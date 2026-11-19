@@ -1,6 +1,7 @@
 //! Match runtime owner (F12): the per-frame simulation advance transaction,
 //! the local frame pacer, and the scenario exit cascade.
 
+pub(crate) mod autoplay_session;
 pub(crate) mod beacons;
 mod deferred_effects;
 pub(crate) mod eva_producers;

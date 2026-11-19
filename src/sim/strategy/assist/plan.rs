@@ -695,7 +695,7 @@ mod tests {
         let owner = sim.interner.intern("Americans");
         let mut census = Census::default();
         let plant = sim.interner().get("GAPOWR").expect("the plant's id");
-        census.lines[crate::sim::strategy::retail::census::LINE_BUILDING].product = Some(plant);
+        census.lines[crate::sim::strategy::assist::census::LINE_BUILDING].product = Some(plant);
         let obs = Observation::new(&sim, owner);
         let ty = rules.object("GAPOWR").expect("the plant");
 
@@ -831,7 +831,7 @@ mod tests {
         );
         // And a plant finished and waiting for a cell is output it has.
         let plant = sim.interner().get("GAPOWR").expect("the power plant type");
-        census.lines[crate::sim::strategy::retail::census::LINE_BUILDING].ready = Some(plant);
+        census.lines[crate::sim::strategy::assist::census::LINE_BUILDING].ready = Some(plant);
         assert!(
             power_deficit(&rules, &obs, &census, -100) <= 0,
             "the waiting plant covers the lab"

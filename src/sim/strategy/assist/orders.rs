@@ -56,7 +56,7 @@ use crate::sim::control::intent::Intent;
 use crate::sim::control::observation::{EnemyEntity, Observation};
 use crate::sim::control::{Goal, MicroKind, MicroParams};
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::strategy::retail::RetailBrain;
+use crate::sim::strategy::assist::AssistBrain;
 
 use super::squared_distance;
 use super::tracked::TrackedKind;
@@ -107,7 +107,7 @@ const HOME_REACH_CELLS: i32 = 12;
 /// worth, not by what is nearest — walking the house's only spy into the
 /// derrick next door is how the feature is wasted.
 pub(super) fn captures(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -378,7 +378,7 @@ pub(super) fn captures(
 ///   the wishlist's "误伤", and the reason the second half of this step looks at
 ///   where the blast would land rather than only at what it would hit.
 pub(super) fn suicide_errand(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -516,7 +516,7 @@ const SPLASH_CELLS: i32 = 10;
 /// * **It is not already home.** A yard inside the base's own ring is a second
 ///   yard doing its job; packing it to move it a few cells is a churn.
 pub(super) fn pack_captured_yard(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -584,7 +584,7 @@ pub(super) fn pack_captured_yard(
 /// is also retail's price, so this only pays for a bridge inside the house's
 /// own reach.
 pub(super) fn bridges(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -664,7 +664,7 @@ pub(super) fn bridges(
 /// `building_dock_now`), so a rifleman sent with it walks to the wall and
 /// stands there — the garrison that never garrisons.
 pub(super) fn garrison(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -792,7 +792,7 @@ fn infiltration_value(rules: &RuleSet, ty: &ObjectType, free: i32) -> u8 {
 
 /// The cells of the house's own buildings: the yard, the plants, the factories,
 /// the defenses. A bridge or a garrison is only worth a unit near one of them.
-fn home_cells(brain: &RetailBrain) -> impl Iterator<Item = (u16, u16)> + '_ {
+fn home_cells(brain: &AssistBrain) -> impl Iterator<Item = (u16, u16)> + '_ {
     brain.census.home_cells.iter().copied()
 }
 
@@ -1104,7 +1104,7 @@ pub(super) fn admits(rules: &RuleSet, obs: &Observation<'_>, unit: u64, goal: &G
 /// on: nothing is ordered, nothing is recorded, and the caller is free to pick
 /// another target or leave the unit alone.
 pub(super) fn issue(
-    brain: &RetailBrain,
+    brain: &AssistBrain,
     out: &mut Outbox,
     rules: &RuleSet,
     obs: &Observation<'_>,
@@ -1257,7 +1257,7 @@ fn cell_in_bounds(obs: &Observation<'_>, cell: (u16, u16)) -> bool {
 
 /// Put every idle combat unit no team has taken on area guard where it stands.
 pub(super) fn forces(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -1366,7 +1366,7 @@ const DEPLOYS_PER_FRAME: usize = 4;
 /// already down stays down, and one that is standing stays up. Issuing it
 /// every frame would walk them in and out of the pose, and a deployed soldier
 /// that never stands up is a soldier that never takes ground.
-pub(super) fn deploy(brain: &mut RetailBrain, obs: &Observation<'_>, out: &mut Outbox) {
+pub(super) fn deploy(brain: &mut AssistBrain, obs: &Observation<'_>, out: &mut Outbox) {
     let tick = obs.tick();
     // Forget the soldiers the house no longer has, so a recycled id cannot
     // inherit another soldier's pose.
@@ -1486,7 +1486,7 @@ fn holds_or_fights(mission: MissionId) -> bool {
 /// already harvesting is given the click the player would give it; the field
 /// search is the mission's job, so the cell is the unit's own.
 pub(super) fn harvesters(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -1600,7 +1600,7 @@ const HOLDLESS_HEALTH: i32 = 250;
 /// house — and a yard maker building is left alone, because it is worth packing
 /// and driving home rather than refunding.
 pub(super) fn sell_hard_to_hold(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -1792,7 +1792,7 @@ const CRATE_SEEK_CELLS: i32 = 8;
 /// — the map takes the crate when the unit enters the cell — so a Move is the
 /// whole order.
 pub(super) fn crates(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -1945,7 +1945,7 @@ const REPAIR_REARM_FRAMES: u64 = 900;
 /// buildings it has already switched on, and forgets one only when it is whole
 /// again. Nothing about the click is per-frame, so nothing here is either.
 pub(super) fn repairs(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -2076,7 +2076,7 @@ const RETREAT_SUPERIORITY_PERMILLE: i32 = 1_500;
 /// Either way a unit that has arrived is held out of the push, and is held
 /// again every frame: it is still under the line the retreat was called at.
 pub(super) fn managed(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     tick: u64,
@@ -2235,7 +2235,7 @@ pub(super) fn carrying_step(passengers: usize, distance: i32) -> Carrying {
 /// — a carrier that already has passengers takes them where the army is going
 /// and opens, instead of standing where it was built for the whole match.
 pub(super) fn transports(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -2303,7 +2303,7 @@ pub(super) fn wants_board(capacity: i32, passengers: usize, distance: i32) -> bo
 /// It is still a behaviour change, so it is measured on the pinned seed rather
 /// than assumed.
 fn board_idle(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -2378,7 +2378,7 @@ fn board_idle(
 
 /// Where a carrier should open: the push's target when there is one, else the
 /// nearest hostile the house knows about.
-fn delivery_cell(brain: &RetailBrain) -> Option<(u16, u16)> {
+fn delivery_cell(brain: &AssistBrain) -> Option<(u16, u16)> {
     brain
         .census
         .enemies
@@ -2426,7 +2426,7 @@ mod transport_tests {
 /// buildings, and firing them at the enemy burns the charge for nothing; they
 /// belong to a defensive decision this brain does not make yet.
 pub(super) fn supers(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -2509,7 +2509,7 @@ fn aim_of(kind: SuperWeaponKind) -> Aim {
 
 /// The cell an aim resolves to this frame.
 fn landing_cell(
-    brain: &RetailBrain,
+    brain: &AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     aim: Aim,
@@ -2580,7 +2580,7 @@ fn spent_on_the_enemy(kind: SuperWeaponKind) -> bool {
 /// value table puts a Construction Yard at 100 against a power plant's 60 and a
 /// tank's 2), and it is the cell a single missile decides a match at.
 fn enemy_structure_cell(
-    brain: &RetailBrain,
+    brain: &AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
 ) -> Option<(u16, u16)> {
@@ -2665,7 +2665,7 @@ mod tests {
         let derrick = sim
             .spawn_object("CAOILD", "Neutral", 30, 20, 255, &rules)
             .expect("a derrick to take");
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
             &rules,
@@ -2711,7 +2711,7 @@ mod tests {
             .expect("a rifleman");
         sim.spawn_object("E1", "Russians", 28, 28, 255, &rules)
             .expect("an enemy to walk at");
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         let obs = Observation::new(&sim, owner);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
@@ -2742,7 +2742,7 @@ mod tests {
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();
         assert!(issue(
-            &RetailBrain::new(0xA17),
+            &AssistBrain::new(0xA17),
             &mut out,
             &rules,
             &obs,
@@ -2751,7 +2751,7 @@ mod tests {
         ));
         assert!(
             !issue(
-                &RetailBrain::new(0xA17),
+                &AssistBrain::new(0xA17),
                 &mut out,
                 &rules,
                 &obs,
@@ -2810,7 +2810,7 @@ mod tests {
         // enemies are named by id, and the interner is the world's.
         let hostile = sim.interner.intern("E2");
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
             &rules,
@@ -2918,7 +2918,7 @@ mod tests {
         sim.spawn_object("NAPOWR", "Russians", 20, 20, 64, &rules)
             .expect("a power plant a spy may enter");
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         let mut out = Outbox::default();
         brain.rebuild_census(&rules, &obs);
         captures(&mut brain, &rules, &obs, &mut out);
@@ -2968,7 +2968,7 @@ mod tests {
             .expect("a power plant");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         let mut out = Outbox::default();
         brain.rebuild_census(&rules, &obs);
         captures(&mut brain, &rules, &obs, &mut out);
@@ -3022,7 +3022,7 @@ mod tests {
             .expect("a shack");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         garrison(&mut brain, &rules, &obs, &mut out);
@@ -3075,7 +3075,7 @@ mod tests {
             .expect("a repair depot");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         managed(&mut brain, &rules, &obs, 0, &mut out);
@@ -3128,7 +3128,7 @@ mod tests {
             .expect("an enemy tank");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         managed(&mut brain, &rules, &obs, 0, &mut out);
@@ -3228,7 +3228,7 @@ mod tests {
 
         assert!(
             !issue(
-                &RetailBrain::new(0xA17),
+                &AssistBrain::new(0xA17),
                 &mut out,
                 &rules,
                 &obs,
@@ -3242,7 +3242,7 @@ mod tests {
         assert!(out.orders.is_empty(), "nothing was ordered");
         assert!(
             issue(
-                &RetailBrain::new(0xA17),
+                &AssistBrain::new(0xA17),
                 &mut out,
                 &rules,
                 &obs,
@@ -3274,7 +3274,7 @@ mod tests {
             .expect("a battle bunker");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         let mut out = Outbox::default();
         brain.rebuild_census(&rules, &obs);
         garrison(&mut brain, &rules, &obs, &mut out);
@@ -3332,7 +3332,7 @@ mod tests {
             "the charged power is the one live button"
         );
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
             &rules,
@@ -3390,7 +3390,7 @@ mod tests {
             .health
             .set(300);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
             &rules,
@@ -3466,7 +3466,7 @@ mod tests {
             .health
             .set(93);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
             &rules,
@@ -3528,7 +3528,7 @@ mod tests {
         let captured = sim
             .spawn_object("CAFRMB", "Americans", 110, 63, 255, &rules)
             .expect("a captured French structure");
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
             &rules,
@@ -3536,7 +3536,7 @@ mod tests {
         );
         let obs = Observation::new(&sim, owner);
 
-        let attempts = |brain: &mut RetailBrain, out: &mut Outbox| {
+        let attempts = |brain: &mut AssistBrain, out: &mut Outbox| {
             brain.sale_at = 0;
             sell_hard_to_hold(brain, &rules, &obs, out);
         };
@@ -3605,7 +3605,7 @@ mod tests {
             .spawn_object("CAOILD", "Russians", 20, 10, 255, &rules)
             .expect("an oil derrick");
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         // Two bays at home: the ledger is where the house keeps them, and the
         // derrick is the prize only while it is short of them.
@@ -3645,7 +3645,7 @@ mod tests {
             .spawn_object("CAOILD", "Russians", 20, 10, 255, &rules)
             .expect("an oil derrick");
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         assert_eq!(brain.census.refineries, 0, "the opening: no bay stands");
         let mut out = Outbox::default();
@@ -3722,7 +3722,7 @@ mod tests {
             .expect("the map's own oil derrick");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         captures(&mut brain, &rules, &obs, &mut out);
@@ -3764,7 +3764,7 @@ mod tests {
             .expect("the tank standing next to it");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         captures(&mut brain, &rules, &obs, &mut out);
@@ -3804,7 +3804,7 @@ mod tests {
             .expect("a derrick in the open");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         captures(&mut brain, &rules, &obs, &mut out);
@@ -3850,7 +3850,7 @@ mod tests {
             .expect("a tank on the way");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         // Two bays at home, so the derrick is worth 3 and the lab 5: only the
         // fire on the walk can put the derrick first.
@@ -3895,7 +3895,7 @@ mod tests {
             sim.spawn_object(name, "Americans", cell.0, cell.1, 255, &rules)
                 .unwrap_or_else(|| panic!("{name} beside the home yard"));
         }
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
             &rules,
@@ -4079,7 +4079,7 @@ mod tests {
         };
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         crates(&mut brain, &rules, &obs, &mut out);
@@ -4127,7 +4127,7 @@ mod tests {
         };
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         crates(&mut brain, &rules, &obs, &mut out);
@@ -4171,7 +4171,7 @@ mod tests {
         };
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         crates(&mut brain, &rules, &obs, &mut out);
@@ -4228,7 +4228,7 @@ mod tests {
         let mut out = Outbox::default();
         assert!(
             !issue(
-                &RetailBrain::new(0xA17),
+                &AssistBrain::new(0xA17),
                 &mut out,
                 &rules,
                 &obs,
@@ -4239,7 +4239,7 @@ mod tests {
         );
         assert!(
             issue(
-                &RetailBrain::new(0xA17),
+                &AssistBrain::new(0xA17),
                 &mut out,
                 &rules,
                 &obs,

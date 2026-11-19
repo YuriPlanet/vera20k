@@ -12,7 +12,7 @@ Player-facing behaviour — the hotkeys, the two switches, the actuation and tim
 app / hotkeys ──▶ sim::autoplay            facade: install, step, switches, HUD name
                        │
                        ▼
-                  sim::strategy            L3  decide     (Brain, RetailBrain)
+                  sim::strategy            L3  decide     (Brain, AssistBrain)
                        │
                        ▼
                   sim::control             L2  store, schedule, deliver
@@ -56,11 +56,11 @@ L3 never needs to.
 | `control::observation` | L2 | the read-only projection a decision sees | borrowed |
 | `control::external` | L2 | reserved: `PolicySource`, versioned `ObservationBatch`, `ActionSlot` | none |
 | `strategy::brain` | L3 | re-export of the port, with the direction documented | none |
-| `strategy::retail` | L3 | the retail brain: frame order, army orders, yard deployment | owned |
-| `strategy::retail::census` | L3 | the house's ledger: counts by pool, key types, each line's occupancy, the jobs the enemy asks for, one walk per frame | owned, rebuilt every frame |
-| `strategy::retail::build` | L3 | what the base builds and in what order (income, barracks, one war factory, defense, throughput, tech) | owned |
-| `strategy::retail::composition` | L3 | what each idle production line starts next: gap closing, the infantry floor, the price bands | owned |
-| `strategy::retail::advance` / `orders` / `expand` | L3 | the push, the specialists and the yard | owned |
+| `strategy::assist` | L3 | the assist brain: frame order, army orders, yard deployment | owned |
+| `strategy::assist::census` | L3 | the house's ledger: counts by pool, key types, each line's occupancy, the jobs the enemy asks for, one walk per frame | owned, rebuilt every frame |
+| `strategy::assist::build` | L3 | what the base builds and in what order (income, barracks, one war factory, defense, throughput, tech) | owned |
+| `strategy::assist::composition` | L3 | what each idle production line starts next: gap closing, the infantry floor, the price bands | owned |
+| `strategy::assist::advance` / `orders` / `expand` | L3 | the push, the specialists and the yard | owned |
 | `autoplay` | facade | `AutoPlayHost`, `AutoPlayDomains`, `ScriptedPolicy`, the hotkey-facing surface | host |
 
 ## Data ownership and lifecycle
@@ -79,13 +79,13 @@ L3 never needs to.
   over — a team's members already have an issuer (`TeamClass::Recruit` clears their
   target). The table is garbage-collected once per frame before stepping.
 - **Brain memory is the brain's.** The plan, the generator, the outstanding orders and
-  the give-up counters live in `RetailBrain`, rebuilt on install, not serialized. What it
+  the give-up counters live in `AssistBrain`, rebuilt on install, not serialized. What it
   has *told* each object is memory too, so the gate reports back: `Brain::orders_refused`
   hands the brain the orders a frame could not admit, and the brain forgets that
   intent. The frame admits a bounded number of commands, and an order the budget
   dropped otherwise stands for its whole term — 450 frames of a unit waiting for a
   march that was never given.
-- **The ledger is per frame.** `RetailBrain::census` is rebuilt at the top of every
+- **The ledger is per frame.** `AssistBrain::census` is rebuilt at the top of every
   `think` and is the only place a decision reads "how many of mine" from: six separate
   walks of the entity store became one, and no count outlives the frame it was taken in.
 - **The projection is a borrow.** Nothing is copied or retained; a decision that needs a
@@ -109,7 +109,7 @@ object is simply busy must not lose it.
 **Every routine in this build is non-parity.** Kiting, waiting out a patrol, splitting a
 flight's fire and breaking off a hurt unit are things a player does by hand;
 `gamemd`'s computer houses do not, and no golden or native comparison covers them. They
-are enabled only for a house the retail brain drives, never for a scenario's own AI
+are enabled only for a house the assist brain drives, never for a scenario's own AI
 house. Each module says so in its header. Where a routine's input is narrower than the
 game's — `SpyApproach` reads proximity rather than vision and disguise, `Retreat` has no
 per-shot ammunition counter to read — the module records that as a residual instead of

@@ -71,7 +71,7 @@ pub const ROLES: [Role; 7] = [
 ///
 /// `RoleWeights` are scaled against the best answer the rule set offers, so a
 /// quarter of it is a type that really does the job; a tank's trace of anti-air
-/// (it has none) stays out of the count. The retail brain counts its `able`
+/// (it has none) stays out of the count. The assist brain counts its `able`
 /// vector at this bar, and every caller that asks "is this job covered" has to
 /// ask it the same way.
 pub const ROLE_FLOOR: f64 = 0.25;
@@ -80,8 +80,8 @@ pub const ROLE_FLOOR: f64 = 0.25;
 ///
 /// The night hawk (`Passengers=5`) and the hind (`Passengers=10`) are air
 /// transports with a machine gun; the IFV's one seat is a fighting vehicle that
-/// happens to carry someone. Five is where the retail brain draws the line
-/// (`sim::strategy::retail::census`), and this is the owner of that reading so
+/// happens to carry someone. Five is where the assist brain draws the line
+/// (`sim::strategy::assist::census`), and this is the owner of that reading so
 /// a second caller cannot draw it somewhere else.
 pub const TRANSPORT_SEATS: i32 = 5;
 
@@ -95,7 +95,7 @@ pub const TRANSPORT_SEATS: i32 = 5;
 ///
 /// Every term is a key the type declares — nothing here is a name or a shape
 /// retail happens to have — so a mod's unit is admitted or refused by the same
-/// reading. The retail brain and the autoplay policy both ask this question,
+/// reading. The assist brain and the autoplay policy both ask this question,
 /// and this is the one place it is answered.
 pub fn is_army(rules: &RuleSet, ty: &ObjectType) -> bool {
     matches!(

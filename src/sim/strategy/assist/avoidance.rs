@@ -69,7 +69,7 @@ use crate::sim::control::brain::Outbox;
 use crate::sim::control::observation::Observation;
 use crate::sim::mission::{MissionId, MissionType};
 
-use super::RetailBrain;
+use super::AssistBrain;
 use super::census::{Census, fight_points};
 use super::tracked::TrackedKind;
 
@@ -398,7 +398,7 @@ impl FriendIndex {
 
 /// Route every walking unit around the fights it would lose on the way.
 pub(super) fn run(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -762,7 +762,7 @@ const BLOCKED_SCAN_CELLS: i32 = 24;
 /// Terrain that no click can open is dropped, so a cliff does not become a
 /// permanent demolition order.
 fn answer_blocked(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -917,7 +917,7 @@ const BREACH_ANSWERS_PER_FRAME: usize = 4;
 const BREACH_REQUESTS_HELD: usize = 8;
 
 /// Add this frame's closed cells to the brain's standing requests.
-fn remember_breaches(brain: &mut RetailBrain, tick: u64, breaches: &[(u16, u16)]) {
+fn remember_breaches(brain: &mut AssistBrain, tick: u64, breaches: &[(u16, u16)]) {
     let until = tick.saturating_add(BREACH_REQUEST_FRAMES);
     for cell in breaches.iter().copied() {
         if let Some((_, expires)) = brain.breaches.iter_mut().find(|(at, _)| *at == cell) {
@@ -929,7 +929,7 @@ fn remember_breaches(brain: &mut RetailBrain, tick: u64, breaches: &[(u16, u16)]
 }
 
 fn answer_breaches(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -1012,7 +1012,7 @@ fn answer_breaches(
 /// already shooting, else the nearest hostile. `None` when the house can see
 /// nothing at all.
 fn objective(
-    brain: &RetailBrain,
+    brain: &AssistBrain,
     obs: &Observation<'_>,
     entity_id: u64,
     from: (u16, u16),
@@ -1225,7 +1225,7 @@ mod tests {
     /// for — the gate that takes a squad's whole crossing to open.
     #[test]
     fn a_breach_request_outlives_the_frame_that_made_it() {
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         remember_breaches(&mut brain, 100, &[(10, 10)]);
         assert_eq!(
             brain.breaches,

@@ -284,7 +284,7 @@ impl Squads {
         // Too small to take a base yet: the nearest few go at what pays for
         // the enemy's army. Not the whole army — a raid is worth a handful,
         // and the house still needs something at home.
-        if census.fighters < crate::sim::strategy::retail::squads::ARMY_TO_ATTACK {
+        if census.fighters < crate::sim::strategy::assist::squads::ARMY_TO_ATTACK {
             let mut nearest: Vec<&Unit> = census
                 .units
                 .iter()
@@ -384,9 +384,9 @@ mod tests {
             ),
             orderable: true,
             hand: false,
-            slot: crate::sim::strategy::retail::census::Slot::Infantry,
+            slot: crate::sim::strategy::assist::census::Slot::Infantry,
             tier: 0,
-            traits: crate::sim::strategy::retail::census::Traits {
+            traits: crate::sim::strategy::assist::census::Traits {
                 combat: true,
                 armed: true,
                 ..Default::default()
@@ -419,9 +419,9 @@ mod tests {
                 ),
                 orderable: true,
                 hand: false,
-                slot: crate::sim::strategy::retail::census::Slot::Infantry,
+                slot: crate::sim::strategy::assist::census::Slot::Infantry,
                 tier: 0,
-                traits: crate::sim::strategy::retail::census::Traits {
+                traits: crate::sim::strategy::assist::census::Traits {
                     combat: true,
                     armed: true,
                     ..Default::default()

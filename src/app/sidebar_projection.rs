@@ -287,6 +287,30 @@ impl PreparedSidebarOrder {
     }
 }
 
+/// The cameo a command writes, if it writes one.
+///
+/// This is the whole presentation contract in one place: a command whose
+/// visible half a player would see maps to the same click the player's hand
+/// would have written. Every other command shows nothing, and that is a
+/// decision rather than an oversight — a move order does not touch the strip.
+/// Adding a command with a visible half and no case here is the bug this
+/// function makes hard to write quietly: the list is short enough to read
+/// against the command enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CameoMirror {
+    /// PRODUCE (event 14): the type starts, queues or resumes.
+    Produce(InternedId),
+}
+
+/// The cameo a command writes, or `None` when it writes nothing.
+pub(crate) fn cameo_mirror(command: &crate::sim::command::Command) -> Option<CameoMirror> {
+    use crate::sim::command::Command;
+    match command {
+        Command::QueueProduction { type_id } => Some(CameoMirror::Produce(*type_id)),
+        _ => None,
+    }
+}
+
 impl SidebarProjectionState {
     /// [`cameo_candidates`] of `inputs` and the right strip's `supers`, kept
     /// while the frame `inputs` came from and the owner hold.
@@ -1175,6 +1199,26 @@ impl SidebarProjectionState {
     /// The agent asks again on every frame the plan wants the item, so a
     /// request that already stands is the answer and is left alone: restarting
     /// it is a clock that never finishes.
+    /// Mirror one auto-play command into the strip.
+    ///
+    /// The pairing this owns is the one the player would notice: an order with a
+    /// visible half must show it, and an order without one must not invent one.
+    /// Auto play goes through here and nowhere else.
+    pub(crate) fn mirror_auto_play(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        owner: InternedId,
+        command: &crate::sim::command::Command,
+    ) {
+        match cameo_mirror(command) {
+            Some(CameoMirror::Produce(type_id)) => {
+                self.record_auto_play_order(sim, rules, owner, type_id)
+            }
+            None => {}
+        }
+    }
+
     pub(crate) fn record_auto_play_order(
         &mut self,
         sim: &crate::sim::world::Simulation,

@@ -40,7 +40,7 @@ use crate::sim::control::brain::Outbox;
 use crate::sim::control::observation::{EnemyEntity, Observation};
 use crate::sim::mission::{MissionId, MissionType};
 
-use super::RetailBrain;
+use super::AssistBrain;
 use super::census::{Census, Unit};
 use super::squared_distance;
 
@@ -157,7 +157,6 @@ fn mop_up(census: &Census) -> bool {
     census.enemies_near(home, THREAT_RADIUS) < MOP_UP_OBJECTS
 }
 
-
 /// The clean-up bypass reads the ground around the base, not the whole map.
 ///
 /// The whole-map sum is what made it dead on a 1v29: twenty-nine houses keep
@@ -181,7 +180,10 @@ fn the_clean_up_bypass_reads_the_base_ring_not_the_whole_map() {
 
     // No base at all: nothing is being held at home.
     census.base_cell = None;
-    assert!(mop_up(&census), "a house with no base has nothing to defend");
+    assert!(
+        mop_up(&census),
+        "a house with no base has nothing to defend"
+    );
 
     // A base with an empty ring, while the map elsewhere is full of enemies:
     // the sum is large, the ring is clear, and the army is free to march.
@@ -217,7 +219,7 @@ fn the_clean_up_bypass_reads_the_base_ring_not_the_whole_map() {
 /// Send the army at the enemy's base when it is large enough. `false` when
 /// the house is not pushing this frame, so the caller keeps its own posture.
 pub(super) fn advance(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -1116,7 +1118,7 @@ mod tests {
         sim.spawn_object("NAREFN", "Russians", 28, 26, 255, &rules)
             .expect("an enemy refinery");
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();

@@ -39,7 +39,7 @@ use crate::sim::control::placement::{PLACEMENT_ATTEMPTS, Placement};
 use crate::sim::intern::InternedId;
 use crate::sim::production::{CanBuild, ProductionCategory};
 
-use super::RetailBrain;
+use super::AssistBrain;
 use super::census::Census;
 use super::plan::{self, Budget, Item};
 
@@ -104,7 +104,7 @@ pub(super) const BUILD_HOLD_FRAMES: u64 = 600;
 /// the next structure. The production lines are
 /// [`super::composition::fill_lines`]' job.
 pub(super) fn spend(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     budget: &Budget,
@@ -124,7 +124,7 @@ pub(super) fn spend(
 /// category — the yard starts nothing else. The attempt counter is what moves
 /// the sweep past a cell the gate admits but the receiver refuses.
 fn place_finished(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -316,7 +316,7 @@ fn earns_its_keep(rules: &RuleSet, ty: &ObjectType) -> bool {
 
 /// Start the one structure the base needs most, while the yard is free.
 fn build_next(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     budget: &Budget,
@@ -501,7 +501,7 @@ fn build_next(
 /// wallet has not reached one, so asking the whole predicate would never
 /// reserve anything.
 fn hold_for_a_second_base(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     budget: &Budget,
@@ -1513,11 +1513,11 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(5_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         // The plant is built and standing in the yard, waiting for its cell.
         let plant = sim.interner().get("GAPOWR").expect("the power plant type");
-        brain.census.lines[crate::sim::strategy::retail::census::LINE_BUILDING].ready = Some(plant);
+        brain.census.lines[crate::sim::strategy::assist::census::LINE_BUILDING].ready = Some(plant);
         let obs = Observation::new(&sim, owner);
         let budget = plan::budget(&rules, &obs, &brain.census, None);
         let mut out = Outbox::default();
@@ -1688,7 +1688,7 @@ mod tests {
 
         let mut census = ledger(&rules, &sim, owner);
         let plant = sim.interner().get("GAPOWR").expect("the plant's id");
-        census.lines[crate::sim::strategy::retail::census::LINE_BUILDING].product = Some(plant);
+        census.lines[crate::sim::strategy::assist::census::LINE_BUILDING].product = Some(plant);
         let obs = Observation::new(&sim, owner);
         assert!(
             obs.power_balance() < 0,

@@ -35,7 +35,7 @@ use crate::sim::control::Goal;
 use crate::sim::control::brain::Outbox;
 use crate::sim::control::observation::Observation;
 
-use super::RetailBrain;
+use super::AssistBrain;
 use super::threats::{Threat, ThreatIndex, covers};
 use super::tracked::TrackedKind;
 
@@ -194,7 +194,7 @@ fn flee_step(
 
 /// Shoot, step out, come back.
 pub(super) fn run(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,

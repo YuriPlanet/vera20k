@@ -99,6 +99,7 @@ const WALL_BREAKER_DPS: i64 = 100;
 /// Above the line units, because an army that cannot break a wall cannot finish a
 /// match, and below the economy, because a house with no income cannot build
 /// anything at all.
+#[allow(dead_code)] // the wall-breaker rule is not wired; see docs/autoplay.md residuals
 const WALL_BREAKER_PRIORITY: i64 = 80;
 
 /// How close counts as "around", in cells.
@@ -128,7 +129,7 @@ const UNIT_SPEND_FLOOR: i32 = 900;
 
 /// How large a gap is worth answering once, in units.
 ///
-/// Three, the engine's own cap (`retail::composition::GAP_CAP`): a house that
+/// Three, the engine's own cap (`assist::composition::GAP_CAP`): a house that
 /// sees twenty tanks does not need twenty anti-tank units before it buys
 /// anything else, and an uncapped gap drowns every other job.
 const GAP_CAP: i64 = 3;
@@ -158,6 +159,7 @@ const MAIN_BATTLE_FLOOR: i64 = 12;
 /// So the floor is a peace-time rule: it applies while the odds are winnable and
 /// yields to sheer numbers when they are not. Sixty is the same bar the scout
 /// uses, for the same reason, measured the same way.
+#[allow(dead_code)] // the infantry-floor rule is not wired; see docs/autoplay.md residuals
 const MAIN_BATTLE_MAX_ENEMIES: usize = 60;
 
 /// How many units the house keeps out scouting at once.
@@ -167,6 +169,7 @@ const MAIN_BATTLE_MAX_ENEMIES: usize = 60;
 /// is large enough that one is affordable, and without a scout the house never
 /// learns what is off its own doorstep: measured, the whole footprint stayed
 /// within about thirty cells of the base for a whole match.
+#[allow(dead_code)] // the scout rule is not wired; see docs/autoplay.md residuals
 const SCOUTS_OUT: usize = 1;
 
 /// What a scout runs at: above Defend's twenty, below Assault's sixty.
@@ -451,7 +454,7 @@ impl Military {
 
     /// Whether a type belongs on the army's line at all.
     ///
-    /// `rules::unit_role::is_army` owns the answer — the retail brain asks it
+    /// `rules::unit_role::is_army` owns the answer — the assist brain asks it
     /// too — so the two cannot disagree about what a squad is made of. Every
     /// term is a key the type declares: a weapon that fires (not a
     /// `NeverUse=yes` scan range), no capture or harvest job, fewer than five
@@ -527,7 +530,7 @@ impl Military {
     /// The gap it closes **best**, not the sum of all of them: a type that
     /// answers four jobs a little is not four units, and summing let one
     /// multi-role vehicle outrank every specialist — the engine's own
-    /// composition reads it the same way (`retail::composition::fighter`).
+    /// composition reads it the same way (`assist::composition::fighter`).
     /// A type that answers nothing scores zero.
     fn role_score(ctx: &Ctx<'_>, type_id: &str, need: &[i64; ROLES.len()]) -> i64 {
         let weights = ctx.roles.weights(type_id);
@@ -576,7 +579,7 @@ impl Military {
     /// The army attacks once it is big enough, and holds the base before that.
     fn commit(&mut self, ctx: &Ctx<'_>, out: &mut Demands) {
         let mut soldiers = Vec::new();
-        /// Every structure the house holds. `home` is chosen from these rather
+        // Every structure the house holds. `home` is chosen from these rather
         /// than from the first one met, because a captured civilian building is a
         /// structure too and taking the first one put home out at an oil derrick:
         /// measured on the 1v1 lane, `CAOILD` at (176, 81) became home, the tanks
@@ -584,7 +587,6 @@ impl Military {
         /// them was turned around and sent back — `ReturnHome target=Cell((176,
         /// 81)) standing=1680..2040` while the column sat beside it.
         let mut structures: Vec<(u16, u16)> = Vec::new();
-        let mut home: Option<(u16, u16)> = None;
         for unit in ctx.obs.own_entities() {
             let Some(ty) = ctx.obs.object_type(ctx.rules, unit.type_id) else {
                 continue;
@@ -705,7 +707,7 @@ impl Military {
         // unit with no post is a unit nobody owns.
         // The densest cluster, not the first structure met: a base is where the
         // buildings are, a captured derrick is one building on its own.
-        home = structures
+        let home: Option<(u16, u16)> = structures
             .iter()
             .max_by_key(|cell| {
                 let neighbours = structures

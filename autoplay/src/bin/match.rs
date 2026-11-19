@@ -24,8 +24,10 @@ use vera20k_core::sim::control::brain::{Brain, Outbox};
 use vera20k_core::sim::control::observation::Observation;
 use vera20k_core::sim::intern::InternedId;
 use vera20k_core::sim::production::ProductionCategory;
-use vera20k_core::sim::replay::{PLAY_HASH_INTERVAL, REPLAY_VERSION, ReplayHeader, ReplayLog, ReplayStartup};
-use vera20k_core::sim::strategy::retail::RetailBrain;
+use vera20k_core::sim::replay::{
+    PLAY_HASH_INTERVAL, REPLAY_VERSION, ReplayHeader, ReplayLog, ReplayStartup,
+};
+use vera20k_core::sim::strategy::assist::AssistBrain;
 use vera20k_core::sim::world::{FrameEffects, Simulation, TickLane};
 use vera20k_core::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchOptions};
 
@@ -855,7 +857,7 @@ fn main() -> Result<(), String> {
         "v2" => Box::new(autoplay::policy::Policy::new(
             &scenario.runtime.resources.rules,
         )),
-        _ => Box::new(RetailBrain::new(u64::from(args.seed))),
+        _ => Box::new(AssistBrain::new(u64::from(args.seed))),
     };
     let mut host = AutoPlayHost::new(chosen, local, args.per_frame);
     let mut last = snapshot(sim, local, &enemies, 0, &host);
@@ -897,7 +899,7 @@ fn main() -> Result<(), String> {
         if tick <= args.dump {
             let sim = &scenario.runtime.simulation;
             let obs = Observation::new(sim, local);
-            let mut brain = RetailBrain::new(u64::from(args.seed));
+            let mut brain = AssistBrain::new(u64::from(args.seed));
             let mut out = Outbox::default();
             brain.think(&scenario.runtime.resources.rules, &obs, &mut out);
             let funnel = vera20k_core::sim::behavior::Funnel::new(
@@ -920,7 +922,12 @@ fn main() -> Result<(), String> {
         }
         let mut frame = scenario
             .runtime
-            .advance_frame(&[], SIM_TICK_MS, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &[],
+                SIM_TICK_MS,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
             .map_err(|error| format!("tick {tick}: {error}"))?;
 
         let sim = &scenario.runtime.simulation;

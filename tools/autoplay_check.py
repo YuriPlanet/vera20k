@@ -781,7 +781,7 @@ def main(argv: list[str] | None = None) -> int:
             return code
     if not args.skip_tests:
         code = run_command([sys.executable, "-m", "tools.cargo_run", "--", "test",
-                            "-p", "vera20k-core", "--lib", "sim::strategy::retail"])
+                            "-p", "vera20k-core", "--lib", "sim::strategy::assist"])
         if code != 0:
             print("the retail tests failed", flush=True)
             return code

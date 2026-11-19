@@ -51,6 +51,7 @@ const THREAT_BUFFER_CELLS: i32 = 3;
 /// Shorter than the capture reach on purpose: holding a building is a defensive
 /// act and the house gains a gun that cannot be shot back at, not a production
 /// line, so it is worth a short walk and not a march.
+#[allow(dead_code)] // parked with `garrison`, disabled at the call site in `propose`
 const GARRISON_REACH_CELLS: i32 = 20;
 
 /// What a garrison runs at.
@@ -58,6 +59,7 @@ const GARRISON_REACH_CELLS: i32 = 20;
 /// Below the assault's sixty: a rifleman already in the line is doing more than
 /// one walking into a block, and the 1v7 lane has shown twice that pulling even
 /// one soldier out of the column costs the base.
+#[allow(dead_code)] // parked with `garrison`, disabled at the call site in `propose`
 const GARRISON_PRIORITY: i64 = 25;
 
 /// How many enemies may be in sight before the house stops garrisoning.
@@ -68,6 +70,7 @@ const GARRISON_PRIORITY: i64 = 25;
 /// collapsed from own 84 to 17, because the rifleman it took was a defend post
 /// the base needed. With the gate, a lane where thirteen to nineteen enemies are
 /// visible never proposes a garrison at all, and a quiet lane still does.
+#[allow(dead_code)] // parked with `garrison`, disabled at the call site in `propose`
 const GARRISON_QUIET_ENEMIES: usize = 3;
 
 /// Capture, in the order a house should want it.
@@ -110,6 +113,7 @@ pub struct Abilities {
     capturing: std::collections::BTreeMap<u64, u64>,
     /// The building each occupier is walking into, remembered for the same
     /// reason: an infantryman re-aimed every term stops a step outside the door.
+    #[allow(dead_code)] // written only by the parked `garrison`
     garrisoning: std::collections::BTreeMap<u64, u64>,
 }
 
@@ -365,6 +369,7 @@ impl Abilities {
     /// `can_garrison` is the engine's `BuildingClass::CanBeOccupiedBy` for the
     /// pair, and the building is any neutral structure the wish list says is
     /// visible from the start. What was missing was the decision.
+    #[allow(dead_code)] // disabled at the call site in `propose`; measured and kept
     fn garrison(&mut self, ctx: &Ctx<'_>, out: &mut Demands) {
         // Quiet time only. A garrison takes a rifleman out of the line for a gun
         // that cannot be shot back at: a good trade when nothing is attacking, a
@@ -438,6 +443,7 @@ impl Abilities {
     }
 
     /// The infantry that can hold a building: a unit carrying `OCCUPIER`.
+    #[allow(dead_code)] // called only by the parked `garrison`
     fn occupiers(&self, ctx: &Ctx<'_>) -> Vec<vera20k_core::sim::control::observation::OwnEntity> {
         let mut occupiers = Vec::new();
         for unit in ctx.obs.own_entities() {
@@ -465,6 +471,7 @@ impl Abilities {
     /// `neutral_structures` is unfogged by design — the wish list says every
     /// neutral building is visible from the start — so a civilian block is a
     /// candidate wherever it stands.
+    #[allow(dead_code)] // called only by the parked `garrison`
     fn neutral_buildings(
         &self,
         ctx: &Ctx<'_>,

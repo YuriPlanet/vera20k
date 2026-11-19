@@ -2129,7 +2129,7 @@ const AUTO_PLAY_POLICY_SEED: u64 = 0x5EED_2_1;
 /// all-or-nothing: from a host that is missing any switch it turns all three
 /// on, and from a host that has them all it takes the host down.
 ///
-/// The installed brain is the retail one (`RetailBrain`): it generates the
+/// The installed brain is the assist one (`AssistBrain`): it generates the
 /// native BasePlan from the loaded rules — `AI_RecalcBuildOptions` — and plays
 /// it through the command path: deploy the MCV, queue what the plan asks for,
 /// place it, keep the harvesters coming. `docs/autoplay.md` carries the scope
@@ -2152,7 +2152,7 @@ fn toggle_auto_play(state: &mut AppState) {
     post_auto_play_state(state);
 }
 
-/// Install a host running `domains`. `false` when there is no house to drive.
+/// Install a session running `domains`. `false` when there is no house to drive.
 fn install_auto_play(
     state: &mut AppState,
     domains: crate::sim::control::board::AutoPlayDomains,
@@ -2165,26 +2165,28 @@ fn install_auto_play(
     else {
         return false;
     };
-    // Which policy drives the house. The retail port is the default; the
-    // crate outside the engine is selected with an environment variable until
-    // it reaches parity, so one build shows both.
+    // Which brain drives the house. The assist is the default, and
+    // `VERA20K_BRAIN=assist` names it so the variable and the module agree; an
+    // unknown value lands there too. `VERA20K_BRAIN=v2` selects the crate
+    // outside the engine, which has not reached parity, so one build shows both.
     let brain: Box<dyn crate::sim::control::brain::Brain> =
         if std::env::var("VERA20K_BRAIN").is_ok_and(|value| value.eq_ignore_ascii_case("v2")) {
             match state.match_state.sim_runtime.runtime() {
                 Some(runtime) => Box::new(autoplay::policy::Policy::new(&runtime.resources.rules)),
-                None => Box::new(crate::sim::strategy::retail::RetailBrain::new(
+                None => Box::new(crate::sim::strategy::assist::AssistBrain::new(
                     AUTO_PLAY_POLICY_SEED,
                 )),
             }
         } else {
-            Box::new(crate::sim::strategy::retail::RetailBrain::new(
+            Box::new(crate::sim::strategy::assist::AssistBrain::new(
                 AUTO_PLAY_POLICY_SEED,
             ))
         };
-    let mut host =
-        crate::sim::autoplay::AutoPlayHost::new(brain, owner, AUTO_PLAY_COMMANDS_PER_FRAME);
-    host.set_domains(domains);
-    state.match_state.auto_play = Some(host);
+    let mut session = crate::app::match_runtime::autoplay_session::AutoplaySession::new(
+        crate::sim::autoplay::AutoPlayHost::new(brain, owner, AUTO_PLAY_COMMANDS_PER_FRAME),
+    );
+    session.set_domains(domains);
+    state.match_state.auto_play = Some(session);
     true
 }
 

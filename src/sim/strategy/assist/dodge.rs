@@ -34,7 +34,7 @@ use crate::sim::control::Goal;
 use crate::sim::control::brain::Outbox;
 use crate::sim::control::observation::Observation;
 
-use super::RetailBrain;
+use super::AssistBrain;
 use super::tracked::TrackedKind;
 
 /// Frames a reaction costs: the shot is seen on this frame and the walk starts
@@ -154,7 +154,7 @@ pub(super) fn can_clear(
 /// read from the frame's ledger, so two hundred bullets in the air cost one pass
 /// and not one pass per unit.
 pub(super) fn run(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -491,7 +491,7 @@ mod tests {
             };
             sim.projectiles_mut_for_test().spawn(1, spawn);
             let obs = Observation::new(&sim, owner);
-            let mut brain = RetailBrain::new(0xA17);
+            let mut brain = AssistBrain::new(0xA17);
             let mut census = super::super::census::Census::default();
             census.refresh(&RoleTable::build(&rules), &rules, &obs);
             brain.census = census;

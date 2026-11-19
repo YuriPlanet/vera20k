@@ -5,7 +5,7 @@
 //! simplest thing that can occupy the brain seam. Because its steps are
 //! commands rather than goals, it uses the outbox's command channel: the gate
 //! (domain switch, budget, ownership, order admission) applies to it exactly as
-//! it does to a retail brain's orders, which is the point of keeping it.
+//! it does to an assist brain's orders, which is the point of keeping it.
 
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::Command;

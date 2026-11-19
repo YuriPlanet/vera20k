@@ -18,7 +18,7 @@ pub(crate) struct MatchState {
     /// Auto play: the agent driving the local house, if one is installed.
     /// `None` is the normal case — a match with no agent is an ordinary match,
     /// and the frame loop does nothing extra. See `docs/autoplay.md`.
-    pub(crate) auto_play: Option<crate::sim::autoplay::AutoPlayHost>,
+    pub(crate) auto_play: Option<crate::app::match_runtime::autoplay_session::AutoplaySession>,
     /// The in-match connection wait and its dialog 0xEA
     /// (`Wait_For_Players 0x00648710`).
     pub(crate) network_wait: super::network_match::NetworkMatchWait,

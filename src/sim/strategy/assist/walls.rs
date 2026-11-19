@@ -42,8 +42,8 @@ use crate::sim::control::observation::Observation;
 use crate::sim::intern::InternedId;
 use crate::sim::production::{CanBuild, ProductionCategory};
 
+use super::AssistBrain;
 use super::Goal;
-use super::RetailBrain;
 use super::tracked::TrackedKind;
 
 /// Credits in hand before a segment is worth a production slot. A wall costs
@@ -201,7 +201,7 @@ pub(super) fn gate_cell(
 /// `Wall=yes` BuildingType the house may actually build (`[GAWALL]
 /// Prerequisite=GAPILE`).
 pub(super) fn wall_type(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
 ) -> Option<InternedId> {
@@ -222,7 +222,7 @@ pub(super) fn wall_type(
 /// `None` while the base is too small, too poor, already walled enough, or has
 /// no enemy to face: a wall is only ever built toward something.
 pub(super) fn next_segment(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
 ) -> Option<Segment> {
@@ -503,7 +503,7 @@ fn planned_ring(rules: &RuleSet, obs: &Observation<'_>) -> Option<((u16, u16), V
 /// only while nothing else is being built on the ring — a unit already walking
 /// somewhere is not this pass's.
 fn clear_the_ring(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -614,7 +614,7 @@ fn outward_cell(
 }
 
 pub(super) fn queue_segment(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     free_credits: i32,

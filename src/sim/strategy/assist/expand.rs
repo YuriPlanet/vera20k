@@ -29,7 +29,7 @@ use crate::sim::control::observation::Observation;
 use crate::sim::control::placement::{PLACEMENT_ATTEMPTS, Placement};
 use crate::sim::intern::InternedId;
 use crate::sim::production::CanBuild;
-use crate::sim::strategy::retail::RetailBrain;
+use crate::sim::strategy::assist::AssistBrain;
 
 use super::advance::cell_distance;
 use super::census::Census;
@@ -117,7 +117,7 @@ pub(super) fn owns_yard_maker(census: &Census) -> bool {
 /// blocked cell is the same search, in `UnitClass::TryToDeploy`
 /// (`0x00738D30`), which only a computer house's Hunt mission runs.
 pub(super) fn deploy_yard_maker(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -427,7 +427,7 @@ const DEPLOY_SITE_RINGS: i32 = 6;
 /// type itself comes from the same `CanBuild` answer the sidebar reads
 /// ([`Self::yard_maker`]), so a house that cannot build one simply does not.
 pub(super) fn wants_a_maker(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     budget: &Budget,
@@ -497,7 +497,7 @@ fn far_ore(rules: &RuleSet, obs: &Observation<'_>, home: (u16, u16)) -> bool {
 /// finished. One predicate for both would be a house that never saves because
 /// it never has enough.
 pub(super) fn expansion_is_worth_saving_for(
-    brain: &RetailBrain,
+    brain: &AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
 ) -> bool {
@@ -570,7 +570,7 @@ fn yard_type<'r>(rules: &'r RuleSet, obs: &Observation<'_>) -> Option<&'r Object
 /// more of it — the sweep's own job is to keep one base from becoming a block,
 /// so the second one is started far enough away to be its own.
 fn deploy_second_yard(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -669,7 +669,7 @@ fn deploy_second_yard(
 /// the rules' overlay is not reachable from [`Observation`], and guessing at a
 /// field from the truck's path is not evidence.
 pub(super) fn expansion_site(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     yard: &ObjectType,
@@ -908,7 +908,7 @@ fn missing_prerequisite<'r>(
 mod tests {
     use super::*;
     use crate::sim::arena_fixture;
-    use crate::sim::strategy::retail::RetailBrain;
+    use crate::sim::strategy::assist::AssistBrain;
     use crate::sim::world::Simulation;
 
     /// A maker whose deploy footprint is obstructed walks to ground it can use.
@@ -947,7 +947,7 @@ mod tests {
         )
         .expect("a hostile on the footprint");
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census.refresh(
             &crate::rules::unit_role::RoleTable::build(&rules),
             &rules,
@@ -1070,7 +1070,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(10_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         {
             let obs = Observation::new(&sim, owner);
             brain.rebuild_census(&rules, &obs);
@@ -1129,7 +1129,7 @@ mod tests {
             .expect("a captured maker");
 
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
         let mut out = Outbox::default();
         deploy_yard_maker(&mut brain, &rules, &obs, &mut out);
@@ -1209,7 +1209,7 @@ mod tests {
             .spawn_object("GACNST", "Americans", 12, 12, 255, &rules)
             .expect("a construction yard");
         let obs = Observation::new(&sim, owner);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
 
         // The aim is the ore, not the house's own ring.
@@ -1232,7 +1232,7 @@ mod tests {
             &[(12, 12)],
             yard_ty,
             &|_| true,
-            &crate::sim::strategy::retail::terrain::Space::read(
+            &crate::sim::strategy::assist::terrain::Space::read(
                 &obs,
                 &rules,
                 &[(12, 12)],

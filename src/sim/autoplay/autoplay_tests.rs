@@ -11,7 +11,6 @@ use crate::sim::behavior::{Funnel, Goal};
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::control::board::AutoPlayDomains;
 use crate::sim::control::brain::{Brain, Outbox};
-use crate::sim::production::ProductionCategory;
 use crate::sim::control::external::{
     ActionSlot, ENTITY_SLOTS, GLOBAL_SLOTS, OBSERVATION_SCHEMA_VERSION, ObservationBatch,
     ObservationSchema, PolicySource, batch_for,
@@ -19,7 +18,8 @@ use crate::sim::control::external::{
 use crate::sim::control::observation::Observation;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::strategy::retail::RetailBrain;
+use crate::sim::production::ProductionCategory;
+use crate::sim::strategy::assist::AssistBrain;
 use crate::sim::world::Simulation;
 
 /// The 32x32 arena with its two houses — `Americans` human, `Russians` a
@@ -58,9 +58,9 @@ fn host(sim: &mut Simulation, script: Vec<(u64, Command)>) -> AutoPlayHost {
     )
 }
 
-/// A host for `Americans` playing the retail brain.
+/// A host for `Americans` playing the assist brain.
 fn retail_host(sim: &mut Simulation, seed: u64) -> AutoPlayHost {
-    AutoPlayHost::new(Box::new(RetailBrain::new(seed)), american(sim), usize::MAX)
+    AutoPlayHost::new(Box::new(AssistBrain::new(seed)), american(sim), usize::MAX)
 }
 
 /// One scripted brain frame: the commands the script releases now.
@@ -76,7 +76,7 @@ fn script_frame(
     out.commands
 }
 
-/// One retail brain frame, as the commands the control layer would issue for
+/// One assist brain frame, as the commands the control layer would issue for
 /// it.
 ///
 /// The brain is read directly, so a test can inspect its plan and its memory
@@ -85,7 +85,7 @@ fn script_frame(
 /// funnel the board uses, so a mid-transition object shows up as "no command"
 /// here exactly as it would in play.
 fn frame_commands(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     sim: &Simulation,
     owner: InternedId,
@@ -168,7 +168,7 @@ fn the_retail_brain_queues_what_the_base_needs_next() {
     let owner = american(&mut sim);
     yard_with_money(&mut sim, &rules, owner, 10_000);
 
-    let mut brain = RetailBrain::new(0xA17);
+    let mut brain = AssistBrain::new(0xA17);
     let commands = frame_commands(&mut brain, &rules, &sim, owner);
 
     assert!(
@@ -187,7 +187,7 @@ fn the_retail_brain_queues_nothing_it_cannot_pay_for() {
     let owner = american(&mut sim);
     yard_with_money(&mut sim, &rules, owner, 0);
 
-    let mut brain = RetailBrain::new(0xA17);
+    let mut brain = AssistBrain::new(0xA17);
     let commands = frame_commands(&mut brain, &rules, &sim, owner);
 
     assert!(
@@ -231,7 +231,7 @@ fn a_house_that_lost_its_yard_buys_another_maker() {
         .expect("a service depot");
     factory_with_money(&mut sim, &rules, owner, 20_000);
 
-    let mut brain = RetailBrain::new(0xA17);
+    let mut brain = AssistBrain::new(0xA17);
     let commands = frame_commands(&mut brain, &rules, &sim, owner);
     let queued = queued_names(&sim, &commands);
 
@@ -256,7 +256,7 @@ fn a_maker_that_cannot_deploy_where_it_stands_is_driven_to_a_site() {
         .expect("an MCV");
     factory_with_money(&mut sim, &rules, owner, 0);
 
-    let mut brain = RetailBrain::new(0xA17);
+    let mut brain = AssistBrain::new(0xA17);
     let commands = frame_commands(&mut brain, &rules, &sim, owner);
 
     assert!(
@@ -289,7 +289,7 @@ fn a_factory_with_no_yard_and_no_maker_starts_what_it_can() {
             .expect("a harvester for the bay");
     }
 
-    let mut brain = RetailBrain::new(0xA17);
+    let mut brain = AssistBrain::new(0xA17);
     let commands = frame_commands(&mut brain, &rules, &sim, owner);
 
     assert!(
@@ -346,7 +346,7 @@ fn the_wallet_decides_how_dear_a_band_the_house_buys() {
             .expect("the house")
             .economy_mut()
             .set_credits_for_test(credits);
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         let commands = frame_commands(&mut brain, &rules, sim, owner);
         queued_with_price(sim, &rules, owner, &commands)
     };
@@ -400,9 +400,9 @@ fn the_policy_does_not_reach_for_a_unit_the_player_keeps() {
     let kept: std::collections::BTreeSet<u64> = [rifleman].into_iter().collect();
 
     let mut free = Outbox::default();
-    RetailBrain::new(0xA17).think(&rules, &Observation::new(&sim, owner), &mut free);
+    AssistBrain::new(0xA17).think(&rules, &Observation::new(&sim, owner), &mut free);
     let mut held = Outbox::default();
-    RetailBrain::new(0xA17).think(
+    AssistBrain::new(0xA17).think(
         &rules,
         &Observation::new(&sim, owner).with_player_groups(&kept),
         &mut held,
@@ -414,9 +414,7 @@ fn the_policy_does_not_reach_for_a_unit_the_player_keeps() {
         free.orders
     );
     assert!(
-        held.orders
-            .iter()
-            .all(|order| order.actor != rifleman),
+        held.orders.iter().all(|order| order.actor != rifleman),
         "and the same rifleman in one of the player's groups is never proposed: {:?}",
         held.orders
     );
@@ -430,14 +428,12 @@ fn the_opening_buys_power_or_income_before_anything_else() {
     let owner = american(&mut sim);
     yard_with_money(&mut sim, &rules, owner, 10_000);
 
-    let mut brain = RetailBrain::new(0xA17);
+    let mut brain = AssistBrain::new(0xA17);
     let commands = frame_commands(&mut brain, &rules, &sim, owner);
     let queued: Vec<String> = commands
         .iter()
         .filter_map(|command| match command {
-            Command::QueueProduction { type_id } => {
-                Some(sim.interner.resolve(*type_id).to_owned())
-            }
+            Command::QueueProduction { type_id } => Some(sim.interner.resolve(*type_id).to_owned()),
             _ => None,
         })
         .collect();
@@ -451,7 +447,6 @@ fn the_opening_buys_power_or_income_before_anything_else() {
         );
     }
 }
-
 
 #[test]
 fn host_queues_commands_with_the_house_owner_and_the_current_tick() {
@@ -818,10 +813,6 @@ fn a_house_with_no_registration_issues_nothing() {
     assert!(sim.pending_command_snapshot().is_empty());
 }
 
-
-
-
-
 /// The army half: a combat unit no team has taken goes on area guard where it
 /// stands — the posture a unit outside a team holds, and what a player's guard
 /// click would be — and it is not sent at a hostile across the map, nor ordered
@@ -844,7 +835,7 @@ fn the_retail_policy_puts_an_idle_unit_on_area_guard() {
         .expect("an American tank");
     sim.spawn_object("MTNK", "Russians", 28, 28, 64, &rules)
         .expect("a Russian tank across the arena");
-    let mut policy = RetailBrain::new(0x5EED);
+    let mut policy = AssistBrain::new(0x5EED);
 
     let decided = frame_commands(&mut policy, &rules, &sim, owner);
     assert!(
@@ -869,7 +860,6 @@ fn the_retail_policy_puts_an_idle_unit_on_area_guard() {
         "the order already stands, got {again:?}"
     );
 }
-
 
 /// A neutral or civilian house is not a target: the map's tech buildings,
 /// garrisonable houses and parked cars belong to `MultiplayPassive` houses, and
@@ -896,7 +886,7 @@ fn the_retail_policy_leaves_a_passive_house_alone() {
     sim.spawn_object("MTNK", "Russians", 18, 16, 64, &rules)
         .expect("a neutral tank beside it");
 
-    let mut policy = RetailBrain::new(0x5EED);
+    let mut policy = AssistBrain::new(0x5EED);
     let decided = frame_commands(&mut policy, &rules, &sim, owner);
     assert!(
         !decided.iter().any(|command| matches!(
@@ -947,7 +937,7 @@ fn the_retail_policy_sends_an_engineer_to_capture_a_building() {
         .spawn_object(&capturable, "Russians", 24, 24, 64, &rules)
         .expect("a capturable building");
 
-    let mut policy = RetailBrain::new(0x5EED);
+    let mut policy = AssistBrain::new(0x5EED);
     let decided = frame_commands(&mut policy, &rules, &sim, owner);
     assert!(
         decided.contains(&Command::CaptureBuilding {
@@ -964,8 +954,6 @@ fn the_retail_policy_sends_an_engineer_to_capture_a_building() {
         "an unarmed engineer is never given an attack order"
     );
 }
-
-
 
 /// A team's script owns its members: the team AI pass has no house gate, so a
 /// policy-driven house's teams recruit its units and drive them like any other
@@ -1028,7 +1016,7 @@ fn the_retail_policy_leaves_a_teams_members_to_its_script() {
         .expect("a forming team");
     sim.team_add_member(team, tank, false, &rules, None, Default::default());
 
-    let mut policy = RetailBrain::new(0x5EED);
+    let mut policy = AssistBrain::new(0x5EED);
     let decided = frame_commands(&mut policy, &rules, &sim, owner);
     assert!(
         !decided.iter().any(|command| matches!(
@@ -1043,7 +1031,7 @@ fn the_retail_policy_leaves_a_teams_members_to_its_script() {
 fn step_policy(
     sim: &mut Simulation,
     rules: &RuleSet,
-    policy: &mut RetailBrain,
+    policy: &mut AssistBrain,
     owner: crate::sim::intern::InternedId,
 ) {
     let commands = frame_commands(policy, rules, sim, owner);
@@ -1128,7 +1116,7 @@ fn the_order_funnel_refuses_an_absent_actor_and_names_a_present_one() {
 /// `Ready_To_Commence` answers whether the mission may be *written* now, and
 /// the MEGAMISSION family never writes one: `EventClass::Execute`'s arm queues
 /// at `0x004C73B9` and promotes at the object's own AI slot. Gating that family
-/// on readiness made a walking unit unreachable — the retail brain could not
+/// on readiness made a walking unit unreachable — the assist brain could not
 /// pull it out of its walk, so a unit passed every enemy in reach without being
 /// told to fight it, and the brain asked again on every frame of the walk.
 #[test]
@@ -1477,7 +1465,11 @@ fn a_step_reports_the_commands_it_queued() {
 
     let issued = host.step(&mut sim, &rules);
 
-    assert_eq!(issued, vec![power.clone()], "the hand reports what it issued");
+    assert_eq!(
+        issued,
+        vec![power.clone()],
+        "the hand reports what it issued"
+    );
     assert_eq!(
         sim.pending_command_snapshot()
             .into_iter()
@@ -1506,7 +1498,9 @@ fn a_full_queue_refuses_the_order_without_reporting_it_as_issued() {
         }
 
         fn think(&mut self, _: &RuleSet, _: &Observation<'_>, out: &mut Outbox) {
-            out.command(Command::QueueProduction { type_id: self.power });
+            out.command(Command::QueueProduction {
+                type_id: self.power,
+            });
             out.order(self.actor, self.goal);
         }
 
@@ -1550,7 +1544,7 @@ fn a_full_queue_refuses_the_order_without_reporting_it_as_issued() {
 
 /// A brain with one house request it asks for again every frame.
 ///
-/// The retail brain does exactly this: it reads the projection, sees no power
+/// The assist brain does exactly this: it reads the projection, sees no power
 /// plant, and asks for one. On XMP29U2.MAP that filled a 24,736-tick match with
 /// 12,898 `QueueProduction` commands for one type at a median spacing of one
 /// tick, and the yard never finished it. The board holds the request for a term.
@@ -1568,8 +1562,9 @@ fn a_house_request_repeated_every_frame_is_issued_once_a_term() {
         }
 
         fn think(&mut self, _: &RuleSet, _: &Observation<'_>, out: &mut Outbox) {
-            out.intents
-                .push(Intent::QueueProduction { type_id: self.power });
+            out.intents.push(Intent::QueueProduction {
+                type_id: self.power,
+            });
         }
     }
 
@@ -1597,7 +1592,7 @@ fn a_house_request_repeated_every_frame_is_issued_once_a_term() {
 
 /// A brain that gives one object the same order every frame.
 ///
-/// The retail brain does this too: its passes re-ask for a guard post, an
+/// The assist brain does this too: its passes re-ask for a guard post, an
 /// approach or a capture each frame, and the funnel answers a unit that is
 /// mid-transition with `NotReady`. Measured on Barrel.mmx: 118-127 orders a
 /// frame were refused that way, and one engineer was sent into the same

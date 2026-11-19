@@ -28,7 +28,7 @@ use crate::sim::control::observation::Observation;
 use crate::sim::intern::InternedId;
 use crate::sim::production::ProductionCategory;
 
-use super::RetailBrain;
+use super::AssistBrain;
 use super::build;
 use super::census::{self, Census, Slot, price_tier};
 use super::plan::Budget;
@@ -110,7 +110,7 @@ const TYPE_SHARE_MIN_POOL: usize = 5;
 
 /// Fill every idle production line with what the house needs next.
 pub(super) fn fill_lines(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     budget: &Budget,
@@ -419,7 +419,7 @@ fn tool<'r>(
 
 /// What one idle line starts next.
 fn product_for<'r>(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &'r RuleSet,
     obs: &Observation<'_>,
     budget: &Budget,
@@ -584,7 +584,7 @@ fn chosen_product<'r>(
 /// then the type the house holds fewest of — so a mixed army forms instead of
 /// one type forever.
 fn fighter<'r>(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &'r RuleSet,
     obs: &Observation<'_>,
     budget: &Budget,
@@ -827,7 +827,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(3_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();
@@ -874,7 +874,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(5_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();
@@ -922,7 +922,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(4_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();
@@ -989,7 +989,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(6_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();
@@ -1042,7 +1042,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(6_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();
@@ -1108,7 +1108,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(3_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();
@@ -1182,7 +1182,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(under);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let mut out = Outbox::default();
@@ -1241,7 +1241,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(3_000);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         let budget = Budget {
@@ -1354,7 +1354,7 @@ mod tests {
             .economy_mut()
             .set_credits_for_test(800);
 
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         // The trucks are not this test's question, and a house short of them
         // is asked for another one before anything else.
@@ -1481,7 +1481,7 @@ mod tests {
         // a ledger rather than as 50 objects: what the ceiling reads is
         // `census.tiers`, and spawning that many soldiers is a fixture the map
         // does not have room for.
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         brain.census.fighters = 60;
         brain.census.tiers[Slot::Infantry.index()] = [50, 0, 0];
@@ -1519,7 +1519,7 @@ mod tests {
         );
 
         // Riches: the same army and the same ceiling, and the barracks fires.
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         brain.census.fighters = 60;
         brain.census.tiers[Slot::Infantry.index()] = [50, 0, 0];

@@ -17,7 +17,6 @@ use crate::app::match_runtime::session::SessionMode;
 use crate::app::types::SIM_TICK_MS;
 use crate::map::terrain;
 use crate::render::sprite_atlas;
-use crate::sim::command::Command;
 use crate::sim::production;
 use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::trigger_runtime::TriggerEffect;
@@ -1993,32 +1992,16 @@ fn advance_one_simulation_frame(
     // A lent frame drains on the simulation thread; the orders issued here are
     // already in the queue by then.
     let drains_this_frame = !replaying && !resuming && tick_lane == TickLane::Ordinary;
-    if drains_this_frame && let Some(host) = state.match_state.auto_play.as_mut() {
-        // The player's own units: a unit in one of the player's control
-        // groups is the player's, and auto play must leave it alone. Read
-        // from the sim, where an assignment lands, so a group assigned in
-        // this frame's commands counts before auto play steps.
-        let player_owned: std::collections::BTreeSet<u64> = sim
-            .projected_control_groups()
-            .into_iter()
-            .flatten()
-            .collect();
-        host.take_back(player_owned);
-        let issued = host.step(sim, &rt.resources.rules);
-        // A PRODUCE press writes the cameo's request1 and predicted
-        // clock before the frame executes the event
-        // (Select6AB0C9/6AB573..6AB8DA). Auto play is the same hand, so
-        // its build orders make the same write; without it a cameo shows
-        // no clock while its Factory builds (a unit even draws its queue
-        // count instead), because the Begin link is the only other
-        // source and the strip may not hold the entry yet.
-        let owner = host.owner();
-        let projection = &mut state.match_state.match_presentation.sidebar_projection;
-        for command in &issued {
-            if let Command::QueueProduction { type_id } = *command {
-                projection.record_auto_play_order(&*sim, &rt.resources.rules, owner, type_id);
-            }
-        }
+    if drains_this_frame && let Some(session) = state.match_state.auto_play.as_mut() {
+        // The session owns the pairing the player would notice: it steps the
+        // host, mirrors every admitted command into the strip, and hands the
+        // commands back. Nothing here names a command kind, so a new one with a
+        // visible half cannot be forgotten in a match nobody reads.
+        session.step(
+            sim,
+            &rt.resources.rules,
+            &mut state.match_state.match_presentation.sidebar_projection,
+        );
     }
     // A lent frame takes its due commands on the simulation thread, after
     // its frame is published: taken here, the published world would have a

@@ -24,7 +24,7 @@ use vera20k_core::sim::control::brain::{Brain, Outbox};
 use vera20k_core::sim::control::observation::Observation;
 use vera20k_core::sim::intern::InternedId;
 use vera20k_core::sim::production::ProductionCategory;
-use vera20k_core::sim::strategy::retail::RetailBrain;
+use vera20k_core::sim::strategy::assist::AssistBrain;
 use vera20k_core::sim::world::Simulation;
 use vera20k_core::skirmish_launch::{AiDifficulty, LaunchCountry};
 
@@ -581,7 +581,7 @@ fn main() -> Result<(), String> {
     }
 
     let mut host = AutoPlayHost::new(
-        Box::new(RetailBrain::new(u64::from(args.seed))),
+        Box::new(AssistBrain::new(u64::from(args.seed))),
         local,
         args.per_frame,
     );
@@ -624,7 +624,7 @@ fn main() -> Result<(), String> {
         if tick <= args.dump {
             let sim = &scenario.runtime.simulation;
             let obs = Observation::new(sim, local);
-            let mut brain = RetailBrain::new(u64::from(args.seed));
+            let mut brain = AssistBrain::new(u64::from(args.seed));
             let mut out = Outbox::default();
             brain.think(&scenario.runtime.resources.rules, &obs, &mut out);
             let funnel = vera20k_core::sim::behavior::Funnel::new(

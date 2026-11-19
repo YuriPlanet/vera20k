@@ -543,7 +543,7 @@ impl<'a, 'b> Placement<'a, 'b> {
     ///
     /// `ProtectWithWall=yes` is retail's own list of what a house cannot afford
     /// to lose — the Construction Yard, the tech lab, the superweapons — the
-    /// same list [`crate::sim::strategy::retail::walls`] closes a wall around.
+    /// same list [`crate::sim::strategy::assist::walls`] closes a wall around.
     /// Putting one of those on the enemy's side of the base is putting the tree
     /// it unlocks in front of the first tank that gets through; the sweep's
     /// openness ranking alone does not care which way the base faces.

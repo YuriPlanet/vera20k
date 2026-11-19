@@ -33,7 +33,7 @@ use crate::sim::control::brain::Outbox;
 use crate::sim::control::observation::{EnemyEntity, Observation};
 use crate::sim::mission::{MissionId, MissionType};
 
-use super::RetailBrain;
+use super::AssistBrain;
 use super::squads::Role;
 use super::squared_distance;
 use super::tracked::TrackedKind;
@@ -75,7 +75,7 @@ struct Work {
 }
 
 pub(super) fn run(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
@@ -491,7 +491,7 @@ pub(super) fn firing(obs: &Observation<'_>, mission: MissionId, entity_id: u64) 
 /// The order itself goes through [`super::orders::issue`], the one door that
 /// asks the simulation whether the unit can act on the target at all.
 fn issue(
-    brain: &RetailBrain,
+    brain: &AssistBrain,
     out: &mut Outbox,
     rules: &RuleSet,
     obs: &Observation<'_>,
@@ -519,7 +519,7 @@ fn issue(
 /// Every team member that may be told anything, with what the cycle needs to
 /// know about it.
 fn collect(
-    brain: &mut RetailBrain,
+    brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     tick: u64,
@@ -559,7 +559,7 @@ fn collect(
             }
             // An order the world does not show is an order that did not take;
             // the brain reads the mission against every intent before any layer
-            // runs (`RetailBrain::void_orders_the_world_does_not_show`), so the
+            // runs (`AssistBrain::void_orders_the_world_does_not_show`), so the
             // walk that was refused, found no path or was interrupted is asked
             // again now rather than on its 450-frame term.
             let deployed = obs.is_deployed(unit.entity_id);
@@ -675,7 +675,7 @@ const NEUTRAL_YARD_REACH: i32 = 10;
 /// One owner for the question, because the two cases are the same rule seen
 /// from two sides: nobody's building where the house's own units have to walk.
 fn neutral_in_the_way(
-    brain: &RetailBrain,
+    brain: &AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     unit: (u16, u16),
@@ -721,7 +721,7 @@ const RECON_STEP_CELLS: u16 = 6;
 fn enemy_economy(
     rules: &RuleSet,
     obs: &Observation<'_>,
-    census: &crate::sim::strategy::retail::census::Census,
+    census: &crate::sim::strategy::assist::census::Census,
     from: (u16, u16),
 ) -> Option<(u64, (u16, u16))> {
     let mut best: Option<(u8, i32, u64, (u16, u16))> = None;

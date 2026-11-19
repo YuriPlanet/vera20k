@@ -1,5 +1,10 @@
-//! The retail brain: the orders and intents a player's hands would produce,
+//! The assist brain: the orders and intents a player's hands would produce,
 //! for whichever house the control layer drives.
+//!
+//! It was called `retail` until 2026-11-20. The name meant "the original game's
+//! data plus a player's legal commands", and it was accurate but misleading:
+//! readers took it for a port of the retail computer AI, which it is not (see
+//! below). The rename is only a name — no decision, order or threshold changed.
 //!
 //! It is a player's brain, not the computer AI's. The house it drives is a
 //! human house: `HouseClass::Update`'s AI blocks — the base plan, the
@@ -226,7 +231,7 @@ pub(super) fn squared_distance(a: (u16, u16), b: (u16, u16)) -> i32 {
 /// frame, short enough that one which finished its attack and idled is sent on.
 
 /// Plays one house the way a player would, through commands only.
-pub struct RetailBrain {
+pub struct AssistBrain {
     /// This brain's own generator. Nothing draws on it yet — every decision
     /// here is deterministic — but the stream stays the brain's own, never
     /// the world's.
@@ -425,7 +430,7 @@ pub struct RetailBrain {
     honest: bool,
 }
 
-impl RetailBrain {
+impl AssistBrain {
     /// `seed` seeds this brain's own generator. It must not be a simulation
     /// stream: the brain's draws are not part of the world's random sequence.
     pub fn new(seed: u64) -> Self {
@@ -558,7 +563,7 @@ impl RetailBrain {
     }
 }
 
-impl Brain for RetailBrain {
+impl Brain for AssistBrain {
     fn name(&self) -> &'static str {
         "retail-ai"
     }
@@ -853,7 +858,7 @@ mod tests {
     /// refusal is therefore retried on its own short term.
     #[test]
     fn a_refused_order_frees_the_unit_to_be_told_again() {
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain
             .tracked
             .record(0, 7, tracked::TrackedKind::Move, None, Some((20, 20)));
@@ -887,7 +892,7 @@ mod tests {
     /// out — the "it killed the target and then idled" the play test reports.
     #[test]
     fn an_attack_the_unit_has_finished_is_not_still_standing() {
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain
             .tracked
             .record(0, 7, TrackedKind::Attack, Some(9), Some((10, 10)));
@@ -945,7 +950,7 @@ mod tests {
     /// retried on the refusal's short term, not on the next frame.
     #[test]
     fn a_refused_attack_does_not_drop_an_unrelated_intent() {
-        let mut brain = RetailBrain::new(0xA17);
+        let mut brain = AssistBrain::new(0xA17);
         brain
             .tracked
             .record(0, 7, tracked::TrackedKind::Engage, Some(9), Some((5, 5)));

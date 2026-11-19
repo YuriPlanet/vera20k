@@ -29,7 +29,7 @@ name = "autoplay-profiles"
 path = "src/bin/profiles.rs"
 required-features = ["retail-fixture"]
 
-# One harness for both brains: the ported retail policy and this crate's, so a
+# One harness for both brains: the ported assist policy and this crate's, so a
 # comparison run is the same binary with one flag.
 [[bin]]
 name = "autoplay-match"

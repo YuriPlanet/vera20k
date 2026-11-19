@@ -4,8 +4,8 @@
 //! **These routines are not native behaviour and do not claim parity.** They
 //! exist so a policy-driven house can pull a hurt unit out of a fight, walk a
 //! spy around a patrol or spread an aircraft flight's fire — micro a player
-//! performs by hand and neither `gamemd`'s computer AI nor VERA's retail brain
-//! issues. They are enabled only for a house the retail brain drives, never for
+//! performs by hand and neither `gamemd`'s computer AI nor VERA's assist brain
+//! issues. They are enabled only for a house the assist brain drives, never for
 //! a scenario's own AI house, and no golden or native comparison covers them.
 //!
 //! A routine is a **pure function of `(me, world, phase)`**. It owns no state:

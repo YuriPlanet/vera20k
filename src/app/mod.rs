@@ -113,6 +113,8 @@ mod shell_movies_credits;
 pub(crate) mod shell_network_setup;
 mod shell_random_map;
 pub(crate) mod shell_route;
+#[cfg(all(test, tests_app))]
+mod cameo_mirror_tests;
 mod shell_saved_games;
 mod shell_saved_seeds;
 mod shell_skirmish;
