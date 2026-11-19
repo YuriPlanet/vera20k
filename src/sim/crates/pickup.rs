@@ -391,7 +391,9 @@ pub(crate) fn pickup_crate(
     if !flags.crate_type {
         return true;
     }
-    let multiplayer = sim.session.game_mode_nonzero();
+    // VMCE uses campaign selection (0x00481B3D) and skips the multiplayer
+    // pickup gates (0x00481A3F and 0x00481BB8).
+    let multiplayer = !sim.session.uses_campaign_rules();
     if multiplayer
         && sim
             .houses
@@ -545,7 +547,7 @@ pub(crate) fn pickup_crate(
                 // PickupCrate4824A7..4824D4: every Money dispatch pays
                 // PlayerPtr in mode0 when IsHumanPlayer50B6F0 admits the
                 // collector, including the random and Unit-fallback routes.
-                // Mode 0 is the campaign alone, so no network peer asks.
+                // In VMCE LAN every peer credits the collector's owner.
                 let recipient =
                     if !sim.session.game_mode_nonzero() && sim.house_is_human_player(owner) {
                         sim.session.current_house()

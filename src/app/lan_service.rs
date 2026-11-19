@@ -6441,7 +6441,6 @@ mod tests {
 
         let mut launch = launch();
         launch.humans.truncate(1);
-        let options = launch.options.clone();
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::LanLobby);
         session
@@ -6476,10 +6475,7 @@ mod tests {
                     capacity: 1,
                     roles: vec!["Authored House".into()],
                     allows_observers: false,
-                    rules: crate::app::match_runtime::session::LocalScenarioRules {
-                        options,
-                        ..Default::default()
-                    },
+                    rules: Default::default(),
                 },
             )
             .unwrap();

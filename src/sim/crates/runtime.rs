@@ -106,29 +106,26 @@ fn clear_crate_overlay_fields(sim: &mut Simulation, cell_ref: CrateMarkCellRef) 
 /// Multiplayer clears only the first occupied slot with this coordinate. A
 /// missing slot leaves even a visible crate untouched. Solo instead looks up
 /// the cell directly, without the In_Bounds diamond test, and accepts any
-/// OverlayType whose Crate flag is set; it never modifies runtime slots.
+/// OverlayType whose Crate flag is set. VMCE uses that overlay rule and also
+/// releases the runtime slot of a trigger-placed crate in LAN.
 pub(super) fn remove_pickup_crate(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: &OverlayTypeRegistry,
     cell: (i16, i16),
 ) -> bool {
-    if sim.session.game_mode_nonzero() {
-        let Some(index) = sim
-            .crate_authority()
+    let slot_index = if sim.session.game_mode_nonzero() {
+        sim.crate_authority()
             .slots()
             .iter()
             .position(|slot| !slot.is_empty() && (slot.cell_x, slot.cell_y) == cell)
-        else {
-            return false;
-        };
-        return clear_crate_slot(
-            sim,
-            rules,
-            registry,
-            index,
-            sim.session.binary_frame() as i32,
-        );
+    } else {
+        None
+    };
+    let current_frame = sim.session.binary_frame() as i32;
+    if !sim.session.uses_campaign_rules() {
+        return slot_index
+            .is_some_and(|index| clear_crate_slot(sim, rules, registry, index, current_frame));
     }
     let cell_ref = resolve_crate_mark_cell(sim, cell);
     let overlay_id = match &cell_ref {
@@ -138,13 +135,15 @@ pub(super) fn remove_pickup_crate(
             .and_then(|grid| grid.cell(*rx, *ry).overlay_id),
         CrateMarkCellRef::Dummy(dummy) => dummy.overlay_fields().0,
     };
-    if !overlay_id
+    let removed = overlay_id
         .and_then(|id| registry.flags(id))
         .is_some_and(|flags| flags.crate_type)
-    {
-        return false;
+        && clear_crate_overlay_fields(sim, cell_ref);
+    if let Some(index) = slot_index {
+        sim.crate_slot_updates()
+            .clear_and_preserve_timer(index, current_frame);
     }
-    clear_crate_overlay_fields(sim, cell_ref)
+    removed
 }
 
 /// Exact `Rules+0xF8`/`+0xFC`/`+0x100` pointer identity, expressed over the

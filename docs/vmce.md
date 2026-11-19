@@ -68,7 +68,9 @@ Set `CameraWaypoint=2` in `[Scenario:entry.map:HouseAlpha]` to start that role a
 
 Room options resolve from the map's `[Basic]`, then `[Campaign]`, then the stage, then the host's permitted changes. `Difficulty` is `0` for Easy, `1` for Normal and `2` for Hard. It selects the difficulty attributes and starting-fund adjustments for every playing primary House. `LockDifficulty` fixes the configured difficulty. Keep `1 <= MinPlayers <= MaxPlayers <= PlayerCount <= 30`. `AllowObservers` enables extra connection seats after the playing capacity when space remains.
 
-VMCE uses campaign AI rules. `AutoEnemySelection=yes` gives computer Houses the ordinary multiplayer step that picks an enemy when they lack one. It defaults to `no` and follows the same map, series and stage precedence. Legacy `ShortGame`, `Crates`, `LockOptions` and `VictoryMode` have no effect in VMCE. Crates authored on the map or spawned by triggers still work.
+VMCE uses campaign AI rules. `AutoEnemySelection=yes` gives computer Houses the ordinary multiplayer step that picks an enemy when they lack one. It defaults to `no` and follows the same map, series and stage precedence.
+
+Crates placed on the map or spawned by triggers use single-player campaign reward rules. In LAN, cash rewards go to the House that owns the collecting unit.
 
 Before the first tick, clients play `[Basic] Intro`, or `Brief` if Intro does not resolve in the movie catalog, and then `Action`. In play, trigger action `10` plays a fullscreen movie, `117` plays a blocking radar movie, and `100` plays a radar movie during normal gameplay. A blocking sequence waits for every connected player and observer to finish or skip. A missing or failed movie counts as skipped on that machine. The map's camera actions move each player's view. Action `110` pauses the shared scenario for its configured duration. Actions `46/47` control gameplay input separately.
 

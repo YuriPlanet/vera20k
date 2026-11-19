@@ -250,7 +250,7 @@ struct LocalScenarioSetup {
 /// in the launch session stay available when the room returns to a stock map.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct LocalScenarioRules {
-    pub(crate) options: SkirmishLaunchOptions,
+    pub(crate) allow_allies_change: bool,
     pub(crate) ai_difficulty: crate::sim::house_state::HouseDifficulty,
     pub(crate) difficulty_locked: bool,
     pub(crate) alliance_admission: crate::sim::house_diplomacy::PlayerAllianceAdmission,
@@ -1042,7 +1042,13 @@ impl MatchSession {
         };
         let mut launch = launch.clone();
         launch.selected_map_file = Some(key.path.clone());
-        launch.options = setup.lobby.rules.options.clone();
+        // The shared network handoff also carries the stock match options.
+        launch.options = SkirmishLaunchOptions {
+            short_game: false,
+            crates: false,
+            ally_change_allowed: setup.lobby.rules.allow_allies_change,
+            ..Default::default()
+        };
         launch.ai_player_count = 0;
         let ahead = if launch.humans.len() == 1 {
             anyhow::ensure!(self.host, "an authored solo start requires the host");

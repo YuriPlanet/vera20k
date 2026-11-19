@@ -21,8 +21,9 @@ use crate::map::scenario_menu::{
 use crate::map::vmce::{self, DiscoveredVmceMap, OpenedVmceStage, VmceMapId, VmceStageOptions};
 use crate::net::lan_messages::SessionScope;
 use crate::sim::AuthoredStageCarryOver;
+use crate::sim::game_options::GameOptions;
 use crate::sim::house_state::HouseDifficulty;
-use crate::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchOptions};
+use crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
 use crate::ui::multiplayer_setup::{
     DIFFICULTY, RoomBox, ScenarioRoleDetails, ScenarioRoomRow, ScenarioRoomView, SetupAction,
     SetupChoice, SetupColumn, SetupCombo, SetupDialog, SetupRowIcon, SetupTrackbar, SetupView,
@@ -503,12 +504,7 @@ fn stage_lobby(options: &VmceStageOptions, roles: Vec<String>) -> Result<LocalSc
         roles,
         allows_observers: options.allow_observers,
         rules: LocalScenarioRules {
-            options: SkirmishLaunchOptions {
-                short_game: false,
-                crates: false,
-                ally_change_allowed: options.allow_allies_change,
-                ..Default::default()
-            },
+            allow_allies_change: options.allow_allies_change,
             ai_difficulty: ai_difficulty(options.lobby_difficulty)?,
             difficulty_locked: options.lock_difficulty,
             alliance_admission:
@@ -532,7 +528,7 @@ fn room_settings(lobby: &LocalScenarioLobby) -> VmceStageOptions {
     VmceStageOptions {
         min_players: usize::from(lobby.minimum_players),
         max_players: usize::from(lobby.capacity),
-        allow_allies_change: rules.options.ally_change_allowed,
+        allow_allies_change: rules.allow_allies_change,
         allow_observers: lobby.allows_observers,
         auto_enemy_selection: rules.auto_enemy_selection,
         lobby_difficulty: 2 - rules.ai_difficulty.table_index() as i32,
@@ -1600,12 +1596,7 @@ fn room_presentation(
             let appearance = role.and_then(|index| role_ui.get(index));
             let details = role.and_then(|index| {
                 let role = stage?.role_appearances.get(index)?;
-                Some(role_details(
-                    selection,
-                    index,
-                    role,
-                    lobby.rules.options.tech_level,
-                ))
+                Some(role_details(selection, index, role))
             });
             let status = if row == 0 {
                 tr("VERA:VmceHostStatus")
@@ -1631,14 +1622,11 @@ fn room_presentation(
             }
         })
         .collect();
-    let mut rules = vec![
-        tr(if lobby.rules.options.ally_change_allowed {
-            "VERA:VmceAlliesAllowed"
-        } else {
-            "VERA:VmceAlliesLocked"
-        }),
-        tr("VERA:VmceVictoryTriggers"),
-    ];
+    let mut rules = vec![tr(if lobby.rules.allow_allies_change {
+        "VERA:VmceAlliesAllowed"
+    } else {
+        "VERA:VmceAlliesLocked"
+    })];
     if lobby.rules.difficulty_locked {
         rules.push(tr("VERA:VmceMapLocksDifficulty"));
     }
@@ -1682,10 +1670,11 @@ fn role_details(
     selection: &LocalScenario,
     index: usize,
     role: &LocalScenarioRoleAppearance,
-    default_tech: i32,
 ) -> ScenarioRoleDetails {
     let opening = role.opening;
-    let tech = opening.tech_level.unwrap_or(default_tech);
+    let tech = opening
+        .tech_level
+        .unwrap_or_else(|| GameOptions::default().tech_level);
     let metric =
         |key, value: &dyn std::fmt::Display| crate::i18n::tr_fill(key, &[("value", value)]);
     let mut lines = vec![
@@ -2006,10 +1995,7 @@ mod tests {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let manifest = lan_manifest().replace(
-            "[Campaign]",
-            "[Campaign]\nLockOptions=no\nShortGame=yes\nCrates=yes\nVictoryMode=Elimination\nDifficulty=2",
-        );
+        let manifest = lan_manifest().replace("[Campaign]", "[Campaign]\nDifficulty=2");
         let manifest =
             manifest.replace("Player2=HouseCharlie", "Player2=HouseCharlie\nDifficulty=0");
         let root = fixture_directory(LAN_STAGE, &manifest, lan_map());
@@ -2020,10 +2006,18 @@ mod tests {
         let wire = serde_json::to_vec(&options).unwrap();
         let wire_settings =
             &serde_json::from_slice::<serde_json::Value>(&wire).unwrap()["settings"];
-        assert_eq!(wire_settings["lobby_difficulty"], 0);
-        for retired in ["lock_options", "short_game", "crates", "victory_mode"] {
-            assert!(wire_settings.get(retired).is_none(), "{retired}");
-        }
+        assert_eq!(
+            *wire_settings,
+            serde_json::json!({
+                "min_players": 2,
+                "max_players": 2,
+                "allow_allies_change": false,
+                "allow_observers": false,
+                "auto_enemy_selection": false,
+                "lobby_difficulty": 0,
+                "lock_difficulty": false,
+            })
+        );
         let options: ScenarioOptions = serde_json::from_slice(&wire).unwrap();
         options.validate().unwrap();
         assert_eq!(options.mode, MODE_KEY);
@@ -2530,27 +2524,29 @@ mod tests {
         let manifest_path = format!("{SERIES}/campaign.ini");
         let map_path = format!("{SERIES}/{STAGE}");
         let map = fixture_map()
-            .replacen(
-                "[Basic]",
-                "[Basic]\nMinPlayers=3\nShortGame=yes\nCrates=yes\nAllowAlliesChange=yes",
-                1,
-            )
+            .replacen("[Basic]", "[Basic]\nMinPlayers=3\nAllowAlliesChange=yes", 1)
             .replace("0=HouseAlpha", "0=HouseAlpha\n1=HouseBravo")
             .replace(
                 "[Waypoints]",
                 "[HouseBravo]\nCountry=Russians\n\n[Waypoints]",
             );
         let series_minimum = fixture_manifest()
-            .replace("[Campaign]", "[Campaign]\nMinPlayers=2\nCrates=no")
+            .replace("[Campaign]", "[Campaign]\nMinPlayers=2")
             .replace("PlayerCount=1", "PlayerCount=2\nPlayer2=HouseBravo");
         let scenario_override = series_minimum.replace(
             "Player1=HouseAlpha",
-            "Player1=housealpha\nMinPlayers=1\nShortGame=no\nDifficulty=0\nLockDifficulty=yes",
+            "Player1=housealpha\nMinPlayers=1\nDifficulty=0\nLockDifficulty=yes",
         );
         root.write(&map_path, map.as_bytes());
         root.write(&manifest_path, series_minimum.as_bytes());
 
         let mut session = host_room("stock.map");
+        let mut stock_options = session.network_setup().unwrap().options.clone();
+        stock_options.short_game = true;
+        stock_options.crates = true;
+        stock_options.ally_change_allowed = false;
+        stock_options.tech_level = 4;
+        session.set_network_options(stock_options).unwrap();
         let key = discover(root.path(), None).remove(0).selection.key;
         accept_selection(&mut session, root.path(), &key, None, None).unwrap();
         let starts = |session: &MatchSession| {
@@ -2606,6 +2602,7 @@ mod tests {
         );
         let options = &startup.launch_session().options;
         assert!(!options.short_game && !options.crates && options.ally_change_allowed);
+        assert_eq!(options.tech_level, GameOptions::default().tech_level);
     }
 
     #[test]
@@ -2708,7 +2705,7 @@ mod tests {
             crate::test_fixture::text("tests/fixtures/vmce/shared_move/shared_move_stage01.map");
         let manifest = lan_manifest().replace(
             "Player1=HouseAlpha",
-            "Player1=HouseAlpha\nAllowAlliesChange=yes\nCrates=yes",
+            "Player1=HouseAlpha\nAllowAlliesChange=yes",
         );
         let root = fixture_directory(SHARED_STAGE, &manifest, shared_map);
         let manifest_path = format!("{SERIES}/campaign.ini");
@@ -2808,7 +2805,7 @@ mod tests {
                 .slots()
                 .iter()
                 .all(|slot| slot.is_empty()),
-            "legacy Crates=yes must leave authored startup free of random crates"
+            "authored startup should leave the crate slots empty"
         );
         assert_eq!(sim.entities().len(), 3);
         let grid = sim.path_grid().unwrap();

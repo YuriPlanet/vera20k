@@ -16,6 +16,7 @@ use crate::sim::crates::CrateSlot;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::world::{PlacementEvidence, RevealPosition, RevealRequest, SimSoundEvent};
 use crate::util::lepton::lepton_to_cell;
 use crate::util::native_x87::NativeF64Bits;
@@ -723,6 +724,65 @@ fn veteran_crate_promotes_trainable_technos_within_the_radius() {
     );
 }
 
+#[test]
+fn authored_lan_scripted_veteran_crate_promotes_and_releases_its_slot() {
+    let rules = effect_rules(
+        "[OverlayTypes]\n0=WOOD\n[WOOD]\nCrate=yes\nLand=Clear\n[Clear]\nTrack=100%\nFoot=100%\n",
+    );
+    let registry = rules.overlay_registry();
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.install_authored_campaign(vec![0], false);
+    sim.session.game_options_mut_for_test().crates = false;
+    let owner = house(&mut sim, "H0", true);
+    let collector = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (9, 10),
+        EntityCategory::Infantry,
+        "CIV",
+    );
+    let soldier = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (10, 11),
+        EntityCategory::Infantry,
+        "E1",
+    );
+
+    // Trigger action 108 uses this placer even when the room's random crates are off.
+    assert!(
+        super::super::place_crate(
+            &mut sim,
+            &rules,
+            registry,
+            CELL,
+            Some(POWERUP_VETERAN as u8),
+            FrameEffects::default(),
+        )
+        .unwrap()
+    );
+    assert_eq!(sim.crate_authority().first_empty_index(), Some(1));
+
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        registry,
+        CELL,
+        collector,
+        FrameEffects::default()
+    ));
+    let raw = sim.substrate.entities.get(soldier).unwrap().veterancy.raw();
+    assert_eq!(f32::from_bits(raw.bits()), 1.0);
+    assert_eq!(sim.houses[&owner].economy().credits(), 0);
+    assert_eq!(overlay_at(&sim, CELL), None);
+    assert!(sim.crate_authority().slots()[0].is_empty());
+}
+
 /// `0x00482D56..0x00482F31` and `0x00483125..0x004832F0`: the multiplier
 /// applies once per object in the radius, the EVA line names every changed
 /// house for the app's local test, and a second crate stacks nothing.
@@ -1058,6 +1118,40 @@ fn mcv_preempt_grants_the_base_unit_with_bases_on() {
         .expect("the free MCV");
     assert_eq!((mcv.position.rx(), mcv.position.ry()), (21, 22));
     assert_eq!(mcv.owner(), owner);
+}
+
+#[test]
+fn authored_lan_preplaced_money_crate_pays_the_collector_on_both_peers() {
+    let run = |remote_view| {
+        let (mut sim, mut rules, registry, owner, actor) = arena();
+        let peer = sim.interner.intern("Russians");
+        sim.houses
+            .register(HouseState::new(peer, 1, Some(peer), true, 0, 10));
+        sim.session.set_game_mode(ScenarioGameMode::Lan);
+        sim.session.install_authored_campaign(vec![0, 1], false);
+        sim.session
+            .set_current_house_for_test(Some(if remote_view { peer } else { owner }));
+        sim.session.game_options_mut_for_test().bases = true;
+        rules.crate_rules.solo_crate_money = 1500;
+        let cell = (21, 22);
+        place_crate(&mut sim, &registry, cell, POWERUP_MONEY as u8);
+        let rng = sim.scenario_rng.native_state_hex();
+
+        assert!(pickup_crate(
+            &mut sim,
+            &rules,
+            &registry,
+            cell,
+            actor,
+            FrameEffects::default()
+        ));
+        assert_eq!(sim.houses[&owner].economy().credits(), 6500);
+        assert_eq!(sim.houses[&peer].economy().credits(), 0);
+        assert_eq!(overlay_at(&sim, cell), None);
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+        sim.state_hash()
+    };
+    assert_eq!(run(false), run(true));
 }
 
 /// `0x00482B8F..0x00482C9C`: the HealBase sound, then `Health - Strength`
