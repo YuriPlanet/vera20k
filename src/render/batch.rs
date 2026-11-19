@@ -694,8 +694,21 @@ impl InstanceBufferPool {
                     wgpu::util::StagingBelt::new(device.clone(), UPLOAD_CHUNK_BYTES)
                 });
                 let size = wgpu::BufferSize::new(byte_data.len() as u64).expect("instances");
-                belt.write_buffer(encoder, &entry.buffer, 0, size)
-                    .copy_from_slice(byte_data);
+                // `StagingBelt::write_buffer` without its panic: a chunk made
+                // on a lost device can't be mapped, and the frame it belongs
+                // to never shows (`GpuContext::device_lost`).
+                let alignment = wgpu::BufferSize::new(wgpu::COPY_BUFFER_ALIGNMENT).expect("4");
+                let slice = belt.allocate(size, alignment);
+                encoder.copy_buffer_to_buffer(
+                    slice.buffer(),
+                    slice.offset(),
+                    &entry.buffer,
+                    0,
+                    size.get(),
+                );
+                if let Ok(mut view) = slice.get_mapped_range_mut() {
+                    view.copy_from_slice(byte_data);
+                }
             }
         }
     }

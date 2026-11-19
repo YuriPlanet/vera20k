@@ -1245,6 +1245,8 @@ impl App {
                 match_winners: None,
                 external_progress: Default::default(),
                 network_goodbye_deadline: None,
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                graphics_lost: None,
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 browser_exit_pending: false,
                 screen: GameScreen::default(),

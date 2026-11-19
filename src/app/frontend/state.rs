@@ -32,6 +32,10 @@ pub(crate) struct FrontendState {
     /// The game is closing and waits until this for its network goodbyes
     /// (`App::poll_network_goodbye`).
     pub(crate) network_goodbye_deadline: Option<crate::util::time::Instant>,
+    /// A lost graphics device closed the game; the player hears it as the
+    /// game exits (`App::close_after_graphics_loss`).
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) graphics_lost: Option<crate::app::system_dialog::GraphicsLost>,
     /// Browser launch is closing its network owners before engine exit.
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     pub(crate) browser_exit_pending: bool,

@@ -1,6 +1,7 @@
 //! The system's own dialogs, for what the game window cannot show: a startup
-//! that never got a working window or renderer, a panic, and a start on the
-//! system's software renderer, whose window stays blank for minutes. A Windows
+//! that never got a working window or renderer, a panic, a graphics device
+//! lost while playing, and a start on the system's software renderer, whose
+//! window stays blank for minutes. A Windows
 //! release build has no console and the app bundle and AppImage none either,
 //! so without these the game would vanish with only the log knowing why. The
 //! first-launch game folder questions (`app_bundle`) use the same macOS alert
@@ -150,6 +151,47 @@ fn software_renderer_message(adapter: &str) -> (String, String) {
             ],
         ),
     )
+}
+
+/// Why the game closed after its graphics device was lost
+/// (`App::close_after_graphics_loss`).
+pub(crate) struct GraphicsLost {
+    /// What the driver said (`GpuContext::device_lost`).
+    pub(crate) error: String,
+    /// The description the single-player match was saved under.
+    pub(crate) saved: Option<String>,
+    /// Where the DirectX 12 box is, as the Options dialog and its page are
+    /// titled, for a Windows game that drew with another API.
+    pub(crate) directx12_box: Option<(String, String)>,
+}
+
+/// Tell the player that the graphics driver stopped, what was saved, what to
+/// try and where the log is. The game has left the screen by then.
+pub(crate) fn report_graphics_lost(lost: &GraphicsLost) {
+    let (title, message) = graphics_lost_message(lost);
+    show_fatal(&title, &message);
+}
+
+fn graphics_lost_message(lost: &GraphicsLost) -> (String, String) {
+    let mut text = vec![crate::i18n::tr("VERA:GraphicsLostText")];
+    if let Some(name) = &lost.saved {
+        text.push(crate::i18n::tr_fill(
+            "VERA:GraphicsLostSaved",
+            &[("name", name)],
+        ));
+    }
+    if let Some((options, page)) = &lost.directx12_box {
+        text.push(crate::i18n::tr_fill(
+            "VERA:GraphicsLostDirectX12",
+            &[("options", options), ("page", page)],
+        ));
+    }
+    text.push(log_note());
+    text.push(crate::i18n::tr_fill(
+        "VERA:GraphicsLostDetails",
+        &[("error", &lost.error)],
+    ));
+    (crate::i18n::tr("VERA:GraphicsLostTitle"), text.join("\n\n"))
 }
 
 /// What the graphics failure advises on this system, as its text's label.
@@ -416,5 +458,28 @@ mod tests {
         assert!(!title.is_empty() && !title.contains("MISSING"), "{title}");
         assert!(text.contains("(Microsoft Basic Render Driver)"), "{text}");
         assert!(text.ends_with(&crate::i18n::tr(GRAPHICS_ADVICE)), "{text}");
+    }
+
+    #[test]
+    fn the_graphics_lost_message_names_the_save_and_the_directx12_box_only_when_there() {
+        let lost = GraphicsLost {
+            error: "Device is lost".to_owned(),
+            saved: Some("Skirmish Game".to_owned()),
+            directx12_box: Some(("Options".to_owned(), "Display Options".to_owned())),
+        };
+        let (title, text) = graphics_lost_message(&lost);
+        assert!(!title.is_empty() && !title.contains("MISSING"), "{title}");
+        assert!(text.contains("\"Skirmish Game\""), "{text}");
+        assert!(text.contains("Options, Display Options"), "{text}");
+        assert!(text.ends_with("Device is lost"), "{text}");
+        let (_, text) = graphics_lost_message(&GraphicsLost {
+            saved: None,
+            directx12_box: None,
+            ..lost
+        });
+        assert!(
+            !text.contains("Skirmish Game") && !text.contains("DirectX 12"),
+            "{text}"
+        );
     }
 }
