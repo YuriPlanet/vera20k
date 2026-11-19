@@ -928,8 +928,8 @@ pub(crate) enum LauncherCheckboxId {
     /// off. Independent of [`Self::DetailedEvaText`].
     ConvenienceHelp,
     /// VERA's gameplay box: a structure PRODUCE queues behind a running or
-    /// completed building instead of being dropped. A player option carried
-    /// onto the frame; not a ruleset field, off by default.
+    /// completed building instead of being dropped. A rule switch the next
+    /// offline scenario reads (`rules::personal_rules`); off by default.
     BuildingProductionQueue,
     /// VERA's box: the super weapon timer list shows six lines and pages the
     /// rest. Default off; the next timer draw reads it.

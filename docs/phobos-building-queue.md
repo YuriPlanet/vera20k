@@ -84,13 +84,15 @@ The building production queue originates in Phobos, but VERA20K promotes it
 to a first-party player option available in **every** build — no feature flag
 and no dependence on a Phobos ruleset. It changes how production plays, so it
 reaches the simulation as a rule of the scenario that every peer, save and
-replay reads, never as one client's preference. It materially improves the playing experience and is meant to
-be a feature **usable in real matches**, not a debug or single-player toy. This
-follows the same precedent as VERA's Shift-Click batch queue, which was adopted
-from Ares and likewise promoted to a normal, always-available convenience.
+replay reads, never as one client's preference. It materially improves the
+playing experience. Network rooms play without it until the room's shared
+rules (`HostRules`) carry it. This follows the precedent of VERA's Shift-Click
+batch queue, which was adopted from Ares and likewise promoted to a normal,
+always-available convenience.
 
 建筑生产线虽源自 Phobos，但我们把它转正为所有构建都可用的一方玩家功能：
 不依赖 Phobos 编译开关，也不依赖 Phobos 规则集。它会改变生产的玩法，所以
 以场景规则的形式进入模拟，所有玩家、存档和录像读到的都一样，而不是某个
-客户端自己的偏好。它能显著改善玩家体验，是对战中可用的功能，而非调试或单人玩具。这与 VERA 从 Ares 引入
-Shift-Click 批量队列、并把它转成普通可用功能的先例一致。
+客户端自己的偏好。它能显著改善玩家体验。在房间共享的规则（`HostRules`）
+带上它之前，联机房间不开启它。这与 VERA 从 Ares 引入 Shift-Click 批量
+队列、并把它转成普通可用功能的先例一致。
