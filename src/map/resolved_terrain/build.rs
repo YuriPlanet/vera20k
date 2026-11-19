@@ -353,7 +353,8 @@ impl ResolvedTerrainGrid {
         let final_lookup: HashMap<(u16, u16), &MapCell> =
             final_cells.iter().map(|c| ((c.rx, c.ry), c)).collect();
 
-        let snow_theater = map.header.theater.eq_ignore_ascii_case("SNOW");
+        let snow_theater = crate::rules::object_image::ImageTheater::from_name(&map.header.theater)
+            == crate::rules::object_image::ImageTheater::Snow;
         let mut terrain_objects = HashMap::new();
         if projection.is_eager() {
             for obj in &map.terrain_objects {

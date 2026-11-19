@@ -331,17 +331,14 @@ fn sell_wall_command_for_cell(
     if !overlays.flags(overlay_id).is_some_and(|flags| flags.wall) {
         return None;
     }
-    let wall_owner = cell.wall_owner?;
-    let wall_owner_house = sim.houses().get(&wall_owner)?;
-    let owner_is_human_player = if sim.session().game_mode_nonzero() {
-        wall_owner == local_owner_id
-    } else {
-        wall_owner_house.is_human() || wall_owner_house.player_control()
-    };
-    owner_is_human_player.then_some(Command::SellWallAtCell {
-        x: rx as i16,
-        y: ry as i16,
-    })
+    // The wall's owner must pass `HouseClass::IsHumanPlayer @ 0x0050B6F0`,
+    // asked of the local player's client: its PlayerPtr is the current house
+    // (`scenario_local_owner`).
+    sim.house_is_human_player(cell.wall_owner?)
+        .then_some(Command::SellWallAtCell {
+            x: rx as i16,
+            y: ry as i16,
+        })
 }
 
 /// Handle a tactical left-click while the sidebar Repair or Sell cursor mode is
@@ -2124,6 +2121,8 @@ mod tests {
         let missing_house = sim.intern("MissingHouse");
         let mut local_house = HouseState::new(local, 0, None, false, 0, 10);
         local_house.set_player_control_for_test(true);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         sim.houses_mut_for_test().register(local_house);
         sim.houses_mut_for_test()
             .register(HouseState::new(remote, 1, None, true, 0, 10));
