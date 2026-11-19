@@ -8,7 +8,6 @@ use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability
 use crate::sim::find_nearby_cell::RADIUS_HARD_CAP;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::world::Simulation;
 
 pub const MAX_SPAWN_COUNT: u16 = 1_000;
@@ -38,7 +37,15 @@ impl Simulation {
         cheat: &SkirmishCheat,
         rules: &RuleSet,
     ) -> Result<CheatEffect, &'static str> {
-        if self.session.game_mode() != ScenarioGameMode::Skirmish {
+        // Offline Skirmish only: no lockstep peers, and multiplayer rules
+        // rather than a campaign's.
+        if self.session.execution_topology().is_lockstep()
+            || !self
+                .session
+                .rule_policy()
+                .bootstrap()
+                .uses_multiplayer_rules()
+        {
             return Err("VERA:CheatUnavailable");
         }
         let owner = self
@@ -205,6 +212,7 @@ impl Simulation {
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+    use crate::sim::scenario_session::ScenarioGameMode;
 
     #[test]
     fn money_requires_a_living_local_skirmish_player_and_room_in_the_wallet() {
