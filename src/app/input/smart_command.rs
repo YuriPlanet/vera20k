@@ -162,10 +162,41 @@ fn detect_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor]) -> Option<Sm
     let Some(first) = roles[0] else {
         return None;
     };
-    roles
-        .iter()
-        .all(|role| *role == Some(first))
-        .then_some(first)
+    if !roles.iter().all(|role| *role == Some(first)) {
+        return None;
+    }
+    // An `Occupier=` rifleman is also a plain infantryman, so `role_of` would
+    // always resolve him to Garrison and the reactor branch would be dead.
+    // When a bio reactor is right next to the squad, feeding it wins over a
+    // garrisonable building further out: the reactor search is deliberately
+    // tighter than the garrison search for exactly this reason.
+    if matches!(first, SmartMode::Garrison | SmartMode::Reactor)
+        && nearby_infantry_absorb(sim, rules, actors)
+    {
+        return Some(SmartMode::Reactor);
+    }
+    Some(first)
+}
+
+/// Whether any actor stands within the (tight) reactor range of a living
+/// bio reactor. Reuses the same admission as the Reactor plan so detection
+/// and ordering can never disagree about what counts as a reactor.
+fn nearby_infantry_absorb(sim: &Simulation, rules: &RuleSet, actors: &[Actor]) -> bool {
+    sim.entities()
+        .values_of_category(EntityCategory::Structure)
+        .any(|entity| {
+            if !entity.is_alive() || entity.death.is_dying() {
+                return false;
+            }
+            let Some(object) = object_of(sim, entity, rules) else {
+                return false;
+            };
+            if !object.infantry_absorb || object.grinding {
+                return false;
+            }
+            let pos = object_center_xy(entity);
+            actors.iter().any(|actor| in_range(actor.pos, pos, REACTOR_RANGE_CELLS))
+        })
 }
 
 /// The single most specific convenience role of one unit. `infiltrate` is
@@ -242,8 +273,8 @@ fn nearby_targets(
 
 /// Evenly spread `actors` over `targets`: each actor takes the nearest target
 /// that still has a free slot, preferring targets with the fewest assignments.
-/// One slot per target keeps multi-engineercapture from self-destructing and
-/// avoids stacking every Ivan bomb on one object. Returns `(actor, target)`.
+/// `slots` is a per-target cap; callers that bomb or charge pass a small value,
+/// callers that fill buildings pass [`spread_all`]. Returns `(actor, target)`.
 fn spread(actors: &[Actor], targets: &[Target], slots: u32) -> Vec<(u64, u64)> {
     if actors.is_empty() || targets.is_empty() {
         return Vec::new();
@@ -273,6 +304,15 @@ fn spread(actors: &[Actor], targets: &[Target], slots: u32) -> Vec<(u64, u64)> {
         }
     }
     orders
+}
+
+/// Give every selected actor an order, balancing the load over the available
+/// buildings. Garrison houses hold a whole squad, reactors absorb a crowd and
+/// one infiltration team can enter several structures at once, so the
+/// per-target cap must be the whole selection rather than one. The simulation
+/// still rejects the overflow when a building is actually full.
+fn spread_all(actors: &[Actor], targets: &[Target]) -> Vec<(u64, u64)> {
+    spread(actors, targets, actors.len() as u32)
 }
 
 fn ally_of(sim: &Simulation, actor: u64, target: u64) -> bool {
@@ -323,7 +363,7 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                 nearby_targets(sim, rules, actors, NEAR_RANGE_CELLS, |_entity, object| {
                     object.capturable || object.can_be_occupied
                 });
-            spread(actors, &targets, 1)
+            spread_all(actors, &targets)
                 .into_iter()
                 .filter(|&(actor, target)| {
                     matches!(
@@ -344,7 +384,7 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                 nearby_targets(sim, rules, actors, NEAR_RANGE_CELLS, |_entity, _object| {
                     true
                 });
-            spread(actors, &targets, 1)
+            spread_all(actors, &targets)
                 .into_iter()
                 .filter(|&(actor, target)| {
                     !ally_of(sim, actor, target)
@@ -361,9 +401,30 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                 .collect()
         }
         SmartMode::Ivan => {
+            // Two independent reasons the old version issued zero orders:
+            // `values()` includes the selected Ivans themselves at distance
+            // zero, so `spread` always handed each Ivan his own id, and the
+            // trailing `actor != target` filter then dropped every order.
+            // Exclude the actors from the candidate set *before* spreading so
+            // the nearest eligible object can actually be picked.
             let mut targets: Vec<Target> = Vec::new();
             for entity in sim.entities().values() {
                 if !entity.is_alive() || entity.death.is_dying() {
+                    continue;
+                }
+                let id = entity.stable_id();
+                if actors.iter().any(|actor| actor.id == id) {
+                    continue;
+                }
+                // Match the native `IvanBomb` cursor: a target already carrying
+                // a bomb, or one that is not `Bombable=`, is refused outright.
+                if entity.bomb.is_some() {
+                    continue;
+                }
+                let Some(object) = object_of(sim, entity, rules) else {
+                    continue;
+                };
+                if !object.bombable {
                     continue;
                 }
                 let pos = object_center_xy(entity);
@@ -371,16 +432,13 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                     .iter()
                     .any(|actor| in_range(actor.pos, pos, NEAR_RANGE_CELLS))
                 {
-                    targets.push(Target {
-                        id: entity.stable_id(),
-                        pos,
-                    });
+                    targets.push(Target { id, pos });
                 }
             }
             spread(actors, &targets, 1)
                 .into_iter()
-                // Never let an Ivan bomb himself.
-                .filter(|&(actor, target)| actor != target)
+                // Never let an Ivan bomb an ally, matching the C4 guard.
+                .filter(|&(actor, target)| !ally_of(sim, actor, target))
                 .map(|(actor, target)| Command::Attack {
                     attacker_id: actor,
                     target_id: target,
@@ -406,7 +464,7 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                 nearby_targets(sim, rules, actors, NEAR_RANGE_CELLS, |_entity, object| {
                     object.can_be_occupied && !object.grinding
                 });
-            spread(actors, &targets, 1)
+            spread_all(actors, &targets)
                 .into_iter()
                 .filter(|&(actor, target)| {
                     let (Some(p), Some(b)) =
@@ -463,7 +521,7 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                 REACTOR_RANGE_CELLS,
                 |_entity, object| object.infantry_absorb && !object.grinding,
             );
-            spread(actors, &targets, 1)
+            spread_all(actors, &targets)
                 .into_iter()
                 .map(|(actor, target)| Command::MegaMission {
                     entity_id: actor,
