@@ -781,10 +781,15 @@ pub struct BatchRenderer {
     /// WebGL2, which has no such interval.
     zsprite_counted_pipelines: Option<[wgpu::RenderPipeline; 2]>,
     /// Bind group layout for the z-shape texture (group 2 of the zsprite
-    /// pipelines): one `R8Unorm` texture read with `textureLoad`.
+    /// pipelines): one `R8Unorm` texture read with `textureLoad`, and the
+    /// skip table beside it.
     zshape_bind_group_layout: wgpu::BindGroupLayout,
     /// 1x1 neutral z-shape used when no BUILDNGZ.SHA is loaded.
     default_zshape_bind_group: wgpu::BindGroup,
+    /// The skip table (`render::zshape_skips`), written once per picture and
+    /// bound at binding 1 of every z-shape group.
+    zshape_skips: wgpu::Texture,
+    zshape_skips_view: wgpu::TextureView,
     /// Render pipeline with per-pixel Z-depth (frag_depth output, LessEqual
     /// compare like `TMP_TileBlitter`'s `base + zdata <= zbuf`).
     /// Used for terrain tiles with TMP Z-data.
@@ -1298,21 +1303,49 @@ impl BatchRenderer {
                 cache: None,
             });
 
-        // Z-shape bind group layout (group 2 of the zsprite pipelines).
+        // Z-shape bind group layout (group 2 of the zsprite pipelines): the
+        // z-shape and the skip table.
         let zshape_bind_group_layout: wgpu::BindGroupLayout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("ZShape BGL"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Uint,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                ],
             });
+        let zshape_skips: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("ZShape skip table"),
+            size: wgpu::Extent3d {
+                width: super::zshape_skips::SKIP_TABLE_ROWS,
+                height: super::zshape_skips::SKIP_TABLE_SLOTS,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let zshape_skips_view: wgpu::TextureView = zshape_skips.create_view(&Default::default());
         let default_zshape_view: wgpu::TextureView = create_r8_texture_view_on_device(
             device,
             queue,
@@ -1325,10 +1358,16 @@ impl BatchRenderer {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Default ZShape BG"),
                 layout: &zshape_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&default_zshape_view),
-                }],
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&default_zshape_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&zshape_skips_view),
+                    },
+                ],
             });
 
         // Per-pixel Z-tested SHP pipelines: native row Z + optional z-shape.
@@ -1563,6 +1602,8 @@ impl BatchRenderer {
             zsprite_counted_pipelines,
             zshape_bind_group_layout,
             default_zshape_bind_group,
+            zshape_skips,
+            zshape_skips_view,
             zdepth_pipeline,
             overlay_passthrough_pipeline,
             smooth_chrome_pipeline,
@@ -2562,11 +2603,47 @@ impl BatchRenderer {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ZShape BG"),
             layout: &self.zshape_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(view),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.zshape_skips_view),
+                },
+            ],
         })
+    }
+
+    /// Write this picture's skip table: `rows` holds whole slots of
+    /// `SKIP_TABLE_ROWS` bytes (`ZShapeSkips::upload`). Slots past the ones
+    /// written keep stale rows, which no body of this picture names.
+    pub(crate) fn write_zshape_skips(&self, queue: &wgpu::Queue, rows: &[u8]) {
+        let per_slot = super::zshape_skips::SKIP_TABLE_ROWS;
+        let slots = (rows.len() / per_slot as usize) as u32;
+        if slots == 0 {
+            return;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.zshape_skips,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rows[..(slots * per_slot) as usize],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(per_slot),
+                rows_per_image: Some(slots),
+            },
+            wgpu::Extent3d {
+                width: per_slot,
+                height: slots,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     /// Neutral 1x1 z-shape for draws that carry no BUILDNGZ.

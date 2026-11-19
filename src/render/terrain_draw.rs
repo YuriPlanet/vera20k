@@ -1835,7 +1835,11 @@ fn edit_source(webgl: bool) -> String {
     let vertex = shp[..shp
         .find("// One signed candidate owner")
         .expect("SHP projection boundary")]
-        .replace("@group(2) @binding(0) var t_zshape: texture_2d<f32>;", "");
+        .replace("@group(2) @binding(0) var t_zshape: texture_2d<f32>;", "")
+        .replace(
+            "@group(2) @binding(1) var t_zshape_skips: texture_2d<u32>;",
+            "",
+        );
     let entry_points = if webgl {
         include_str!("terrain_read_only.wgsl")
     } else {
