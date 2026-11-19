@@ -23,7 +23,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The release's multiplayer build, which the lobby compares players' games
+  # with (docs/lobby-protocol.md): its Linux program logs it at start-up
+  # (src/entry.rs), which the release's own Linux test checks. Starting the
+  # program happens here, in a job without the publisher's secrets. A release
+  # from before that line logs none, and its manifest gets none; a program
+  # that does not start fails the job, so publication waits for a re-run.
+  build:
+    if: github.repository == 'YuriPlanet/vera20k' && (github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      build: ${{ steps.read.outputs.build }}
+    steps:
+      - name: Read the multiplayer build the release's Linux program logs
+        id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          ROLL_BACK: ${{ inputs.roll_back }}
+        run: |
+          set -euo pipefail
+          # A rollback writes no manifest, so it waits on nothing here.
+          if [[ $ROLL_BACK == true ]]; then echo 'build=' >> "$GITHUB_OUTPUT"; exit 0; fi
+          [[ $RELEASE_TAG =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] \
+            || { echo "not a stable release tag: $RELEASE_TAG" >&2; exit 1; }
+          version=${BASH_REMATCH[1]}
+          image="vera20k-$version-linux-x64.AppImage"
+          work=$(mktemp -d)
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$image" --dir "$work"
+          gh attestation verify "$work/$image" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --deny-self-hosted-runners > /dev/null
+          # The program needs ALSA's library to start.
+          ldconfig -p > "$work/libraries"
+          grep -q 'libasound\.so\.2 ' "$work/libraries" \
+            || { sudo apt-get update && sudo apt-get install -y libasound2t64; }
+          chmod +x "$work/$image"
+          # As the release's Linux test starts it: the usage switch logs the
+          # banner in its data folder and exits. It gets no token.
+          (cd / && env -u GH_TOKEN XDG_DATA_HOME="$work/data" APPIMAGE_EXTRACT_AND_RUN=1 \
+            timeout 60 "$work/$image" -h > /dev/null) || true
+          log="$work/data/VERA20k/logs/ra2.log"
+          # A program that did not start fails the run, so publication waits
+          # for a re-run instead of leaving the manifest without a build.
+          grep -q 'VERA20k .* starting' "$log" \
+            || { echo "$RELEASE_TAG's program did not start; re-run the failed jobs" >&2; exit 1; }
+          line=$(grep -oE 'Multiplayer build: [0-9]+\.[0-9]+\.[0-9]+:[0-9a-f]{64}$' "$log" | head -n 1 || true)
+          build=${line#Multiplayer build: }
+          [[ $line == "Multiplayer build: $version:"* ]] || build=
+          [[ -n $build ]] || echo "::warning::$RELEASE_TAG's program logs no multiplayer build, so its manifest names none."
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: build
     if: github.repository == 'YuriPlanet/vera20k' && (github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease))
     # The publisher's secrets live only in this environment: v* tags and main
     # may use it, each run once the maintainer approves it
@@ -46,6 +99,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          RELEASE_BUILD: ${{ needs.build.outputs.build }}
           ROLL_BACK: ${{ inputs.roll_back }}
         run: |
           if [[ $ROLL_BACK == true ]]; then

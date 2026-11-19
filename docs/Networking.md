@@ -142,6 +142,18 @@ names vera20k.org (`web_link::DOWNLOAD_PAGE`), but a release signed by a new key
 still points to the GitHub releases. Nothing exchanged changes: a released game
 shows only the text with its link, and a rollback does the same.
 
+A game on the newest release's version can still be another build, such as a dev build
+or one built from source. latest.json names the release's own `build`, read from the
+`Multiplayer build:` line its program logs at start-up (`src/entry.rs`,
+`.github/release/downloads.md`). A game of that version whose sign-in names another
+build hears that it is not the release (phrase `NotRelease`), and when a player joins a
+room on another build of the room's version, the room's line names whose game is not
+the release (`ReleaseMismatch`, `HostReleaseMismatch`) or says that the builds differ
+(`BuildMismatch`), without the build hashes ([lobby protocol](lobby-protocol.md)). They
+are chat lines: a released game without the keys shows the lobby's English text, a
+lobby rollback names the builds again, and a latest.json without `build`, from a
+release before it or a rollback to one, leaves `BuildMismatch` alone.
+
 A relay deploy reaches every version the lobby admits, from `OLDEST_ADMITTED` in
 `tools/relay_compat.py` on. Before a relay change merges, the Relay compatibility
 workflow plays a client built on the relay protocol crate of each of those releases,
@@ -694,7 +706,8 @@ in a release), which the hash already covers; they are refused as any other buil
   carries it. The lobby hides rooms and matches of another build, or of another version
   where a game names no build, and starts a match only when every player's is equal
   ([lobby protocol](lobby-protocol.md#sign-in-headers)); a watcher's game compares its own
-  with the match's before it loads.
+  with the match's before it loads. A game of the newest release's version on another
+  build is told it is not the release ([current production path](#current-production-path)).
 - Start: every network start folds it into the start identity the relay and LAN's startup
   compare (`StartupAgreement`), so a launcher's match of two builds, which no lobby
   compares, is refused at its start.

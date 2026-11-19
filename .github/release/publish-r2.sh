@@ -22,6 +22,12 @@ bucket=vera20k-downloads
 [[ -n ${AWS_ACCESS_KEY_ID:-} && -n ${AWS_SECRET_ACCESS_KEY:-} ]] \
   || die 'S3 access credentials are required'
 [[ -n ${UPDATE_SIGNING_KEY:-} ]] || die 'UPDATE_SIGNING_KEY is required'
+# The release's multiplayer build (docs/Networking.md, "Build check"), which
+# downloads.yml reads from the release's own Linux program; none for a release
+# whose program does not log it.
+build=${RELEASE_BUILD:-}
+[[ -z $build || (${build%%:*} == "$version" && ${build#*:} =~ ^[0-9a-f]{64}$) ]] \
+  || die 'RELEASE_BUILD must be this version, a colon and a 64-digit hash'
 # The public half the game trusts, beside this script: base64 of the raw
 # 32-byte Ed25519 key.
 public_key=$(tr -d '[:space:]' < "$(dirname "$0")/update-key.pub") \
@@ -136,12 +142,13 @@ commit=$(tag_commit)
 # Markdown links, emphasis or code marks. At most 12 of 300 characters keep the
 # manifest far below the game's 64 KiB limit. Beside them, `updater` and
 # `update_key`, the public key that signs the manifest, let an older game
-# offer a release it cannot install as a download by hand. A version's
+# offer a release it cannot install as a download by hand, and `build` lets
+# the lobby tell a game of this version that is another build. A version's
 # manifest is written once, so a retry keeps the fields it was first published
-# with, none for a release mirrored before them, whatever the page and
-# update-key.pub say now.
+# with, none for a release mirrored before them, whatever the page,
+# update-key.pub and RELEASE_BUILD say now.
 if fetch_optional "releases/$tag/manifest.json" "$work/stored-manifest.json"; then
-  fields=$(jq -c 'with_entries(select(.key | IN("notes", "updater", "update_key")))' \
+  fields=$(jq -c 'with_entries(select(.key | IN("notes", "updater", "update_key", "build")))' \
     "$work/stored-manifest.json") || die 'existing release manifest is malformed'
 else
   result=$?
@@ -167,7 +174,8 @@ else
 ' "$work/release.json") || die 'cannot read the release notes'
   updater=$(updater_version)
   fields=$(jq -nc --argjson notes "$notes" --argjson updater "$updater" --arg key "$public_key" \
-    '{notes:$notes,updater:$updater,update_key:$key} | with_entries(select(.value != null))')
+    --arg build "$build" '{notes:$notes,updater:$updater,update_key:$key,
+      build:(if $build == "" then null else $build end)} | with_entries(select(.value != null))')
 fi
 jq -nS --arg version "$version" --arg tag "$tag" --arg commit "$commit" --argjson fields "$fields" \
   '{version:$version,tag:$tag,commit:$commit,files:{}} + $fields' > "$work/manifest.json"
