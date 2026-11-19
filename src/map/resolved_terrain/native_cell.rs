@@ -212,8 +212,8 @@ impl NativeAllocatedCellCursor {
     }
 
     /// The coordinate the cursor stands on, then [`Self::advance`]: the walk
-    /// without its cell lookup, for the map generator's grid, which ends the
-    /// walk past its far diagonal (`map::rmg::grid::NativeCells`).
+    /// without its cell lookup, for the Size diamond's walk, which knows where
+    /// `Next`'s null falls (`map::playfield::SizeDiamond::allocated_cells`).
     pub(crate) fn take_coord(&mut self, size_width: i32) -> (i32, i32) {
         let at = (self.x, self.y);
         self.advance(size_width);

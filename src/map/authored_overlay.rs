@@ -142,10 +142,11 @@ impl NativeOverlayMapShape {
         crate::map::playfield::size_diamond_contains(self.width, self.height, (x, y))
     }
 
-    /// Exact real-cell anti-diagonal order used by `Full_Init @ 0x00686B20`
-    /// through `CellIterator_Init @ 0x00578350` / `Next @ 0x00578290`:
-    /// increasing `x`, decreasing `y` for each sum in
-    /// `W+1 ..= W+2H`. Dimensions must fit the selected cell grid.
+    /// The real cells `Full_Init @ 0x00686B20` visits: the allocated-cell
+    /// walk over the cells [`Self::admits`]
+    /// ([`SizeDiamond::allocated_cells`](crate::map::playfield::SizeDiamond::allocated_cells)),
+    /// which on a Size one cell wide ends after (1, 1). Dimensions must fit
+    /// the selected cell grid.
     pub(crate) fn recalc_cells(self) -> Vec<(i16, i16)> {
         if !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.width)
             || !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.height)
@@ -154,13 +155,11 @@ impl NativeOverlayMapShape {
         }
         let mut cells =
             Vec::with_capacity(usize::try_from(self.height * (2 * self.width - 1)).unwrap_or(0));
-        for sum in self.width + 1..=self.width + 2 * self.height {
-            let first_x = (sum - self.width) / 2 + 1;
-            let last_x = (sum + self.width - 1) / 2;
-            for x in first_x..=last_x {
-                cells.push((x as i16, (sum - x) as i16));
-            }
-        }
+        cells.extend(
+            crate::map::playfield::SizeDiamond::from_size(self.width, self.height)
+                .allocated_cells()
+                .map(|(x, y)| (x as i16, y as i16)),
+        );
         cells
     }
 }
@@ -1437,6 +1436,16 @@ mod tests {
         assert_eq!(
             shape.recalc_cells(),
             vec![(1, 2), (2, 1), (2, 2), (2, 3), (3, 2), (3, 3)]
+        );
+    }
+
+    #[test]
+    fn a_one_cell_wide_walk_ends_at_its_first_null() {
+        // The walk steps from (1, 1) to (2, 1), outside a one-wide Size, where
+        // Next @ 0x00578290 returns null before the diagonal's (2, 2).
+        assert_eq!(
+            NativeOverlayMapShape::new(1, 3).recalc_cells(),
+            vec![(1, 1)]
         );
     }
 

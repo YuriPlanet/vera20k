@@ -743,7 +743,10 @@ impl ResolvedTerrainGrid {
         // The engine reaches cells through an anti-diagonal iterator, so the
         // animations are constructed in that order. The loop above is row-major,
         // so restore the sweep order here: the spawner then assigns animation
-        // identities the way a native load would.
+        // identities the way a native load would. On a Size at least two wide
+        // this is the allocated-cell walk's order
+        // (`map::playfield::SizeDiamond::allocated_cells`); only generated
+        // maps, which are at least four wide, spawn from this list.
         tile_animations.sort_by_key(|anim| (anim.rx as u32 + anim.ry as u32, anim.rx));
         if !tile_animations.is_empty() {
             log::info!(
@@ -1691,30 +1694,42 @@ pub(super) fn materialize_map_load_cells(
         .unwrap_or(0);
     let mut cells = Vec::with_capacity(expected_count);
     let mut index_by_coord = HashMap::with_capacity(expected_count);
-    let last_sum = n + m * 2;
+    let mut allocate = |x: u32, y: u32, tile_index: i32, z: u8| {
+        let rx = u16::try_from(x).expect("validated Size diamond x fits u16");
+        let ry = u16::try_from(y).expect("validated Size diamond y fits u16");
+        index_by_coord.insert((rx, ry), cells.len());
+        cells.push(MapCell {
+            rx,
+            ry,
+            tile_index,
+            sub_tile: 0,
+            z,
+            // CellClass::Constructor47BBF0 writes zero at47BCFE before
+            // authored Pack5 records overwrite allocated cells.
+            legacy_ice_byte: 0,
+        });
+    };
 
-    // This sum-major form is the native iterator's anti-diagonal order: each
-    // diagonal advances x and retreats y, beginning at (1, Size.Width).
-    for sum in (n + 1)..=last_sum {
-        for rx in 0..=sum {
-            let ry = sum - rx;
-            if rx.abs_diff(ry) >= n {
-                continue;
-            }
-            let rx = u16::try_from(rx).expect("validated Size diamond x fits u16");
-            let ry = u16::try_from(ry).expect("validated Size diamond y fits u16");
-            let index = cells.len();
-            cells.push(MapCell {
-                rx,
-                ry,
-                tile_index: selector.draw_fill_tile_index(is_water, scenario_fill_ranged),
-                sub_tile: 0,
-                z: 0u8.wrapping_add(map.header.level as u8),
-                // CellClass::Constructor47BBF0 writes zero at47BCFE before
-                // authored Pack5 records overwrite allocated cells.
-                legacy_ice_byte: 0,
-            });
-            index_by_coord.insert((rx, ry), index);
+    // `MapClass::Resize @ 0x00565C10` has allocated every Size-diamond cell
+    // at level 0 (the call at 0x004ACF0D). The fill walk at
+    // 0x004ACF81..0x004ACFD6 then gives each cell `Next` returns one Scenario
+    // `RandomRanged` tile and adds the map's Level to its level.
+    let diamond = crate::map::playfield::SizeDiamond::from_size(n as i32, m as i32);
+    for (x, y) in diamond.allocated_cells() {
+        let tile_index = selector.draw_fill_tile_index(is_water, scenario_fill_ranged);
+        allocate(
+            x as u32,
+            y as u32,
+            tile_index,
+            0u8.wrapping_add(map.header.level as u8),
+        );
+    }
+    // On a Size one cell wide that walk ends after (1, 1), while Resize
+    // allocated the whole diagonal: its later cells keep the constructor's
+    // tile 0xFFFF (0x0047BC11) and level 0.
+    if n == 1 {
+        for k in 2..=m {
+            allocate(k, k, 0xFFFF, 0);
         }
     }
     debug_assert_eq!(cells.len(), expected_count);
