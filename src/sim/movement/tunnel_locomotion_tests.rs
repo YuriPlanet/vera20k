@@ -29,7 +29,7 @@ fn test_position() -> Position {
 /// neither does any other step.
 #[test]
 fn the_dig_anim_marks_exactly_the_four_transitions() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = test_position();
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
     let speed = 5;
@@ -76,7 +76,7 @@ fn the_dig_anim_marks_exactly_the_four_transitions() {
 /// `Idle`.
 #[test]
 fn the_dig_cycle_owns_the_underground_layer_and_the_z_floor() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = test_position();
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
     let speed = 5;
@@ -153,7 +153,7 @@ fn the_dig_cycle_owns_the_underground_layer_and_the_z_floor() {
 /// 0x72A060` is false exactly while sunk, traveling or rising.
 #[test]
 fn a_digging_tunnel_neither_fires_nor_casts_a_shadow() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = test_position();
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
     let from = position_world(&position);
@@ -218,7 +218,7 @@ fn a_digging_tunnel_neither_fires_nor_casts_a_shadow() {
 /// cell's ground, which `ProcessPreDigOut 0x7298F0` re-reads every frame.
 #[test]
 fn a_raised_cell_sinks_to_the_underground_plane_and_surfaces_at_its_own_height() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = Position::new(
         5,
         5,
@@ -277,7 +277,7 @@ fn a_raised_cell_sinks_to_the_underground_plane_and_surfaces_at_its_own_height()
 /// ends on that cell's ground, not on the height it dug in from.
 #[test]
 fn surfacing_reads_the_destination_cells_ground() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = test_position();
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
     let from = position_world(&position);
@@ -324,7 +324,7 @@ fn surfacing_reads_the_destination_cells_ground() {
 /// surfacing target follows the destination cell.
 #[test]
 fn surfacing_over_a_flat_cell_ends_at_ground_level() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = Position::new(
         5,
         5,
@@ -373,7 +373,7 @@ fn surfacing_over_a_flat_cell_ends_at_ground_level() {
 /// is not "moving now", so the readiness gate cannot hold a tunnel order on it.
 #[test]
 fn only_pre_dig_in_answers_is_moving_now() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     assert!(!runtime.is_moving_now(), "Idle");
     runtime.move_to(false);
     assert_eq!(runtime.state(), TunnelState::PreDigIn);
@@ -395,7 +395,7 @@ fn only_pre_dig_in_answers_is_moving_now() {
 /// where it stands instead of staying underground.
 #[test]
 fn stopping_while_underground_surfaces_in_place() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = test_position();
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
     let from = position_world(&position);
@@ -468,7 +468,7 @@ fn stopping_while_underground_surfaces_in_place() {
 }
 #[test]
 fn stopping_the_dig_in_timer_settles_as_dug_out() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = test_position();
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
     let from = position_world(&position);
@@ -499,7 +499,7 @@ fn stopping_the_dig_in_timer_settles_as_dug_out() {
 /// way through the sink rises from the Z it reached instead of staying buried.
 #[test]
 fn stopping_half_sunk_raises_the_unit_from_where_it_is() {
-    let mut runtime = TunnelRuntime::constructed();
+    let mut runtime = TunnelRuntime::constructed(0);
     let mut position = test_position();
     let mut facing = crate::sim::movement::FacingClass::new(0, 0);
     let from = position_world(&position);

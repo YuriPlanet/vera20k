@@ -78,7 +78,7 @@ fn use_weeds_charges_from_the_house_store_and_parks_the_cameo_below_it() {
     );
     let (mut sim, owner, type_id) = scene(&rules);
     give(&mut sim, owner, 9, 0);
-    tick_house_superweapon_instances(&mut sim, &rules, owner);
+    tick_house_superweapon_instances(&mut sim, &rules, owner, crate::sim::frame_effects::FrameEffects::empty());
     let parked = instance(&sim, owner, type_id);
     assert!(!parked.is_ready);
     assert_eq!(parked.charge_start_tick, 100);
@@ -91,7 +91,7 @@ fn use_weeds_charges_from_the_house_store_and_parks_the_cameo_below_it() {
     );
     let (mut sim, owner, type_id) = scene(&rules_low);
     give(&mut sim, owner, 8, 0);
-    tick_house_superweapon_instances(&mut sim, &rules_low, owner);
+    tick_house_superweapon_instances(&mut sim, &rules_low, owner, crate::sim::frame_effects::FrameEffects::empty());
     let parked = instance(&sim, owner, type_id);
     assert_eq!(parked.charge_duration, 915, "below the readiness edge");
     assert_eq!(stage(&sim, &rules_low, owner), 43, "int(8 * 54 / 10)");
@@ -99,7 +99,7 @@ fn use_weeds_charges_from_the_house_store_and_parks_the_cameo_below_it() {
     let rules_ready = weed_rules("UseWeeds.Amount=10\n", "");
     let (mut sim, owner, type_id) = scene(&rules_ready);
     give(&mut sim, owner, 20, 0);
-    tick_house_superweapon_instances(&mut sim, &rules_ready, owner);
+    tick_house_superweapon_instances(&mut sim, &rules_ready, owner, crate::sim::frame_effects::FrameEffects::empty());
     let charged = instance(&sim, owner, type_id);
     assert!(charged.is_ready);
     assert_eq!(charged.charge_duration, 0, "RechargeTimer.Start(0)");
@@ -110,7 +110,7 @@ fn use_weeds_charges_from_the_house_store_and_parks_the_cameo_below_it() {
     );
     assert_eq!(stage(&sim, &rules_ready, owner), 54, "ready shows the end");
     // A ready UseWeeds Super never consumes again.
-    tick_house_superweapon_instances(&mut sim, &rules_ready, owner);
+    tick_house_superweapon_instances(&mut sim, &rules_ready, owner, crate::sim::frame_effects::FrameEffects::empty());
     assert_eq!(sim.houses[&owner].economy().owned_weed_total(), 10);
 }
 
@@ -139,7 +139,7 @@ fn use_weeds_drains_slot_zero_only_and_refuses_a_scripted_charge() {
     one_time.is_active = true;
     one_time.set_charged(&sw, 0);
     assert!(one_time.is_ready);
-    tick_house_superweapon_instances(&mut sim, &rules, owner);
+    tick_house_superweapon_instances(&mut sim, &rules, owner, crate::sim::frame_effects::FrameEffects::empty());
     assert!(instance(&sim, owner, type_id).is_ready);
     let amounts = sim.houses[&owner].economy().owned_weed_amounts();
     assert_eq!(amounts[0], NativeF32Bits::POSITIVE_ZERO, "slot 0 drains");
@@ -163,7 +163,7 @@ UseChargeDrain=yes
     );
     let (mut sim, owner, type_id) = scene(&rules);
     give(&mut sim, owner, 4, 0);
-    tick_house_superweapon_instances(&mut sim, &rules, owner);
+    tick_house_superweapon_instances(&mut sim, &rules, owner, crate::sim::frame_effects::FrameEffects::empty());
     let charged = instance(&sim, owner, type_id);
     assert_eq!(charged.charge_drain_state, 1, "the drain starts");
     assert!(charged.is_ready);
@@ -176,7 +176,7 @@ UseChargeDrain=yes
         launched.is_ready = true;
     }
     give(&mut sim, owner, 4, 0);
-    tick_house_superweapon_instances(&mut sim, &rules, owner);
+    tick_house_superweapon_instances(&mut sim, &rules, owner, crate::sim::frame_effects::FrameEffects::empty());
     let restarted = instance(&sim, owner, type_id);
     assert_eq!(restarted.charge_drain_state, 0, "the drain ends");
     assert_eq!(
@@ -192,18 +192,18 @@ fn use_weeds_amount_defaults_to_weed_capacity() {
     let defaulted = weed_rules("", "[General]\nWeedCapacity=4\n");
     let (mut sim, owner, type_id) = scene(&defaulted);
     give(&mut sim, owner, 3, 0);
-    tick_house_superweapon_instances(&mut sim, &defaulted, owner);
+    tick_house_superweapon_instances(&mut sim, &defaulted, owner, crate::sim::frame_effects::FrameEffects::empty());
     assert!(!instance(&sim, owner, type_id).is_ready, "3 of 4 is short");
 
     let (mut sim, owner, type_id) = scene(&defaulted);
     give(&mut sim, owner, 4, 0);
-    tick_house_superweapon_instances(&mut sim, &defaulted, owner);
+    tick_house_superweapon_instances(&mut sim, &defaulted, owner, crate::sim::frame_effects::FrameEffects::empty());
     assert!(instance(&sim, owner, type_id).is_ready, "4 of 4 charges");
 
     let explicit = weed_rules("UseWeeds.Amount=10\n", "[General]\nWeedCapacity=4\n");
     let (mut sim, owner, type_id) = scene(&explicit);
     give(&mut sim, owner, 4, 0);
-    tick_house_superweapon_instances(&mut sim, &explicit, owner);
+    tick_house_superweapon_instances(&mut sim, &explicit, owner, crate::sim::frame_effects::FrameEffects::empty());
     assert!(
         !instance(&sim, owner, type_id).is_ready,
         "the explicit amount wins over WeedCapacity"

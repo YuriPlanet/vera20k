@@ -276,7 +276,7 @@ fn adjust_target_coords_on_rotation_gates_the_fire_sweep() {
         let mut system = system;
         system.stable_id = stable_id;
         sim.substrate.particle_systems.insert(system);
-        assert!(sim.reveal_particle_system(stable_id, rules));
+        assert!(sim.reveal_particle_system(stable_id));
         stable_id
     }
 

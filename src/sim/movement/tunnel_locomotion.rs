@@ -36,6 +36,8 @@
 
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::movement::tunnel_movement::TunnelRuntime;
+use crate::sim::movement::tunnel_movement::TunnelState;
 
 /// Binary64 at `0x007F5B18`, the numerator of the dig timer.
 const DIG_FRAMES_NUMERATOR: f64 = 64.0;
@@ -51,28 +53,6 @@ const ARRIVAL_DISTANCE: i32 = 20;
 /// default-rate simulation leaves at 1.0.
 const FRAME_SCALE: f64 = 1.0;
 
-/// `TunnelLocomotionClass+0x18`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub enum TunnelState {
-    /// 0: parked; `Is_Moving` is false and `Can_Fire` is not overridden.
-    #[default]
-    Idle,
-    /// 1: turning the hull toward the destination before the dig timer starts.
-    PreDigIn,
-    /// 2: the dig-in timer (`0x729370`); the hull is already in place.
-    DiggingIn,
-    /// 3: sinking to [`UNDERGROUND_Z`] (`0x728F86`).
-    DugIn,
-    /// 4: traveling under the surface (`0x729580`); the only state whose layer
-    /// is `Underground`.
-    Digging,
-    /// 5: rising back to the surface (`0x7298F0`).
-    PreDigOut,
-    /// 6: the dig-out timer (`0x729AA0`).
-    DiggingOut,
-    /// 7: settled, waiting for the last timer to expire (`0x729480`).
-    DugOut,
-}
 
 /// `MapClass::Get_Ground_Height 0x578080(&coord)` in leptons, as
 /// `ProcessPreDigOut 0x7298F0` reads it on every frame (`0x72991D`). `None` is
@@ -80,38 +60,12 @@ pub enum TunnelState {
 /// falls back to [`TunnelRuntime::ground_z`].
 pub(crate) type GroundQuery<'a> = &'a dyn Fn(DriveCoord) -> Option<i32>;
 
-/// The class-local state carried in
-/// [`LocomotorRuntimePayload::Tunnel`](super::locomotion::piggyback::LocomotorRuntimePayload).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
-pub struct TunnelRuntime {
-    state: TunnelState,
-    /// `DigTimer.start` (`+0x28`): the frame the current timer began.
-    timer_start: u32,
-    /// `DigTimer.duration` (`+0x34`).
-    timer_duration: u32,
-    /// The height the unit stood at when the dig-in timer completed, in
-    /// leptons. Native keeps no such sample — `ProcessDugIn` sinks to the
-    /// absolute `0xFFFFFF00` plane and `ProcessPreDigOut` re-reads `0x578080` —
-    /// so this is only the terrain-free fallback for a caller without a map,
-    /// plus the hash fold's record of that sample.
-    #[serde(default)]
-    ground_z: i32,
-}
 
 impl TunnelRuntime {
-    /// The class constructor (`0x728A00`) leaves `State` at zero.
-    pub(crate) fn constructed() -> Self {
-        Self::default()
-    }
-
-    pub fn state(&self) -> TunnelState {
-        self.state
-    }
-
     /// `DigTimer.start` and `DigTimer.duration`. `Z_Adjust 0x729EDA` divides the
     /// elapsed count by the total to get its interpolation fraction.
     pub fn dig_timer(&self) -> (u32, u32) {
-        (self.timer_start, self.timer_duration)
+        (self.dig_timer_pair().0, self.dig_timer_pair().1)
     }
 
     /// Fixture seam for the presentation tests, which need one specific state
@@ -119,8 +73,7 @@ impl TunnelRuntime {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_state_and_timer_for_test(&mut self, state: TunnelState, start: u32, duration: u32) {
         self.state = state;
-        self.timer_start = start;
-        self.timer_duration = duration;
+        self.set_dig_timer_pair(start, duration);
     }
 
     /// `In_Which_Layer 0x72A1A0`: `state == 4` is the only underground state.
@@ -132,53 +85,10 @@ impl TunnelRuntime {
         }
     }
 
-    /// `Is_To_Have_Shadow 0x72A060`: no shadow while sunk, traveling or rising.
-    pub(crate) fn has_shadow(&self) -> bool {
-        !matches!(
-            self.state,
-            TunnelState::DugIn | TunnelState::Digging | TunnelState::PreDigOut
-        )
-    }
-
-    /// `Is_Moving 0x728A50`.
-    pub(crate) fn is_moving(&self) -> bool {
-        self.state != TunnelState::Idle
-    }
-
-    /// `Is_Surfacing 0x72A1E0`.
-    pub(crate) fn is_surfacing(&self) -> bool {
-        matches!(self.state, TunnelState::PreDigOut | TunnelState::DiggingOut)
-    }
-
-    /// `Is_Moving_Now 0x728A60`: only `PreDigIn` answers true.
-    pub(crate) fn is_moving_now(&self) -> bool {
-        self.state == TunnelState::PreDigIn
-    }
-
     /// `Can_Fire 0x72A1C0`: the base answer first, then a non-idle state
     /// refuses with 7.
     pub(crate) fn refuses_fire(&self) -> bool {
         self.state != TunnelState::Idle
-    }
-
-    /// `Stop_Moving 0x728C00`'s jump table `0x728E08`, indexed by `State - 1`:
-    ///
-    /// | state | target | result |
-    /// |-------|--------|--------|
-    /// | 1 `PreDigIn` | `0x728DE0` | unchanged; the null coordinate written there makes the next `ProcessPreDigIn` leave it at `Idle` |
-    /// | 2 `DiggingIn` | `0x728DD9` | `DugOut` (7): the timer never finished, so nothing sank |
-    /// | 3 `DugIn` | `0x728DD0` | `PreDigOut` (5): rise from the Z reached so far |
-    /// | 4 `Digging` | `0x728C1E` | `PreDigOut`: surface where the unit stands |
-    /// | 5/6/7 | `0x728DE0` | unchanged; surfacing continues |
-    ///
-    /// Every target also stores the null coordinate over `+0x18`; VERA's stored
-    /// destination is the NavCom cell, which the same stop clears.
-    pub(crate) fn stop_moving(&mut self) {
-        self.state = match self.state {
-            TunnelState::DiggingIn => TunnelState::DugOut,
-            TunnelState::DugIn | TunnelState::Digging => TunnelState::PreDigOut,
-            state => state,
-        };
     }
 
     /// `Move_To 0x728AF0`'s tail: a destination arms `PreDigIn`, and an
@@ -339,8 +249,7 @@ impl TunnelRuntime {
         if distance <= ARRIVAL_DISTANCE {
             position.put_location(destination);
             self.state = TunnelState::PreDigOut;
-            self.timer_start = 0;
-            self.timer_duration = 0;
+            self.set_dig_timer_pair(0, 0);
             return true;
         }
         let step = TUNNEL_SPEED_LEPTONS;
@@ -403,25 +312,13 @@ impl TunnelRuntime {
     }
 
     fn start_timer(&mut self, duration: u32, frame: u32) {
-        self.timer_start = frame;
-        self.timer_duration = duration;
-    }
-
-    /// The defined fields the world hash folds: `State`, `DigTimer.start` and
-    /// `DigTimer.duration`.
-    pub(crate) fn hash_fields(&self) -> (u8, u32, u32, i32) {
-        (
-            self.state as u8,
-            self.timer_start,
-            self.timer_duration,
-            self.ground_z,
-        )
+        self.set_dig_timer_pair(frame, duration);
     }
 
     /// `RateTimer` completion as `ProcessDiggingIn` reads it: the elapsed
     /// fraction reaches the `1.0` constant at `0x7E1718`.
     fn timer_elapsed(&self, frame: u32) -> bool {
-        frame.saturating_sub(self.timer_start) >= self.timer_duration
+        frame.saturating_sub(self.dig_timer_pair().0) >= self.dig_timer_pair().1
     }
 }
 

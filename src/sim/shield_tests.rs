@@ -1522,7 +1522,7 @@ fn a_cloaking_shield_detaches_its_idle_anim_per_type_flag() {
     let cloak = |sim: &mut Simulation| {
         let mut runtime = crate::sim::cloak_disguise::CloakRuntime::new(0);
         runtime.establish_unlimbo_fully_cloaked();
-        sim.substrate.entities.get_mut(1).unwrap().cloak = Some(runtime);
+        sim.substrate.entities.get_mut(1).unwrap().cloak = Some(Box::new(runtime));
     };
     let rules = idle_rules("IdleAnim=IDLE", "");
     let (mut sim, _) = scene(&rules);

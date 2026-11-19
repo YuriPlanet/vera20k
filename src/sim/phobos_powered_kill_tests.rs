@@ -54,7 +54,7 @@ fn fall_offline(sim: &mut Simulation, building: u64) {
         .entities
         .get_mut(building)
         .expect("building")
-        .building_last_operational
+        .building.building_last_operational
         .set_for_test(true);
 }
 
@@ -73,7 +73,7 @@ fn stay_powered(sim: &mut Simulation, building: u64) {
         .entities
         .get_mut(building)
         .expect("building")
-        .building_last_operational
+        .building.building_last_operational
         .set_for_test(false);
 }
 
@@ -164,7 +164,7 @@ fn an_offline_building_kills_its_attacking_and_returning_children() {
         "ResetTarget precedes the node walk"
     );
     assert!(
-        !entity.building_last_operational.is_operational(),
+        !entity.building.building_last_operational.is_operational(),
         "43FBEF stores the offline sample after the hook"
     );
 }
@@ -205,7 +205,7 @@ fn the_key_and_the_offline_edge_are_both_required() {
             .entities
             .get(building)
             .expect("building")
-            .building_last_operational
+            .building.building_last_operational
             .is_operational(),
         "the online sample is stored"
     );

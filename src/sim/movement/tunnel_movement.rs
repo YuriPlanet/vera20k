@@ -120,7 +120,7 @@ impl DigEffects {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TunnelRuntime {
     /// `+0x18`.
-    state: TunnelState,
+    pub(crate) state: TunnelState,
     /// `+0x1C`. The zero coordinate is native's null (`0x00B0F910`).
     destination: DriveCoord,
     /// `+0x28`: start frame and duration (its `+0x2C` dword is a stale stack
@@ -130,6 +130,12 @@ pub struct TunnelRuntime {
     /// take the phase's progress as `(rate - left) / rate`; a zero rate is
     /// done.
     dig_timer_rate: i32,
+    /// The height sampled when the dig-in timer completed, in leptons. Native
+    /// keeps no sample (`ProcessDugIn` sinks to `0xFFFFFF00` and
+    /// `ProcessPreDigOut` re-reads `0x578080`), so this is only the
+    /// terrain-free fallback for a caller without a map.
+    #[serde(default)]
+    pub(crate) ground_z: i32,
 }
 
 impl TunnelRuntime {
@@ -141,11 +147,23 @@ impl TunnelRuntime {
             destination: NULL_COORD,
             dig_timer: CdTimer::started(binary_frame as i32, 0),
             dig_timer_rate: 0,
+            ground_z: 0,
         }
     }
 
     pub fn state(&self) -> TunnelState {
         self.state
+    }
+
+    /// The `DigTimer.start`/`DigTimer.duration` pair `Z_Adjust` reads.
+    pub(crate) fn dig_timer_pair(&self) -> (u32, u32) {
+        (self.dig_timer.start_frame().max(0) as u32, self.dig_timer_rate.max(0) as u32)
+    }
+
+    /// Rebuild the timer from a start frame and a duration.
+    pub(crate) fn set_dig_timer_pair(&mut self, start: u32, duration: u32) {
+        self.dig_timer = CdTimer::started(start as i32, duration as i32);
+        self.dig_timer_rate = duration as i32;
     }
 
     pub(crate) fn set_state(&mut self, state: TunnelState) {

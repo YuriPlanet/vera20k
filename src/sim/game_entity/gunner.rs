@@ -190,7 +190,7 @@ impl GameEntity {
 
     /// The saved `+0x2F8` charge denominator, for production-path tests.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) const fn charge_turret_delay_for_test(&self) -> i32 {
+    pub(crate) fn charge_turret_delay_for_test(&self) -> i32 {
         self.turret_selection.charge_turret_delay
     }
 }

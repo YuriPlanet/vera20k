@@ -327,6 +327,20 @@ pub(crate) fn build_shp_vehicle_sequences(
     set
 }
 
+/// Phobos `UnitTypeClass_ReadINI_TurretShape` (`0x747A2E`,
+/// `Ext/TechnoType/Hooks.cpp:142-168`): a non-voxel turreted UnitType whose
+/// `<image>TUR.SHP` exists draws its turret from that separate shape. The
+/// type gate, the `ArtImageSwap` name and the file test all live here, so
+/// the renderer and the animation catalog ask the same question.
+pub fn shp_vehicle_turret_shape_file(
+    rules: &RuleSet,
+    assets: &AssetManager,
+    type_id: &str,
+) -> Option<String> {
+    let file = rules.unit_turret_shp_file(type_id)?;
+    assets.get_shared(&file).map(|_| file)
+}
+
 #[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
@@ -459,7 +473,7 @@ mod tests {
         let ini = IniFile::from_str(&source);
         let mut native = UnitShpReadState::default();
         native.read_pass(ini.section_or_empty("IMAGE"), has_turret);
-        build_shp_vehicle_sequences(art, TEST_CADENCE, Some(&native), has_turret)
+        build_shp_vehicle_sequences(art, TEST_CADENCE, has_turret, Some(&native))
     }
 
     #[test]
@@ -747,7 +761,7 @@ mod turret_shape_tests {
         let set = turret_set(4, 8, false, true);
         let turret = set.shp_vehicle_turret().expect("turret layout");
         assert_eq!(turret.start_frame, 32);
-        assert_eq!(turret.frame_count, 8);
+        assert_eq!(turret.facings, 8);
         assert_eq!(turret.facings, 8);
         assert_eq!(turret.facing_multiplier, 1);
 
@@ -771,7 +785,7 @@ mod turret_shape_tests {
         let set = turret_set(4, 6, false, true);
         let turret = set.shp_vehicle_turret().expect("turret layout");
         assert_eq!(turret.start_frame, 24);
-        assert_eq!(turret.frame_count, 6);
+        assert_eq!(turret.facings, 6);
         assert_eq!(turret.facings, 6);
     }
 
@@ -811,7 +825,7 @@ mod turret_shape_tests {
             0
         );
         let body_frame =
-            crate::sim::animation::resolve_shp_vehicle_body_frame(&set, 0, 0, -1, true, false)
+            crate::sim::animation::resolve_shp_vehicle_body_frame(&set, 0, 0, -1, 0, true, false)
                 .expect("body image");
         assert!(
             body_frame < 40,

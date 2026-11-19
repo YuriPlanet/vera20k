@@ -851,6 +851,12 @@ pub(crate) mod tests {
         RuleSet::from_ini(&ini).expect("rules")
     }
 
+    /// The crate registry shared by the crate tests: every overlay slot with
+    /// its own name, so a crate overlay resolves by index.
+    pub(crate) fn crate_registry() -> OverlayTypeRegistry {
+        crate_registry_with_raw_b2()
+    }
+
     fn crate_registry_with_raw_b2() -> OverlayTypeRegistry {
         let mut ini_text = String::from("[OverlayTypes]\n");
         for index in 0..=0xB2u16 {

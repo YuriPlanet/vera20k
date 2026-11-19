@@ -585,6 +585,7 @@ mod tests {
             IVec3::ZERO,
             rules.particle_type(kind),
             &mut sim,
+            &rules,
         );
         let system = sim.substrate.particle_systems.get_mut(host).unwrap();
         system.done_spawning = true;
@@ -645,15 +646,6 @@ mod tests {
                         &rules,
                     )
                     .unwrap();
-                let kind = rules.p_type_id_by_name("CLOUD").unwrap();
-                let cloud = Particle::new(
-                    kind,
-                    IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
-                    IVec3::ZERO,
-                    rules.particle_type(kind),
-                    &mut sim,
-                    &rules,
-                );
                 sim.substrate
                     .particle_systems
                     .get_mut(host)
@@ -671,6 +663,7 @@ mod tests {
                         IVec3::ZERO,
                         rules.particle_type(kind),
                         &mut sim,
+                        &rules,
                     );
                     sim.substrate
                         .particle_systems

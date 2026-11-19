@@ -57,8 +57,6 @@ mod detonate;
 #[cfg(all(test, feature = "phobos"))]
 mod detonate_tests;
 pub(crate) mod drop_pod;
-#[cfg(all(test, feature = "phobos"))]mod drop_pod_phobos_tests;
-#[cfg(test)]pub(crate) mod drop_pod;
 #[cfg(all(test, tests_sim_superweapon))]
 mod drop_pod_tests;
 mod emp_pulse;

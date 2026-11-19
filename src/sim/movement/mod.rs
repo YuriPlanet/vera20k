@@ -120,6 +120,7 @@ pub(crate) use track_path::SetterForceReassign;
 pub mod track_process;
 pub mod tunnel_movement;
 pub use tunnel_movement::{TunnelRuntime, TunnelState};
+mod tunnel_locomotion;
 mod tunnel_process;
 #[cfg(all(test, tests_sim_movement))]
 mod tunnel_tests;

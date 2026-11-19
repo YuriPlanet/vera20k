@@ -1856,17 +1856,10 @@ fn ares_air_rate_alone_steps_an_airborne_foot() {
 #[test]
 fn shp_vehicle_turret_frame_switches_between_the_turret_shape_and_the_body_slice() {
     let mut set = SequenceSet::new();
-    set.set_shp_vehicle_turret(SequenceDef {
-        start_frame: 96,
-        frame_count: 8,
-        facings: 8,
-        facing_multiplier: 1,
-        frame_delay: 1,
-        normalized: false,
-        completion_facing: None,
-        loop_mode: LoopMode::Loop,
-        facing_slots: FacingSlots::VehicleOctant,
-    });
+        set.set_shp_vehicle_turret(ShpVehicleTurret {
+            start_frame: 96,
+            facings: 8,
+        });
     let body_slot = super::vehicle_facing_slot(0);
     assert_eq!(
         resolve_shp_vehicle_turret_frame(&set, 0, false),
@@ -1885,17 +1878,10 @@ fn shp_vehicle_turret_frame_switches_between_the_turret_shape_and_the_body_slice
         Some(96 + east)
     );
     let mut without = SequenceSet::new();
-    without.set_shp_vehicle_turret(SequenceDef {
-        start_frame: 0,
-        frame_count: 0,
-        facings: 8,
-        facing_multiplier: 1,
-        frame_delay: 1,
-        normalized: false,
-        completion_facing: None,
-        loop_mode: LoopMode::Loop,
-        facing_slots: FacingSlots::VehicleOctant,
-    });
+        set.set_shp_vehicle_turret(ShpVehicleTurret {
+            start_frame: 0,
+            facings: 8,
+        });
     assert_eq!(
         resolve_shp_vehicle_turret_frame(&without, 0, true),
         None,
@@ -1904,17 +1890,10 @@ fn shp_vehicle_turret_frame_switches_between_the_turret_shape_and_the_body_slice
     // A non-octant body keeps one image per body facing; the facing selects
     // no sub-slot, so the turret shape still starts at its frame-0 block.
     let mut six = SequenceSet::new();
-    six.set_shp_vehicle_turret(SequenceDef {
-        start_frame: 24,
-        frame_count: 6,
-        facings: 6,
-        facing_multiplier: 1,
-        frame_delay: 1,
-        normalized: false,
-        completion_facing: None,
-        loop_mode: LoopMode::Loop,
-        facing_slots: FacingSlots::VehicleOctant,
-    });
+        set.set_shp_vehicle_turret(ShpVehicleTurret {
+            start_frame: 24,
+            facings: 6,
+        });
     assert_eq!(resolve_shp_vehicle_turret_frame(&six, 64, true), Some(0));
     assert_eq!(resolve_shp_vehicle_turret_frame(&six, 64, false), Some(24));
 }

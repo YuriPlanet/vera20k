@@ -50,20 +50,7 @@ mod native_fixture;
 mod native_identity_tests;
 #[cfg(test)]
 mod railgun_native_tests;
-#[cfg(test)]
-#[cfg(all(test, tests_sim_p_s))]
-mod ares_gas_tests;
-#[cfg(all(test, tests_sim_p_s))]
-mod fire_native_tests;
-#[cfg(all(test, tests_sim_p_s))]
-mod gas_native_tests;
-#[cfg(all(test, tests_sim_p_s))]
-mod native_fixture;
-#[cfg(all(test, tests_sim_p_s))]
-mod native_identity_tests;
 // Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
-#[cfg(all(test, tests_sim_p_s))]
-mod railgun_native_tests;
 #[cfg(all(test, tests_sim_p_s))]
 mod virus_tests;
 
@@ -1257,6 +1244,7 @@ mod tests {
             IVec3::ZERO,
             rules.particle_type(ParticleTypeId(0)),
             &mut sim,
+            &rules,
         );
         assert_eq!(particle.lifetime_remaining(), 0);
         assert_eq!(sim.scenario_rng.logical_state(), rng_before);
@@ -1279,6 +1267,7 @@ mod tests {
             IVec3::ZERO,
             rules.particle_type(ParticleTypeId(0)),
             &mut sim,
+            &rules,
         );
         sim.scenario_rng = crate::sim::rng::SimRng::with_next_draws_for_test(&[0, 0, 0x8000_0000]);
         sim.session.set_binary_frame_for_test(0);

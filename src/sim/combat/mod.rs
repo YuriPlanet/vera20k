@@ -198,9 +198,6 @@ mod infantry_flh_tests;
 mod laser_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod laser_tracking_tests;
-#[cfg(test)]
-#[cfg(all(test, tests_sim_combat_d_z))]
-mod laser_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod mirage_disguise_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]

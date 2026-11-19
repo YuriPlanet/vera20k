@@ -66,9 +66,6 @@ fn read_burst_rows(
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
-#[path = "weapon_offsets_tests.rs"]
-mod tests;
 
 /// One `ParseBurstFLHs` key set: the normal and elite rows of one firing
 /// offset family.

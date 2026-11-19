@@ -41,7 +41,10 @@ impl VoxelPart {
     /// the match's `AssetManager`.
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_parts(vxl: VxlFile, hva: Option<HvaFile>) -> Self {
-        Self { vxl, hva }
+        Self {
+            vxl: Arc::new(vxl),
+            hva: hva.map(Arc::new),
+        }
     }
 
     pub fn hva(&self) -> Option<&HvaFile> {
