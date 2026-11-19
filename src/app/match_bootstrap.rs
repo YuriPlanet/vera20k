@@ -4,7 +4,9 @@
 //! sessions, reads the ordinary Windows seed once, and observes an already
 //! initialized `Simulation` without mutating it.
 
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::campaign_carry_over::CampaignCarryOver;
+use crate::sim::scenario_session::ExecutionTopology;
 use crate::sim::world::{Simulation, SimulationRngState};
 use crate::skirmish_launch::{LaunchStartPosition, SKIRMISH_AI_SLOT_COUNT, SkirmishLaunchSession};
 
@@ -538,7 +540,34 @@ pub enum LoadingStartup {
     },
 }
 
+/// The credential-free rule and execution choices for an admitted startup.
+/// The startup keeps ownership of map, seed, room state and transport.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct MatchSpec {
+    topology: ExecutionTopology,
+    rules: RulePolicy,
+}
+
+impl MatchSpec {
+    pub(crate) const fn topology(self) -> ExecutionTopology {
+        self.topology
+    }
+
+    pub(crate) const fn rules(self) -> RulePolicy {
+        self.rules
+    }
+}
+
 impl LoadingStartup {
+    pub(crate) fn match_spec(&self) -> MatchSpec {
+        let mode = self.session_mode();
+        let class = self.launch_session().map(|launch| launch.mode.class);
+        MatchSpec {
+            topology: mode.execution_topology(),
+            rules: mode.stock_rule_policy(class),
+        }
+    }
+
     /// The match seed of a typed startup, which `ScenarioBootstrapRng::new`
     /// seeds the load's Scenario and Main streams with.
     pub(crate) fn match_seed(&self) -> Option<u32> {
@@ -1007,6 +1036,56 @@ mod tests {
     }
 
     #[test]
+    fn stock_startups_project_rules_independently_of_live_transport() {
+        use crate::app::match_runtime::session::{SessionMode, WolStartTerms};
+        use crate::rules::rule_policy::BootstrapRuleProfile;
+
+        let offline = LoadingStartup::Accepted(prepared(73)).match_spec();
+        assert_eq!(offline.topology(), ExecutionTopology::LocalOffline);
+        assert_eq!(
+            offline.rules().bootstrap(),
+            BootstrapRuleProfile::Multiplayer
+        );
+        assert!(!offline.rules().shared_allied_victory());
+
+        let mut session = explicit_session();
+        let replay = LoadingStartup::Replay {
+            session: session.clone(),
+            seed: MatchSeed {
+                value: 73,
+                source: MatchSeedSource::SavedScenario,
+                seed_authority_certifying: false,
+            },
+            game_mode: SessionMode::Wol,
+            native_id_prefix: 0,
+        };
+        assert_eq!(
+            replay.match_spec().topology(),
+            ExecutionTopology::LockstepNetwork
+        );
+        assert_eq!(replay.match_spec().rules(), offline.rules());
+
+        session.mode = SkirmishLaunchMode::stock(3).unwrap();
+        let network = LoadingStartup::Network(std::sync::Arc::new(PreparedNetworkStartup::new(
+            session,
+            73,
+            SessionMode::Lan,
+            true,
+            48,
+            WolStartTerms::default(),
+        )));
+        let co_op = network.match_spec();
+        assert_eq!(co_op.topology(), ExecutionTopology::LockstepNetwork);
+        assert_eq!(co_op.rules().bootstrap(), BootstrapRuleProfile::Multiplayer);
+        assert!(co_op.rules().shared_allied_victory());
+        assert!(co_op.rules().skips_network_score_dialog());
+
+        let spec = serde_json::to_value(co_op).unwrap();
+        assert_eq!(spec.as_object().unwrap().len(), 2);
+        assert_eq!(serde_json::from_value::<MatchSpec>(spec).unwrap(), co_op);
+    }
+
+    #[test]
     fn saved_campaign_keeps_later_map_identity_for_restart_and_victory() {
         let (campaigns, restored) = restored_campaign("SOV03UMD.MAP");
         let source = crate::map::source::LoadedMapSource::Mix {
@@ -1268,6 +1347,13 @@ mod tests {
         assert_eq!(restart.game_options().unwrap().game_speed, 4);
         assert_eq!(restart.scenario(), startup.scenario());
         assert_eq!(restart.campaign_index(), startup.campaign_index());
+        let campaign = LoadingStartup::Campaign(startup).match_spec();
+        assert_eq!(campaign.topology(), ExecutionTopology::LocalOffline);
+        assert_eq!(
+            campaign.rules().bootstrap(),
+            crate::rules::rule_policy::BootstrapRuleProfile::Campaign
+        );
+        assert!(!campaign.rules().shared_allied_victory());
     }
 
     #[test]

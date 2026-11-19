@@ -4009,11 +4009,15 @@ mod tests {
     #[test]
     fn exact_network_mode_timing_and_observer_identity_survive_snapshot() {
         use crate::sim::scenario_session::ScenarioGameMode;
-        for mode in [ScenarioGameMode::Lan, ScenarioGameMode::Wol] {
+        use crate::skirmish_modes::MpModeClass;
+        for (mode, class, cooperative) in [
+            (ScenarioGameMode::Lan, MpModeClass::Battle, false),
+            (ScenarioGameMode::Wol, MpModeClass::Cooperative, true),
+        ] {
             // Native Scenario load reseeds the RNG to zero. Isolate the
             // persisted session fields from that intentional load-time change.
             let mut sim = Simulation::with_seed(0);
-            let owner = sim.intern("Observer");
+            let owner = sim.intern(if cooperative { "Player" } else { "Observer" });
             sim.houses
                 .register(crate::sim::house_state::HouseState::new(
                     owner, 0, None, true, 0, 1,
@@ -4021,10 +4025,9 @@ mod tests {
             sim.session.set_current_house_for_test(Some(owner));
             sim.session.set_game_mode(mode);
             sim.session.install_network_timing(73);
-            sim.session.install_multiplayer_house_identity(
-                crate::skirmish_modes::MpModeClass::Battle,
-                vec![owner],
-            );
+            let observers = if cooperative { vec![] } else { vec![owner] };
+            sim.session
+                .install_multiplayer_house_identity(class, observers.clone());
             let mut header = crate::map::preview::ScenarioStartHeader::default();
             header.read_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[Header]\nNumCoopHumanStartSpots=2\n",
@@ -4034,15 +4037,59 @@ mod tests {
             let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
             restored.restore_after_snapshot_load().unwrap();
             assert_eq!(restored.session.game_mode(), mode);
+            assert!(restored.session.execution_topology().is_lockstep());
             assert_eq!(restored.session.start_header().coop_human_start_spots(), 2);
             assert_eq!(restored.session.network_max_ahead_frames(), Some(73));
-            assert_eq!(restored.session.observer_houses(), [owner]);
+            assert_eq!(restored.session.observer_houses(), observers.as_slice());
+            assert_eq!(restored.session.multiplayer_mode_class(), Some(class));
             assert_eq!(
-                restored.session.multiplayer_mode_class(),
-                Some(crate::skirmish_modes::MpModeClass::Battle)
+                restored.session.rule_policy().shared_allied_victory(),
+                cooperative,
+            );
+            assert_eq!(
+                restored.session.rule_policy().skips_network_score_dialog(),
+                cooperative,
             );
             assert_eq!(restored.state_hash(), sim.state_hash());
         }
+    }
+
+    #[test]
+    fn network_local_view_identity_round_trips_outside_shared_hash() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let mut sim = Simulation::with_seed(0);
+        let owner = sim.intern("SharedPlayer");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 1,
+            ));
+        sim.session.install_current_house(Some(owner));
+        sim.session.set_game_mode(ScenarioGameMode::Lan);
+        sim.session.install_network_timing(73);
+        sim.session
+            .install_network_command_timing(0, std::num::NonZeroU8::MIN, [0, 1]);
+        sim.session
+            .install_multiplayer_house_identity(crate::skirmish_modes::MpModeClass::Battle, vec![]);
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(0));
+        let shared_hash = sim.state_hash();
+
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(1));
+        sim.install_watcher();
+        assert!(sim.observe());
+        assert_eq!(sim.state_hash(), shared_hash);
+
+        let bytes = GameSnapshot::save(&sim, 0, 0, "network-local-view", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        let view = restored.session.local_view_identity();
+        assert_eq!(view.current_house, Some(owner));
+        assert_eq!(view.shared_house_source, Some(1));
+        assert!(view.watching);
+        assert!(view.observer_sidebar);
+        assert_eq!(restored.state_hash(), shared_hash);
     }
 
     #[test]

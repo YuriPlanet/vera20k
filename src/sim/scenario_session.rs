@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 use std::hash::Hash;
 
+use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
 use crate::sim::game_options::GameOptions;
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::intern::InternedId;
@@ -633,6 +634,20 @@ impl Default for ScenarioLightingState {
     }
 }
 
+/// The scenario's execution semantics. Replaying a LAN/WOL game preserves
+/// its lockstep semantics without requiring live transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ExecutionTopology {
+    LocalOffline,
+    LockstepNetwork,
+}
+
+impl ExecutionTopology {
+    pub const fn is_lockstep(self) -> bool {
+        matches!(self, Self::LockstepNetwork)
+    }
+}
+
 /// SessionClass GameMode A8B238. The exact active mode survives startup and
 /// save/restore; zero/nonzero tests are projections of this single value.
 #[derive(
@@ -670,7 +685,34 @@ impl ScenarioGameMode {
         matches!(self, Self::Campaign | Self::Skirmish)
     }
     pub const fn is_network(self) -> bool {
-        matches!(self, Self::Lan | Self::Wol)
+        self.execution_topology().is_lockstep()
+    }
+    pub const fn execution_topology(self) -> ExecutionTopology {
+        match self {
+            Self::Lan | Self::Wol => ExecutionTopology::LockstepNetwork,
+            Self::Campaign | Self::Skirmish | Self::Other => ExecutionTopology::LocalOffline,
+        }
+    }
+    pub const fn stock_rule_policy(
+        self,
+        class: Option<crate::skirmish_modes::MpModeClass>,
+    ) -> RulePolicy {
+        let bootstrap = if self.is_nonzero() {
+            BootstrapRuleProfile::Multiplayer
+        } else {
+            BootstrapRuleProfile::Campaign
+        };
+        match class {
+            Some(class) => {
+                let policy = class.policy();
+                RulePolicy::new(
+                    bootstrap,
+                    policy.shared_allied_victory,
+                    policy.skips_network_score_dialog,
+                )
+            }
+            None => RulePolicy::new(bootstrap, false, false),
+        }
     }
     pub const fn is_nonzero(self) -> bool {
         !matches!(self, Self::Campaign)
@@ -1035,6 +1077,16 @@ pub struct ScenarioSession {
     binary_frame: u32,
 }
 
+/// Process-local identity projected from the session's existing save fields.
+/// Scenario rules may read the native current House for local effects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LocalViewIdentity {
+    pub(crate) current_house: Option<InternedId>,
+    pub(crate) shared_house_source: Option<i8>,
+    pub(crate) watching: bool,
+    pub(crate) observer_sidebar: bool,
+}
+
 impl ScenarioSession {
     // ---- Reads -----------------------------------------------------------
 
@@ -1346,6 +1398,21 @@ impl ScenarioSession {
     pub const fn game_mode(&self) -> ScenarioGameMode {
         self.game_mode
     }
+    pub const fn execution_topology(&self) -> ExecutionTopology {
+        self.game_mode.execution_topology()
+    }
+    pub const fn rule_policy(&self) -> RulePolicy {
+        self.game_mode
+            .stock_rule_policy(self.multiplayer_mode_class)
+    }
+    pub(crate) const fn local_view_identity(&self) -> LocalViewIdentity {
+        LocalViewIdentity {
+            current_house: self.current_house,
+            shared_house_source: self.local_shared_house_source,
+            watching: self.watcher,
+            observer_sidebar: self.watcher_observes,
+        }
+    }
     pub const fn game_mode_nonzero(&self) -> bool {
         self.game_mode.is_nonzero()
     }
@@ -1471,7 +1538,7 @@ impl ScenarioSession {
 
     /// VERA watching: this process watches the match and sends nothing.
     pub fn watcher(&self) -> bool {
-        self.watcher
+        self.local_view_identity().watching
     }
 
     pub(crate) fn install_watcher(&mut self) {
@@ -1480,7 +1547,7 @@ impl ScenarioSession {
 
     /// VERA watching: the watcher shows the observer's sidebar.
     pub fn watcher_observes(&self) -> bool {
-        self.watcher_observes
+        self.local_view_identity().observer_sidebar
     }
 
     /// The watcher's Tab moves between a player's sidebar and the observer's.

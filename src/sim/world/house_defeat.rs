@@ -674,12 +674,9 @@ impl Simulation {
         // 0x004FC5DD/5EC: both class virtuals return true only for Cooperative
         // (0x005C4EE0/0x005C4EF0); ordinary 0x005C0E40 returns false. 0x004FC62C's
         // final human scan intentionally does not filter passive Houses. VERA
-        // gates shared allied victory via ModePolicy::shared_allied_victory.
-        let cooperative_shared_win = self.session.game_mode().is_network()
-            && self
-                .session
-                .multiplayer_mode_class()
-                .is_some_and(|class| class.policy().shared_allied_victory)
+        // projects the factory's shared victory rule through the session.
+        let cooperative_shared_win = self.session.execution_topology().is_lockstep()
+            && self.session.rule_policy().shared_allied_victory()
             && (all_allied || alive.len() == 1)
             && self
                 .houses

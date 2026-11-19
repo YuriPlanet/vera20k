@@ -1071,7 +1071,7 @@ fn ordinary_country_loading_index(
     // A replay of a network game has the same cold Rules boundary as a live
     // match. An ordinary Country prefix would transfer the old world's writes
     // into that rebuilt registry after the initial map load.
-    if startup.session_mode().is_network()
+    if startup.match_spec().topology().is_lockstep()
         || matches!(
             startup,
             LoadingStartup::Campaign(_) | LoadingStartup::Generic { .. }
