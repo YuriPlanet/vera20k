@@ -2266,10 +2266,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
             }
         }
-        #[cfg(feature = "verax")]
-        HotkeyCommand::AutoLoad => crate::app::input::autoload::hotkey_pressed(state),
-        #[cfg(not(feature = "verax"))]
-        HotkeyCommand::AutoLoad => {}
+        HotkeyCommand::AutoLoad => crate::app::input::smart_command::hotkey_pressed(state),
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
         HotkeyCommand::PerformanceStats
