@@ -68,13 +68,27 @@ pub(crate) fn main_menu_layout(state: &AppState) -> MainMenuShellLayout {
     }
 }
 
-/// Count-rule message boxes over the front-end shell use the same mapping for
-/// their art, labels and controller hit rectangles as the page beneath them.
+/// Front-end message boxes, including VERA's Esc menu, share their rendered
+/// button geometry with the pointer feed.
 pub(crate) fn shell_message_box_layout(
     state: &AppState,
     kind: crate::ui::shell::modal::ModalKind,
 ) -> crate::ui::shell::modal::MessageBoxLayout {
-    message_box_layout_for_screen(kind, shell_screen_size(state))
+    let size = shell_screen_size(state);
+    if kind == crate::ui::shell::modal::ModalKind::ThreeButton
+        && state
+            .frontend
+            .shell_message_box
+            .as_ref()
+            .is_some_and(|dialog| dialog.menu_settings().is_some())
+    {
+        return crate::ui::shell::modal::esc_menu_box_layout_on(
+            size.0 as i32,
+            size.1 as i32,
+            shell_scale_for_screen(size),
+        );
+    }
+    message_box_layout_for_screen(kind, size)
 }
 
 fn message_box_layout_for_screen(

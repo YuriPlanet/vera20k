@@ -1053,6 +1053,17 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
                 }),
         );
     }
+    let menu = message_box
+        .menu_settings()
+        .map(|settings| (settings, shell_layout::shell_menu_settings_layout(state)));
+    if let Some((settings, controls)) = &menu
+        && let Some(list) = settings.shell_popup(controls)
+    {
+        // The shell draws all text after its sprites, including the list's backing.
+        labels.retain(|label| {
+            !super::skirmish_shell_render::text_covered_by_overlay(label.rect, &[list.rect])
+        });
+    }
     let mut draw = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         background,
@@ -1063,12 +1074,12 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         layout.scale,
         EXIT_CONFIRM_MODAL_DEPTHS,
     );
-    if let Some(settings) = message_box.menu_settings() {
+    if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
             &mut draw,
             &state.renderer.bit_font,
             atlas,
-            &shell_layout::shell_menu_settings_layout(state),
+            &controls,
             settings,
         );
     }

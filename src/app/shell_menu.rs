@@ -164,8 +164,12 @@ impl App {
         if language {
             let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
             let labels = ShellMessageBoxLabels::shell_menu(&csf);
+            let option_labels = Self::launcher_options_labels(state);
             if let Some(message_box) = state.frontend.shell_message_box.as_mut() {
                 message_box.labels = labels;
+                if let Some(settings) = message_box.menu_settings_mut() {
+                    settings.set_labels(option_labels);
+                }
             }
             crate::app::persistence::options::persist_options_profile(state);
         }

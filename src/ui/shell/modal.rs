@@ -258,6 +258,23 @@ pub struct MessageBoxLayout {
     pub scale: geom::ShellScale,
 }
 
+impl MessageBoxLayout {
+    fn scaled(self, scale: geom::ShellScale) -> Self {
+        if scale.is_retail() {
+            return self;
+        }
+        let rect = |r| scale.scale_rect(r);
+        Self {
+            dialog: rect(self.dialog),
+            body: rect(self.body),
+            ok: rect(self.ok),
+            cancel: self.cancel.map(rect),
+            third: self.third.map(rect),
+            scale,
+        }
+    }
+}
+
 pub fn message_box_layout(kind: ModalKind, screen_w: i32, screen_h: i32) -> MessageBoxLayout {
     message_box_layout_in(kind, menu_popup_area(screen_w, screen_h))
 }
@@ -291,18 +308,7 @@ pub fn message_box_layout_on(
     screen_h: i32,
     scale: geom::ShellScale,
 ) -> MessageBoxLayout {
-    let base = message_box_base(kind, screen_w, screen_h, scale);
-    if scale.is_retail() {
-        return base;
-    }
-    MessageBoxLayout {
-        dialog: scale.scale_rect(base.dialog),
-        body: scale.scale_rect(base.body),
-        ok: scale.scale_rect(base.ok),
-        cancel: base.cancel.map(|rect| scale.scale_rect(rect)),
-        third: base.third.map(|rect| scale.scale_rect(rect)),
-        scale,
-    }
+    message_box_base(kind, screen_w, screen_h, scale).scaled(scale)
 }
 
 /// The box in the coordinates [`message_box_layout_on`] maps it from.
@@ -317,6 +323,25 @@ pub fn message_box_base(
     } else {
         message_box_layout(kind, geom::SHELL_BASE_W, geom::SHELL_BASE_H)
     }
+}
+
+/// VERA's front-end Esc menu places Options, Exit Game and Cancel in a
+/// footer, keeping the three-button template's button size and results.
+pub(crate) fn esc_menu_box_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> MessageBoxLayout {
+    let mut layout = message_box_base(ModalKind::ThreeButton, screen_w, screen_h, scale);
+    let dialog = layout.dialog;
+    let button = layout.ok;
+    let inset = 24;
+    let y = dialog.y + dialog.h - inset - button.h;
+    let at = |x| RectPx::new(dialog.x + x, y, button.w, button.h);
+    layout.ok = at(inset);
+    layout.third = Some(at((dialog.w - button.w) / 2));
+    layout.cancel = Some(at(dialog.w - inset - button.w));
+    layout.scaled(scale)
 }
 
 pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
@@ -1094,6 +1119,32 @@ mod tests {
         // DLU x=207, as in the 0x120 template and the retail capture.
         assert!(l.ok.y < l.cancel.y);
         assert_eq!(l.ok.x, l.cancel.x);
+    }
+
+    #[test]
+    fn esc_menu_actions_share_a_balanced_footer() {
+        for (w, h) in [(640, 480), (1024, 800)] {
+            let scale = geom::ShellScale::for_window(w, h);
+            let layout = esc_menu_box_layout_on(w, h, scale);
+            let panel = scale.base_rect(layout.dialog);
+            let [options, exit, cancel] =
+                [layout.ok, layout.third.unwrap(), layout.cancel.unwrap()]
+                    .map(|r| scale.base_rect(r));
+            let native = message_box_base(ModalKind::ThreeButton, w, h, scale).ok;
+            for button in [options, exit, cancel] {
+                assert_eq!(
+                    (button.y, button.w, button.h),
+                    (options.y, native.w, native.h)
+                );
+            }
+            let left_gap = exit.x - (options.x + options.w);
+            let right_gap = cancel.x - (exit.x + exit.w);
+            assert!(left_gap > 0 && (left_gap - right_gap).abs() <= 1);
+            let inset = options.x - panel.x;
+            assert!(inset > 0);
+            assert_eq!(panel.x + panel.w - (cancel.x + cancel.w), inset);
+            assert_eq!(panel.y + panel.h - (options.y + options.h), inset);
+        }
     }
 
     #[test]

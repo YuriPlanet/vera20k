@@ -215,13 +215,10 @@ pub(super) fn build_text(
         }
     }
     for &(id, rect) in &layout.checkboxes {
-        // The box's icon column keeps its authored 26-pixel reserve.
-        let text = scale.derive_rect(rect, |rect| {
-            RectPx::new(rect.x + 26, rect.y, rect.w - 26, rect.h)
-        });
+        let text = crate::ui::skirmish_shell::checkbox_text_rect(rect, scale);
         out.push(text_draw(
             font,
-            &dialog.shell_checkbox_label(id),
+            &dialog.shell_checkbox_face_text(layout, id),
             text,
             ShellAlign::V_CENTER,
             SHELL_LABEL_TEXT_RGB,
@@ -391,6 +388,12 @@ fn without_text_under(layout: &LauncherOptionsLayout, list: RectPx) -> LauncherO
         .retain(|(rect, _)| !text_covered_by_overlay(*rect, &[list]));
     shown
         .buttons
+        .retain(|(_, rect)| !text_covered_by_overlay(*rect, &[list]));
+    shown
+        .checkboxes
+        .retain(|(_, rect)| !text_covered_by_overlay(*rect, &[list]));
+    shown
+        .combos
         .retain(|(_, rect)| !text_covered_by_overlay(*rect, &[list]));
     shown
 }
@@ -685,27 +688,30 @@ pub(crate) fn render_launcher_options(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::{LauncherOptionsLayout, without_text_under, zoom_label};
-    use crate::ui::main_menu_dialogs::options::shell::PageLabel;
-    use crate::ui::main_menu_dialogs::options::{HAS_SET_WINDOW_SIZE, LauncherComboId, Zoom};
-    use crate::ui::shell::geom::{RectPx, ShellScale};
+    use crate::ui::main_menu_dialogs::options::{LauncherComboId, OptionsDialogState, Zoom};
+    use crate::ui::shell::geom::ShellScale;
 
-    /// The Language list opens over the Set Window Size row, whose text is
-    /// drawn after the list's backing: it has to go, and the caption above
-    /// the list stays.
+    /// The open list covers the values in its column. The four setting
+    /// names to its left stay readable.
     #[test]
     fn an_open_list_hides_the_esc_menu_text_it_covers() {
-        if !HAS_SET_WINDOW_SIZE {
-            return;
-        }
         let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL);
-        let face = layout.combo_rect(LauncherComboId::Language).unwrap();
-        let list = RectPx::new(face.x, face.y + face.h, face.w, 160);
-        let shown = without_text_under(&layout, list);
-        assert!(shown.buttons.is_empty());
-        assert_eq!(
-            shown.labels.iter().map(|(_, id)| *id).collect::<Vec<_>>(),
-            [PageLabel::List(LauncherComboId::Language)]
+        let mut state = OptionsDialogState::default();
+        state.set_languages(
+            (0..11)
+                .map(|i| crate::i18n::LanguageChoice {
+                    tag: i.to_string(),
+                    name: i.to_string(),
+                })
+                .collect(),
+            "0".to_owned(),
         );
+        let face = layout.combo_rect(LauncherComboId::Language).unwrap();
+        state.shell_mouse_down(face.x + 2, face.y + 2, &layout);
+        let shown = without_text_under(&layout, state.shell_popup(&layout).unwrap().rect);
+        assert!(shown.buttons.is_empty());
+        assert!(shown.checkboxes.is_empty() && shown.combos.is_empty());
+        assert_eq!(shown.labels, layout.labels);
     }
 
     #[test]
