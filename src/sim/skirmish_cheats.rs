@@ -1,7 +1,6 @@
 //! VERA's one-shot commands for the local player in an offline skirmish.
 
 use crate::map::cell_index::square_ring_cells;
-use crate::rules::locomotor_type::{LocomotorKind, SpeedType};
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability};
@@ -84,12 +83,12 @@ impl Simulation {
                 Ok(CheatEffect::SpySat)
             }
             SkirmishCheat::Spawn { type_id, count } => {
-                self.spawn_skirmish_vehicles(owner, type_id, *count, rules)
+                self.spawn_skirmish_units(owner, type_id, *count, rules)
             }
         }
     }
 
-    fn spawn_skirmish_vehicles(
+    fn spawn_skirmish_units(
         &mut self,
         owner: InternedId,
         type_id: &str,
@@ -99,26 +98,11 @@ impl Simulation {
         if !(1..=MAX_SPAWN_COUNT).contains(&count) {
             return Err("VERA:CheatUsage");
         }
+        // A vehicle keeps its ID even if a mod also registers infantry under
+        // that name. Existing commands and replays resolved vehicles first.
         let object = rules
             .object_in_category(ObjectCategory::Vehicle, type_id)
-            .filter(|ty| {
-                !ty.naval
-                    && matches!(
-                        ty.locomotor,
-                        LocomotorKind::Drive
-                            | LocomotorKind::Hover
-                            | LocomotorKind::Teleport
-                            | LocomotorKind::Walk
-                            | LocomotorKind::Tunnel
-                    )
-                    && !matches!(
-                        ty.speed_type,
-                        SpeedType::Winged
-                            | SpeedType::Float
-                            | SpeedType::FloatBeach
-                            | SpeedType::Invalid
-                    )
-            })
+            .or_else(|| rules.task_force_member_object(type_id))
             .ok_or("VERA:CheatUnit")?;
         let (cx, cy) = self
             .houses
@@ -249,13 +233,13 @@ mod tests {
     }
 
     #[test]
-    fn spawn_keeps_the_vehicle_when_a_building_shares_its_rules_id() {
+    fn spawn_keeps_the_vehicle_when_other_classes_share_its_rules_id() {
         let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
         let mut scene = crate::headless_scenario::load(&retail, "Hills.mmx", 17).unwrap();
         let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-            "[VehicleTypes]\n0=DUAL\n[BuildingTypes]\n0=DUAL\n[DUAL]\nStrength=100\nSpeedType=Track\n",
+            "[VehicleTypes]\n0=DUAL\n[InfantryTypes]\n0=DUAL\n[BuildingTypes]\n0=DUAL\n[DUAL]\nStrength=100\nSpeedType=Track\n",
         )).unwrap();
         let sim = &mut scene.runtime.simulation;
         let command = SkirmishCheat::Spawn {
@@ -273,6 +257,77 @@ mod tests {
         assert!(sim.entities().values().any(|e| e.is_live_on_map()
             && sim.resolve(e.type_ref()) == "DUAL"
             && e.category() == crate::map::entities::EntityCategory::Unit));
+    }
+
+    #[test]
+    fn a_retail_skirmish_spawns_kirovs_aircraft_ships_and_infantry() {
+        use crate::map::entities::EntityCategory;
+        use crate::rules::terrain_rules::LandType;
+        let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut scene = crate::headless_scenario::load(&retail, "Pacific.mmx", 17).unwrap();
+        let sim = &mut scene.runtime.simulation;
+        let owner = sim.session.current_house().unwrap();
+        let before = sim
+            .entities()
+            .values()
+            .map(|e| e.stable_id())
+            .max()
+            .unwrap_or(0);
+        let units = [
+            ("ZEP", 100, EntityCategory::Unit),
+            ("ORCA", 1, EntityCategory::Aircraft),
+            ("SUB", 2, EntityCategory::Unit),
+            ("E1", 3, EntityCategory::Infantry),
+        ];
+        for (id, count, _) in units {
+            let command = SkirmishCheat::Spawn {
+                type_id: id.into(),
+                count,
+            };
+            assert_eq!(
+                sim.apply_skirmish_cheat(&command, &scene.runtime.resources.rules),
+                Ok(CheatEffect::Spawned {
+                    placed: count,
+                    requested: count,
+                    type_id: id.into()
+                }),
+                "{id}"
+            );
+        }
+        scene
+            .runtime
+            .advance_frame(
+                &[],
+                67,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::empty(),
+            )
+            .unwrap();
+        let sim = &scene.runtime.simulation;
+        let terrain = sim.resolved_terrain().unwrap();
+        for (id, count, category) in units {
+            let members = sim.entities().values().filter(|e| {
+                e.stable_id() > before
+                    && e.owner() == owner
+                    && e.is_live_on_map()
+                    && e.category() == category
+                    && sim.resolve(e.type_ref()) == id
+            });
+            let cells: std::collections::BTreeSet<_> = members
+                .map(|e| (e.position.rx(), e.position.ry()))
+                .collect();
+            assert_eq!(cells.len(), usize::from(count), "{id}");
+            if id == "SUB" {
+                assert!(
+                    cells
+                        .iter()
+                        .all(|&(x, y)| terrain.cell(x, y).unwrap().land_type
+                            == LandType::Water.as_index())
+                );
+            }
+        }
     }
 
     #[test]
