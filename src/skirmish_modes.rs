@@ -45,6 +45,8 @@ pub struct ModePolicy {
     /// (`0x00653918..0x00653938`). Cooperative (`0x007EE27C`) overrides base
     /// `0x005C0E30`/`0x005C0E40` (false) with `0x005C4EE0`/`0x005C4EF0` (true).
     pub restates_mission_for_diplomacy: bool,
+    /// At launch, pair human Houses with humans and AI Houses with AI.
+    pub allies_starting_houses_by_role: bool,
     /// Whether VERA's network room seats players into numbered teams when
     /// alliances are allowed outside clan rooms.
     pub room_teams: bool,
@@ -82,6 +84,7 @@ impl MpModeClass {
                 setup_player_limit: None,
                 permits_all_allied: false,
                 restates_mission_for_diplomacy: false,
+                allies_starting_houses_by_role: false,
                 room_teams: true,
                 shared_start_positions: true,
                 skips_network_score_dialog: false,
@@ -94,6 +97,7 @@ impl MpModeClass {
                 setup_player_limit: None,
                 permits_all_allied: false,
                 restates_mission_for_diplomacy: false,
+                allies_starting_houses_by_role: false,
                 room_teams: true,
                 shared_start_positions: true,
                 skips_network_score_dialog: false,
@@ -106,6 +110,7 @@ impl MpModeClass {
                 setup_player_limit: Some(2),
                 permits_all_allied: true,
                 restates_mission_for_diplomacy: true,
+                allies_starting_houses_by_role: true,
                 room_teams: false,
                 shared_start_positions: false,
                 skips_network_score_dialog: true,

@@ -189,12 +189,26 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
 /// FreeForAll's (`0x005C0E30`) answers false, like every other mode's.
 #[test]
 fn cooperative_computers_turn_paranoid_without_allies_allowed() {
+    use crate::sim::scenario_session::ScenarioGameMode;
     use crate::skirmish_modes::MpModeClass;
-    let mut rules = rules();
-    rules.general.allies_allowed = false;
-    for (mode, paranoid_runs) in [
-        (MpModeClass::Cooperative, true),
-        (MpModeClass::FreeForAll, false),
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_mode_rules_for_map(2, "Hills.mmx")
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    assert!(!rules.general.allies_allowed);
+    let mode = ScenarioGameMode::Skirmish;
+    let cooperative = MpModeClass::Cooperative;
+    let free_for_all = MpModeClass::FreeForAll;
+    let free_for_all_rules = mode.stock_rule_policy(Some(free_for_all));
+    for (class, policy, paranoid_runs) in [
+        (cooperative, mode.stock_rule_policy(Some(cooperative)), true),
+        (free_for_all, free_for_all_rules, false),
+        (
+            free_for_all,
+            free_for_all_rules.with_paranoid_ignores_allies_allowed(true),
+            true,
+        ),
     ] {
         let (mut sim, ids) = sim_with(
             &rules,
@@ -204,18 +218,17 @@ fn cooperative_computers_turn_paranoid_without_allies_allowed() {
                 ("Computer2", "Russians", false),
             ],
         );
-        sim.session
-            .install_multiplayer_house_identity(mode, Vec::new());
+        sim.install_session_admission(mode, Some(class), policy);
         paranoid(&mut sim, &rules);
         assert_eq!(
             allies(&sim, "Computer1") == set(&["Computer2"]),
             paranoid_runs,
-            "{mode:?}"
+            "{class:?} {policy:?}"
         );
         assert_eq!(
             !sim.houses[&ids[1]].grudge_scores().is_empty(),
             paranoid_runs,
-            "{mode:?}"
+            "{class:?} {policy:?}"
         );
     }
 }

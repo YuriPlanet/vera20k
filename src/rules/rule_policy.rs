@@ -94,6 +94,10 @@ impl RulePolicy {
     const DISSOLVE_UNFILLED_TEAMS: u32 = 1 << 8;
     const SHARED_ALLIED_VICTORY: u32 = 1 << 9;
     const SKIP_NETWORK_SCORE_DIALOG: u32 = 1 << 10;
+    const PARANOID_IGNORES_ALLIES_ALLOWED: u32 = 1 << 11;
+    const NETWORK_DIPLOMACY_BRIEFING: u32 = 1 << 12;
+    const STARTING_HOUSE_ROLE_ALLIANCES: u32 = 1 << 13;
+    const ARES_PSYCHIC_REVEAL_EXCLUSIONS: u32 = 1 << 14;
 
     pub const fn stock_campaign() -> Self {
         Self { flags: 0 }
@@ -237,6 +241,45 @@ impl RulePolicy {
 
     pub const fn with_skips_network_score_dialog(self, enabled: bool) -> Self {
         self.with_flag(Self::SKIP_NETWORK_SCORE_DIALOG, enabled)
+    }
+
+    /// `Computer_Paranoid @ 0x00501640` can pass the AlliesAllowed gate
+    /// when the stock mode's virtual at +4 returns true (0x00501659).
+    pub(crate) const fn paranoid_ignores_allies_allowed(self) -> bool {
+        self.has_flag(Self::PARANOID_IGNORES_ALLIES_ALLOWED)
+    }
+
+    pub const fn with_paranoid_ignores_allies_allowed(self, enabled: bool) -> Self {
+        self.with_flag(Self::PARANOID_IGNORES_ALLIES_ALLOWED, enabled)
+    }
+
+    /// The LAN/WOL sidebar request chooses the briefing when both mode
+    /// virtuals answer true (0x00653918..0x00653938).
+    pub const fn restates_mission_for_network_diplomacy(self) -> bool {
+        self.has_flag(Self::NETWORK_DIPLOMACY_BRIEFING)
+    }
+
+    pub const fn with_network_diplomacy_briefing(self, enabled: bool) -> Self {
+        self.with_flag(Self::NETWORK_DIPLOMACY_BRIEFING, enabled)
+    }
+
+    /// Add mutual alliances among starting Houses with matching human roles.
+    pub(crate) const fn allies_starting_houses_by_role(self) -> bool {
+        self.has_flag(Self::STARTING_HOUSE_ROLE_ALLIANCES)
+    }
+
+    pub const fn with_starting_house_role_alliances(self, enabled: bool) -> Self {
+        self.with_flag(Self::STARTING_HOUSE_ROLE_ALLIANCES, enabled)
+    }
+
+    /// Ares RevealHelper (0x100692D5..0x10069315 and 0x10069480)
+    /// excludes three map-relative cells in competitive LAN/WOL games.
+    pub(crate) const fn ares_psychic_reveal_exclusions(self) -> bool {
+        self.has_flag(Self::ARES_PSYCHIC_REVEAL_EXCLUSIONS)
+    }
+
+    pub const fn with_ares_psychic_reveal_exclusions(self, enabled: bool) -> Self {
+        self.with_flag(Self::ARES_PSYCHIC_REVEAL_EXCLUSIONS, enabled)
     }
 
     /// `HouseClass::Update @ 0x004F8440` checks the AllowWin count only

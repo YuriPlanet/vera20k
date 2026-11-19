@@ -13,10 +13,10 @@ use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::presentation::house_ui::HouseUiSources;
 use crate::app::{App, AppState};
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
-use crate::skirmish_modes::MpModeClass;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::diplomacy::{
     DIPLOMACY_ROWS, DiplomacyAlliesBox, DiplomacyButton, DiplomacyChatBox, DiplomacyControl,
@@ -49,16 +49,14 @@ pub(crate) enum RequestedState {
 pub(crate) fn requested_state(
     request: DiplomacyRequest,
     mode: SessionMode,
-    mode_class: Option<MpModeClass>,
+    rule_policy: RulePolicy,
 ) -> RequestedState {
     match request {
         DiplomacyRequest::Hotkey if mode.is_nonzero() => RequestedState::Diplomacy,
         DiplomacyRequest::Hotkey => RequestedState::Nothing,
         DiplomacyRequest::SidebarButton
             if !mode.is_nonzero()
-                || (mode.is_network()
-                    && mode_class
-                        .is_some_and(|class| class.policy().restates_mission_for_diplomacy)) =>
+                || (mode.is_network() && rule_policy.restates_mission_for_network_diplomacy()) =>
         {
             RequestedState::MissionBriefing
         }
@@ -68,12 +66,12 @@ pub(crate) fn requested_state(
 
 /// Write the requested state; `State_Machine` admits it on the way in.
 pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
-    let mode_class = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class());
-    match requested_state(request, state.match_state.session_mode(), mode_class) {
+    let mode = state.match_state.session_mode();
+    let rule_policy = state.match_state.sim_runtime.runtime().map_or_else(
+        || mode.stock_rule_policy(None),
+        |runtime| runtime.simulation.session().rule_policy(),
+    );
+    match requested_state(request, mode, rule_policy) {
         RequestedState::Nothing => {}
         RequestedState::Diplomacy => {
             App::enter_in_game_menu_state(state, InGameMenuState::Diplomacy);

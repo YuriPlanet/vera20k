@@ -1,32 +1,45 @@
 use super::*;
 use crate::rules::house_colors::{HouseColorIndex, house_text_rgb};
 use crate::sim::house_state::{HouseState, MatchStatistics};
+use crate::skirmish_modes::MpModeClass;
 
 /// Entry: the sidebar gadget 0x006538FE and Request_Diplomacy_Menu 0x006ABC40.
 #[test]
 fn entry_follows_the_native_gadget_and_tab_rules_per_mode() {
     use DiplomacyRequest::{Hotkey, SidebarButton};
     use RequestedState::{Diplomacy, MissionBriefing, Nothing};
+    let campaign = SessionMode::from_game_mode(0);
+    let offline = SessionMode::from_game_mode(5);
     let coop = Some(MpModeClass::Cooperative);
     let battle = Some(MpModeClass::Battle);
     for (request, mode, class, expected) in [
-        (SidebarButton, SessionMode::Campaign, None, MissionBriefing),
-        (Hotkey, SessionMode::Campaign, None, Nothing),
-        (SidebarButton, SessionMode::Skirmish, battle, Diplomacy),
-        (Hotkey, SessionMode::Skirmish, battle, Diplomacy),
+        (SidebarButton, campaign, None, MissionBriefing),
+        (Hotkey, campaign, None, Nothing),
+        (SidebarButton, offline, battle, Diplomacy),
+        (Hotkey, offline, battle, Diplomacy),
         (SidebarButton, SessionMode::Lan, battle, Diplomacy),
         (SidebarButton, SessionMode::Lan, coop, MissionBriefing),
         (SidebarButton, SessionMode::Wol, coop, MissionBriefing),
         // Tab writes 8 even in co-op; the gadget's co-op test is LAN/WOL only.
         (Hotkey, SessionMode::Lan, coop, Diplomacy),
-        (SidebarButton, SessionMode::Skirmish, coop, Diplomacy),
+        (SidebarButton, offline, coop, Diplomacy),
     ] {
         assert_eq!(
-            requested_state(request, mode, class),
+            requested_state(request, mode, mode.stock_rule_policy(class)),
             expected,
             "{request:?} in {mode:?} with {class:?}"
         );
     }
+
+    let lan = SessionMode::Lan;
+    let briefing = lan
+        .stock_rule_policy(battle)
+        .with_network_diplomacy_briefing(true);
+    assert_eq!(
+        requested_state(SidebarButton, lan, briefing),
+        MissionBriefing
+    );
+    assert_eq!(requested_state(Hotkey, lan, briefing), Diplomacy);
 }
 
 struct Fixture {

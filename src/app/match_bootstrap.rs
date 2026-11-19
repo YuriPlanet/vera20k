@@ -1052,7 +1052,10 @@ mod tests {
         assert!(crate::app::mod_additions::reach(&offline_startup));
         let offline = offline_startup.match_spec();
         assert_eq!(offline.topology(), ExecutionTopology::LocalOffline);
-        assert_eq!(offline.rules(), RulePolicy::stock_multiplayer());
+        assert_eq!(
+            offline.rules(),
+            RulePolicy::stock_multiplayer().with_ares_psychic_reveal_exclusions(true)
+        );
 
         let mut session = explicit_session();
         let replay = |game_mode| LoadingStartup::Replay {
@@ -1075,7 +1078,7 @@ mod tests {
         let mode_zero_replay = replay(SessionMode::Campaign);
         assert_eq!(
             mode_zero_replay.match_spec().rules(),
-            RulePolicy::stock_campaign()
+            RulePolicy::stock_campaign().with_ares_psychic_reveal_exclusions(true)
         );
         assert_eq!(
             mode_zero_replay.match_spec_for_construction(BootstrapRuleProfile::Multiplayer),

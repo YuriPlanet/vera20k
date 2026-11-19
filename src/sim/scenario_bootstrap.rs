@@ -1437,10 +1437,11 @@ pub(crate) fn apply_skirmish_launch_alliances(
     rules: &RuleSet,
 ) {
     let slots = normalized_launch_slots(session);
+    let rule_policy = sim.session.rule_policy();
     sim.install_house_alliances(
         crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(launch_alliance_map(
             &slots,
-            &session.mode,
+            rule_policy,
         )),
         rules,
     );
@@ -2159,7 +2160,7 @@ pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses
     }
 }
 
-/// The launch diplomacy graph: team and co-op alliances between the slots.
+/// The launch diplomacy graph for explicit teams and same-role alliances.
 ///
 /// A map House's `Allies=` takes no part. `HouseClass::Read_INI @ 0x005009B0`,
 /// its only reader on an authored map, runs only when `Session.GameMode` is 0
@@ -2167,7 +2168,7 @@ pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses
 /// @ 0x00687F10` builds Neutral and Special with no allies.
 pub fn launch_alliance_map(
     slots: &[NormalizedSkirmishSlot],
-    mode: &crate::skirmish_launch::SkirmishLaunchMode,
+    policy: crate::rules::rule_policy::RulePolicy,
 ) -> crate::map::houses::HouseAllianceMap {
     let mut alliances = crate::map::houses::HouseAllianceMap::new();
     for slot in slots {
@@ -2192,7 +2193,7 @@ pub fn launch_alliance_map(
             alliances.entry(right_key).or_default().insert(left_key);
         }
     }
-    if mode.class == crate::skirmish_modes::MpModeClass::Cooperative {
+    if policy.allies_starting_houses_by_role() {
         for left in slots {
             for right in slots {
                 if left.owner_name == right.owner_name || left.is_human != right.is_human {
@@ -3799,6 +3800,49 @@ mod tests {
         let mut ini = IniFile::from_str(CONTROLLED_STOCK_COUNTRIES);
         ini.merge(&IniFile::from_str(source));
         ini
+    }
+
+    #[test]
+    fn starting_role_alliances_follow_admitted_rules_without_replacing_teams() {
+        use crate::map::houses::are_houses_mutually_allied;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::skirmish_launch::AiDifficulty;
+
+        let mut launch = crate::headless_scenario::battle_session(
+            "XMP03T4.MAP",
+            &[
+                (LaunchCountry::Russia, AiDifficulty::Normal),
+                (LaunchCountry::Cuba, AiDifficulty::Normal),
+            ],
+        );
+        launch.local_slot_mut().team = LaunchTeam::Team(0);
+        launch.opponents[0].team = LaunchTeam::Team(0);
+        let rules = RuleSet::from_ini(&launch_fixture_ini("")).unwrap();
+        let mut sim = Simulation::new();
+        populate_launch_houses(&mut sim, &normalized_launch_slots(&launch), &rules);
+        let mode = ScenarioGameMode::from_game_mode(5);
+        let class = Some(launch.mode.class);
+        let stock = mode.stock_rule_policy(class);
+
+        sim.install_session_admission(mode, class, stock);
+        apply_skirmish_launch_alliances(&mut sim, &launch, &rules);
+        let alliances = sim.house_alliances.as_map();
+        assert!(are_houses_mutually_allied(alliances, "Player", "Computer1"));
+        assert!(!are_houses_mutually_allied(
+            alliances,
+            "Computer1",
+            "Computer2"
+        ));
+
+        sim.install_session_admission(mode, class, stock.with_starting_house_role_alliances(true));
+        apply_skirmish_launch_alliances(&mut sim, &launch, &rules);
+        let alliances = sim.house_alliances.as_map();
+        assert!(are_houses_mutually_allied(alliances, "Player", "Computer1"));
+        assert!(are_houses_mutually_allied(
+            alliances,
+            "Computer1",
+            "Computer2"
+        ));
     }
 
     fn starting_country_native_fixture(passive: bool) -> (serde_json::Value, RuleSet) {

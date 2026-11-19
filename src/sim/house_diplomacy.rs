@@ -428,11 +428,9 @@ impl Simulation {
         // 0x00501640..0x00501662: the mode's vt+4, else Rules AlliesAllowed.
         // Only Cooperative's vt+4 (0x005C4EE0) answers true, so its
         // computers turn paranoid although MPCoopMD sets AlliesAllowed=no.
-        let mode_permits = self
-            .session
-            .multiplayer_mode_class()
-            .is_some_and(|class| class.policy().permits_all_allied);
-        if !mode_permits && !rules.general.allies_allowed {
+        if !self.session.rule_policy().paranoid_ignores_allies_allowed()
+            && !rules.general.allies_allowed
+        {
             return;
         }
         // VERA `[General] AINearestEnemy=` (off by default): the computers
