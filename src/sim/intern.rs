@@ -3,7 +3,8 @@
 //! `InternedId` is a `Copy` newtype around `u32`. Cloning an entity's owner or
 //! type_ref becomes a register copy instead of a heap allocation. The
 //! `StringInterner` maps strings to IDs and back, using uppercase normalization
-//! so case-insensitive owner comparisons become plain `==` on IDs.
+//! so case-insensitive comparisons of owners `intern` adds become plain `==`
+//! on IDs.
 //!
 //! ## Determinism
 //! The interner is part of `Simulation` — all peers intern the same strings
@@ -56,7 +57,9 @@ impl fmt::Display for InternedId {
 /// Bidirectional string interner with uppercase-normalized lookup.
 ///
 /// `intern("Americans")` and `intern("americans")` return the same ID, so two
-/// distinct ids never name strings equal under ASCII case folding.
+/// distinct ids of names `intern` adds never name strings equal under ASCII
+/// case folding. A damaged save can list such a pair; a load keeps both ids,
+/// and lookups find the first.
 /// The display string preserves the casing of the first call that created the entry.
 #[derive(Debug)]
 pub struct StringInterner {
