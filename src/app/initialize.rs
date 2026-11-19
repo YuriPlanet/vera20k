@@ -1320,7 +1320,7 @@ impl App {
                 room_limits: Default::default(),
                 wol_room_name: None,
                 wol_room_unranked: false,
-                wol_room_watching: crate::ui::wol_lobby::RoomWatching::Delayed,
+                wol_room_watching: Default::default(),
                 lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,

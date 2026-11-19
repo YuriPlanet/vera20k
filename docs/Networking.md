@@ -789,9 +789,10 @@ watcher's own version with two or more people in them, one of them playing, or, 
 game that signed in with `Vera-Watch-AI: 1`, where only AI play while everyone in the
 room watches; on a relay that lets watchers in,
 and never one from a room with a password, a clan room, a generated map or a co-op
-mission: a watcher's game cannot yet rebuild their starts. A host chooses in Create
-Game who may watch the room's games: everyone 2 minutes behind (the default), nobody,
-or everyone live. Quick Match and ranked games are always watched 2 minutes behind.
+mission: a watcher's game cannot yet rebuild their starts. Create Game starts Watching
+on Live. The host can also choose a two-minute delay or turn Watching off. The next
+room uses the host's last confirmed choice in the same session. Quick Match and ranked
+games always have a two-minute viewing delay.
 
 A lone observer normally plays an AI match locally, so there is no stream for
 others to watch ([above](#current-production-path)). To make it watchable, the
@@ -1071,11 +1072,10 @@ move the view within 10 seconds (it turns left halfway, for a view already at th
 map's right edge), then Escape must return it to the online lobby, and it leaves for
 the Main Menu.
 Run it beside `online-live-host` and `online-live-guest` for two other
-accounts. Their `--online-frames` must keep their first match going well past the
-watcher's start: the list poll takes up to 5 seconds, the watcher sees the match two
-minutes behind and needs 300 frames after catching up, and it catches up only when it
-joins more than two minutes into the match. The host's room must let everyone watch,
-as the Create Game Watching choice's default does; Quick Match games
+accounts. Set their `--online-frames` so the match lasts through the list poll (up to
+5 seconds), the granted viewing delay and 300 frames after the watcher catches up.
+To see catch-up on a two-minute stream, join more than two minutes into the match.
+The host's room must allow watching. Quick Match games
 (`--online-quick-match` on both) can always be watched. The manifest's `lan.watch`
 records the match, the grant's delay, whether catch-up was seen and the frame it ended,
 the frames played after it, the views Tab went through, how far the right drag moved
