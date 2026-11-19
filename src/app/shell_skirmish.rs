@@ -443,6 +443,7 @@ impl App {
         let rules = MatchRules {
             superweapon_limit: profile.superweapon_limit,
             terrain_deformation: profile.terrain_deformation,
+            skirmish_cheats: profile.skirmish_cheats,
         };
         state.frontend.skirmish_shell_state.game_options = Some(GameOptionsBox::new(rules));
         state.platform.window.request_redraw();
@@ -456,9 +457,9 @@ impl App {
         };
         let rules = open.rules;
         let profile = &mut state.persistence.options_profile;
-        if (profile.superweapon_limit, profile.terrain_deformation)
-            != (rules.superweapon_limit, rules.terrain_deformation)
-        {
+        let shared_rules_changed = (profile.superweapon_limit, profile.terrain_deformation)
+            != (rules.superweapon_limit, rules.terrain_deformation);
+        if shared_rules_changed {
             profile.superweapon_limit = rules.superweapon_limit;
             profile.terrain_deformation = rules.terrain_deformation;
             // The next offline game reads them, and a room's host starts
@@ -469,6 +470,9 @@ impl App {
             state
                 .process_assets
                 .set_terrain_deformation(rules.terrain_deformation);
+        }
+        if shared_rules_changed || profile.skirmish_cheats != rules.skirmish_cheats {
+            profile.skirmish_cheats = rules.skirmish_cheats;
             crate::app::persistence::options::persist_options_profile(state);
         }
         state.platform.window.request_redraw();
