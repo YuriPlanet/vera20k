@@ -59,6 +59,16 @@ test('lobby transport preserves request and response bytes and status on the com
     assert.equal(calls.length, 2);
 });
 
+test('a sign-in carries the headers its game names, and a 401 keeps its body like any status', async () => {
+    const calls = [];
+    const {api} = fixture(async (...args) => { calls.push(args); return response(401, [new TextEncoder().encode('{}')]); });
+    const id = api.veraLobbyOpen('wss://wss.vera20k.com');
+    const headers = '[["Vera-Version","0.3.6"],["Vera-Quick-Match","1"]]';
+    assert.deepEqual(JSON.parse(await api.veraLobbyRequest(id, '/v1/sessions', undefined, '{}', 2, headers)), [401, '{}']);
+    assert.equal(calls[0][1].headers['Vera-Version'], '0.3.6');
+    assert.equal(calls[0][1].headers['Vera-Quick-Match'], '1');
+});
+
 test('response cap and invalid UTF-8 abort without retaining a request or timeout', async () => {
     let cancelled = 0;
     let options;

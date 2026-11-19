@@ -173,8 +173,8 @@ def execute_translucent(route, selector_bits, writes_depth, profile, a, index,
     u.mem_write(shape, bytes(3))
     u.mem_write(alpha, struct.pack('<3H', *([a] * 3)))
     old_depth = [65535, 65535, 65535 if overlap else 0]
-    # Guarded destination window admits signed offsets and a synthetic eight-
-    # word row pitch. These are original leaf inputs, not70BE50 producer values.
+    # Guarded destination window around the three stores. The warp is the leaf
+    # input Bit_Blit 4373B0 seeds from the row and clipped left x (0..3).
     u.mem_write(dest - 16, struct.pack('<19H', *([raw] * 19)))
     if displacement:
         u.mem_write(dest + displacement * 2, struct.pack('<H', raw ^ 0x07E0))
@@ -221,12 +221,12 @@ def generate_translucent():
     for route, bits, rgb, raw in product(TRANSLUCENT_ROUTES, (2, 4, 6), rgbs, boundaries):
         cases.append(execute_translucent(route, bits, False, 'plain1', 127, 1, 1000, raw, rgb))
     for route, bits, a, displacement in product(TRANSLUCENT_ROUTES, (10, 12), (2, 127),
-                                              (-8, -1, 1, 8)):
+                                              (1, 2, 3)):
         cases.append(execute_translucent(route, bits, False, 'light27', a, 1, 1000, RAW,
                                         displacement=displacement))
     for route, bits, a in product(TRANSLUCENT_ROUTES, (10, 12), (2, 127)):
         cases.append(execute_translucent(route, bits, False, 'scheme53', a, 1, 1000, RAW,
-                                        displacement=-1, overlap=True))
+                                        displacement=1, overlap=True))
     replay_controls = [execute_translucent(route, bits, write, 'light27', a, 1,
                                           1000, RAW, replays=3)
                        for route, bits, write, a in product(
@@ -237,8 +237,7 @@ def generate_translucent():
                             TRANSLUCENT_ROUTES, (2, 4, 6), (0, 2, 127))]
     return dict(selectors=selectors, decoded_stencil=['source', 'hole', 'depth_reject'],
                 candidate=4096, cases=cases, replay_controls=replay_controls,
-                cloak_transition=generate_cloak_transition(),
-                cloak_offsets=generate_cloak_offsets())
+                cloak_transition=generate_cloak_transition())
 
 
 def signed(value):
@@ -287,10 +286,9 @@ def execute_cloak_transition(stage, depth, owned, force, state=1):
     u.reg_write(UC_X86_REG_ESP, palette.STACK + 0x70000)
     native_oracle.run_checked(u, 0x73B21F, 0x73B259, count=1000)
     flags = u.reg_read(UC_X86_REG_EDI)
-    displacement = signed(struct.unpack('<I', u.mem_read(palette.STACK + 0x70010, 4))[0])
     return dict(stage=stage, depth=depth, owned=owned, force=force, state=state,
                 scaled=phases[0] if phases else None, character=character,
-                final_flags=flags, offset_words=displacement)
+                final_flags=flags)
 
 
 def generate_cloak_transition():
@@ -306,23 +304,6 @@ def generate_cloak_transition():
     return rows
 
 
-def generate_cloak_offsets():
-    cases = []
-    inputs = [(value, 0.0) for value in (0, 1, 399, 400, 401, 1010667, -1, -400, -401)]
-    inputs += [(1, 1.9), (1, -1.9), (0, 399.9), (0x7FFFFFFF, 1.9), (-0x80000000, -1.9)]
-    for identity, value in inputs:
-        u = palette.machine()
-        obj, _type, _rules = native_unit(u)
-        palette.put32(u, obj + 0x10, identity)
-        raw_float = struct.pack('<f', value)
-        u.mem_write(obj + 0x24C, raw_float)
-        palette.call(u, 0x70BE50, (), obj)
-        cases.append(dict(native_unique_id=identity, float_24c=value,
-                          raw_f32_hex=raw_float.hex(),
-                          offset_words=signed(u.reg_read(UC_X86_REG_EAX))))
-    return cases
-
-
 def translucent_metadata():
     return native_oracle.provenance(
         scope='Original RGB565 SHP/voxel translucent selector and pixel leaves, including neighbor-destination bit8; isolated from full scene production.',
@@ -331,9 +312,8 @@ def translucent_metadata():
             'Original4BAA73..4BAB06 produces masks and48EB56..48EB73 writes Convert+180/+184. Blitter+4/+8/+C values follow48EBF0 RGB565 constructor bytes; full allocation is not executed.',
             'N1/N27/N53 palettes/LUTs use existing native palette owner. Synthetic RGB200,100,50 and carry-boundary RGB palettes, A0/1/2/63/127/255, indices1/240, brightness1000/1500, destination0/F940/FFFF and packed channel boundaries.',
             'SHP compressed zero run versus voxel raw zero source; old Z[65535,65535,0], candidate4096, zero signed shape. Depth-read and depth-write controls both execute; write controls do not establish Unit final-composite usage.',
-            'Bit8 offset0/plus-or-minus1/plus-or-minus8 controls isolate neighbor destination reads with a synthetic eight-word pitch; offsets are supplied, not claimed as executed cloak70BE50 outputs. Wholebody Unit73B140 caller reading separately establishes flags280x; full Unit temp-cache/row-walker production is not executed.',
+            'Bit8 warp1/2/3 controls read the destination word warp to the right, as Bit_Blit4373B0 seeds it from the row and clipped left x; the warp is supplied, the row walker is not executed. Wholebody Unit73B140 caller reading separately establishes flags280x; full Unit temp-cache/row-walker production is not executed.',
             'Separate original4DA4E0->703860 transition controls use real Unit/Drive vtables, TypeInvisible0, state1, current-house-owned flag41A, force0/1, stages0/1/9/12/13/-1/-9 and signed progress; they execute x87 FIDIV/FMUL/ftol and Unit73B21F..73B259 selector, including the native invalid-stage results. State0/2 controls supply owned41A and a nonnull tactical screen; allied/sensor visibility branches are not executed.',
-            'Separate70BE50 executes actual Unit secondary vtable7F5C54 getter410220 and ftol7C5F00 over supplied native_unique_id and raw f32+24C. The constructor/world producer lifecycle of the supplied fields is not executed.',
             'No native instruction is changed and no leaf call is substituted. Original pixel leaves contain no RNG, timer or detach calls. Palette/mask/selector ranges are separate executable comparisons.',
             '54 separate sequential parent replay controls invoke the same original SHP/voxel bits2/4/6 leaf three times on one retained destination and depth array: read/write Z, A0/2/127, brightness1000, plus brightness1500 read controls. Source holes and initial strict depth rejection remain; no expected result is calculated in Python.',
         ], substitutions=[],
@@ -343,7 +323,6 @@ def translucent_metadata():
                           drive_constructor=0x4AF540, foot_visual=0x4DA4E0,
                           visual_character=0x703860, visual_scaled=0x703A94,
                           unit_selector_begin=0x73B21F, unit_selector_end=0x73B259,
-                          cloak_offset=0x70BE50, native_id=0x410220, ftol=0x7C5F00,
                           light_convert=0x556090, plain_convert=0x4BBB00, intensity=0x420196))
 
 

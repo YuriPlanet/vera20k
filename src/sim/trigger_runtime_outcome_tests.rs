@@ -71,7 +71,6 @@ fn admitted_victory_survives_a_later_house_tag_replacing_the_pending_result() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::default().with_outcome_wait(&vox),
@@ -84,11 +83,7 @@ fn admitted_victory_survives_a_later_house_tag_replacing_the_pending_result() {
     assert!(sim.ready_outcome_for_owner(player).is_none());
     vox.0.set(true);
     let frame = sim
-        .resume_outcome_wait(
-            &rules,
-            None,
-            FrameEffects::default().with_outcome_wait(&vox),
-        )
+        .resume_outcome_wait(&rules, FrameEffects::default().with_outcome_wait(&vox))
         .unwrap();
     assert!(!frame.outcome_waiting);
     assert_eq!(sim.trigger_runtime.action_trace, vec![(67, 0), (2, 8)]);

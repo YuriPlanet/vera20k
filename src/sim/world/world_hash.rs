@@ -1632,7 +1632,7 @@ impl Simulation {
     /// retain future timer behavior without mutating `OverlayGrid`.
     fn hash_crate_authority(&self, hasher: &mut impl Hasher) {
         b"crate-authority-v1".hash(hasher);
-        for slot in self.crate_authority.slots() {
+        for slot in self.crate_authority().slots() {
             slot.start_frame.hash(hasher);
             slot.aux.hash(hasher);
             slot.duration.hash(hasher);
@@ -2619,7 +2619,7 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     }
 
     // Passenger/transport state.
-    let role = &entity.passenger_role;
+    let role = entity.passenger_role();
     match role.cargo() {
         Some(cargo) => {
             1u8.hash(hasher);
@@ -4906,7 +4906,7 @@ mod passenger_cargo_hash_tests {
         let mut cargo = PassengerCargo::new(5, 0.0);
         cargo.board_forced_chain(&[(10, first_size)]);
         cargo.board_forced_chain(&[(11, second_size)]);
-        carrier.passenger_role = PassengerRole::transport(cargo);
+        carrier.set_passenger_role_for_test(PassengerRole::transport(cargo));
         sim.substrate.entities.insert(carrier);
         sim
     }
@@ -4926,7 +4926,7 @@ mod passenger_cargo_hash_tests {
                 .entities
                 .get_mut(1)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .set_inside_transport(20, false);
             let inside = sim.state_hash();
             assert_ne!(inside, outside);
@@ -4934,14 +4934,14 @@ mod passenger_cargo_hash_tests {
                 .entities
                 .get_mut(1)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .set_inside_transport(21, false);
             assert_ne!(sim.state_hash(), inside);
             sim.substrate
                 .entities
                 .get_mut(1)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .clear_carrier_relation();
             assert_eq!(sim.state_hash(), outside);
             assert_eq!(
@@ -4949,7 +4949,7 @@ mod passenger_cargo_hash_tests {
                     .entities
                     .get(1)
                     .unwrap()
-                    .passenger_role
+                    .passenger_role()
                     .cargo()
                     .unwrap()
                     .passengers(),

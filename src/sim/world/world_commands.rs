@@ -17,10 +17,10 @@ use crate::sim::combat;
 use crate::sim::command::{
     ArchiveRecord, BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord,
     COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, CycleProducerRecord, DeployRecord,
-    ExitRecord, GameSpeedRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
-    ObjectAction, ObjectActionRecord, PaidSuperAction, PaidSuperRecord, PlaceRecord,
-    ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord, SellWallAtCellRecord,
-    SpecialPlaceRecord, StopRecord,
+    ExitRecord, GameSpeedRecord, MEGAMISSION_AUXILIARY_KIND_OFFSET, MEGAMISSION_PLANNING_OFFSET,
+    MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, ObjectAction, ObjectActionRecord,
+    PaidSuperAction, PaidSuperRecord, PlaceRecord, ProductionEvent, ProductionRecord, RepairRecord,
+    ScatterRecord, SellWallAtCellRecord, SpecialPlaceRecord, StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -407,9 +407,6 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<(InternedId, Command)> {
         let owner = self.command_sender_owner(record.house_id())?;
-        if !self.houses.contains_key(&owner) {
-            return None;
-        }
         let type_id = |index| {
             self.interner
                 .get(rules.super_weapon_order.get(usize::try_from(index).ok()?)?)
@@ -940,9 +937,10 @@ impl Simulation {
             .and_then(|index| i8::try_from(index).ok())
     }
 
-    /// The House a command record's sender byte names. VERA shared control:
-    /// the sender is a network source, which is its House index unless
-    /// players share Houses (`ScenarioSession::network_source_house`).
+    /// The registered House a command record's sender byte names, the one
+    /// sender admission for every record. VERA shared control: the sender
+    /// is a network source, which is its House index unless players share
+    /// Houses (`ScenarioSession::network_source_house`).
     pub(crate) fn command_sender_owner(&self, sender: i8) -> Option<InternedId> {
         let index = self.session.network_source_house(sender)?;
         self.houses.order().get(index).copied()
@@ -990,201 +988,114 @@ impl Simulation {
     /// Decode one synchronized record after its queue has admitted the stamped
     /// frame. The semantic envelope is only a typed execution view of the raw
     /// bytes; timing/processed-bit ownership remains with the raw queue.
+    /// Every typed view below reads its House from this same header byte.
     pub fn decode_native_command_record(
         &self,
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
+        let owner = self.command_sender_owner(record.house_id())?;
+        let envelope = |command| Some(CommandEnvelope::new(owner, execute_tick, command));
+        let raw = || {
+            envelope(Command::SynchronizedRecord {
+                record: record.clone(),
+            })
+        };
         if let Some(event) = RepairRecord::decode(record) {
-            let owner = self.command_sender_owner(event.house_id)?;
             let entity_id = u64::try_from(event.entity_id).ok()?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(owner, execute_tick, Command::ToggleRepair { entity_id })
-            });
+            return envelope(Command::ToggleRepair { entity_id });
         }
         if let Some(event) = ArchiveRecord::decode(record) {
-            let owner = self.command_sender_owner(event.house_id)?;
-            if !self.houses.contains_key(&owner) {
-                return None;
-            }
             // Preserve late object lookup and NULL. These semantic views do
             // not replace the native record held by queues/replay/snapshots.
             let entity_id = u64::try_from(event.entity_id).ok()?;
-            let payload = match event.target {
-                MegaMissionTarget::Cell { x, y } => Command::SetRally {
+            return match event.target {
+                MegaMissionTarget::Cell { x, y } => envelope(Command::SetRally {
                     rx: x as u16,
                     ry: y as u16,
                     producer_ids: vec![entity_id],
-                },
-                MegaMissionTarget::Object { id } if id >= 0 => Command::ArchiveObject {
+                }),
+                MegaMissionTarget::Object { id } if id >= 0 => envelope(Command::ArchiveObject {
                     entity_id,
                     target_id: id as u64,
-                },
-                _ => Command::SynchronizedRecord {
-                    record: record.clone(),
-                },
+                }),
+                _ => raw(),
             };
-            return Some(CommandEnvelope::new(owner, execute_tick, payload));
         }
         if let Some(event) = ObjectActionRecord::decode(record) {
-            let owner = self.command_sender_owner(event.house_id)?;
             let entity_id = u64::try_from(event.entity_id).ok()?;
-            let command = match event.action {
+            return envelope(match event.action {
                 ObjectAction::Sell => Command::SellBuilding { entity_id },
                 ObjectAction::Primary => Command::TogglePrimaryFactory { entity_id },
                 ObjectAction::EjectBunker => Command::EjectBunker {
                     bunker_id: entity_id,
                 },
-            };
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, command));
+            });
         }
         if let Some(event) = CycleProducerRecord::decode(record) {
-            let owner = self.command_sender_owner(event.house_id)?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::CycleProducerFocus {
-                        category: event.category,
-                    },
-                )
+            return envelope(Command::CycleProducerFocus {
+                category: event.category,
             });
         }
         // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler,
         // which answers on the switch; no stock opcode decodes as 0x60, and
         // only a game Ares plays in encodes one.
         if crate::sim::command::AresTrenchRedirectRecord::decode(record).is_some() {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SynchronizedRecord {
-                        record: record.clone(),
-                    },
-                )
-            });
+            return raw();
         }
         // DETONATE stays raw until its handler, which resolves the carrier
         // late, as Execute does.
         if crate::sim::command::DetonateRecord::decode(record).is_some() {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SynchronizedRecord {
-                        record: record.clone(),
-                    },
-                )
-            });
+            return raw();
         }
         if ProductionRecord::decode(record).is_some()
             || PlaceRecord::decode(record).is_some()
             || SpecialPlaceRecord::decode(record).is_some()
             || PaidSuperRecord::decode(record).is_some()
         {
-            let owner = self.command_sender_owner(record.house_id())?;
             // Keep selectors raw: a category-only semantic view loses Naval,
             // RTTI aliases and the -1 wildcard before the House receiver runs.
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SynchronizedRecord {
-                        record: record.clone(),
-                    },
-                )
-            });
+            return raw();
         }
         if let Some(typed) = DeployRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
             let entity_id = u64::try_from(typed.entity_id).ok()?;
             self.substrate.entities.get(entity_id)?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(owner, execute_tick, Command::DeployMcv { entity_id })
-            });
+            return envelope(Command::DeployMcv { entity_id });
         }
-        if matches!(
-            record.opcode(),
-            crate::sim::command::OPTIONS_OPCODE | crate::sim::command::LATENCY_FUDGE_OPCODE
-        ) {
-            let owner = self.command_sender_owner(record.house_id())?;
-            let command = if record.opcode() == crate::sim::command::OPTIONS_OPCODE {
-                Command::OpenOptions
-            } else {
-                Command::SetLatencyFudge {
-                    value: i32::from_le_bytes(record.payload()[..4].try_into().ok()?),
-                }
-            };
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, command));
+        if record.opcode() == crate::sim::command::OPTIONS_OPCODE {
+            return envelope(Command::OpenOptions);
+        }
+        if record.opcode() == crate::sim::command::LATENCY_FUDGE_OPCODE {
+            return envelope(Command::SetLatencyFudge {
+                value: i32::from_le_bytes(record.payload()[..4].try_into().ok()?),
+            });
         }
         // PlanMgr637E00/638120 owns the payload and validates live actors.
         // Keep its native byte record intact through the scheduled envelope.
         if matches!(record.opcode(), 0x2A..=0x2C)
-            || (record.opcode() == crate::sim::command::MEGAMISSION_OPCODE
-                && matches!(record.payload()[22], 1 | 2))
+            || matches!(MegaMissionRecord::planning_flag(record), Some(1 | 2))
         {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::PlanningRecord {
-                        record: record.clone(),
-                    },
-                )
+            return envelope(Command::PlanningRecord {
+                record: record.clone(),
             });
         }
         if let Some(typed) = StopRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            if !self.houses.contains_key(&owner) {
-                return None;
-            }
             let entity_id = u64::try_from(typed.entity_id).ok()?;
             self.substrate.entities.get(entity_id)?;
-            return Some(CommandEnvelope::new(
-                owner,
-                execute_tick,
-                Command::Stop { entity_id },
-            ));
+            return envelope(Command::Stop { entity_id });
         }
         if let Some(typed) = ScatterRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            if !self.houses.contains_key(&owner) {
-                return None;
-            }
             let entity_id = u64::try_from(typed.entity_id).ok()?;
             self.substrate.entities.get(entity_id)?;
-            return Some(CommandEnvelope::new(
-                owner,
-                execute_tick,
-                Command::Scatter { entity_id },
-            ));
+            return envelope(Command::Scatter { entity_id });
         }
         if let Some(typed) = MegaMissionRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            if !self.houses.contains_key(&owner) {
-                return None;
-            }
             let entity_id = u64::try_from(typed.source_id).ok()?;
             self.substrate.entities.get(entity_id)?;
             // Keep NavComAux in the native carrier until execution, where
             // the shared MegaMission receiver applies it after the setters.
             if typed.auxiliary != MegaMissionTarget::Null {
-                return Some(CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SynchronizedRecord {
-                        record: record.clone(),
-                    },
-                ));
+                return raw();
             }
             let target = |token: MegaMissionTarget| -> Option<Option<combat::TargetKind>> {
                 Some(match token {
@@ -1247,25 +1158,17 @@ impl Simulation {
                     destination: target(destination)?,
                 },
             };
-            return Some(CommandEnvelope::new(owner, execute_tick, command));
+            return envelope(command);
         }
 
         // Event2D4C6E2E resolves its House and calls50C8C0 without input
         //lock, cooldown, selection or product admission being repeated.
         if record.opcode() == crate::sim::command::CHEER_OPCODE {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, Command::Cheer));
+            return envelope(Command::Cheer);
         }
 
-        if let Some(typed) = ExitRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, Command::ExitMatch));
+        if ExitRecord::decode(record).is_some() {
+            return envelope(Command::ExitMatch);
         }
 
         let house_index_event: Option<fn(i32) -> Command> = match record.opcode() {
@@ -1276,31 +1179,20 @@ impl Simulation {
             _ => None,
         };
         if let Some(command) = house_index_event {
-            let owner = self.command_sender_owner(record.house_id())?;
             let other = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, command(other)));
+            return envelope(command(other));
         }
 
         if record.opcode() == crate::sim::command::DESTRUCT_OPCODE {
-            let owner = self.command_sender_owner(record.house_id())?;
-            return self
-                .houses
-                .contains_key(&owner)
-                .then(|| CommandEnvelope::new(owner, execute_tick, Command::Destruct));
+            return envelope(Command::Destruct);
         }
 
         // Native opcode 0x0D (EventClass::Execute type-13 @ 0x004C794B): the
         // payload dword at Event+7 is the new GameSpeed setting; the changer is
         // the header house. It is SetGameSpeed's live-network twin.
         if let Some(typed) = GameSpeedRecord::decode(record) {
-            let owner = self.command_sender_owner(typed.house_id)?;
             let speed = u8::try_from(typed.speed).ok()?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(owner, execute_tick, Command::LiveGameSpeed { speed })
-            });
+            return envelope(Command::LiveGameSpeed { speed });
         }
 
         // Native opcodes 0x01/0x02 (EventClass::Execute branches 0x004C6CF0 /
@@ -1312,35 +1204,19 @@ impl Simulation {
             record.opcode(),
             BUILDING_ON_LINE_OPCODE | BUILDING_OFF_LINE_OPCODE
         ) {
-            let Some(typed) = BuildingOnLineRecord::decode(record) else {
-                return None;
-            };
-            let owner = self.command_sender_owner(typed.house_id)?;
+            let typed = BuildingOnLineRecord::decode(record)?;
             let entity_id = u64::try_from(typed.entity_id).ok()?;
             self.substrate.entities.get(entity_id)?;
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::SetBuildingOnLine {
-                        entity_id,
-                        on: typed.on,
-                    },
-                )
+            return envelope(Command::SetBuildingOnLine {
+                entity_id,
+                on: typed.on,
             });
         }
 
         let typed = SellWallAtCellRecord::decode(record)?;
-        let owner = self.command_sender_owner(typed.house_id)?;
-        self.houses.contains_key(&owner).then(|| {
-            CommandEnvelope::new(
-                owner,
-                execute_tick,
-                Command::SellWallAtCell {
-                    x: typed.x,
-                    y: typed.y,
-                },
-            )
+        envelope(Command::SellWallAtCell {
+            x: typed.x,
+            y: typed.y,
         })
     }
 
@@ -1628,10 +1504,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let Some(owner) = self
-            .command_sender_owner(record.house_id())
-            .filter(|owner| self.houses.contains_key(owner))
-        else {
+        let Some(owner) = self.command_sender_owner(record.house_id()) else {
             return false;
         };
         let owner = self.interner.resolve(owner).to_owned();
@@ -1724,22 +1597,23 @@ impl Simulation {
         let native_mission = match cmd {
             Command::PlanningRecord { record } if planned => Some(record),
             Command::SynchronizedRecord { record }
-                if record.opcode() == 4 && record.payload()[22] == 0 =>
+                if MegaMissionRecord::planning_flag(record) == Some(0) =>
             {
                 Some(record)
             }
             _ => None,
         };
         let cmd = if let Some(record) = native_mission {
-            let mut ordinary = record.clone();
-            ordinary.payload_mut()[22] = 0;
-            let Some(typed) = MegaMissionRecord::decode(&ordinary) else {
+            let Some((typed, _)) = MegaMissionRecord::decode_planned(record) else {
                 return false;
             };
             auxiliary = typed.auxiliary;
-            // Only the temporary semantic projection omits NavComAux. The
-            // queue, plan graph and saved/replayed bytes keep the full token.
-            ordinary.payload_mut()[21] = 0;
+            // Only the temporary semantic projection omits the planning flag
+            // and NavComAux. The queue, plan graph and saved/replayed bytes
+            // keep the full record.
+            let mut ordinary = record.clone();
+            ordinary.payload_mut()[MEGAMISSION_PLANNING_OFFSET] = 0;
+            ordinary.payload_mut()[MEGAMISSION_AUXILIARY_KIND_OFFSET] = 0;
             let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick())
             else {
                 return false;
@@ -2604,8 +2478,8 @@ impl Simulation {
                     return false;
                 }
                 let has_passengers = self.substrate.entities.get(*transport_id).is_some_and(|t| {
-                    !t.passenger_role.occupants().is_empty()
-                        || t.passenger_role
+                    !t.passenger_role().occupants().is_empty()
+                        || t.passenger_role()
                             .cargo()
                             .is_some_and(|cargo| !cargo.is_empty())
                 });
@@ -3294,21 +3168,24 @@ impl Simulation {
     pub(crate) fn techno_select(
         &mut self,
         stable_id: u64,
-        voice_latch: bool,
         context: super::UninitContext<'_>,
     ) -> bool {
         if !self.techno_select_admits(stable_id) || !self.object_select(stable_id, true, context) {
             return false;
         }
         let rules = context.rules();
-        if let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch) {
+        if let Some(sound_id) = self.selection_voice_request(
+            rules,
+            stable_id,
+            context.effects().selection_voice_enabled(),
+        ) {
             let sound_id = sound_id.to_owned();
             self.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: stable_id,
                 sound_id,
             });
         }
-        self.planning_select_tail_node(stable_id, voice_latch, context);
+        self.planning_select_tail_node(stable_id, context);
         true
     }
 

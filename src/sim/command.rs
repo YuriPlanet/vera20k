@@ -94,6 +94,14 @@ pub const LATENCY_FUDGE_OPCODE: u8 = 0x24;
 pub const TIMING_OPCODE: u8 = 0x20;
 /// ProcessNetwork647767 / EventClass4C80B1: a source's mean frame cost.
 pub const PROCESS_TIME_OPCODE: u8 = 0x21;
+// Native names from EventClass's name table at `0x0082091C`. FRAMEINFO
+// (0x1C) is `command_queue::FRAMEINFO_EVENT_OPCODE`, beside its layout.
+pub const EMPTY_OPCODE: u8 = 0x00;
+pub const FRAME_SYNC_OPCODE: u8 = 0x19;
+pub const MESSAGE_OPCODE: u8 = 0x1a;
+pub const RESPONSE_TIME_OPCODE: u8 = 0x1b;
+pub const ADD_PLAYER_OPCODE: u8 = 0x1f;
+pub const PAGE_USER_OPCODE: u8 = 0x22;
 
 /// The five-byte EVENT_TIMING payload. A zero send rate cannot be produced by
 /// ProcessNetwork and would divide by zero in native; reject it on decode.
@@ -251,21 +259,24 @@ impl BuildingOnLineRecord {
     }
 }
 
-const MEGAMISSION_SOURCE_VALUE_OFFSET: usize = 0;
-const MEGAMISSION_SOURCE_KIND_OFFSET: usize = 4;
-const MEGAMISSION_ACTION_OFFSET: usize = 5;
-const MEGAMISSION_SECONDARY_VALUE_OFFSET: usize = 7;
-const MEGAMISSION_SECONDARY_KIND_OFFSET: usize = 11;
-const MEGAMISSION_DESTINATION_VALUE_OFFSET: usize = 12;
-const MEGAMISSION_DESTINATION_KIND_OFFSET: usize = 16;
-const MEGAMISSION_AUXILIARY_VALUE_OFFSET: usize = 17;
-const MEGAMISSION_AUXILIARY_KIND_OFFSET: usize = 21;
-const MEGAMISSION_PLANNING_OFFSET: usize = 22;
-const MEGAMISSION_OWNED_PAYLOAD_LEN: usize = 23;
+// MEGAMISSION payload layout. Each TargetClass token is a value DWORD and
+// then its kind byte.
+pub(crate) const MEGAMISSION_SOURCE_VALUE_OFFSET: usize = 0;
+pub(crate) const MEGAMISSION_SOURCE_KIND_OFFSET: usize = 4;
+pub(crate) const MEGAMISSION_ACTION_OFFSET: usize = 5;
+pub(crate) const MEGAMISSION_SECONDARY_VALUE_OFFSET: usize = 7;
+pub(crate) const MEGAMISSION_SECONDARY_KIND_OFFSET: usize = 11;
+pub(crate) const MEGAMISSION_DESTINATION_VALUE_OFFSET: usize = 12;
+pub(crate) const MEGAMISSION_DESTINATION_KIND_OFFSET: usize = 16;
+pub(crate) const MEGAMISSION_AUXILIARY_VALUE_OFFSET: usize = 17;
+pub(crate) const MEGAMISSION_AUXILIARY_KIND_OFFSET: usize = 21;
+/// PlanMgr's flag: 0 an ordinary order, 1 a plan append, 2 a plan dispatch.
+pub(crate) const MEGAMISSION_PLANNING_OFFSET: usize = 22;
+pub(crate) const MEGAMISSION_OWNED_PAYLOAD_LEN: usize = 23;
 
-const ABSTRACT_OBJECT_TARGET_KIND: u8 = 0x34;
-const CELL_TARGET_KIND: u8 = 0x0b;
-const NULL_TARGET_KIND: u8 = 0;
+pub(crate) const ABSTRACT_OBJECT_TARGET_KIND: u8 = 0x34;
+pub(crate) const CELL_TARGET_KIND: u8 = 0x0b;
+pub(crate) const NULL_TARGET_KIND: u8 = 0;
 const MOVE_ACTION: u8 = 2;
 const AREA_GUARD_ACTION: u8 = 11;
 const CELL_TOKEN_ROW_STRIDE: i32 = 1000;
@@ -1299,6 +1310,20 @@ impl MegaMissionRecord {
     /// Decode represented ordinary movement, combat and special mission
     /// forms. Planning flags are dispatched by the PlanMgr owner.
     pub fn decode(record: &CommandRecord) -> Option<Self> {
+        Self::decode_planned(record)
+            .filter(|(_, flag)| *flag == 0)
+            .map(|(order, _)| order)
+    }
+
+    /// A MEGAMISSION record's planning flag.
+    pub(crate) fn planning_flag(record: &CommandRecord) -> Option<u8> {
+        (record.opcode() == MEGAMISSION_OPCODE)
+            .then(|| record.payload()[MEGAMISSION_PLANNING_OFFSET])
+    }
+
+    /// [`Self::decode`] that also reads a PlanMgr order, beside the record's
+    /// planning flag.
+    pub fn decode_planned(record: &CommandRecord) -> Option<(Self, u8)> {
         if record.opcode() != MEGAMISSION_OPCODE || record.house_id() < 0 {
             return None;
         }
@@ -1319,9 +1344,7 @@ impl MegaMissionRecord {
                 .try_into()
                 .ok()?,
         );
-        if payload[MEGAMISSION_SOURCE_KIND_OFFSET] != ABSTRACT_OBJECT_TARGET_KIND
-            || payload[MEGAMISSION_PLANNING_OFFSET] != 0
-        {
+        if payload[MEGAMISSION_SOURCE_KIND_OFFSET] != ABSTRACT_OBJECT_TARGET_KIND {
             return None;
         }
         let target =
@@ -1337,7 +1360,11 @@ impl MegaMissionRecord {
             MegaMissionTarget::Null
         } else {
             MegaMissionTarget::from_token(
-                i32::from_le_bytes(payload[17..21].try_into().ok()?),
+                i32::from_le_bytes(
+                    payload[MEGAMISSION_AUXILIARY_VALUE_OFFSET..MEGAMISSION_AUXILIARY_KIND_OFFSET]
+                        .try_into()
+                        .ok()?,
+                ),
                 payload[MEGAMISSION_AUXILIARY_KIND_OFFSET],
             )?
         };
@@ -1370,13 +1397,16 @@ impl MegaMissionRecord {
             }
             _ => return None,
         };
-        Some(Self {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            source_id,
-            order,
-            auxiliary,
-        })
+        Some((
+            Self {
+                house_id: record.house_id(),
+                frame: record.frame_stamp(),
+                source_id,
+                order,
+                auxiliary,
+            },
+            payload[MEGAMISSION_PLANNING_OFFSET],
+        ))
     }
 }
 

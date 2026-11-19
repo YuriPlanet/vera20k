@@ -49,7 +49,7 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 
 ## 多线程构建（实验性）
 
-`--threads` 让每个 tick 在绘制旁边的模拟 Web Worker 上运行，tick 内的并行工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。
+`--threads` 让每个 tick 在绘制旁边的模拟 Web Worker 上运行，tick 内的并行工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。这个选项不计入[构建校验](Networking.md#build-check)：多线程包可以和不带它构建的同一个包联机。
 
 ```sh
 rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
@@ -74,7 +74,7 @@ python3 tools/wasm/serve.py
 
 只有同时启用 `wasm-net` 和浏览器目标，才会启用 Fetch、WS socket 和延后的联机加载等待。桌面构建（包括启用 `wasm-net` 的构建）仍使用原生 UDP、阻塞 HTTPS 和线程调度。仅启用 `wasm` 的单机包仍会在网络入口明确返回不支持错误。浏览器不支持 LAN 发现和直接 UDP 连接。
 
-浏览器版也不支持在独立线程上生成地图的“生成地图”对话框，以及同步 GPU 截图／捕获。页面改用 `generate_map(input)` 生成随机地图文件（[随机地图](spawn.md#random-maps)）：多线程包在线程池启动后于池中的 Worker 上生成，否则在页面线程上生成。非美式键盘布局中需要 Shift 的标点快捷键尚未完全映射。聊天框通过引擎在激活时加到页面上的隐藏 textarea 接收输入法文字（`src/web/ime.rs`），宿主页面无需为此添加标记。大型图集工作和同步存档准备仍可能阻塞浏览器事件循环；运行和性能验证尚待完成。
+浏览器版也不支持在独立线程上生成地图的“生成地图”对话框，以及同步 GPU 截图／捕获。选择地图的“在线地图”行和在线登录页的玩家人数同样不可用：游戏在独立线程上从大厅读取它们（`src/app/worker.rs`）。页面改用 `generate_map(input)` 生成随机地图文件（[随机地图](spawn.md#random-maps)）：多线程包在线程池启动后于池中的 Worker 上生成，否则在页面线程上生成。非美式键盘布局中需要 Shift 的标点快捷键尚未完全映射。聊天框通过引擎在激活时加到页面上的隐藏 textarea 接收输入法文字（`src/web/ime.rs`），宿主页面无需为此添加标记。大型图集工作和同步存档准备仍可能阻塞浏览器事件循环；运行和性能验证尚待完成。
 
 ## 检查
 

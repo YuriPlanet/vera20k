@@ -20,17 +20,17 @@ use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use vera20k_relay_protocol::envelope::MAX_DATAGRAM;
 use vera20k_relay_protocol::netsim::adaptive_client::AdaptiveClient;
-use vera20k_relay_protocol::netsim::client::HeadlessClient;
 use vera20k_relay_protocol::netsim::network::Rng;
 use vera20k_relay_protocol::{
-    ClientSession, MAX_TICKET_LIFETIME, OrderingCertificate, SecretKey, Ticket, derive_packet_key,
+    ClientSession, FRAME_RATES, MAX_TICKET_LIFETIME, OrderingCertificate, SecretKey, Ticket,
+    derive_packet_key,
 };
 
 /// `ClientSession::new` still takes the lobby's payload key; batches are
 /// plaintext and it goes unused (bandwidth-compaction spec §3.2).
 const PAYLOAD_KEY: [u8; 32] = [89; 32];
 /// Plaintext bytes per command, a move's records as the network
-/// simulation's default (bandwidth-compaction spec §2, §4).
+/// simulation's default (bandwidth-compaction spec §4, appendix A).
 const COMMAND_BYTES: usize = 19;
 /// The game loop's service period (spec §6.3).
 const SERVICE_MS: u64 = 16;
@@ -84,8 +84,8 @@ fn options() -> Result<Options, String> {
     if !(2..=30).contains(&options.players) {
         return Err("--players must be 2..=30".into());
     }
-    if ![90, 60, 45, 30, 20, 15, 12, 10].contains(&options.tick_hz) {
-        return Err("--tick-hz must be 90, 60, 45, 30, 20, 15, 12 or 10".into());
+    if !FRAME_RATES.contains(&options.tick_hz) {
+        return Err(format!("--tick-hz must be one of {FRAME_RATES:?}"));
     }
     // Tickets cannot outlive MAX_TICKET_LIFETIME, and this tool never renews.
     if options.warmup + options.seconds + 30 > MAX_TICKET_LIFETIME {
@@ -298,9 +298,7 @@ fn drive(players: &mut [Player], timing: Timing, mut rng: Rng) -> Stats {
                 stats.datagrams_received += 1;
                 stats.bytes_received += length as u64;
                 let at_us = elapsed_us();
-                player
-                    .client
-                    .deliver(&buffer[..length], at_us / 1000, at_us);
+                player.client.deliver(&buffer[..length], at_us / 1000);
                 player.flush(&mut stats);
             }
             let at_us = elapsed_us();
@@ -347,9 +345,7 @@ fn drive(players: &mut [Player], timing: Timing, mut rng: Rng) -> Stats {
         }
         stats.decode_errors += log.refused.values().sum::<u64>();
         stats.mac_failures += player.client.mac_failures();
-        if let Some(link) = player.client.link_stats() {
-            stats.resends += link.rto_timeouts;
-        }
+        stats.resends += player.client.link_stats().rto_timeouts;
         if !player.client.started()
             || log
                 .advances

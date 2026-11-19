@@ -108,9 +108,8 @@ impl BlitPolicy {
 pub struct ObjectDraw {
     pub id: DrawId,
     pub layer: TacticalLayer,
-    /// Position in the layer's draw order (`Simulation::display_draw_order`);
-    /// a presentation anim's follows its layer's members
-    /// (`NativeDisplayOrder::from_world`).
+    /// Position in the layer's draw order (`Simulation::picture_draw_order`,
+    /// which places the presentation anims among the Display members).
     pub display_order: u64,
     pub policy: BlitPolicy,
 }

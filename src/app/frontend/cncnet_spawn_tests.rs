@@ -96,14 +96,16 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
     );
     assert_eq!(metadata.load_message_key(), "MISSION:AL1");
 
-    let next = startup.next_mission(
-        "ALL02uMd.map".into(),
-        2,
-        1,
-        3,
-        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
-        &mut OrdinaryMatchSeedClock,
-    );
+    let next = startup
+        .next_mission(
+            "ALL02uMd.map".into(),
+            2,
+            1,
+            3,
+            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            &mut OrdinaryMatchSeedClock,
+        )
+        .unwrap();
     assert_eq!(next.scenario(), "ALL02UMD.MAP");
     let loaded =
         load_map_by_name_or_path_with_assets(retail.path(), next.selected_map_file(), &assets)
@@ -112,14 +114,16 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
         matches!(loaded.source, LoadedMapSource::Loose { path, .. } if path == client.path().join("ALL02uMd.map"))
     );
 
-    let archived = next.next_mission(
-        "all03md.map".into(),
-        3,
-        1,
-        3,
-        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
-        &mut OrdinaryMatchSeedClock,
-    );
+    let archived = next
+        .next_mission(
+            "all03md.map".into(),
+            3,
+            1,
+            3,
+            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            &mut OrdinaryMatchSeedClock,
+        )
+        .unwrap();
     let loaded =
         load_map_by_name_or_path_with_assets(retail.path(), archived.selected_map_file(), &assets)
             .unwrap();
@@ -196,7 +200,7 @@ fn client_skirmish_preserves_roster_options_and_native_indices() {
     assert_eq!(session.local_slot().team, LaunchTeam::Team(0));
     assert_eq!(session.opponents[1].team, LaunchTeam::None);
     assert_eq!(session.required_start_count(), 3);
-    assert_eq!(session.pre_fill_house_roster.created_house_count(), 5);
+    assert_eq!(session.pre_fill_house_roster().created_house_count(), 5);
     assert!(session.house_roster_is_consistent());
     assert_eq!(session.options.starting_credits, 5000);
     assert!(!session.options.super_weapons);

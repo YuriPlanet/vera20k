@@ -615,11 +615,15 @@ pub(crate) fn paint_wol_lobby_popup(
             let layout =
                 crate::ui::shell::modal::wol_create_game_layout_on(width, height, modern, scale);
             let check_text = |rect| crate::ui::skirmish_shell::checkbox_text_rect(rect, scale);
-            // Style SS_RIGHT.
+            let field_align = if modern {
+                ShellAlign::H_RIGHT | ShellAlign::V_CENTER
+            } else {
+                ShellAlign::H_RIGHT
+            };
             let mut labels = vec![caption(
                 "GUI:Password",
                 layout.password_label,
-                ShellAlign::H_RIGHT,
+                field_align,
                 true,
             )];
             // The online layout has no clan or observer box.
@@ -712,7 +716,7 @@ pub(crate) fn paint_wol_lobby_popup(
                 labels.push(PaintLabel {
                     text: crate::i18n::tr("VERA:RoomName").into(),
                     rect: label,
-                    align: ShellAlign::H_RIGHT,
+                    align: field_align,
                     rgb: SHELL_LABEL_TEXT_RGB,
                     path_a_reveal: None,
                 });

@@ -485,7 +485,7 @@ impl FerryState {
             let Some((entity, object)) = ferry_transport(sim, rules, route.transport, owner) else {
                 return false;
             };
-            let cargo = entity.passenger_role.cargo();
+            let cargo = entity.passenger_role().cargo();
             // A unit the player clicked aboard shows as the transport's
             // boarding contact.
             for id in entity.radio_contacts.iter_live() {
@@ -637,7 +637,7 @@ fn at_rest(entity: &GameEntity) -> bool {
 fn on_the_way_aboard(sim: &Simulation, id: u64) -> bool {
     sim.entities().get(id).is_some_and(|entity| {
         entity.is_alive()
-            && !entity.passenger_role.is_inside_transport()
+            && !entity.passenger_role().is_inside_transport()
             && entity.mission.current().known() == Some(MissionType::Enter)
     })
 }
@@ -658,7 +658,7 @@ fn ferry_transport<'a>(
             entity.category(),
             EntityCategory::Unit | EntityCategory::Aircraft
         )
-        || entity.passenger_role.is_inside_transport()
+        || entity.passenger_role().is_inside_transport()
     {
         return None;
     }
@@ -766,7 +766,7 @@ fn board_orders(
     };
     // The hold as it will be once everyone already on the way is aboard.
     let mut planned = transport
-        .passenger_role
+        .passenger_role()
         .cargo()
         .cloned()
         .unwrap_or_else(|| {
@@ -779,7 +779,7 @@ fn board_orders(
         if boarder.transport == route.transport
             && boarder.holds(sim, now)
             && let Some(entity) = sim.entities().get(boarder.unit)
-            && !entity.passenger_role.is_inside_transport()
+            && !entity.passenger_role().is_inside_transport()
             && let Some(size) = size_of(entity)
         {
             planned.board_forced_chain(&[(boarder.unit, size)]);
@@ -811,14 +811,14 @@ fn board_orders(
                     || !entity.is_alive()
                     || entity.death.is_dying()
                     || !matches!(category, EntityCategory::Infantry | EntityCategory::Unit)
-                    || entity.passenger_role.is_inside_transport()
+                    || entity.passenger_role().is_inside_transport()
                     || !at_rest(entity)
                     || ferrying.contains(&id)
                     || boarders.iter().any(|boarder| boarder.unit == id)
                     || waiting.iter().any(|&(_, seen, _)| seen == id)
                     // A loaded carrier does not board, as in AutoLoad.
                     || !entity
-                        .passenger_role
+                        .passenger_role()
                         .cargo()
                         .is_none_or(PassengerCargo::is_empty)
                     || !sim.techno_player_controllable(id, rules)
@@ -942,7 +942,7 @@ fn route_for(
         transport,
         pickup,
         drop,
-        entity.passenger_role.passenger_count(),
+        entity.passenger_role().passenger_count(),
         now,
     ))
 }
@@ -996,7 +996,7 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
                 route_for(
                     sim,
                     &runtime.resources.rules,
-                    Some(&runtime.resources.overlay_registry),
+                    Some(runtime.resources.rules.overlay_registry()),
                     owner,
                     id,
                     clicked,
@@ -1035,7 +1035,7 @@ pub(crate) fn frame_pass(state: &mut AppState) {
                 Some(owner) if now % CHECK_INTERVAL == 0 => ferry.check(
                     sim,
                     &runtime.resources.rules,
-                    Some(&runtime.resources.overlay_registry),
+                    Some(runtime.resources.rules.overlay_registry()),
                     owner,
                     now,
                 ),
@@ -1089,7 +1089,7 @@ fn find_armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     // click needs a whole route.
     let waypoint_click = state.match_state.input.ferry.waypoint_click();
     let rules = &runtime.resources.rules;
-    let registry = Some(&runtime.resources.overlay_registry);
+    let registry = Some(runtime.resources.rules.overlay_registry());
     let accepted = transports.iter().any(|&id| {
         if waypoint_click {
             ordinary_cell_move_goal(sim, rules, registry, owner, id, clicked, false).is_some()

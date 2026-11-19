@@ -518,7 +518,10 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     }
     if modal.advanced && modal.extras_page.is_none() {
         for field in crate::ui::skirmish_shell::AdvancedField::ALL {
-            let rect = layout.advanced_control_rects[field.row()];
+            if field.page() != modal.advanced_page {
+                continue;
+            }
+            let rect = layout.advanced_control_rects[field.page_row()];
             paint_control(
                 out,
                 &chrome,
@@ -531,6 +534,25 @@ pub(super) fn push_random_map_setup_modal_control_instances(
                     ),
                     plaque: true,
                     disabled: !modal.is_enabled(RandomMapSetupControl::Advanced(field)),
+                },
+                layout.scale,
+            );
+        }
+        // The native vertical scrollbar the dropdowns use, now paging the
+        // seven reusable rows over every Advanced slider.
+        if crate::ui::skirmish_shell::AdvancedField::PAGE_COUNT > 1 {
+            paint_control(
+                out,
+                &chrome,
+                ControlPaint::ScrollBar {
+                    scrollbar: crate::ui::skirmish_shell::AdvancedField::advanced_scrollbar_rect(
+                        layout,
+                    ),
+                    thumb: crate::ui::skirmish_shell::AdvancedField::advanced_scrollbar_thumb(
+                        layout,
+                        modal.advanced_page,
+                    ),
+                    pressed_part: None,
                 },
                 layout.scale,
             );
@@ -574,7 +596,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             &chrome,
             ControlPaint::Trackbar {
                 rect: players,
-                thumb_left: crate::ui::skirmish_shell::PLAYERS_RANGE.thumb_left_in(
+                thumb_left: modal.players_range.thumb_left_in(
                     modal.options.num_players,
                     players,
                     layout.scale,

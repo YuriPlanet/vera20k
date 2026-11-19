@@ -26,7 +26,7 @@ use super::fairness::FairCtx;
 use super::grid::RmgGrid;
 use super::phases::tech_buildings::TechType;
 use super::phases::tiberium::{DENSITY_LEVELS, GEM_BASE};
-use super::phases::urban_areas::{UrbanCatalog, UrbanObject, UrbanStructure};
+use super::phases::urban_areas::{SpawnFoots, UrbanCatalog, UrbanObject, UrbanStructure};
 use super::rng::RmgRng;
 use crate::map::construction_trace::RmgConstructionPhase;
 use crate::map::entities::EntityCategory;
@@ -36,6 +36,13 @@ const LANDMARK_SALT: u16 = 0x1A4D;
 const GEM_SALT: u16 = 0x6E35;
 const FARM_SALT: u16 = 0xFA43;
 const FENCE_SALT: u16 = 0xFE9C;
+const TECH_SALT: u16 = 0x7EC1;
+const DERELICT_SALT: u16 = 0x5B17;
+/// Independent streams for the three Neutral foot stages, so a player moving
+/// one slider never shifts the others' picks or any native stage's draws.
+const CIVILIAN_SALT: u16 = 0x3A71;
+const ANIMAL_SALT: u16 = 0x6C2D;
+const WILD_SALT: u16 = 0x51BE;
 
 /// Half the side of the square round a start that Base Room clears of trees:
 /// the square Fair Starts counts as a start's building room.
@@ -70,6 +77,20 @@ pub struct EmbellishArgs<'a> {
     pub centre_gems: u8,
     pub countryside: u8,
     pub fences: u8,
+    /// Advanced Tech Buildings raises the stock count toward 40.
+    pub tech_building_amount: i32,
+    /// VERA extension: the Advanced Derelicts slider, 0 = none; stands neutral
+    /// unpowered combat buildings over open ground.
+    pub derelict_amount: i32,
+    /// VERA extension: the Advanced Civilians slider, 0 = none; extra
+    /// civilian infantry and vehicles on Neutral over open ground.
+    pub civilian_amount: i32,
+    /// VERA extension: the Advanced Animals slider, 0 = none; `Name=Animal …`
+    /// foots on Neutral over open ground.
+    pub animal_amount: i32,
+    /// VERA extension: the Advanced Neutral Defenders slider, 0 = none;
+    /// player-buildable units left on Neutral over open ground.
+    pub wild_amount: i32,
     pub seed: u16,
     /// The neutral tech building Fair Tech stands, by name (`FairTech=`).
     pub fair_tech_type: &'a str,
@@ -180,6 +201,97 @@ pub fn run(
     paved
 }
 
+/// Add the optional population to the finished map. Each slider draws from
+/// its own seed. Occupancy is shared so two added objects cannot overlap.
+pub(super) fn place_slider_objects(
+    ctx: &mut FairCtx<'_>,
+    args: &EmbellishArgs<'_>,
+    starts: &[(i32, i32)],
+    catalog: &UrbanCatalog,
+    tech: &[TechType],
+    stock_tech: usize,
+    out: &mut EmbellishOutput<'_>,
+) {
+    let tech_target = if args.tech_building_amount > 0 {
+        (args.tech_building_amount.min(100) * 40 / 100).max(1)
+    } else {
+        0
+    };
+    let additional = (tech_target as usize).saturating_sub(stock_tech);
+    if (additional == 0 || tech.is_empty())
+        && args.derelict_amount <= 0
+        && args.civilian_amount <= 0
+        && args.animal_amount <= 0
+        && args.wild_amount <= 0
+    {
+        return;
+    }
+    let play: Vec<_> = ctx
+        .grid
+        .native_cells()
+        .filter(|&(x, y)| ctx.in_play(x, y))
+        .collect();
+    if play.is_empty() {
+        return;
+    }
+    if additional > 0 && !tech.is_empty() {
+        let mut rng = RmgRng::new(args.seed ^ TECH_SALT);
+        for _ in 0..additional {
+            let kind = &tech[rng.uniform(0, tech.len() as i32 - 1) as usize];
+            if kind.footprint.is_empty() {
+                continue;
+            }
+            // Like the native per-building placer (0x00595400), give each
+            // building a finite number of anchors. A full map receives fewer.
+            for _ in 0..100 {
+                let cell = play[rng.uniform(0, play.len() as i32 - 1) as usize];
+                if clear_of_starts(starts, cell, START_CLEARANCE)
+                    && site_fits(ctx, cell, &kind.footprint, 0, Also::Nothing)
+                {
+                    place_building(ctx, out, &kind.name, &kind.footprint, cell);
+                    break;
+                }
+            }
+        }
+    }
+    if args.derelict_amount > 0 {
+        derelicts(ctx, args, starts, &play, catalog, out);
+    }
+    if args.civilian_amount > 0 {
+        spawn_foots(
+            ctx,
+            starts,
+            &play,
+            &catalog.civilians,
+            args.civilian_amount,
+            args.seed ^ CIVILIAN_SALT,
+            out,
+        );
+    }
+    if args.animal_amount > 0 {
+        spawn_foots(
+            ctx,
+            starts,
+            &play,
+            &catalog.animals,
+            args.animal_amount,
+            args.seed ^ ANIMAL_SALT,
+            out,
+        );
+    }
+    if args.wild_amount > 0 {
+        spawn_foots(
+            ctx,
+            starts,
+            &play,
+            &catalog.wild,
+            args.wild_amount,
+            args.seed ^ WILD_SALT,
+            out,
+        );
+    }
+}
+
 /// Flat, unclaimed pavement of a town (the urban pass locks its districts):
 /// where a landmark may stand as well as on open ground.
 fn town_pavement(ctx: &FairCtx<'_>, x: i32, y: i32) -> bool {
@@ -285,7 +397,24 @@ fn place_building(
         category: EntityCategory::Structure,
         cell: (anchor.0 as i16, anchor.1 as i16),
         facing: 0,
+        derelict: false,
     });
+}
+
+/// Stand a derelict combat building: same placement and trace as
+/// [`place_building`], but flagged so the build post-pass powers it down and
+/// damages it.
+fn place_derelict(
+    ctx: &mut FairCtx<'_>,
+    out: &mut EmbellishOutput<'_>,
+    name: &str,
+    footprint: &[(i16, i16)],
+    anchor: (i32, i32),
+) {
+    place_building(ctx, out, name, footprint, anchor);
+    if let Some(object) = out.objects.last_mut() {
+        object.derelict = true;
+    }
 }
 
 /// Base Room: the trees in the square round each start go, the ore trees
@@ -626,6 +755,234 @@ fn countryside(
             }
         }
     }
+}
+
+/// VERA extension: the Advanced Derelicts slider. Stands neutral, unpowered
+/// combat buildings — radar, lab, refinery, war factory, barracks, power,
+/// yard — over open ground away from the starts, from its own RNG stream so
+/// no other stage's draws move. The build post-pass powers them down and
+/// damages them; here they only take their cells and construction trace.
+const DERELICT_SPACING: i32 = 12;
+const DERELICT_MAX: i32 = 60;
+
+fn derelicts(
+    ctx: &mut FairCtx<'_>,
+    args: &EmbellishArgs<'_>,
+    starts: &[(i32, i32)],
+    play: &[(i32, i32)],
+    catalog: &UrbanCatalog,
+    out: &mut EmbellishOutput<'_>,
+) {
+    let kinds: Vec<(&UrbanStructure, &Vec<(i16, i16)>)> = catalog
+        .derelicts
+        .iter()
+        .filter_map(|entry| entry.footprint.as_ref().map(|f| (entry, f)))
+        .collect();
+    if kinds.is_empty() {
+        return;
+    }
+    // 0..100 -> a capped share of the map's open cells; small maps get fewer.
+    let wanted = ((args.derelict_amount.clamp(0, 100) * DERELICT_MAX / 100)
+        .min(play.len() as i32 / 900))
+    .max(1);
+    let open: Vec<(i32, i32)> = play
+        .iter()
+        .copied()
+        .filter(|&cell| {
+            free_ground(ctx, cell.0, cell.1) && clear_of_starts(starts, cell, START_CLEARANCE)
+        })
+        .collect();
+    if open.is_empty() {
+        return;
+    }
+    let mut rng = RmgRng::new(args.seed ^ DERELICT_SALT);
+    let mut placed: Vec<(i32, i32)> = Vec::new();
+    for _ in 0..wanted * 120 {
+        if placed.len() as i32 >= wanted {
+            break;
+        }
+        let anchor = open[rng.uniform(0, open.len() as i32 - 1) as usize];
+        let (kind, footprint) = kinds[rng.uniform(0, kinds.len() as i32 - 1) as usize];
+        if !clear_of_starts(&placed, anchor, DERELICT_SPACING)
+            || !site_fits(ctx, anchor, footprint, 1, Also::Nothing)
+        {
+            continue;
+        }
+        place_derelict(ctx, out, &kind.name, footprint, anchor);
+        placed.push(anchor);
+    }
+}
+
+/// VERA extension: the three spawn sliders. Scatters foot-sized units over
+/// clear open ground and, for the types the Rules say stand only on water,
+/// over open water — away from the starts, each slider from its own RNG
+/// stream. The types come from the rules (a mod's own units are picked up
+/// automatically) and are emitted on Neutral through [`UrbanObject`], the
+/// same path the urban pass' civilians and the tech buildings use. Infantry
+/// and vehicles keep their registry category; no other stage's draw moves.
+const SPAWN_SPACING: i32 = 3;
+const SPAWN_MAX: i32 = 120;
+/// Of a slider's spawns, one in this many stands on water (at least one),
+/// when the map has water and the slurry lists a type for it.
+const SPAWN_WATER_DIVISOR: i32 = 3;
+
+/// A cell a water-only unit may stand on: open sea (`WaterSet` tiles only —
+/// a shore piece is walkable beach, not water) with nothing on it.
+fn open_water(ctx: &FairCtx<'_>, cell: (i32, i32)) -> bool {
+    ctx.in_play(cell.0, cell.1)
+        && ctx
+            .grid
+            .get(cell.0, cell.1)
+            .is_some_and(|cell| ctx.ids.is_water(cell.tile) && !cell.occupied && !cell.start_marker)
+}
+
+/// Shuffle `order` in place, so a pass over it takes every kind once.
+fn shuffle(rng: &mut RmgRng, order: &mut [usize]) {
+    for index in (1..order.len()).rev() {
+        let other = rng.uniform(0, index as i32) as usize;
+        order.swap(index, other);
+    }
+}
+
+/// Stand up to `wanted` units of `kinds` on `open`, at least
+/// [`SPAWN_SPACING`] apart. The kinds are taken in shuffled turns, so a small
+/// budget still shows many of them rather than one type's run of luck.
+fn scatter(
+    ctx: &mut FairCtx<'_>,
+    open: &[(i32, i32)],
+    kinds: &[(String, EntityCategory)],
+    wanted: i32,
+    rng: &mut RmgRng,
+    out: &mut EmbellishOutput<'_>,
+    placed: &mut Vec<(i32, i32)>,
+) {
+    if wanted <= 0 || open.is_empty() || kinds.is_empty() {
+        return;
+    }
+    let mut order: Vec<usize> = (0..kinds.len()).collect();
+    shuffle(rng, &mut order);
+    let mut cursor = order.len();
+    let mut count = 0;
+    for _ in 0..wanted * 60 {
+        if count >= wanted {
+            break;
+        }
+        let cell = open[rng.uniform(0, open.len() as i32 - 1) as usize];
+        if !clear_of_starts(placed, cell, SPAWN_SPACING) {
+            continue;
+        }
+        if cursor == order.len() {
+            shuffle(rng, &mut order);
+            cursor = 0;
+        }
+        let (name, category) = &kinds[order[cursor]];
+        cursor += 1;
+        // A foot does not claim its cell for placement (towns put several on
+        // one tile), but marking it keeps two spawns off the same spot here.
+        ctx.grid.cell_native_mut(cell.0, cell.1).occupied = true;
+        let event = out
+            .trace
+            .push_discarded(RmgConstructionPhase::UrbanAreas, name.clone());
+        out.trace.mark_emitted(
+            event,
+            out.entity_base + out.objects.len(),
+            (cell.0 as u16, cell.1 as u16),
+        );
+        out.objects.push(UrbanObject {
+            name: name.clone(),
+            category: *category,
+            cell: (cell.0 as i16, cell.1 as i16),
+            facing: ((rng.uniform(0, 7) << 5) & 0xFF) as u8,
+            derelict: false,
+        });
+        placed.push(cell);
+        count += 1;
+    }
+}
+
+fn spawn_foots(
+    ctx: &mut FairCtx<'_>,
+    starts: &[(i32, i32)],
+    play: &[(i32, i32)],
+    kinds: &SpawnFoots,
+    amount: i32,
+    seed: u16,
+    out: &mut EmbellishOutput<'_>,
+) {
+    if kinds.is_empty() {
+        return;
+    }
+    // 0..100 -> a capped share of the map's open cells; small maps get fewer.
+    let wanted = ((amount.clamp(0, 100) * SPAWN_MAX / 100).min(play.len() as i32 / 90)).max(1);
+    let land_open: Vec<(i32, i32)> = play
+        .iter()
+        .copied()
+        .filter(|&cell| {
+            free_ground(ctx, cell.0, cell.1) && clear_of_starts(starts, cell, START_CLEARANCE)
+        })
+        .collect();
+    let water_open: Vec<(i32, i32)> = play
+        .iter()
+        .copied()
+        .filter(|&cell| open_water(ctx, cell) && clear_of_starts(starts, cell, START_CLEARANCE))
+        .collect();
+
+    let land: Vec<(String, EntityCategory)> = kinds
+        .infantry
+        .iter()
+        .map(|name| (name.clone(), EntityCategory::Infantry))
+        .chain(
+            kinds
+                .vehicles
+                .iter()
+                .map(|name| (name.clone(), EntityCategory::Unit)),
+        )
+        .collect();
+    let water: Vec<(String, EntityCategory)> = kinds
+        .water_infantry
+        .iter()
+        .map(|name| (name.clone(), EntityCategory::Infantry))
+        .chain(
+            kinds
+                .water_vehicles
+                .iter()
+                .map(|name| (name.clone(), EntityCategory::Unit)),
+        )
+        .collect();
+
+    // Water types get their share only where the map has water to hold them;
+    // a slider of land types alone fills the land as before.
+    let water_share = if water.is_empty() || water_open.is_empty() {
+        0
+    } else {
+        (wanted / SPAWN_WATER_DIVISOR).max(1)
+    };
+    let land_share = if land.is_empty() {
+        0
+    } else {
+        (wanted - water_share).max(0)
+    };
+
+    let mut rng = RmgRng::new(seed);
+    let mut placed: Vec<(i32, i32)> = Vec::new();
+    scatter(
+        ctx,
+        &land_open,
+        &land,
+        land_share,
+        &mut rng,
+        out,
+        &mut placed,
+    );
+    scatter(
+        ctx,
+        &water_open,
+        &water,
+        water_share,
+        &mut rng,
+        out,
+        &mut placed,
+    );
 }
 
 /// Fences: short runs of fence on a town's pavement along the sides of its

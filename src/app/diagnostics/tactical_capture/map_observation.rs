@@ -2253,7 +2253,7 @@ fn cloak_runtime_observation(
 fn temporal_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
     // Independent immutable owner queries: diagnostics neither transfer a
     // link nor infer a carrier relation from a cargo entry (or vice versa).
-    let cargo = entity.passenger_role.cargo().map(|cargo| {
+    let cargo = entity.passenger_role().cargo().map(|cargo| {
         let passengers: Vec<_> = cargo
             .passengers()
             .iter()
@@ -2262,7 +2262,7 @@ fn temporal_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
             .collect();
         json!({"count": cargo.count(), "passengers": passengers})
     });
-    let inside = entity.passenger_role.inside_transport().map(
+    let inside = entity.passenger_role().inside_transport().map(
         |(transport, open_topped)| json!({"transport": transport, "open_topped": open_topped}),
     );
     json!({"has_link": entity.temporal.has_link(),
@@ -5090,8 +5090,8 @@ mod tests {
     #[test]
     fn ordinary_capture_admission_uses_canonical_color_and_source_roster() {
         let mut profile = example();
+        profile.launch.use_live_house_rows();
         profile.launch.local_slot_mut().color_index = 6;
-        profile.launch.rebuild_house_roster();
         profile.validate().unwrap();
         let baseline = profile;
         let mut profile = baseline.clone();
@@ -5099,17 +5099,14 @@ mod tests {
         assert!(profile.validate().is_err());
         let mut profile = baseline.clone();
         profile.launch.humans[0].role = crate::skirmish_launch::LaunchHumanRole::Observer;
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
         let mut profile = baseline.clone();
         profile.launch.opponents[0].raw_slot_index = 3;
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
         let mut profile = baseline;
         let mut remote = profile.launch.humans[0].clone();
         remote.raw_slot_index = Some(2);
         profile.launch.humans.push(remote);
-        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
     }
 
@@ -5132,7 +5129,7 @@ mod tests {
             .unwrap();
         sim.session_mut_for_test().set_binary_frame_for_test(17);
         sim.bomb_attach_for_test(planter, Some(carrier), &rules);
-        let entity = sim.entities_mut_for_test().get_mut(planter).unwrap();
+        let entity = sim.entity_mut_for_test(planter).unwrap();
         entity.last_fire_frame.set_for_test(16);
         entity.body_frame_counter.set_for_test(u32::MAX);
         entity.rearm_timer.set_for_test(CdTimer::from_raw(16, 50));
@@ -5257,8 +5254,7 @@ mod tests {
         // predicate here. World gameplay tests cover that independent input.
         let mut rng = sim.scenario_rng_mut_for_test().clone();
         let cloak = sim
-            .entities_mut_for_test()
-            .get_mut(sub)
+            .entity_mut_for_test(sub)
             .unwrap()
             .cloak
             .as_mut()
@@ -5309,16 +5305,14 @@ mod tests {
         // A diagnostic fixture exercises independent cargo order and the
         // existing target-head fixture, without modelling gunner callbacks.
         let cargo = sim
-            .entities_mut_for_test()
-            .get_mut(fv)
+            .entity_mut_for_test(fv)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         cargo.board_forced_chain(&[(cleg, 1.0)]);
         cargo.board_forced_chain(&[(other, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(victim)
+        sim.entity_mut_for_test(victim)
             .unwrap()
             .set_temporal_for_test(TemporalState::warped_by_for_test(cleg));
         let hash = sim.state_hash();

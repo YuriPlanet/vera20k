@@ -6,7 +6,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::world::{Simulation, UninitContext};
+use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 use std::collections::BTreeMap;
 
 /// Mutable BuildingType normal animation names changed by Unlimbo44099B.
@@ -245,7 +245,7 @@ mod tests {
                     row["initial_count"].as_i64().unwrap() as i8,
                     types,
                 );
-            sim.power_down_building_upgrade(host, &rules);
+            sim.power_down_building_upgrade(host, &rules, Default::default());
             let actual = sim
                 .substrate
                 .entities
@@ -327,7 +327,7 @@ mod tests {
                     .anim_slots_mut_for_test()[slot] = Some(anim);
                 sentinels.push((slot, anim));
             }
-            sim.power_down_building_upgrade(host, &rules);
+            sim.power_down_building_upgrade(host, &rules, Default::default());
             let actual = sim.entities().get(host).unwrap();
             assert_eq!(
                 i64::from(actual.building_upgrades().count()),
@@ -622,6 +622,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
     ) -> Option<InternedId> {
         let entity = self.substrate.entities.get(id)?;
         let slot = usize::try_from(i32::from(entity.building_upgrades().count()) - 1).ok()?;
@@ -644,7 +645,7 @@ impl Simulation {
         }
         if refresh_supers {
             let owner = self.substrate.entities.get(id)?.owner();
-            crate::sim::superweapon::update_owned_supers(self, rules, owner);
+            crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
         }
         removed
     }

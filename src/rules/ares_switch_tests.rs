@@ -136,7 +136,7 @@ fn a_maps_ares_key_turns_ares_on() {
             .spawn_object("GAPOWR", "Americans", 12, 12, 0, rules)
             .unwrap();
         sim.object_ai_visit_one(id, Some(rules), crate::sim::world::ObjectAiCtx::default());
-        sim.substrate.entities.get(id).unwrap().cloak.is_some()
+        sim.entities().get(id).unwrap().cloak.is_some()
     };
     let stock = skirmish(
         &mut owner,

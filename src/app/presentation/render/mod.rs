@@ -180,9 +180,29 @@ pub(crate) struct GameRenderTimes {
     pub message_ms: Option<u64>,
 }
 
-/// Whether this render measures its phases: for an attached dashboard, or
-/// while the performance panel shows its Most CPU row.
+/// Names of the render phases, in the same order as [`RenderPhases::spans`].
+/// The perf recorder uses these as CSV column names.
+#[cfg(feature = "perf")]
+pub(crate) const RENDER_PHASE_KEYS: [&str; RenderPhases::COUNT] = [
+    "world",
+    "debug",
+    "shroud",
+    "ui",
+    "sidebar",
+    "upload",
+    "lights",
+    "effects",
+    "draw_calls",
+    "handoff",
+    "other",
+];
+
+/// Whether this render measures its phases: for an attached dashboard, while
+/// the performance panel shows its Most CPU row, or always in a perf build.
 fn render_phases_wanted(state: &AppState) -> bool {
+    if cfg!(feature = "perf") {
+        return true;
+    }
     #[cfg(feature = "telemetry-dashboard")]
     if state.diag.telemetry_observer.active() {
         return true;
@@ -798,6 +818,7 @@ pub(crate) fn render_game(
             cell_body_draws: &world.cell_body_draws,
             terrain: &world.terrain.normal,
             smudge: &world.smudge,
+            smudge_cuts: &world.smudge_cuts,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
             fogged_objects: &world.fogged_objects,

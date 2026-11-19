@@ -476,7 +476,6 @@ impl WolCapture {
                 },
                 NetworkSetupRequest::PublishRoster,
                 NetworkSetupRequest::PublishOptions,
-                NetworkSetupRequest::RequestPings,
             ]) && !requests.contains(&NetworkSetupRequest::Advertise)
                 && launch
                     .selected_map_file
@@ -846,6 +845,7 @@ fn matchbot_says(
         WolServiceEvent::Message {
             from: member(MATCHBOT, MEMBER_OPERATOR, ""),
             text: text.encode_utf16().collect(),
+            localized: false,
             private,
             action: false,
             ansi: true,

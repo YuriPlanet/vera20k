@@ -411,7 +411,8 @@ impl App {
         request.check_country_limits(state.process_assets.reads_ares_way())?;
         if let SpawnGame::Network(network) = &mut request.game {
             // VERA: a launcher's room has no host to share rules: each
-            // player plays their own, which its ExpectedRulesDigest compares.
+            // player plays their own, which its ExpectedRulesDigest and the
+            // start agreement (`lan_service::install_gameplay`) compare.
             network.session.options.host_rules =
                 crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
         }

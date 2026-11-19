@@ -122,8 +122,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
     building.mission_leaf =
         crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Structure);
     building
-        .passenger_role
-        .occupants_mut()
+        .garrison_mut_for_test()
         .set_fire_index_for_test(integer(&input["fire_index"]));
     for owner in input["occupant_owners"].as_array().unwrap() {
         let passenger_id = sim.substrate.allocate_stable_id();
@@ -137,14 +136,14 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
         );
         passenger.set_type_ref_for_test(sim.interner.intern("E1"));
         passenger.set_owner_for_test(houses[owner.as_u64().unwrap() as usize]);
-        passenger.passenger_role = PassengerRole::inside_for_test(id, false);
+        passenger.set_passenger_role_for_test(PassengerRole::inside_for_test(id, false));
         passenger.lifecycle.set_in_limbo_for_test(true);
         passenger.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::for_test_kind(
                 crate::rules::locomotor_type::LocomotorKind::Walk,
             ),
         );
-        building.passenger_role.occupants_mut().add(passenger_id);
+        building.garrison_mut_for_test().add_for_test(passenger_id);
         sim.substrate.entities.insert(passenger);
     }
     sim.substrate.entities.insert(building);
@@ -204,7 +203,7 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
         let expected_owner = houses[expected["owner_after_callback"].as_u64().unwrap() as usize];
         assert_eq!(building.owner(), expected_owner, "{name}");
         assert_eq!(changed, old_owner != expected_owner, "{name}");
-        let occupants = building.passenger_role.occupants();
+        let occupants = building.passenger_role().occupants();
         assert_eq!(
             occupants.fire_index(),
             integer(&expected["fire_index_after_callback"]),
@@ -393,7 +392,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
             .entities
             .get(id)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_none()
     );

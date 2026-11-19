@@ -1,11 +1,14 @@
-//! Direct IPv4 LAN socket owner for UDPInterfaceClass (`0x007B30B0`,
-//! `0x007B3450`, `0x007B3AA0`). Reliable queues and endpoint identity stay in
-//! `LanConnections`; this owner queues raw datagram attempts and adds/checks
-//! their four-byte UDP checksum.
+//! The IPv4 socket pair of UDPInterfaceClass (`0x007B30B0`, `0x007B3450`,
+//! `0x007B3AA0`): it queues raw datagram attempts and adds/checks their
+//! four-byte UDP checksum. On LAN they go straight to peers; online they go
+//! through the client relay route (`RelayRoute`: the relay session, its
+//! renewal, Leave retries, the absence release, the ordering inbox and peer
+//! probes). Reliable queues and endpoint identity stay in `LanConnections`,
+//! global messages in `GlobalChannel`.
 //!
 //! Global messages admit unknown sources; private messages require an admitted
-//! peer roster. Router/localhost rewriting, native self-source filtering, spare sockets and
-//! platform socket-buffer tuning remain outside this direct-peer owner.
+//! peer roster. Residual: router/localhost rewriting, native self-source
+//! filtering, spare sockets and platform socket-buffer tuning are not ported.
 
 use std::collections::VecDeque;
 use std::io;
@@ -34,7 +37,10 @@ pub fn browser_proxy_url() -> &'static str {
     }
 }
 
-use vera20k_relay_protocol::{ABSENT_MS, ClientSession, RelayError, ServerEvent};
+use vera20k_relay_protocol::{
+    ABSENT_MS, ClientSession, HOP_HANDSHAKE_INTERVAL_MS, HOP_PING_INTERVAL_MS,
+    HOP_READINESS_TIMEOUT_MS, LEAVE_ATTEMPTS, LEAVE_INTERVAL_MS, RelayError, ServerEvent,
+};
 pub use vera20k_relay_protocol::{
     CertificatePacing, MAX_PEERS as RELAY_MAX_PEERS, OrderingCertificate, Ticket as RelayTicket,
     WatchTicket as RelayWatchTicket, peer_endpoint as relay_peer_endpoint,
@@ -67,22 +73,35 @@ pub const DEFAULT_LAN_PORT: u16 = 1234;
 pub const DEFAULT_ALTERNATE_PORT: u16 = 1236;
 /// Original recvfrom7B3EDD supplies a640-byte datagram buffer.
 pub const UDP_DATAGRAM_CAPACITY: usize = 640;
-const CHECKSUM_LEN: usize = 4;
+// A relay must carry every datagram the send queue admits.
+const _: () = assert!(UDP_DATAGRAM_CAPACITY <= vera20k_relay_protocol::MAX_PAYLOAD);
+pub(super) const CHECKSUM_LEN: usize = 4;
 // VERA physical scheduling only: leave the guard between bounded receive
 // passes, even when peers continuously replenish the socket. No extra inbox.
 const IO_PUMP_RECEIVE_BUDGET: usize = 256;
 const IO_PUMP_INTERVAL: Duration = Duration::from_millis(6);
-// VERA-only match boundary, outside the native checksum/connection codec.
+// VERA-only match boundary, outside the native checksum/connection codec: the
+// magic and the encoded `SessionScope` come before the checksum.
 // Scope admission precedes every global/private ACK, sequence and receive cache.
-const LAN_SCOPE_MAGIC: &[u8; 4] = b"VLS\x01";
-const LAN_SCOPE_HEADER_LEN: usize = 4 + 16 + 8;
-// Explicit Leave is resent every 16 wall buckets (256 ms) until the relay
-// acknowledges it. A relay that answers none of these attempts (about a
-// minute) is gone or unreachable: release the route rather than block every
-// later online admission. The relay then treats the place as a lost
-// connection, and the next match's newer generation supersedes it
-// (services/relay/README.md).
-const RELAY_LEAVE_ATTEMPTS: u16 = 235;
+pub(super) const LAN_SCOPE_MAGIC: &[u8; 4] = b"VLS\x01";
+pub(super) const LAN_SCOPE_HEADER_LEN: usize = LAN_SCOPE_MAGIC.len() + SessionScope::LEN;
+// The relay session's cadences (`vera20k_relay_protocol`) in 16 ms wall
+// buckets. Explicit Leave is resent until the relay acknowledges it. A relay
+// that answers none of `LEAVE_ATTEMPTS` (about a minute) is gone or
+// unreachable: release the route rather than block every later online
+// admission. The relay then treats the place as a lost connection, and the
+// next match's newer generation supersedes it (services/relay/README.md).
+const RELAY_LEAVE_TICKS: u32 = (LEAVE_INTERVAL_MS / 16) as u32;
+const RELAY_PING_TICKS: u32 = (HOP_PING_INTERVAL_MS / 16) as u32;
+const RELAY_HANDSHAKE_TICKS: u32 = (HOP_HANDSHAKE_INTERVAL_MS / 16) as u32;
+const RELAY_READINESS_TICKS: u32 = (HOP_READINESS_TIMEOUT_MS / 16) as u32;
+// Whole buckets, so these ticks and the netsim's 16 ms bucket clock agree.
+const _: () = assert!(
+    LEAVE_INTERVAL_MS % 16 == 0
+        && HOP_PING_INTERVAL_MS % 16 == 0
+        && HOP_HANDSHAKE_INTERVAL_MS % 16 == 0
+        && HOP_READINESS_TIMEOUT_MS % 16 == 0
+);
 // The relay retires a started player it has not heard for `ABSENT_MS`
 // (`retire_absent`, services/relay-protocol/src/sequenced.rs), and drops a
 // lapsed ticket unanswered, so nothing tells a game that its place is gone.
@@ -283,9 +302,8 @@ impl UdpSendQueue {
         }
         let mut bytes = [0; UDP_DATAGRAM_CAPACITY];
         if let Some(scope) = lan_scope {
-            bytes[..4].copy_from_slice(LAN_SCOPE_MAGIC);
-            bytes[4..20].copy_from_slice(&scope.epoch);
-            bytes[20..LAN_SCOPE_HEADER_LEN].copy_from_slice(&scope.revision.to_le_bytes());
+            bytes[..LAN_SCOPE_MAGIC.len()].copy_from_slice(LAN_SCOPE_MAGIC);
+            bytes[LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN].copy_from_slice(&scope.encode());
         }
         bytes[scope_len..scope_len + CHECKSUM_LEN]
             .copy_from_slice(&udp_checksum(frame).to_le_bytes());
@@ -1125,13 +1143,7 @@ impl UdpIo {
         #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
         let alternate = UdpSocket::bind(config.alternate, "alternate")?;
         alternate.set_nonblocking(true)?;
-        let global = GlobalChannel::new(
-            GlobalConfig {
-                product_id: connections.product_id(),
-                ..GlobalConfig::default()
-            },
-            connections.retry_timing(),
-        );
+        let global = GlobalChannel::new(GlobalConfig::default(), connections.retry_timing());
         Ok(Self {
             primary,
             alternate,
@@ -1550,8 +1562,8 @@ impl UdpIo {
             if let Some(retiring) = route.retiring.as_mut() {
                 let due = retiring
                     .last_sent
-                    .is_none_or(|last| now_ticks.wrapping_sub(last) >= 16);
-                leave_unacknowledged = due && retiring.attempts == RELAY_LEAVE_ATTEMPTS;
+                    .is_none_or(|last| now_ticks.wrapping_sub(last) >= RELAY_LEAVE_TICKS);
+                leave_unacknowledged = due && retiring.attempts == LEAVE_ATTEMPTS;
                 if due && !leave_unacknowledged {
                     retiring.last_sent = Some(now_ticks);
                     retiring.attempts += 1;
@@ -1577,7 +1589,7 @@ impl UdpIo {
             } else {
                 if route
                     .last_response
-                    .is_some_and(|last| now_ticks.wrapping_sub(last) > 625)
+                    .is_some_and(|last| now_ticks.wrapping_sub(last) > RELAY_READINESS_TICKS)
                 {
                     route.session.forget_readiness();
                 }
@@ -1591,9 +1603,9 @@ impl UdpIo {
                 // initial admission retry once a second; established routes ping
                 // every two seconds. These wall buckets never enter simulation.
                 let interval = if route.session.is_ready() && route.renewing.is_none() {
-                    125
+                    RELAY_PING_TICKS
                 } else {
-                    62
+                    RELAY_HANDSHAKE_TICKS
                 };
                 if route
                     .last_probe
@@ -1954,8 +1966,7 @@ fn drain_socket(
                 };
                 if datagram.len() < LAN_SCOPE_HEADER_LEN + CHECKSUM_LEN
                     || datagram.len() > UDP_DATAGRAM_CAPACITY
-                    || datagram[4..20] != scope.epoch
-                    || datagram[20..LAN_SCOPE_HEADER_LEN] != scope.revision.to_le_bytes()
+                    || datagram[LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN] != scope.encode()
                 {
                     report.malformed_datagrams += 1;
                     continue;

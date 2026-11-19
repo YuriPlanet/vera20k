@@ -43,9 +43,11 @@ use crate::sim::world::Simulation;
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, absolute_leptons_to_screen};
 use crate::util::native_x87::adjust_for_z_standard;
 
-/// Both blits walk the voxel blitter's vertical gradient: DrawIt blits through
-/// `0x004AF2A0`, as TechnoClass's voxel body and uncached shadow do.
-const VOXEL_Z_GRADIENT: u32 = pack_z_gradient(ZGradient::Vertical, false);
+/// Both blits walk gradient 0. DrawIt hands `0x004AF2A0` a literal 0 for
+/// the shadow (`0x00749D24`) and the body (`0x00749E9C`), unlike
+/// TechnoClass's voxel body, which passes its own GetZGradient. Row Z is then
+/// independent of the piece's rectangle.
+const VOXEL_Z_GRADIENT: u32 = pack_z_gradient(ZGradient::Flat, false);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PieceGeometry {

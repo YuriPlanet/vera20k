@@ -271,23 +271,14 @@ fn snapshot_restored_collapsed_high_runtime(
 
     let terrain_speed_config = sim.terrain_speed_config().clone();
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "Radar load", 3);
-    let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, "RADARLOAD.MAP")
-        .expect("validated current snapshot")
-        .sim;
-    restored
-        .restore_after_snapshot_load()
-        .expect("restored object graph");
     let resources = SimResources::empty();
-    restored.rebuild_caches_after_load(
-        terrain_template.clone(),
-        terrain_speed_config,
-        &resources.rules,
-    );
-    restored
-        .restore_map_authority_after_snapshot_load(
+    let restored = GameSnapshot::load_validated(&bytes, 1, 2, "RADARLOAD.MAP")
+        .expect("validated current snapshot")
+        .restore_checkpoint_map_for_test(
             &resources.rules,
-            &resources.overlay_registry,
-            None,
+            resources.rules.overlay_registry(),
+            terrain_template.clone(),
+            terrain_speed_config,
         )
         .expect("restored current map authority");
     SimRuntime {
@@ -347,7 +338,7 @@ fn native_constructor_side_cells_use_structural_radar_without_own_sprite() {
 
             // 47C060 takes its structural color branch before testing +44.
             // No sprite of its own is required for this CellClass read.
-            let authority = CurrentRadarCellAuthority::new(Some(&resolved), None, None, None);
+            let authority = CurrentRadarCellAuthority::new(Some(&resolved), None, None);
             assert_eq!(
                 authority.source(cell.0, cell.1, BRIDGE_COLOR, &colors),
                 Some((BRIDGE_COLOR, OverlayClassification::Bridge)),
@@ -359,7 +350,7 @@ fn native_constructor_side_cells_use_structural_radar_without_own_sprite() {
                 .bridge_facts
                 .raw_flags &= !BRIDGE_FLAG_STRUCTURAL;
             assert_eq!(
-                CurrentRadarCellAuthority::new(Some(&resolved), None, None, None).source(
+                CurrentRadarCellAuthority::new(Some(&resolved), None, None).source(
                     cell.0,
                     cell.1,
                     BRIDGE_COLOR,
@@ -551,14 +542,14 @@ fn retail_bridge_end_headers_reach_full_and_dirty_radar_sources() {
     };
     crate::map::theater::load_theater(&mut assets, "TEMPERATE")
         .expect("physical temperate theater");
-    let registry = retail.rules.overlay_registry().clone();
+    let registry = retail.rules.overlay_registry();
     let names = std::collections::BTreeMap::from([(
         100,
         registry.name(100).expect("stock bridge end").to_string(),
     )]);
     let colors = crate::render::overlay_atlas::compute_overlay_radar_colors(
         &assets,
-        &registry,
+        registry,
         crate::render::overlay_atlas::OverlayRadarColorSource::Cell,
         &names,
         "tem",
@@ -569,7 +560,7 @@ fn retail_bridge_end_headers_reach_full_and_dirty_radar_sources() {
     let cell = central_cell(&grid, expanded_bounds());
     assert_eq!(colors.get(&(100, 1)), Some(&BRIDGE_END_COLOR));
     let mut runtime = runtime_with_overlay(resolved.clone(), cell, Some((100, 1)));
-    runtime.resources_mut().overlay_registry = registry;
+    runtime.resources_mut().rules = retail.rules;
     let full = projection(&grid, &runtime, &[], expanded_bounds(), &colors);
     assert_eq!(raw_pair(&full, cell), [BRIDGE_END_COLOR; 2]);
 

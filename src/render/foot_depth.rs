@@ -360,8 +360,7 @@ pub(crate) fn foot_z_adjust(
 /// Unit's final composite draw at 0x73B140, before its height > 16 test.
 /// The bridge arm consumes raw 0x703B10 / 0x703E70 results, independently of
 /// ZFudge coefficients. The other arm is NavCom plus radio slot zero's
-/// WeaponsFactory building. See docs/research/bridges/06-render-presentation-audio/
-/// UNIT_COMPOSITE_BRIDGE_SPLIT_73B140_GHIDRA_REPORT.md.
+/// WeaponsFactory building.
 pub(crate) fn unit_composite_split(
     context: FootDepthContext,
     too_big: bool,

@@ -34,7 +34,9 @@
         visit.requests.clear();
     };
 
-    globalThis.veraLobbyRequest = async function(id, path, token, body, limit) {
+    // headers: a sign-in's JSON [[name, value], ...] from the Rust lobby owner
+    // (sign_in_headers), which the gateway forwards by name.
+    globalThis.veraLobbyRequest = async function(id, path, token, body, limit, headers) {
         const visit = visits.get(id);
         if (!visit || !path.startsWith('/v1/') || path.includes('#')
             || !Number.isSafeInteger(limit) || limit < 1 || limit > 1024 * 1024) {
@@ -47,17 +49,14 @@
         const timer = setTimeout(() => abort.abort(), 12000);
         let reader;
         try {
-            const headers = {'Accept': 'application/json'};
-            if (token) headers.Authorization = 'Bearer ' + token;
-            if (body !== undefined) headers['Content-Type'] = 'application/json';
+            const sent = {'Accept': 'application/json'};
+            if (token) sent.Authorization = 'Bearer ' + token;
+            if (body !== undefined) sent['Content-Type'] = 'application/json';
+            for (const [name, value] of headers === undefined ? [] : JSON.parse(headers)) sent[name] = value;
             const response = await fetch(url.href, {
-                method: body === undefined ? 'GET' : 'POST', headers, body,
+                method: body === undefined ? 'GET' : 'POST', headers: sent, body,
                 credentials: 'omit', redirect: 'error', cache: 'no-store', signal: abort.signal,
             });
-            if (response.status === 401) {
-                await response.body?.cancel();
-                return JSON.stringify([401, '']);
-            }
             reader = response.body.getReader();
             const chunks = [];
             let length = 0;

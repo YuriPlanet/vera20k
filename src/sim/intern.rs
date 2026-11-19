@@ -9,11 +9,13 @@
 //! The interner is part of `Simulation` — all peers intern the same strings
 //! from the same rules.ini + map data in the same order, producing identical IDs.
 
+mod type_handle_table;
+
 use std::fmt;
 
+use self::type_handle_table::TypeHandleTable;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::{RuleSet, TypeHandle};
-use crate::sim::type_handle_table::TypeHandleTable;
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_string::with_ascii_uppercase;
 use crate::util::synced::Synced;

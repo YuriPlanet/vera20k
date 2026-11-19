@@ -243,6 +243,7 @@ fn frozen_building_pieces(
         };
         if zshape {
             let origin = native_z::zshape_origin(
+                native_z::FOGGED_ZSHAPE_ANCHOR,
                 (x as i32, y as i32),
                 object.foundation.dimensions(),
                 art.map_or((0, 0), |art| art.z_shape_point_move),
@@ -502,6 +503,9 @@ mod tests {
                 .iter()
                 .all(|piece| piece.instance.position == [x + 3.0, y - 4.0])
         );
+        // The remembered body places BUILDNGZ from (0x90, 0xAC), not the
+        // live (0xC6, 0x1BE) (0x004D1DBD, 0x004D1DCE).
+        assert_eq!(pieces[0].instance.zshape_origin, [x - 144.0, y - 172.0]);
         assert!(pieces.iter().all(|piece| piece.instance.alpha == 1.0
             && piece.instance.draw_state.native_selector_bits() == 0
             && piece.instance.palette_light.colour_word() == 0));
@@ -519,9 +523,12 @@ mod tests {
         raised.location.z = 3744;
         let raised = frozen_building_pieces(&input, &raised);
         assert_eq!(raised.len(), pieces.len());
+        // FoggedObject 0x004D1E5B lifts by AdjustForZ alone.
+        let lift = (crate::util::native_x87::adjust_for_z_standard(3744)
+            - crate::util::native_x87::adjust_for_z_standard(104)) as f32;
         for (low, high) in pieces.iter().zip(&raised) {
-            assert_eq!(high.instance.position[1], low.instance.position[1] - 525.0);
-            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - 525.0);
+            assert_eq!(high.instance.position[1], low.instance.position[1] - lift);
+            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - lift);
             assert_eq!(high.instance.depth, low.instance.depth);
         }
     }

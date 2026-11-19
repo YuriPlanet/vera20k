@@ -2398,7 +2398,7 @@ pub(crate) fn holds_sight(
     !entity.death.is_dying()
         && !entity.lifecycle.in_limbo()
         && (!config.require_playfield_membership || entity.in_playfield())
-        && !entity.passenger_role.is_inside_transport()
+        && !entity.passenger_role().is_inside_transport()
         && !config.passive_owner(entity.owner())
 }
 

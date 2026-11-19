@@ -202,12 +202,23 @@ pub(crate) enum LanLobbyAction {
     NameChanged(String),
     SendChat(Vec<u16>),
     ObserverChanged(bool),
-    /// Every selection notification refreshes displayed users; only a change
-    /// broadcasts selection in5DDCFD..5DDD28.
+    /// Every selection notification refreshes displayed users; `change`
+    /// decides what the service broadcasts.
     SelectGame {
         game_id: Option<u64>,
-        changed: bool,
+        change: LanSelectionChange,
     },
+}
+
+/// How a game selection came about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LanSelectionChange {
+    /// A click on the row already selected.
+    Unchanged,
+    /// A click on another row.
+    Changed,
+    /// Discovery dropped rows and clamped the selection to the last one.
+    Clamped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -523,7 +534,7 @@ impl LanLobbyState {
         self.game_list.selected = Some(selected);
         (selected != before).then(|| LanLobbyAction::SelectGame {
             game_id: self.selected_game().map(|row| row.id),
-            changed: true,
+            change: LanSelectionChange::Clamped,
         })
     }
 
@@ -604,13 +615,17 @@ impl LanLobbyState {
         {
             return None;
         }
-        let changed = self.game_list.selected != Some(index);
+        let change = if self.game_list.selected == Some(index) {
+            LanSelectionChange::Unchanged
+        } else {
+            LanSelectionChange::Changed
+        };
         self.game_list.selected = Some(index);
         // The roster follows through `replace_players` (the 0x549 LBN_SELCHANGE
         // handler's `0x005DAFE0`), which keeps the selected player by name.
         Some(LanLobbyAction::SelectGame {
             game_id: self.selected_game().map(|row| row.id),
-            changed,
+            change,
         })
     }
 
@@ -1062,14 +1077,14 @@ mod tests {
             lobby.select_game(3),
             Some(LanLobbyAction::SelectGame {
                 game_id: Some(2),
-                changed: true
+                change: LanSelectionChange::Changed
             })
         );
         assert_eq!(
             lobby.replace_games(Vec::new()),
             Some(LanLobbyAction::SelectGame {
                 game_id: None,
-                changed: true
+                change: LanSelectionChange::Clamped
             })
         );
         assert_eq!(

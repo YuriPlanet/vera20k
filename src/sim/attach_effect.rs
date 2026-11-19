@@ -806,7 +806,7 @@ pub(crate) fn range_modifier_source<'a>(
     let Some(entities) = entities else {
         return entity;
     };
-    let Some(transport_id) = entity.passenger_role.inside_transport_id() else {
+    let Some(transport_id) = entity.passenger_role().inside_transport_id() else {
         return entity;
     };
     let Some(transport) = entities.get(transport_id) else {
@@ -1676,7 +1676,7 @@ impl Simulation {
             .get(&new_owner)
             .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
         let human_and_computer = old_human != new_human;
-        let has_transporter = entity.passenger_role.inside_transport_id().is_some();
+        let has_transporter = entity.passenger_role().inside_transport_id().is_some();
         let effects = rules.attach_effect_types().types();
         let mut list = std::mem::take(
             self.substrate
@@ -1847,7 +1847,7 @@ impl Simulation {
         // the native immobilised states VERA models.
         if entity.lifecycle.in_limbo()
             || entity.chrono_warp_latch()
-            || entity.passenger_role.inside_transport_id().is_some()
+            || entity.passenger_role().inside_transport_id().is_some()
             || entity.phobos_attach_effects().is_empty()
         {
             return;
@@ -3932,7 +3932,9 @@ mod tests {
             .entities
             .get_mut(rider)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(truck, true);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                truck, true,
+            ));
         assert_eq!(
             range(&sim),
             5 * 256 * 2,
@@ -3944,7 +3946,9 @@ mod tests {
             .entities
             .get_mut(rider)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(truck, true);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                truck, true,
+            ));
         assert_eq!(
             range(&sim),
             5 * 256 * 3,

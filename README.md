@@ -31,22 +31,12 @@ VERA20K is made by gamers, for gamers, and gamers have the final say in where it
 
 Stuck? See the [help page](https://vera20k.org/help).
 
-It's in active development: skirmish is playable on Windows, macOS and Linux, campaigns partly
-work, and online multiplayer (experimental) is now available. Earlier versions and what changed in
-each are on the [releases page](https://github.com/YuriPlanet/vera20k/releases).
-
-To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
-[offline client setup](integrations/cncnet/README.md).
-
 ## Project goals
 
 1. Keep the gameplay, visuals and atmosphere of the original Red Alert 2: Yuri's Revenge.
 2. Support bigger battles: up to **30 players** and **20,000 units** on 500×500 maps.
 3. Incorporate known RTS features and some never seen before.
 4. Integrated multiplayer client
-
-See the [roadmap](https://github.com/orgs/YuriPlanet/projects/1) for current priorities
-and future plans.
 
 ## Contributing
 
@@ -63,8 +53,7 @@ Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1
 The engine has three main parts:
 
 - **Simulation:** Owns gameplay state and logic.
-- **Rendering:** An absolutely new GPU rendering pipeline using the original game assets, built
-  to preserve the original look.
+- **Rendering:** Draws terrain, units and buildings on the GPU using the original game's art.
 - **Application:** Handles input, menus, audio, and platform integration, connecting the systems.
 
 This separation supports deterministic gameplay.
@@ -99,18 +88,15 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-VERA20K plays like the original game by default. New features, including extensions from
-mods such as Ares, stay off until they are turned on with one of:
+VERA20K uses the original Yuri's Revenge rules by default. In **Options**, you can change
+sound, graphics and controls or turn on VERA features. The game saves your preferences in
+`VERA.INI`, with VERA-specific options under `[VERA]`.
 
-- **A VERA player option**, in **Options**, saved under `[VERA]` in `VERA.INI`.
-- **A build option**, such as `--features phobos` for the supported [Phobos extensions](docs/phobos.md).
-- **An INI key**, set by a mod or a map. Ares keys, or a mod that ships `ares.mix`, turn on
-  the supported [Ares extensions](docs/ares.md).
+Lobby settings, mods and maps can change the rules for a match. Mods and maps can enable supported
+[Ares](docs/ares.md) and [Phobos](docs/phobos.md) features through their INI files. A mod can also
+enable Ares by including `ares.mix`. Some Phobos features still require a build with `--features phobos`.
 
-Sound, graphics and controls are saved in `VERA.INI`. Gameplay rules come from lobby
-settings, mods or maps.
-
-The [modding guide](docs/modding.md) explains how to make your own mods.
+To create a mod, start with the [modding guide](docs/modding.md).
 
 ## Support
 
@@ -137,6 +123,7 @@ icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is
 with or endorsed by Electronic Arts.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**

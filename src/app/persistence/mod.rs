@@ -23,7 +23,6 @@ use crate::util::time::SystemTime;
 use std::path::{Path, PathBuf};
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::snapshot::{
     GameSnapshot, GameSnapshotHeader, SnapshotError, SnapshotMapRestoreOutput, SnapshotRestoreError,
@@ -100,7 +99,7 @@ pub(crate) enum PreparedLoadError {
     ReadFile(#[source] std::io::Error),
     #[error("a network match cannot load a saved game")]
     NetworkMatch,
-    // The four `#[cfg(test)]` variants belong to the headless same-content
+    // The three `#[cfg(test)]` variants belong to the headless same-content
     // fixture route; saved-resource preparation rebuilds those inputs.
     #[cfg(test)]
     #[error("no active simulation to restore")]
@@ -113,13 +112,10 @@ pub(crate) enum PreparedLoadError {
     #[cfg(test)]
     #[error("no resolved_terrain available")]
     MissingTerrainTemplate,
-    #[cfg(test)]
-    #[error("active overlay registry is unavailable")]
-    MissingOverlayRegistry,
     #[error(transparent)]
     Snapshot(#[from] SnapshotError),
     #[error(transparent)]
-    Restore(#[from] SnapshotRestoreError),
+    Restore(SnapshotRestoreError),
     #[error(transparent)]
     FactoryState(#[from] crate::sim::production::FactoryRestoreError),
     #[error("invalid saved sidebar order: {0}")]
@@ -136,6 +132,15 @@ pub(crate) enum PreparedLoadError {
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
     #[error(transparent)]
     RadarEvents(#[from] crate::render::radar::SavedRadarEventsError),
+}
+
+impl From<SnapshotRestoreError> for PreparedLoadError {
+    fn from(error: SnapshotRestoreError) -> Self {
+        match error {
+            SnapshotRestoreError::Factory(source) => Self::FactoryState(source),
+            other => Self::Restore(other),
+        }
+    }
 }
 
 /// Fully validated, cache-rebuilt replacement state ready for one infallible commit.
@@ -169,7 +174,6 @@ pub(crate) struct LoadPreparationView<'a> {
     expected_map_hash: Option<u64>,
     rules: Option<&'a RuleSet>,
     terrain_template: Option<&'a ResolvedTerrainGrid>,
-    overlay_registry: Option<&'a OverlayTypeRegistry>,
 }
 
 #[cfg(test)]
@@ -188,7 +192,6 @@ impl<'a> LoadPreparationView<'a> {
             rules: runtime.map(|runtime| &runtime.resources.rules),
             terrain_template: runtime
                 .and_then(|runtime| runtime.resources.terrain_template.as_ref()),
-            overlay_registry: runtime.map(|runtime| &runtime.resources.overlay_registry),
         }
     }
 
@@ -200,7 +203,6 @@ impl<'a> LoadPreparationView<'a> {
         expected_map_hash: Option<u64>,
         rules: Option<&'a RuleSet>,
         terrain_template: Option<&'a ResolvedTerrainGrid>,
-        overlay_registry: Option<&'a OverlayTypeRegistry>,
     ) -> Self {
         Self {
             repository,
@@ -208,7 +210,6 @@ impl<'a> LoadPreparationView<'a> {
             expected_map_hash,
             rules,
             terrain_template,
-            overlay_registry,
         }
     }
 }
@@ -231,7 +232,6 @@ impl PreparedLoad {
             view.expected_map_hash,
             view.rules,
             view.terrain_template,
-            view.overlay_registry,
         )
     }
 
@@ -245,7 +245,6 @@ impl PreparedLoad {
         expected_map_hash: Option<u64>,
         rules: Option<&RuleSet>,
         terrain_template: Option<&ResolvedTerrainGrid>,
-        overlay_registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Self, PreparedLoadError> {
         let current_simulation =
             current_simulation.ok_or(PreparedLoadError::MissingCurrentSimulation)?;
@@ -267,30 +266,20 @@ impl PreparedLoad {
             rules,
             terrain_template,
             current_simulation.terrain_speed_config().clone(),
-            overlay_registry.ok_or(PreparedLoadError::MissingOverlayRegistry)?,
-            None,
-            None,
+            crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
         )
     }
 
     /// One world restore for production resource loads and headless fixtures.
     /// The caller supplies the incoming bound resources and only lends the
     /// current process RNG owners; no fresh scenario construction is replayed.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "bound resources and explicit user-file Cell values"
-    )]
     fn prepare_snapshot(
-        snapshot: GameSnapshot,
+        mut snapshot: GameSnapshot,
         process: crate::sim::world::SnapshotProcessState<'_>,
         rules: &RuleSet,
         terrain_template: ResolvedTerrainGrid,
         terrain_speed_config: crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig,
-        overlay_registry: &OverlayTypeRegistry,
-        prepare_terrain_assets: Option<
-            &mut crate::sim::snapshot::SnapshotTerrainAssetPreparation<'_>,
-        >,
-        saved_land: Option<crate::map::resolved_terrain::SavedCellLandValues>,
+        cells: crate::sim::snapshot::PlayerSaveCells<'_, '_>,
     ) -> Result<Self, PreparedLoadError> {
         let saved_sidebar_order = snapshot.sidebar_order().cloned();
         let tactical_view = snapshot.tactical_view().cloned();
@@ -298,54 +287,20 @@ impl PreparedLoad {
             crate::app::input::camera::validate_saved_tactical_view(saved)
                 .map_err(PreparedLoadError::TacticalView)?;
         }
-        let mut simulation = snapshot.sim;
-        simulation.retain_process_state_for_load(process);
-        // Native MouseLoad->Resize reconstructs the dummy before subsequent
-        // LoadContent67E8CD hierarchy reads. The fallible candidate must see
-        // that state without touching the running match's retained identity.
-        simulation.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
-        simulation.reconstruct_cellclass_dummy_for_map_resize();
-        // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition
-        // clock. This user-file seam is separate from internal continuations.
-        simulation.restart_cloak_progress_after_player_load();
-        simulation.reconstruct_building_repair_progress_after_player_load();
-        simulation.validate_ares_state_for_load(rules.ares())?;
-        simulation.restore_after_snapshot_load()?;
-        crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
-        simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);
-
-        let map_restore = match saved_land {
-            Some(saved_land) => simulation.restore_map_authority_after_user_load(
-                rules,
-                overlay_registry,
-                prepare_terrain_assets,
-                saved_land,
-            )?,
-            None => simulation.restore_map_authority_after_snapshot_load(
-                rules,
-                overlay_registry,
-                prepare_terrain_assets,
-            )?,
-        };
-        // Older headless saves may omit types that had never spawned. Add
-        // those canonical names without changing any saved ID, then build
-        // the handle table; a missing name must never become sidebar ID zero.
-        simulation.intern_rule_type_ids(rules);
-        simulation.resolve_type_handles(rules);
-        simulation.rebuild_lighting_sources_after_load(rules);
-        // Post_Load_Game6851AC/6851B1 reselects lighting, then refreshes the
-        // flagged Anim conversions from the incoming stored Locations.
-        simulation.reinitialize_lighting_after_user_load();
-        simulation
-            .refresh_animated_tiberium_after_load(rules, overlay_registry)
-            .map_err(SnapshotRestoreError::from)?;
+        let mut sinking_waterlines = std::mem::take(&mut snapshot.sinking_waterlines);
+        let mut anim_intensities = std::mem::take(&mut snapshot.anim_intensities);
+        let (simulation, map_restore) = snapshot.restore_player_world(
+            process,
+            rules,
+            terrain_template,
+            terrain_speed_config,
+            cells,
+        )?;
 
         // A render cache can retain an outgoing ID until its next sweep. Only
         // restored entity identities may re-enter the new presentation owner;
         // do not infer +3CA from current height or from the sinking byte.
-        let mut sinking_waterlines = snapshot.sinking_waterlines;
         sinking_waterlines.retain(|(id, _)| simulation.entities().contains(*id));
-        let mut anim_intensities = snapshot.anim_intensities;
         anim_intensities.retain(|(id, _)| simulation.anim(*id).is_some());
         // MouseLoad5BDF70 preserves the four strip lists; no-init5BE9B0
         // resets their progress only. Hydration is fallible and borrows no
@@ -590,8 +545,10 @@ impl SaveRepository {
     }
 
     /// The game's one retained initial save per mission. Native67CF13..67CF42
-    /// forwards the entire filename to StgCreateDocfile(CREATE). Relative paths
-    /// use VERA's save root; absolute paths retain their selected location.
+    /// forwards the entire filename to StgCreateDocfile(CREATE), wherever it
+    /// points. VERA: the name is the mission's map name, which a mod, a map or
+    /// a saved game supplies, so only a logical name is written, under the save
+    /// root; a name that would leave it (a drive, a root, `..`) is refused.
     /// Missing subdirectories fail, and an existing VERA automatic slot is replaced.
     /// The Rust-format boundary preserves foreign/native SAV files rather than
     /// replacing them with an incompatible snapshot. The attempt still consumes
@@ -603,23 +560,21 @@ impl SaveRepository {
         bytes: &[u8],
     ) -> Result<PathBuf, SaveWriteError> {
         let file = Path::new(filename);
-        if file.file_name().is_none()
+        if !crate::map::source::is_logical_name(filename)
             || file.extension().and_then(|ext| ext.to_str()) != Some("sav")
         {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "initial campaign save must name a .sav file",
+                "initial campaign save must name a .sav file in the save folder",
             )));
         }
-        if file.is_relative() {
-            crate::util::file_system::create_dir_all(&self.directory).map_err(|source| {
-                SaveWriteError {
-                    #[cfg(any(feature = "dev-overlays", test))]
-                    stage: SaveWriteStage::CreateDirectory,
-                    source,
-                }
-            })?;
-        }
+        crate::util::file_system::create_dir_all(&self.directory).map_err(|source| {
+            SaveWriteError {
+                #[cfg(any(feature = "dev-overlays", test))]
+                stage: SaveWriteStage::CreateDirectory,
+                source,
+            }
+        })?;
         let path = self.directory.join(file);
         if crate::util::file_system::exists(&path) {
             self.validate_existing_save(&path)?;
@@ -776,8 +731,8 @@ mod tests {
     }
 
     fn load_fixture_launch() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
+        SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode {
                 class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".into(),
@@ -788,8 +743,8 @@ mod tests {
                 allies_allowed: true,
                 must_ally: false,
             },
-            selected_map_file: Some(LOAD_FIXTURE_MAP_NAME.into()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            Some(LOAD_FIXTURE_MAP_NAME.into()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".into(),
                 slot: SkirmishLocalSlot {
@@ -802,9 +757,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -814,10 +768,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     fn startup_authority(seed: u32) -> MatchStartup {
@@ -1017,7 +969,6 @@ mod tests {
         expected_map_hash: Option<u64>,
         rules: Option<&RuleSet>,
         terrain_template: Option<&ResolvedTerrainGrid>,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         expected_error: impl FnOnce(&PreparedLoadError) -> bool,
     ) {
         // Capture every represented running-match owner before the production
@@ -1030,7 +981,6 @@ mod tests {
                 expected_map_hash,
                 rules,
                 terrain_template,
-                overlay_registry,
             ),
             path,
         );
@@ -1065,7 +1015,6 @@ mod tests {
     #[test]
     fn failed_load_preserves_complete_running_match_transaction() {
         let rules = load_fixture_rules();
-        let registry = OverlayTypeRegistry::empty();
         let terrain = load_fixture_terrain();
         let state = RunningMatchTestState::running(&rules);
         let directory = isolated_directory("load-transaction-failures");
@@ -1104,7 +1053,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
             |error| matches!(error, PreparedLoadError::Snapshot(_)),
         );
         assert_transaction_failure(
@@ -1114,7 +1062,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH ^ 1),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
             |error| {
                 matches!(
                     error,
@@ -1129,7 +1076,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             None,
             Some(&terrain),
-            Some(&registry),
             |error| matches!(error, PreparedLoadError::MissingRules),
         );
         assert_transaction_failure(
@@ -1139,18 +1085,7 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             None,
-            Some(&registry),
             |error| matches!(error, PreparedLoadError::MissingTerrainTemplate),
-        );
-        assert_transaction_failure(
-            &state,
-            &repository,
-            &valid_path,
-            Some(LOAD_FIXTURE_MAP_HASH),
-            Some(&rules),
-            Some(&terrain),
-            None,
-            |error| matches!(error, PreparedLoadError::MissingOverlayRegistry),
         );
         assert_transaction_failure(
             &state,
@@ -1159,7 +1094,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
             |error| {
                 matches!(
                     error,
@@ -1174,7 +1108,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&terrain),
-            Some(&registry),
             |error| {
                 matches!(
                     error,
@@ -1193,7 +1126,6 @@ mod tests {
     #[test]
     fn successful_same_content_load_preserves_admission_and_bound_resources() {
         let rules = load_fixture_rules();
-        let registry = OverlayTypeRegistry::empty();
         let terrain = load_fixture_terrain();
         let mut state = RunningMatchTestState::running(&rules);
         let directory = isolated_directory("load-transaction-startup");
@@ -1222,7 +1154,6 @@ mod tests {
         let startup_before = state.startup.clone();
         let baseline = state.baseline();
         state.runtime.resources_mut().rules = rules;
-        state.runtime.resources_mut().overlay_registry = registry;
         state.runtime.resources_mut().terrain_template = Some(terrain);
         let rules_before = state.runtime.resources.rules.simulation_config_hash();
         let prepared = PreparedLoad::from_repository(
@@ -1286,7 +1217,7 @@ mod tests {
             .base_reservations_mut_for_test()
             .reserve(None, -1, 0, 6);
         assert_ne!(simulation.state_hash(), accepted_hash);
-        simulation.reconstruct_cellclass_dummy_for_map_resize();
+        simulation.reconstruct_map_dummy_for_test();
         assert_eq!(simulation.base_reservations().dummy_mask(), 0);
         assert_eq!(
             simulation.state_hash(),
@@ -1312,7 +1243,6 @@ mod tests {
     fn current_house_survives_prepared_load_and_first_headless_frame() {
         let rules = load_fixture_rules();
         let terrain = load_fixture_terrain();
-        let registry = OverlayTypeRegistry::empty();
         let mut saved = load_fixture_simulation(true);
         let roster_ini = IniFile::from_str(
             "[Houses]\n0=SavedPlayer\n1=OutgoingPlayer\n[SavedPlayer]\n[OutgoingPlayer]\n[Basic]\nPlayer=SavedPlayer\n",
@@ -1346,7 +1276,6 @@ mod tests {
         assert!(!current.houses()[&saved_owner].is_human());
         let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
         runtime.resources_mut().rules = rules;
-        runtime.resources_mut().overlay_registry = registry;
         runtime.resources_mut().terrain_template = Some(terrain);
         let outgoing_hash = runtime.simulation.state_hash();
         let outgoing_rng = runtime.simulation.rng_state();
@@ -1423,13 +1352,14 @@ mod tests {
             let path = repository
                 .write_named(&format!("collision-{case_index}.bin"), &bytes)
                 .unwrap();
-            let mut outgoing = GameSnapshot::load(&bytes).unwrap().sim;
+            let mut outgoing = GameSnapshot::load(&bytes)
+                .unwrap()
+                .into_simulation_for_test();
             outgoing
                 .session_mut_for_test()
                 .set_current_house_for_test(Some(ai));
             let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(outgoing);
             runtime.resources_mut().rules = load_fixture_rules();
-            runtime.resources_mut().overlay_registry = OverlayTypeRegistry::empty();
             runtime.resources_mut().terrain_template = Some(load_fixture_terrain());
             let prepared = PreparedLoad::from_repository(
                 LoadPreparationView::from_runtime(
@@ -1477,7 +1407,6 @@ mod tests {
         assert_eq!(compatibility.translate_legacy_map_tile_index(5), 8);
 
         let rules = load_fixture_rules();
-        let registry = OverlayTypeRegistry::empty();
         let translated_template =
             ResolvedTerrainGrid::from_cells(1, 1, vec![compatibility_snapshot_cell(8)]);
         let mut runtime_actual = compatibility_snapshot_cell(5);
@@ -1499,7 +1428,6 @@ mod tests {
             Some(LOAD_FIXTURE_MAP_HASH),
             Some(&rules),
             Some(&translated_template),
-            Some(&registry),
         )
         .expect("full persistence prepare/serde/rebuild/restore route")
         .simulation;

@@ -487,7 +487,7 @@ impl Simulation {
     /// `+0x432` reselect memo, consumed only by successful releases
     /// (`0x0062A71C`, `0x0062A37F`) for a human player's house
     /// (`HouseClass::IsHumanPlayer @ 0x0050B6F0`), then Select (vt+0x14C,
-    /// `0x0062A744`/`0x0062A3A7`) with the voice latch set.
+    /// `0x0062A744`/`0x0062A3A7`) with the current voice latch.
     fn parasite_reselect(&mut self, owner: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         let Some(entity) = self.substrate.entities.get(owner) else {
             return;
@@ -500,7 +500,6 @@ impl Simulation {
         }
         self.techno_select(
             owner,
-            true,
             UninitContext::with_rules(rules).with_effects(effects),
         );
     }

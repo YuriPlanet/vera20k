@@ -69,6 +69,20 @@ const FARMS: [&str; 7] = [
 const LANDMARKS: [&str; 8] = [
     "CAWSH12", "CAPARS11", "CAEURO05", "CASTL04", "CAWASH19", "CAWASH14", "CAWASH15", "CAMEX01",
 ];
+/// `Derelicts=` where absent: the combat buildings the Advanced Derelicts
+/// slider stands neutral and unpowered. Allied, then Soviet, then Yuri of
+/// each kind (`NAPSIS` is Yuri's psychic sensor, his radar).
+const DERELICTS: [&str; 23] = [
+    "GARAD", "NARAD", "NAPSIS", // radar
+    "CALAB", "NALAB", "YATECH", // battle lab
+    "GAREF", "NAREF", "YAREFN", // ore refinery
+    "GAWEAP", "NAWEAP", "YAWEAP", // war factory
+    "GABARR", "NABARR", "YABRCK", // barracks
+    "GAPOWR", "NAPOWR", "YAPOWR", // power plant
+    "GACNST", "NACNST", "YACNST", // construction yard
+    "YAYARD", // naval shipyard
+    "YAGRND", // grinder
+];
 /// The ReadString buffer of a `[Extras]` value, as Ares gives `[Urban]`.
 const VALUE_CAPACITY: usize = 0x800;
 
@@ -84,6 +98,9 @@ pub struct ExtrasSettings {
     /// `FairTech=`: the neutral tech building (`[AI] NeutralTechBuildings=`)
     /// the Fair Tech Extra stands by every start.
     pub fair_tech: String,
+    /// `Derelicts=`: the combat buildings the Advanced Derelicts slider stands
+    /// neutral and unpowered, resolved from the Rules and theater art.
+    pub derelicts: Vec<String>,
     /// `FarmFence=` and `TownFence=`: the fence overlays of the Countryside
     /// and Fences Extras.
     pub farm_fence: String,
@@ -98,6 +115,7 @@ impl Default for ExtrasSettings {
             farms: FARMS.map(String::from).to_vec(),
             landmarks: LANDMARKS.map(String::from).to_vec(),
             fair_tech: "CAOILD".into(),
+            derelicts: DERELICTS.map(String::from).to_vec(),
             farm_fence: "CAFNCW".into(),
             town_fence: "CAFNCB".into(),
             moods: MOODS.map(|(_, ambient, rgb)| (ambient, rgb)),
@@ -122,6 +140,7 @@ impl ExtrasSettings {
         };
         names("Farms", &mut self.farms);
         names("Landmarks", &mut self.landmarks);
+        names("Derelicts", &mut self.derelicts);
         for (key, name) in [
             ("FairTech", &mut self.fair_tech),
             ("FarmFence", &mut self.farm_fence),

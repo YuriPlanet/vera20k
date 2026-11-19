@@ -172,8 +172,6 @@ pub(crate) enum LoadingProgressRowPlacement {
         participants: usize,
     },
     Campaign([i32; 2]),
-    ///642C80 auto-centres in72AD20's tactical-sized surface extent.
-    AutoCentered([u32; 2]),
 }
 
 /// One `DrawPlayerProgressRow @ 0x00643720` geometry implementation shared by
@@ -194,7 +192,7 @@ pub(crate) fn layout_loading_progress_row(
     scale: ShellScale,
     row_index: usize,
 ) -> LoadingProgressRowLayout {
-    let ([mut base_x, mut base_y], row_width_override) = match placement {
+    let ([base_x, base_y], row_width_override) = match placement {
         LoadingProgressRowPlacement::StandardSkirmish { render_size, .. } => {
             let authored = loading_authored_size(render_size, scale);
             let [origin_x, origin_y] = loading_base_origin(authored);
@@ -206,7 +204,6 @@ pub(crate) fn layout_loading_progress_row(
             ([origin_x + offset_x, origin_y + offset_y], Some(width))
         }
         LoadingProgressRowPlacement::Campaign(point) => (point, None),
-        LoadingProgressRowPlacement::AutoCentered(_) => ([0, 0], None),
     };
     let bar_width = bar_size[0].max(0);
     let bar_height = bar_size[1].max(0);
@@ -256,12 +253,6 @@ pub(crate) fn layout_loading_progress_row(
         .scaled(scale);
     }
 
-    if let LoadingProgressRowPlacement::AutoCentered([width, height]) = placement {
-        //642D9B..642DBD ignores72AD20's origin, using width-168,height-32.
-        base_x = (width as i32 - 168 - row_width) / 2;
-        base_y = (height as i32 - 32 - row_height) / 2;
-    }
-
     // DrawPlayerProgressRow64377D multiplies this measured height by
     // source-player index before the per-element vertical centering.
     let base_y = base_y + row_height * row_index as i32;
@@ -288,9 +279,7 @@ pub(crate) fn layout_loading_progress_row(
     };
     match placement {
         LoadingProgressRowPlacement::StandardSkirmish { .. } => layout.scaled(scale),
-        LoadingProgressRowPlacement::Campaign(_) | LoadingProgressRowPlacement::AutoCentered(_) => {
-            layout
-        }
+        LoadingProgressRowPlacement::Campaign(_) => layout,
     }
 }
 

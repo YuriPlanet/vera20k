@@ -261,7 +261,7 @@ fn a_ferry_carries_a_unit_across_the_river_and_comes_back() {
         let result = sim.advance_tick(&due, Some(&rules), None, None, 67);
         assert!(result.frame_committed, "{result:?}");
         set_down |= sim.entities().get(gi).is_some_and(|rider| {
-            !rider.passenger_role.is_inside_transport() && rider.position.rx() > 10
+            !rider.passenger_role().is_inside_transport() && rider.position.rx() > 10
         });
         let carrier = sim
             .entities()
@@ -356,7 +356,7 @@ fn a_flak_track_and_a_nighthawk_ferry_too() {
             let result = sim.advance_tick(&due, Some(rules), None, None, 67);
             assert!(result.frame_committed, "{result:?}");
             set_down |= sim.entities().get(gi).is_some_and(|rider| {
-                !rider.passenger_role.is_inside_transport() && rider.position.rx() > 18
+                !rider.passenger_role().is_inside_transport() && rider.position.rx() > 18
             });
             let entity = sim.entities().get(transport).expect("the transport lives");
             back = set_down

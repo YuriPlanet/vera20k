@@ -35,7 +35,7 @@ fn spawn_fv(scene: &mut HeadlessScenario, xyz: [i32; 3]) -> u64 {
             (xyz[1] / 256) as u16,
             128,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary FV bank placement");
     // Declared native Unlimbo coordinate input within this already admitted
@@ -342,7 +342,7 @@ fn command_paid_fv(
             target_ry: 54,
         },
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         crate::sim::world::FrameEffects::default(),
     ));
     id
@@ -428,7 +428,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                             &owner,
                             &Command::Stop { entity_id: id },
                             &runtime.resources.rules,
-                            Some(&runtime.resources.overlay_registry),
+                            Some(runtime.resources.rules.overlay_registry()),
                             crate::sim::world::FrameEffects::default(),
                         ));
                     }
@@ -676,7 +676,7 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                 .approach_foot_target(
                     id,
                     rules,
-                    Some(&runtime.resources.overlay_registry),
+                    Some(runtime.resources.rules.overlay_registry()),
                     crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
@@ -810,7 +810,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
             (xyz[1] / 256) as u16,
             128,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary FV bank placement");
     // Supplied native starting XYZ, in the same already-admitted Cell. Map

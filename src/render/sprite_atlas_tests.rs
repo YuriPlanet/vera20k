@@ -3818,7 +3818,7 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
     let e1 = crate::sim::intern::test_intern("E1");
     let e2 = crate::sim::intern::test_intern("E2");
     world
-        .get_mut(1)
+        .get_mut_for_test(1)
         .unwrap()
         .disguise
         .as_mut()
@@ -3873,7 +3873,7 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
         .insert(HouseColorIndex(5));
     assert!(covered(&atlas, &world));
     world
-        .get_mut(2)
+        .get_mut_for_test(2)
         .unwrap()
         .disguise
         .as_mut()

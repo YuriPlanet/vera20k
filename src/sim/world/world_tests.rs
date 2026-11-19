@@ -626,7 +626,6 @@ fn app_and_headless_frames_hash_identically_for_particle_frame_timing() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -1105,7 +1104,6 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
         .advance_app_frame(
             &[],
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1121,7 +1119,6 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
         .advance_app_frame(
             &[],
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1133,7 +1130,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
 
 #[test]
 fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
-    let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
+    let (rules, _) = gsi_04_07_wall_sell_rules(false, false);
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     sim.resolved_terrain = Some(gsi_04_10_clear_terrain(4, 4));
@@ -1146,10 +1143,9 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .place_owned_wall(2, 2, 2, 0x23, owner);
 
     let deferred = sim
-        .advance_app_frame(
+        .advance_app_frame_without_overlay_types_for_test(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1167,7 +1163,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1188,7 +1183,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1206,7 +1200,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
          [ORE]\nTiberium=yes\n[WALL]\nWall=yes\nStrength=100\n",
     );
     let rules = RuleSet::from_ini(&ini).expect("terminal overlay rules");
-    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut terrain = gsi_04_10_clear_terrain(2, 1);
     terrain
         .cell_mut_for_test(0, 0)
@@ -1229,7 +1222,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
         .advance_app_frame(
             &[exit],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -1265,7 +1257,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(&overlays),
             67,
             TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -2249,7 +2240,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         carrier.set_owner_for_test(enemy);
         carrier.set_type_ref_for_test(sim.interner.intern("BOOMER"));
         carrier.health.set_for_test(carrier_hp);
-        carrier.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        carrier.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         sim.substrate.entities.insert(carrier);
         let _ = sim.reveal(10);
 
@@ -2261,7 +2252,9 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             EntityCategory::Infantry,
         );
         passenger.set_is_voxel_for_test(false);
-        passenger.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+        passenger.set_passenger_role_for_test(
+            crate::sim::passenger::PassengerRole::inside_for_test(10, false),
+        );
         sim.substrate.entities.insert(passenger);
 
         let mut listener = GameEntity::test_default_of_category(
@@ -2460,7 +2453,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             .entities
             .get(10)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers(),
@@ -3384,6 +3377,48 @@ fn sonic_wave_test_rules(range: u8) -> RuleSet {
          [SonicWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     )))
     .expect("Sonic Wave fixture")
+}
+
+/// Wave passes its firer and a null source House (75F417..75F42C).
+/// Psychedelic checks that nullable House at 701CE5, even for friendly fire.
+#[test]
+fn stock_psychedelic_wave_can_affect_the_firers_own_house() {
+    use crate::sim::wave::{Wave, WaveRecordedCell};
+
+    let _stock = crate::rules::ares_switch::read_ares_way(false);
+    let rules = combat_test_rules_with_override(
+        "[MTNK]\nPrimary=SonicZap\n[SonicZap]\nIsSonic=yes\nDamage=1\nAmbientDamage=20\nWarhead=SA\n\
+         [SA]\nPsychedelic=yes\nAffectsAllies=yes\n",
+    );
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 42);
+    let firer = sim
+        .spawn_object("MTNK", "Americans", 6, 10, 0, &rules)
+        .unwrap();
+    let friendly = sim
+        .spawn_object("E1", "Americans", 7, 10, 0, &rules)
+        .unwrap();
+    let hostile = sim
+        .spawn_object("E1", "Russians", 8, 10, 0, &rules)
+        .unwrap();
+    let mut wave = Wave::new_owned(
+        0,
+        firer,
+        TargetKind::Cell(8, 10),
+        ProjectileCoord::new(6 * 256, 10 * 256, 0),
+        ProjectileCoord::new(8 * 256, 10 * 256, 0),
+    );
+    wave.set_active_geometry_for_test(false);
+    wave.set_decaying_for_test(true);
+    wave.replace_recorded_cells(vec![
+        WaveRecordedCell::real(7, 10),
+        WaveRecordedCell::real(8, 10),
+    ]);
+    let id = sim.substrate.allocate_stable_id();
+    sim.admit_wave(id, wave);
+    assert!(sim.object_ai_visit_one(id, Some(&rules), Default::default()));
+    let berserk = |id| sim.entities().get(id).unwrap().berserk.is_active();
+    assert!(berserk(hostile), "the hostile GI went berserk");
+    assert!(berserk(friendly), "the friendly GI should also go berserk");
 }
 
 fn sonic_tail_order_test_rules() -> RuleSet {

@@ -282,7 +282,10 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
     );
     sim.change_owner_with_rules(alternate, owner, &rules, None, FrameEffects::default());
     assert!(sim.houses[&owner].tech_recheck_pending());
-    assert!(sim.recheck_house_tech_tree(owner, &rules).is_empty());
+    assert!(
+        sim.recheck_house_tech_tree(owner, &rules, Default::default())
+            .is_empty()
+    );
     let outputs = sim.lifecycle_outputs.take();
     assert!(outputs.iter().any(|output| matches!(
         output, LifecycleOutput::SidebarConstructionOption { owner: reached, type_id }
@@ -305,7 +308,7 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
     );
     sim.change_owner_with_rules(alternate, other, &rules, None, FrameEffects::default());
     assert!(sim.houses[&owner].tech_recheck_pending());
-    let events = sim.recheck_house_tech_tree(owner, &rules);
+    let events = sim.recheck_house_tech_tree(owner, &rules, Default::default());
     let cancellation_order = events
         .iter()
         .map(|event| {

@@ -2242,6 +2242,7 @@ pub(crate) fn try_queue_context_order(
 
     if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) {
         let resources = &rt.resources;
+        let overlay_registry = resources.rules.overlay_registry();
         let sim = &mut rt.simulation;
         let execute_tick = sim.session().tick();
         if selected_ids.is_empty() {
@@ -2635,7 +2636,7 @@ pub(crate) fn try_queue_context_order(
                 attack_target,
                 object_forced,
                 order_mode,
-                &resources.overlay_registry,
+                overlay_registry,
             )
         } else if let TargetKind::Cell(rx, ry) = attack_target
             && !force_fire
@@ -2655,7 +2656,7 @@ pub(crate) fn try_queue_context_order(
                             id,
                             (rx, ry),
                             &resources.rules,
-                            Some(&resources.overlay_registry),
+                            Some(overlay_registry),
                         )
                         && matches!(
                             armed_action(
@@ -2664,7 +2665,7 @@ pub(crate) fn try_queue_context_order(
                                 id,
                                 &attack_target,
                                 true,
-                                Some(&resources.overlay_registry),
+                                Some(overlay_registry),
                             ),
                             Some(
                                 AttackAction::Attack
@@ -2681,7 +2682,7 @@ pub(crate) fn try_queue_context_order(
                 attack_target,
                 true,
                 order_mode,
-                &resources.overlay_registry,
+                overlay_registry,
             )
         } else {
             AttackDispatch {
@@ -2708,7 +2709,7 @@ pub(crate) fn try_queue_context_order(
                 &current_objects,
                 &receivers,
                 target_id,
-                &resources.overlay_registry,
+                overlay_registry,
                 object_forced,
             ) {
                 LeftRelease::Select => return false,
@@ -2743,7 +2744,7 @@ pub(crate) fn try_queue_context_order(
             let (orders, announce) = building_click_orders(
                 sim,
                 &resources.rules,
-                Some(&resources.overlay_registry),
+                Some(overlay_registry),
                 &selected_ids,
                 owner_id,
                 hover.as_ref(),
@@ -2764,7 +2765,7 @@ pub(crate) fn try_queue_context_order(
             match building_selection_click(
                 sim,
                 &resources.rules,
-                &resources.overlay_registry,
+                overlay_registry,
                 &current_objects,
                 &selected_ids,
                 owner_id,
@@ -2793,7 +2794,7 @@ pub(crate) fn try_queue_context_order(
                 if let Some(orders) = infiltrator_capture_orders(
                     sim,
                     &resources.rules,
-                    Some(&resources.overlay_registry),
+                    Some(overlay_registry),
                     &mut selected_units,
                     target,
                     key_modifier,
@@ -2825,7 +2826,7 @@ pub(crate) fn try_queue_context_order(
                     target,
                     key_modifier,
                     force_move_key,
-                    Some(&resources.overlay_registry),
+                    Some(overlay_registry),
                 )
             {
                 consumed_building_action = true;
@@ -2881,7 +2882,7 @@ pub(crate) fn try_queue_context_order(
                             target.stable_id,
                             key_modifier,
                             force_move_key,
-                            Some(&resources.overlay_registry),
+                            Some(overlay_registry),
                         );
                         infantry_c4_action(sim, &resources.rules, id, target, attacks)
                             == Some(InfantryC4Action::Sabotage)
@@ -2923,7 +2924,7 @@ pub(crate) fn try_queue_context_order(
                 && let Some(cmd) = self_click_command(
                     sim,
                     &resources.rules,
-                    Some(&resources.overlay_registry),
+                    Some(overlay_registry),
                     owner_id,
                     &current_objects,
                     hover.as_ref(),
@@ -2938,7 +2939,7 @@ pub(crate) fn try_queue_context_order(
                     self_answers_no_deploy(
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(overlay_registry),
                         owner_id,
                         &current_objects,
                         target,
@@ -2983,7 +2984,7 @@ pub(crate) fn try_queue_context_order(
                     &selected_units,
                     current_objects.len(),
                     target.stable_id,
-                    Some(&resources.overlay_registry),
+                    Some(overlay_registry),
                 );
                 if cursor_owner(sim, &resources.rules, &selected_ids, target.stable_id)
                     .is_some_and(|best| ivans.contains(&best))
@@ -3140,7 +3141,7 @@ pub(crate) fn try_queue_context_order(
                         &current_objects,
                         &selected_ids,
                         target_id,
-                        &resources.overlay_registry,
+                        overlay_registry,
                         forced,
                     ) {
                         LeftRelease::Select => return false,
@@ -3176,7 +3177,7 @@ pub(crate) fn try_queue_context_order(
                     let Some(payload) = object_attack_click_command(
                         sim,
                         &resources.rules,
-                        &resources.overlay_registry,
+                        overlay_registry,
                         owner_id,
                         order_mode,
                         modifier,
@@ -3196,7 +3197,7 @@ pub(crate) fn try_queue_context_order(
                     let Some(payload) = object_attack_click_command(
                         sim,
                         &resources.rules,
-                        &resources.overlay_registry,
+                        overlay_registry,
                         owner_id,
                         order_mode,
                         key_modifier,
@@ -3227,7 +3228,7 @@ pub(crate) fn try_queue_context_order(
                     && let Some(order) = cell_harvest_order(
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(overlay_registry),
                         owner_id,
                         stable_id,
                         (target_rx, target_ry),
@@ -3244,7 +3245,7 @@ pub(crate) fn try_queue_context_order(
                         &mut queued,
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(overlay_registry),
                         owner_id,
                         execute_tick,
                         &current_objects,
@@ -3255,7 +3256,7 @@ pub(crate) fn try_queue_context_order(
                     let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
                         sim,
                         &resources.rules,
-                        Some(&resources.overlay_registry),
+                        Some(overlay_registry),
                         owner_id,
                         stable_id,
                         (target_rx, target_ry),
@@ -3276,7 +3277,7 @@ pub(crate) fn try_queue_context_order(
                                     &mut queued,
                                     sim,
                                     &resources.rules,
-                                    Some(&resources.overlay_registry),
+                                    Some(overlay_registry),
                                     owner_id,
                                     execute_tick,
                                     &current_objects,
@@ -3315,7 +3316,7 @@ pub(crate) fn try_queue_context_order(
                                 None => crate::app::input::commands::ordinary_cell_move_goal(
                                     sim,
                                     &resources.rules,
-                                    Some(&resources.overlay_registry),
+                                    Some(overlay_registry),
                                     owner_id,
                                     stable_id,
                                     locked_cells
@@ -3476,7 +3477,7 @@ pub(crate) fn queue_formation_line(
             &mut queued,
             sim,
             &resources.rules,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
             owner_id,
             execute_tick,
             &current_objects,
@@ -3487,7 +3488,7 @@ pub(crate) fn queue_formation_line(
         let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
             sim,
             &resources.rules,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
             owner_id,
             stable_id,
             (rx, ry),
@@ -3689,7 +3690,7 @@ fn self_deploy_is_blocked(
             && entity.bunker.link().installed_in().is_none()
             && !object.no_manual_unload()
             && entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_none_or(|cargo| cargo.is_empty()))
 }
@@ -5622,8 +5623,7 @@ mod tests {
             let id = sim
                 .spawn_object(kind, "Americans", rx, 5, 0, &rules)
                 .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .berserk
                 .set_active_for_test(berserk);
@@ -5653,8 +5653,7 @@ mod tests {
         assert_eq!(click(&[tank, gi], None, (3, 5)), Dispatch);
         assert_eq!(click(&[gi, tank], None, (6, 5)), Nothing);
         // 0 over an object already selected does nothing (`0x004ABE0B`).
-        sim.entities_mut_for_test()
-            .get_mut(friend)
+        sim.entity_mut_for_test(friend)
             .unwrap()
             .selection
             .set_selected_for_test(true);
@@ -6216,8 +6215,7 @@ mod tests {
         );
         assert_eq!(click(&sim, mcv), None);
 
-        sim.entities_mut_for_test()
-            .get_mut(enemy)
+        sim.entity_mut_for_test(enemy)
             .unwrap()
             .selection
             .set_selected_for_test(true);
@@ -6247,13 +6245,12 @@ mod tests {
                 target_ry,
             })
         );
-        sim.entities_mut_for_test()
-            .get_mut(enemy)
+        sim.entity_mut_for_test(enemy)
             .unwrap()
             .selection
             .set_selected_for_test(false);
 
-        let loaner = sim.entities_mut_for_test().get_mut(mcv).unwrap();
+        let loaner = sim.entity_mut_for_test(mcv).unwrap();
         loaner.mission_only.mark();
         loaner.discovery.set_owned_by_current_house_for_test(true);
         assert_eq!(action(&sim, mcv), AttackAction::NoMove);
@@ -6294,14 +6291,12 @@ mod tests {
             .unwrap();
         let own_tank = sim.spawn_object("MTNK", "Local", 6, 4, 0, &rules).unwrap();
         let wingman = sim.spawn_object("ORCA", "Local", 6, 5, 0, &rules).unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(wingman)
+        sim.entity_mut_for_test(wingman)
             .unwrap()
             .selection
             .set_selected_for_test(true);
         for flier in [kirov, rocketeer] {
-            sim.entities_mut_for_test()
-                .get_mut(flier)
+            sim.entity_mut_for_test(flier)
                 .unwrap()
                 .position
                 .set_exact_z_leptons_for_test(Some(700));
@@ -6847,8 +6842,7 @@ mod tests {
             .unwrap();
         let selected = [other, clicked];
         for id in selected {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .selection
                 .set_selected_for_test(true);
@@ -6939,8 +6933,7 @@ mod tests {
         let shrouded_kirov = sim.spawn_object("ZEP", "Enemy", 12, 6, 0, &rules).unwrap();
         let disc = sim.spawn_object("DISK", "Enemy", 9, 9, 0, &rules).unwrap();
         for flier in [kirov, rocketeer, own_wall_kirov, shrouded_kirov, disc] {
-            sim.entities_mut_for_test()
-                .get_mut(flier)
+            sim.entity_mut_for_test(flier)
                 .unwrap()
                 .position
                 .set_exact_z_leptons_for_test(Some(700));
@@ -8024,8 +8017,7 @@ mod tests {
         // answers 0 over a selected object (0x007005BF), which Building
         // keeps (0x0044750D).
         for id in [first, second] {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .selection
                 .set_selected_for_test(true);
@@ -8066,10 +8058,9 @@ mod tests {
             .expect("Bio Reactor builds");
         let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0.0);
         cargo.board_forced_chain(&[(99, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(reactor)
+        sim.entity_mut_for_test(reactor)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         let hover = HoverTargetKindWithId {
             kind: HoverTargetKind::FriendlyStructure,
             stable_id: reactor,
@@ -8118,10 +8109,9 @@ mod tests {
             .expect("transport builds");
         let mut cargo = crate::sim::passenger::PassengerCargo::new(1, 0.0);
         cargo.board_forced_chain(&[(99, 1.0)]);
-        sim.entities_mut_for_test()
-            .get_mut(ifv)
+        sim.entity_mut_for_test(ifv)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
         let hover = HoverTargetKindWithId {
             kind: HoverTargetKind::FriendlyUnit,
             stable_id: ifv,
@@ -8149,10 +8139,7 @@ mod tests {
                 crate::app::types::CursorFeedbackKind::Deploy
             )
         );
-        sim.entities_mut_for_test()
-            .get_mut(ifv)
-            .unwrap()
-            .set_on_bridge(true);
+        sim.entity_mut_for_test(ifv).unwrap().set_on_bridge(true);
         assert_eq!(
             probe(&sim),
             (None, crate::app::types::CursorFeedbackKind::NoDeploy)
@@ -8189,8 +8176,7 @@ mod tests {
             (true, false, false),
             (true, false, true),
         ] {
-            sim.entities_mut_for_test()
-                .get_mut(id)
+            sim.entity_mut_for_test(id)
                 .unwrap()
                 .set_unit_simple_deploy_for_test(deployed, begin, reverse);
             assert_eq!(
@@ -8217,10 +8203,7 @@ mod tests {
             None,
             "a group self-click remains selection"
         );
-        sim.entities_mut_for_test()
-            .get_mut(id)
-            .unwrap()
-            .low_bridge_tube_state = Some(
+        sim.entity_mut_for_test(id).unwrap().low_bridge_tube_state = Some(
             crate::sim::movement::tube_movement::LowBridgeTubeMovementState::for_test(
                 crate::map::tube_facts::TubeId(0),
                 0,
@@ -8304,8 +8287,7 @@ mod tests {
             (true, false, false),
             (true, false, true),
         ] {
-            sim.entities_mut_for_test()
-                .get_mut(chopper)
+            sim.entity_mut_for_test(chopper)
                 .unwrap()
                 .set_unit_simple_deploy_for_test(deployed, begin, reverse);
             let (on_cell, over_object) = goals(&sim, chopper);
@@ -8321,8 +8303,7 @@ mod tests {
             }
         }
         assert!(rules.object("E1").unwrap().deployer);
-        sim.entities_mut_for_test()
-            .get_mut(gi)
+        sim.entity_mut_for_test(gi)
             .unwrap()
             .mission_leaf
             .set_infantry_doing_verified(28)
@@ -8333,8 +8314,7 @@ mod tests {
             matches!(over_object, Some(TargetKind::Cell(..))),
             "{over_object:?}"
         );
-        sim.entities_mut_for_test()
-            .get_mut(gi)
+        sim.entity_mut_for_test(gi)
             .unwrap()
             .mission_leaf
             .set_infantry_doing_verified(0)
@@ -8521,8 +8501,7 @@ mod tests {
         let hut = sim
             .spawn_object("CABHUT", owner, 10, 10, 0, &rules)
             .unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(hut)
+        sim.entity_mut_for_test(hut)
             .unwrap()
             .health
             .set_for_test(150);
@@ -8788,8 +8767,7 @@ mod tests {
             if gates["bunker"] == true {
                 // Typed existing owner state: positive native pointer control,
                 // not an assertion of ordinary Infantry bunker installation.
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
+                sim.entity_mut_for_test(engineer)
                     .unwrap()
                     .bunker
                     .set_bunker_link_for_test(
@@ -8797,8 +8775,7 @@ mod tests {
                     );
             }
             if gates["paralysis_start"].is_number() {
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
+                sim.entity_mut_for_test(engineer)
                     .unwrap()
                     .parasite
                     .set_paralysis_for_test(CdTimer::from_raw(
@@ -8807,16 +8784,14 @@ mod tests {
                     ));
             }
             if gates["warp_out"] == true {
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
+                sim.entity_mut_for_test(engineer)
                     .unwrap()
                     .set_temporal_for_test(
                         crate::sim::temporal::TemporalState::warped_by_for_test(hover.stable_id),
                     );
             }
             if gates["warp_in"] == true {
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
+                sim.entity_mut_for_test(engineer)
                     .unwrap()
                     .install_teleport_state_for_test(Some(
                         crate::sim::movement::teleport_movement::TeleportState::for_test(
@@ -8828,7 +8803,7 @@ mod tests {
                     ));
             }
             if gates["slave_owner"] == true {
-                sim.entities_mut_for_test().get_mut(engineer).unwrap().slave =
+                sim.entity_mut_for_test(engineer).unwrap().slave =
                     crate::sim::slave_manager::SlaveLink::for_test(Some(hover.stable_id), vec![]);
             }
             if let Some(native_slots) = gates["spawn_slots"].as_array() {
@@ -8838,8 +8813,7 @@ mod tests {
                         let child = sim
                             .spawn_object("ENGINEER", "Americans", 5 + index as u16, 12, 0, &rules)
                             .unwrap();
-                        sim.entities_mut_for_test()
-                            .get_mut(child)
+                        sim.entity_mut_for_test(child)
                             .unwrap()
                             .lifecycle
                             .set_in_limbo_for_test(native_slot["limbo"] == true);
@@ -8860,10 +8834,8 @@ mod tests {
                     ));
                 }
                 let spawn_type = sim.intern("ENGINEER");
-                sim.entities_mut_for_test()
-                    .get_mut(engineer)
-                    .unwrap()
-                    .spawn_manager = Some(Box::new(SpawnManagerState::for_test(spawn_type, slots)));
+                sim.entity_mut_for_test(engineer).unwrap().spawn_manager =
+                    Some(Box::new(SpawnManagerState::for_test(spawn_type, slots)));
             }
             let before = sim.state_hash();
             let actor = serde_json::to_value(sim.entities().get(engineer).unwrap()).unwrap();
@@ -9104,8 +9076,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         );
         let house = Some(sim.entities().get(stationary).unwrap().owner());
         sim.session_mut_for_test().set_current_house_for_test(house);
-        sim.entities_mut_for_test()
-            .get_mut(stationary)
+        sim.entity_mut_for_test(stationary)
             .unwrap()
             .bunker
             .set_bunker_link_for_test(BunkerLink::Installed(99));

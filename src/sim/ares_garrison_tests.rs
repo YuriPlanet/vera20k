@@ -242,7 +242,7 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
             .entities
             .get(id)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .ids()
             .to_vec()
@@ -254,7 +254,7 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
             .entities
             .get(gis[0])
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(east)
     );

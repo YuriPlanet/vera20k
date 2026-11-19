@@ -26,9 +26,8 @@ use crate::rules::skirmish_colors::{FIRST_EXTRA_PRIORITY, MAX_EXTRA_COLORS, OBSE
 use crate::sim::game_options::is_selectable_game_speed;
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchHumanRole, LaunchStartPosition, LaunchTeam,
-    NETWORK_PLAYER_SLOT_COUNT, PreFillHouseRoster, SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot,
-    SkirmishHumanSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession,
-    SkirmishLocalSlot,
+    NETWORK_PLAYER_SLOT_COUNT, SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishHumanSlot,
+    SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
 };
 use crate::skirmish_modes::{ModeStartEffect, SkirmishGameMode, mode_by_id};
 
@@ -261,6 +260,12 @@ impl CampaignSpawn {
         // StartScenario(ScenarioName,1,0). Original683AB0 keeps this index
         // independently of the explicit filename; see campaign_start_prefix.json.
         // Do not infer a record from Scenario, Side or client CampaignID.
+        // An empty Scenario takes the record's own (Start_Scenario683AC8).
+        anyhow::ensure!(
+            self.scenario.is_empty() || crate::map::source::is_logical_name(&self.scenario),
+            "campaign Scenario {:?} is not a map name",
+            self.scenario
+        );
         let campaign_index = 0;
         crate::app::match_bootstrap::prepare_campaign_startup_at_index(
             catalog,
@@ -804,17 +809,14 @@ fn skirmish(
         queue: Vec::new(),
         host_rules: Default::default(),
     };
-    let mut session = SkirmishLaunchSession {
+    let mut session = SkirmishLaunchSession::from_rows(
         mode,
-        selected_map_file: Some(scenario),
+        Some(scenario),
         humans,
         local_player_index,
-        ai_player_count: ai_count as i32,
         opponents,
-        // Derived below by the canonical owner from the human and raw AI rows.
-        pre_fill_house_roster: PreFillHouseRoster::new(Vec::new(), Vec::new()),
         options,
-    };
+    );
     // The gates network setup's host runs before its assignments: the mode's
     // Start (`validate_setup_start`, vtable+14), then TXT_CANNOT_ALLY.
     let roles: Vec<_> = session
@@ -840,7 +842,6 @@ fn skirmish(
         ),
     }
     ensure!(!session.all_allied(), "every house is on one team");
-    session.rebuild_house_roster();
     Ok(session)
 }
 

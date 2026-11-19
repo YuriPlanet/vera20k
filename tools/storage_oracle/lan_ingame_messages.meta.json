@@ -29,6 +29,6 @@
     "taunt_end": "0x00536459",
     "game_name_hash": "0x005DAC00"
   },
-  "replay_command": "python -m tools.storage_oracle.lan_lobby --ingame-messages",
-  "payload_sha256": "b369555c4e8943e8e0cc173947797af353fed00b9d5c1002028391476c7d4e69"
+  "replay_command": "python -m tools.storage_oracle.lan_ingame_messages",
+  "payload_sha256": "1f6ac66b344fceaafccd8ad237f869827f3dd319444757932cc3099c8921528c"
 }

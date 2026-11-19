@@ -103,7 +103,6 @@ fn load(
         ai.color_index = (args.isolation_humans + index) as u8;
         ai.start_position = LaunchStartPosition::Position((args.isolation_humans + index) as u8);
     }
-    session.rebuild_house_roster();
     let prefix =
         vera20k_core::sim::native_identity::network_native_id_prefix(mode, session.humans.len());
     let launch =

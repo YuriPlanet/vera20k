@@ -151,7 +151,6 @@ struct Answers {
     building_online: bool,
     has_airstrike_marker: bool,
     building_cloak_stage: u8,
-    native_cloak_offset_words: i32,
     driver_killed: bool,
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
@@ -181,7 +180,6 @@ impl Answers {
             building_online: entity.building_online(),
             has_airstrike_marker: entity.has_airstrike_marker(),
             building_cloak_stage: entity.building_cloak_stage(),
-            native_cloak_offset_words: entity.native_cloak_offset_words(),
             driver_killed: entity.driver_killed(),
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
@@ -650,7 +648,7 @@ impl ObjectRecord {
             sinking: Sinking {
                 active: entity.sinking.is_active(),
             },
-            passenger_role: PassengerRole::of(&entity.passenger_role),
+            passenger_role: PassengerRole::of(entity.passenger_role()),
             rocking: entity.rocking.as_ref().map(|_| ()),
             mission: Mission::of(&entity.mission),
             tether: Tether {
@@ -784,10 +782,6 @@ impl ObjectRecord {
         self.answers.building_cloak_stage
     }
 
-    pub(crate) fn native_cloak_offset_words(&self) -> i32 {
-        self.answers.native_cloak_offset_words
-    }
-
     pub(crate) fn driver_killed(&self) -> bool {
         self.answers.driver_killed
     }
@@ -869,9 +863,6 @@ impl crate::render::snapshot::SnapshotObject for ObjectRecord {
     }
     fn building_cloak_stage(&self) -> u8 {
         self.answers.building_cloak_stage
-    }
-    fn native_cloak_offset_words(&self) -> i32 {
-        self.answers.native_cloak_offset_words
     }
     fn is_warped_out(&self) -> bool {
         self.answers.is_warped_out
@@ -1152,7 +1143,7 @@ impl Flashing {
 }
 
 /// Every stored object's record, for one world state and local player.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub(crate) struct PresentationFrame {
     /// In ascending stable-id order.
     objects: Vec<ObjectRecord>,
@@ -1197,7 +1188,7 @@ pub(crate) struct PresentationFrame {
 }
 
 /// The resources a frame was captured under; none for a default frame.
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct CapturedRules(Option<std::sync::Arc<crate::sim::runtime::SimResources>>);
 
 impl std::fmt::Debug for CapturedRules {
@@ -1207,6 +1198,13 @@ impl std::fmt::Debug for CapturedRules {
 }
 
 impl PresentationFrame {
+    /// Release the live match's resources before the host accepts its next Rules write.
+    /// Freeing the frame's 20,000 object records can still run on the pool.
+    pub(crate) fn retire(mut self: Box<Self>) {
+        self.resources.0 = None;
+        crate::sim::parallel::drop_on_pool(self);
+    }
+
     /// The records of `runtime`'s objects, as its local player (the
     /// scenario's current house) sees them, with the sidebar's answers for
     /// `sidebar_types`.

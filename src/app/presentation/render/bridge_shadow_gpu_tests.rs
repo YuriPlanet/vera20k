@@ -282,7 +282,7 @@ fn retail_rock_shadow_admits_generated_live_and_restored_overlay() {
     );
     let mut sim = Simulation::new();
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.install_overlay_grid_for_load(grid);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
     let point = crate::map::terrain::iso_to_screen(4, 4, 0);
     let build = |sim: &Simulation, atlas: &BridgeAtlas| {
         let mut instances = Vec::new();
@@ -325,11 +325,14 @@ fn retail_rock_shadow_admits_generated_live_and_restored_overlay() {
         build(&sim, &atlas).is_empty(),
         "live erasure defeats the stale published anchor"
     );
-    let mut restored = GameSnapshot::load(&saved).unwrap().sim;
-    restored.restore_after_snapshot_load().unwrap();
-    restored.rebuild_caches_after_load(terrain, Default::default(), &fixture.rules);
-    restored
-        .restore_map_authority_after_snapshot_load(&fixture.rules, &fixture.registry, None)
+    let restored = GameSnapshot::load(&saved)
+        .unwrap()
+        .restore_checkpoint_map_for_test(
+            &fixture.rules,
+            &fixture.registry,
+            terrain,
+            Default::default(),
+        )
         .unwrap();
     let restored_atlas = fixture.atlas(&gpu, &batch);
     let after = build(&restored, &restored_atlas);

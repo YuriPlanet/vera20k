@@ -600,8 +600,7 @@ fn log_prepared_load_error(
         #[cfg(test)]
         PreparedLoadError::MissingCurrentSimulation
         | PreparedLoadError::MissingMapHash
-        | PreparedLoadError::MissingTerrainTemplate
-        | PreparedLoadError::MissingOverlayRegistry => log::error!("Load: {error}"),
+        | PreparedLoadError::MissingTerrainTemplate => log::error!("Load: {error}"),
         PreparedLoadError::Snapshot(source) => log::error!("Load: {source}"),
         PreparedLoadError::Restore(source) => {
             log::error!("Load: restoration validation failed: {source}")

@@ -1025,12 +1025,8 @@ mod tests {
             let Command::PlanningRecord { record } = &queued[0].payload else {
                 panic!("mobile self-click escaped Planning Mode");
             };
-            let decoded = crate::sim::command::MegaMissionRecord::decode(&{
-                let mut ordinary = record.clone();
-                ordinary.payload_mut()[22] = 0;
-                ordinary
-            })
-            .unwrap();
+            let (decoded, _) =
+                crate::sim::command::MegaMissionRecord::decode_planned(record).unwrap();
             assert!(matches!(
                 decoded.order,
                 crate::sim::command::MegaMissionOrder::Mission {
@@ -1080,7 +1076,6 @@ mod tests {
 
     #[test]
     fn retail_planning_primary_selection_keeps_its_ordinary_scheduled_event() {
-        use crate::rules::overlay_types::OverlayTypeRegistry;
         use crate::sim::runtime::{SimResources, SimRuntime};
         use crate::sim::world::{FrameEffects, TickLane};
 
@@ -1088,8 +1083,6 @@ mod tests {
             return;
         };
         let owner = sim.session().current_house().unwrap();
-        let overlays =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let order = CommandEnvelope::new(
             owner,
@@ -1114,9 +1107,7 @@ mod tests {
         );
         assert!(sim.planning_paths(owner).is_empty());
 
-        let mut resources = SimResources::empty();
-        resources.rules = rules;
-        resources.overlay_registry = overlays;
+        let resources = SimResources::new(rules);
         let mut runtime = SimRuntime {
             simulation: sim,
             resources: resources.into(),

@@ -1487,7 +1487,7 @@ fn retail_dustbowl_a_hard_computer_walls_its_yard() {
         let overlay = rules
             .object("NAWALL")
             .and_then(|ty| ty.to_overlay.as_deref())
-            .and_then(|name| resources.overlay_registry.id_for_name(name))
+            .and_then(|name| resources.rules.overlay_registry().id_for_name(name))
             .expect("retail NAWALL's overlay");
         (
             rules.building_type_index("NACNST").expect("retail NACNST"),

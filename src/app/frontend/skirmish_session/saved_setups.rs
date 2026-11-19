@@ -15,9 +15,7 @@ use std::fmt::Write as _;
 
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::ini_value::crt_atoi;
-use crate::skirmish_launch::{
-    LaunchStartPosition, NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchOptions,
-};
+use crate::skirmish_launch::{LaunchStartPosition, SKIRMISH_MAX_SLOT_COUNT, SkirmishLaunchOptions};
 use crate::ui::skirmish_shell::{
     SkirmishCountryChoice, SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat,
 };
@@ -108,7 +106,7 @@ fn replace_section(file: &[u8], section: &str, values: Vec<(String, String)>) ->
 
 fn read_setup(section: &IniSection) -> Option<SkirmishSavedSetup> {
     let player = read_seat(&section.read_list("Player", 0x200)?);
-    let computers = (1..NETWORK_PLAYER_SLOT_COUNT)
+    let computers = (1..SKIRMISH_MAX_SLOT_COUNT)
         .map_while(|number| section.read_list(&format!("Slot{number:02}"), 0x200))
         .map(|tokens| SkirmishSetupComputer {
             row_type: ai_row_type_from_persisted(tokens.first().map_or(1, |type_| crt_atoi(type_))),

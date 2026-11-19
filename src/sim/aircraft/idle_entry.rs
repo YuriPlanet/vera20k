@@ -400,7 +400,7 @@ fn enter_idle_mode_with(
         airstrike: entity.airstrike_link().is_some(),
         mission_only: entity.is_mission_only(),
         passengers: entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_some_and(|cargo| cargo.count() != 0),
         human: sim.owner_is_human(entity.owner()),

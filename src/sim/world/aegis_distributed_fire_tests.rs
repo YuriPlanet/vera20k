@@ -132,7 +132,6 @@ impl GuardScene {
             .advance_app_frame(
                 &commands,
                 &self.rules,
-                None,
                 33,
                 TickLane::Ordinary,
                 FrameEffects::default(),

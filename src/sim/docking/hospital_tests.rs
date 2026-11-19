@@ -34,7 +34,7 @@ impl SoundBoundary for Heard {
             {
                 let hospital = sim.entities().get(self.hospital).unwrap();
                 assert_eq!(
-                    hospital.passenger_role.cargo().unwrap().passengers(),
+                    hospital.passenger_role().cargo().unwrap().passengers(),
                     [self.patient],
                     "native7509E0 precedes hospital Cargo.RemoveFirst473430"
                 );
@@ -169,6 +169,6 @@ fn retail_hospital_heal_sound_is_delivered_before_the_patient_leaves_cargo() {
             health
         );
         assert_eq!(heard.heals.get(), cues);
-        assert_eq!(building.passenger_role.passenger_count(), cargo);
+        assert_eq!(building.passenger_role().passenger_count(), cargo);
     }
 }

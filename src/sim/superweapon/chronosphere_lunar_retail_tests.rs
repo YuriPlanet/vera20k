@@ -151,7 +151,7 @@ fn placed_type(sim: &Simulation, owner: InternedId, name: &str) -> Option<u64> {
 fn placement(scene: &HeadlessScenario, name: &str, anchor: (u16, u16)) -> (u16, u16) {
     let sim = scene.sim();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
     let resources: Vec<_> = terrain
         .cells()
@@ -241,7 +241,7 @@ fn buy_building(scene: &mut HeadlessScenario, name: &str, anchor: (u16, u16)) ->
             name,
             rx,
             ry,
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
         )
         .unwrap()
         .valid
@@ -256,7 +256,7 @@ fn buy_building(scene: &mut HeadlessScenario, name: &str, anchor: (u16, u16)) ->
                 .unwrap()
                 .cell(rx, ry)
                 .overlay_id
-                .and_then(|id| scene.runtime.resources.overlay_registry.flags(id))
+                .and_then(|id| scene.runtime.resources.rules.overlay_registry().flags(id))
                 .is_some_and(|flags| flags.wall)
         } else {
             scene
@@ -427,7 +427,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
                     terrain.native_cell_identity((at.0 as i16, at.1 as i16)),
                     InfantryEntryArgs::REPAIR,
                     rules,
-                    Some(&scene.runtime.resources.overlay_registry),
+                    Some(scene.runtime.resources.rules.overlay_registry()),
                 ) == Ok(0)
         })
         .expect("ordinary empty AMCV source choice");
@@ -492,7 +492,8 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
     let flags = scene
         .runtime
         .resources
-        .overlay_registry
+        .rules
+        .overlay_registry()
         .flags(overlay.overlay_id.unwrap())
         .unwrap();
     assert!(flags.wall && !flags.crushable);
@@ -502,7 +503,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
             target_cell,
             InfantryEntryArgs::REPAIR,
             &scene.runtime.resources.rules,
-            Some(&scene.runtime.resources.overlay_registry)
+            Some(scene.runtime.resources.rules.overlay_registry())
         ),
         Ok(7)
     );

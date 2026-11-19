@@ -298,7 +298,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(passenger)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_inside_transport()
         {
             break;
@@ -309,7 +309,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         1
@@ -371,7 +371,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         0

@@ -374,8 +374,7 @@ fn fractional_retail_land_row_reaches_rhino_entry_and_drive() {
         crate::sim::world::FrameEffects::default()
     ));
     sim.session.set_binary_frame_for_test(101);
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .mission_leaf
         .set_foot_idle_entry_latch(0);

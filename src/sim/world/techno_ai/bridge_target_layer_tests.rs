@@ -619,7 +619,7 @@ pub(super) fn retail_hills_collapsed_scene(
             source,
             &runtime.resources.rules,
             ObjectAiCtx {
-                overlay_registry: Some(&runtime.resources.overlay_registry),
+                overlay_registry: Some(runtime.resources.rules.overlay_registry()),
                 ..Default::default()
             },
         );
@@ -746,7 +746,7 @@ fn collapse_retail_scene(
     };
     let mut collapsed = false;
     for _ in 0..8 {
-        collapsed|=crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(&mut runtime.simulation,&runtime.resources.rules,&[event],Some(&runtime.resources.overlay_registry), crate::sim::world::FrameEffects::default());
+        collapsed|=crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(&mut runtime.simulation,&runtime.resources.rules,&[event],Some(runtime.resources.rules.overlay_registry()), crate::sim::world::FrameEffects::default());
         if !runtime
             .simulation
             .resolved_terrain

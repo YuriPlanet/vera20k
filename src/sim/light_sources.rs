@@ -176,13 +176,18 @@ impl Simulation {
             .publish(LightingEvent::RetainAnimIntensity { anim, cell });
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn rebuild_lighting_sources_for_test(&mut self, rules: &RuleSet) {
+        self.rebuild_lighting_sources_after_load(rules);
+    }
+
     /// VERA-only, as [`LightingSources`] records: the lights of the alive
     /// (`+0x90`), unlimboed (`+0x81`), Marked (`+0x74`), undying buildings
     /// with Health above 0 that have one by now: each that has opened
     /// (`+0x6E4`, [`Self::light_building`] at Grand_Opening) and, in a
     /// campaign, each other, which its Unlimbo lit (`0x00440D4D`). The
     /// outgoing timeline restarts empty.
-    pub fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
+    pub(crate) fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
         self.lighting_sources = LightingSources::default();
         let campaign = !self.session.game_mode_nonzero();
         let ids: Vec<_> = self
@@ -350,7 +355,7 @@ impl Simulation {
 
     /// User-load685120 ->53AB50 reselects from the incoming effect globals.
     /// The detached client lighting installation consumes this one refresh.
-    pub fn reinitialize_lighting_after_user_load(&mut self) {
+    pub(crate) fn reinitialize_lighting_after_user_load(&mut self) {
         debug_assert!(self.lighting_sources.pending().is_empty());
         self.update_lighting();
         self.lighting_sources.discard_pending();

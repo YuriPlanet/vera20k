@@ -212,18 +212,25 @@ impl CampaignLaunchOptions {
 
     fn loose_scenario_file(&self, scenario: &str) -> Option<String> {
         let path = self.scenario_directory.as_ref()?.join(scenario);
-        path.is_file().then(|| path.to_string_lossy().into_owned())
+        let name = path.to_str()?;
+        crate::util::file_system::is_file(&path).then(|| name.to_owned())
     }
 }
 
 /// StartScenario683B26..683B62 copies Scenario+125C and uppercases it via
 /// 7DCFC4 before the exact-case MISSIONMD reads (original gamemd.exe).
 /// Keep the supplied physical spelling for case-sensitive loose-file lookup.
+///
+/// VERA: the name comes from game data (a campaign list, a map's
+/// `NextScenario`, MapSelect, a saved game, a launch file), and Start_Scenario
+/// hands it to the file system as it is. Here only a logical name starts a
+/// mission, so none of them can make the game open a host path or a network
+/// share; `None` for any other.
 fn prepare_campaign_scenario(
     scenario: &str,
     campaign: &crate::rules::campaigns::CampaignDefinition,
     launch_options: Option<&CampaignLaunchOptions>,
-) -> (String, Option<String>) {
+) -> Option<(String, Option<String>)> {
     // Start_Scenario683AC8..683AF8: a null/empty requested name falls back
     // to the retained campaign entry, including after failed MapSelect.
     let scenario = if scenario.is_empty() {
@@ -231,11 +238,15 @@ fn prepare_campaign_scenario(
     } else {
         scenario
     };
+    if !crate::map::source::is_logical_name(scenario) {
+        log::warn!("Campaign scenario {scenario:?} is not a map name and is not opened");
+        return None;
+    }
     let logical_name = scenario.to_ascii_uppercase();
     let source = launch_options
         .and_then(|options| options.loose_scenario_file(scenario))
         .or_else(|| (logical_name != scenario).then(|| scenario.to_owned()));
-    (logical_name, source)
+    Some((logical_name, source))
 }
 
 /// Start_Scenario683AB0's immutable campaign-array selection, separate from
@@ -275,27 +286,39 @@ impl PreparedCampaignStartup {
     /// world. Native ScenarioLoad689470 retains index+34CC, name+125C and
     /// counter+1254; ContentLoad67E804 restores the incoming carry-over.
     /// The re-read process catalog supplies the same indexed Campaign entry.
+    ///
+    /// VERA: a saved game is a file from a stranger, so it names no file
+    /// location. Its map name must be a logical name, and its loose map path
+    /// is used only inside a folder this game already reads maps from
+    /// (`LoadedMapSource::restored_loose_lookup`): `launch_dir`, the outgoing
+    /// campaign's external folder, or the game's own. A save cannot make
+    /// Restart or the next mission open a network share or a device.
     pub(crate) fn from_saved_scenario(
         campaigns: &crate::rules::campaigns::CampaignRegistry,
         simulation: &Simulation,
         source: &crate::map::source::LoadedMapSource,
+        ra2_dir: Option<&std::path::Path>,
+        launch_dir: Option<&std::path::Path>,
     ) -> Option<Self> {
         let session = simulation.session();
         if session.game_mode_nonzero() {
             return None;
         }
+        if !crate::map::source::is_logical_name(session.map_name()) {
+            log::warn!(
+                "Saved campaign map {:?} is not a map name; Restart and the next mission are off",
+                session.map_name()
+            );
+            return None;
+        }
         let campaign_index = usize::try_from(session.campaign_index()?).ok()?;
         let campaign = campaigns.get(campaign_index)?.clone();
+        let (scenario_file, scenario_directory) = source.restored_loose_lookup(ra2_dir, launch_dir);
         Some(Self {
             campaign_index,
             campaign,
             scenario: session.map_name().to_owned(),
-            scenario_file: match source {
-                crate::map::source::LoadedMapSource::Loose { path, .. } => {
-                    Some(path.to_string_lossy().into_owned())
-                }
-                _ => None,
-            },
+            scenario_file: scenario_file.map(str::to_owned),
             mission_counter: session.campaign_mission_counter()?,
             difficulty: session.campaign_house_difficulties()?.0 as i32,
             // Reuse the saved session's existing options authority. A loose
@@ -303,12 +326,7 @@ impl PreparedCampaignStartup {
             launch_options: Some(CampaignLaunchOptions {
                 game_speed: session.game_options().game_speed,
                 build_off_ally: session.game_options().build_off_ally,
-                scenario_directory: match source {
-                    crate::map::source::LoadedMapSource::Loose { path, .. } => {
-                        path.parent().map(std::path::Path::to_path_buf)
-                    }
-                    _ => None,
-                },
+                scenario_directory: scenario_directory.map(std::path::Path::to_path_buf),
             }),
             carry_over: session.campaign_restart_carry_over(),
             play_action_movie: false,
@@ -334,6 +352,12 @@ impl PreparedCampaignStartup {
 
     pub fn selected_map_file(&self) -> &str {
         self.scenario_file.as_deref().unwrap_or(&self.scenario)
+    }
+
+    /// The folder this campaign's loose maps are read from besides the game's:
+    /// an external launch's, or the saved map's after a load.
+    pub(crate) fn scenario_directory(&self) -> Option<&std::path::Path> {
+        self.launch_options.as_ref()?.scenario_directory.as_deref()
     }
 
     pub fn mission_counter(&self) -> i32 {
@@ -404,7 +428,8 @@ impl PreparedCampaignStartup {
     /// index, the map MapSelect chose, the incremented mission counter and
     /// the record `0x004C6180` saved from the won mission. Options.Difficulty
     /// is read again for the session; the player House's row comes from the
-    /// record.
+    /// record. `None`, with no seed read, when the chosen name is not a map
+    /// name ([`prepare_campaign_scenario`]).
     pub fn next_mission(
         &self,
         scenario: String,
@@ -413,10 +438,10 @@ impl PreparedCampaignStartup {
         game_speed: i32,
         carry_over: CampaignCarryOver,
         clock: &mut impl MatchSeedClock,
-    ) -> Self {
+    ) -> Option<Self> {
         let (scenario, scenario_file) =
-            prepare_campaign_scenario(&scenario, &self.campaign, self.launch_options.as_ref());
-        Self {
+            prepare_campaign_scenario(&scenario, &self.campaign, self.launch_options.as_ref())?;
+        Some(Self {
             campaign_index: self.campaign_index,
             campaign: self.campaign.clone(),
             scenario_file,
@@ -433,7 +458,7 @@ impl PreparedCampaignStartup {
             carry_over: Some(carry_over),
             play_action_movie: true,
             seed: read_match_seed(clock),
-        }
+        })
     }
 }
 
@@ -474,7 +499,7 @@ pub(crate) fn prepare_campaign_startup_at_index(
         scenario.unwrap_or_default(),
         &campaign,
         launch_options.as_ref(),
-    );
+    )?;
     Some(PreparedCampaignStartup {
         campaign_index,
         // External mission selectors can enter a later authored scenario while
@@ -903,8 +928,8 @@ mod tests {
     };
 
     fn explicit_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
+        SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode {
                 class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".into(),
@@ -915,8 +940,8 @@ mod tests {
                 allies_allowed: true,
                 must_ally: false,
             },
-            selected_map_file: Some("DeepFrze.map".into()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            Some("DeepFrze.map".into()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".into(),
                 slot: SkirmishLocalSlot {
@@ -929,9 +954,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -941,10 +965,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     fn accepted_session() -> AcceptedBattleSession {
@@ -986,25 +1008,7 @@ mod tests {
 
     #[test]
     fn saved_campaign_keeps_later_map_identity_for_restart_and_victory() {
-        use crate::sim::scenario_session::ScenarioDescriptor;
-        use crate::sim::snapshot::GameSnapshot;
-
-        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
-        campaigns.apply_ini(
-            &crate::rules::ini_parser::IniFile::from_str(
-                "[Battles]\n0=ALL1\n1=SOV1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n[SOV1]\nCD=2\nScenario=SOV01UMD.MAP\n",
-            ),
-            &crate::rules::movies::MovieRegistry::default(),
-        );
-        let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
-            map_name: "SOV03UMD.MAP".into(),
-            seed: 71,
-            ..Default::default()
-        });
-        sim.session_mut_for_test()
-            .initialize_campaign_for_test(1, 3, CampaignCarryOver::CLEARED);
-        let bytes = GameSnapshot::save(&sim, 0, 0, "SOV03UMD.MAP", 0);
-        let restored = GameSnapshot::load(&bytes).unwrap().sim;
+        let (campaigns, restored) = restored_campaign("SOV03UMD.MAP");
         let source = crate::map::source::LoadedMapSource::Mix {
             logical_name: "SOV03UMD.MAP".into(),
             source_archive: "mapsmd03.mix".into(),
@@ -1012,8 +1016,10 @@ mod tests {
             payload_len: 0,
             source_sha256: String::new(),
         };
-        let saved = PreparedCampaignStartup::from_saved_scenario(&campaigns, &restored, &source)
-            .expect("a later map keeps its saved catalog index");
+        let saved = PreparedCampaignStartup::from_saved_scenario(
+            &campaigns, &restored, &source, None, None,
+        )
+        .expect("a later map keeps its saved catalog index");
         assert_eq!(saved.campaign_index(), 1);
         assert_eq!(saved.campaign().id(), "SOV1");
         assert_eq!(saved.scenario(), "SOV03UMD.MAP");
@@ -1038,19 +1044,191 @@ mod tests {
         assert_eq!(retry.mission_counter(), 3);
         assert_eq!(retry.carry_over(), Some(&CampaignCarryOver::CLEARED));
         assert!(!retry.plays_action_movie());
-        let next = saved.next_mission(
-            "SOV04UMD.MAP".into(),
-            4,
-            2,
-            1,
-            restored.save_campaign_carry_over(),
-            &mut clock,
-        );
+        let next = saved
+            .next_mission(
+                "SOV04UMD.MAP".into(),
+                4,
+                2,
+                1,
+                restored.save_campaign_carry_over(),
+                &mut clock,
+            )
+            .unwrap();
         assert_eq!(next.campaign_index(), 1);
         assert_eq!(next.scenario(), "SOV04UMD.MAP");
         assert_eq!(next.mission_counter(), 4);
         assert!(next.plays_action_movie());
         assert_eq!(clock.reads, 2, "only the two fresh starts sample a seed");
+    }
+
+    /// The SOV1 campaign's third mission under `map_name`, saved and loaded.
+    fn restored_campaign(
+        map_name: &str,
+    ) -> (crate::rules::campaigns::CampaignRegistry, Simulation) {
+        use crate::sim::scenario_session::ScenarioDescriptor;
+        use crate::sim::snapshot::GameSnapshot;
+
+        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
+        campaigns.apply_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[Battles]\n0=ALL1\n1=SOV1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n[SOV1]\nCD=2\nScenario=SOV01UMD.MAP\n",
+            ),
+            &crate::rules::movies::MovieRegistry::default(),
+        );
+        let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
+            map_name: map_name.into(),
+            seed: 71,
+            ..Default::default()
+        });
+        sim.session_mut_for_test()
+            .initialize_campaign_for_test(1, 3, CampaignCarryOver::CLEARED);
+        let bytes = GameSnapshot::save(&sim, 0, 0, "SOV03UMD.MAP", 0);
+        let restored = GameSnapshot::load(&bytes)
+            .unwrap()
+            .into_simulation_for_test();
+        (campaigns, restored)
+    }
+
+    /// A saved game is a file from a stranger: its map path, its mission name
+    /// and its next mission's name all reach the file system on Restart or a win.
+    #[test]
+    fn a_saved_campaign_names_no_file_outside_the_map_folders() {
+        use crate::map::source::test_support::TestDirectory;
+        use std::path::Path;
+        let loose = |path: &Path| crate::map::source::LoadedMapSource::Loose {
+            path: path.to_path_buf(),
+            payload_len: 0,
+            source_sha256: String::new(),
+            cache_lease: Default::default(),
+        };
+        let folder = |label: &str| {
+            let folder = TestDirectory::new(label);
+            std::fs::create_dir(folder.path().join("Maps")).unwrap();
+            folder.write("Maps/sov03umd.map", b"[Map]");
+            folder
+        };
+        let map = |folder: &TestDirectory| folder.path().join("Maps").join("sov03umd.map");
+        let (game, client, elsewhere) = (
+            folder("saved-campaign-game"),
+            folder("saved-campaign-client"),
+            folder("saved-campaign-elsewhere"),
+        );
+        let (campaigns, restored) = restored_campaign("SOV03UMD.MAP");
+        let saved = |path: &Path| {
+            PreparedCampaignStartup::from_saved_scenario(
+                &campaigns,
+                &restored,
+                &loose(path),
+                Some(game.path()),
+                Some(client.path()),
+            )
+            .unwrap()
+        };
+        // Inside a map folder the saved file is the map; an external launch's
+        // folder stays where the next mission is looked for.
+        for (inside, next_from) in [
+            (map(&game), game.path().join("Maps")),
+            (map(&client), client.path().to_path_buf()),
+        ] {
+            let startup = saved(&inside);
+            assert_eq!(startup.selected_map_file(), inside.to_str().unwrap());
+            assert_eq!(startup.scenario_directory(), Some(next_from.as_path()));
+        }
+        // Outside them even a file that exists is only a name to look up.
+        let through_parent = game
+            .path()
+            .join("..")
+            .join(elsewhere.path().file_name().unwrap())
+            .join("Maps")
+            .join("sov03umd.map");
+        assert!(through_parent.is_file());
+        for outside in [map(&elsewhere), through_parent] {
+            let startup = saved(&outside);
+            assert_eq!(startup.selected_map_file(), "sov03umd.map", "{outside:?}");
+            assert_eq!(startup.scenario_directory(), None, "{outside:?}");
+        }
+        let share = saved(Path::new(r"\\host\share\sov03umd.map"));
+        assert!(crate::map::source::is_logical_name(
+            share.selected_map_file()
+        ));
+        assert_eq!(share.scenario_directory(), None);
+
+        let startup = saved(&map(&game));
+        let mut clock = CountingClock { value: 1, reads: 0 };
+        for name in [
+            r"\\host\share\NEXT.MAP",
+            "../NEXT.MAP",
+            "/dev/zero",
+            "COM1.MAP",
+        ] {
+            let next =
+                startup.next_mission(name.into(), 4, 2, 1, CampaignCarryOver::CLEARED, &mut clock);
+            assert!(next.is_none(), "{name}");
+        }
+        assert_eq!(clock.reads, 0, "a refused name reads no seed");
+        let (campaigns, restored) = restored_campaign("../SOV03UMD.MAP");
+        assert!(
+            PreparedCampaignStartup::from_saved_scenario(
+                &campaigns,
+                &restored,
+                &loose(&map(&game)),
+                Some(game.path()),
+                None
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn saved_loose_campaign_restarts_from_the_current_install() {
+        let (campaigns, sim) = restored_campaign("SOV03UMD.MAP");
+        let mut clock = CountingClock {
+            value: 12,
+            reads: 0,
+        };
+        let install =
+            crate::map::source::test_support::TestDirectory::new("saved-campaign-install");
+        let mut restart = |path| {
+            let source = crate::map::source::LoadedMapSource::Loose {
+                path,
+                cache_lease: Default::default(),
+                payload_len: 12,
+                source_sha256: "saved-digest".into(),
+            };
+            PreparedCampaignStartup::from_saved_scenario(
+                &campaigns,
+                &sim,
+                &source,
+                Some(install.path()),
+                None,
+            )
+            .unwrap()
+            .restart(1, 1, &mut clock)
+        };
+        // The physical filename can differ from the campaign's logical name.
+        install.write("Physical.map", b"[Map]");
+        let original = install.path().join("Physical.map");
+        assert_eq!(
+            restart(original.clone()).selected_map_file(),
+            original.to_str().unwrap()
+        );
+        let moved = install.path().join("moved");
+        std::fs::create_dir(&moved).unwrap();
+        std::fs::rename(&original, moved.join("Physical.map")).unwrap();
+        let retry = restart(original);
+        assert!(moved.join(retry.selected_map_file()).is_file());
+        assert_eq!(retry.selected_map_file(), "Physical.map");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let path = std::ffi::OsStr::from_bytes(b"/game/\xff/Mission.map");
+            assert_eq!(restart(path.into()).selected_map_file(), "Mission.map");
+            assert_eq!(
+                restart(r"C:\other\Physical.map".into()).selected_map_file(),
+                "SOV03UMD.MAP"
+            );
+        }
     }
 
     #[test]
@@ -1126,14 +1304,16 @@ mod tests {
         assert!(!startup.game_options().unwrap().build_off_ally);
         assert_eq!(startup.seed.value, 731);
         assert_eq!(clock.reads, 1);
-        let next = startup.next_mission(
-            "ALL05uMd.map".into(),
-            2,
-            2,
-            4,
-            CampaignCarryOver::CLEARED,
-            &mut clock,
-        );
+        let next = startup
+            .next_mission(
+                "ALL05uMd.map".into(),
+                2,
+                2,
+                4,
+                CampaignCarryOver::CLEARED,
+                &mut clock,
+            )
+            .unwrap();
         assert_eq!(next.campaign_index(), startup.campaign_index());
         assert_eq!(next.campaign(), startup.campaign());
         assert_eq!(next.scenario(), "ALL05UMD.MAP");
@@ -1146,7 +1326,9 @@ mod tests {
         let mut sim = crate::sim::world::Simulation::new();
         sim.set_campaign_map_stage(17);
         let record = sim.save_campaign_carry_over();
-        let fallback = next.next_mission(String::new(), 3, 2, 4, record, &mut clock);
+        let fallback = next
+            .next_mission(String::new(), 3, 2, 4, record, &mut clock)
+            .unwrap();
         assert_eq!(fallback.scenario(), "ALL01UMD.MAP");
         assert_eq!(fallback.campaign_index(), startup.campaign_index());
         assert_eq!(fallback.mission_counter(), 3);
@@ -1170,7 +1352,9 @@ mod tests {
         let mut won = crate::sim::world::Simulation::new();
         won.set_trigger_variable_for_test(true, 3, true);
         let record = won.save_campaign_carry_over();
-        let second = first.next_mission("SOV02SMD.MAP".into(), 2, 0, 1, record, &mut clock);
+        let second = first
+            .next_mission("SOV02SMD.MAP".into(), 2, 0, 1, record, &mut clock)
+            .unwrap();
         clock.value = 77;
         let restarted = second.restart(2, 1, &mut clock);
         assert_eq!(restarted.campaign_index(), second.campaign_index());

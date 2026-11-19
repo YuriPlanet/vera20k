@@ -206,6 +206,47 @@ impl SearchFootEntry for SuppliedEntry {
 }
 
 #[test]
+fn missing_astar_endpoint_refuses_the_route_before_querying_neighbors() {
+    // Original AStar_main_loop 0x00429AE3/0x00429AEB: either null map slot
+    // returns no path. The Unit's Can_Enter_Cell never runs.
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    let grid = PathGrid::new(32, 32);
+    let entry = SuppliedEntry {
+        answer: Ok(0),
+        queries: Default::default(),
+    };
+    let options = AStarOptions {
+        resolved_terrain: Some(&terrain),
+        ..AStarOptions::new(&entry)
+    };
+    for (start, goal) in [((9, 32), (9, 31)), ((31, 9), (32, 9))] {
+        assert_eq!(
+            astar_search(&grid, start, MovementLayer::Ground, goal, &options),
+            Err(PathSearchFailure::CellSearchExhausted)
+        );
+    }
+    assert!(entry.queries.borrow().is_empty());
+}
+
+#[test]
+fn astar_searches_the_real_cells_of_aliased_endpoints() {
+    // Original 0x00429AA1 uses signed coordinates with a 512-cell stride.
+    // The native run (512,9) -> (513,9) returned start (0,10), then East.
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    let grid = PathGrid::new(32, 32);
+    let entry = WalkableEntry::new(&grid);
+    let options = AStarOptions {
+        resolved_terrain: Some(&terrain),
+        ..AStarOptions::new(&entry)
+    };
+    let path = astar_search(&grid, (512, 9), MovementLayer::Ground, (513, 9), &options).unwrap();
+    assert_eq!(
+        path.iter().map(|s| (s.rx, s.ry)).collect::<Vec<_>>(),
+        [(0, 10), (1, 10)]
+    );
+}
+
+#[test]
 fn canonical_entry_reaches_blocked_goal_before_static_grid_refusal() {
     // Production wiring check: the supplied class comes from concrete native
     // Infantry-entry controls. This two-cell Rust route is not a native route

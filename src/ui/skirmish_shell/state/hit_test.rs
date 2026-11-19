@@ -286,6 +286,7 @@ pub fn status_help_key_for_random_map_setup(control: RandomMapSetupControl) -> &
         C::Delete0x6c4 => "STT:GenerateButtonDeleteMap",
         C::Cancel0x5c0 => "STT:GenerateButtonCancel",
         C::AdvancedToggle => "VERA:RandomMapAdvancedHelp",
+        C::AdvancedScrollbar => "VERA:RandomMapScrollHelp",
         C::ExportMap => "VERA:RandomMapExportHelp",
         C::FairStartsToggle => "VERA:RandomMapFairStartsHelp",
         C::PresetCycle => "VERA:RandomMapPresetHelp",
@@ -295,6 +296,18 @@ pub fn status_help_key_for_random_map_setup(control: RandomMapSetupControl) -> &
         C::Advanced(super::super::layout::AdvancedField::PlateauSize) => {
             "VERA:RandomMapPlateauSizeHelp"
         }
+        C::Advanced(super::super::layout::AdvancedField::TechBuildings) => {
+            "VERA:RandomMapTechBuildingsHelp"
+        }
+        C::Advanced(super::super::layout::AdvancedField::Derelicts) => {
+            "VERA:RandomMapDerelictsHelp"
+        }
+        C::Advanced(super::super::layout::AdvancedField::Damage) => "VERA:RandomMapDamageHelp",
+        C::Advanced(super::super::layout::AdvancedField::Civilians) => {
+            "VERA:RandomMapCiviliansHelp"
+        }
+        C::Advanced(super::super::layout::AdvancedField::Animals) => "VERA:RandomMapAnimalsHelp",
+        C::Advanced(super::super::layout::AdvancedField::Wild) => "VERA:RandomMapWildHelp",
         C::Advanced(_) => "VERA:RandomMapAdvancedSliderHelp",
         // Ares Game_DialogFunc_Subtext_Load (Ares.dll 10075EC0, hook 0x60411B).
         // The box is hit-tested only when Ares.dll is loaded.

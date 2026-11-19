@@ -91,7 +91,7 @@ fn world(rules: &RuleSet) -> (Simulation, InternedId, InternedId, InternedId, u6
     sim.spawn_object("TARGET", "Russians", 20, 20, 0, rules)
         .unwrap();
     sim.assess_power_for_test(rules);
-    sim.recheck_house_tech_tree(local, rules);
+    sim.recheck_house_tech_tree(local, rules, Default::default());
     let id = sim.interner.get(SHIELD).unwrap();
     (sim, local, remote, id, provider)
 }
@@ -282,7 +282,6 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
         .advance_app_frame(
             &commands,
             &rules,
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::for_sound(&boundary),

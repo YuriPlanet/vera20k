@@ -143,9 +143,9 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
         let actor = sim.substrate.entities.get(man).unwrap();
         assert_eq!((actor.position.rx(), actor.position.ry()), (15, 15));
         assert!(!actor.in_limbo());
-        assert!(actor.passenger_role.inside_transport().is_none());
+        assert!(actor.passenger_role().inside_transport().is_none());
         let aircraft = sim.substrate.entities.get(plane).unwrap();
-        assert_eq!(aircraft.passenger_role.cargo().unwrap().count(), 0);
+        assert_eq!(aircraft.passenger_role().cargo().unwrap().count(), 0);
         if survivor {
             assert_ne!(
                 aircraft.mission.queued(),

@@ -98,8 +98,7 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 /// Whether the room's map thumbnail shows a picture with nothing over it: no
 /// combo list, box (Game Options, Teams) or missing-map offer.
 fn preview_box_shows(state: &AppState, view: &SetupView, layout: &MultiplayerSetupLayout) -> bool {
-    !view.preview_hidden
-        && view.open_box.is_none()
+    view.open_box.is_none()
         && !view.map_offer_open
         && state.frontend.skirmish_preview_texture.is_some()
         && state
@@ -115,16 +114,6 @@ fn notice_active(state: &AppState) -> bool {
         .multiplayer_setup
         .as_ref()
         .is_some_and(|ui| ui.notice.is_some())
-}
-
-fn transfer_active(state: &AppState) -> bool {
-    state
-        .frontend
-        .network_setup_protocol
-        .as_ref()
-        .is_some_and(|protocol| {
-            protocol.blocking_map_transfer() && protocol.transfer_progress().is_some()
-        })
 }
 
 fn notice_feed(state: &AppState) -> [crate::ui::shell::layout::LaidOutControl; 1] {
@@ -158,11 +147,10 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     key_press(state, code, event.text.as_deref());
 }
 
-/// [`key_press`] reaches the room: no transfer, verify box, page dialog or
-/// notice is over it.
+/// [`key_press`] reaches the room: no verify box, page dialog or notice is
+/// over it.
 fn room_takes_keys(state: &AppState) -> bool {
-    !transfer_active(state)
-        && crate::app::shell_network_setup::verify(state).is_none()
+    crate::app::shell_network_setup::verify(state).is_none()
         && !crate::app::shell_wol::page::open(state)
         && !notice_active(state)
         && crate::app::shell_network_setup::view(state).is_some()
@@ -182,7 +170,7 @@ pub(crate) fn leaves_escape(state: &AppState) -> bool {
 
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`): [`key_press`] reaches the focused chat with no
-/// transfer, verify box, page dialog, notice or ChooseMap over the dialog.
+/// verify box, page dialog, notice or ChooseMap over the dialog.
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
         && state.frontend.shell_route.network_setup()
@@ -204,9 +192,6 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    if transfer_active(state) {
-        return;
-    }
     // WOL Start Game Now's 0x130 has no key handling; the locked C2/C9
     // under it takes none either.
     if crate::app::shell_network_setup::verify(state).is_some() {
@@ -283,9 +268,6 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    if transfer_active(state) {
-        return;
-    }
     if crate::app::shell_network_setup::verify(state).is_some() {
         crate::app::shell_network_setup::verify_cursor_moved(state);
         return;
@@ -385,9 +367,6 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if transfer_active(state) {
-        return;
-    }
     if button != MouseButton::Left || shell_transition::blocks_shell_input(state) {
         return;
     }
@@ -521,8 +500,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         }
     } else {
         ui.trackbar_hold = None;
-        ui.popup.cancel_pointer();
-        ui.chat.list.scroll.cancel();
+        ui.release_scrollbars();
         if let Some((row, header)) = ui.drop_row()
             && let Some(group) = view.drop_group(row, header)
         {
@@ -566,9 +544,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if crate::app::shell_network_setup::verify(state).is_some() {
         return crate::app::shell_network_setup::verify_poll_scroll(state);
-    }
-    if transfer_active(state) {
-        return None;
     }
     if notice_active(state) {
         return None;
@@ -615,10 +590,13 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         .min()
 }
 
-/// The wheel over VERA's roster scrolls it, while no list or box is open
-/// over the room; returns whether the wheel was the roster's.
+/// Route wheel input to VERA's room when it owns the pointer.
 pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
-    if lines == 0.0 || transfer_active(state) || notice_active(state) {
+    if lines == 0.0
+        || notice_active(state)
+        || crate::app::shell_network_setup::verify(state).is_some()
+        || crate::app::shell_wol::page::open(state)
+    {
         return false;
     }
     let Some(view) = crate::app::shell_network_setup::view(state) else {
@@ -629,16 +607,5 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return false;
     };
-    let Some(roster) = layout.roster_scroll(&view) else {
-        return false;
-    };
-    if view.open_box.is_some()
-        || view.map_offer_open
-        || ui.popup_geometry(&view, &layout).is_some()
-        || !layout.roster_area.contains(x, y)
-    {
-        return false;
-    }
-    ui.roster_wheel(roster, lines);
-    true
+    ui.wheel(&view, &layout, x, y, lines)
 }

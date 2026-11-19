@@ -11,7 +11,6 @@ use crate::map::basic::BasicSection;
 use crate::map::houses::HouseRoster;
 use crate::render::radar::minimap::MinimapRenderer;
 use crate::render::selection_overlay::SelectionOverlay;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::sidebar::SidebarTab;
 
@@ -65,7 +64,6 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             simulation: None,
             overlays: Vec::new(),
             terrain_objects: Vec::new(),
-            overlay_registry: OverlayTypeRegistry::empty(),
             house_roster: HouseRoster::default(),
             rules: None,
             map_lighting_config: crate::map::lighting::LightingConfig::default(),
@@ -148,7 +146,7 @@ pub(crate) fn install_world_presentation(
         .match_state
         .sim_runtime
         .runtime()
-        .map(|runtime| runtime.resources.overlay_registry.clone());
+        .map(|runtime| runtime.resources.rules.retain_overlay_registry());
 
     state.match_state.match_presentation.combat_lights.clear();
     state.renderer.performance_overlay.clear_simulation_rate();
@@ -359,7 +357,8 @@ pub(crate) fn install_world_presentation(
         .as_ref()
         .map(|grid| {
             let runtime = state.match_state.sim_runtime.runtime();
-            let overlay_registry = runtime.map(|runtime| &runtime.resources.overlay_registry);
+            let overlay_registry =
+                runtime.map(|runtime| runtime.resources.rules.overlay_registry());
             let rules = runtime.map(|runtime| &runtime.resources.rules);
             let overlay_data = build_minimap_overlay_data(
                 state.match_state.match_presentation.overlays.as_slice(),
@@ -645,7 +644,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             crate::sim::runtime::SimRuntime {
                 simulation,
                 resources: crate::sim::runtime::SimResources {
-                    overlay_registry: result.scenario.overlay_registry,
                     terrain_template: result.scenario.resolved_terrain,
                     rules,
                 }

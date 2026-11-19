@@ -81,6 +81,7 @@ impl Simulation {
         {
             return true;
         }
+        let effects = effects.with_overlay_registry(overlay_registry);
         if self.ares_powered_by_update(id, rules, effects) {
             return true;
         }
@@ -411,30 +412,7 @@ impl Simulation {
         if category.is_foot() {
             self.leave_team(id, false, rules, effects);
         }
-        let selected = self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| entity.selection.is_selected());
-        // A Building's Focus survives the shared Deactivate's Guard reset.
-        let focus = (category == EntityCategory::Structure).then(|| {
-            self.substrate
-                .entities
-                .get(id)
-                .expect("same object")
-                .archive_target()
-        });
-        self.techno_deactivate(id, rules, effects);
-        // Deactivate deselects; a selected victim is selected again with
-        // the move feedback off (no voice).
-        if selected && let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.selection.select();
-        }
-        if let Some(focus) = focus
-            && let Some(entity) = self.substrate.entities.get_mut(id)
-        {
-            entity.set_archive_target(focus);
-        }
+        self.ares_deactivate_with_reselection(id, rules, effects);
         if category.is_foot() {
             let _ = self.mission_queue_exact(
                 id,

@@ -31,7 +31,7 @@ async function fixture(t, { otherRelays = [], ...extra } = {}) {
     req.on('end', () => {
       if (req.url === '/v1/hold') { held.push(res); return; }
       requests.push({ path: req.url, method: req.method, auth: req.headers.authorization,
-        cookie: req.headers.cookie, address: req.headers['vera-client-address'],
+        build: req.headers['vera-build'], cookie: req.headers.cookie, address: req.headers['vera-client-address'],
         key: req.headers['vera-gateway-key'], body: Buffer.concat(chunks) });
       if (req.url === '/v1/oversize') { res.end(Buffer.alloc(LIMITS.responseBytes + 1)); return; }
       res.writeHead(409, { 'content-type': 'application/json' });
@@ -76,22 +76,26 @@ test('lobby HTTP remains byte-for-byte, bounded and restricted to its configured
   assert.throws(() => createGateway({ ...options, lobby: 'https://user:password@lobby.example' }), /HTTPS/);
   const body = '{ "request_id": "7", "payload": {"text":"中文"} }';
   const response = await fetch(`${base}/v1/commands?after=2`, {
-    method: 'POST', headers: { origin, authorization: 'Bearer test-token', cookie: 'must-not-forward=1' }, body,
+    method: 'POST', headers: { origin, authorization: 'Bearer test-token', 'vera-build': '0.3.6:ab:0000',
+      cookie: 'must-not-forward=1' }, body,
   });
   assert.equal(response.status, 409);
   assert.equal(response.headers.get('access-control-allow-origin'), origin);
   assert.equal(await response.text(), '{"error":{"code":"map_pending"}}');
   // Without the lobby key the gateway names no client address.
   assert.deepEqual(requests[0], { path: '/v1/commands?after=2', method: 'POST', auth: 'Bearer test-token',
-    cookie: undefined, address: undefined, key: undefined, body: Buffer.from(body) });
-  const preflight = await fetch(`${base}/v1/commands`, { method: 'OPTIONS', headers: {
-    origin, 'access-control-request-method': 'POST', 'access-control-request-headers': 'Authorization, Content-Type',
+    build: '0.3.6:ab:0000', cookie: undefined, address: undefined, key: undefined, body: Buffer.from(body) });
+  // What a browser game's sign-in sends (sign_in_headers in the game).
+  const signIn = 'Content-Type, Vera-Version, Vera-Build, Vera-Quick-Match, Vera-Host-Handover, Vera-Watch-AI, Vera-Language';
+  const preflight = await fetch(`${base}/v1/sessions`, { method: 'OPTIONS', headers: {
+    origin, 'access-control-request-method': 'POST', 'access-control-request-headers': signIn,
   } });
   assert.equal(preflight.status, 204);
-  assert.equal(preflight.headers.get('access-control-allow-headers'), 'Authorization, Content-Type');
+  assert.match(preflight.headers.get('access-control-allow-headers'), /^authorization, content-type, vera-version/);
   assert.equal((await fetch(`${base}/v1/events`, { headers: { origin: 'https://foreign.example' } })).status, 403);
+  // The lobby trusts this header only from the gateway itself.
   assert.equal((await fetch(`${base}/v1/events`, { method: 'OPTIONS', headers: {
-    origin, 'access-control-request-method': 'POST', 'access-control-request-headers': 'x-target-host',
+    origin, 'access-control-request-method': 'POST', 'access-control-request-headers': 'vera-client-address',
   } })).status, 403);
   assert.equal((await fetch(`${base}/v1/commands`, { method: 'POST', body: Buffer.alloc(LIMITS.requestBytes + 1) })).status, 413);
   assert.equal(requests.length, 1);
