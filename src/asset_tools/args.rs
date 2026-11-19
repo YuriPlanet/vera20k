@@ -50,6 +50,8 @@ pub enum Verb {
 
 pub struct Cli {
     pub ra2_dir: Option<PathBuf>,
+    /// Explicit mod directory; its normal mod.ini supplies loading rules.
+    pub mod_dir: Option<PathBuf>,
     pub all_mixes: bool,
     /// `--ares`: the player's Ares setting the game opens with.
     pub ares: crate::util::ares_launch::AresSetting,
@@ -134,11 +136,11 @@ ini-expand
                        --all-mixes widens tooling lookup only, not game mounting.
 
 GLOBAL OPTIONS
-  --ini-profile <yr|mo|auto|custom>  ini-roots/get/type: overrides [ini] as a unit.
-                       Archive verbs: mo mounts MO's renamed startup archives.
+  --ini-profile <yr|auto|custom>  ini-roots/get/type: overrides [ini] as a unit.
   --rules-ini <NAME> --art-ini <NAME> --ai-ini <NAME>
                        Custom profile requires all three plain INI basenames.
   --ra2-dir <PATH>     Retail install root. Overrides $RA2_DIR and config.toml.
+  --mod-dir <PATH>     Overlay a mod directory using its mod.ini loading rules.
   --all-mixes          Also mount archives the game's startup path skips.
                        Tooling-only: hits found this way are not what the game
                        would resolve.
@@ -227,6 +229,7 @@ parse-check
 pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     let mut cli = Cli {
         ra2_dir: None,
+        mod_dir: None,
         all_mixes: false,
         ares: Default::default(),
         verb: Verb::Help,
@@ -403,6 +406,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                 return Ok(cli);
             }
             "--ra2-dir" => cli.ra2_dir = Some(PathBuf::from(value(&mut args, "--ra2-dir")?)),
+            "--mod-dir" => cli.mod_dir = Some(PathBuf::from(value(&mut args, "--mod-dir")?)),
             "--all-mixes" => cli.all_mixes = true,
             "--ares" => {
                 let text = value(&mut args, "--ares")?;
@@ -414,11 +418,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                     cli.verb,
                     Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
                 );
-                // Archive verbs take only a profile, which selects the
-                // archive family the game mounts for it (MO's renamed MIXes).
-                let archive_verb =
-                    !matches!(cli.verb, Verb::IniExpand { .. }) && flag == "--ini-profile";
-                if !ini_verb && !archive_verb {
+                if !ini_verb {
                     return Err(flag_not_valid(&flag, &cli.verb));
                 }
                 let config = cli.ini_roots.get_or_insert_with(Default::default);
@@ -683,11 +683,14 @@ mod tests {
             custom.ini_roots.unwrap().resolve(|_| true).unwrap().names(),
             ["r.ini", "a.ini", "i.ini"]
         );
-        let extract = parse(args(&["extract", "aimo.ini", "--ini-profile", "mo"])).unwrap();
-        assert_eq!(
-            extract.ini_roots.unwrap().profile,
-            crate::util::ini_roots::IniProfile::Mo
-        );
+        let extract = parse(args(&[
+            "extract",
+            "alternate.ini",
+            "--mod-dir",
+            "mods/example",
+        ]))
+        .unwrap();
+        assert_eq!(extract.mod_dir, Some(PathBuf::from("mods/example")));
         for words in [
             vec![
                 "ini-roots",
@@ -696,11 +699,11 @@ mod tests {
                 "--rules-ini",
                 "r.ini",
             ],
-            vec!["ini-roots", "--ini-profile", "mo", "--ai-ini", "aimd.ini"],
+            vec!["ini-roots", "--ini-profile", "yr", "--ai-ini", "aimd.ini"],
             vec!["ini-roots", "--ini-profile", "unknown"],
             vec!["ini-roots", "--out", "somewhere"],
-            vec!["find", "r.ini", "--ai-ini", "aimo.ini"],
-            vec!["ini-expand", "r.ini", "--ini-profile", "mo"],
+            vec!["find", "r.ini", "--ai-ini", "alternate.ini"],
+            vec!["ini-expand", "r.ini", "--ini-profile", "custom"],
             vec!["ini-roots", "--strict"],
             vec!["ini-roots", "--source-only"],
         ] {
@@ -712,7 +715,7 @@ mod tests {
     fn ini_expand_probe_admits_only_its_own_read_only_options() {
         let cli = parse(args(&[
             "ini-expand",
-            "rulesmo.ini",
+            "alternate.ini",
             "--strict",
             "--max-depth",
             "12",
@@ -720,7 +723,7 @@ mod tests {
             "--source-only",
         ]))
         .unwrap();
-        assert!(matches!(cli.verb, Verb::IniExpand { name } if name == "rulesmo.ini"));
+        assert!(matches!(cli.verb, Verb::IniExpand { name } if name == "alternate.ini"));
         assert!(cli.ini_strict && cli.all_mixes && cli.ini_source_only);
         assert_eq!(cli.ini_max_depth, 12);
         for words in [

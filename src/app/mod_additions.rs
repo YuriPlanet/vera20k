@@ -33,31 +33,16 @@ const FILE_LIMIT: u64 = 8 * 1024 * 1024;
 /// ([`is_addition`]): Yuri's Revenge's own files, such as `rulesmd.ini`, its
 /// mode and theater INIs, and a campaign mission's, such as `all04dmd.ini`
 /// (`select_campaign_named_ini_for_full_init`). Here are the rest: the files
-/// beside them, the Mental Omega names of the Rules, Art, AI, sound, theater,
-/// theme and campaign files (`util::ini_roots`), the files a launcher writes
-/// for a match, VERA's settings, and Red Alert 2's own.
-const GAME_INIS: [&str; 32] = [
+/// beside them, the files a launcher writes for a match, VERA's settings,
+/// and Red Alert 2's own. The selected mod's declared root and catalog names
+/// are supplied by the process asset owner rather than listed here.
+const GAME_INIS: [&str; 17] = [
     "langrule.ini",
     "tmcj4f.ini",
     "spawn.ini",
     "spawnmap.ini",
     "vera.ini",
     "verarules.ini",
-    "rulesmo.ini",
-    "artmo.ini",
-    "aimo.ini",
-    "soundmo.ini",
-    "evamo.ini",
-    "temperatmo.ini",
-    "snowmo.ini",
-    "urbanmo.ini",
-    "desertmo.ini",
-    "lunarmo.ini",
-    "urbannmo.ini",
-    "thememo.ini",
-    "battlemo.ini",
-    "missionmo.ini",
-    "mapselmo.ini",
     "rules.ini",
     "art.ini",
     "ai.ini",

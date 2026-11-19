@@ -14,18 +14,22 @@ ra2_dir = "C:/Westwood/RA2"
 # mod = "MyMod"
 
 [ini]
-# Root files, plus Mental Omega's startup archive names under an explicit mo
-# (docs/ini-roots.md#archive-names); not full MOD gameplay.
-# Default yr preserves the normal Yuri's Revenge path. mo requires all three MO
-# roots; auto accepts exactly one complete set with no partial alternate set.
-# auto keeps the YR archive names, so a Mental Omega folder needs profile = "mo".
-profile = "yr" # yr | mo | auto | custom
+# Host root-file overrides (docs/ini-roots.md). A selected mod can declare its
+# own files and archive names in mod.ini without changing this configuration.
+# Default yr preserves Yuri's Revenge; auto requires its complete root triplet.
+profile = "yr" # yr | auto | custom
 # With profile = "custom", specify all three logical INI basenames:
 # rules = "my-rules.ini"
 # art = "my-art.ini"
 # ai = "my-ai.ini"
 # sound = "my-sound.ini"
 # eva = "my-eva.ini"
+# theme = "my-theme.ini"
+# battle = "my-campaigns.ini"
+# mission = "my-missions.ini"
+# mapsel = "my-map-select.ini"
+# modes = "my-modes.ini"
+# map_catalog = "my-maps.pkt"
 # Theater INI suffix for any profile, the MD of SNOWMD.INI: "md" reads
 # snowmd.ini, "xx" reads snowxx.ini, or snowmd.ini when that is absent.
 # theater_suffix = "md"

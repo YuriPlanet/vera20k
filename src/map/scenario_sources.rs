@@ -74,7 +74,7 @@ pub fn list_skirmish_scenario_records_with_assets(
     let mut records = Vec::new();
 
     if let Some(pkt) = assets
-        .get_ref("MISSIONSMD.PKT")
+        .get_ref(assets.ini_roots().map_catalog())
         .and_then(|bytes| IniFile::from_bytes(bytes).ok())
     {
         append_pkt_records(
@@ -106,7 +106,9 @@ fn append_loose_pkt_records(
     for (path, file_name) in loose_files_with_extension(&game_folders(ra2_dir), "pkt")? {
         // The wildcard scan would otherwise re-list every archived row a second
         // time from an extracted copy sitting beside the executable.
-        if file_name.eq_ignore_ascii_case(MISSIONS_MD_PKT_FILE_NAME) {
+        if file_name.eq_ignore_ascii_case(MISSIONS_MD_PKT_FILE_NAME)
+            || file_name.eq_ignore_ascii_case(assets.ini_roots().map_catalog())
+        {
             continue;
         }
         let Some(pkt) = read_ini_file(&path) else {
@@ -434,6 +436,38 @@ mod tests {
     use super::*;
     use crate::map::preview::{PreviewSourceBounds, PreviewStartPoint};
     use crate::map::source::test_support::{TestDirectory, make_new_format_mix_bytes};
+
+    #[test]
+    fn declared_catalogs_supply_the_maps_and_modes() {
+        let directory = TestDirectory::new("declared-catalogs");
+        let pack = make_new_format_mix_bytes(&[
+            ("custom-maps.pkt", &b"[MultiMaps]\n0=Arena\n[Arena]\nDescriptionText=Declared arena\nGameMode=custom\nMinPlayers=2\nMaxPlayers=2\n"[..]),
+            ("custom-modes.ini", &b"[Battle]\n12=GUI:Custom,STT:Custom,match.ini,custom,false\n"[..]),
+            ("match.ini", &b"[MultiplayerDialogSettings]\nAlliesAllowed=no\n"[..]),
+            ("Arena.MAP", &b"[Basic]\nName=Arena\n[Waypoints]\n0=100011\n1=120013\n"[..]),
+        ]);
+        directory.write("resources.yro", &pack);
+        let mut assets = AssetManager::from_loose_root_for_test(directory.path())
+            .with_ini_roots(&crate::util::ini_roots::IniRootConfig {
+                modes: Some("custom-modes.ini".into()),
+                map_catalog: Some("custom-maps.pkt".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        assets
+            .register_loose_yro_archive(&directory.path().join("resources.yro"))
+            .unwrap();
+
+        let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets).unwrap();
+        assert_eq!(modes.len(), 1);
+        assert_eq!(modes[0].id, 12);
+        assert!(!modes[0].allies_allowed);
+        let maps = list_skirmish_scenario_records_with_assets(directory.path(), &mut assets, None)
+            .unwrap();
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps[0].display_name, "Declared arena");
+        assert_eq!(maps[0].game_modes, ["custom"]);
+    }
 
     #[test]
     fn menu_entry_exposes_sorted_multiplayer_start_waypoints() {

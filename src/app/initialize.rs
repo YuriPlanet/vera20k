@@ -428,6 +428,11 @@ impl App {
                 crate::app::mods::begin(&config.paths, mod_switch, capture_dimensions.is_some())
             })
             .unwrap_or_default();
+        let base_ini = game_config
+            .as_ref()
+            .map(|config| config.ini.clone())
+            .unwrap_or_default();
+        let (resources, ares_setting) = mods.select_resources(&base_ini, ares_setting);
         // VERARULES.INI is no longer read: a file that still holds settings
         // is named once the main menu is up, in the language just chosen.
         if capture_dimensions.is_none()
@@ -596,6 +601,7 @@ impl App {
                 profile_screen,
                 external_launch,
                 quickplay_allowed,
+                resources,
                 ares_setting,
             )
         };
@@ -624,6 +630,7 @@ impl App {
         launch_window_size: ScreenSize,
         external_launch: bool,
         quickplay_allowed: bool,
+        resources: crate::util::mod_definition::ResourceConfig,
         ares_setting: crate::util::ares_launch::AresSetting,
     ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
@@ -661,11 +668,9 @@ impl App {
                     mods.dir(),
                     startup_options.media_archive_mode,
                     ares_setting,
-                    crate::assets::asset_manager::ArchiveFamily::for_ini_profile(
-                        config.ini.profile,
-                    ),
+                    &resources.archives,
                 )
-                .and_then(|assets| assets.with_ini_roots(&config.ini))
+                .and_then(|assets| assets.with_ini_roots(&resources.ini))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
@@ -785,14 +790,11 @@ impl App {
             // screen: the presented swapchain frame stays composited while this
             // thread blocks.
             let mut process_assets =
-                crate::app::process_assets::ProcessAssets::new_with_ini_config(
+                crate::app::process_assets::ProcessAssets::new(
                     startup_options.media_archive_mode,
                     startup_audio.load_audio_indices,
-                    game_config
-                        .as_ref()
-                        .map(|config| config.ini.clone())
-                        .unwrap_or_default(),
                 )
+                .with_resources(resources)
                 .with_personal_rules(personal_rules)
                 .with_mod_dir(mods.dir().map(Path::to_path_buf))
                 .with_ares_setting(ares_setting);

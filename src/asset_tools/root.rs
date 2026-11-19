@@ -9,7 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::assets::asset_manager::{ArchiveFamily, AssetManager, MediaArchiveMode};
+use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+use crate::util::archive_names::ArchiveNames;
 use crate::util::ares_launch::AresSetting;
 use crate::util::config::GameConfig;
 
@@ -63,20 +64,19 @@ fn check(dir: PathBuf, source: RootSource) -> Result<(PathBuf, RootSource), Stri
 /// tooling-only widening of the search set, so results found only that way are
 /// not what the game would resolve. `ares` is the player's Ares setting the
 /// game opens with: On reads the installation as an Ares game, as the game
-/// does (`AssetManager::ships_ares`). `family` picks the archive names the
-/// game mounts for an INI profile ([`ArchiveFamily::for_ini_profile`]).
+/// does (`AssetManager::ships_ares`). `archives` supplies the archive names.
 pub fn open_manager(
     ra2_dir: &Path,
     all_mixes: bool,
     ares: AresSetting,
-    family: ArchiveFamily,
+    archives: &ArchiveNames,
 ) -> Result<AssetManager, String> {
     let mut manager = AssetManager::with_mod_and_ares(
         ra2_dir,
         None,
         MediaArchiveMode::STOCK_DIGITAL,
         ares,
-        family,
+        archives,
     )
     .map_err(|err| {
         format!(
@@ -112,15 +112,38 @@ pub fn open_ini_manager(
         }
     };
     config.validate()?;
-    // INI commands mount the archives the game mounts for this profile.
-    open_manager(
+    open_manager(root, all_mixes, ares, &ArchiveNames::default())?
+        .with_ini_roots(&config)
+        .map_err(|error| error.to_string())
+}
+
+/// Inspect a mod through the same definition and archive policy as a game
+/// launch. This deliberately does not consult the desktop's selected mod.
+pub fn open_mod_manager(
+    root: &Path,
+    mod_dir: &Path,
+    all_mixes: bool,
+    explicit: Option<&crate::util::ini_roots::IniRootConfig>,
+    ares: AresSetting,
+) -> Result<AssetManager, String> {
+    let base = explicit.cloned().unwrap_or_default();
+    let definition = crate::util::mod_definition::ModDefinition::read(mod_dir)?;
+    let resources = definition.resources(&base);
+    let mut manager = AssetManager::with_mod_and_ares(
         root,
-        all_mixes,
-        ares,
-        ArchiveFamily::for_ini_profile(config.profile),
-    )?
-    .with_ini_roots(&config)
-    .map_err(|error| error.to_string())
+        Some(mod_dir),
+        MediaArchiveMode::STOCK_DIGITAL,
+        resources.effective_ares(ares)?,
+        &resources.archives,
+    )
+    .and_then(|assets| assets.with_ini_roots(&resources.ini))
+    .map_err(|error| format!("could not load mod {}: {error}", mod_dir.display()))?;
+    if all_mixes {
+        manager
+            .load_all_disk_mixes()
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(manager)
 }
 
 /// INI expansion may be audited against a MOD/source directory that lacks

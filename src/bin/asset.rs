@@ -14,7 +14,7 @@ use vera20k::asset_tools::{
     verb_find, verb_info, verb_ini, verb_ini_expand, verb_ls, verb_palette, verb_parse_check,
     verb_scan, verb_sound,
 };
-use vera20k::assets::asset_manager::ArchiveFamily;
+use vera20k::util::archive_names::ArchiveNames;
 
 const EXIT_FAILED: i32 = 1;
 const EXIT_USAGE: i32 = 2;
@@ -56,7 +56,15 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
     log::info!("retail root {} (from {source:?})", ra2_dir.display());
 
     let source_only = matches!(cli.verb, Verb::IniExpand { .. }) && cli.ini_source_only;
-    let manager = if source_only {
+    let manager = if let Some(mod_dir) = &cli.mod_dir {
+        root::open_mod_manager(
+            &ra2_dir,
+            mod_dir,
+            cli.all_mixes,
+            cli.ini_roots.as_ref(),
+            cli.ares,
+        )
+    } else if source_only {
         root::open_ini_probe_manager(&ra2_dir, cli.all_mixes)
     } else if matches!(
         cli.verb,
@@ -64,12 +72,8 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
     ) {
         root::open_ini_manager(&ra2_dir, cli.all_mixes, cli.ini_roots.as_ref(), cli.ares)
     } else {
-        // Archive verbs never read the host [ini]; an explicit --ini-profile
-        // mounts the archive names the game mounts for that profile.
-        let family = cli.ini_roots.as_ref().map_or(ArchiveFamily::Yr, |config| {
-            ArchiveFamily::for_ini_profile(config.profile)
-        });
-        root::open_manager(&ra2_dir, cli.all_mixes, cli.ares, family)
+        // Archive verbs without a mod keep the stock archive policy.
+        root::open_manager(&ra2_dir, cli.all_mixes, cli.ares, &ArchiveNames::default())
     };
     let mut manager = manager.map_err(|error| ErrorReport {
         error,
@@ -92,7 +96,7 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
                 to_json(&serde_json::json!({
                     "ini_roots": manager.ini_roots(), "sources": sources,
                     "scope": if cli.all_mixes { "tooling_all_mixes" } else { "game_archive_stack" },
-                    "limits": "Root selection, plus MO's startup archive names under mo; this is not MO gameplay acceptance or arbitrary game MIX mounting."
+                    "limits": "Selected roots and declared archive names; this does not establish gameplay compatibility."
                 }))
             );
         }

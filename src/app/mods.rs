@@ -32,17 +32,17 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
 
 use crate::app::state::AppState;
+use crate::util::ares_launch::AresSetting;
 use crate::util::config::PathsConfig;
 use crate::util::file_system;
+use crate::util::ini_roots::IniRootConfig;
+use crate::util::mod_definition::{ModDefinition, ResourceConfig};
 use crate::util::time::{Duration, Instant};
 
 const USE_SWITCH: &str = "--mod";
 const NO_MOD_SWITCH: &str = "--no-mod";
-const MOD_INI: &str = "mod.ini";
 const README: &str = "README.txt";
 const START_RECORD: &str = "mod-start.txt";
-/// The most of `mod.ini` that is read: far more than its few lines take.
-const MOD_INI_LIMIT: u64 = 64 * 1024;
 /// How long the main menu has been at rest when a start with a mod counts as
 /// good: its first frames, with the mod's own menu art and movie, have drawn.
 const MENU_SETTLE: Duration = Duration::from_secs(2);
@@ -104,6 +104,7 @@ pub(crate) struct ActiveMod {
     /// What the player is shown: `mod.ini`'s `Name=` and `Version=`, else the
     /// folder's name.
     pub(crate) title: String,
+    definition: ModDefinition,
 }
 
 /// How a launch's mod choice came out; the app keeps it for the run.
@@ -137,6 +138,26 @@ impl Mods {
     /// The folder the game files and the maps are read from first.
     pub(crate) fn dir(&self) -> Option<&Path> {
         self.active.as_ref().map(|active| active.dir.as_path())
+    }
+
+    /// Apply only the mod this launch actually accepted, after crash fallback.
+    /// A refused requirement leaves the original available from the menu.
+    pub(crate) fn select_resources(
+        &mut self,
+        base: &IniRootConfig,
+        setting: AresSetting,
+    ) -> (ResourceConfig, AresSetting) {
+        match resources_for(self.active.as_ref(), base, setting) {
+            Ok(selected) => selected,
+            Err(error) => {
+                self.notice = Some(format!("{error}\n\nThis start uses the original game."));
+                self.active = None;
+                if let Some(record) = self.record.take() {
+                    record.clear();
+                }
+                (ResourceConfig::from_ini(base.clone()), setting)
+            }
+        }
     }
 
     /// The mod in use's title, as the player is shown it.
@@ -213,100 +234,6 @@ impl Mods {
     }
 }
 
-/// What `mod.ini` says. VERA's own file, in UTF-8: `[Mod]` with `Name=`,
-/// `Version=`, `Author=`, `About=`, `Terms=` and `Needs=`, every key
-/// optional, as the file is. Not read with gamemd's INI reader, which takes
-/// bytes as Latin-1 and drops a last line that has no line end.
-#[derive(Debug, Default, PartialEq, Eq)]
-struct ModInfo {
-    name: Option<String>,
-    version: Option<String>,
-    /// Who made the mod.
-    author: Option<String>,
-    /// What the mod is, in a line or two.
-    about: Option<String>,
-    /// What its maker lets others do with it.
-    terms: Option<String>,
-    /// The lowest VERA20K version that can play the mod.
-    needs: Option<String>,
-}
-
-/// The most of one `mod.ini` value that is kept: the Mods screen's boxes hold
-/// less.
-const VALUE_LIMIT: usize = 300;
-
-impl ModInfo {
-    /// The mod's own account of itself, when its folder has a `mod.ini` that
-    /// is a file of a few lines; anything else there says nothing.
-    fn read(dir: &Path) -> Self {
-        let Some(path) = crate::util::case_insensitive_path::find(dir, MOD_INI) else {
-            return Self::default();
-        };
-        let small_file = file_system::metadata(&path)
-            .is_ok_and(|file| file.is_file() && file.len() <= MOD_INI_LIMIT);
-        if !small_file {
-            log::warn!("{} is not a small file; not read", path.display());
-            return Self::default();
-        }
-        file_system::read(&path)
-            .map(|bytes| Self::parse(&String::from_utf8_lossy(&bytes)))
-            .unwrap_or_default()
-    }
-
-    fn parse(text: &str) -> Self {
-        let mut info = Self::default();
-        let mut in_mod = false;
-        for line in text.trim_start_matches('\u{feff}').lines() {
-            // As in the game's own INI files, `;` starts a comment.
-            let line = line.split(';').next().unwrap_or_default().trim();
-            if let Some(header) = line.strip_prefix('[') {
-                in_mod = header
-                    .strip_suffix(']')
-                    .is_some_and(|name| name.trim().eq_ignore_ascii_case("Mod"));
-                continue;
-            }
-            if !in_mod {
-                continue;
-            }
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-            let slot = match key.trim().to_ascii_lowercase().as_str() {
-                "name" => &mut info.name,
-                "version" => &mut info.version,
-                "author" => &mut info.author,
-                "about" => &mut info.about,
-                "terms" => &mut info.terms,
-                "needs" => &mut info.needs,
-                _ => continue,
-            };
-            let value: String = value.trim().chars().take(VALUE_LIMIT).collect();
-            *slot = Some(value).filter(|value| !value.is_empty());
-        }
-        // A file saved in another encoding would show as boxes; the folder's
-        // name, which the file system gives as Unicode, shows as it is.
-        for shown in [
-            &mut info.name,
-            &mut info.version,
-            &mut info.author,
-            &mut info.about,
-            &mut info.terms,
-        ] {
-            if shown.as_ref().is_some_and(|text| text.contains('\u{fffd}')) {
-                *shown = None;
-            }
-        }
-        info
-    }
-
-    fn title(&self, folder: &str) -> String {
-        match (self.name.as_deref().unwrap_or(folder), &self.version) {
-            (name, Some(version)) => format!("{name} {version}"),
-            (name, None) => name.to_owned(),
-        }
-    }
-}
-
 /// `1`, `1.2` or `1.2.3` as three numbers, absent ones 0; anything else,
 /// such as a later scheme this build does not know, is `None`.
 fn version_parts(text: &str) -> Option<[u32; 3]> {
@@ -373,7 +300,7 @@ fn resolve(paths: &PathsConfig, wanted: &str) -> Result<ActiveMod, String> {
             &[("mod", &wanted), ("folder", &mods_dir.display())],
         ));
     };
-    let info = ModInfo::read(&dir);
+    let info = ModDefinition::read(&dir)?;
     let title = info.title(&folder);
     let version = env!("CARGO_PKG_VERSION");
     if let Some(needs) = info
@@ -387,7 +314,12 @@ fn resolve(paths: &PathsConfig, wanted: &str) -> Result<ActiveMod, String> {
             &[("mod", &title), ("needs", &needs), ("version", &version)],
         ));
     }
-    Ok(ActiveMod { folder, dir, title })
+    Ok(ActiveMod {
+        folder,
+        dir,
+        title,
+        definition: info,
+    })
 }
 
 /// The folder a launch asks for: its switch's, else config.toml's where
@@ -405,12 +337,34 @@ fn wanted<'a>(
     }
 }
 
-/// The folder of the mod a launch with `switch` would read: for the launch
-/// probe (`spawn_probe`), which reports what a launch reads without being
-/// one, so it leaves `mod-start.txt` alone.
-pub(crate) fn launch_dir(paths: &PathsConfig, switch: Option<&ModSwitch>) -> Option<PathBuf> {
-    let wanted = wanted(paths, switch, true)?;
-    resolve(paths, wanted).ok().map(|active| active.dir)
+/// Resolve the same selected mod as game startup without claiming its start
+/// record. Probes return a bad selection as an error, never a stock report.
+pub(crate) fn launch_mod(
+    paths: &PathsConfig,
+    switch: Option<&ModSwitch>,
+) -> Result<Option<ActiveMod>, String> {
+    wanted(paths, switch, true)
+        .map(|wanted| resolve(paths, wanted))
+        .transpose()
+}
+
+/// One resource decision for startup, the probe and map generation.
+pub(crate) fn resources_for(
+    active: Option<&ActiveMod>,
+    base: &IniRootConfig,
+    setting: AresSetting,
+) -> Result<(ResourceConfig, AresSetting), String> {
+    let resources = active.map_or_else(
+        || ResourceConfig::from_ini(base.clone()),
+        |active| active.definition.resources(base),
+    );
+    let setting = resources
+        .effective_ares(setting)
+        .map_err(|error| match active {
+            Some(active) => format!("{}: {error}", active.title),
+            None => error,
+        })?;
+    Ok((resources, setting))
 }
 
 /// One line of the Mods screen: a folder in `Mods`, or the original game.
@@ -461,7 +415,7 @@ pub(crate) fn installed(paths: &PathsConfig) -> Vec<Listed> {
             if left_by_a_system(&folder) {
                 return None;
             }
-            let info = ModInfo::read(&dir);
+            let info = ModDefinition::read(&dir).unwrap_or_default();
             Some(Listed {
                 title: info.title(&folder),
                 folder: Some(folder),
@@ -1097,5 +1051,173 @@ mod tests {
             assert!(!version_serves("0.2.10", unreadable), "{unreadable:?}");
         }
         assert!(version_serves("0.3.0-dev", "9.0"));
+    }
+
+    #[test]
+    fn selected_manifest_reaches_the_loader_and_frozen_recovery() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+        let (root, paths) = settings("manifest-loader");
+        let retail = audio_test_install("manifest-loader");
+        let dir = paths.mods_dir().join("Winter War");
+        for (name, text) in [
+            ("storm-rules.ini", "[General]\nBuildSpeed=.7\n"),
+            ("storm-art.ini", "[TEST]\nVoxel=yes\n"),
+            ("storm-ai.ini", "[Marker]\nValue=Storm\n"),
+            (
+                "mod.ini",
+                "[Mod]\nName=Storm\n[Files]\nRules=storm-rules.ini\nArt=storm-art.ini\nAI=storm-ai.ini\nModes=storm-modes.ini\nMapCatalog=storm-maps.pkt\n[Archives]\nExpansionPrefix=storm\n[Extensions]\nAres=yes\n",
+            ),
+        ] {
+            std::fs::write(dir.join(name), text).unwrap();
+        }
+        let mut config =
+            crate::util::config::GameConfig::load_from(&root, &root.join("vera20k")).unwrap();
+        config.paths.ra2_dir = retail.path().to_owned();
+        let mut startup = begin(&config.paths, None, false);
+        let (selected, ares) = startup.select_resources(&config.ini, AresSetting::Auto);
+        assert_eq!(ares, AresSetting::On);
+        let (mut process, _, _) = crate::app::spawn_probe::load_process_sources(
+            &config,
+            Default::default(),
+            MediaArchiveMode::STOCK_DIGITAL,
+            launch_mod(&config.paths, None).unwrap(),
+            AresSetting::Auto,
+            false,
+        )
+        .unwrap();
+        let assets = process.manager().unwrap();
+        assert_eq!(assets.ini_roots().rules(), "storm-rules.ini");
+        assert_eq!(assets.ini_roots().modes(), "storm-modes.ini");
+        assert_eq!(assets.ini_roots().map_catalog(), "storm-maps.pkt");
+        assert_eq!(assets.archive_names(), &selected.archives);
+        assert_eq!(assets.ares_setting(), ares);
+        assert!(
+            process
+                .native_rules()
+                .unwrap()
+                .fixed_art()
+                .section_or_empty("TEST")
+                .read_bool("Voxel", false)
+        );
+        // A changed manifest cannot change a running game's recovery choices.
+        std::fs::write(
+            dir.join("mod.ini"),
+            "[Files]\nRules=missing.ini\n[Archives]\nExpansionPrefix=later\n",
+        )
+        .unwrap();
+        drop(process.lease_for_loading().unwrap());
+        process.note_lease_ended_without_return();
+        let recovered = process.reconstruct_manager(retail.path()).unwrap();
+        assert_eq!(recovered.ini_roots().rules(), "storm-rules.ini");
+        assert_eq!(recovered.archive_names(), &selected.archives);
+        assert_eq!(recovered.ares_setting(), AresSetting::On);
+        drop(startup);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refused_or_unselected_manifests_leave_the_base_resources() {
+        let (root, paths) = settings("manifest-refusal");
+        let manifest = paths.mods_dir().join("Winter War").join("mod.ini");
+        let base = IniRootConfig {
+            sound: Some("host-sound.ini".into()),
+            ..Default::default()
+        };
+        std::fs::write(
+            &manifest,
+            "[Files]\nRules=storm.ini\n[Archives]\nExpansionPrefix=storm\n[Extensions]\nAres=yes\n",
+        )
+        .unwrap();
+        let mut selected = begin(&paths, None, false);
+        let (resources, setting) = selected.select_resources(&base, AresSetting::Off);
+        assert!(selected.active.is_none());
+        assert!(
+            selected
+                .notice
+                .as_deref()
+                .unwrap()
+                .contains("requires Ares")
+        );
+        assert!(!root.join(START_RECORD).exists());
+        assert_eq!(resources, ResourceConfig::from_ini(base.clone()));
+        assert_eq!(setting, AresSetting::Off);
+        let selected = launch_mod(&paths, None).unwrap();
+        let (resources, setting) =
+            resources_for(selected.as_ref(), &base, AresSetting::Auto).unwrap();
+        assert_eq!(setting, AresSetting::On);
+        assert_eq!(
+            resources.ini.sound, None,
+            "a declared Files section starts from stock"
+        );
+        let mut original = begin(&paths, Some(&ModSwitch::NoMod), true);
+        assert_eq!(
+            original.select_resources(&base, AresSetting::Auto),
+            (ResourceConfig::from_ini(base.clone()), AresSetting::Auto)
+        );
+        std::fs::write(&manifest, "[Mod]\nName=Metadata only\n").unwrap();
+        let selected = launch_mod(&paths, None).unwrap();
+        assert_eq!(
+            resources_for(selected.as_ref(), &base, AresSetting::Auto)
+                .unwrap()
+                .0
+                .ini,
+            base
+        );
+        std::fs::write(&manifest, "[Files]\nRules=../outside.ini\n").unwrap();
+        assert!(launch_mod(&paths, None).unwrap_err().contains("rules"));
+        let refused = begin(&paths, None, false);
+        assert!(refused.active.is_none() && refused.notice.is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn loading_declarations_change_agreement_but_display_metadata_does_not() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+        let (root, paths) = settings("manifest-agreement");
+        let retail = audio_test_install("manifest-agreement");
+        let dir = paths.mods_dir().join("Winter War");
+        for (name, text) in [
+            ("one-rules.ini", "[General]\nBuildSpeed=.7\n"),
+            ("two-rules.ini", "[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", "[TEST]\nVoxel=yes\n"),
+            ("aimd.ini", "[Marker]\nValue=Storm\n"),
+        ] {
+            std::fs::write(dir.join(name), text).unwrap();
+        }
+        let mut config =
+            crate::util::config::GameConfig::load_from(&root, &root.join("vera20k")).unwrap();
+        config.paths.ra2_dir = retail.path().to_owned();
+        let start = |title, rules| {
+            std::fs::write(
+                dir.join("mod.ini"),
+                format!("[Mod]\nName={title}\n[Files]\nRules={rules}\n"),
+            )
+            .unwrap();
+            crate::app::spawn_probe::load_process_sources(
+                &config,
+                Default::default(),
+                MediaArchiveMode::STOCK_DIGITAL,
+                launch_mod(&config.paths, None).unwrap(),
+                AresSetting::Auto,
+                false,
+            )
+            .unwrap()
+            .0
+        };
+        let first = start("First title", "one-rules.ini");
+        let digest = first.multiplayer_rules_digest("").unwrap();
+        let metadata_only = start("New title", "one-rules.ini");
+        assert_eq!(digest, metadata_only.multiplayer_rules_digest("").unwrap());
+        let other_selection = start("New title", "two-rules.ini");
+        assert_ne!(
+            digest,
+            other_selection.multiplayer_rules_digest("").unwrap()
+        );
+        assert_eq!(
+            digest,
+            first.multiplayer_rules_digest("").unwrap(),
+            "a running game retains its loading declaration"
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

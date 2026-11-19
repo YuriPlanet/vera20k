@@ -189,12 +189,16 @@ impl MpModeClass {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SkirmishModeLoadError {
-    #[error("MPModesMD.ini is missing from the configured retail archive stack")]
-    MissingRoster,
-    #[error("MPModesMD.ini from {archive} could not be parsed: {message}")]
-    InvalidRoster { archive: String, message: String },
-    #[error("MPModesMD.ini from {archive} did not contain any usable mode rows")]
-    EmptyRoster { archive: String },
+    #[error("{name} is missing from the configured archive stack")]
+    MissingRoster { name: String },
+    #[error("{name} from {archive} could not be parsed: {message}")]
+    InvalidRoster {
+        name: String,
+        archive: String,
+        message: String,
+    },
+    #[error("{name} from {archive} did not contain any usable mode rows")]
+    EmptyRoster { name: String, archive: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -312,16 +316,17 @@ pub fn parse_mpmodes_ini(ini: &IniFile) -> Vec<SkirmishGameMode> {
 pub fn skirmish_modes_from_assets(
     assets: &AssetManager,
 ) -> Result<Vec<SkirmishGameMode>, SkirmishModeLoadError> {
-    let (data, source) = assets
-        .get_with_source("MPModesMD.ini")
-        .ok_or(SkirmishModeLoadError::MissingRoster)?;
-    log::info!(
-        "Loading MPModesMD.ini ({} bytes) from {}",
-        data.len(),
-        source
-    );
+    let name = assets.ini_roots().modes();
+    let (data, source) =
+        assets
+            .get_with_source(name)
+            .ok_or_else(|| SkirmishModeLoadError::MissingRoster {
+                name: name.to_owned(),
+            })?;
+    log::info!("Loading {} ({} bytes) from {}", name, data.len(), source);
     let roster_ini =
         IniFile::from_bytes(&data).map_err(|err| SkirmishModeLoadError::InvalidRoster {
+            name: name.to_owned(),
             archive: source.clone(),
             message: err.to_string(),
         })?;
@@ -361,6 +366,7 @@ pub fn skirmish_modes_from_selected_ini(
 
     if modes.is_empty() {
         Err(SkirmishModeLoadError::EmptyRoster {
+            name: assets.ini_roots().modes().to_owned(),
             archive: source.to_owned(),
         })
     } else {

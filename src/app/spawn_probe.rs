@@ -203,7 +203,7 @@ pub(crate) fn build_identity() -> BuildIdentity {
 }
 
 /// The process sources startup loads (config INI roots, personal rules,
-/// neutral archives) from the game folder and the mod in `mod_dir`, with the
+/// neutral archives) from the game folder and the selected `active_mod`, with the
 /// startup Rules and shell projection their first load returns
 /// (`ProcessAssets::initialize_sources_if_needed`). `load_audio_index` reads
 /// the audio bag's index too, as startup does; it costs a hash of the bag.
@@ -211,7 +211,7 @@ pub(crate) fn load_process_sources(
     config: &crate::util::config::GameConfig,
     personal_rules: crate::rules::personal_rules::PersonalRules,
     media_archive_mode: MediaArchiveMode,
-    mod_dir: Option<std::path::PathBuf>,
+    active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
     load_audio_index: bool,
 ) -> Result<(
@@ -219,23 +219,24 @@ pub(crate) fn load_process_sources(
     Option<crate::rules::ruleset::RuleSet>,
     Option<crate::rules::ini_parser::IniFile>,
 )> {
+    let (resources, ares_setting) =
+        crate::app::mods::resources_for(active_mod.as_ref(), &config.ini, ares_setting)
+            .map_err(anyhow::Error::msg)?;
+    let mod_dir = active_mod.map(|active| active.dir);
     let mut assets = AssetManager::with_mod_and_ares(
         &config.paths.ra2_dir,
         mod_dir.as_deref(),
         media_archive_mode,
         ares_setting,
-        crate::assets::asset_manager::ArchiveFamily::for_ini_profile(config.ini.profile),
+        &resources.archives,
     )
-    .and_then(|assets| assets.with_ini_roots(&config.ini))
+    .and_then(|assets| assets.with_ini_roots(&resources.ini))
     .context("could not load the game archives")?;
-    let mut process = ProcessAssets::new_with_ini_config(
-        media_archive_mode,
-        load_audio_index,
-        config.ini.clone(),
-    )
-    .with_personal_rules(personal_rules)
-    .with_mod_dir(mod_dir)
-    .with_ares_setting(ares_setting);
+    let mut process = ProcessAssets::new(media_archive_mode, load_audio_index)
+        .with_resources(resources)
+        .with_personal_rules(personal_rules)
+        .with_mod_dir(mod_dir)
+        .with_ares_setting(ares_setting);
     let (startup_rules, projection) = process
         .initialize_sources_if_needed(&assets)
         .map_err(anyhow::Error::msg)
@@ -247,14 +248,14 @@ pub(crate) fn load_process_sources(
 }
 
 /// Load the process sources as startup does ([`load_process_sources`]) and
-/// report them; `map` is a path to the launcher's map file, and `mod_dir`
-/// the folder of the mod the launch would read (`mods::launch_dir`).
+/// report them; `map` is a path to the launcher's map file, and `active_mod`
+/// the mod the launch would read (`mods::launch_mod`).
 pub(crate) fn probe(
     config: &crate::util::config::GameConfig,
     personal_rules: crate::rules::personal_rules::PersonalRules,
     media_archive_mode: MediaArchiveMode,
     map: Option<&str>,
-    mod_dir: Option<std::path::PathBuf>,
+    active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
@@ -262,7 +263,7 @@ pub(crate) fn probe(
         config,
         personal_rules,
         media_archive_mode,
-        mod_dir,
+        active_mod,
         ares_setting,
         true,
     )?;
@@ -581,7 +582,7 @@ pub(crate) fn run_desktop(
         personal_rules,
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
-        crate::app::mods::launch_dir(&config.paths, mod_switch),
+        crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
         ares,
     )
 }

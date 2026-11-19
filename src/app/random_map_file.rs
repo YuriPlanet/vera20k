@@ -180,10 +180,10 @@ pub(crate) fn generate(
 }
 
 /// Read `input` ([`read_options`]), load the game folder `config` names with
-/// the mod in `mod_dir` (`mods::launch_dir`), and generate its map.
+/// the selected `active_mod` (`mods::launch_mod`), and generate its map.
 pub(crate) fn generate_from_game(
     config: &crate::util::config::GameConfig,
-    mod_dir: Option<std::path::PathBuf>,
+    active_mod: Option<crate::app::mods::ActiveMod>,
     input: &str,
 ) -> Result<RandomMapFile> {
     let options = read_options(input)?;
@@ -191,7 +191,7 @@ pub(crate) fn generate_from_game(
         config,
         Default::default(),
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
-        mod_dir,
+        active_mod,
         // The game's files decide, whatever the player's own setting.
         crate::util::ares_launch::AresSetting::Auto,
         false,
@@ -217,7 +217,7 @@ pub(crate) fn run_desktop(
     let config = crate::util::config::GameConfig::load()?;
     let map = generate_from_game(
         &config,
-        crate::app::mods::launch_dir(&config.paths, mod_switch),
+        crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
         input,
     )?;
     let mut partial = output.as_os_str().to_owned();
