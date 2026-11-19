@@ -452,10 +452,15 @@ pub(super) fn step_ra2ts_movie(state: &mut AppState, shown: bool) -> bool {
         .frontend
         .main_menu_movie_clock
         .elapsed(Instant::now(), playing);
-    if let Some(elapsed) = elapsed
-        && let Some(movie) = state.frontend.main_menu_movie.as_mut()
-        && let Err(err) = movie.step(&state.renderer.gpu, elapsed.as_secs_f64())
-    {
+    let Some(movie) = state.frontend.main_menu_movie.as_mut() else {
+        return true;
+    };
+    let Some(elapsed) = elapsed else {
+        // The next interval starts at the frame that remained on screen.
+        movie.resume_clock();
+        return true;
+    };
+    if let Err(err) = movie.step(&state.renderer.gpu, elapsed.as_secs_f64()) {
         log::warn!("Failed to step RA2TS menu movie: {err:#}");
         state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
             "VERA:MenuMovieFailed",

@@ -321,10 +321,12 @@ impl App {
                 });
         let movie = FullscreenMovie::new(
             surface,
-            state.audio.music_player.as_ref().map(|music| music.mixer()),
+            // BinkMovie_Open 0x0043279F selects the shared sound device.
+            state.audio.movie_mixer(),
             voice_volume,
             subtitles,
             return_to,
+            crate::app::frontend::fullscreen_movie::playback_active(state),
         );
         state.frontend.fullscreen_movie = Some(movie);
         if running_scenario {
@@ -346,15 +348,18 @@ impl App {
         Self::return_from_fullscreen_movie(state, return_to);
     }
 
-    /// Per-frame Play_Movie service: pause while inactive, step video and
-    /// soundtrack, and finish once the last frame or an abort is reached.
+    /// Per-frame Play_Movie service: step video and soundtrack, then finish
+    /// once the last frame or an abort is reached.
     pub(super) fn advance_fullscreen_movie(state: &mut AppState) -> anyhow::Result<()> {
-        let active = state.platform.window_active;
         let Some(movie) = state.frontend.fullscreen_movie.as_mut() else {
             return Ok(());
         };
-        movie.set_active(active);
-        let ended = match movie.step(&state.renderer.gpu) {
+        let voice_volume = state
+            .persistence
+            .options_profile
+            .voice_volume
+            .clamp(0.0, 1.0);
+        let ended = match movie.step(&state.renderer.gpu, voice_volume) {
             Ok(ended) => ended,
             Err(err) => {
                 log::warn!("Bink Error during playback: {err:#}");
