@@ -639,19 +639,29 @@ fn pick_map_ini(archive: &MixArchive, transferred: bool) -> Result<IniFile, MapE
     selected.ok_or(MapError::MissingIsoMapPack)
 }
 
+/// The map's `[Map] Theater=`: `ReadTheater @ 0x00475870` with default 0
+/// (Temperate), as the map reader (0x004ACFE5) and Full_Init (0x0068763E)
+/// both call it. The name its 0x80-byte ReadString copies, uppercased, or
+/// `TEMPERATE` when the copy is empty. An unknown name stays as read; the
+/// theater lookups match names without regard to case, as FindTheater
+/// (0x0048DBE0) does.
+pub(crate) fn read_map_theater(ini: &IniFile) -> String {
+    ini.section_or_empty("Map")
+        .read_name("Theater", 0x80)
+        .unwrap_or("TEMPERATE")
+        .to_uppercase()
+}
+
 /// Extract the [Map] header fields.
 pub fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
     let map_section = ini
         .section("Map")
         .ok_or(MapError::MissingSection { name: "Map".into() })?;
 
-    // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70`: the theater name read
-    // (`0x00475870`, 0x80 bytes), `Fill` as a 0x20-byte ReadString, ReadInt
+    // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70`: the theater read
+    // ([`read_map_theater`]), `Fill` as a 0x20-byte ReadString, ReadInt
     // `Level`, and ReadRect for both rectangles.
-    let theater: String = map_section
-        .read_name("Theater", 0x80)
-        .unwrap_or("TEMPERATE")
-        .to_uppercase();
+    let theater = read_map_theater(ini);
     let fill = map_section.read_string("Fill", "Clear", 0x20);
     let level = map_section.read_int("Level", 0);
 

@@ -56,14 +56,10 @@ impl ImageTheater {
     }
 
     /// Full_Init687633..687649 invokes ReadTheater475870 with default0
-    /// before resetting Types. This reads the raw map, not the merged Rules.
+    /// before resetting Types. This reads the raw map, not the merged Rules,
+    /// with the map header's read ([`crate::map::map_file::read_map_theater`]).
     pub(crate) fn from_map(map: &IniFile) -> Self {
-        let name = map.section_or_empty("Map").read_string("Theater", "", 0x80);
-        if name.is_empty() {
-            Self::Temperate
-        } else {
-            Self::from_name(&name)
-        }
+        Self::from_name(&crate::map::map_file::read_map_theater(map))
     }
 }
 
