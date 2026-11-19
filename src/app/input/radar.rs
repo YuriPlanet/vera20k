@@ -517,6 +517,8 @@ fn centre_view_on_pick(state: &mut AppState) {
         return;
     }
     crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(state);
+    // A complete redraw, and the Z seed back to DEFAULT_Z (`0x00653EA5..0x00653EBA`).
+    state.renderer.native_z_seed.reset();
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

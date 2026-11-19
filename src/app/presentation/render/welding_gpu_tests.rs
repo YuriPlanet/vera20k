@@ -152,6 +152,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                 tactical: [0, 0, size[0], size[1]],
                 zoom: 1.,
                 axis: DepthAxis::NONE,
+                z_seed: crate::render::native_z::DEFAULT_Z,
                 atlas,
                 detail,
                 detail_level: 2,

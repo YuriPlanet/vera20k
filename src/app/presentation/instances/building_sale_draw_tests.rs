@@ -222,7 +222,7 @@ fn gate_piece(
         ignore_visibility: true,
         lighting: &lighting,
         house_colors: colors,
-        building_zshape: true,
+        building_zshape: Some((0, 0)),
     };
     let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
     let mut planned = Vec::new();

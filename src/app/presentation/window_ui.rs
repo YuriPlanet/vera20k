@@ -95,7 +95,7 @@ impl WindowUi {
             world_height: 1.0,
             _pad: 0.0,
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            native_z_pan: 0.0,
         };
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));

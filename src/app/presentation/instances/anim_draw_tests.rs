@@ -501,6 +501,7 @@ fn free_anim_draw_in(
             tactical,
             zoom: 1.0,
             axis: DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
             atlas: Some(&atlas),
             detail: &detail,
             detail_level: 2,
