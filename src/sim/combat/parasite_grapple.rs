@@ -34,7 +34,11 @@ impl FootParasite {
     /// UpdateSquidGrapple6297F0's entry phase publishes its Anim at +44
     /// (none when the type is absent) and starts phase 1, through
     /// [`EntityStore::begin_parasite_grapple`](crate::sim::entity_store::EntityStore::begin_parasite_grapple).
-    pub(in crate::sim) fn begin_grapple(&mut self, anim: Option<u64>) -> Option<()> {
+    pub(in crate::sim) fn begin_grapple(
+        &mut self,
+        anim: Option<u64>,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) -> Option<()> {
         let grapple = &mut self.class_mut()?.grapple;
         grapple.anim = anim;
         grapple.phase = 1;
