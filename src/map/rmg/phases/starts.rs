@@ -10,6 +10,7 @@
 //! quota split, per-region gather/select/write (one lane draw plus one
 //! candidate draw per iteration).
 
+use crate::map::playfield::PlayfieldBounds;
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
@@ -20,7 +21,7 @@ use crate::util::native_x87::X87Chop53;
 use super::area;
 use super::blob::{CellHeap, by_key};
 use super::regions::{Regions, RmgRegion};
-use super::zones::{ZoneField, diamond_frame_contains};
+use super::zones::ZoneField;
 
 /// Region-size survival floor: 3% of the interior area but at least 400.
 const AREA_FRACTION: f64 = 0.03;
@@ -55,7 +56,7 @@ pub struct StartsArgs {
     pub tiberium_layout: i32,
     pub gen_w: i32,
     pub gen_h: i32,
-    /// The padded map width (frame-test base).
+    /// The padded map width, the `Size` width the view test keeps.
     pub map_w: i32,
 }
 
@@ -281,9 +282,16 @@ fn place_region_starts(
     offset: i32,
     outcome: &mut StartsOutcome,
 ) {
-    // The view frame the candidates must sit in: the local rect inset by
-    // (4, 4, -8, -8).
-    let view_rect = [6, 9, args.gen_w - 8, args.gen_h - 8];
+    // The view frame the candidates must sit in: the LocalSize (2, 5, w, h)
+    // inset by (4, 4, -8, -8) (0x00594873..0x005948B0). 0x00578640 runs the
+    // playfield test over it in LocalSize's place.
+    let view = PlayfieldBounds::from_normalized_local_size(
+        args.map_w,
+        6,
+        9,
+        args.gen_w - 8,
+        args.gen_h - 8,
+    );
 
     let lane = lane_draw(ctx.rng);
     let quota = ctx.regions.list[region_index].start_quota;
@@ -302,7 +310,7 @@ fn place_region_starts(
             continue;
         }
         let cell = ctx.grid.get(x, y).expect("region cells are in-band");
-        if !diamond_frame_contains(args.map_w, view_rect, x, y, cell.level, cell.slope != 0) {
+        if !view.contains_height_aware_packed(x, y, cell.level as i8, cell.slope) {
             continue;
         }
         // Duplicates are allowed: repeated draws of the same cell append
@@ -577,8 +585,9 @@ mod tests {
             grid,
             &ClearBlocks,
             &ZoneParams {
-                map_w: args.map_w,
-                local_rect: [2, 5, args.gen_w, args.gen_h],
+                playfield: PlayfieldBounds::from_normalized_local_size(
+                    args.map_w, 2, 5, args.gen_w, args.gen_h,
+                ),
                 wheel_impassable: wheel,
                 cliff_back_impassability: 2,
                 overlays: &[],
@@ -921,8 +930,9 @@ mod tests {
                 &grid,
                 &LandBlocks,
                 &ZoneParams {
-                    map_w: 16,
-                    local_rect: [2, 5, gen_size.0, gen_size.1],
+                    playfield: PlayfieldBounds::from_normalized_local_size(
+                        16, 2, 5, gen_size.0, gen_size.1,
+                    ),
                     wheel_impassable: wheel,
                     cliff_back_impassability: 0,
                     overlays: &overlays,

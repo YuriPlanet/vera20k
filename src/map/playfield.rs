@@ -78,7 +78,9 @@ impl PlayfieldBounds {
     ///
     /// RMG establishes synthetic LocalSize `(2,5,genW,genH)` and immediately
     /// runs `0x00567230`; those values are stable under its clip/margin rules.
-    /// This seam exists for that post-normalization RMG state, not raw headers.
+    /// This seam exists for that post-normalization RMG state, not raw headers,
+    /// and for the explicit rect `MapClass::IsCellInViewRegion @ 0x00578640`
+    /// tests in LocalSize's place.
     pub const fn from_normalized_local_size(
         map_width: i32,
         left: i32,
@@ -107,6 +109,8 @@ impl PlayfieldBounds {
 
     /// Mode-one `MapClass::IsCellInPlayfield @ 0x00578460` after its caller
     /// supplies the selected CellClass's signed level and unsigned slope byte.
+    /// `MapClass::IsCellInViewRegion @ 0x00578640` with checkLevel set is the
+    /// same arithmetic over a caller's rect and the same `Size` width.
     pub const fn contains_height_aware_packed(self, x: i32, y: i32, level: i8, slope: u8) -> bool {
         let (x, y) = packed_cell_coord(x, y);
         let height = self.slope_adjusted_height(x.wrapping_add(y), level, slope);

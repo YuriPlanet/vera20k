@@ -211,6 +211,15 @@ impl NativeAllocatedCellCursor {
         selected
     }
 
+    /// The coordinate the cursor stands on, then [`Self::advance`]: the walk
+    /// without its cell lookup, for the map generator's grid, which ends the
+    /// walk past its far diagonal (`map::rmg::grid::NativeCells`).
+    pub(crate) fn take_coord(&mut self, size_width: i32) -> (i32, i32) {
+        let at = (self.x, self.y);
+        self.advance(size_width);
+        at
+    }
+
     /// Next578290's step past the current position.
     pub(super) fn advance(&mut self, size_width: i32) {
         if self.remaining != 0 {
