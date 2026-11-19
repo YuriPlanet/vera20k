@@ -93,10 +93,11 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
             if supplied["granted"] == false {
                 continue;
             }
-            // Installed Ares hands MultiMissile to SW_NuclearMissile, whose custom
-            // action ignores Action=; an unredirected stock type keeps the read.
+            // Ares hands MultiMissile and PsychicReveal to handlers whose custom
+            // action ignores Action= (`SuperWeaponType::action`); the Iron
+            // Curtain keeps its stock handler, and so the read.
             let kind = if ares_way {
-                "PsychicReveal"
+                "IronCurtain"
             } else {
                 "MultiMissile"
             };

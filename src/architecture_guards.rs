@@ -417,7 +417,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // labels, and which lines an enemy's building may show; only
                 // the label capture (HudFacts) asks, which feeds drawing.
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/superweapon/psychic_reveal.rs", 1),
+                // The stock and Ares launches name the local player as the
+                // reveal's notification viewer; `reveal_notifies_viewer`
+                // reads it only outside a network game.
+                ("sim/superweapon/psychic_reveal.rs", 2),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
                 ("sim/trigger_runtime.rs", 1),
