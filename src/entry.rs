@@ -59,6 +59,14 @@ pub fn log_banner(log_path: Option<&Path>) {
         std::env::consts::OS,
         std::env::consts::ARCH,
     );
+    // The build two games must share to play together. A release's
+    // downloads.yml reads this line from its Linux program for latest.json,
+    // and the release's Linux test checks it (docs/Networking.md, "Build
+    // check").
+    log::info!(
+        "Multiplayer build: {}",
+        crate::app::shell_network_setup::agreement::version()
+    );
     log::info!(
         "Phobos support compiled in: {}",
         crate::rules::PHOBOS_ENABLED

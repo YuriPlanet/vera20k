@@ -640,10 +640,19 @@ since a match starts only between equal versions (`ready`, `start`). It arrives
 as a notice does: at once in the public channel or a game room that has not started,
 otherwise on the next public-channel join. Its phrase key `NewRelease` makes a game
 check for updates again, as a 426 does.
+latest.json also names the release's `build`, its multiplayer build
+([build check](Networking.md#build-check)), from the releases that log it
+(`.github/release/downloads.md`). A session on the release's version whose sign-in
+names another build receives one line the same way, `NotRelease` with `version`: its
+game is not the release, so it plays only with players on its own build.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
-versions, or both builds when the versions are the same.
-Where the join could not tell, since one of the games names no build, the same line
+versions (`VersionMismatch`). When the versions are the same, the line names no build:
+where latest.json names that version's `build` and only one of the two games has it,
+it names the other one's player as not on the release (`ReleaseMismatch` for the
+joining player, `HostReleaseMismatch` for the host), and otherwise says the joining
+player has another build than the room (`BuildMismatch`); each has `name` and `version`.
+Where the join could not tell, since one of the games names no build, `VersionMismatch`
 with both agreement `version` strings goes to the room once when a member's `ready` or
 `map_status` names another one than the host's, since such a room cannot start.
 A member on the host's build whose `rules_digest` differs from the host's makes the room
