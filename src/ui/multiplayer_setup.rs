@@ -1567,22 +1567,23 @@ impl MultiplayerSetupLayout {
         let options = crate::ui::shell::modal::menu_box(SHELL_BASE_W, SHELL_BASE_H)
             .translate(window.x / 2, 0);
         let popup = |x, y, w, h| base(options.x + x, options.y + y, w, h);
+        let form_row = |index| crate::ui::shell::modal::game_options_form_row(options, index);
         // The same two columns as the checkboxes below: each trackbar's
         // label in the left one, the trackbar (its art's own width) starting
         // the right one.
         for (index, (_, label)) in self.option_labels.iter_mut().enumerate() {
-            *label = popup(24, 32 + 30 * index as i32, 185, 17);
+            *label = scale.scale_rect(form_row(index).0);
         }
         for (id, bar) in &mut self.trackbars {
             if let Some(index) = OPTION_TRACKBARS.iter().position(|option| option == id) {
-                *bar = popup(215, 30 + 30 * index as i32, 129, 21);
+                *bar = scale.scale_rect(form_row(index).1);
             }
             // Superweapon Limit under Unit Count.
             if *id == SUPERWEAPON_LIMIT {
-                *bar = popup(215, 30 + 30 * OPTION_TRACKBARS.len() as i32, 129, 21);
+                *bar = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).1);
             }
         }
-        self.superweapon_limit_label = popup(24, 32 + 30 * OPTION_TRACKBARS.len() as i32, 185, 17);
+        self.superweapon_limit_label = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).0);
         // Two columns of six under the trackbars and Superweapon Limit, the
         // left one over the art: the native five and Destroyable Bridges,
         // then In-game Allying, the four bans and Terrain Deformation.

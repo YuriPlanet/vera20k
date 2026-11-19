@@ -416,7 +416,7 @@ pub fn wait_box_layout_on(screen_w: i32, screen_h: i32, scale: geom::ShellScale)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolCreateGameLayout {
     pub dialog: RectPx,
-    /// Static `GUI:Password`, right aligned.
+    /// Static `GUI:Password`.
     pub password_label: RectPx,
     /// Edit `0x72C` after its NewEdit inset.
     pub password: RectPx,
@@ -431,12 +431,31 @@ pub struct WolCreateGameLayout {
     pub name: Option<(RectPx, RectPx)>,
     /// VERA's online popup's Ranked game box, below Allow spectators.
     pub ranked: Option<RectPx>,
-    /// VERA's online popup's Watching caption and box, below Ranked game.
-    pub watching: Option<(RectPx, RectPx)>,
+    /// VERA's online popup's Watching box, below Ranked game.
+    pub watching: Option<RectPx>,
     pub ok: RectPx,
     pub cancel: RectPx,
     /// Its own status line `0x695`.
     pub status: RectPx,
+}
+
+impl WolCreateGameLayout {
+    /// The left-hand title of an online setting, on the same baseline
+    /// beside its control as Password is beside its edit.
+    pub(crate) fn setting_label(&self, control: RectPx) -> RectPx {
+        self.password_label
+            .translate(0, control.y - self.password.y)
+    }
+}
+
+/// Label and trackbar in one row of the in-room Game Options form, in
+/// authored pixels. Create Room uses the same rows for its settings.
+pub(crate) fn game_options_form_row(dialog: RectPx, index: usize) -> (RectPx, RectPx) {
+    let y = dialog.y + 30 + 30 * index as i32;
+    (
+        RectPx::new(dialog.x + 24, y + 2, 185, 17),
+        RectPx::new(dialog.x + 215, y, 129, 21),
+    )
 }
 
 /// A NewEdit's window after `0x00614CCF`'s +1/-2 inset.
@@ -447,10 +466,8 @@ fn new_edit_window(rect: RectPx) -> RectPx {
 /// The online popup's status line inset from each side of the box art's frame.
 const ONLINE_STATUS_INSET: i32 = 10;
 
-/// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
-/// observer box (the lobby's own Observe box still seats an observer); Room
-/// name, Password and Max players share a field column to the right of the
-/// Tesla Trooper, with four checkbox rows below.
+/// VERA's online lobby uses the in-room Game Options columns for its
+/// labels and controls. The native lobby uses the 0xC3 template.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = menu_box(screen_w, screen_h);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -477,47 +494,40 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
     if !online {
         return layout;
     }
-    // Use the shell's 210x21 value-plaque trackbar for the field width.
-    let row = |y, h| RectPx::new(layout.password.x, dialog.y + y, 210, h);
-    let field = |index| row(44 + 32 * index, 21);
-    let check = |index| row(151 + 26 * index, 18);
-    let caption = |rect: RectPx| RectPx {
-        y: rect.y,
-        h: rect.h,
-        ..layout.password_label
+    let (name_label, name) = game_options_form_row(dialog, 0);
+    let (password_label, password) = game_options_form_row(dialog, 1);
+    let (players_label, players) = game_options_form_row(dialog, 2);
+    let inset = name_label.x - dialog.x;
+    let right = dialog.x + dialog.w - inset;
+    let field = |rect: RectPx| RectPx {
+        w: right - rect.x,
+        ..rect
     };
-    let name = field(0);
-    let password = field(1);
-    let players = field(2);
-    let watching = check(3);
-    let field_right = name.x + name.w;
-    let margin = dialog.x + dialog.w - field_right;
-    let ok = RectPx::new(dialog.x + margin, dialog.y + 272, layout.ok.w, layout.ok.h);
+    let check = |index| RectPx {
+        h: 18,
+        ..field(game_options_form_row(dialog, index).1)
+    };
+    let ok = RectPx::new(name_label.x, dialog.y + 292, layout.ok.w, layout.ok.h);
     WolCreateGameLayout {
-        password_label: caption(password),
-        password,
+        password_label,
+        password: field(password),
         clan: None,
         observe: None,
-        limit: check(0),
+        limit: check(3),
         room: Some(crate::ui::room_limits::RoomLimitsLayout {
-            players_label: caption(players),
+            players_label,
             players,
-            spectators: check(1),
+            spectators: check(4),
         }),
-        name: Some((caption(name), name)),
-        ranked: Some(check(2)),
-        watching: Some((caption(watching), watching)),
+        name: Some((name_label, field(name))),
+        ranked: Some(check(5)),
+        watching: Some(check(6)),
         ok,
         cancel: RectPx {
-            x: field_right - ok.w,
+            x: right - ok.w,
             ..ok
         },
-        status: RectPx::new(
-            dialog.x + ONLINE_STATUS_INSET,
-            status.y,
-            dialog.w - 2 * ONLINE_STATUS_INSET,
-            status.h,
-        ),
+        status: RectPx::new(name_label.x, dialog.y + 246, right - name_label.x, 34),
         ..layout
     }
 }
@@ -552,7 +562,7 @@ pub fn wol_create_game_layout_on(
             }),
         name: base.name.map(|(label, edit)| (s(label), s(edit))),
         ranked: base.ranked.map(s),
-        watching: base.watching.map(|(label, rect)| (s(label), s(rect))),
+        watching: base.watching.map(s),
         ok: s(base.ok),
         cancel: s(base.cancel),
         status: s(base.status),
@@ -1273,53 +1283,62 @@ mod tests {
         let frame = create.dialog;
         let (_, first) = create.fields[0];
         let (_, last) = create.fields[3];
-        // Account fields start in the same column as the Create Game fields.
-        assert_eq!(
-            first.x,
-            wol_create_game_layout(800, 600, true).name.unwrap().1.x
-        );
         assert!(last.y + last.h < create.ok.y);
         assert!(create.status.y >= create.ok.y + create.ok.h);
         assert!(create.status.y + create.status.h <= frame.y + frame.h);
         // One field sits mid-way between the four's first and last rows.
         let (_, code) = wol_account_form_layout(screen, 1).fields[0];
+        assert_eq!((code.x, code.w), (first.x, first.w));
         assert!(((code.y - first.y) - (last.y - code.y)).abs() <= 1);
     }
 
     #[test]
-    fn online_create_game_keeps_its_rows_inside_the_frame() {
+    fn online_create_game_uses_the_in_room_game_options_columns() {
+        use crate::ui::multiplayer_setup::{
+            MultiplayerSetupLayout, SPEED, SetupDialog, SetupFlavor,
+        };
+        let options = MultiplayerSetupLayout::new(
+            SetupDialog {
+                host: true,
+                flavor: SetupFlavor::Wol,
+                modern: true,
+            },
+            800,
+            600,
+            false,
+        );
         let online = wol_create_game_layout(800, 600, true);
         assert_eq!((online.clan, online.observe), (None, None));
-        let frame = online.dialog;
-        let inside = |rect: RectPx| {
-            rect.x >= frame.x + ONLINE_STATUS_INSET
-                && rect.x + rect.w <= frame.x + frame.w - ONLINE_STATUS_INSET
-                && rect.y + rect.h <= frame.y + frame.h
-        };
-        assert!(inside(online.status), "{:?}", online.status);
-        assert!(inside(online.limit), "{:?}", online.limit);
-        let (_, name) = online.name.unwrap();
+        let (name_label, name) = online.name.unwrap();
         let room = online.room.unwrap();
-        assert_eq!((room.players.x, room.players.w), (name.x, name.w));
-        assert_eq!(
-            online.password.y - name.y,
-            room.players.y - online.password.y
-        );
-        assert!(online.limit.y >= room.players.y + room.players.h);
-        // Ranked game sits below Allow spectators and Watching below it,
-        // above the buttons, which stay above the status line.
-        let ranked = online.ranked.unwrap();
-        let spectators = room.spectators;
-        let (caption, watching) = online.watching.unwrap();
-        assert!(inside(ranked), "{ranked:?}");
-        assert!(inside(caption) && inside(watching), "{watching:?}");
-        assert_eq!(spectators.y - online.limit.y, ranked.y - spectators.y);
-        assert_eq!(watching.y - ranked.y, ranked.y - spectators.y);
-        assert!(ranked.y >= spectators.y + spectators.h);
-        assert!(watching.y >= ranked.y + ranked.h);
-        assert!(caption.x + caption.w <= watching.x);
-        assert!(watching.y + watching.h <= online.ok.y);
-        assert!(online.ok.y + online.ok.h <= online.status.y);
+        let watching = online.watching.unwrap();
+        let bar = options.control_rect(SPEED).unwrap();
+        assert_eq!(name_label, options.option_labels[0].1);
+        assert_eq!(online.password_label, options.option_labels[1].1);
+        assert_eq!(room.players_label, options.option_labels[2].1);
+        assert_eq!(room.players.w, bar.w);
+        let rows = [
+            name,
+            online.password,
+            room.players,
+            online.limit,
+            room.spectators,
+            online.ranked.unwrap(),
+            watching,
+        ];
+        let pitch = options.option_labels[1].1.y - name_label.y;
+        for (index, row) in rows.into_iter().enumerate() {
+            assert_eq!((row.x, row.y), (bar.x, bar.y + index as i32 * pitch));
+            assert_eq!(
+                online.setting_label(row),
+                name_label.translate(0, index as i32 * pitch)
+            );
+            assert!(row.x + row.w <= online.dialog.x + online.dialog.w - ONLINE_STATUS_INSET);
+        }
+        assert!(watching.y + watching.h <= online.status.y);
+        assert!(online.status.y + online.status.h <= online.ok.y);
+        assert_eq!(online.cancel.y, online.ok.y);
+        assert!(online.cancel.y + online.cancel.h <= online.dialog.y + online.dialog.h);
     }
 
     #[test]
