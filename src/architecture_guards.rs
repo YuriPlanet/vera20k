@@ -407,7 +407,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/production/production_queue.rs", 1),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/scenario_bootstrap.rs", 5),
-                ("sim/scenario_session.rs", 5),
+                // Session ownership plus the projection's field and initialization.
+                ("sim/scenario_session.rs", 8),
                 ("sim/snapshot.rs", 2),
                 // Ares IsTimerVisible (10032E80): whether the local player
                 // sees a Super's timer line; only the timer drawing asks.
@@ -542,6 +543,13 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/shroud_refresh.rs", 1),
                 ("sim/world/world_commands.rs", 1),
                 ("sim/world/world_hash.rs", 1),
+            ],
+        ),
+        (
+            "local_view_identity",
+            &[
+                ("sim/scenario_session.rs", 3),
+                ("sim/world/command_schedule.rs", 1),
             ],
         ),
         (
