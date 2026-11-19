@@ -21,7 +21,8 @@ pub(crate) enum ImageTheater {
 
 impl ImageTheater {
     /// FindTheater48DBE0 scans the six names at7E1B78 with case-insensitive
-    /// comparison; Snow is ordinal1. Unknown names return-1.
+    /// comparison; Snow is ordinal1. Unknown names return-1. The map's
+    /// theater data finds its theater through this too (`map::theater`).
     pub(crate) fn from_name(name: &str) -> Self {
         if name.eq_ignore_ascii_case("SNOW") {
             Self::Snow
