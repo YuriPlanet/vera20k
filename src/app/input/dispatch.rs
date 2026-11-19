@@ -1325,12 +1325,9 @@ fn sidebar_cameo_press(
     // The linked Factory's state also decides whether Shift may repeat: a held
     // or finished build takes the resume/placement arm, not a fresh PRODUCE.
     let own_for_repeat = linked_factory.map(|(status, _)| status);
-    #[cfg(feature = "phobos")]
     let building_production_queue = state
         .rules()
         .is_some_and(|rules| rules.general.building_production_queue);
-    #[cfg(not(feature = "phobos"))]
-    let building_production_queue = false;
     let click = sidebar_eva::cameo_click_with_queue(
         &queue,
         category,

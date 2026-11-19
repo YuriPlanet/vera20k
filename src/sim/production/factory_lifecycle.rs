@@ -191,10 +191,9 @@ pub(crate) fn enqueue_selected(
     };
     let type_interned = sim.interner.intern(type_id);
     let building = obj.category == ObjectCategory::Building;
-    #[cfg(feature = "phobos")]
+    // `[General] BuildingProductionQueue=` run-time switch: on in every build,
+    // default false so retail play still drops/abandons as gamemd does.
     let building_production_queue = rules.general.building_production_queue;
-    #[cfg(not(feature = "phobos"))]
-    let building_production_queue = false;
     // Phobos `HouseClass_BeginProduction_SkipBuilding 0x4FA520`.
     if selection.rtti == 7
         && !building_production_queue

@@ -456,6 +456,80 @@ fn synchronous_sound_prefix_keeps_eva_text_rows() {
     );
 }
 
+/// Regression: the detailed-EVA text rows for attacks and spy cash theft
+/// carry no subject type on their sim events, so they must cross the boundary
+/// as text-only rows (never a type lookup). Each admitted voice arm contributes
+/// exactly one row, keyed to its own alert.
+#[test]
+fn under_attack_and_infiltration_keep_text_only_eva_rows() {
+    use crate::app::input::messages::HudMessage;
+    use crate::sim::radar::{RadarEventRequest, RadarEventType};
+    use crate::sim::spy_infiltration::InfiltrationEffect;
+    use std::cell::RefCell;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    sim.session_mut_for_test().set_tick_for_test(17);
+    let local = sim.intern("Local");
+    let enemy = sim.intern("Enemy");
+    sim.session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(local));
+    let radar = || RadarEventRequest::new(RadarEventType::BaseUnderAttack, 15, 15);
+    let facts = vec![
+        SimSoundEvent::UnderAttack {
+            rx: 15,
+            ry: 15,
+            owner: local,
+            miner: false,
+            radar: radar(),
+        },
+        SimSoundEvent::UnderAttack {
+            rx: 15,
+            ry: 15,
+            owner: local,
+            miner: true,
+            radar: radar(),
+        },
+        SimSoundEvent::AllyUnderAttack {
+            owner: local,
+            radar: radar(),
+        },
+        SimSoundEvent::BuildingInfiltrated {
+            owner: enemy,
+            infiltrator: local,
+            effect: InfiltrationEffect::Cash,
+            radar: radar(),
+        },
+    ];
+    let mut output = SoundEventQueue::new();
+    let rows: RefCell<Vec<HudMessage>> = RefCell::new(Vec::new());
+    {
+        let mut admit_radar = |_request: RadarEventRequest, _tick, _rules: &RuleSet| true;
+        let boundary = FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
+            .with_eva_text(Some(&rows));
+        boundary.consume(&sim, &rules, &facts);
+    }
+    assert_eq!(
+        *rows.borrow(),
+        vec![
+            HudMessage::EvaTextLine {
+                label: "VERA:EvaBaseUnderAttack"
+            },
+            HudMessage::EvaTextLine {
+                label: "VERA:EvaHarvesterUnderAttack"
+            },
+            HudMessage::EvaTextLine {
+                label: "VERA:EvaAllyUnderAttack"
+            },
+            HudMessage::EvaTextLine {
+                label: "VERA:EvaCashStolen"
+            },
+        ]
+    );
+}
+
 /// A network trigger's authored operand crosses the dispatcher unresolved, and
 /// only the listener's own catalog resolves it at playback: an action-21 EVA
 /// name, an action-99 sound slot on an object, then a slot this catalog lacks,

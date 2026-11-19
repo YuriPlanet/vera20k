@@ -1867,11 +1867,11 @@ pub struct GeneralRules {
     /// 0x005276D0` at `0x00671DA7`; the constructor writes 5 (`0x006656EE` →
     /// `0x006657CD`).
     pub maximum_queued_objects: i32,
-    /// Phobos `[General] BuildingProductionQueue=` (default false): a
-    /// BuildingType PRODUCE queues behind a running or completed building
-    /// instead of being dropped or abandoning the held product. The next
-    /// building starts only after the held one is placed.
-    #[cfg(feature = "phobos")]
+    /// `[General] BuildingProductionQueue=` (default false): a BuildingType
+    /// PRODUCE queues behind a running or completed building instead of being
+    /// dropped or abandoning the held product. The next building starts only
+    /// after the held one is placed. A run-time switch, on in every build:
+    /// stock data leaves it false, so gamemd play is unchanged.
     pub building_production_queue: bool,
     /// Phobos `[General] BuildingTypeSelectable=` (default false): type select
     /// admits every building, not only the `UndeploysInto=` ones the retail ID
@@ -3012,7 +3012,6 @@ impl Default for GeneralRules {
             slave_miner_scan_correction: 0x300,
             slave_miner_kick_frame_delay: 0x7FFF_FFFF,
             maximum_queued_objects: 5,
-            #[cfg(feature = "phobos")]
             building_production_queue: false,
             #[cfg(feature = "phobos")]
             building_type_selectable: false,
@@ -4371,7 +4370,6 @@ impl GeneralRules {
             slave_miner_scan_correction: general.read_range("SlaveMinerScanCorrection", 0x300),
             slave_miner_kick_frame_delay: general.read_int("SlaveMinerKickFrameDelay", 0x7FFF_FFFF),
             maximum_queued_objects: general.read_int("MaximumQueuedObjects", 5),
-            #[cfg(feature = "phobos")]
             building_production_queue: general.read_bool("BuildingProductionQueue", false),
             #[cfg(feature = "phobos")]
             building_type_selectable: crate::rules::ares_switch::ares_way()
@@ -9839,7 +9837,6 @@ impl RuleSet {
         self.general.lightning_warhead.hash(&mut hasher);
         self.general.weather_con_bolt_explosion.hash(&mut hasher);
         self.general.weapon_nullify_anim.hash(&mut hasher);
-        #[cfg(feature = "phobos")]
         self.general.building_production_queue.hash(&mut hasher);
         if self.phobos {
             b"phobos-ai-dehardcode-v1".hash(&mut hasher);
