@@ -234,6 +234,7 @@ impl Transfers {
             });
             self.key = Some(key);
         }
+        self.recheck_lost_source(&state.match_state.session, seed);
         if self.failed || self.complete {
             return Ok(());
         }
@@ -374,6 +375,28 @@ impl Transfers {
             })?;
         }
         Ok(())
+    }
+    /// A finished transfer stands only while the session holds the map it
+    /// verified. A match's end drops that map
+    /// (`MatchSession::return_to_network_lobby`), but a room reopened for a
+    /// rematch keeps its map and so this key. Without a fresh check, a game
+    /// whose match end lands after the reopen, host or guest, keeps reporting
+    /// map status 0, and the host's Start waits on it until it times out. The
+    /// lobby still holds the room's map, so nothing is uploaded again
+    /// (`lobby_holds`).
+    fn recheck_lost_source(
+        &mut self,
+        session: &crate::app::match_runtime::session::MatchSession,
+        seed: bool,
+    ) {
+        if self.complete && session.network_local_map_source().is_none() {
+            self.complete = false;
+            self.next_resource = Some(if seed {
+                TransferResource::Seed
+            } else {
+                TransferResource::Map
+            });
+        }
     }
     /// Whether the lobby already has this room's map, so the host need not
     /// upload it. Generated maps and their previews always come from the host.
@@ -721,6 +744,76 @@ mod tests {
         };
         maps.forget_other_available(&other);
         assert!(maps.available.is_none());
+    }
+    #[test]
+    fn a_rematch_checks_the_map_a_match_end_dropped_without_uploading_it() {
+        use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.command-bar.example.json",
+        ))
+        .unwrap();
+        let launch: crate::skirmish_launch::SkirmishLaunchSession =
+            serde_json::from_value(fixture["launch"].clone()).unwrap();
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::Wol);
+        session
+            .accept_network_setup(launch.clone(), true, None, false)
+            .unwrap();
+        let directory = crate::map::source::test_support::TestDirectory::new("rematch-map");
+        directory.write(
+            "room.map",
+            b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n",
+        );
+        let source = crate::map::source::transfer_file_source(
+            &directory.path().join("room.map"),
+            TransferResource::Map,
+        )
+        .unwrap();
+        let (total, digest) = source.physical_identity().unwrap();
+        let digest = digest.to_owned();
+        let metadata = crate::app::match_runtime::session::NetworkMapMetadata {
+            display_name: "Room map".into(),
+            player_capacity: 8,
+            official: false,
+            byte_length: total as i32,
+            digest: "Room".into(),
+            source_sha256: digest.clone(),
+            effective_digest: "b".repeat(64),
+        };
+        session
+            .accept_network_map_metadata(metadata.clone(), None, true)
+            .unwrap();
+        session
+            .accept_external_network_map_source(source, "b".repeat(64))
+            .unwrap();
+        let mut maps = Transfers {
+            key: Some(Key {
+                room: "room".into(),
+                digest: digest.clone(),
+                total,
+                effective_digest: "b".repeat(64),
+                random: None,
+            }),
+            available: Some(("room".into(), digest, total)),
+            complete: true,
+            ..Default::default()
+        };
+        maps.recheck_lost_source(&session, false);
+        assert!(maps.complete && maps.next_resource.is_none());
+        // The match ends, then the reopened room brings back its setup and
+        // the same map: none of that restores the dropped source.
+        session.return_to_network_lobby();
+        session
+            .accept_network_setup(launch, true, None, false)
+            .unwrap();
+        session
+            .accept_network_map_metadata(metadata, None, true)
+            .unwrap();
+        assert!(session.network_local_map_source().is_none());
+        maps.recheck_lost_source(&session, false);
+        assert!(!maps.complete);
+        assert_eq!(maps.next_resource, Some(TransferResource::Map));
+        assert!(maps.lobby_holds(TransferResource::Map));
     }
     #[test]
     fn a_guest_missing_the_map_waits_for_its_answer_before_downloading() {
