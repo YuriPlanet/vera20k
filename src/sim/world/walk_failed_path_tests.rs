@@ -133,7 +133,7 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
 
 #[test]
 fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_closer() {
-    let (mut sim, rules, registry) = fixture();
+    let (mut sim, rules, _registry) = fixture();
     human_house(&mut sim);
     let id = engineer_at(&mut sim, &rules, (10, 10));
     // A code-6 target is occupied (0x51C61F: an infantryman disguised to the
@@ -154,7 +154,6 @@ fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_
             DriveCoord::cell(13, 10, 0),
             6,
             &rules,
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -174,7 +173,6 @@ fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_
             DriveCoord::cell(12, 10, 0),
             6,
             &rules,
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();

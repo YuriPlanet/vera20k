@@ -94,7 +94,7 @@ fn sov07_discovery_recruits_the_nine_authored_group_members_after_reload() {
     assert!(sim.discover_techno(
         *members.first().unwrap(),
         player,
-        UninitContext::with_rules(&rules),
+        UninitContext::new(&rules),
     ));
     let team = sim.team_script_vm.first_team_of_type(team_type).unwrap();
     let team_id = team.id();

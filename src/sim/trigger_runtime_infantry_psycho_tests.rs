@@ -260,10 +260,7 @@ fn ordered_go_berzerk_survives_snapshot_tag_removal_and_reconstruction_starts_cl
         &rules,
     );
     loaded.resolve_type_handles(&rules);
-    loaded.uninit_with_context(
-        actor,
-        crate::sim::world::UninitContext::new(&rules, Some(&registry)),
-    );
+    loaded.uninit_with_context(actor, crate::sim::world::UninitContext::new(&rules));
     loaded.flush_pending_delete();
     let fresh = spawn(&mut loaded, &rules, "SHOOTER", "House0", 18);
     assert!(!psycho(&loaded, fresh));

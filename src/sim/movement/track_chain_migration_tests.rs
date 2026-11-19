@@ -258,7 +258,6 @@ fn production_chain_clear_and_code2_share_admission_and_never_scatter_or_repath(
                         previous_cell: None,
                     },
                     &rules,
-                    None,
                 )
                 .unwrap();
             assert_eq!(classified, if blocker == 0 { 0 } else { 2 });

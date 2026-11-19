@@ -628,7 +628,6 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 Some(owner),
                 PointerExpiryControl::Uninit,
                 &s.rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             );
         }

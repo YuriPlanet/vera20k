@@ -204,7 +204,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
     visit(&mut sim, light_id);
     let before_turn = sim.building_spotlight(light_id, None, &rules).unwrap();
     assert_eq!(before_turn.glow_flags, 4);
-    sim.detach_all_pointer_expired(foot_id, &rules, None, FrameEffects::empty());
+    sim.detach_all_pointer_expired(foot_id, &rules, FrameEffects::empty());
     assert!(
         sim.building_spotlight(light_id, None, &rules).is_some(),
         "cloak-style detach retains the light's parent"
@@ -328,7 +328,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .resolve(restored.entities().get(members[0]).unwrap().type_ref()),
         "NEW"
     );
-    restored.techno_limbo_with_rules(foot_id, &rules, None);
+    restored.techno_limbo_with_rules(foot_id, &rules);
     assert!(
         restored
             .building_spotlight(recreated, None, &rules)

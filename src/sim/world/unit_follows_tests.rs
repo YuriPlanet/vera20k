@@ -217,10 +217,7 @@ fn uninit_clears_incoming_unit_link_but_preserves_orphan_follower_byte_after_res
 
     // UnitPointerExpired7446E0 clears its pointer after inherited forwards;
     // neither it nor the deleting destructor resets the surviving tail byte.
-    sim.uninit_with_context(
-        middle,
-        UninitContext::new(rules, Some(rules.overlay_registry())),
-    );
+    sim.uninit_with_context(middle, UninitContext::new(rules));
     assert_eq!(sim.entities().get(head).unwrap().unit_follower(), None);
     assert!(sim.entities().get(tail).unwrap().is_unit_follower());
     sim.advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())

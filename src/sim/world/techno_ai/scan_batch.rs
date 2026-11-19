@@ -221,7 +221,6 @@ impl ScannerKey {
             fire: FireSubject {
                 world,
                 rules,
-                overlay_registry: None,
                 fog: None,
                 firer: entity,
                 obj,
@@ -406,7 +405,6 @@ impl Simulation {
     pub(super) fn take_batched_scan(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         id: u64,
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
@@ -450,7 +448,6 @@ impl Simulation {
                 id,
                 TargetKind::Entity(pick),
                 check_range,
-                overlay_registry,
             ) {
                 FireError::Illegal | FireError::Cant => true,
                 FireError::Range => check_range,

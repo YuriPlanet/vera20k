@@ -3978,8 +3978,7 @@ impl Simulation {
             //6E42A5 repeats F8 even when458A80 has already rejected/UnInited.
             self.uninit_with_context(
                 created,
-                crate::sim::world::UninitContext::new(rules, overlay_registry)
-                    .with_effects(frame_effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
             );
             return false;
         }
@@ -4191,22 +4190,8 @@ impl Simulation {
                 let Some(target) = self.live_action_house(live, value, rules) else {
                     return false;
                 };
-                self.make_enemy(
-                    source,
-                    target,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                    false,
-                );
-                self.make_enemy(
-                    target,
-                    source,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                    false,
-                );
+                self.make_enemy(source, target, rules, frame_effects, false);
+                self.make_enemy(target, source, rules, frame_effects, false);
             }
             23..=27 => {
                 use crate::sim::scenario_session::ScenarioTimerAction;
@@ -4269,8 +4254,7 @@ impl Simulation {
                 });
             }
             31 => self.grow_shroud(
-                crate::sim::world::UninitContext::new(rules, overlay_registry)
-                    .with_effects(frame_effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
             ),
             51 => {
                 //6DEF9B calls the incoming House's577C90 map transition,
@@ -4595,7 +4579,6 @@ impl Simulation {
                         crate::sim::world::bridge_orchestrator::BridgeDamageDrivers::new(
                             self,
                             rules,
-                            overlay_registry,
                             frame_effects,
                         );
                     for _ in 0..4 {
@@ -4821,8 +4804,7 @@ impl Simulation {
             }
             16 => {
                 return self.trigger_reveal_entire_map(
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             5 => {
@@ -4919,8 +4901,7 @@ impl Simulation {
                 };
                 return self.trigger_reveal_at_waypoint(
                     waypoint,
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             108 => {
@@ -4956,8 +4937,7 @@ impl Simulation {
                 };
                 return self.trigger_conceal_at_waypoint(
                     waypoint,
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             18 => {
@@ -4966,8 +4946,7 @@ impl Simulation {
                 };
                 return self.trigger_reveal_zone_at_waypoint(
                     waypoint,
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             ACTION_PLAY_SOUND => {
@@ -5472,8 +5451,7 @@ impl Simulation {
                 if let Some(raw_local_size) = parse_visible_map_area(&action.params) {
                     let _ = self.change_visible_map_area(
                         raw_local_size,
-                        crate::sim::world::UninitContext::new(rules, overlay_registry)
-                            .with_effects(frame_effects),
+                        crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                     );
                 }
             }
@@ -5541,8 +5519,7 @@ impl Simulation {
                 self.talk_bubble_set_object_and_frame(
                     actor,
                     value.unwrap_or(0),
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
             106 => {

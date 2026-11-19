@@ -409,10 +409,9 @@ impl Simulation {
         aircraft: u64,
         unit: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let _ = self.techno_limbo_with_context(unit, context);
         let Some(type_ref) = self.substrate.entities.get_mut(unit).map(|cargo| {
             cargo.on_bridge.store(false);
@@ -547,7 +546,6 @@ impl Simulation {
         let _ = depart_cargo_head(
             self,
             rules,
-            registry,
             aircraft,
             DepartureRoute::Carryall,
             |sim, cargo| {
@@ -570,7 +568,6 @@ impl Simulation {
                     requested,
                     PlacementEvidence::EvaluateMark,
                     rules,
-                    registry,
                 ) else {
                     return Err(DepartureFailure::Placement);
                 };
@@ -632,10 +629,7 @@ impl Simulation {
                 locomotor.power_off();
             }
         }
-        self.refresh_object_sight_border(
-            cargo,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        self.refresh_object_sight_border(cargo, UninitContext::new(rules).with_effects(effects));
         let nearby = self.techno_nearby_location(aircraft, None, rules);
         if self
             .substrate
@@ -674,7 +668,7 @@ impl Simulation {
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
             if let Some((team, _)) = self.team_script_vm.team_for_member(cargo) {
-                self.team_add_member(team, cargo, false, rules, registry, effects);
+                self.team_add_member(team, cargo, false, rules, effects);
             }
         }
         let destination = nearby

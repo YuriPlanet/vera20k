@@ -1729,10 +1729,9 @@ mod tests {
         tips.on_mouse_move(20, 20, 0);
         tips.poll(1000);
         assert_eq!(tips.active().unwrap().text, expected);
-        runtime.simulation.techno_limbo_with_context(
-            entity_id,
-            UninitContext::with_rules(&runtime.resources.rules),
-        );
+        runtime
+            .simulation
+            .techno_limbo_with_context(entity_id, UninitContext::new(&runtime.resources.rules));
         let text = tactical_world_tip_text(
             runtime.view(),
             &runtime.resources.rules,

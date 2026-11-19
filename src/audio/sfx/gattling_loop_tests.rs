@@ -1232,7 +1232,7 @@ fn production_limbo_preserves_frame_sound_scope_in_a_nested_context() {
     // before6F6C76 is instruction-established; this is not an executed native
     // comparison of the complete Limbo transaction.
     let effects = FrameEffects::for_sound(&boundary);
-    let context = UninitContext::new(rules, None).with_effects(effects);
+    let context = UninitContext::new(rules).with_effects(effects);
     let (outcome, raw) = trace_draws(|| sim.techno_limbo_with_context(id, context));
     assert_eq!(outcome, ConcealOutcome::Concealed);
     assert!(raw.is_empty());

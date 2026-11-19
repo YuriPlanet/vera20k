@@ -266,7 +266,6 @@ fn an_is_passable_building_does_not_block_entry() {
             cells.lookup(cell),
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             &rules,
-            None,
         )
         .unwrap()
     };

@@ -733,7 +733,6 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
             &mut sim,
             &rules,
             carrier,
-            None,
             FrameEffects::default(),
         );
     }

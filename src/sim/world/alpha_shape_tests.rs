@@ -57,7 +57,7 @@ fn a_loaded_alpha_image_glows_from_unlimbo_until_the_purge_after_expiry() {
         .find(|entity| entity.position.rx() == 4)
         .unwrap()
         .stable_id();
-    sim.detach_all_pointer_expired(lamp, &rules, None, FrameEffects::default());
+    sim.detach_all_pointer_expired(lamp, &rules, FrameEffects::default());
     assert_eq!(sim.alpha_shapes().count(), 1);
     sim.advance_tick(&[], Some(&rules), None, None, 33);
     assert_eq!(sim.alpha_shapes().count(), 0);

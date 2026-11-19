@@ -558,7 +558,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             let runtime = &mut scene.runtime;
             assert!(runtime.simulation.change_visible_map_area(
                 [2, 2, 1, 1],
-                crate::sim::world::UninitContext::with_rules(&runtime.resources.rules),
+                crate::sim::world::UninitContext::new(&runtime.resources.rules),
             ));
             assert!(
                 !runtime
@@ -570,7 +570,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             );
             assert!(runtime.simulation.change_visible_map_area(
                 restore_local_size,
-                crate::sim::world::UninitContext::with_rules(&runtime.resources.rules),
+                crate::sim::world::UninitContext::new(&runtime.resources.rules),
             ));
             assert!(
                 runtime

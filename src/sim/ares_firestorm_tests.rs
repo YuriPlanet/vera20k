@@ -111,7 +111,6 @@ fn a_raised_firestorm_powers_its_sections_which_then_block_and_cannot_be_sold() 
             cells.lookup((10, 10)),
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             &rules,
-            None,
         )
         .unwrap()
     };

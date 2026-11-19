@@ -1190,7 +1190,7 @@ mod map_wall_owner_candidate_tests {
             crate::sim::combat::FatalLifecycleStage::BeforeBuildingDestruction,
             id,
             EntityCategory::Structure,
-            crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::world::UninitContext::new(rules),
         );
     }
 

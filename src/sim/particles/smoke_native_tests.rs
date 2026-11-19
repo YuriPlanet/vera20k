@@ -344,7 +344,7 @@ fn original_smoke_follows_owner_offset_leaves_trail_and_suppresses_tube_births()
                 &mut sim,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules)
+                crate::sim::world::UninitContext::new(&rules)
             ));
             assert_system(&sim, id, Some(owner), expected);
             assert_eq!(
@@ -411,7 +411,7 @@ fn original_smoke_system_birth_split_emission_cutoff_and_limbo() {
                 &mut sim,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules)
+                crate::sim::world::UninitContext::new(&rules)
             ));
             assert_system(&sim, id, owner, &visit["state"]);
         }
@@ -459,7 +459,7 @@ fn original_stored_smoke_accumulator_preserves_long_run_rng_boundaries() {
             &mut sim,
             &rules,
             id,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         if let Some(point) = points.iter().find(|point| point["frame"] == frame) {
             assert_system(&sim, id, None, &point["state"]);
@@ -499,7 +499,7 @@ fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     sim.session
         .set_map_name_for_test("damage-smoke-continuation".into());
@@ -535,13 +535,13 @@ fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     super::super::system_ai::tick_particle_system(
         &mut restored,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     assert_system(&restored, id, owner, &case["visits"][1]);
     let a = sim.particle_systems().get(id).unwrap();

@@ -82,7 +82,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -94,7 +93,7 @@ impl Simulation {
         let Some(&head) = entity.navigation.nav_list().first() else {
             return;
         };
-        self.send_to_navigation_head(id, head, rules, registry, effects);
+        self.send_to_navigation_head(id, head, rules, effects);
     }
 
     /// `FootClass::Mission_Area_Guard`'s list head (`0x004D6B23..0x004D6B8D`),
@@ -107,7 +106,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -126,7 +124,7 @@ impl Simulation {
         if entity.archive_target() != Some(TargetKind::from(head)) {
             return;
         }
-        self.send_to_navigation_head(id, head, rules, registry, effects);
+        self.send_to_navigation_head(id, head, rules, effects);
     }
 
     /// The send both consumers make: vt+0x480(head, 1) (`0x004DA062`,
@@ -139,12 +137,9 @@ impl Simulation {
         id: u64,
         head: NavTargetRef,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        if let Err(cause) =
-            self.assign_destination_represented(id, Some(head), rules, registry, effects)
-        {
+        if let Err(cause) = self.assign_destination_represented(id, Some(head), rules, effects) {
             log::debug!("Foot {id} navigation list head: {cause}");
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {

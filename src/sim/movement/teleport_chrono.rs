@@ -159,7 +159,6 @@ impl Simulation {
                     cell.1 as u16,
                 )),
                 rules,
-                registry,
                 effects,
             )
             .map_err(|error| error.to_string())?;
@@ -198,11 +197,10 @@ impl Simulation {
                     cell.1 as u16,
                 )),
                 rules,
-                registry,
                 effects,
             )
             .map_err(|error| error.to_string())?;
-            self.assign_destination_represented(id, None, rules, registry, effects)
+            self.assign_destination_represented(id, None, rules, effects)
                 .map_err(|error| error.to_string())?;
         }
         let frame = self.session.binary_frame();
@@ -226,7 +224,6 @@ impl Simulation {
                 cell.1 as u16,
             )),
             rules,
-            registry,
             effects,
         )
         .map_err(|error| error.to_string())?;
@@ -454,7 +451,7 @@ impl Simulation {
             .and_then(|runtime| runtime.resolved_destination())
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         self.foot_set_location_marked(id, marked, rules, registry, effects);
-        self.set_object_height(id, 0, rules, registry, effects);
+        self.set_object_height(id, 0, rules, effects);
         self.foot_mark_put(id, rules, registry, effects);
         marked
     }
@@ -977,7 +974,7 @@ impl Simulation {
             self.record_manipulated_kill(
                 id,
                 id,
-                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
             );
             return;
         }
@@ -992,7 +989,6 @@ impl Simulation {
                 },
                 EntryQueryMode::CheckLocomotor,
                 rules,
-                registry,
             )
             .unwrap_or_else(|error| {
                 log::debug!("chrono warp {id} entry at ({cx}, {cy}): {error}");

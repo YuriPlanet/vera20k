@@ -679,7 +679,7 @@ fn tibtre_active_stage_survives_snapshot_and_removal_clears_its_owner() {
     }
     let id = s.sim.terrain_objects.cell_index()[&at];
     s.sim
-        .uninit_with_context(id, super::UninitContext::new(&s.rules, Some(registry())));
+        .uninit_with_context(id, super::UninitContext::new(&s.rules));
     assert!(!s.sim.terrain_objects.animations().contains_key(&id));
     assert!(!s.sim.terrain_objects.spawning_cells().contains(&at));
 }

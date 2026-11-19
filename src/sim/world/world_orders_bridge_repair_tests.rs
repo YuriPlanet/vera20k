@@ -815,7 +815,7 @@ fn assert_live_repair_strip(sim: &Simulation, engineer: u64, expected_overlay: u
 
 #[test]
 fn ordinary_engineer_repair_consumes_mapgen_only_and_preserves_overlay_metadata() {
-    let (mut sim, rules, registry, engineer) = live_repair_fixture();
+    let (mut sim, rules, _registry, engineer) = live_repair_fixture();
     let scenario_before = sim.scenario_rng.logical_state();
     let main_before = sim.main_rng.logical_state();
     let mut expected_mapgen = crate::sim::rng::SimRng::new(0);
@@ -825,7 +825,6 @@ fn ordinary_engineer_repair_consumes_mapgen_only_and_preserves_overlay_metadata(
         crate::sim::world::bridge_orchestrator::repair_from_engineer(
             &mut sim,
             &rules,
-            Some(&registry),
             engineer,
             crate::sim::world::FrameEffects::default(),
         )
@@ -859,7 +858,7 @@ fn generated_map_bridge_repair_continues_post_rmg_mapgen_stream() {
     };
     let mut expected = crate::sim::rng::SimRng::from_mapgen_continuation(continuation());
     let expected_variant = expected.next_high_two_bits();
-    let (mut sim, rules, registry, engineer) = live_repair_fixture();
+    let (mut sim, rules, _registry, engineer) = live_repair_fixture();
     sim.mapgen_rng = crate::sim::rng::SimRng::from_mapgen_continuation(continuation());
     let scenario_before = sim.scenario_rng.logical_state();
     let main_before = sim.main_rng.logical_state();
@@ -868,7 +867,6 @@ fn generated_map_bridge_repair_continues_post_rmg_mapgen_stream() {
         crate::sim::world::bridge_orchestrator::repair_from_engineer(
             &mut sim,
             &rules,
-            Some(&registry),
             engineer,
             crate::sim::world::FrameEffects::default(),
         )
@@ -885,7 +883,7 @@ fn generated_map_bridge_repair_continues_post_rmg_mapgen_stream() {
 fn two_identical_sims_repair_with_identical_hash_and_streams() {
     let (mut sim_a, rules_a, registry_a, engineer_a) = live_repair_fixture();
     let (mut sim_b, rules_b, registry_b, engineer_b) = live_repair_fixture();
-    for (sim, rules, registry, engineer) in [
+    for (sim, rules, _registry, engineer) in [
         (&mut sim_a, &rules_a, &registry_a, engineer_a),
         (&mut sim_b, &rules_b, &registry_b, engineer_b),
     ] {
@@ -893,7 +891,6 @@ fn two_identical_sims_repair_with_identical_hash_and_streams() {
             crate::sim::world::bridge_orchestrator::repair_from_engineer(
                 sim,
                 rules,
-                Some(registry),
                 engineer,
                 crate::sim::world::FrameEffects::default(),
             )

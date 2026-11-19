@@ -176,7 +176,7 @@ fn expired_spy_target_advances_without_discovering_its_replacement() {
     // A subsequent Script15 visit sees NULL, not the original waypoint Cell.
     let rules = &scene.runtime.resources.rules;
     let sim = &mut scene.runtime.simulation;
-    sim.uninit_with_context(plant, UninitContext::with_rules(rules));
+    sim.uninit_with_context(plant, UninitContext::new(rules));
     assert!(
         sim.team_script_vm
             .team(team)

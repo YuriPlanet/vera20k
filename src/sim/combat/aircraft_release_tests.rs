@@ -703,13 +703,7 @@ fn a_campaign_ally_aircraft_shooting_over_shroud_maps_the_players_cells() {
 #[test]
 fn a_kamikaze_missile_is_removed_after_its_shot() {
     let (mut sim, rules) = fixture(&serde_json::json!({"burst": 1, "missile_spawn": true}));
-    sim.kamikaze_push(
-        1,
-        None,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
+    sim.kamikaze_push(1, None, &rules, crate::sim::world::FrameEffects::default());
     assert!(sim.kamikaze.contains(1));
     let result = dispatch(&mut sim, &rules);
     assert_eq!(result.len(), 1, "it fires");

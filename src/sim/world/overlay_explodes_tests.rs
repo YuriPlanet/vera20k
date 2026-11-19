@@ -116,13 +116,7 @@ fn queued_retail_mtnk_ground_attack_reaches_exploding_rock() {
     assert!(
         fired,
         "MTNK must fire; error={:?}, target={:?}, turret={:?}, latch={:?}",
-        sim.selected_weapon_fire_error(
-            &rules,
-            tank,
-            TargetKind::Cell(12, 12),
-            true,
-            Some(registry)
-        ),
+        sim.selected_weapon_fire_error(&rules, tank, TargetKind::Cell(12, 12), true,),
         sim.entities().get(tank).unwrap().attack_target.target(),
         sim.entities().get(tank).unwrap().barrel_facing,
         sim.entities().get(tank).unwrap().turret_rotation_latch,
@@ -354,14 +348,8 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
     );
     assert_eq!(sim.entities().get(victim).unwrap().health.current(), 0);
     assert_eq!(sim.voxel_type_damage(type_id, &rules), 3);
-    sim.uninit_with_context(piece, UninitContext::with_rules(&rules));
-    sim.process_pending_delete_with(
-        &rules,
-        Some(rules.overlay_registry()),
-        FrameEffects::default(),
-        1,
-        sim.session().started(),
-    );
+    sim.uninit_with_context(piece, UninitContext::new(&rules));
+    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, sim.session().started());
     assert!(sim.voxel_anims().is_empty());
     // Isolated snapshot continuation: the native full-load RNG reset remains
     // separate; restore the supplied pre-save cursor for this equality check.

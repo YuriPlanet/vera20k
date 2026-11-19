@@ -270,7 +270,7 @@ mod tests {
                 id,
                 source,
                 KillCallback::OwnerChange,
-                UninitContext::with_rules(&rules),
+                UninitContext::new(&rules),
             )
         };
         let source = KillSource::Techno(Some(hunter));
@@ -283,7 +283,7 @@ mod tests {
         let bank = sim
             .spawn_object("BANK", "Americans", 10, 10, 64, &rules)
             .unwrap();
-        sim.techno_limbo_with_rules(bank, &rules, None);
+        sim.techno_limbo_with_rules(bank, &rules);
         record(&mut sim, victim, source);
         assert_eq!(
             sim.houses[&owner].economy().credits(),

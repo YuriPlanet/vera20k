@@ -554,7 +554,7 @@ mod tests {
                 .remaining,
             4
         );
-        restored.techno_limbo_with_rules(target, &rules, None);
+        restored.techno_limbo_with_rules(target, &rules);
         assert!(
             restored
                 .entities()
@@ -581,7 +581,7 @@ mod tests {
         );
         // Ordinary UnInit and its deferred drain reach the shared Techno DTOR.
         restored.uninit_with_rules(target, &rules);
-        restored.process_pending_delete_with(&rules, None, FrameEffects::empty(), 1, false);
+        restored.process_pending_delete_with(&rules, FrameEffects::empty(), 1, false);
         assert!(restored.entities().get(target).is_none());
     }
 }

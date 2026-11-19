@@ -90,8 +90,8 @@ pub(crate) fn mission_enter(
                 // 0x004D92CE..0x004D92E8.
                 radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, effects);
                 crate::sim::world::enter_idle_mode(sim, id, rules, registry, effects);
-            } else if !pop_nav_queue(sim, rules, registry, id, effects) {
-                teleporter_reassign(sim, rules, registry, id, effects);
+            } else if !pop_nav_queue(sim, rules, id, effects) {
+                teleporter_reassign(sim, rules, id, effects);
             }
         }
     }
@@ -114,7 +114,6 @@ pub(crate) fn mission_enter(
 fn pop_nav_queue(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     id: u64,
     effects: FrameEffects<'_>,
 ) -> bool {
@@ -130,7 +129,7 @@ fn pop_nav_queue(
     };
     let first = entity.navigation.nav_queue()[0];
     // 0x004D939A: vt+0x480(NavQueue[0], 0).
-    let _ = sim.assign_destination_keeping_queue(id, Some(first), rules, registry, effects);
+    let _ = sim.assign_destination_keeping_queue(id, Some(first), rules, effects);
     // The shift deletes the first entry of the queue the setter left; the
     // UnitRepair arm's modified NULL (`0x007423CA`) may have emptied it.
     if let Some(entity) = sim.substrate.entities.get_mut(id)
@@ -146,13 +145,7 @@ fn pop_nav_queue(
 /// to the class setter with the flag 1. On a Unit's pad approach that re-runs
 /// the Teleporter arm and the Teleport Move_To; after the warp NavCom is NULL
 /// and the setter returns at once (`0x00741A80`).
-fn teleporter_reassign(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
-    id: u64,
-    effects: FrameEffects<'_>,
-) {
+fn teleporter_reassign(sim: &mut Simulation, rules: &RuleSet, id: u64, effects: FrameEffects<'_>) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
@@ -166,5 +159,5 @@ fn teleporter_reassign(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.navigation.stop_moving();
     }
-    let _ = sim.assign_destination_represented(id, nav, rules, registry, effects);
+    let _ = sim.assign_destination_represented(id, nav, rules, effects);
 }

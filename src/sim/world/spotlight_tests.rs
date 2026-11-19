@@ -33,13 +33,13 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
             .unwrap();
         let before = sim.substrate.spotlights.get(id).unwrap().coord;
         sim.set_spotlight_behavior(id, 2);
-        sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
+        sim.visit_spotlight(id, &rules, UninitContext::new(&rules));
         assert_eq!(sim.substrate.spotlights.get(id).unwrap().coord, before);
         assert!(sim.building_spotlight(id, None, &rules).is_some());
         // Invalid authored motion must not bypass ordinary orphan cleanup.
         sim.substrate
             .spotlights_pointer_expired(p, true, rules.ares());
-        sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
+        sim.visit_spotlight(id, &rules, UninitContext::new(&rules));
         assert!(
             sim.substrate
                 .pending_delete
@@ -160,7 +160,7 @@ fn original_constructor_endpoints_and_full_ai_motion_controls() {
             },
         );
         for frame in 1..=160 {
-            sim.visit_spotlight(2, &rules, UninitContext::new(&rules, None));
+            sim.visit_spotlight(2, &rules, UninitContext::new(&rules));
             if let Some(expected) = case["states"]
                 .as_array()
                 .unwrap()
@@ -216,7 +216,7 @@ fn shared_ids_logic_snapshot_and_parent_limbo_retire_the_independent_child() {
     loaded.restore_after_snapshot_load().unwrap();
     assert_eq!(loaded.substrate.spotlights.get(id), Some(&state));
     loaded.debug_assert_logic_membership_consistent();
-    loaded.destroy_spotlight_for_parent(p, UninitContext::new(&rules, None));
+    loaded.destroy_spotlight_for_parent(p, UninitContext::new(&rules));
     assert!(!loaded.substrate.spotlights.contains_key(id));
     assert!(!loaded.substrate.logic.as_slice().contains(&id));
     assert_eq!(
@@ -425,7 +425,7 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
     assert!(
         order.iter().position(|&x| x == id).unwrap() < order.iter().position(|&x| x == p).unwrap()
     );
-    sim.uninit_with_context(p, UninitContext::new(&rules, None));
+    sim.uninit_with_context(p, UninitContext::new(&rules));
     // BuildingClass::Limbo @ 0x00445D81 UnInits the light (0x005F65F0): it
     // is dead, out of Logic and Display and queued, and Building+0x600 is
     // clear (0x0044E93A), but it keeps its 8B4190 slot until the drain.
@@ -527,14 +527,14 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, Some(4));
     sim.set_spotlight_behavior(id, 2);
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, Some(4));
-    sim.notify_pointer_expired(4, UninitContext::new(&rules, None));
+    sim.notify_pointer_expired(4, UninitContext::new(&rules));
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, None);
     // AI436321: a lost target goes through SetBehaviour(1); the pose stays.
     let light = sim.substrate.spotlights.get_mut(id).unwrap();
     light.mode = 3;
     light.angle = NativeF64Bits::from_bits(0x3ff0000000000000);
     let before = light.coord;
-    sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
+    sim.visit_spotlight(id, &rules, UninitContext::new(&rules));
     let light = sim.substrate.spotlights.get(id).unwrap();
     assert_eq!(
         (light.mode, light.angle.bits(), light.coord),

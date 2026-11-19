@@ -407,7 +407,7 @@ fn fresh_arm_rows_match_the_original_responses() {
         if input.get("far_zone").is_some() {
             continue;
         }
-        let (mut sim, rules, registry, id) = unit(input);
+        let (mut sim, rules, _registry, id) = unit(input);
         let destination = input.get("destination").map_or((13, 10), pair);
         order(
             &mut sim,
@@ -496,7 +496,6 @@ fn fresh_arm_rows_match_the_original_responses() {
             family,
             ProcessMovementArgs::OUTER,
             &rules,
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         );
         let (records, unused) = fresh_oracle_seam::finish();
@@ -552,7 +551,6 @@ fn crusher_all_non_wall_overlay_uses_ground_unit_for_straight_latch() {
             TrackFamily::Drive,
             ProcessMovementArgs::OUTER,
             &rules,
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         );
         let (_, unused) = fresh_oracle_seam::finish();
@@ -584,7 +582,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
         .iter()
         .filter(|row| row["branch"] == "first_rejection")
     {
-        let (mut sim, mut rules, registry, id) = unit(row);
+        let (mut sim, mut rules, _registry, id) = unit(row);
         let sound = native["sound"]["resolved_name"].as_str().unwrap();
         rules.general.scold_sound = Some(sound.into());
         order(&mut sim, &rules, id, (13, 10));
@@ -618,7 +616,6 @@ fn first_code7_scold_request_retains_the_native_byte() {
                 force_single: false,
             },
             &rules,
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         );
         let (_, unused) = fresh_oracle_seam::finish();

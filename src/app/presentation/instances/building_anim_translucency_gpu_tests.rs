@@ -328,7 +328,6 @@ impl SlotScene {
                 id,
                 crate::sim::combat::TargetKind::Entity(self.plant),
                 true,
-                Some(self.scene.runtime.resources.rules.overlay_registry()),
             );
             eprintln!(
                 "{boundary}: attack_target={:?} navigation={:?} locomotor={:?} rearm={:?} last_fire={} facing={} pose={:?} GetFireError={error:?}",

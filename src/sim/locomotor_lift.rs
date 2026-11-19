@@ -407,7 +407,7 @@ impl Simulation {
         crate::sim::spawn_manager::kill_all_spawns_with_context(
             self,
             target,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
         let naval_eater = self
             .substrate
@@ -535,7 +535,6 @@ impl Simulation {
             target,
             Some(NavTargetRef::object(firer)),
             rules,
-            registry,
             effects,
         ) {
             log::debug!("lifted {target} destination: {error:?}");
@@ -636,10 +635,7 @@ impl Simulation {
                     entity.drop_credit.manipulated_by = Some(firer);
                     entity.drop_credit.warped_by_house = Some(firer_house);
                 }
-                self.stun(
-                    held,
-                    UninitContext::new(rules, registry).with_effects(effects),
-                );
+                self.stun(held, UninitContext::new(rules).with_effects(effects));
                 self.assign_null_destination(held, rules, registry, effects);
             }
             Some(_) => {
@@ -655,7 +651,7 @@ impl Simulation {
             firer.lift.target = None;
         }
         if clear_target {
-            let _ = self.assign_target_represented(firer, None, rules, registry, effects);
+            let _ = self.assign_target_represented(firer, None, rules, effects);
         }
     }
 
@@ -834,7 +830,7 @@ impl Simulation {
                 bridge_state_changed: false,
             },
             Some(EntityCategory::Infantry) => {
-                self.dropped_crush(id, first, rules, registry, effects);
+                self.dropped_crush(id, first, rules, effects);
                 DroppedImpact::default()
             }
             _ => DroppedImpact {
@@ -852,7 +848,6 @@ impl Simulation {
         id: u64,
         first: CellObjectMember,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         let mut cursor = Some(first);
@@ -881,7 +876,7 @@ impl Simulation {
                     &mut self.sound_events,
                 );
             }
-            let context = UninitContext::new(rules, registry).with_effects(effects);
+            let context = UninitContext::new(rules).with_effects(effects);
             if !self.record_manipulated_kill(victim, id, context) {
                 self.record_the_kill(
                     victim,
@@ -896,7 +891,6 @@ impl Simulation {
                     reason: UninitReason::Crush,
                 },
                 rules,
-                registry,
                 effects,
             );
         }
@@ -989,11 +983,7 @@ impl Simulation {
             .get(id)
             .and_then(|entity| entity.drop_credit.manipulated_by());
         self.free_slaves(id, killer, None, rules, registry, effects);
-        self.record_manipulated_kill(
-            id,
-            id,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        self.record_manipulated_kill(id, id, UninitContext::new(rules).with_effects(effects));
     }
 }
 

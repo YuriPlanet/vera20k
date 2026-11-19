@@ -170,13 +170,8 @@ impl Scene {
     }
 
     fn drain(&mut self) {
-        self.sim.process_pending_delete_with(
-            &self.rules,
-            Some(&self.registry),
-            FrameEffects::default(),
-            1,
-            true,
-        );
+        self.sim
+            .process_pending_delete_with(&self.rules, FrameEffects::default(), 1, true);
     }
 
     fn assert_boundary(&self, corpus: &Value, control: &Value, state: &Value, label: &str) {

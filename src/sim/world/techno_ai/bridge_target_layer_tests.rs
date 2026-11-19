@@ -197,7 +197,6 @@ fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
             1,
             None::<TargetKind>,
             rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -746,7 +745,7 @@ fn collapse_retail_scene(
     };
     let mut collapsed = false;
     for _ in 0..8 {
-        collapsed|=crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(&mut runtime.simulation,&runtime.resources.rules,&[event],Some(runtime.resources.rules.overlay_registry()), crate::sim::world::FrameEffects::default());
+        collapsed|=crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(&mut runtime.simulation, &runtime.resources.rules, &[event], crate::sim::world::FrameEffects::default());
         if !runtime
             .simulation
             .resolved_terrain

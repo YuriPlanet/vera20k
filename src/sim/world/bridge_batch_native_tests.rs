@@ -131,8 +131,6 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
     ))
     .unwrap();
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
-    let registry =
-        crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
     let mut checked = 0;
     for case in corpus["cases"].as_array().unwrap() {
         let input = &case["input"];
@@ -174,7 +172,6 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
                         frame_effects: crate::sim::world::FrameEffects::default(),
                         sim: &mut sim,
                         rules: &rules,
-                        registry: Some(&registry),
                         collapsed: false,
                     };
                     let cell = live.lookup(coord);
@@ -227,7 +224,6 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
                 frame_effects: crate::sim::world::FrameEffects::default(),
                 sim: &mut sim,
                 rules: &rules,
-                registry: Some(&registry),
                 collapsed: false,
             };
             let mut trace = BatchTrace {
@@ -343,13 +339,10 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
         .base_topology_mut_for_test()
         .clone();
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
-    let registry =
-        crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
     let mut live = LivePublication {
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim: &mut sim,
         rules: &rules,
-        registry: Some(&registry),
         collapsed: false,
     };
     let cell = live.lookup((12, 10));
@@ -394,7 +387,6 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim: &mut sim,
         rules: &rules,
-        registry: Some(&registry),
         collapsed: false,
     };
     live.recalculate_bridge_zones(&[(10, 10), (12, 10)])
@@ -416,7 +408,6 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
         frame_effects: FrameEffects::default(),
         sim: &mut sim,
         rules: &rules,
-        registry: Some(&registry),
         collapsed: false,
     };
     // The earlier native batch input uses an invalid tile index. Supply a
@@ -459,7 +450,6 @@ fn live_raw_bridge_height_preserves_native_signed_deck_byte_and_dummy_identity()
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim: &mut sim,
         rules: &rules,
-        registry: None,
         collapsed: false,
     };
     let cell = live.lookup((12, 10));
@@ -537,13 +527,10 @@ fn live_bridge_batch_recovers_rust_append_capacity_without_replacing_base_connec
     }
     assert_eq!(fine.record_slot_count(), usize::from(u16::MAX) + 1);
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
-    let registry =
-        crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
     LivePublication {
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim: &mut sim,
         rules: &rules,
-        registry: Some(&registry),
         collapsed: false,
     }
     .recalculate_bridge_zones(&[(10, 10)])

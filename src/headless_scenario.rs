@@ -1029,7 +1029,7 @@ mod retail_construction_tests {
             alias.health() - 1
         );
         loaded.dirty_cells.clear_radar_for_test();
-        loaded.uninit_with_context(alias_id, UninitContext::with_rules(rules));
+        loaded.uninit_with_context(alias_id, UninitContext::new(rules));
         assert_eq!(
             loaded
                 .terrain_objects()
@@ -1038,13 +1038,7 @@ mod retail_construction_tests {
             [ordinary_id]
         );
         assert_eq!(loaded.dirty_cells.radar(), [alias.cell()]);
-        loaded.process_pending_delete_with(
-            rules,
-            Some(rules.overlay_registry()),
-            Default::default(),
-            1,
-            true,
-        );
+        loaded.process_pending_delete_with(rules, Default::default(), 1, true);
         assert!(loaded.terrain_objects().get(alias_id).is_none());
         assert!(loaded.terrain_objects().get(ordinary_id).unwrap().is_live());
         assert_eq!(
@@ -1072,7 +1066,7 @@ mod retail_construction_tests {
                 crate::map::resolved_terrain::zone_class::GROUND;
             base.zone_ids_mut_for_test()[index] = cluster;
         }
-        loaded.uninit_with_context(hole_id, UninitContext::with_rules(rules));
+        loaded.uninit_with_context(hole_id, UninitContext::new(rules));
         assert_eq!(
             loaded
                 .zone_grid
@@ -3017,7 +3011,6 @@ mod retail_construction_tests {
             rhino,
             Some(TargetKind::Entity(gi)),
             rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("the Rhino takes the GI as its target");
@@ -3377,7 +3370,6 @@ mod retail_construction_tests {
             tanya,
             Some(TargetKind::Entity(reactor)),
             rules,
-            None,
             FrameEffects::default(),
         )
         .unwrap();

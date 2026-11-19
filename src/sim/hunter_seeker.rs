@@ -21,7 +21,6 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         use crate::map::entities::EntityCategory;
@@ -158,7 +157,6 @@ impl crate::sim::world::Simulation {
             id,
             Some(TargetKind::Entity(candidates[picked as usize])),
             rules,
-            registry,
             effects,
         )
         .expect("live Fly target setter");
@@ -216,7 +214,6 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         if !self.is_hunter_seeker(id, rules) {
@@ -235,9 +232,9 @@ impl crate::sim::world::Simulation {
                     || target.is_warped_out()
             });
         if lost {
-            let _ = self.assign_target_represented(id, None, rules, registry, effects);
+            let _ = self.assign_target_represented(id, None, rules, effects);
         }
-        self.ares_hunter_seeker_reacquire(id, rules, registry, effects);
+        self.ares_hunter_seeker_reacquire(id, rules, effects);
         true
     }
 

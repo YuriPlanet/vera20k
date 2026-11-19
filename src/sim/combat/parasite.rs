@@ -380,7 +380,7 @@ impl Simulation {
             -1,
             victim_coord,
             rules,
-            effects.overlay_registry(),
+            Some(rules.overlay_registry()),
             effects,
         );
         self.substrate
@@ -425,7 +425,7 @@ impl Simulation {
                 .map(NativeCellQuery::canonical)
                 .as_ref(),
         );
-        let context = UninitContext::with_rules(rules).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         if !self.parasite_unlimbo_owner(owner, coords, 0, rules, effects) {
             self.uninit_with_context(owner, context);
             return;
@@ -463,9 +463,15 @@ impl Simulation {
                     rules.ares_form(),
                 );
             }
-            self.assign_null_destination(owner, rules, effects.overlay_registry(), effects);
+            self.assign_null_destination(owner, rules, Some(rules.overlay_registry()), effects);
         }
-        crate::sim::world::enter_idle_mode(self, owner, rules, effects.overlay_registry(), effects);
+        crate::sim::world::enter_idle_mode(
+            self,
+            owner,
+            rules,
+            Some(rules.overlay_registry()),
+            effects,
+        );
     }
 
     /// A successful ExitUnit or PointerExpired release re-adds the owner to
@@ -473,14 +479,7 @@ impl Simulation {
     /// and `0x0062A3BC`), which asks `Can_Add`.
     fn parasite_rejoin_team(&mut self, owner: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         if let Some(team) = self.team_script_vm.team_to_rejoin(owner) {
-            self.team_add_member(
-                team,
-                owner,
-                false,
-                rules,
-                effects.overlay_registry(),
-                effects,
-            );
+            self.team_add_member(team, owner, false, rules, effects);
         }
     }
 
@@ -498,10 +497,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
             entity.parasite.limbo_reselect = false;
         }
-        self.techno_select(
-            owner,
-            UninitContext::with_rules(rules).with_effects(effects),
-        );
+        self.techno_select(owner, UninitContext::new(rules).with_effects(effects));
     }
 
     /// ParasiteClass AI `0x00629FD0`, run at the tail of the victim's
@@ -727,10 +723,7 @@ impl Simulation {
                 .health
                 .set(0);
             self.substrate.detach_parasite_victim(owner, victim, frame);
-            self.uninit_with_context(
-                owner,
-                UninitContext::with_rules(rules).with_effects(effects),
-            );
+            self.uninit_with_context(owner, UninitContext::new(rules).with_effects(effects));
             return;
         }
         let requested = if naval {
@@ -782,10 +775,7 @@ impl Simulation {
                 .unwrap()
                 .health
                 .set(0);
-            self.uninit_with_context(
-                owner,
-                UninitContext::with_rules(rules).with_effects(effects),
-            );
+            self.uninit_with_context(owner, UninitContext::new(rules).with_effects(effects));
         }
         self.substrate.detach_parasite_victim(owner, victim, frame);
     }
@@ -826,10 +816,7 @@ impl Simulation {
                 entity.parasite.eater = None;
             }
             self.substrate.clear_parasite_victim(owner);
-            self.uninit_with_context(
-                owner,
-                UninitContext::with_rules(rules).with_effects(effects),
-            );
+            self.uninit_with_context(owner, UninitContext::new(rules).with_effects(effects));
             return;
         }
         let victim_raw = self
@@ -897,10 +884,7 @@ impl Simulation {
                 .unwrap()
                 .health
                 .set(0);
-            self.uninit_with_context(
-                owner,
-                UninitContext::with_rules(rules).with_effects(effects),
-            );
+            self.uninit_with_context(owner, UninitContext::new(rules).with_effects(effects));
         }
         self.substrate.clear_parasite_victim(owner);
     }
@@ -1173,14 +1157,9 @@ impl Simulation {
             crate::util::fixed_math::SimFixed::from_num(coord.x.rem_euclid(256)),
             crate::util::fixed_math::SimFixed::from_num(coord.y.rem_euclid(256)),
         );
-        let registry = effects.overlay_registry();
-        let Some((position, placement)) = self.unlimbo_class_entry(
-            owner,
-            requested,
-            PlacementEvidence::EvaluateMark,
-            rules,
-            registry,
-        ) else {
+        let Some((position, placement)) =
+            self.unlimbo_class_entry(owner, requested, PlacementEvidence::EvaluateMark, rules)
+        else {
             return false;
         };
         matches!(
@@ -1191,7 +1170,7 @@ impl Simulation {
                     placement,
                     logic_eligible: true,
                 },
-                UninitContext::new(rules, registry)
+                UninitContext::new(rules)
                     .with_effects(effects)
                     .with_unlimbo_facing(Some(facing)),
             ),
@@ -1208,7 +1187,6 @@ impl Simulation {
         weapon: &crate::rules::weapon_type::WeaponType,
         bullet: Option<u64>,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
@@ -1247,10 +1225,7 @@ impl Simulation {
         if object.rejoin_team_if_limboed && target_infantry {
             self.team_script_vm.remember_team_to_rejoin(firer);
         }
-        self.techno_limbo_with_context(
-            firer,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        self.techno_limbo_with_context(firer, UninitContext::new(rules).with_effects(effects));
         let parasite = rules
             .weapon_warhead(weapon)
             .is_some_and(|warhead| warhead.parasite);

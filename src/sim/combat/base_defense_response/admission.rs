@@ -122,7 +122,6 @@ pub(super) fn candidate_admitted(
     let peek = FireSubject {
         world: sim,
         rules,
-        overlay_registry: None,
         fog: Some(sim.fog.fire_view(&sim.house_alliances)),
         firer: candidate,
         obj: candidate_object,

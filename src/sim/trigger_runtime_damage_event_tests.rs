@@ -258,7 +258,6 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
         aircraft,
         object.flight_level(rules.general.flight_level),
         &rules,
-        None,
         FrameEffects::default(),
     );
     assert_eq!(
@@ -289,7 +288,6 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
             &mut sim,
             aircraft,
             &rules,
-            None,
             FrameEffects::default(),
         );
     });
@@ -315,16 +313,10 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
 
 #[test]
 fn live_crash_with_attacker_keeps_both_41_visits() {
-    let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+    let (mut sim, rules, _overlays, houses) = event_ingress_fixture();
     let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let attacker = spawn_event_ingress_unit(&mut sim, &rules, houses[1], (17, 15));
-    sim.set_object_height(
-        victim,
-        512,
-        &rules,
-        Some(&overlays),
-        FrameEffects::default(),
-    );
+    sim.set_object_height(victim, 512, &rules, FrameEffects::default());
     install_event_ingress_map(
         &mut sim,
         &rules,
@@ -336,13 +328,7 @@ fn live_crash_with_attacker_keeps_both_41_visits() {
     );
     sim.attach_object_trigger_tag(victim, Some("TAG"));
     sim.trigger_runtime.dispatch_trace.clear();
-    assert!(sim.foot_crash(
-        victim,
-        Some(attacker),
-        &rules,
-        Some(&overlays),
-        FrameEffects::default(),
-    ));
+    assert!(sim.foot_crash(victim, Some(attacker), &rules, FrameEffects::default(),));
     // Crash4DEBEC/4DEC0F/4DEC36: the persistent Tag survives all three
     // visits, including the second41 carrying the retained attacker.
     assert_eq!(
@@ -363,18 +349,12 @@ fn live_crash_with_attacker_keeps_both_41_visits() {
 #[test]
 fn crash_stops_when_a_real_tag_action_uninits_before_or_during_record_kill() {
     for kind in [41, 29] {
-        let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+        let (mut sim, rules, _overlays, houses) = event_ingress_fixture();
         let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
         assert!(!rules.object("TAGUNIT").unwrap().crashable);
         // Supplied shared-Foot boundary: C4 on this non-Crashable Unit
         // reaches UnInit, rather than an Aircraft's nested dead-HP Crash.
-        sim.set_object_height(
-            victim,
-            512,
-            &rules,
-            Some(&overlays),
-            FrameEffects::default(),
-        );
+        sim.set_object_height(victim, 512, &rules, FrameEffects::default());
         install_event_ingress_map(
             &mut sim,
             &rules,
@@ -386,13 +366,7 @@ fn crash_stops_when_a_real_tag_action_uninits_before_or_during_record_kill() {
         );
         sim.attach_object_trigger_tag(victim, Some("TAG"));
         let (accepted, draws) = crate::sim::rng::trace_draws(|| {
-            sim.foot_crash(
-                victim,
-                None,
-                &rules,
-                Some(&overlays),
-                FrameEffects::default(),
-            )
+            sim.foot_crash(victim, None, &rules, FrameEffects::default())
         });
         assert!(
             accepted,

@@ -42,7 +42,6 @@
 use super::{FrameEffects, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
@@ -127,7 +126,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> SleepVisit {
         if !self.idle_sleep.on {
@@ -195,7 +193,7 @@ impl Simulation {
                 .as_ref()
                 .is_some_and(|grid| grid.has_dirty())
         {
-            let _ = self.commit_no_fire(rules, registry, effects);
+            let _ = self.commit_no_fire(rules, effects);
         }
         SleepVisit::Counted
     }

@@ -178,8 +178,7 @@ impl Simulation {
                 argument: 0,
             });
         }
-        let Some(members) = self.create_reinforcement_members(team_type, rules, registry, effects)
-        else {
+        let Some(members) = self.create_reinforcement_members(team_type, rules, effects) else {
             return (false, None);
         };
         let Some(owner) = self.team_type_house(team_type, rules) else {
@@ -359,8 +358,7 @@ impl Simulation {
                 argument: 0,
             });
         }
-        let Some(members) = self.create_reinforcement_members(team_type, rules, registry, effects)
-        else {
+        let Some(members) = self.create_reinforcement_members(team_type, rules, effects) else {
             //65ECD2 dereferences an empty returned chain before its null test.
             // This explicit diagnostic is a bounded safe refusal, not AL parity.
             log::warn!("Chrono reinforcement has no constructed members (native invalid state)");
@@ -659,9 +657,9 @@ impl Simulation {
             (cell.0 as i16, cell.1 as i16)
         };
         self.team_member_queue_mission(plane, MissionType::ParadropApproach, rules);
-        self.team_member_set_destination(plane, None, rules, registry, effects);
+        self.team_member_set_destination(plane, None, rules, effects);
         let canonical_target = self.canonical_team_cell(target);
-        self.team_member_assign_target(plane, canonical_target, rules, registry, effects);
+        self.team_member_assign_target(plane, canonical_target, rules, effects);
         //65DC9B..65DCC6 builds CoordStruct from the literal signed start
         //cell center with Z0 (not Cell's ground GetCoords), inside A8E7AC.
         let coord = DriveCoord {
@@ -706,7 +704,7 @@ impl Simulation {
         let loaded = self.add_cargo_members(
             plane,
             &cargo_members,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
         assert!(
             loaded,
@@ -727,7 +725,6 @@ impl Simulation {
         &mut self,
         team_type: InternedId,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Option<Vec<u64>> {
         let definition = *self.team_script_vm.team_types.get(&team_type)?;
@@ -856,7 +853,7 @@ impl Simulation {
                     _ => {}
                 }
                 self.with_object_placement_scope(|sim| {
-                    sim.team_add_member(team, member, false, rules, registry, effects)
+                    sim.team_add_member(team, member, false, rules, effects)
                 });
                 //65DEE4 explicitly initiates each new member, even when it
                 //was not the first one AddMember prepended.
@@ -912,7 +909,7 @@ impl Simulation {
                 let loaded = self.add_cargo_members(
                     transport,
                     &cargo_members,
-                    UninitContext::new(rules, registry).with_effects(effects),
+                    UninitContext::new(rules).with_effects(effects),
                 );
                 assert!(
                     loaded,
@@ -1078,7 +1075,6 @@ impl Simulation {
                                 },
                                 EntryQueryMode::CheckLocomotor,
                                 rules,
-                                registry,
                             )
                             .expect("reinforcement uses its shared class admission receiver")
                                 == 0)
@@ -1160,7 +1156,7 @@ impl Simulation {
             registry,
             effects,
         );
-        self.team_member_set_destination(member, Some(target), rules, registry, effects);
+        self.team_member_set_destination(member, Some(target), rules, effects);
         if let Some(entity) = self.substrate.entities.get_mut(member) {
             entity
                 .foot_speed

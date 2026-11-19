@@ -15,12 +15,17 @@ use crate::sim::world::common_raw_test_terrain_cell;
 use crate::util::save_codec;
 
 fn rules(bind_warp_art: bool) -> RuleSet {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    rules_with(bind_warp_art, "")
+}
+
+/// [`rules`] with `extra` appended to its rules INI.
+fn rules_with(bind_warp_art: bool, extra: &str) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nWarpOut=WARPOUT\n\n[InfantryTypes]\n0=CLEG\n\n\
          [VehicleTypes]\n0=CMON\n\n\
          [CLEG]\nStrength=100\nSpeed=4\nSensorsSight=1\nSpeedType=Foot\nMovementZone=Infantry\n\n\
-         [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\n[Clear]\nFoot=100%\n",
-    ))
+         [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\n[Clear]\nFoot=100%\n{extra}",
+    )))
     .unwrap();
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
         "[WARPOUT]\nFlat=yes\nTranslucent=yes\nRate=120\n",
@@ -269,7 +274,7 @@ fn teleport_target_loss_and_pointer_expiry_match_native_controls() {
             });
             let repair = |sim: &mut Simulation| {
                 if expire {
-                    sim.detach_all_pointer_expired(1, &rules, None, FrameEffects::default());
+                    sim.detach_all_pointer_expired(1, &rules, FrameEffects::default());
                 } else {
                     sim.lose_projectile_targets(1, &rules);
                 }
@@ -632,26 +637,27 @@ fn a_restored_destination_warps_at_the_teleport_process_entry() {
 }
 
 /// Supplied Clear-overlay inputs exercise the production callback context,
-/// not a native overlay-admission golden. Restore must validate its borrowed
-/// registry before changing Mission, NavCom, reservations or any RNG stream.
+/// not a native overlay-admission golden. Restore must validate the rules'
+/// overlay table before changing Mission, NavCom, reservations or any RNG
+/// stream.
 #[test]
 fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
-    use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::sim::components::NavTargetRef;
     use crate::sim::mission::authority::MissionAuthorityError;
     use crate::sim::mission::state::MissionTestFixture;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 
+    // `rules` reads no OverlayTypes, so it cannot read the cell's overlay;
+    // `overlay_rules` reads the one the cell holds.
     let rules = rules(false);
-    let registry = OverlayTypeRegistry::from_ini(
-        &IniFile::from_str(
-            "[OverlayTypes]\n0=RESTORE_OVERLAY\n[RESTORE_OVERLAY]\nLand=Clear\n\
-             [Clear]\nFoot=100%\n",
-        ),
-        None,
+    let overlay_rules = rules_with(
+        false,
+        "[OverlayTypes]\n0=RESTORE_OVERLAY\n[RESTORE_OVERLAY]\nLand=Clear\n",
     );
-    let overlay = registry.id_for_name("RESTORE_OVERLAY").unwrap();
-    let unregistered = OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
+    let overlay = overlay_rules
+        .overlay_registry()
+        .id_for_name("RESTORE_OVERLAY")
+        .unwrap();
     let destination = NavTargetRef::cell(12, 7);
 
     let mut sim = relocating_legionnaire((8, 9));
@@ -684,32 +690,25 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
         sim.rng_state(),
     );
 
-    for missing in [None, Some(&unregistered)] {
-        let result = sim.mission_restore_represented(
-            1,
-            &rules,
-            missing,
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert!(matches!(
-            result,
-            Err(MissionAuthorityError::AuthorityUnavailable(_))
-        ));
-        assert_eq!(
-            (
-                save_codec::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
-                save_codec::serialize(&sim.substrate.raw_cell_occupation).unwrap(),
-                sim.rng_state(),
-            ),
-            before,
-            "unavailable inputs refuse before the Restore transaction"
-        );
-    }
+    let result =
+        sim.mission_restore_represented(1, &rules, crate::sim::world::FrameEffects::default());
+    assert!(matches!(
+        result,
+        Err(MissionAuthorityError::AuthorityUnavailable(_))
+    ));
+    assert_eq!(
+        (
+            save_codec::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
+            save_codec::serialize(&sim.substrate.raw_cell_occupation).unwrap(),
+            sim.rng_state(),
+        ),
+        before,
+        "unavailable inputs refuse before the Restore transaction"
+    );
 
     let result = sim.mission_restore_represented(
         1,
-        &rules,
-        Some(&registry),
+        &overlay_rules,
         crate::sim::world::FrameEffects::default(),
     );
     assert!(result.unwrap());

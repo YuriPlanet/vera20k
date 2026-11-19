@@ -405,10 +405,9 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                             // are not paired native RNG/ID boundaries.
                             paired = false;
                             let id = scene.role(&action["role"]).unwrap();
-                            scene.sim.notify_pointer_expired(
-                                id,
-                                UninitContext::new(rules, Some(&registry)),
-                            );
+                            scene
+                                .sim
+                                .notify_pointer_expired(id, UninitContext::new(rules));
                         }
                         kind => panic!("unexpected action {kind}"),
                     }
@@ -509,13 +508,9 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                 "laser_update" => {}
                 "drain" => {
                     let begin = scene.sim.lifecycle_test_events_for_test().len();
-                    scene.sim.process_pending_delete_with(
-                        rules,
-                        Some(&registry),
-                        FrameEffects::default(),
-                        1,
-                        false,
-                    );
+                    scene
+                        .sim
+                        .process_pending_delete_with(rules, FrameEffects::default(), 1, false);
                     selected.extend(
                         scene.sim.lifecycle_test_events_for_test()[begin..]
                             .iter()
@@ -600,10 +595,9 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
         }
         if pending {
             for _ in 0..2 {
-                scene.sim.notify_pointer_expired(
-                    scene.source,
-                    UninitContext::new(rules, Some(&registry)),
-                );
+                scene
+                    .sim
+                    .notify_pointer_expired(scene.source, UninitContext::new(rules));
             }
             assert_eq!(
                 scene
@@ -674,13 +668,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                         })
                         .collect();
                     let sound = sounds(sim, sound_start);
-                    sim.process_pending_delete_with(
-                        rules,
-                        Some(&registry),
-                        FrameEffects::default(),
-                        1,
-                        false,
-                    );
+                    sim.process_pending_delete_with(rules, FrameEffects::default(), 1, false);
                     (
                         lasers,
                         sound,

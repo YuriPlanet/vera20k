@@ -661,7 +661,7 @@ fn add_infantry_map_event_team(sim: &mut Simulation, rules: &RuleSet, actor: u64
         .team_script_vm
         .construct_team(typ, owner, TeamLimitScope::PerHouse, 0, false, None)
         .unwrap();
-    assert!(sim.team_add_member(id, actor, false, rules, None, FrameEffects::default()));
+    assert!(sim.team_add_member(id, actor, false, rules, FrameEffects::default()));
     id
 }
 
@@ -911,7 +911,6 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
         infantry,
         Some(crate::sim::components::NavTargetRef::object(reactor)),
         &rules,
-        Some(&registry),
         FrameEffects::default(),
     );
     assert_eq!(

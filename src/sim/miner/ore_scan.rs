@@ -143,14 +143,7 @@ pub(crate) fn search_for_tiberium_and_move(
     if cell == own {
         return Ok(true);
     }
-    super::miner_system::assign_miner_cell_destination(
-        sim,
-        rules,
-        id,
-        cell,
-        overlay_registry,
-        frame_effects,
-    );
+    super::miner_system::assign_miner_cell_destination(sim, rules, id, cell, frame_effects);
     Ok(false)
 }
 
@@ -196,14 +189,8 @@ fn foot_scan_for_tiberium(
     }
     let checks_player_shroud = sim.session.uses_local_player_shroud();
     best_in_rings(sim, own, range, |sim, candidate| {
-        let Some(cell) = is_cell_harvestable(
-            sim,
-            rules,
-            overlay_registry,
-            id,
-            candidate,
-            checks_player_shroud,
-        ) else {
+        let Some(cell) = is_cell_harvestable(sim, rules, id, candidate, checks_player_shroud)
+        else {
             return Ok(None);
         };
         Ok(Some((
@@ -391,7 +378,6 @@ pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
 fn is_cell_harvestable(
     sim: &Simulation,
     rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     candidate: (i32, i32),
     checks_player_shroud: bool,
@@ -454,7 +440,6 @@ fn is_cell_harvestable(
             native_cell,
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             rules,
-            overlay_registry,
         )
         .ok()?;
     (code == 0).then_some(cell)

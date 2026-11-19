@@ -48,7 +48,7 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
     use crate::map::houses::HouseAllianceMap;
     use crate::sim::house_diplomacy::HouseAllianceAdmission;
 
-    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+    let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
         "[VehicleTypes]\n0=MOVER\n[BuildingTypes]\n1=GATE\n\
          [MOVER]\nSpeedType=Track\n[GATE]\nFoundation=1x1\nGate=yes\n",
     );
@@ -85,7 +85,6 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
         let live = EntryReadContext {
             sim,
             rules: &rules,
-            registry: Some(&registry),
             facts: None,
         };
         let args = InfantryEntryArgs {
@@ -128,7 +127,7 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
     let mut mismatches = Vec::new();
     for case in cases {
         let input = &case["input"];
-        let (mut sim, rules, registry) =
+        let (mut sim, rules, _registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules(&format!(
                 "[VehicleTypes]\n0=MOVER\n1=VICTIM\n[MOVER]\nSpeedType=Track\nCrusher=yes\n\
                  OmniCrusher={}\n",
@@ -222,7 +221,6 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
         let live = EntryReadContext {
             sim: &sim,
             rules: &rules,
-            registry: Some(&registry),
             facts: None,
         };
         let mover = EntryMover::new(
@@ -264,7 +262,7 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
 fn an_unarmed_train_answers_five_where_an_unarmed_unit_answers_seven() {
     for (train, expected) in [("no", 7), ("yes", 5)] {
         for listed in [false, true] {
-            let (mut sim, rules, registry) =
+            let (mut sim, rules, _registry) =
                 crate::sim::world::entry_test_fixture::fixture_with_rules(&format!(
                     "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeedType=Track\nIsTrain={train}\n"
                 ));
@@ -309,7 +307,6 @@ fn an_unarmed_train_answers_five_where_an_unarmed_unit_answers_seven() {
                 let live = EntryReadContext {
                     sim: &sim,
                     rules: &rules,
-                    registry: Some(&registry),
                     facts,
                 };
                 let args = InfantryEntryArgs {
@@ -339,7 +336,7 @@ fn a_crusher_meets_a_terrain_object_with_its_weapon() {
         ("OmniCrusher=yes\n", 7),
         ("Crusher=yes\nPrimary=SAW\n", 5),
     ] {
-        let (mut sim, rules, registry) =
+        let (mut sim, rules, _registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules(&format!(
                 "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeedType=Track\n{mover}\
                  [TerrainTypes]\n0=TREE01\n[TREE01]\nCrushable=yes\n\
@@ -376,7 +373,6 @@ fn a_crusher_meets_a_terrain_object_with_its_weapon() {
             let live = EntryReadContext {
                 sim: &sim,
                 rules: &rules,
-                registry: Some(&registry),
                 facts,
             };
             let args = InfantryEntryArgs {
@@ -448,7 +444,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
         if input.get("wall").is_some() {
             extra.push_str(&format!("[O0]\nWall=yes\nCrushable={}\n", flag("wall")));
         }
-        let (mut sim, rules, registry) =
+        let (mut sim, rules, _registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules(&extra);
         let coord = |value: &serde_json::Value| {
             (
@@ -833,7 +829,6 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 let live = EntryReadContext {
                     sim,
                     rules: &rules,
-                    registry: Some(&registry),
                     facts,
                 };
                 let actual = classify_entry(&live, CellObjectMember::Entity(90), cell, args);

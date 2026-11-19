@@ -287,7 +287,6 @@ impl Simulation {
                     aircraft,
                     Some(TargetKind::Entity(target)),
                     rules,
-                    None,
                     effects,
                 );
                 let _ = self.mission_queue_exact(
@@ -341,8 +340,8 @@ impl Simulation {
                 self.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
-            let _ = self.assign_target_represented(id, None, rules, None, effects);
-            let _ = self.assign_destination_represented(id, None, rules, None, effects);
+            let _ = self.assign_target_represented(id, None, rules, effects);
+            let _ = self.assign_destination_represented(id, None, rules, effects);
         }
         self.substrate.airstrike_manager_mut(owner).unwrap().active = false;
         if let Some(target) = target.filter(|&id| {

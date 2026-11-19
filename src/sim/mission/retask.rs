@@ -92,8 +92,8 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         let now = self.session.binary_frame();
-        self.assign_null_destination(id, rules, None, frame_effects);
-        let _ = self.assign_target_represented(id, None, rules, None, frame_effects);
+        self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
+        let _ = self.assign_target_represented(id, None, rules, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.set_archive_target(None);
         }

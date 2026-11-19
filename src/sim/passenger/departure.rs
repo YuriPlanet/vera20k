@@ -54,7 +54,6 @@ pub enum DepartureFailure {
 pub fn depart_cargo_head(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     transport_id: u64,
     route: DepartureRoute,
     attempt: impl FnOnce(&mut Simulation, u64) -> Result<(), DepartureFailure>,
@@ -107,7 +106,6 @@ pub fn depart_cargo_head(
         restore_departure(
             sim,
             rules,
-            registry,
             link,
             passenger_id,
             passenger_size,
@@ -122,7 +120,6 @@ pub fn depart_cargo_head(
 fn restore_departure(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     link: CarrierLink,
     passenger_id: u64,
     passenger_size: f64,
@@ -140,7 +137,7 @@ fn restore_departure(
         // Defensive legacy repair of an already-broken cargo/limbo invariant.
         let _ = sim.techno_limbo_with_context(
             passenger_id,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
     }
     match route {
@@ -187,7 +184,7 @@ fn restore_departure(
     let _ = sim.add_cargo_passenger_chain(
         transport_id,
         &[(passenger_id, passenger_size)],
-        UninitContext::new(rules, registry).with_effects(effects),
+        UninitContext::new(rules).with_effects(effects),
     );
     if route == DepartureRoute::Absorber {
         // Mission_Unload's failed Unlimbo path first re-adds the passenger,
@@ -274,7 +271,7 @@ pub fn reveal_unloaded_passenger(
             placement,
             logic_eligible: true,
         },
-        UninitContext::with_rules(rules)
+        UninitContext::new(rules)
             .with_effects(effects)
             .with_unlimbo_facing(unlimbo_facing),
     );

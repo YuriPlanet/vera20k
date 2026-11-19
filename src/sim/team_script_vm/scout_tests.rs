@@ -16,7 +16,7 @@ fn recruited_scout_keeps_its_selected_shrouded_cell_after_reload_then_finishes()
             scene
                 .runtime
                 .simulation
-                .trigger_reveal_at_waypoint(697, UninitContext::with_rules(rules))
+                .trigger_reveal_at_waypoint(697, UninitContext::new(rules))
         );
     }) else {
         return;
@@ -176,8 +176,8 @@ pub(super) fn campaign_scene(
     // Full_Init's Fill registers unattached timed Tags after the map actors;
     // definitions alone do not put Event13 into Logic's update list.
     sim.classify_map_triggers(&rules);
-    sim.initialize_scenario_sight(UninitContext::with_rules(&rules));
-    sim.initialize_fog_of_war(UninitContext::with_rules(&rules));
+    sim.initialize_scenario_sight(UninitContext::new(&rules));
+    sim.initialize_fog_of_war(UninitContext::new(&rules));
     let member = sim.entities().values().next().unwrap().stable_id();
     let ty = sim.interner.get("SCOUT-TEAM").unwrap();
     sim.session.publish_started();

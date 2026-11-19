@@ -140,8 +140,8 @@ pub(crate) fn issue_order(
         effects,
     );
     // Queue's same-mission guard keeps the handler and timer on a repeated D.
-    sim.assign_null_destination(id, rules, None, effects);
-    let _ = sim.assign_target_represented(id, None, rules, None, effects);
+    sim.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+    let _ = sim.assign_target_represented(id, None, rules, effects);
     sim.mission_queue_exact(
         id,
         MissionId::from_known(MissionType::Unload),
@@ -209,14 +209,8 @@ impl Simulation {
         // Native always has a cell; without one VERA fires at nothing rather
         // than at a Target the unit held before.
         let targeted = self.own_map_cell(id).is_some_and(|(rx, ry)| {
-            self.assign_target_represented(
-                id,
-                Some(TargetKind::Cell(rx, ry)),
-                rules,
-                overlay_registry,
-                effects,
-            )
-            .is_ok()
+            self.assign_target_represented(id, Some(TargetKind::Cell(rx, ry)), rules, effects)
+                .is_ok()
         });
         let shot = targeted
             .then(|| self.substrate.entities.get(id))
@@ -227,7 +221,6 @@ impl Simulation {
                 let subject = crate::sim::combat::fire_error_world::FireSubject {
                     world: self,
                     rules,
-                    overlay_registry,
                     fog: None,
                     firer: actor,
                     obj: object,
@@ -607,7 +600,6 @@ impl Simulation {
                         id,
                         Some(TargetKind::Cell(at.0 as u16, at.1 as u16)),
                         rules,
-                        None,
                         effects,
                     )
                     .map_err(|cause| format!("AreaFire Unload target: {cause}"))?;
@@ -624,7 +616,7 @@ impl Simulation {
                 self.session.binary_frame(),
             )
             .map_err(|cause| format!("Infantry Unload Guard: {cause}"))?;
-        self.assign_destination_represented(id, None, rules, None, effects)
+        self.assign_destination_represented(id, None, rules, effects)
             .map_err(|cause| format!("Infantry Unload destination: {cause}"))?;
         Ok(if delay > -1 { delay } else { 450 })
     }

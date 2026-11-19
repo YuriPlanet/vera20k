@@ -333,7 +333,7 @@ fn a_teleporter_forgets_its_marked_cell_in_limbo() {
             z: 0,
         });
     assert!(marked(&sim).is_some());
-    let _ = sim.techno_limbo_with_context(cleg, UninitContext::new(&rules, None));
+    let _ = sim.techno_limbo_with_context(cleg, UninitContext::new(&rules));
     assert_eq!(marked(&sim), None);
 }
 

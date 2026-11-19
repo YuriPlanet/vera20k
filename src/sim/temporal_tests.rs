@@ -1191,7 +1191,6 @@ fn house_cleanup_leaves_a_warped_bridge_hut_offline_when_it_survives_c4() {
         crate::sim::combat::fire_error_world::FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: entity(&sim, cleg),
             obj: rules.object("CLEG").unwrap(),
@@ -2761,15 +2760,14 @@ fn native_initiate_warp_corpus() {
                 // Relocation must migrate its actual Mark lists as well as pose.
                 assert!(sim.unmark_entity_remove(
                     factory_id,
-                    crate::sim::world::UninitContext::with_rules(&rules)
+                    crate::sim::world::UninitContext::new(&rules)
                 ));
                 let building = sim.substrate.entities.get_mut(factory_id).unwrap();
                 building.position.set_rx_for_test(19);
                 building.position.set_ry_for_test(19);
-                assert!(sim.mark_entity_put(
-                    factory_id,
-                    crate::sim::world::UninitContext::with_rules(&rules)
-                ));
+                assert!(
+                    sim.mark_entity_put(factory_id, crate::sim::world::UninitContext::new(&rules))
+                );
             }
             let contacts = &mut sim
                 .substrate

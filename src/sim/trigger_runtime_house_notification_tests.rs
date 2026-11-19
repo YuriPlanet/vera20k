@@ -216,7 +216,7 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
     assert!(sim.discover_techno(
         building,
         houses[0],
-        crate::sim::world::UninitContext::new(&rules, Some(&registry))
+        crate::sim::world::UninitContext::new(&rules)
     ));
     assert!(sim.houses[&houses[1]].discovered_by_current_house());
     assert!(!sim.houses[&houses[0]].discovered_by_current_house());

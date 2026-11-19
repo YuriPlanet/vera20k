@@ -132,7 +132,6 @@ impl Simulation {
         cell: (u16, u16),
         query: CellActionQuery,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<MoveAction, String> {
         let entity = self
             .substrate
@@ -147,7 +146,7 @@ impl Simulation {
             return Ok(MoveAction::None);
         }
         if entity.category() == EntityCategory::Structure {
-            return self.building_cell_move_action(viewer, id, cell, query, rules, registry);
+            return self.building_cell_move_action(viewer, id, cell, query, rules);
         }
         if !self.house_is_human_player(entity.owner()) {
             return Ok(MoveAction::None);
@@ -183,7 +182,6 @@ impl Simulation {
                     InfantryEntryArgs::REPAIR,
                     EntryQueryMode::CheckLocomotor,
                     rules,
-                    registry,
                 )
             })?
         };
@@ -283,7 +281,6 @@ impl Simulation {
         cell: (u16, u16),
         query: CellActionQuery,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<MoveAction, String> {
         if !self.takes_rally_point(id, self.interner.resolve(viewer), rules) {
             return Ok(MoveAction::None);
@@ -317,7 +314,7 @@ impl Simulation {
             ..query
         };
         Self::techno_cell_move_rungs(object, in_playfield, query, rules, || {
-            self.building_can_enter(id, clicked, rules, registry)
+            self.building_can_enter(id, clicked, rules)
         })
     }
 
@@ -730,7 +727,6 @@ impl Simulation {
         clicked: (u16, u16),
         shift: bool,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Option<(u16, u16)>, String> {
         let action = self.cell_move_action(
             viewer,
@@ -741,7 +737,6 @@ impl Simulation {
                 shift,
             },
             rules,
-            registry,
         )?;
         let entity = self
             .substrate
@@ -797,7 +792,6 @@ impl Simulation {
         clicked: (u16, u16),
         shift: bool,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<bool, String> {
         let action = self.cell_move_action(
             viewer,
@@ -808,7 +802,6 @@ impl Simulation {
                 shift,
             },
             rules,
-            registry,
         )?;
         Ok(action == MoveAction::Move)
     }
@@ -896,7 +889,6 @@ impl Simulation {
         target: u64,
         action: MoveAction,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> MoveAction {
         let Some(entity) = self.substrate.entities.get(id) else {
             return action;
@@ -905,7 +897,7 @@ impl Simulation {
             return action;
         };
         if entity.category() == EntityCategory::Aircraft {
-            return self.aircraft_object_class_action(viewer, id, target, action, rules, registry);
+            return self.aircraft_object_class_action(viewer, id, target, action, rules);
         }
         let human = self.house_is_human_player(entity.owner());
         let action = match (entity.category(), action) {
@@ -968,7 +960,6 @@ impl Simulation {
         target: u64,
         action: MoveAction,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> MoveAction {
         let action = if action == MoveAction::None {
             let Some(cell) = self.object_coords_cell(target) else {
@@ -978,7 +969,7 @@ impl Simulation {
                 mouse_over: false,
                 shift: false,
             };
-            self.cell_move_action(viewer, id, cell, query, rules, registry)
+            self.cell_move_action(viewer, id, cell, query, rules)
                 .unwrap_or(MoveAction::None)
         } else {
             action
@@ -1056,7 +1047,7 @@ impl Simulation {
             .interner
             .object_type(entity.type_ref(), rules)
             .ok_or("Move click receiver lacks its type")?;
-        let action = self.foot_object_class_action(viewer, id, target, action, rules, None);
+        let action = self.foot_object_class_action(viewer, id, target, action, rules);
         let refused = match action {
             // Harvest is a Cell answer only.
             MoveAction::None | MoveAction::Harvest => true,

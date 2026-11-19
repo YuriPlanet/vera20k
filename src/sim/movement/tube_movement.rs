@@ -530,7 +530,7 @@ impl Simulation {
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
         let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let mut turn = TubeObjectTurn::default();
-        self.complete_pending_order(id, rules, registry, effects);
+        self.complete_pending_order(id, rules, effects);
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(turn);
         };
@@ -758,7 +758,7 @@ impl Simulation {
             height: 0,
             previous_cell: None,
         };
-        if self.foot_can_enter(id, cell, args, rules, registry)? != 0 {
+        if self.foot_can_enter(id, cell, args, rules)? != 0 {
             return self.tube_exit_blocked(id, rules, registry, effects);
         }
 

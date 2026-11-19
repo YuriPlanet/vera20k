@@ -73,7 +73,7 @@ pub(super) fn mission_patrol(
             let candidate = scan(sim, id, rules, ctx, point);
             let weapon = target_scan::select_weapon(sim, rules, id, candidate);
             if let Some(candidate) = candidate
-                && qualifies(sim, id, candidate, weapon, None, limit, rules, ctx)
+                && qualifies(sim, id, candidate, weapon, None, limit, rules)
             {
                 let mut post = sim
                     .object_navigation_cell_identity(id, rules)
@@ -128,16 +128,7 @@ pub(super) fn mission_patrol(
             if let Some(object) = object {
                 if healthy_allied_building_for_engineer(sim, id, object, rules) {
                     target(sim, id, None, rules, ctx);
-                } else if qualifies(
-                    sim,
-                    id,
-                    object,
-                    weapon,
-                    Some(post(sim, id)),
-                    limit,
-                    rules,
-                    ctx,
-                ) {
+                } else if qualifies(sim, id, object, weapon, Some(post(sim, id)), limit, rules) {
                     sim.approach_target(id, rules, ctx.overlay_registry, ctx.effects);
                     if sim
                         .substrate
@@ -182,7 +173,6 @@ pub(super) fn mission_patrol(
                         Some(post(sim, id)),
                         limit,
                         rules,
-                        ctx,
                     )
                 {
                     target(sim, id, Some(candidate), rules, ctx);
@@ -245,7 +235,6 @@ pub(super) fn mission_patrol(
                     Some(post(sim, id)),
                     limit,
                     rules,
-                    ctx,
                 )
             {
                 target(sim, id, Some(candidate), rules, ctx);
@@ -414,9 +403,8 @@ fn qualifies(
     post: Option<NativeCellIdentity>,
     limit: i32,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
 ) -> bool {
-    if target_scan::can_fire_at(sim, rules, id, candidate, weapon, ctx.overlay_registry) {
+    if target_scan::can_fire_at(sim, rules, id, candidate, weapon) {
         return true;
     }
     let TargetKind::Entity(candidate) = candidate else {
@@ -560,7 +548,7 @@ fn target(
     rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
 ) {
-    let _ = sim.assign_target_represented(id, target, rules, ctx.overlay_registry, ctx.effects);
+    let _ = sim.assign_target_represented(id, target, rules, ctx.effects);
 }
 
 fn destination(
@@ -570,8 +558,7 @@ fn destination(
     rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
 ) {
-    let _ =
-        sim.assign_destination_represented(id, target, rules, ctx.overlay_registry, ctx.effects);
+    let _ = sim.assign_destination_represented(id, target, rules, ctx.effects);
 }
 
 fn idle(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCtx<'_>) -> i32 {

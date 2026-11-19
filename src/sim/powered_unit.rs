@@ -345,7 +345,7 @@ impl Simulation {
             // only on the transition. The parent and its cargo survive.
             self.destroy_spotlight_for_parent(
                 id,
-                crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
             );
             // Then a Building's factory queues (`10013250`): an offline
             // factory no longer serves its production.
@@ -371,7 +371,7 @@ impl Simulation {
             (entity.category() == EntityCategory::Structure).then(|| entity.archive_target());
         self.techno_deactivate(id, rules, effects);
         if selected {
-            let context = crate::sim::world::UninitContext::new(rules, effects.overlay_registry())
+            let context = crate::sim::world::UninitContext::new(rules)
                 .with_effects(effects.without_selection_voice());
             self.techno_select(id, context);
         }
@@ -477,8 +477,7 @@ impl Simulation {
         {
             return;
         }
-        if let Err(cause) = self.assign_destination_represented(id, None, rules, registry, effects)
-        {
+        if let Err(cause) = self.assign_destination_represented(id, None, rules, effects) {
             log::warn!("Deactivated unit {id} destination: {cause}");
         }
         if let Err(cause) = self.foot_stop_driver(id, rules, registry, effects) {

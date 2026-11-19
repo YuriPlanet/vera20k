@@ -62,7 +62,7 @@ impl Simulation {
             &[coord],
         );
         self.publish_cell_and_assign_orphaned_zone(rules, coord, Some(&blocked));
-        self.stop_all_targeting_cell(coord.0, coord.1, rules, Some(registry), effects);
+        self.stop_all_targeting_cell(coord.0, coord.1, rules, effects);
         true
     }
 

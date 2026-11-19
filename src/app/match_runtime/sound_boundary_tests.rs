@@ -352,7 +352,6 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         gun,
         Some(TargetKind::Entity(target)),
         &rules,
-        None,
         FrameEffects::empty(),
     )
     .unwrap();

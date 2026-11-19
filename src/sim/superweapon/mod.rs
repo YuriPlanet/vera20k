@@ -2003,7 +2003,7 @@ pub(super) fn deactivate_ares_handler(
         76,
         crate::sim::trigger_runtime::AresEventSource::Super(typ),
         rules,
-        effects.overlay_registry(),
+        Some(rules.overlay_registry()),
         effects,
     );
 }

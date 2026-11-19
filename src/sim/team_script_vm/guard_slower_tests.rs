@@ -59,7 +59,7 @@ fn retail_guard_slower_center_falls_back_when_infantry_cannot_enter_water() {
     let Some(Fixture {
         sim,
         rules,
-        overlays,
+        overlays: _,
         team,
         actors,
     }) = Fixture::new(true, true)
@@ -76,7 +76,6 @@ fn retail_guard_slower_center_falls_back_when_infantry_cannot_enter_water() {
             InfantryEntryArgs::REPAIR,
             EntryQueryMode::CheckLocomotor,
             &rules,
-            Some(&overlays),
         )
         .unwrap(),
         0

@@ -256,7 +256,7 @@ fn ares_deactivated_robot_tank_only_selects_and_takes_no_click() {
         shift: false,
     };
     assert_eq!(
-        sim.cell_move_action(viewer, robot, (18, 18), query, rules, Some(&registry)),
+        sim.cell_move_action(viewer, robot, (18, 18), query, rules),
         Ok(crate::sim::world::MoveAction::Move)
     );
     sim.entity_mut_for_test(robot)
@@ -276,7 +276,7 @@ fn ares_deactivated_robot_tank_only_selects_and_takes_no_click() {
         Some(CursorId::Select)
     );
     assert_eq!(
-        sim.cell_move_action(viewer, robot, (18, 18), query, rules, Some(&registry)),
+        sim.cell_move_action(viewer, robot, (18, 18), query, rules),
         Ok(crate::sim::world::MoveAction::None)
     );
     assert!(sim.click_order_receivers(&[robot, own], true) == [own]);

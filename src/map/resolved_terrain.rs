@@ -92,8 +92,9 @@ pub use saved_terrain::{SavedCellLandValues, SavedTerrainError, SavedTerrainTemp
 #[cfg(any(test, feature = "test-support"))]
 pub use tests::{
     bridge_constructor_terrain, install_bridge_batch_test_catalog,
-    install_bridge_query_test_catalog, install_no_registered_tiles_test_catalog,
-    install_ordinary_repair_test_catalog, install_tunnel_repair_test_catalog,
+    install_bridge_query_test_catalog, install_clear_test_catalog,
+    install_no_registered_tiles_test_catalog, install_ordinary_repair_test_catalog,
+    install_tunnel_repair_test_catalog, install_water_repair_test_catalog,
 };
 pub(crate) use tubes::NativeTubeRegistryBindError;
 

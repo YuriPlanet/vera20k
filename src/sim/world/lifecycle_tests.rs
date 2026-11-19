@@ -185,14 +185,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             })
             .unwrap();
         assert!(sim.with_object_placement_scope(|sim| {
-            sim.team_add_member(
-                team,
-                member,
-                false,
-                &rules,
-                None,
-                super::FrameEffects::default(),
-            )
+            sim.team_add_member(team, member, false, &rules, super::FrameEffects::default())
         }));
         let actor = sim.entities().get(member).unwrap();
         assert!(actor.lifecycle.object_alive() && actor.lifecycle.in_limbo());
@@ -229,7 +222,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         sim.finalize_and_remove_common(
             member,
-            super::lifecycle::UninitContext::with_rules(&rules),
+            super::lifecycle::UninitContext::new(&rules),
             i32::try_from(input["game_active_byte"].as_i64().unwrap()).unwrap(),
         );
         assert!(!sim.entities().contains(member), "{input}");
@@ -578,7 +571,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         sim.try_reveal_entity_with_context(
             building_id,
             common_raw_request(13, 13, 4, 128, 128),
-            super::UninitContext::with_rules(&rules)
+            super::UninitContext::new(&rules)
         ),
         RevealOutcome::Revealed { .. }
     ));
@@ -719,7 +712,7 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         sim.try_reveal_entity_with_context(
             stable_id,
             request(5, 5, PlacementEvidence::MarkSucceeded),
-            super::UninitContext::with_rules(&rules),
+            super::UninitContext::new(&rules),
         ),
         RevealOutcome::Revealed { .. }
     ));
@@ -818,7 +811,7 @@ fn wrapped_smudge_data_survives_load_and_controls_building_clear() {
         restored.try_reveal_entity_with_context(
             41,
             request(257, 10, PlacementEvidence::MarkSucceeded),
-            super::UninitContext::with_rules(&rules),
+            super::UninitContext::new(&rules),
         ),
         RevealOutcome::Revealed { .. }
     ));
@@ -2068,7 +2061,6 @@ fn gsi_04_12_object_raw_occupation_airborne_and_non_fly_aircraft_are_excluded() 
         1,
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -2281,7 +2273,6 @@ fn gsi_05_05_fly_landing_on_bridge_uses_absolute_z_for_deck_put() {
         1,
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
@@ -2440,7 +2431,6 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
             id,
             416,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             crate::sim::world::FrameEffects::default(),
         );
         Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, id);
@@ -2534,7 +2524,7 @@ fn unlimbo_adds_a_high_flying_considered_aircraft_to_the_air_tracker() {
         let _ = sim.try_reveal_entity_with_context(
             30,
             common_raw_request(3, 4, 4, 128, 128),
-            super::UninitContext::with_rules(&rules),
+            super::UninitContext::new(&rules),
         );
 
         let jumpjet = sim.substrate.entities.get(30).unwrap();
@@ -3694,7 +3684,7 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
                     // retaining the expired object's Alive and Health fields.
                     sim.object_conceal(1);
                 } else {
-                    sim.detach_all_pointer_expired(1, &rules, None, super::FrameEffects::default());
+                    sim.detach_all_pointer_expired(1, &rules, super::FrameEffects::default());
                 }
             };
             if placement_scope {
@@ -4150,7 +4140,6 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 owner,
                 PointerExpiryControl::DetachAll,
                 &rules,
-                None,
                 super::FrameEffects::default(),
             );
         }
@@ -4235,7 +4224,6 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 owner,
                 PointerExpiryControl::DetachAll,
                 &rules,
-                None,
                 super::FrameEffects::default(),
             );
         }
@@ -4415,7 +4403,6 @@ fn techno_spark_pointer_expiry_is_exact_and_independent_of_control() {
             None,
             control,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             super::FrameEffects::default(),
         );
         assert_eq!(
@@ -4691,7 +4678,7 @@ fn particle_system_physical_disposal_removes_retained_child_air_entries() {
         &mut sim,
         &rules,
         system_id,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     let child_id = sim.particle_systems().get(system_id).unwrap().particles()[0].stable_id();
     assert_eq!(
@@ -4705,7 +4692,7 @@ fn particle_system_physical_disposal_removes_retained_child_air_entries() {
         sim.mapgen_rng.native_state_hex(),
     ];
 
-    sim.finalize_and_remove_common(system_id, super::UninitContext::with_rules(&rules), 1);
+    sim.finalize_and_remove_common(system_id, super::UninitContext::new(&rules), 1);
 
     assert!(sim.substrate.particle_systems.get(system_id).is_none());
     assert_eq!(sim.substrate.display.layer_of(system_id), None);
@@ -5280,7 +5267,7 @@ fn score_stats_credit_the_killer_and_charge_the_victim_once() {
         1,
         crate::sim::combat::KillSource::House(Some(killer_owner)),
         crate::sim::combat::KillCallback::Terminal,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     assert_eq!(sim.houses[&victim_owner].stats().losses(), 1);
     assert_eq!(sim.houses[&killer_owner].stats().kills(), 1);
@@ -5324,7 +5311,7 @@ fn score_stats_come_from_the_kill_record_captured_at_destruction() {
         1,
         crate::sim::combat::KillSource::House(Some(killer_owner)),
         crate::sim::combat::KillCallback::Terminal,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     assert_eq!(sim.houses[&killer_owner].economy().score(), 200);
 
@@ -5381,7 +5368,7 @@ fn score_stats_count_a_self_inflicted_kill_but_award_no_points() {
         1,
         crate::sim::combat::KillSource::House(Some(owner)),
         crate::sim::combat::KillCallback::Terminal,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
 
     sim.uninit(1);
@@ -6876,7 +6863,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
         sim.try_reveal_entity_with_context(
             building_id,
             common_raw_request(8, 8, 0, 128, 128),
-            super::UninitContext::with_rules(&rules)
+            super::UninitContext::new(&rules)
         ),
         RevealOutcome::Revealed { .. }
     ));
@@ -7130,7 +7117,6 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
         target_id,
         208,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     let projectile_id = sim.substrate.allocate_stable_id();
@@ -7388,7 +7374,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     sim.admit_wave(wave_id, wave);
     sim.active_wave_links.insert(owner_id, wave_id);
 
-    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
+    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
     assert_eq!(
         represented.target_position,
         Some(ProjectileCoord::new(4 * 256 + 128, 128, 0)),
@@ -7411,7 +7397,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
         "UnInit synchronously expires +0xAC"
     );
     assert_eq!(sim.active_wave_links.get(&owner_id), Some(&wave_id));
-    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
+    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
     assert_eq!(expired.target_position, None);
     let _ = sim
         .waves
@@ -7471,7 +7457,6 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         sim.wave_update_context(
             sim.waves.get(wave_id).unwrap(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None
         )
         .owner_position
         .is_some(),
@@ -8941,7 +8926,7 @@ fn detach_sweep_restores_before_clearing_target_in_descending_id_order() {
     }
     sim.lifecycle_test_events.clear();
 
-    sim.stop_all_targeting_on_detach(3, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.stop_all_targeting_on_detach(3, &rules, crate::sim::world::FrameEffects::default());
 
     // The detaching object is untouched and still present: this is not removal.
     assert!(sim.substrate.entities.contains(3));
@@ -9013,7 +8998,6 @@ fn detach_sweep_clears_target_when_no_mission_was_suspended() {
     sim.stop_all_targeting_on_detach(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -9058,7 +9042,6 @@ fn detach_sweep_never_matches_a_cell_target() {
     sim.stop_all_targeting_on_detach(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -9094,13 +9077,7 @@ fn bridge_cell_success_restores_before_conditional_target_clear() {
         MissionType::Attack,
         MissionId::from_known(MissionType::Move),
     ));
-    sim.stop_all_targeting_cell(
-        9,
-        11,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
+    sim.stop_all_targeting_cell(9, 11, &rules, crate::sim::world::FrameEffects::default());
     let attacker = sim.substrate.entities.get(1).unwrap();
     assert_eq!(attacker.attack_target.target(), Some(TargetKind::Entity(2)));
     assert_eq!(
@@ -9251,7 +9228,7 @@ fn naval_build_const_capture_moves_old_entry_to_new_owner_tail() {
             sim.try_reveal_entity_with_context(
                 stable_id,
                 request(rx, ry, PlacementEvidence::MarkSucceeded),
-                super::UninitContext::with_rules(&rules),
+                super::UninitContext::new(&rules),
             ),
             RevealOutcome::Revealed { .. }
         ));
@@ -9433,8 +9410,7 @@ fn production_air_wrapper_retains_native_jumpjet_result_below_the_ground() {
             .tick_jumpjet_cruise_one(
                 1,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
-                crate::sim::world::FrameEffects::default()
+                crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
             .is_some()

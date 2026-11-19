@@ -123,7 +123,7 @@ fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
         &mut sim,
         bunker,
         None,
-        UninitContext::new(&rules, None),
+        UninitContext::new(&rules),
     );
     assert_eq!(owner(&sim, bunker), "Russians", "returned when empty");
 }

@@ -176,7 +176,6 @@ impl HuntHost for WorldHunt<'_> {
                 self.id,
                 threat,
                 self.rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("hunting aircraft");
@@ -187,13 +186,7 @@ impl HuntHost for WorldHunt<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        super::enter_idle_mode_for(
-            self.sim,
-            self.id,
-            self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
-        );
+        super::enter_idle_mode_for(self.sim, self.id, self.rules, self.ctx.effects);
     }
 
     fn leave_team(&mut self) {

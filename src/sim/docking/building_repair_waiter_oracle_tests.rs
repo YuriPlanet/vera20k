@@ -101,7 +101,6 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                         previous_cell: None,
                     },
                     &marked.rules,
-                    None,
                 )
                 .unwrap();
             assert_eq!(
@@ -262,7 +261,6 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
                 previous_cell: None,
             },
             &scene.rules,
-            None,
         )
         .unwrap();
     assert_eq!(
@@ -306,7 +304,6 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
         TrackFamily::Drive,
         ProcessMovementArgs::OUTER,
         &scene.rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     let (calls, unused) = fresh_oracle_seam::finish();
