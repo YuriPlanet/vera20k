@@ -16,8 +16,8 @@ use crate::map::overlay_mark::{
 };
 use crate::map::resolved_terrain::{
     AutomaticTubeAllocation, AutomaticTubeRequest, LoadCellRecalcEffects, LoadCellRecalcError,
-    LoadCellRecalcOutcome, LoadCellRecalcState, NativeAllocatedCellCursor, ResolvedTerrainGrid,
-    SharedCellDummy, TerrainTileAnimation,
+    LoadCellRecalcOutcome, LoadCellRecalcState, ResolvedTerrainGrid, SharedCellDummy,
+    TerrainTileAnimation,
 };
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -142,13 +142,11 @@ impl NativeOverlayMapShape {
         crate::map::playfield::size_diamond_contains(self.width, self.height, (x, y))
     }
 
-    /// The real cells `Full_Init @ 0x00686B20` visits, in the order of the
-    /// allocated-cell walk (`CellIterator_Init @ 0x00578350` /
-    /// `Next @ 0x00578290`, [`NativeAllocatedCellCursor`]): rows of rising
-    /// `x + y` from `W + 1`, each with rising `x`. The allocated cells are the
-    /// ones [`Self::admits`], so `Next`'s null ends the walk at the first
-    /// coordinate outside them: past the far diagonal `x + y == W + 2H`, or at
-    /// (2, 1) when `W` is 1. Dimensions must fit the selected cell grid.
+    /// The real cells `Full_Init @ 0x00686B20` visits: the allocated-cell
+    /// walk over the cells [`Self::admits`]
+    /// ([`SizeDiamond::allocated_cells`](crate::map::playfield::SizeDiamond::allocated_cells)),
+    /// which on a Size one cell wide ends after (1, 1). Dimensions must fit
+    /// the selected cell grid.
     pub(crate) fn recalc_cells(self) -> Vec<(i16, i16)> {
         if !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.width)
             || !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.height)
@@ -157,15 +155,12 @@ impl NativeOverlayMapShape {
         }
         let mut cells =
             Vec::with_capacity(usize::try_from(self.height * (2 * self.width - 1)).unwrap_or(0));
-        let mut cursor = NativeAllocatedCellCursor::reset(self.width);
-        loop {
-            let (x, y) = cursor.take_coord(self.width);
-            let cell = (x as i16, y as i16);
-            if !self.admits(cell.0, cell.1) {
-                return cells;
-            }
-            cells.push(cell);
-        }
+        cells.extend(
+            crate::map::playfield::SizeDiamond::from_size(self.width, self.height)
+                .allocated_cells()
+                .map(|(x, y)| (x as i16, y as i16)),
+        );
+        cells
     }
 }
 

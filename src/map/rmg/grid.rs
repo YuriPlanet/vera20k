@@ -8,8 +8,7 @@
 
 use super::MapGeometry;
 use super::tiles::TILE_UNASSIGNED;
-use crate::map::playfield::SizeDiamond;
-use crate::map::resolved_terrain::NativeAllocatedCellCursor;
+use crate::map::playfield::{AllocatedCellWalk, SizeDiamond};
 use crate::util::direction::DIRECTION_DELTAS;
 
 /// One generated cell — the fields the generation phases touch.
@@ -242,35 +241,12 @@ impl RmgGrid {
         (x + dx, y + dy)
     }
 
-    /// All existing cells in native scan order. The scan's rows always stay
-    /// inside the off-axis bounds, so the first coordinate past the far
-    /// diagonal is where the original's null-cell check stops it.
-    pub fn native_cells(&self) -> NativeCells {
-        let (near, far) = self.diamond.bounds();
-        NativeCells {
-            cursor: NativeAllocatedCellCursor::reset(near),
-            size_width: near,
-            diamond_max: far,
-        }
-    }
-}
-
-/// Iterator over valid cell coordinates in native order: the allocated-cell
-/// walk (`CellIterator_Init @ 0x00578350` / `Next @ 0x00578290`) from the
-/// `Size` width, the diamond's near bound. It rises one anti-diagonal per
-/// row, so it never comes back inside once past the far diagonal.
-pub struct NativeCells {
-    cursor: NativeAllocatedCellCursor,
-    size_width: i32,
-    diamond_max: i32,
-}
-
-impl Iterator for NativeCells {
-    type Item = (i32, i32);
-
-    fn next(&mut self) -> Option<(i32, i32)> {
-        let (x, y) = self.cursor.take_coord(self.size_width);
-        (x + y <= self.diamond_max).then_some((x, y))
+    /// All existing cells in native scan order: the allocated-cell walk
+    /// ([`SizeDiamond::allocated_cells`]). On a Size at least two wide its
+    /// rows stay inside the off-axis bounds, so the first coordinate past the
+    /// far diagonal is where the original's null-cell check stops it.
+    pub fn native_cells(&self) -> AllocatedCellWalk {
+        self.diamond.allocated_cells()
     }
 }
 
