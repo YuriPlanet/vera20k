@@ -67,7 +67,7 @@ pub(crate) struct FrontendState {
     pub(crate) main_menu_movie: Option<crate::render::bink_movie::BinkMovieSurface>,
     pub(crate) main_menu_movie_identity:
         Option<crate::app::frontend::main_menu_shell_render::Ra2tsMovieSessionIdentity>,
-    pub(crate) main_menu_movie_last_step: Instant,
+    pub(crate) main_menu_movie_clock: super::main_menu_shell_render::MenuMovieClock,
     /// Terminal menu failure; retained for the error screen and input gate.
     pub(crate) main_menu_shell_error: Option<String>,
     /// The config and settings files the error screen names (`initialize`).
