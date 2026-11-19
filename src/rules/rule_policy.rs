@@ -98,6 +98,7 @@ impl RulePolicy {
     const NETWORK_DIPLOMACY_BRIEFING: u32 = 1 << 12;
     const STARTING_HOUSE_ROLE_ALLIANCES: u32 = 1 << 13;
     const ARES_PSYCHIC_REVEAL_EXCLUSIONS: u32 = 1 << 14;
+    const AI_MCV_DEPLOY_HUNT: u32 = 1 << 15;
 
     pub const fn stock_campaign() -> Self {
         Self { flags: 0 }
@@ -110,6 +111,7 @@ impl RulePolicy {
             .with_computer_paranoid(ComputerParanoidPolicy::React)
             .with_crates(AuthoredCratePolicy::Skip)
             .with_ai_base(AiBasePolicy::ReplaceUnavailableNodes)
+            .with_ai_mcv_deploy_hunt(true)
             .with_double_owned(DoubleOwnedPolicy::AllCountries)
             .with_mod_map_additions(true)
             .with_team_creation_limit_scope(TeamLimitScope::PerHouse)
@@ -202,6 +204,17 @@ impl RulePolicy {
             Self::REPLACE_UNAVAILABLE_BASE_NODES,
             matches!(policy, AiBasePolicy::ReplaceUnavailableNodes),
         )
+    }
+
+    /// A computer's construction-yard maker can hunt to deploy, both from
+    /// UnitClass::AI (0x007363DE..0x0073645B) and after an initial Unload
+    /// attempt without a pending deploy (0x0073DDCB..0x0073DE1E).
+    pub(crate) const fn allows_ai_mcv_deploy_hunt(self) -> bool {
+        self.has_flag(Self::AI_MCV_DEPLOY_HUNT)
+    }
+
+    pub const fn with_ai_mcv_deploy_hunt(self, enabled: bool) -> Self {
+        self.with_flag(Self::AI_MCV_DEPLOY_HUNT, enabled)
     }
 
     pub const fn double_owned(self) -> DoubleOwnedPolicy {
