@@ -8442,16 +8442,6 @@ impl Simulation {
     }
 }
 
-impl crate::sim::houses::Houses {
-    /// Inline native House+1FC writers request the existing House tail;
-    /// power/radar dirty bytes remain with their distinct PowerState owner.
-    pub(crate) fn request_house_tech_tree_recheck(&mut self, owner: InternedId) {
-        if let Some(house) = self.get_mut(&owner) {
-            house.request_tech_recheck();
-        }
-    }
-}
-
 impl ObjectSubstrate {
     /// Legacy non-lifecycle contact scrub retained only for separately classified
     /// failure paths. Reveal/Conceal/UnInit must use synchronous radio authority.
