@@ -221,6 +221,7 @@ fn build_skirmish_shell_instances(
     choose_map_layout: Option<&ChooseMapModalLayout>,
     seed_layout: Option<&SavedSeedLayout>,
     setup_layout: Option<&RandomMapSetupLayout>,
+    setups_layout: Option<&SavedSeedLayout>,
     shell: &SkirmishShellState,
     search_display: &str,
     rules: Option<&RuleSet>,
@@ -335,6 +336,36 @@ fn build_skirmish_shell_instances(
         return instances;
     }
 
+    // VERA's Setups page covers `0x102` as the seed browser covers `0x105`:
+    // the panel, the strip, the page background, then the browser. The
+    // panel keeps `0x102`'s top art, the map button framing the preview.
+    if let (Some(browser), Some(setups_layout)) = (shell.setups_browser.as_ref(), setups_layout) {
+        push_right_panel_base_instances(
+            &mut instances,
+            atlas,
+            layout,
+            right_panel_frame10_overlay_active(shell),
+        );
+        push_lower_strip_instance(&mut instances, atlas, layout);
+        let interior = push_generic_shell_background_instances(&mut instances, atlas, layout);
+        push_steady_optional_chrome_instances(
+            &mut instances,
+            atlas,
+            layout,
+            ShellDialogChromeProfile::SkirmishSetup0x102,
+        );
+        push_saved_browser_modal_instances(
+            &mut instances,
+            atlas,
+            font,
+            setups_layout,
+            browser,
+            interior,
+            true,
+        );
+        return instances;
+    }
+
     push_right_panel_base_instances(
         &mut instances,
         atlas,
@@ -398,6 +429,7 @@ fn build_skirmish_shell_instances(
                     OwnerDrawButton::ChooseMap0x5aa,
                     false,
                 ),
+                (layout.setups_button, OwnerDrawButton::Setups, false),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
             ] {
                 push_right_panel_button_shp(
@@ -540,6 +572,12 @@ fn render_skirmish_shell_with_atlas(
         .saved_seed_browser
         .as_ref()
         .map(|browser| crate::app::frontend::shell_layout::saved_seed_layout(state, browser.mode));
+    let setups_layout = state
+        .frontend
+        .skirmish_shell_state
+        .setups_browser
+        .as_ref()
+        .map(|_| crate::app::frontend::shell_layout::setups_layout(state));
     let setup_layout = state
         .frontend
         .skirmish_shell_state
@@ -742,6 +780,7 @@ fn render_skirmish_shell_with_atlas(
             choose_map_layout.as_ref(),
             seed_layout.as_ref(),
             setup_layout,
+            setups_layout.as_ref(),
             &state.frontend.skirmish_shell_state,
             &search_display,
             state.rules(),
@@ -759,7 +798,8 @@ fn render_skirmish_shell_with_atlas(
             SHELL_PREVIEW_BACKDROP_DEPTH,
         );
     }
-    let parent_showing = !message_box_up && choose_map_layout.is_none() && !leaving;
+    let parent_showing =
+        !message_box_up && choose_map_layout.is_none() && setups_layout.is_none() && !leaving;
     // ComboDropWin is a popup over the dialog: its frame and rows go after
     // every dialog text, which this unbuffered pass paints in queue order.
     // VERA's Game Options box takes the same place; the two never show at
@@ -838,6 +878,9 @@ fn render_skirmish_shell_with_atlas(
                 choose_map_layout.scale,
             ));
         }
+    }
+    if let Some(setups_layout) = setups_layout.as_ref().filter(|_| !message_box_up) {
+        text::push_setups_text_draws(&mut shell_draws, state, setups_layout);
     }
     if let Some(prompt) = message_box {
         text::push_choose_map_prompt_text(&mut shell_draws, state, &prompt);

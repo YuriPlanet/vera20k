@@ -73,6 +73,8 @@ pub fn saved_game_layout(
             geom::dlu_rect(action.x, action.y, action.w, action.h),
             button_size,
         ),
+        load: None,
+        delete: None,
         // 609730 ->60B350: bottom button follows the SIDE3 upper edge.
         back: shell.lower_button_rect(width, button_size),
         // Active60B550 uses parent left+10 and bottom-existingheight-1.
@@ -154,6 +156,8 @@ pub fn main_menu_saved_game_layout(width: u32, height: u32) -> MainMenuSavedGame
         ),
         name_edit: None,
         action: button(LOAD_BUTTON),
+        load: None,
+        delete: None,
         back: button(BACK_BUTTON),
         blank: page.status_help,
         scale: page.scale,

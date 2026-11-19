@@ -182,6 +182,16 @@ pub(crate) fn saved_seed_layout(state: &AppState, mode: SavedSeedMode) -> SavedS
     }
 }
 
+/// VERA's Skirmish Setups page, on the Save browser's rects.
+pub(crate) fn setups_layout(state: &AppState) -> SavedSeedLayout {
+    let (width, height) = (state.render_width(), state.render_height());
+    if fills_window(state) {
+        crate::ui::skirmish_shell::compute_responsive_setups_layout(width, height)
+    } else {
+        crate::ui::skirmish_shell::compute_setups_layout(width, height)
+    }
+}
+
 /// Campaign selection `0x94`, the page behind Single Player's New Campaign.
 pub(crate) fn campaign_layout(state: &AppState) -> crate::ui::campaign_shell::CampaignLayout {
     let (width, height) = shell_screen_size(state);

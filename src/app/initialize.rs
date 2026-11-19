@@ -1282,7 +1282,7 @@ impl App {
                 main_menu_shell_chrome,
                 main_menu_movie: None,
                 main_menu_movie_identity: None,
-                main_menu_movie_last_step: Instant::now(),
+                main_menu_movie_clock: Default::default(),
                 main_menu_shell_error,
                 startup_files,
                 status_screen_drawn: false,

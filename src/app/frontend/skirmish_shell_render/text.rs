@@ -835,6 +835,7 @@ fn push_right_panel_text_draws(
         crate::ui::skirmish_shell::game_options::GAME_OPTIONS_LABEL,
         "Game Options",
     );
+    let setups = tr("VERA:Setups");
     let back = localized_label(state, "GUI:Back", "Back");
 
     for (label, rect, button) in [
@@ -852,6 +853,11 @@ fn push_right_panel_text_draws(
             choose.as_str(),
             layout.choose_map_button,
             OwnerDrawButton::ChooseMap0x5aa,
+        ),
+        (
+            setups.as_str(),
+            layout.setups_button,
+            OwnerDrawButton::Setups,
         ),
         (
             back.as_str(),
@@ -1735,6 +1741,61 @@ pub(super) fn push_saved_seed_modal_text_draws(
             out,
             state,
             &localized_label(state, key, fallback),
+            rect_to_text_rect(rect),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
+            scale.factor(),
+        );
+    }
+    push_saved_browser_prompt_text(out, state, layout, browser);
+}
+
+/// VERA's Setups page: its title, the setups, the name field, Save, Load,
+/// Delete and Back, and a message box when one is up.
+pub(super) fn push_setups_text_draws(
+    out: &mut Vec<ShellTextDraw>,
+    state: &AppState,
+    layout: &SavedSeedLayout,
+) {
+    let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_ref() else {
+        return;
+    };
+    let scale = layout.scale;
+    push_text_draw(
+        out,
+        state,
+        &tr("VERA:SetupsTitle"),
+        rect_to_text_rect(layout.title),
+        SHELL_LABEL_TEXT_RGB,
+        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+        scale.factor(),
+    );
+    push_saved_browser_contents_text(out, state, layout, browser);
+    let buttons = [
+        (
+            Some(layout.action),
+            localized_label(state, "GUI:Save", "Save"),
+        ),
+        (layout.load, localized_label(state, "GUI:Load", "Load")),
+        (
+            layout.delete,
+            localized_label(state, "GUI:Delete", "Delete"),
+        ),
+        (
+            Some(layout.back),
+            localized_label(state, "GUI:Back", "Back"),
+        ),
+    ];
+    for (rect, label) in buttons {
+        let Some(rect) = rect else {
+            continue;
+        };
+        push_text_draw(
+            out,
+            state,
+            &label,
             rect_to_text_rect(rect),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,

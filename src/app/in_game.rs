@@ -257,6 +257,7 @@ impl App {
             return;
         }
         state.platform.window_active = active;
+        state.frontend.main_menu_movie_clock.pause();
         if active {
             state.platform.clear_attention();
         }
@@ -314,6 +315,7 @@ impl App {
             return;
         }
         state.platform.window_hidden = hidden;
+        state.frontend.main_menu_movie_clock.pause();
         if !hidden {
             state.platform.window.request_redraw();
         }
