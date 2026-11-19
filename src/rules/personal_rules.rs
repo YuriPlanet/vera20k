@@ -55,8 +55,7 @@ impl PersonalRules {
         self.building_production_queue = on;
     }
 
-    /// A switch changes the game: what [`Self::compatibility_crc`] adds to
-    /// the network rules digest.
+    /// A switch changes the game: [`Self::scenario_root`] composes it.
     pub fn in_effect(&self) -> bool {
         self.terrain_deformation || self.superweapon_limit != 0 || self.building_production_queue
     }
@@ -95,11 +94,13 @@ impl PersonalRules {
         Cow::Owned(root)
     }
 
-    /// What the switches add to the network rules digest; `None` while both
-    /// are off. The header keeps the words it had while VERARULES.INI was
-    /// read, so a game with only the switches on digests as it did.
+    /// What the shared switches add to the network rules digest; `None`
+    /// while both are off. The header keeps the words it had while
+    /// VERARULES.INI was read, so a game with only the switches on digests
+    /// as it did. Building Production Queue adds nothing: no network room
+    /// plays it, so it must not refuse a launcher's match.
     pub fn compatibility_crc(&self) -> Option<u32> {
-        if !self.in_effect() {
+        if !self.terrain_deformation && self.superweapon_limit == 0 {
             return None;
         }
         let mut header = String::from("[VERA]\nPersonalRulesVersion=1\nOverrideMapRules=no\n");
@@ -108,9 +109,6 @@ impl PersonalRules {
         }
         if self.superweapon_limit != 0 {
             header.push_str(&format!("SuperweaponLimit={}\n", self.superweapon_limit));
-        }
-        if self.building_production_queue {
-            header.push_str("BuildingProductionQueue=yes\n");
         }
         Some(IniFile::from_str(&header).native_crc())
     }
@@ -283,7 +281,8 @@ mod tests {
             )
         };
         assert_eq!(scenario(false), (false, 5, false));
-        assert_eq!(scenario(true), (true, 5, true));
+        // No room shares the box, so it leaves the network digest alone.
+        assert_eq!(scenario(true), (true, 5, false));
     }
 
     #[test]
