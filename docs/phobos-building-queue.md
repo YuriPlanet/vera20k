@@ -76,3 +76,20 @@ and `SelectClass::Action`'s busy structure check is skipped at `0x6AB689`
 - Shift-Click batching for buildings is VERA's convenience, not native
   behavior; it remains governed by `[VERA] ShiftQueue=` and
   `[General] MaximumQueuedObjects=`.
+
+## Design stance / 设计立场
+
+The building production queue originates in Phobos, but VERA20K promotes it
+to a first-party player option available in **every** build — no feature flag
+and no dependence on a Phobos ruleset. It changes no simulation state: it is a
+player preference in `VERA.INI`, carried to the simulation on each frame's
+`FrameEffects`. It materially improves the playing experience and is meant to
+be a feature **usable in real matches**, not a debug or single-player toy. This
+follows the same precedent as VERA's Shift-Click batch queue, which was adopted
+from Ares and likewise promoted to a normal, always-available convenience.
+
+建筑生产线虽源自 Phobos，但我们把它转正为所有构建都可用的一方玩家功能：
+不依赖 Phobos 编译开关，也不依赖 Phobos 规则集。它不改动 SIM 状态（只是
+`VERA.INI` 里的玩家偏好，经 `FrameEffects` 逐帧传入），却能显著改善玩家
+体验，是对战中可用的功能，而非调试或单人玩具。这与 VERA 从 Ares 引入
+Shift-Click 批量队列、并把它转成普通可用功能的先例一致。
