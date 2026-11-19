@@ -190,6 +190,16 @@ authoritative state private to its owning module and expose mutations through th
 owner. Extend or fix that owner instead of introducing competing state or duplicated
 decision logic, or widening visibility to reach its state or raw data.
 
+Write Rust, not C++ or Java in Rust syntax. When the borrow checker refuses code, fix
+who borrows what (split the borrow, pass a reference or an index, end a borrow sooner,
+reorder the writes) before reaching for `.clone()`, `Rc`, `RefCell`, `Arc` or a lock.
+Clone only where an owned copy is the intent, never per entity in a hot loop. Shared
+state gets an owner, not `Arc<Mutex<_>>`; parallel simulation work splits data by
+owner instead of sharing it behind a lock. Owners offer operations, not a `get_`/`set_`
+pair per field. Model gamemd's class tree with enums and data, not trait hierarchies.
+Loop with iterators; index where the index is itself the data (handles, slots,
+parallel arrays).
+
 Before porting a native function, search the code for its address (e.g. `703850`) and
 native name. Each native function has one Rust port, and new callers call it. Never
 fork an owner: when an existing one is wrong for your chain, correct it for every
