@@ -1951,7 +1951,14 @@ fn advance_one_simulation_frame(
         drain_radar_terrain_marks(&mut state.match_state);
     }
     let hash_interval = play_hash_interval(state.match_state.live_network.is_some());
-    let Some((rt, frame_checksums)) = state.match_state.sim_runtime.tick_parts() else {
+    // A lent tick publishes the frame the last read captured: until `lend`
+    // below, this dispatch writes nothing a frame records.
+    let parts = if threaded {
+        state.match_state.sim_runtime.lend_parts()
+    } else {
+        state.match_state.sim_runtime.tick_parts()
+    };
+    let Some((rt, frame_checksums)) = parts else {
         return threaded_finished.unwrap_or(false);
     };
     let sim = &mut rt.simulation;
