@@ -327,6 +327,13 @@ pub(crate) struct RetailOptionsProfile {
     /// voice never names it. Client presentation only: no sim, audio, state
     /// hash or network protocol reads it. Off by default.
     pub(crate) detailed_eva_text: bool,
+    /// `[VERA] BuildingProductionQueue=`: a BuildingType PRODUCE queues
+    /// behind a running or completed building instead of being dropped or
+    /// abandoning the held product. The next building starts only after the
+    /// held one is placed. The app carries this onto the frame, so the
+    /// simulation reads it without any ruleset field: it is neither saved in
+    /// a scenario nor hashed. Off by default, so gamemd play is unchanged.
+    pub(crate) building_production_queue: bool,
     /// `[VERA] CompactSuperTimers=`: the battlefield's super weapon timer
     /// list shows at most six lines, the player's own first, with an arrow
     /// that opens and scrolls the rest
@@ -431,6 +438,7 @@ impl Default for RetailOptionsProfile {
             online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             detailed_eva_text: false,
+            building_production_queue: false,
             compact_super_timers: false,
             superweapon_building_timers: false,
         }
@@ -449,7 +457,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 38],
+    pub(crate) vera: [(&'static str, String); 39],
 }
 
 impl RetailOptionsLoad {
@@ -692,6 +700,8 @@ impl RetailOptionsProfile {
             self.custom_end_game_movie =
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
             self.detailed_eva_text = vera.read_bool("DetailedEvaText", self.detailed_eva_text);
+            self.building_production_queue =
+                vera.read_bool("BuildingProductionQueue", self.building_production_queue);
             self.compact_super_timers =
                 vera.read_bool("CompactSuperTimers", self.compact_super_timers);
             self.superweapon_building_timers = vera.read_bool(
@@ -885,6 +895,10 @@ impl RetailOptionsProfile {
                 (
                     "DetailedEvaText",
                     format_bool(self.detailed_eva_text).to_string(),
+                ),
+                (
+                    "BuildingProductionQueue",
+                    format_bool(self.building_production_queue).to_string(),
                 ),
                 (
                     "CompactSuperTimers",
@@ -2604,6 +2618,23 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
                 .retained_profile
                 .detailed_eva_text
         );
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    /// The build queue is a player option, off by default, with no ruleset
+    /// presence: it round-trips through VERA.INI like the other VERA boxes.
+    #[test]
+    fn building_production_queue_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
+        assert!(!read(b"").building_production_queue);
+        let mut profile = read(b"[VERA]\nBuildingProductionQueue=yes\nUnowned=keep\n");
+        assert!(profile.building_production_queue);
+        let written = profile.transform_settings(b"[VERA]\nBuildingProductionQueue=yes\nUnowned=keep\n");
+        assert!(read(&written).building_production_queue);
+        profile.building_production_queue = false;
+        let written = profile.transform_settings(&written);
+        assert!(!read(&written).building_production_queue);
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 

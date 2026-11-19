@@ -57,6 +57,7 @@ pub(crate) fn launcher_values_from_profile(
         custom_end_game_movie: profile.custom_end_game_movie,
         commander_feedback: profile.commander_feedback,
         detailed_eva_text: profile.detailed_eva_text,
+        building_production_queue: profile.building_production_queue,
         compact_super_timers: profile.compact_super_timers,
         sidebar: profile.sidebar,
         sidebar_columns: profile.sidebar_columns,
@@ -166,6 +167,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_commander_feedback(&mut self, enabled: bool);
     /// VERA-only accessibility text rows; default off.
     fn store_detailed_eva_text(&mut self, enabled: bool);
+    /// VERA's structure build queue option; default off.
+    fn store_building_production_queue(&mut self, enabled: bool);
     /// VERA's six-line super weapon timer list; default off.
     fn store_compact_super_timers(&mut self, enabled: bool);
     /// VERA's team-colour strength, as the level the profile stores.
@@ -260,6 +263,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::DetailedEvaTextChanged(enabled) => {
             operations.store_detailed_eva_text(enabled);
+        }
+        LauncherOptionsEvent::BuildingProductionQueueChanged(enabled) => {
+            operations.store_building_production_queue(enabled);
         }
         LauncherOptionsEvent::CompactSuperTimersChanged(enabled) => {
             operations.store_compact_super_timers(enabled);

@@ -1898,6 +1898,10 @@ fn advance_one_simulation_frame(
     // this sink; the frame tail handles the suffix. Both must be merged so
     // an EVA row is never lost just because its voice played early.
     let detailed_eva_text = state.persistence.options_profile.detailed_eva_text;
+    // Player-only build queue option: read before the frame borrows the app
+    // state and carried onto the tick's FrameEffects. Not a ruleset field, so
+    // it changes neither the rules hash nor the simulation state hash.
+    let building_production_queue = state.persistence.options_profile.building_production_queue;
     let prefix_eva_text: std::cell::RefCell<Vec<crate::app::input::messages::HudMessage>> =
         std::cell::RefCell::new(Vec::new());
     let fps_panel_shown = state.renderer.performance_overlay.is_visible();
@@ -2022,6 +2026,7 @@ fn advance_one_simulation_frame(
                 &due_commands,
                 tick_lane,
                 FrameResume::None,
+                building_production_queue,
             );
             Box::new(ThreadedTick {
                 finish,
@@ -2052,6 +2057,7 @@ fn advance_one_simulation_frame(
             &due_commands,
             tick_lane,
             resume,
+            building_production_queue,
         ) {
             Ok(output) => output,
             Err(error) => {
@@ -2180,6 +2186,7 @@ fn advance_one_simulation_frame(
         .with_eva_text(detailed_eva_text.then_some(&finish.prefix_eva_text))
         .with_quiet_sounds(&mut state.match_state.match_audio.quiet);
         let effects = FrameEffects::for_sound(&boundary)
+            .with_building_production_queue(building_production_queue)
             .with_tactical_radar(&boundary)
             .with_local_planning(&boundary)
             .with_network_commands(&boundary)
@@ -2344,6 +2351,7 @@ fn run_deferred_tick(
     due_commands: &[crate::sim::command::CommandEnvelope],
     tick_lane: TickLane,
     resume: FrameResume,
+    building_production_queue: bool,
 ) -> Result<SimFrameOutput, crate::sim::world::FrameAdvanceError> {
     let record_clear = |type_id| {
         deferred.record(super::deferred_effects::DeferredEffect::ProductionRequestCleared(type_id));
@@ -2357,6 +2365,7 @@ fn run_deferred_tick(
     // Sound plays from the frame tail; replay, the initial save and command
     // logs never reach this path, and a network frame stops at Queue_AI.
     let effects = FrameEffects::empty()
+        .with_building_production_queue(building_production_queue)
         .with_tactical_radar(deferred)
         .with_local_planning(deferred)
         .with_production_strip(production_visits, &record_clear)

@@ -1739,7 +1739,7 @@ impl FactoryEdit<'_> {
         // `0x004FAA29`. A `BuildingType` with no `BuildCat=` is 0 too
         // (constructor `0x0045DD9A`/`0x0045DDC7`), which is VERA's `None`.
         // The rewrite is unconditional, so it follows the `phobos` feature and
-        // not `[General] BuildingProductionQueue=`.
+        // not VERA's player-only `BuildingProductionQueue` option.
         const PHOBOS_STRUCTURE_ABANDON: bool = cfg!(feature = "phobos");
         // Phobos' own guard inside that rewrite: a single cancel on a structure
         // strip holding no product skips the removal and takes the null-held

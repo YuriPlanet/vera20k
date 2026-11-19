@@ -510,13 +510,11 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// is at most the held copy; a Defense entry never counts. The de-hard-coded
 /// lookup (Phobos' `StripClass_DrawStrip_FindFactoryDehardCode @ 0x006A9C54`,
 /// `src/Ext/Building/Hooks.cpp`) uses the building type's own Factory and is
-/// switched on at run time by `[General] BuildingProductionQueue=`, the same
-/// key that lets structure strips stack copies. Stock data leaves it false,
-/// so gamemd's single-count badge behavior is unchanged.
+/// switched on by VERA's `Building Production Queue` option, the same switch
+/// that lets structure strips stack copies. Off by default, so gamemd's
+/// single-count badge behavior is unchanged.
 fn structure_queue_badges(state: &crate::app::state::AppState) -> bool {
-    state
-        .rules()
-        .is_some_and(|rules| rules.general.building_production_queue)
+    state.persistence.options_profile.building_production_queue
 }
 
 fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: bool) -> bool {

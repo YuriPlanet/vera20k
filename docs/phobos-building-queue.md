@@ -1,12 +1,18 @@
-# Optional Phobos building production queue
+# Building production queue (player option)
 
-Build with `--features phobos` and set `[General] BuildingProductionQueue=yes`
-to queue buildings like mobile production. Default is `no`.
+Tick **Gameplay → Building Production Queue** in Options, or set
+`[VERA] BuildingProductionQueue=yes` in `VERA.INI`. It is on in every build,
+no feature flag needed. Default is off.
 
 ```ini
-[General]
-BuildingProductionQueue=false ; boolean
+[VERA]
+BuildingProductionQueue=no ; boolean
 ```
+
+This is a player preference, not a ruleset setting: it is not part of a map or
+scenario, is not saved with a game, and is not written into either the ruleset
+hash or the simulation state hash. The app reads it from the profile and puts
+it on each frame's `FrameEffects`, which the simulation reads.
 
 With the switch on, a BuildingType cameo press appends behind the category
 factory's running or completed product instead of being dropped or replacing
@@ -21,13 +27,19 @@ and `SelectClass::Action`'s busy structure check is skipped at `0x6AB689`
 
 ## Where VERA20K owns it
 
-- `rules/ruleset.rs` — the `[General]` read and its configuration hash.
+- `app/persistence/options_profile.rs` — the `[VERA]` read/write and default.
+- `ui/main_menu_dialogs/options.rs` — the Options checkbox and its event.
+- `app/match_runtime/sim_tick.rs` — reads the profile once per frame and puts
+  it on the tick's `FrameEffects`.
+- `sim/world/frame_effects.rs` — carries the flag to the simulation boundary.
 - `sim/production/factory_lifecycle.rs` — `enqueue_selected` gates the busy
   refusal and the held-product abandonment; the existing generic queue tail
   already starts the next building after placement.
 - `app/input/sidebar_eva.rs` — a busy structure strip accepts the press, and
   Shift repeat may append when the switch is on.
-- `app/input/dispatch.rs` — passes the rules switch to the click decision.
+- `app/input/dispatch.rs` — passes the player option to the click decision.
+- `app/presentation/sidebar_build.rs` — opens the Building/Defense queue-count
+  badge when the option is on.
 - `sim/production/factory.rs` — `cancel_one` follows Phobos'
   `HouseClass_AbandonProduction_RewriteForBuilding @ 0x004FAAD8`, which replaces
   vanilla's `BuildCat == DontCare` test so a structure cancel removes one queued
@@ -42,7 +54,7 @@ and `SelectClass::Action`'s busy structure check is skipped at `0x6AB689`
   factory lookup resolves a structure's Factory only under Phobos'
   `StripClass_DrawStrip_FindFactoryDehardCode @ 0x006A9C54`, which is
   unconditional, so `shows_queue_badge` opens the Building/Defense categories
-  for the `phobos` feature rather than for this switch.
+  whenever this player option is on.
 - The rewrite sits in the shared `House::Abandon_Production` body, but of the
   other `cancel_production_for_owner` callers only the factory building's
   detach (`0x0044EE9E..0x0044EEC3`: `all = false` with the held type's index)

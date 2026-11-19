@@ -130,9 +130,11 @@ impl HouseFactoryAbandonment {
 /// [`settle_abandoned`]), and a BuildingType always takes the create path
 /// (`0x004C9C95..0x004C9C98`). The sidebar refuses a busy structure strip, so
 /// only a building PRODUCE sent before an earlier one executed reaches either
-/// branch. Phobos `[General] BuildingProductionQueue=yes` skips both the busy
-/// refusal (`0x4FA520`) and the held-product abandon (`0x4C9C7B`), so the
-/// PRODUCE appends to the factory queue instead.
+/// branch. VERA's `Building Production Queue` option (the app passes it in on
+/// `FrameEffects`) skips both the busy refusal (`0x4FA520`) and the
+/// held-product abandon (`0x4C9C7B`), so the PRODUCE appends to the factory
+/// queue instead. The player setting is client-side: it is not a ruleset
+/// field, not saved, and not hashed.
 pub fn enqueue_by_type(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -191,9 +193,9 @@ pub(crate) fn enqueue_selected(
     };
     let type_interned = sim.interner.intern(type_id);
     let building = obj.category == ObjectCategory::Building;
-    // `[General] BuildingProductionQueue=` run-time switch: on in every build,
-    // default false so retail play still drops/abandons as gamemd does.
-    let building_production_queue = rules.general.building_production_queue;
+    // VERA's player option, carried on the frame's client effects. Default
+    // false so retail play still drops/abandons as gamemd does.
+    let building_production_queue = effects.building_production_queue();
     // Phobos `HouseClass_BeginProduction_SkipBuilding 0x4FA520`.
     if selection.rtti == 7
         && !building_production_queue

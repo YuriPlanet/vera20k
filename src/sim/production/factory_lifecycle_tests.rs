@@ -2638,18 +2638,21 @@ fn ready_manager_is_refunded_and_disposed_by_another_buildings_produce() {
     );
 }
 
-/// The same fixture with `[General] BuildingProductionQueue=yes`. The switch
-/// is a run-time INI key, on in every build, so these tests run without the
-/// `phobos` feature too.
+/// The same fixture, plus the frame effects that carry VERA's player build
+/// queue option. Not a ruleset key: the tests pass the flag on every PRODUCE
+/// call, so they run without the `phobos` feature too.
 fn world_with_building_queue(seed: u64) -> (Simulation, RuleSet, InternedId) {
     let mut ini = manager_ini();
-    ini.merge(&IniFile::from_str(
-        "[General]\nBuildingProductionQueue=yes\n[GAPOWR]\nBuildCat=Power\n",
-    ));
+    ini.merge(&IniFile::from_str("[GAPOWR]\nBuildCat=Power\n"));
     world_with(
         RuleSet::from_ini(&ini).expect("building queue fixture"),
         seed,
     )
+}
+
+/// Frame effects with VERA's build queue option on, for the fixture above.
+fn queue_effects() -> crate::sim::world::FrameEffects<'static> {
+    crate::sim::world::FrameEffects::empty().with_building_production_queue(true)
 }
 
 #[test]
@@ -2659,13 +2662,12 @@ fn building_queue_switch_queues_and_starts_the_next_after_placement() {
     use crate::sim::world::FrameEffects;
 
     let (mut sim, rules, owner) = world_with_building_queue(0xb001_0001);
-    assert!(rules.general.building_production_queue);
     assert!(enqueue_by_type(
         &mut sim,
         &rules,
         "Americans",
         "GAPOWR",
-        FrameEffects::default(),
+        queue_effects(),
         false,
     ));
     let held = held_id(&sim, owner, ProductionCategory::Building);
@@ -2677,7 +2679,7 @@ fn building_queue_switch_queues_and_starts_the_next_after_placement() {
         &rules,
         "Americans",
         "YAREFN",
-        FrameEffects::default(),
+        queue_effects(),
         false,
     ));
     assert_eq!(
@@ -2746,7 +2748,7 @@ fn building_queue_switch_keeps_a_suspended_held_building() {
         &rules,
         "Americans",
         "GAPOWR",
-        FrameEffects::default(),
+        queue_effects(),
         false,
     ));
     let held = held_id(&sim, owner, ProductionCategory::Building);
@@ -2771,7 +2773,7 @@ fn building_queue_switch_keeps_a_suspended_held_building() {
         &rules,
         "Americans",
         "YAREFN",
-        FrameEffects::default(),
+        queue_effects(),
         false,
     ));
     assert_eq!(
@@ -2806,7 +2808,7 @@ fn cancel_one_queued_structure_keeps_the_building_under_construction() {
         &rules,
         "Americans",
         "GAPOWR",
-        FrameEffects::default(),
+        queue_effects(),
         false,
     ));
     let held = held_id(&sim, owner, ProductionCategory::Building);
@@ -2815,7 +2817,7 @@ fn cancel_one_queued_structure_keeps_the_building_under_construction() {
         &rules,
         "Americans",
         "GAPOWR",
-        FrameEffects::default(),
+        queue_effects(),
         false,
     ));
     let credits = sim.houses[&owner].economy().credits();

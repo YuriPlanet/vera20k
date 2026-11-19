@@ -131,6 +131,10 @@ pub struct FrameEffects<'a> {
     bounty_text: Option<&'a dyn Fn(&Simulation, &RuleSet, crate::sim::bounty::BountyText)>,
     production_factories: &'a [crate::sim::production::ProductionFactoryVisit],
     production_request_cleared: Option<&'a dyn Fn(crate::sim::intern::InternedId)>,
+    /// VERA's `Building Production Queue` player option. Carried on the
+    /// frame's client effects, so it never enters the ruleset, saves or the
+    /// state hash. Default false keeps gamemd's drop/abandon behavior.
+    building_production_queue: bool,
 }
 
 impl<'a> FrameEffects<'a> {
@@ -156,6 +160,7 @@ impl<'a> FrameEffects<'a> {
             bounty_text: None,
             production_factories: &[],
             production_request_cleared: None,
+            building_production_queue: false,
         }
     }
 
@@ -164,6 +169,19 @@ impl<'a> FrameEffects<'a> {
             sound: Some(sound),
             ..Self::empty()
         }
+    }
+
+    /// Carry VERA's `Building Production Queue` player option into this
+    /// frame. The app reads it from `[VERA] BuildingProductionQueue=` once
+    /// before the tick; the simulation only reads it here.
+    pub fn with_building_production_queue(mut self, enabled: bool) -> Self {
+        self.building_production_queue = enabled;
+        self
+    }
+
+    /// Whether a BuildingType PRODUCE may queue behind a running building.
+    pub(crate) const fn building_production_queue(self) -> bool {
+        self.building_production_queue
     }
 
     pub fn with_tactical_radar(self, boundary: &'a dyn TacticalRadarBoundary) -> Self {
