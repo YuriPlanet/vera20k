@@ -11,6 +11,7 @@ use super::super::{
 };
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::MovementZone;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
@@ -244,7 +245,7 @@ fn replay_with(row: &Value, plant: bool, extra: &[(usize, &str)]) -> Replay {
         .unwrap()
         .only_target_house_enemy = flag(&row["only_enemy"]);
     let team = vm
-        .construct_team(team_type, owner, true, 0, false, None)
+        .construct_team(team_type, owner, TeamLimitScope::PerHouse, 0, false, None)
         .unwrap();
     let state = vm.teams.get_mut(&team).unwrap();
     state.members = members

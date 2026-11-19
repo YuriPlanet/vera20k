@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::rules::locomotor_type::MovementZone;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::{AiTriggerOwnerIni, TeamAiDefinitionSource, TeamAiIniRegistry};
 use crate::sim::intern::{InternedId, StringInterner};
@@ -295,19 +296,20 @@ impl TeamScriptVm {
         );
         let owner = resolve_trigger_owner(trigger, rules, diagnostics);
         let object_type = resolve_trigger_object(trigger, rules, interner, diagnostics);
+        let bootstrap_rule_profile = registry.bootstrap_rule_profile();
         let primary_tech_level = trigger_task_force_tech_level(
             self,
             primary_team_type,
             interner,
             rules,
-            registry.game_mode_nonzero(),
+            bootstrap_rule_profile,
         );
         let secondary_tech_level = trigger_task_force_tech_level(
             self,
             secondary_team_type,
             interner,
             rules,
-            registry.game_mode_nonzero(),
+            bootstrap_rule_profile,
         );
         let threshold = [primary_tech_level, secondary_tech_level]
             .into_iter()
@@ -490,8 +492,9 @@ fn trigger_task_force_tech_level(
     team_type_id: Option<InternedId>,
     interner: &StringInterner,
     rules: &RuleSet,
-    game_mode_nonzero: bool,
+    bootstrap_rule_profile: BootstrapRuleProfile,
 ) -> Option<i32> {
+    let use_default_tech_level = bootstrap_rule_profile.uses_default_task_force_member_tech_level();
     team_type_id
         .and_then(|id| vm.team_types.get(&id))
         .and_then(|team_type| vm.task_forces.get(&team_type.task_force_id))
@@ -512,7 +515,7 @@ fn trigger_task_force_tech_level(
                     let tech_level = member_type.tech_level;
                     if tech_level > current {
                         tech_level
-                    } else if tech_level == -1 && game_mode_nonzero {
+                    } else if tech_level == -1 && use_default_tech_level {
                         11
                     } else {
                         current

@@ -4,6 +4,7 @@
 use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit};
 use super::*;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
@@ -657,7 +658,7 @@ fn add_infantry_map_event_team(sim: &mut Simulation, rules: &RuleSet, actor: u64
     let typ = sim.interner.get("MATCH").unwrap();
     let id = sim
         .team_script_vm
-        .construct_team(typ, owner, true, 0, false, None)
+        .construct_team(typ, owner, TeamLimitScope::PerHouse, 0, false, None)
         .unwrap();
     assert!(sim.team_add_member(id, actor, false, rules, None, FrameEffects::default()));
     id

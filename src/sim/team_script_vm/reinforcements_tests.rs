@@ -17,6 +17,7 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::retail_ini_fixture::retail_rules_and_art;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::rules::terrain_rules::TerrainRules;
@@ -133,7 +134,7 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
             };
             let mut live = vm.clone();
             let owner = interner.intern("OWNER");
-            live.construct_team(id, owner, false, 0, false, None)
+            live.construct_team(id, owner, TeamLimitScope::AllHouses, 0, false, None)
                 .unwrap();
             let saved: TeamScriptVm =
                 save_codec::deserialize(&save_codec::serialize(&live).unwrap()).unwrap();
@@ -1459,7 +1460,8 @@ fn transport_origin_fields_match_original_retained_reads_and_survive_save_hash()
             "native input reads draw nothing"
         );
         let owner = interner.intern("OWNER");
-        vm.construct_team(id, owner, false, 0, false, None).unwrap();
+        vm.construct_team(id, owner, TeamLimitScope::AllHouses, 0, false, None)
+            .unwrap();
         let restored: TeamScriptVm =
             save_codec::deserialize(&save_codec::serialize(&vm).unwrap()).unwrap();
         assert_eq!(restored.team_type_ini[&id], vm.team_type_ini[&id]);
@@ -2132,6 +2134,55 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
         sim.mapgen_rng.native_state_hex(),
         row["rng_after"]["mapgen"].as_str().unwrap()
     );
+}
+
+#[test]
+fn ordinary_team_limit_and_empty_timeout_follow_stock_rules() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let terrain = TerrainRules::from_ini(&retail.processed_rules);
+    let rules = retail.rules;
+    let delay = u32::try_from(rules.general.dissolve_unfilled_team_delay).unwrap();
+    let input = serde_json::json!({"entries":[["MTNK",1]],"origin":[87,50],"max":1});
+
+    for (mode, per_house_limit, empty_team_expires) in [
+        (ScenarioGameMode::Campaign, false, false),
+        (ScenarioGameMode::Skirmish, true, true),
+    ] {
+        let mut sim = reinforcement_world(&rules, &terrain, &input);
+        sim.session.set_game_mode(mode);
+        let team_type = sim.interner.get("TT").unwrap();
+        let first_house = sim.interner.get("Americans").unwrap();
+        let second_house = sim.interner.get("ENEMY").unwrap();
+        let start = sim.session.binary_frame();
+        let team = sim
+            .create_team(team_type, Some(first_house), &rules)
+            .unwrap();
+        assert!(
+            sim.create_team(team_type, Some(first_house), &rules)
+                .is_none()
+        );
+        assert_eq!(
+            sim.create_team(team_type, Some(second_house), &rules)
+                .is_some(),
+            per_house_limit,
+        );
+
+        sim.session.set_binary_frame_for_test(start + delay);
+        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        assert!(sim.team_script_vm.team(team).is_some());
+        sim.session.set_binary_frame_for_test(start + delay + 1);
+        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        assert_eq!(sim.team_script_vm.team(team).is_none(), empty_team_expires);
+        assert_eq!(
+            sim.create_team(team_type, Some(first_house), &rules)
+                .is_some(),
+            empty_team_expires,
+        );
+    }
 }
 
 #[test]

@@ -27,7 +27,7 @@ use crate::sim::trigger_runtime::TeamTagOrder;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
-use super::{TeamRules, TeamScriptState, TeamTarget, script_action_at};
+use super::{TeamScriptState, TeamTarget, script_action_at};
 use crate::sim::intern::StringInterner;
 
 /// Script actions 53 and 54 relax the stray distance (`Rules+0x1720`
@@ -157,10 +157,20 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
+        let unfilled_team_timeout = self
+            .session
+            .rule_policy()
+            .unfilled_team_timeout(rules.general.dissolve_unfilled_team_delay);
         let teams: Vec<u64> = self.team_script_vm.teams.keys().copied().collect();
         for team_id in teams {
             if self.team_script_vm.teams.contains_key(&team_id) {
-                self.team_ai(team_id, rules, registry, frame_effects);
+                self.team_ai(
+                    team_id,
+                    rules,
+                    registry,
+                    frame_effects,
+                    unfilled_team_timeout,
+                );
             }
         }
     }
@@ -172,6 +182,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
+        unfilled_team_timeout: Option<i32>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
@@ -224,8 +235,7 @@ impl Simulation {
         // `0x006E929B..0x006E9339`: an empty team that has been full, or
         // that could not fill before `DissolveUnfilledTeamDelay=` in a
         // multiplayer game, is destroyed.
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
-        if team.dissolves(&team_rules, current_frame) {
+        if team.dissolves(current_frame, unfilled_team_timeout) {
             // TeamClass::AI @0x006E9140, retail gamemd.exe:6E92D0..6E9320
             // raises23 while the empty Team still exists for HasOccurred23.
             if team.leaving_map {

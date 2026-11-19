@@ -88,7 +88,7 @@ impl Simulation {
         let id = self.team_script_vm.construct_team(
             team_type,
             owner,
-            self.session.game_mode_nonzero(),
+            self.session.rule_policy().team_creation_limit_scope(),
             self.session.binary_frame() as i32,
             placement_scope_active,
             zone,

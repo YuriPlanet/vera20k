@@ -64,6 +64,20 @@ Phase 0 涵盖 R01–R03，复用现有启动和会话所有者，提供可在�
 
 ```powershell
 python -m tools.scale_map target/scale/mode-core-match30.map --starts 30
+python -m tools.cargo_run -- build --release -p vera20k-core --bin sim-bench
+$bench = python -m tools.cargo_run --resolve sim-bench --profile release
 $map = (Resolve-Path target/scale/mode-core-match30.map).Path
-python -m tools.cargo_run -- run --release -p vera20k-core --bin sim-bench -- --ra2-dir "$env:RA2_DIR" --map "$map" --scenario match --units 20000 --houses 30 --computers 29 --seed 1592590337 --ticks 300 --client-timing
+& $bench --ra2-dir "$env:RA2_DIR" --map "$map" --scenario match --units 20000 --houses 30 --computers 29 --seed 1592590337 --ticks 300 --client-timing
 ```
+
+## R04–R05 首个切片
+
+加载期使用 `BootstrapRuleProfile` 表达 AI 触发启用、任务组科技阈值和预置木箱规则。客户端依据已接纳的地图构造路径，无头加载依据现有遭遇战构造配置，随机地图沿用早期 `Full_Init` 的入口。原版预置木箱只在零模式保留，离线遭遇战和 LAN/WOL 均在构造覆盖物前跳过。
+[AI INI 读取](../../src/rules/team_ai_ini.rs) · [预置覆盖物](../../src/map/authored_overlay.rs) · [启动加载](../../src/app/loading/init.rs)
+
+活跃小队继续由 `TeamScriptVm` 持有。普通创建按战役全局或非零模式逐阵营执行 `Max=`，AI 触发候选筛选继续逐阵营检查，触发器建队与增援沿用已有豁免。非零模式下，从未满编的空队在严格超过 `DissolveUnfilledTeamDelay=` 后解散。满足离场条件时，事件 23 仍先于销毁。
+[小队存续与创建](../../src/sim/team_script_vm.rs) · [AI 触发筛选](../../src/sim/ai_team_creation.rs)
+
+`AllowWin`、`Paranoid`、基地建造、`DoubleOwned=`、威胁与经济决策拥有各自的原版调用条件，按各自行为链继续迁移。
+
+在 `48e858260` 和首切片上分别按 R03 的同一组参数运行 300 帧，终局哈希均为 `a442638ed2f52f75`。两次运行的预热后平均耗时分别为 77.34 和 61.02 ms，全程 P95 分别为 93.05 和 74.39 ms。耗时各取一次样本。

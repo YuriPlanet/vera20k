@@ -61,6 +61,7 @@ use crate::rules::effect_asset_catalog::resolved_overlay_shp_ids;
 #[cfg(test)]
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 
@@ -1593,7 +1594,7 @@ fn prepare_scenario_rules(
     prefix: crate::rules::process_owner::NativeScenarioRulesPrefix<'_>,
     map_ini: &crate::rules::ini_parser::IniFile,
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
-    game_mode_nonzero: bool,
+    bootstrap_rule_profile: BootstrapRuleProfile,
 ) -> Result<PreparedScenarioRules> {
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
         let (loaded, (ai, rules_at_read)) = owner
@@ -1602,7 +1603,7 @@ fn prepare_scenario_rules(
                     crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
                         assets,
                         map_ini,
-                        game_mode_nonzero,
+                        bootstrap_rule_profile,
                     ),
                     rules_at_read,
                 )
@@ -1616,7 +1617,7 @@ fn prepare_scenario_rules(
         let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
             assets,
             map_ini,
-            game_mode_nonzero,
+            bootstrap_rule_profile,
         )
         .map_err(anyhow::Error::msg)?;
         (loaded, ai, None)
@@ -2650,7 +2651,7 @@ pub(crate) fn load_map_initial_with_assets(
             crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(mode_rules.as_ref()),
             &synthetic_ini,
             tmcj4f.as_ref(),
-            full_init_entry_mode != crate::app::match_runtime::session::SessionMode::Campaign,
+            full_init_entry_mode.bootstrap_rule_profile(),
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
@@ -3078,8 +3079,14 @@ fn load_map_first_step(
         mapgen_rng_continuation.is_some(),
         generated_construction_trace.is_some(),
     )?;
-    let game_mode_nonzero = campaign.is_none();
-    if !game_mode_nonzero {
+    // Fresh construction follows the admitted scenario family. A replay's
+    // recorded session mode is installed later for the simulation.
+    let bootstrap_rule_profile = if campaign.is_some() {
+        BootstrapRuleProfile::Campaign
+    } else {
+        BootstrapRuleProfile::Multiplayer
+    };
+    if bootstrap_rule_profile == BootstrapRuleProfile::Campaign {
         map_data
             .special_flags
             .resolve_campaign_defaults(retained_campaign_special_flags.as_ref());
@@ -3163,7 +3170,7 @@ fn load_map_first_step(
                     full_init_entry_mode,
                     services.the_team_enabled,
                 )?;
-                let rules_prefix = if game_mode_nonzero {
+                let rules_prefix = if bootstrap_rule_profile.uses_multiplayer_rules() {
                     if let Some(preparation) = prepared_prefix {
                         crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
                             preparation,
@@ -3189,7 +3196,7 @@ fn load_map_first_step(
                     rules_prefix,
                     &map_data.ini,
                     tmcj4f_ini.as_ref(),
-                    game_mode_nonzero,
+                    bootstrap_rule_profile,
                 )?
             };
             let (
@@ -3308,10 +3315,10 @@ fn load_map_first_step(
                             .or_else(|| map_data.basic.name.clone())
                             .unwrap_or_default(),
                         theater: map_data.header.theater.clone(),
-                        game_mode_nonzero,
+                        game_mode_nonzero: bootstrap_rule_profile.uses_multiplayer_rules(),
                         // Campaign/editor reads `[SpecialFlags] Inert=`. Nonzero game modes
                         // replace active SpecialFlags from session staging.
-                        no_damage: !game_mode_nonzero
+                        no_damage: bootstrap_rule_profile == BootstrapRuleProfile::Campaign
                             && map_data.special_flags.inert.unwrap_or(false),
                         // Scenario bit 0x800: campaign reads the map's `[SpecialFlags]
                         // HarvesterImmune=`; a nonzero game mode replaces the map's flags
@@ -3320,7 +3327,7 @@ fn load_map_first_step(
                         // (`0x00A8B31D`) in the bit (`0x005E7495..0x005E74D4`). The skirmish
                         // lobby never sets the truce (`0x006AD89D` clears it), so every
                         // skirmish leaves the bit off.
-                        harvester_immune: if game_mode_nonzero {
+                        harvester_immune: if bootstrap_rule_profile.uses_multiplayer_rules() {
                             skirmish_launch_session
                                 .is_some_and(|launch| launch.options.harvester_truce)
                         } else {
@@ -3340,9 +3347,9 @@ fn load_map_first_step(
                         vein_growth_enabled: map_data.basic.vein_growth_enabled,
                         // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
                         // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-                        tiberium_grows_flag: game_mode_nonzero
+                        tiberium_grows_flag: bootstrap_rule_profile.uses_multiplayer_rules()
                             || map_data.special_flags.tiberium_grows.unwrap_or(false),
-                        tiberium_spreads_flag: game_mode_nonzero
+                        tiberium_spreads_flag: bootstrap_rule_profile.uses_multiplayer_rules()
                             || map_data.special_flags.tiberium_spreads.unwrap_or(true),
                         // Native Resize constructs a square cell-array extent of SizeW+SizeH.
                         map_width: scenario_cell_extent,
