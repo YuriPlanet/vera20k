@@ -42,7 +42,6 @@ pub(crate) fn sync_in_game_options_speed_from_sim(state: &mut AppState) {
         .match_presentation
         .in_game_options
         .game_speed = game_speed;
-    state.match_state.sim_speed_tps = crate::app::types::tps_for_game_speed(game_speed);
 }
 
 pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {

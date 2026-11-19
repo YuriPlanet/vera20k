@@ -1217,14 +1217,6 @@ impl App {
                 configured_input_delay_ticks: input_delay_ticks,
                 sandbox_full_visibility: false,
                 debug_pause: false,
-                // KD-3: unify the two game-speed sources. `in_game_options.game_speed`
-                // (in the presentation owner) is the single source of truth; seed it
-                // from the skirmish-setup speed (internal 1) and derive
-                // `sim_speed_tps` from the same value, so the Options slider
-                // reflects the current pace (GS1 -> 63 tps).
-                sim_speed_tps: crate::app::types::tps_for_game_speed(
-                    crate::app::types::DEFAULT_YR_SKIRMISH_GAME_SPEED,
-                ),
             },
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,

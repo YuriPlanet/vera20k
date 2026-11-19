@@ -560,7 +560,6 @@ fn host_options(
     }
     launch.ai_player_count = opponents.len() as i32;
     launch.opponents = opponents;
-    launch.use_live_house_rows();
     let vacancies = std::array::from_fn(|row| {
         session
             .network_vacancy(row as u8)
