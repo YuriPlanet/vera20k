@@ -2296,6 +2296,18 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 if on { "shown" } else { "hidden" }
             );
         }
+        // VERA: show or hide the convenience help rows (repair/reload and
+        // future lines) above friendly buildings and units. Presentation only,
+        // and saved under the same `[VERA]` key the Options box writes, so a
+        // match's choice seeds the next scenario.
+        HotkeyCommand::ConvenienceHelp => {
+            let help = &mut state.match_state.match_presentation.convenience_help;
+            *help = !*help;
+            let on = *help;
+            state.persistence.options_profile.convenience_help = on;
+            crate::app::persistence::options::persist_options_profile(state);
+            log::info!("Convenience help: {}", if on { "shown" } else { "hidden" });
+        }
         // A held key: `input::keyboard::in_game_key_edge` tracks it.
         HotkeyCommand::FormationLine => {}
         HotkeyCommand::FormationLock => {

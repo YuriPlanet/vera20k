@@ -333,6 +333,10 @@ pub(crate) fn install_world_presentation(
         .match_state
         .match_presentation
         .superweapon_building_timers = saved_timers;
+    // VERA's Convenience Help starts each scenario from the saved switch too;
+    // Ctrl+Alt+H flips it from there and writes it back to the profile.
+    state.match_state.match_presentation.convenience_help =
+        state.persistence.options_profile.convenience_help;
     state.match_state.match_presentation.house_roster = map.house_roster;
     state.process_assets.csf = assets.csf;
     state.match_state.match_presentation.theater_name = map.theater_name;

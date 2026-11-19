@@ -508,12 +508,22 @@ pub(super) fn build_world_instances(
                     state.health_bar_mode(),
                 );
                 status.group = group_labels.remove(&parent.parent.id).unwrap_or_default();
-                // VERA detailed status rows (reload / unit repair): built here
-                // because the GAME.FNT atlas lives on the renderer. The texts
-                // are frozen strings captured with the frame; only the glyph
-                // geometry is produced at draw time. Uses the same health-bar
-                // visibility admission the pips already passed.
-                if state.persistence.options_profile.detailed_eva_text
+                // VERA convenience status rows (reload / unit repair): built
+                // here because the GAME.FNT atlas lives on the renderer. The
+                // texts are frozen strings captured with the frame; only the
+                // glyph geometry is produced at draw time. Uses the same
+                // health-bar visibility admission the pips already passed.
+                // Only the local house and its allies: an enemy's row is
+                // never drawn, even when its body is in view.
+                let viewer_allied = local_owner.as_deref().is_some_and(|viewer| {
+                    crate::map::houses::is_allied_with(
+                        sim.house_alliances().as_map(),
+                        viewer,
+                        sim.interner().resolve(entity.owner()),
+                    )
+                });
+                if state.match_state.match_presentation.convenience_help
+                    && viewer_allied
                     && !entity.hud.info_lines().is_empty()
                 {
                     let font = &state.renderer.bit_font;

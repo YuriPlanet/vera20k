@@ -70,7 +70,7 @@ struct HudMore {
     /// with the frame so the label never reads the live simulation while a
     /// frame is being drawn; empty for anything but such a Structure.
     super_charges: Vec<crate::sim::superweapon::SuperChargeLine>,
-    /// VERA's detailed object status lines ([VERA] DetailedEvaText): reload,
+    /// VERA's convenience status lines ([VERA] ConvenienceHelp): reload,
     /// building repair, unit repair. Each string is formatted at capture time
     /// from frozen sim facts, so the draw pass reads no live simulation.
     info_lines: Vec<String>,
@@ -289,7 +289,7 @@ fn building_repair_estimate(
     Some((seconds, periods.saturating_mul(cost_per_period)))
 }
 
-/// VERA's detailed object status lines, resolved from frozen sim facts at
+/// VERA's convenience help status lines, resolved from frozen sim facts at
 /// capture time (`HudFacts::capture`) so the draw pass never reads live state.
 /// Every number comes from the object's own sim fields plus Rules; nothing
 /// writes back. The strings are complete and localized.
@@ -1028,7 +1028,7 @@ pub(crate) fn build_building_status_render_instances(
     tactical_clip: [i32; 4],
     rules: &RuleSet,
     superweapon_building_timers: bool,
-    detailed_eva_text: bool,
+    convenience_help: bool,
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
@@ -1075,10 +1075,12 @@ pub(crate) fn build_building_status_render_instances(
             } else {
                 &[]
             };
-        // VERA's detailed status rows (building repair): the same frozen
-        // capture, gated by DetailedEvaText, drawn for every visible building
-        // like the Super lines. Not restricted to the selected building.
-        let info_lines: &[String] = if detailed_eva_text && visible {
+        // VERA's convenience status rows (building repair): the same frozen
+        // capture, gated by ConvenienceHelp, drawn for every visible friendly
+        // building like the Super lines. `allied` is true for the local house
+        // as well as allies, so an enemy's row is never shown. Not restricted
+        // to the selected building.
+        let info_lines: &[String] = if convenience_help && allied && visible {
             entity.hud.info_lines()
         } else {
             &[]
@@ -1359,7 +1361,7 @@ pub(crate) fn build_building_status_instances(
             .match_state
             .match_presentation
             .superweapon_building_timers,
-        state.persistence.options_profile.detailed_eva_text,
+        state.match_state.match_presentation.convenience_help,
     )
 }
 

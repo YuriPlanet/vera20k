@@ -14,8 +14,9 @@ use super::{
     COMMANDER_FEEDBACK_LABEL, COMPACT_SUPER_TIMERS_HELP, COMPACT_SUPER_TIMERS_LABEL,
     CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL,
     CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP,
-    CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, DETAILED_EVA_TEXT_HELP,
-    DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget,
+    CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, CONVENIENCE_HELP_HELP,
+    CONVENIENCE_HELP_LABEL, DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL,
+    DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget,
     EDIT_LAYOUT_HELP, EDIT_LAYOUT_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, GENERAL_LABEL,
     HAS_CHECK_FOR_UPDATES, HAS_MODS, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP,
     HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL,
@@ -790,6 +791,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
             LauncherCheckboxId::CommanderFeedback => COMMANDER_FEEDBACK_LABEL,
             LauncherCheckboxId::DetailedEvaText => DETAILED_EVA_TEXT_LABEL,
+            LauncherCheckboxId::ConvenienceHelp => CONVENIENCE_HELP_LABEL,
             LauncherCheckboxId::BuildingProductionQueue => BUILDING_PRODUCTION_QUEUE_LABEL,
             LauncherCheckboxId::CompactSuperTimers => COMPACT_SUPER_TIMERS_LABEL,
         }))
@@ -875,6 +877,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
             LauncherCheckboxId::CommanderFeedback => self.values.commander_feedback,
             LauncherCheckboxId::DetailedEvaText => self.values.detailed_eva_text,
+            LauncherCheckboxId::ConvenienceHelp => self.values.convenience_help,
             LauncherCheckboxId::BuildingProductionQueue => {
                 self.values.building_production_queue
             }
@@ -1218,6 +1221,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::DetailedEvaText => {
                     LauncherStatusHelp::Vera(DETAILED_EVA_TEXT_HELP)
+                }
+                LauncherCheckboxId::ConvenienceHelp => {
+                    LauncherStatusHelp::Vera(CONVENIENCE_HELP_HELP)
                 }
                 LauncherCheckboxId::BuildingProductionQueue => {
                     LauncherStatusHelp::Vera(BUILDING_PRODUCTION_QUEUE_HELP)

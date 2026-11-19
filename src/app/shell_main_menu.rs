@@ -201,6 +201,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;
     }
+    fn store_convenience_help(&mut self, enabled: bool) {
+        // Presentation only: the next status-row draw reads it.
+        self.persistence.options_profile.convenience_help = enabled;
+    }
     fn store_building_production_queue(&mut self, enabled: bool) {
         // The next frame carries it onto FrameEffects; the simulation reads it
         // there, so it stays out of the ruleset, saves and state hashes.
