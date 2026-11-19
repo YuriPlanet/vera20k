@@ -92,7 +92,14 @@ keys later; the fallback is evaluated at the hook at runtime by `.Get(...)`.
 - **`0x4D9510` `FootClass_SetDestination_OpenToppedFireWhileMoving`**
   (`Hooks.Transport.cpp:893-952`): on setting a destination, release each
   passenger's `LocomotorTarget` / `TemporalImUsing` when it may not fire while
-  moving. **Not ported** (residual).
+  moving. VERA runs it from the admitted non-null destination in
+  `movement/navcom.rs` (`phobos_open_topped_release_locks` in
+  `sim/passenger.rs`): the carrier's `OpenTopped.FireWhileMoving` and the
+  rider's `OpenTransport.FireWhileMoving` must both allow firing, and a link
+  whose selected weapon carries `Warhead.IsLocomotor` (`Warhead.Temporal` for
+  the temporal link) still goes when that weapon is `FireWhileMoving=no`.
+  Tests `a_moving_open_topped_carrier_releases_a_rider_that_cannot_fire`,
+  `a_locomotor_weapon_without_fire_while_moving_releases_the_link`.
 - **`0x6FCA26` `TechnoClass_CanFire_RevertAresOpenTopCloakFix`**
   (`Hooks.Cloak.cpp:179-199`): `OpenTopped.DecloakToFire` true returns
   `NotApplicable(0x6FCA5E)`, skipping the Ares forced-decloak verdict; false
