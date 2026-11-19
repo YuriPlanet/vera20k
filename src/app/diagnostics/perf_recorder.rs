@@ -113,7 +113,7 @@ impl PerfRecorder {
         }
     }
 
-    /// The CSV header: base columns, then 30 SIM phases + total, 11 render
+    /// The CSV header: base columns, then 30 SIM phases + total, 14 render
     /// phases, 11 path-batch counters, 5 process counters, and the GPU mean.
     fn header() -> String {
         let mut columns = vec![
@@ -273,7 +273,7 @@ mod tests {
         );
         assert_eq!(columns[5], "sim_commands_ingress");
         assert_eq!(columns[5 + PHASE_KEYS.len()], "sim_total_ms");
-        assert_eq!(columns[6 + PHASE_KEYS.len()], "render_world");
+        assert_eq!(columns[6 + PHASE_KEYS.len()], "render_snapshot");
         assert_eq!(columns.last().copied(), Some("gpu_ms"));
     }
 

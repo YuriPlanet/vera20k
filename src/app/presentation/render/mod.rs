@@ -198,6 +198,9 @@ pub(crate) struct GameRenderTimes {
 /// The perf recorder uses these as CSV column names.
 #[cfg(feature = "perf")]
 pub(crate) const RENDER_PHASE_KEYS: [&str; RenderPhases::COUNT] = [
+    "snapshot",
+    "terrain",
+    "objects",
     "world",
     "debug",
     "shroud",
