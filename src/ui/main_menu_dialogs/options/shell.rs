@@ -854,7 +854,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
             LauncherCheckboxId::SmoothOnlineMenus => SMOOTH_ONLINE_MENUS_LABEL,
             LauncherCheckboxId::VSync => super::VSYNC_LABEL,
-            LauncherCheckboxId::DirectX12 => super::DIRECTX12_LABEL,
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::AutoRepair => AUTO_REPAIR_LABEL,
@@ -938,7 +937,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => self.values.smooth_sidebar,
             LauncherCheckboxId::SmoothOnlineMenus => self.values.smooth_online_menus,
             LauncherCheckboxId::VSync => self.values.vsync,
-            LauncherCheckboxId::DirectX12 => self.values.directx12,
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::AutoRepair => self.values.auto_repair,
@@ -1265,7 +1263,6 @@ impl OptionsDialogState {
                     LauncherStatusHelp::Vera(SMOOTH_ONLINE_MENUS_HELP)
                 }
                 LauncherCheckboxId::VSync => LauncherStatusHelp::Vera(super::VSYNC_HELP),
-                LauncherCheckboxId::DirectX12 => LauncherStatusHelp::Vera(super::DIRECTX12_HELP),
                 LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Vera(HD_MAP_PREVIEWS_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::AutoRepair => LauncherStatusHelp::Vera(AUTO_REPAIR_HELP),

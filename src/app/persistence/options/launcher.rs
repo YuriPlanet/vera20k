@@ -43,7 +43,6 @@ pub(crate) fn launcher_values_from_profile(
         smooth_sidebar: profile.smooth_sidebar,
         smooth_online_menus: profile.smooth_online_menus,
         vsync: profile.vsync,
-        directx12: profile.directx12,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
         auto_repair: profile.auto_repair,
@@ -141,8 +140,6 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     /// Present in step with the display, or as soon as a frame is drawn
     /// (`[VERA] VSync=`).
     fn store_vsync(&mut self, vsync: bool);
-    /// Draw through DirectX 12 from the next start (`[VERA] DirectX12=`).
-    fn store_directx12(&mut self, enabled: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
@@ -222,9 +219,6 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_smooth_online_menus(enabled);
         }
         LauncherOptionsEvent::VSyncChanged(vsync) => operations.store_vsync(vsync),
-        LauncherOptionsEvent::DirectX12Changed(enabled) => {
-            operations.store_directx12(enabled);
-        }
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);
         }
@@ -594,7 +588,6 @@ mod tests {
             skip_intro: true,
             mouse_wheel_zoom: true,
             shift_queue: true,
-            directx12: true,
             ..RetailOptionsProfile::default()
         });
         assert!(!booleans.tooltips);
@@ -604,6 +597,5 @@ mod tests {
         assert!(booleans.skip_intro);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
-        assert!(booleans.directx12);
     }
 }

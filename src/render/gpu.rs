@@ -34,10 +34,6 @@ mod web_present;
 /// clamped to the adapter's own maximum anyway.
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
-/// Whether this build can draw through DirectX 12, which only Windows has.
-/// Options shows its DirectX 12 box, and startup honors it, only here.
-pub(crate) const HAS_DIRECTX12: bool = cfg!(target_os = "windows");
-
 /// True on the browser's WebGL2 fallback device, which has no storage buffers,
 /// compute or reinterpreting texture views. Renderers that use those select
 /// render-target equivalents there; every other device keeps its ordinary path.
@@ -221,7 +217,7 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
     ) -> Result<Self> {
-        Self::new_async(window, display, false, false).await
+        Self::new_async(window, display, false).await
     }
 
     /// Initialize wgpu with the given window.
@@ -230,16 +226,12 @@ impl GpuContext {
     /// winit's sync ApplicationHandler::resumed().
     /// `hidden_capture` is the startup owner's deliberate capture choice, not
     /// the current visibility/occlusion of a player's ordinary window.
-    /// `directx12` draws through DirectX 12 alone, as Options' box asks
-    /// (`persistence::directx12_start`); only [`HAS_DIRECTX12`] builds ask.
     pub fn new(
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
-        directx12: bool,
     ) -> Result<Self> {
-        block_on(Self::new_async(window, display, hidden_capture, directx12))
-            .context(GraphicsUnavailable)
+        block_on(Self::new_async(window, display, hidden_capture)).context(GraphicsUnavailable)
     }
 
     /// Async initialization — called by new() via block_on().
@@ -247,27 +239,16 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
-        directx12: bool,
     ) -> Result<Self> {
-        // Options' DirectX 12 box asks for DirectX 12 alone: where a driver
-        // offers both, wgpu takes Vulkan, the first API it lists. wgpu's own
-        // override (`WGPU_BACKEND`) wins over either, for reproducible shroud
-        // GPU comparisons. wgpu requires the display at instance creation for
-        // Wayland EGL:
+        // The standard override selects a backend for reproducible
+        // shroud GPU comparisons while retaining primary backends by default.
+        // wgpu requires the display at instance creation for Wayland EGL:
         // https://docs.rs/wgpu-types/30.0.1/wgpu_types/struct.InstanceDescriptor.html
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: if directx12 {
-                wgpu::Backends::DX12
-            } else {
-                wgpu::Backends::PRIMARY
-            }
-            .with_env(),
+            backends: wgpu::Backends::PRIMARY.with_env(),
             ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
         });
-        // The browser has no DirectX 12, and its build never asks for it.
-        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-        let _ = directx12;
         // Browsers without a usable WebGPU adapter fall back to WebGL2. A
         // surface-less probe with the adapter options used below decides
         // first: a canvas given a WebGPU context can no longer create WebGL2.
