@@ -179,6 +179,7 @@ const BOX_W: i32 = 160;
 /// Width of the retail resolution list's face in the chrome atlas.
 const OPTIONS_COMBO_W: i32 = 180;
 const ESC_MENU_ROW_PITCH: i32 = 40;
+const ESC_MENU_COLUMN_GAP: i32 = 18;
 /// Retail's status help for the in-game Game Options Keyboard button, which
 /// the in-game menu shows for its own (`app::input::pause_menu`).
 pub(crate) const IN_GAME_KEYBOARD_HELP: &str = "STT:IGGameOptButtonKeyboard";
@@ -197,8 +198,8 @@ pub(crate) enum PageLabel {
     Heading,
     /// A list's caption, over its face.
     List(LauncherComboId),
-    /// A setting named in the Esc menu's left column, beside its lamp.
-    Checkbox(LauncherCheckboxId),
+    /// A setting named by one of VERA's translation keys.
+    Localized(&'static str),
     /// A slider's caption, over its track.
     Slider(LauncherTrackbarId),
     /// The step a plaque-less slider stands at, right-aligned over the
@@ -206,8 +207,6 @@ pub(crate) enum PageLabel {
     Step(LauncherTrackbarId),
     /// Static `GUI:Blank` at the status line's template place.
     Blank,
-    /// The caption for the button that restores the launch window size.
-    SetWindowSize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -485,8 +484,10 @@ impl LauncherOptionsLayout {
             let mut x = ROW_X;
             let mut row = Vec::new();
             if HAS_SET_WINDOW_SIZE {
-                rows.labels
-                    .push((px(dlu_rect(ROW_X, top, 83, 10)), PageLabel::SetWindowSize));
+                rows.labels.push((
+                    px(dlu_rect(ROW_X, top, 83, 10)),
+                    PageLabel::Localized(SET_WINDOW_SIZE_LABEL),
+                ));
                 row.push(LauncherButton::SetWindowSize);
             }
             if keyboard {
@@ -517,20 +518,44 @@ impl LauncherOptionsLayout {
 
     /// Fit the settings between the top of the Allied box and its action row.
     /// The footer supplies the side margins and the native button dimensions.
-    pub(crate) fn esc_menu(width: i32, height: i32, scale: ShellScale) -> Self {
+    pub(crate) fn esc_menu(
+        width: i32,
+        height: i32,
+        scale: ShellScale,
+        text_width: impl Fn(&str) -> u32,
+    ) -> Self {
         let modal = esc_menu_box_layout_on(width, height, scale);
         let dialog = scale.base_rect(modal.dialog);
         let action = scale.base_rect(modal.ok);
         let inset = action.x - dialog.x;
+        let available = dialog.w - 2 * inset;
+        let captions = [
+            FULL_SCREEN_LABEL,
+            PERFORMANCE_STATS_LABEL,
+            LANGUAGE_LABEL,
+            SET_WINDOW_SIZE_LABEL,
+        ];
+        let captions = &captions[..3 + usize::from(HAS_SET_WINDOW_SIZE)];
+        // Place the controls beside the longest caption in the active language.
+        // A long translation can borrow space from the list down to the button's width.
+        let max_caption = (available - ESC_MENU_COLUMN_GAP - action.w).max(0) as u32;
+        let caption_w = captions
+            .iter()
+            .map(|key| text_width(&tr(key)))
+            .max()
+            .unwrap_or(0)
+            .min(max_caption) as i32;
+        let offset = caption_w + ESC_MENU_COLUMN_GAP;
+        let value_x = action.x + offset;
+        let control_w = OPTIONS_COMBO_W.min(available - offset);
         let body = RectPx::new(
             action.x,
             dialog.y + 8,
-            dialog.w - 2 * inset,
+            offset + control_w,
             action.y - dialog.y - 16,
         );
-        let value_x = body.x + body.w - OPTIONS_COMBO_W;
         let row_h = COMBO_FACE_H.max(action.h);
-        let rows = 3 + i32::from(HAS_SET_WINDOW_SIZE);
+        let rows = captions.len() as i32;
         let top = body.y + (body.h - (rows - 1) * ESC_MENU_ROW_PITCH - row_h) / 2;
         let cell = |row: i32, x, w, h| {
             scale.scale_rect(RectPx::new(
@@ -540,18 +565,21 @@ impl LauncherOptionsLayout {
                 h,
             ))
         };
-        let caption = |row| cell(row, body.x, value_x - body.x - 12, 17);
         let control = |row, w, h| cell(row, value_x, w, h);
         let nothing = RectPx::new(0, 0, 0, 0);
         use LauncherCheckboxId::{FullScreen, PerformanceStats};
-        let mut labels = vec![
-            (caption(0), PageLabel::Checkbox(FullScreen)),
-            (caption(1), PageLabel::Checkbox(PerformanceStats)),
-            (caption(2), PageLabel::List(LauncherComboId::Language)),
-        ];
+        let labels = captions
+            .iter()
+            .enumerate()
+            .map(|(row, &key)| {
+                (
+                    cell(row as i32, body.x, offset, 17),
+                    PageLabel::Localized(key),
+                )
+            })
+            .collect();
         let mut buttons = Vec::new();
         if HAS_SET_WINDOW_SIZE {
-            labels.push((caption(3), PageLabel::SetWindowSize));
             buttons.push((
                 LauncherButton::SetWindowSize,
                 control(3, action.w, action.h),
@@ -565,12 +593,12 @@ impl LauncherOptionsLayout {
             labels,
             combos: vec![(
                 LauncherComboId::Language,
-                control(2, OPTIONS_COMBO_W, COMBO_FACE_H),
+                control(2, control_w, COMBO_FACE_H),
             )],
             trackbars: Vec::new(),
             checkboxes: vec![
-                (FullScreen, control(0, OPTIONS_COMBO_W, 18)),
-                (PerformanceStats, control(1, OPTIONS_COMBO_W, 18)),
+                (FullScreen, control(0, control_w, 18)),
+                (PerformanceStats, control(1, control_w, 18)),
             ],
             buttons,
             scale,
@@ -733,11 +761,10 @@ impl OptionsDialogState {
             let (text, align) = match label {
                 PageLabel::Heading => (self.shell_category_label(layout.category), Left),
                 PageLabel::List(id) => (Cow::Owned(list_caption(id)), Left),
-                PageLabel::Checkbox(id) => (self.shell_checkbox_label(id), Left),
+                PageLabel::Localized(key) => (Cow::Owned(tr(key)), Left),
                 PageLabel::Slider(id) => (self.slider_caption(id), Left),
                 PageLabel::Step(id) => (Cow::Borrowed(self.slider_step(id)), Right),
                 PageLabel::Blank => (Cow::Borrowed(self.labels.blank.as_str()), Left),
-                PageLabel::SetWindowSize => (Cow::Owned(tr(SET_WINDOW_SIZE_LABEL)), Left),
             };
             LauncherShellLabel {
                 rect,
@@ -2092,6 +2119,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn esc_menu_controls_follow_the_widest_visible_caption() {
+        let stats = tr(PERFORMANCE_STATS_LABEL);
+        for width in [94, 166] {
+            let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL, |caption| {
+                if caption == stats { width } else { 40 }
+            });
+            let face = layout.combo_rect(LauncherComboId::Language).unwrap();
+            let gap = face.x - (layout.labels[0].0.x + width as i32);
+            assert!(
+                (12..=22).contains(&gap),
+                "gap after the longest caption is {gap}px"
+            );
+            let lamp = checkbox(&layout, LauncherCheckboxId::FullScreen);
+            assert!(
+                layout
+                    .checkbox_at(face.x + face.w + 1, lamp.y + 2)
+                    .is_none()
+            );
+        }
+    }
+
     /// The Esc menu's settings share two columns. Opening even the full
     /// language list leaves its three action buttons visible.
     #[test]
@@ -2108,11 +2157,11 @@ mod tests {
         state.set_languages(languages, "0".to_owned());
         for (w, h) in [(640, 480), (1920, 1080)] {
             let scale = ShellScale::for_window(w, h);
-            let layout = LauncherOptionsLayout::esc_menu(w, h, scale);
+            let layout = LauncherOptionsLayout::esc_menu(w, h, scale, |_| 100);
             let message_box = esc_menu_box_layout_on(w, h, scale);
             let face = layout.combo_rect(LauncherComboId::Language).unwrap();
             let caption = |kind| layout.labels.iter().find(|(_, id)| *id == kind).unwrap().0;
-            let language = caption(PageLabel::List(LauncherComboId::Language));
+            let language = caption(PageLabel::Localized(LANGUAGE_LABEL));
             assert!(language.x + language.w <= face.x);
             assert!(language.y < face.y + face.h && face.y < language.y + language.h);
             for (id, rect) in &layout.checkboxes {
@@ -2127,7 +2176,7 @@ mod tests {
             }
             if HAS_SET_WINDOW_SIZE {
                 let size = button(&layout, LauncherButton::SetWindowSize);
-                let title = caption(PageLabel::SetWindowSize);
+                let title = caption(PageLabel::Localized(SET_WINDOW_SIZE_LABEL));
                 assert_eq!((title.x, size.x), (language.x, face.x));
                 assert!(title.y < size.y + size.h && size.y < title.y + title.h);
                 assert!(size.y + size.h < message_box.ok.y);
@@ -2156,7 +2205,7 @@ mod tests {
             return;
         }
         let mut state = state();
-        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL);
+        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL, |_| 100);
         let rect = button(&layout, LauncherButton::SetWindowSize);
         let (x, y) = (rect.x + 2, rect.y + 2);
         state.shell_mouse_down(x, y, &layout);
@@ -2191,7 +2240,7 @@ mod tests {
     #[test]
     fn esc_menu_checkboxes_publish_what_the_options_page_does() {
         let mut state = state();
-        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL);
+        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL, |_| 100);
         let event = |id, checked| match id {
             LauncherCheckboxId::FullScreen => LauncherOptionsEvent::FullScreenChanged(checked),
             _ => LauncherOptionsEvent::PerformanceStatsChanged(checked),
@@ -2201,12 +2250,12 @@ mod tests {
             LauncherCheckboxId::PerformanceStats,
         ] {
             let rect = checkbox(&layout, id);
-            let title = layout
-                .labels
-                .iter()
-                .find(|(_, label)| *label == PageLabel::Checkbox(id))
+            let title = state
+                .shell_labels(&layout)
+                .into_iter()
+                .find(|label| label.text == state.shell_checkbox_label(id))
                 .unwrap()
-                .0;
+                .rect;
             for (x, y) in [
                 (rect.x + 2, rect.y + 2),
                 (title.x + 2, title.y + 2),

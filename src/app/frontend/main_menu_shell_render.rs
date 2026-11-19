@@ -1053,9 +1053,13 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
                 }),
         );
     }
-    let menu = message_box
-        .menu_settings()
-        .map(|settings| (settings, shell_layout::shell_menu_settings_layout(state)));
+    let menu = message_box.menu_settings().map(|settings| {
+        let controls = shell_layout::shell_menu_settings_layout(
+            shell_layout::shell_screen_size(state),
+            &state.renderer.bit_font,
+        );
+        (settings, controls)
+    });
     if let Some((settings, controls)) = &menu
         && let Some(list) = settings.shell_popup(controls)
     {

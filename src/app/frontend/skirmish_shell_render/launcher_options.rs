@@ -695,7 +695,7 @@ mod tests {
     /// names to its left stay readable.
     #[test]
     fn an_open_list_hides_the_esc_menu_text_it_covers() {
-        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL);
+        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL, |_| 100);
         let mut state = OptionsDialogState::default();
         state.set_languages(
             (0..11)

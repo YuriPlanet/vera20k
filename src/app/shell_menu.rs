@@ -13,6 +13,7 @@ use winit::event::KeyEvent;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 use super::{App, AppState};
+use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition::{self, ShellExitThen};
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
@@ -113,11 +114,17 @@ impl App {
     /// button's new state, `None` a move. True when an open list took a press,
     /// as a click outside the list only closes it.
     pub(super) fn shell_menu_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
-        let layout = crate::app::frontend::shell_layout::shell_menu_settings_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        let Some(settings) = Self::shell_menu_settings(state) else {
+        let size = shell_layout::shell_screen_size(state);
+        let Some(settings) = state
+            .frontend
+            .shell_message_box
+            .as_mut()
+            .and_then(ShellMessageBox::menu_settings_mut)
+        else {
             return false;
         };
+        let layout = shell_layout::shell_menu_settings_layout(size, &state.renderer.bit_font);
+        let (x, y) = state.match_state.input.cursor_px();
         let list_open = settings.shell_popup(&layout).is_some();
         match pressed {
             Some(true) => settings.shell_mouse_down(x, y, &layout),
