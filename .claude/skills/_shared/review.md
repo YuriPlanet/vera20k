@@ -63,7 +63,8 @@ Naming claims worth challenging helps; the packet does not bound inquiry.
 
 The critic did not build the change and has access to original sources and Ghidra.
 Challenge omitted scope, design, production reachability and tests, including any copy,
-wrapper or competing owner the change keeps or adds. Trace suspected defects to
+wrapper or competing owner the change keeps or adds, and any `.clone()`, `Rc`,
+`RefCell`, `Arc` or lock added to get past the borrow checker. Trace suspected defects to
 consumers; distinguish evidence from speculation and architectural preference. Read
 the cited instructions yourself; do not ask for native execution beyond what AGENTS.md
 allows. Name useful refactoring opportunities with their impact and risks.
