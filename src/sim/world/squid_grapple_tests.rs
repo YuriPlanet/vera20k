@@ -1317,7 +1317,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
         .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     scene.sim.techno_limbo_with_context(
         scene.squid,
-        super::UninitContext::with_rules(&scene.rules).with_effects(FrameEffects::default()),
+        super::UninitContext::new(&scene.rules).with_effects(FrameEffects::default()),
     );
     assert!(
         scene

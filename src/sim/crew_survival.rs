@@ -427,7 +427,7 @@ impl Simulation {
             self.ares_kill_tunnel_feet_if_last(
                 building_id,
                 c4_source,
-                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
             );
         }
         // Phase A (0x00442DF2..0x00443011): every absorbed passenger advances
@@ -516,7 +516,7 @@ impl Simulation {
         //ordinary481180. It remains raised through Scatter/Walk and the
         //mission queue, and is decremented at443288, including failed exits.
         self.with_object_placement_scope(|sim| {
-            if !sim.unlimbo_crew(rules, id, unlimbo, None, registry, effects) {
+            if !sim.unlimbo_crew(rules, id, unlimbo, None, effects) {
                 sim.discard_constructed_limbo(id, rules, effects);
                 return false;
             }
@@ -707,7 +707,7 @@ impl Simulation {
                                 placement: PlacementEvidence::MarkSucceeded,
                                 logic_eligible: true,
                             },
-                            UninitContext::new(rules, registry)
+                            UninitContext::new(rules)
                                 .with_effects(effects)
                                 .with_unlimbo_facing(Some(facing)),
                         ),
@@ -718,7 +718,7 @@ impl Simulation {
                 sim.record_kill_and_uninit(
                     passenger,
                     killer,
-                    UninitContext::new(rules, registry).with_effects(effects),
+                    UninitContext::new(rules).with_effects(effects),
                 );
                 return;
             }
@@ -841,7 +841,7 @@ impl Simulation {
         let Some(crew) = crew else {
             return;
         };
-        let Some(id) = self.construct_crew(rules, &crew, owner, unlimbo, registry, effects) else {
+        let Some(id) = self.construct_crew(rules, &crew, owner, unlimbo, effects) else {
             return;
         };
         // Signed Strength/2 (CDQ; SUB; SAR).
@@ -857,10 +857,7 @@ impl Simulation {
         self.substrate.queue_crew_mission(id, mission);
         if selected_by_player {
             // `0x0073835E`: Select (vt+0x14C) inherits the current voice latch.
-            self.techno_select(
-                id,
-                UninitContext::new(rules, registry).with_effects(effects),
-            );
+            self.techno_select(id, UninitContext::new(rules).with_effects(effects));
         }
         //738364..73837A, after Unlimbo, health, Scatter, mission and Select.
         self.trigger_runtime.transfer_object_tag(unit_id, id);
@@ -904,7 +901,7 @@ impl Simulation {
             self.kill_passengers(
                 unit_id,
                 dying.attacker,
-                UninitContext::new(rules, registry).with_effects(effects),
+                UninitContext::new(rules).with_effects(effects),
             );
         }
         if crashable {
@@ -915,7 +912,6 @@ impl Simulation {
         while crate::sim::passenger::depart_cargo_head(
             self,
             rules,
-            registry,
             unit_id,
             crate::sim::passenger::DepartureRoute::DeathEscape,
             |sim, passenger| {
@@ -986,7 +982,6 @@ impl Simulation {
                     cell,
                     crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
                     rules,
-                    registry,
                 )
             }
             None => Err("no map cells".into()),
@@ -1008,7 +1003,7 @@ impl Simulation {
             self.record_kill_and_uninit(
                 passenger,
                 dying.attacker,
-                UninitContext::new(rules, registry).with_effects(effects),
+                UninitContext::new(rules).with_effects(effects),
             );
             return;
         }
@@ -1059,11 +1054,11 @@ impl Simulation {
                 locomotor.store_ground_layer(false);
             }
             // `0x007380EC..0x007380F4`: a refused Unlimbo kills.
-            if !sim.unlimbo_crew(rules, passenger, unlimbo, Some(facing), registry, effects) {
+            if !sim.unlimbo_crew(rules, passenger, unlimbo, Some(facing), effects) {
                 sim.record_kill_and_uninit(
                     passenger,
                     dying.attacker,
-                    UninitContext::new(rules, registry).with_effects(effects),
+                    UninitContext::new(rules).with_effects(effects),
                 );
                 return;
             }
@@ -1074,7 +1069,7 @@ impl Simulation {
 
             // `0x00738104..0x0073812A`: Assign_Target(NULL).
             if open_topped && passenger_owner != unit_owner {
-                let _ = sim.assign_target_represented(passenger, None, rules, registry, effects);
+                let _ = sim.assign_target_represented(passenger, None, rules, effects);
             }
             // `0x00738130..0x0073813D`: Scatter(&EmptyCoord, 1, 0).
             // The virtual receiver includes Unit passengers. Its destination
@@ -1085,7 +1080,7 @@ impl Simulation {
             if !sim.owner_is_human(passenger_owner) {
                 match sim.team_script_vm.team_for_member(unit_id) {
                     Some((team_id, _)) => {
-                        sim.team_add_member(team_id, passenger, false, rules, registry, effects);
+                        sim.team_add_member(team_id, passenger, false, rules, effects);
                     }
                     None => sim
                         .substrate
@@ -1094,10 +1089,7 @@ impl Simulation {
             }
             // `0x00738174..0x00738180`: Select (vtable `+0x14C`) inherits the voice latch.
             if dying.selected_by_player {
-                sim.techno_select(
-                    passenger,
-                    UninitContext::new(rules, registry).with_effects(effects),
-                );
+                sim.techno_select(passenger, UninitContext::new(rules).with_effects(effects));
             }
         });
     }
@@ -1111,12 +1103,11 @@ impl Simulation {
         crew: &str,
         owner: InternedId,
         unlimbo: CrewUnlimbo,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Option<u64> {
         let (rx, ry, z) = unlimbo.cell_level();
         let id = self.construct_crew_limbo(rules, crew, owner, (rx, ry), z, effects)?;
-        if !self.unlimbo_crew(rules, id, unlimbo, None, registry, effects) {
+        if !self.unlimbo_crew(rules, id, unlimbo, None, effects) {
             self.discard_constructed_limbo(id, rules, effects);
             return None;
         }
@@ -1159,7 +1150,6 @@ impl Simulation {
         id: u64,
         unlimbo: CrewUnlimbo,
         facing: Option<u8>,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let infantry = self
@@ -1244,7 +1234,7 @@ impl Simulation {
                 placement: PlacementEvidence::MarkSucceeded,
                 logic_eligible: true,
             },
-            UninitContext::new(rules, registry)
+            UninitContext::new(rules)
                 .with_effects(effects)
                 .with_unlimbo_facing(facing),
         );
@@ -1379,14 +1369,7 @@ impl Simulation {
             let escaped = self.with_object_placement_scope(|sim| {
                 let pick = sim.scenario_rng.next_range_i32_inclusive(0, last);
                 let cell = cells[pick as usize];
-                if !sim.unlimbo_crew(
-                    rules,
-                    id,
-                    sim.survivor_unlimbo(cell),
-                    None,
-                    registry,
-                    effects,
-                ) {
+                if !sim.unlimbo_crew(rules, id, sim.survivor_unlimbo(cell), None, effects) {
                     sim.discard_constructed_limbo(id, rules, effects);
                     return false;
                 }

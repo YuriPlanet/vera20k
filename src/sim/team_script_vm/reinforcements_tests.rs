@@ -1636,12 +1636,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let placement_members = sim
-            .create_reinforcement_members(
-                team_type,
-                &rules,
-                Some(&overlay),
-                FrameEffects::default(),
-            )
+            .create_reinforcement_members(team_type, &rules, FrameEffects::default())
             .expect("original Full constructor result");
         let created: Vec<_> = sim
             .entities()

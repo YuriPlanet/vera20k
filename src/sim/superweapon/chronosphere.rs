@@ -478,7 +478,6 @@ fn arm_chrono_warp(
         id,
         Some(NavTargetRef::cell(cx as u16, cy as u16)),
         rules,
-        overlay_registry,
         frame_effects,
     ) {
         log::debug!("chrono warp {id} destination: {error:?}");
@@ -850,20 +849,13 @@ fn ares_chronoport(
         crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     }
     if chrono.kill_cargo {
-        let context = crate::sim::world::UninitContext::new(rules, overlay_registry)
-            .with_effects(frame_effects);
+        let context = crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
         sim.ares_kill_cargo(id, context);
     }
     if category == EntityCategory::Structure {
-        if let Some(building) = ares_begin_building_chronoshift(
-            sim,
-            rules,
-            warp,
-            id,
-            is_vehicle,
-            overlay_registry,
-            frame_effects,
-        ) {
+        if let Some(building) =
+            ares_begin_building_chronoshift(sim, rules, warp, id, is_vehicle, frame_effects)
+        {
             buildings.push(building);
         }
         return;
@@ -937,10 +929,9 @@ fn ares_begin_building_chronoshift(
     warp: &AresChronoWarp,
     id: u64,
     is_vehicle: bool,
-    overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> Option<AresChronoWarpBuilding> {
-    sim.stop_all_targeting_on_detach(id, rules, overlay_registry, frame_effects);
+    sim.stop_all_targeting_on_detach(id, rules, frame_effects);
     sim.lose_projectile_targets(id, rules);
     let entity = sim.substrate.entities.get_mut(id)?;
     entity.begin_ares_chronoshift();
@@ -1034,8 +1025,7 @@ fn ares_chrono_warp_update(
                 .is_some_and(|entity| entity.lifecycle.object_alive())
         })
         .collect();
-    let context =
-        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(frame_effects);
+    let context = crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
     for item in &buildings {
         sim.techno_limbo_with_context(item.building, context);
         if let Some(entity) = sim.substrate.entities.get_mut(item.building) {
@@ -1283,7 +1273,6 @@ fn ares_arm_chrono_warp(
         id,
         Some(NavTargetRef::cell(cx as u16, cy as u16)),
         rules,
-        overlay_registry,
         frame_effects,
     ) {
         log::debug!("ares chrono warp {id} destination: {error:?}");

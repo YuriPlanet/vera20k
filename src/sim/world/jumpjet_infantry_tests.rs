@@ -1158,7 +1158,7 @@ fn a_hovering_jumpjet_turn_infantryman_aims_his_locomotor_at_his_target() {
             .jumpjet_runtime_mut()
             .unwrap();
         *runtime = runtime.clone().with_destination_for_test(here);
-        sim.tick_jumpjet_cruise_one(1, &rules, None, crate::sim::world::FrameEffects::default())
+        sim.tick_jumpjet_cruise_one(1, &rules, crate::sim::world::FrameEffects::default())
             .unwrap();
         let frame = sim.session.binary_frame();
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -1511,7 +1511,6 @@ fn a_ground_route_order_gives_a_rocketeer_his_navcom_and_move_to() {
         1,
         Some(crate::sim::components::NavTargetRef::cell(60, 52)),
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
@@ -1589,7 +1588,6 @@ fn an_object_order_flies_a_rocketeer_with_the_order() {
         1,
         Some(crate::sim::components::NavTargetRef::object(shooter)),
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
@@ -1629,7 +1627,6 @@ fn the_mission_destination_setter_flies_a_rocketeer() {
         1,
         Some(crate::sim::components::NavTargetRef::cell(60, 52)),
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
@@ -1719,7 +1716,6 @@ fn the_mission_destination_setter_reorders_a_moving_rocketeer() {
             1,
             Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();

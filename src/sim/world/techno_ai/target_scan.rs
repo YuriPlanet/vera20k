@@ -470,7 +470,7 @@ pub(super) fn passive_acquire_gate(
     }
     let (slot, _) = combat_weapon::deploy_weapon(obj, entity.veterancy.rank());
     let target = entity.attack_target.target();
-    let area_fire = fire_subject(sim, rules, id, target, slot, None)
+    let area_fire = fire_subject(sim, rules, id, target, slot)
         .and_then(|subject| subject.weapon_at(slot).map(|weapon| weapon.area_fire))
         .unwrap_or(false);
     !(area_fire && select_weapon(sim, rules, id, target) == slot)
@@ -592,14 +592,12 @@ fn fire_subject<'a>(
     id: u64,
     target: Option<TargetKind>,
     weapon_index: i32,
-    overlay_registry: Option<&'a OverlayTypeRegistry>,
 ) -> Option<FireSubject<'a>> {
     let firer = sim.substrate.entities.get(id)?;
     let obj = sim.interner.object_type(firer.type_ref(), rules)?;
     Some(FireSubject {
         world: sim,
         rules,
-        overlay_registry,
         fog: Some(sim.fog.fire_view(&sim.house_alliances)),
         firer,
         obj,
@@ -616,7 +614,7 @@ pub(crate) fn weapon_at_index<'r>(
     id: u64,
     index: i32,
 ) -> Option<&'r WeaponType> {
-    let subject = fire_subject(sim, rules, id, None, index, None)?;
+    let subject = fire_subject(sim, rules, id, None, index)?;
     // `weapon_at` borrows the subject; re-resolve through the rules so the
     // weapon outlives it.
     rules.weapon(&subject.weapon_at(index)?.id)
@@ -663,9 +661,8 @@ pub(crate) fn can_fire_at(
     id: u64,
     target: TargetKind,
     weapon_index: i32,
-    overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> bool {
-    fire_subject(sim, rules, id, Some(target), weapon_index, overlay_registry)
+    fire_subject(sim, rules, id, Some(target), weapon_index)
         .is_some_and(|subject| subject.in_range())
 }
 
@@ -679,12 +676,10 @@ pub(super) fn fire_error_at(
     target: Option<TargetKind>,
     weapon_index: i32,
     check_range: bool,
-    overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> FireError {
-    fire_subject(sim, rules, id, target, weapon_index, overlay_registry)
-        .map_or(FireError::Illegal, |subject| {
-            subject.fire_error(check_range)
-        })
+    fire_subject(sim, rules, id, target, weapon_index).map_or(FireError::Illegal, |subject| {
+        subject.fire_error(check_range)
+    })
 }
 
 impl Simulation {
@@ -701,18 +696,9 @@ impl Simulation {
         id: u64,
         target: TargetKind,
         check_range: bool,
-        overlay_registry: Option<&OverlayTypeRegistry>,
     ) -> FireError {
         let weapon = select_weapon(self, rules, id, Some(target));
-        fire_error_at(
-            self,
-            rules,
-            id,
-            Some(target),
-            weapon,
-            check_range,
-            overlay_registry,
-        )
+        fire_error_at(self, rules, id, Some(target), weapon, check_range)
     }
 }
 
@@ -788,15 +774,7 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     fn fire_error(&mut self, target: Option<TargetKind>, weapon: i32) -> FireError {
         // Original7098DA PUSH1 before7098E6 GetFireError(vt+3C0): the
         // held passive target must pass the live wall-aware range query.
-        fire_error_at(
-            self.sim,
-            self.rules,
-            self.id,
-            target,
-            weapon,
-            true,
-            self.ctx.overlay_registry,
-        )
+        fire_error_at(self.sim, self.rules, self.id, target, weapon, true)
     }
 
     /// The SpawnManager `+0x2D0` that `Retaliate_And_Scan @ 0x00709820` tests.
@@ -809,19 +787,14 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
             self.sim,
             self.id,
             self.rules,
-            None,
             self.ctx.effects,
         );
     }
 
     fn assign_target(&mut self, target: Option<TargetKind>) {
-        let _ = self.sim.assign_target_represented(
-            self.id,
-            target,
-            self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
-        );
+        let _ = self
+            .sim
+            .assign_target_represented(self.id, target, self.rules, self.ctx.effects);
     }
 
     /// Through the object's `+0x3C4` override, or this pass's batched answer
@@ -831,16 +804,15 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     /// sim-scale deviation.
     fn greatest_threat(&mut self, mask: ScanMission) -> Option<TargetKind> {
         let (rules, registry) = (self.rules, self.ctx.overlay_registry);
-        let outcome =
-            match self
+        let outcome = match self
+            .sim
+            .take_batched_scan(rules, self.id, mask, self.scan_coord)
+        {
+            Some(outcome) => outcome,
+            None => self
                 .sim
-                .take_batched_scan(rules, registry, self.id, mask, self.scan_coord)
-            {
-                Some(outcome) => outcome,
-                None => self
-                    .sim
-                    .threat_scan(rules, registry, self.id, mask, self.scan_coord),
-            };
+                .threat_scan(rules, registry, self.id, mask, self.scan_coord),
+        };
         Simulation::commit_threat_scan(
             &mut self.sim.scenario_rng,
             &mut self.sim.substrate,
@@ -1085,7 +1057,6 @@ mod tests {
             let subject = FireSubject {
                 world: &sim,
                 rules,
-                overlay_registry: Some(&registry),
                 fog: Some(sim.fog.fire_view(&sim.house_alliances)),
                 firer: actor,
                 obj: rules.object("E1").unwrap(),

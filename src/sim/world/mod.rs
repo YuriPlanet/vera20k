@@ -187,6 +187,7 @@ mod wall_autofill_oracle_tests;
 #[cfg(all(test, tests_sim_world_t_z))]
 mod wall_restore_tests;
 mod world_commands;
+pub use world_commands::Selection;
 mod world_hash;
 
 #[cfg(all(test, tests_sim_world_c_o))]
@@ -2511,7 +2512,7 @@ impl Simulation {
             run.finish(),
             fire_events,
         )
-        .commit(self, rules, overlay_registry, frame_effects);
+        .commit(self, rules, frame_effects);
         #[cfg(test)]
         if let Some(id) = observed_direct {
             crate::sim::combat::receiver_fixture::observe_fire_visit(self, id, "return");
@@ -2525,7 +2526,6 @@ impl Simulation {
     pub(crate) fn commit_no_fire(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
         damage_consequences::DamageConsequences::live_fire(
@@ -2534,7 +2534,7 @@ impl Simulation {
             Vec::new(),
             Vec::new(),
         )
-        .commit(self, rules, overlay_registry, frame_effects)
+        .commit(self, rules, frame_effects)
     }
 
     /// Commit a completed Bullet's detonation while its current Logic slot and
@@ -2571,7 +2571,6 @@ impl Simulation {
         }
         self.absorb_noncombat_damage_effects(
             rules,
-            overlay_registry,
             commit.effects,
             commit.under_attack_events,
             terrain_navigation_changed_cells,
@@ -2588,7 +2587,6 @@ impl Simulation {
         event: &SimFireEvent,
         wave_type: u8,
         weapon_index: i32,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         if let Some(wave) = self.prepare_fired_wave(rules, event, wave_type) {
             // Ares CreateWave (Ares.dll 10055160) stores the BYTE weapon index
@@ -2598,7 +2596,7 @@ impl Simulation {
             {
                 owner.record_ares_wave_weapon_slot(weapon_index as u8);
             }
-            self.admit_fired_wave(event.attacker_id, wave, rules, overlay_registry);
+            self.admit_fired_wave(event.attacker_id, wave, rules);
         }
     }
 
@@ -2661,7 +2659,6 @@ impl Simulation {
         attacker_id: u64,
         mut wave: crate::sim::wave::Wave,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let stable_id = self.substrate.allocate_stable_id();
         if !wave.constructor_distance_is_live() {
@@ -2670,8 +2667,7 @@ impl Simulation {
             // represents that same-frame deferred cleanup window.
             self.waves.spawn(stable_id, wave);
             self.active_wave_links.insert(attacker_id, stable_id);
-            let retired =
-                self.retire_non_entity_object(stable_id, UninitContext::with_rules(rules));
+            let retired = self.retire_non_entity_object(stable_id, UninitContext::new(rules));
             debug_assert!(retired);
             return;
         }
@@ -2681,13 +2677,12 @@ impl Simulation {
         self.next_native_runtime_id();
         // Constructor75E950 runs an immediate Update_Wave762AF0, including
         // current target+58 and GetFLH(0), before the first Logic AI visit.
-        let context = self.wave_update_context(&wave, rules, overlay_registry);
+        let context = self.wave_update_context(&wave, rules);
         let terminal = wave.initialize(context, self.resolved_terrain.as_ref());
         self.admit_wave(stable_id, wave);
         self.active_wave_links.insert(attacker_id, stable_id);
         if terminal {
-            let retired =
-                self.retire_non_entity_object(stable_id, UninitContext::with_rules(rules));
+            let retired = self.retire_non_entity_object(stable_id, UninitContext::new(rules));
             debug_assert!(retired);
         }
     }
@@ -3003,7 +2998,6 @@ impl Simulation {
         }
         self.absorb_noncombat_damage_effects(
             rules,
-            overlay_registry,
             effects,
             under_attack_events,
             terrain_navigation_changed_cells,
@@ -3072,13 +3066,8 @@ impl Simulation {
                 // then dirty this radar cell, in old-TMP row order.
                 for &coord in &mutation.original_footprint {
                     // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
-                    let _receipt = self.stop_all_targeting_cell(
-                        coord.0,
-                        coord.1,
-                        rules,
-                        overlay_registry,
-                        frame_effects,
-                    );
+                    let _receipt =
+                        self.stop_all_targeting_cell(coord.0, coord.1, rules, frame_effects);
                     #[cfg(any(test, feature = "test-support"))]
                     effects.cell_target_detaches.extend(_receipt.cell_detaches);
                     self.dirty_cells.mark_radar([coord]);
@@ -3176,7 +3165,6 @@ impl Simulation {
         let terrain_navigation_changed_cells = run.finish();
         self.absorb_noncombat_damage_effects(
             rules,
-            overlay_registry,
             effects,
             under_attack_events,
             terrain_navigation_changed_cells,
@@ -3244,7 +3232,6 @@ impl Simulation {
         let terrain_navigation_changed_cells = run.finish();
         self.absorb_noncombat_damage_effects(
             rules,
-            overlay_registry,
             effects,
             under_attack_events,
             terrain_navigation_changed_cells,
@@ -3294,7 +3281,6 @@ impl Simulation {
         let terrain_navigation_changed_cells = run.finish();
         let mut receipt = self.absorb_noncombat_damage_effects(
             rules,
-            overlay_registry,
             effects,
             under_attack_events,
             terrain_navigation_changed_cells,
@@ -3311,7 +3297,6 @@ impl Simulation {
     pub(crate) fn absorb_noncombat_damage_effects(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: crate::sim::combat::DeathEffects,
         under_attack_events: Vec<crate::sim::combat::UnderAttackEvent>,
         terrain_navigation_changed_cells: Vec<(u16, u16)>,
@@ -3322,7 +3307,7 @@ impl Simulation {
             under_attack_events,
             terrain_navigation_changed_cells,
         )
-        .commit(self, rules, overlay_registry, frame_effects)
+        .commit(self, rules, frame_effects)
     }
 
     /// HouseClass::NotifyUnderAttack4F93E0 submits its radar/EVA/Voc before
@@ -5132,7 +5117,7 @@ impl Simulation {
         if let Some(id) = construction.constructed_id() {
             // Full SmudgeCtor6B4A50 retires after its Mark/Place, before the
             // producer can make another RNG draw or construct the next object.
-            self.uninit_with_context(id, lifecycle::UninitContext::new(rules, overlay_registry));
+            self.uninit_with_context(id, lifecycle::UninitContext::new(rules));
         }
         Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
         if let Err(error) = result {
@@ -6853,7 +6838,7 @@ impl Simulation {
                 &self.resolved_terrain,
                 stable_id,
             );
-            self.release_object_sight_with_context(stable_id, UninitContext::new(rules, None));
+            self.release_object_sight_with_context(stable_id, UninitContext::new(rules));
             // Original4483A6 clears PrimaryFactory before the old-house
             //teardown.448C69 initializes it after the delegated owner swap.
             self.production.clear_primary_factory(stable_id);
@@ -6943,8 +6928,8 @@ impl Simulation {
             && self
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| object.is_simple_deployer);
-        let _ = self.assign_target_represented(stable_id, None, rules, registry, effects);
-        self.assign_null_destination(stable_id, rules, None, effects);
+        let _ = self.assign_target_represented(stable_id, None, rules, effects);
+        self.assign_null_destination(stable_id, rules, Some(rules.overlay_registry()), effects);
         if !unit_deploying && let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.set_archive_target(None);
         }
@@ -6984,7 +6969,7 @@ impl Simulation {
             crate::sim::spawn_manager::kill_all_spawns_with_context(
                 self,
                 stable_id,
-                UninitContext::new(rules, registry).with_effects(effects),
+                UninitContext::new(rules).with_effects(effects),
             );
         }
         // Techno701585 -> Planning638840 removes this actor's path before
@@ -7007,7 +6992,7 @@ impl Simulation {
             stable_id,
             crate::sim::combat::KillSource::Techno(None),
             crate::sim::combat::KillCallback::OwnerChange,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
         let cost = self
             .substrate
@@ -7059,7 +7044,7 @@ impl Simulation {
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
         //the owner store. PlaceDown's Cell discovery therefore observes the
         //old House and can dirty its radar as well as its power.
-        let mark_context = UninitContext::new(rules, registry).with_effects(effects);
+        let mark_context = UninitContext::new(rules).with_effects(effects);
         if on_map {
             self.unmark_entity_remove(stable_id, mark_context);
         }
@@ -7069,7 +7054,7 @@ impl Simulation {
         // garrison transfer both come through here, so a squad that was firing
         // at a building stops the instant the building changes hands instead of
         // shooting at what is now its own structure.
-        self.stop_all_targeting_on_detach(stable_id, rules, registry, effects);
+        self.stop_all_targeting_on_detach(stable_id, rules, effects);
         if on_map {
             self.mark_entity_put(stable_id, mark_context);
         }
@@ -7082,7 +7067,7 @@ impl Simulation {
         // them the cleared latch makes it a no-op.
         self.release_object_sight_with_context(
             stable_id,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
         self.substrate.entities.change_owner(stable_id, new_owner);
         #[cfg(feature = "phobos")]
@@ -7212,7 +7197,7 @@ impl Simulation {
                 stable_id,
                 0,
                 None,
-                UninitContext::new(rules, registry).with_effects(effects),
+                UninitContext::new(rules).with_effects(effects),
             );
         }
         if category == EntityCategory::Structure {
@@ -7224,7 +7209,14 @@ impl Simulation {
             crate::sim::production::initialize_factory_primary(self, rules, stable_id);
             //448CEF: Grand_Opening(1) also runs on an already placed
             //building; its6E4 gate prevents repeating first-opening slots.
-            self.grand_opening(stable_id, true, false, rules, None, effects);
+            self.grand_opening(
+                stable_id,
+                true,
+                false,
+                rules,
+                Some(rules.overlay_registry()),
+                effects,
+            );
         }
         // `FootClass::ChangeOwner @ 0x004DBF13..0x004DBF32`: a Foot given to
         // a human house leaves its team.
@@ -7533,9 +7525,15 @@ impl Simulation {
         if in_factory_contact {
             return;
         }
-        self.assign_null_destination(stable_id, rules, None, effects);
-        let _ = self.assign_target_represented(stable_id, None, rules, None, effects);
-        enter_idle_mode(self, stable_id, rules, None, effects);
+        self.assign_null_destination(stable_id, rules, Some(rules.overlay_registry()), effects);
+        let _ = self.assign_target_represented(stable_id, None, rules, effects);
+        enter_idle_mode(
+            self,
+            stable_id,
+            rules,
+            Some(rules.overlay_registry()),
+            effects,
+        );
     }
 
     /// A `WeaponsFactory=` building whose current mission is Unload: one

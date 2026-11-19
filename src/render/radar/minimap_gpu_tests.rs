@@ -270,7 +270,7 @@ fn present(
                     view.fog(),
                     view.house_alliances(),
                     true,
-                    view.session().game_mode_nonzero(),
+                    view.session().native_player_identity(),
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),

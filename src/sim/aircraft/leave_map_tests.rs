@@ -113,12 +113,8 @@ fn removal_past_the_map_matches_native() {
             continue;
         }
         let mut sim = world(&row);
-        let removed = sim.remove_aircraft_off_map(
-            1,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        let removed =
+            sim.remove_aircraft_off_map(1, &rules, crate::sim::world::FrameEffects::default());
         assert_eq!(removed, flag(&row, "removed"), "{row}");
         // UnInit: dead, and deleted at the frame's end.
         let alive = sim
@@ -163,12 +159,7 @@ fn removal_releases_the_planes_sounds() {
     plane.set_in_playfield(flag(&row, "in_playfield"));
     plane.move_sound = crate::sim::world::MoveSoundState::from_raw_for_test(true, 3);
     assert!(sim.aircraft_may_leave_map(1));
-    assert!(sim.remove_aircraft_off_map(
-        1,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    assert!(sim.remove_aircraft_off_map(1, &rules, crate::sim::world::FrameEffects::default(),));
     assert!(
         sim.sound_events
             .iter()
@@ -240,7 +231,7 @@ fn dummy_cleanup_uses_allocation_identity_and_does_not_stamp_the_dummy() {
             .as_ref()
             .unwrap()
             .stamp_dummy_cell_requested_coord(700, 701);
-        sim.cleanup_aircraft_dummy_cells(plane, &rules, None, Default::default());
+        sim.cleanup_aircraft_dummy_cells(plane, &rules, Default::default());
         let entity = sim.substrate.entities.get(plane).unwrap();
         assert_eq!(entity.navigation.nav_com(), pointer);
         assert_eq!(entity.attack_target.target(), pointer.map(TargetKind::from));
@@ -271,7 +262,7 @@ fn dummy_cleanup_uses_allocation_identity_and_does_not_stamp_the_dummy() {
         .unwrap()
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(20, 20)));
-    sim.cleanup_aircraft_dummy_cells(plane, &rules, None, Default::default());
+    sim.cleanup_aircraft_dummy_cells(plane, &rules, Default::default());
     let entity = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(entity.navigation.nav_com(), None);
     assert_eq!(entity.attack_target.target(), None);
@@ -303,7 +294,7 @@ fn dummy_cleanup_rereads_the_target_after_idle_restores_a_mission() {
     entity
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Cell(701, 701)));
-    sim.cleanup_aircraft_dummy_cells(plane, &rules, None, Default::default());
+    sim.cleanup_aircraft_dummy_cells(plane, &rules, Default::default());
     let entity = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(entity.mission.current(), mission);
     assert_eq!(entity.mission.suspended(), MissionId::NONE);

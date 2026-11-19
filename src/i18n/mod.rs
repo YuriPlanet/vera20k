@@ -33,7 +33,7 @@
 //! (`zero`, `one`, `two`, `few`, `many`, `other`); `{count}` is the count.
 //!
 //! A language whose texts mostly start with a right-to-left letter (Arabic,
-//! Hebrew) reads right to left ([`right_to_left`]): there a text holding
+//! Hebrew) reads right to left ([`interface_language`]): there a text holding
 //! such a letter reads from the right even when it starts with a name or a
 //! number. VERA keeps gamemd's layouts unmirrored, so text stays on its
 //! box's side.
@@ -67,7 +67,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display, Write as _};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError, RwLock};
 
 use crate::util::time::{Duration, Instant};
@@ -312,6 +312,18 @@ impl Catalog {
 static CATALOG: LazyLock<RwLock<Catalog>> =
     LazyLock::new(|| RwLock::new(Catalog::new(languages(None))));
 
+/// Bumped at each change of the catalog ([`init`], [`select`], a reload of
+/// the language files), so the fonts read the language in use again
+/// ([`interface_language`]).
+static CATALOG_REVISION: AtomicU64 = AtomicU64::new(0);
+
+/// Put `next` in use ([`CATALOG_REVISION`]).
+fn install_catalog(next: Catalog) {
+    let mut catalog = CATALOG.write().unwrap_or_else(PoisonError::into_inner);
+    *catalog = next;
+    CATALOG_REVISION.fetch_add(1, Ordering::Relaxed);
+}
+
 /// Whether every label displays its own string-table key instead of its text
 /// (Options' Developer page), VERA's own `VERA:` labels included.
 static SHOW_STRING_KEYS: AtomicBool = AtomicBool::new(false);
@@ -453,7 +465,7 @@ fn reload_languages(settings_dir: Option<&Path>, source_dir: Option<&Path>) {
         None => next.languages[0].clone(),
     };
     let tag = next.selected.tag.clone();
-    *CATALOG.write().unwrap_or_else(PoisonError::into_inner) = next;
+    install_catalog(next);
     log::info!("Interface language reloaded: {tag}");
 }
 
@@ -647,7 +659,7 @@ pub fn init(settings_dir: Option<&Path>, chosen: Option<&str>) -> String {
     });
     let tag = catalog.selected.tag.clone();
     log::info!("Interface language: {tag} ({})", catalog.selected.name);
-    *CATALOG.write().unwrap_or_else(PoisonError::into_inner) = catalog;
+    install_catalog(catalog);
     tag
 }
 
@@ -660,6 +672,7 @@ pub fn select(tag: &str) -> bool {
             return false;
         };
         catalog.selected = language.clone();
+        CATALOG_REVISION.fetch_add(1, Ordering::Relaxed);
         language
     };
     // Logged after the lock is released: a panic while logging reports
@@ -689,14 +702,24 @@ pub fn cameo_label(file: &str) -> Option<Arc<CameoLabel>> {
         .cloned()
 }
 
-/// Whether the language `tag` reads right to left: most of its file's texts
-/// start with a right-to-left letter. A text holding one then reads from
-/// the right whatever it starts with, as a sentence that opens with a name
-/// does; text without one, such as the game's English, keeps its own order.
-pub fn right_to_left(tag: &str) -> bool {
-    catalog()
-        .find(tag)
-        .is_some_and(|language| language.right_to_left)
+/// The catalog's revision: it changes whenever [`interface_language`] may.
+pub fn catalog_revision() -> u64 {
+    CATALOG_REVISION.load(Ordering::Relaxed)
+}
+
+/// The language in use as the fonts draw it, with the [`catalog_revision`]
+/// it belongs to: its tag, for region-specific CJK letter forms, and whether
+/// it reads right to left: most of its file's texts start with a
+/// right-to-left letter. A text holding one then reads from the right
+/// whatever it starts with, as a sentence that opens with a name does; text
+/// without one, such as the game's English, keeps its own order.
+pub fn interface_language() -> (u64, String, bool) {
+    let catalog = catalog();
+    (
+        CATALOG_REVISION.load(Ordering::Relaxed),
+        catalog.selected.tag.clone(),
+        catalog.selected.right_to_left,
+    )
 }
 
 /// A language the player can choose.

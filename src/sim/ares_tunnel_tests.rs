@@ -91,7 +91,6 @@ fn a_foot_enters_one_tunnel_and_leaves_from_another() {
             &mut sim,
             &rules,
             east,
-            None,
             FrameEffects::default(),
         )
         .is_some()
@@ -172,7 +171,7 @@ fn only_the_last_entrance_kills_its_network() {
     for foot in feet {
         assert!(enter(&mut sim, &rules, foot, west));
     }
-    let context = UninitContext::new(&rules, None);
+    let context = UninitContext::new(&rules);
     sim.ares_sell_tunnel(west, &rules, None, FrameEffects::default());
     sim.ares_kill_tunnel_feet_if_last(west, None, context);
     assert_eq!(sim.ares_tunnels.members(owner, 0), feet);

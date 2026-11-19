@@ -65,7 +65,6 @@
 //! (`0x0041B9E0`), gates TechnoClass::Enter_Idle_Mode's planning-path
 //! arrival (`0x00709A6B` -> `0x006385C0`).
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
 use crate::sim::mission::{MissionId, MissionType};
@@ -340,10 +339,9 @@ pub(crate) fn enter_idle_mode_for(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    enter_idle_mode_with(sim, id, rules, registry, frame_effects, true);
+    enter_idle_mode_with(sim, id, rules, frame_effects, true);
 }
 
 /// Mission_Attack state 10's Enter_Idle_Mode (`0x00418CFA`): the state clears
@@ -356,10 +354,9 @@ pub(crate) fn enter_idle_mode_after_attack(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    enter_idle_mode_with(sim, id, rules, registry, frame_effects, false);
+    enter_idle_mode_with(sim, id, rules, frame_effects, false);
 }
 
 /// `planning_arrival` is Aircraft `+0x6D5` for this call.
@@ -367,7 +364,6 @@ fn enter_idle_mode_with(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
     planning_arrival: bool,
 ) {
@@ -429,7 +425,6 @@ fn enter_idle_mode_with(
             sim,
             id,
             rules,
-            registry,
             frame_effects,
             planning_arrival,
         },
@@ -440,7 +435,6 @@ struct WorldIdle<'a> {
     sim: &'a mut Simulation,
     id: u64,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     frame_effects: FrameEffects<'a>,
     /// Aircraft `+0x6D5` ([`enter_idle_mode_after_attack`]).
     planning_arrival: bool,
@@ -473,12 +467,10 @@ impl IdleHost for WorldIdle<'_> {
     fn restore(&mut self) -> MissionId {
         // As at the expiry receiver (`world/lifecycle.rs`): a refused Restore
         // leaves the override in place and the caller reads that mission.
-        if let Err(error) = self.sim.mission_restore_represented(
-            self.id,
-            self.rules,
-            self.registry,
-            self.frame_effects,
-        ) {
+        if let Err(error) =
+            self.sim
+                .mission_restore_represented(self.id, self.rules, self.frame_effects)
+        {
             log::error!(
                 "idle entry: aircraft {} kept its override: {error}",
                 self.id
@@ -503,7 +495,7 @@ impl IdleHost for WorldIdle<'_> {
         self.sim.foot_enter_idle_base_with(
             self.id,
             self.rules,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             self.frame_effects,
             self.planning_arrival,
         )
@@ -545,7 +537,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn clear_target(&mut self) {
         self.sim
-            .assign_target_represented(self.id, None, self.rules, None, FrameEffects::default())
+            .assign_target_represented(self.id, None, self.rules, FrameEffects::default())
             .expect("idle-mode aircraft");
     }
 
@@ -583,7 +575,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn crash(&mut self) {
         self.sim
-            .foot_crash(self.id, None, self.rules, self.registry, self.frame_effects);
+            .foot_crash(self.id, None, self.rules, self.frame_effects);
     }
 
     fn in_radio_contact(&mut self) -> bool {

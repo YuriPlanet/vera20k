@@ -497,7 +497,7 @@ impl Simulation {
             {
                 self.reveal_sight_to_current_house(
                     id,
-                    crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(effects),
                     None,
                 );
             }
@@ -544,7 +544,7 @@ impl Simulation {
         // 0x446EE2), where every reached opening resumes past the free unit:
         // the building's InitialPayload, once, when Ares plays.
         if rules.ares() {
-            self.create_ares_initial_payload(id, rules, registry, effects);
+            self.create_ares_initial_payload(id, rules, effects);
         }
     }
     fn building_anim_config(
@@ -1765,7 +1765,7 @@ mod slot_tests {
                 placement: PlacementEvidence::MarkSucceeded,
                 logic_eligible: true,
             },
-            UninitContext::with_rules(&rules),
+            UninitContext::new(&rules),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
         assert_eq!(
@@ -1778,7 +1778,7 @@ mod slot_tests {
         // SetHeight5F5FA0 re-enters BuildingMark43F738 without Unlimbo.
         // Move the retained slot after PlaceDown without restarting it.
         let old_z = sim.anim(replaced).unwrap().world_coord().z;
-        sim.set_object_height(id, 96, &rules, None, FrameEffects::default());
+        sim.set_object_height(id, 96, &rules, FrameEffects::default());
         assert_eq!(sim.anim(replaced).unwrap().world_coord().z, old_z + 96);
         assert_eq!(
             sim.entities().get(id).unwrap().building_art.anim_slots[3],

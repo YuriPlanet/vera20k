@@ -67,7 +67,6 @@ impl Simulation {
                     InfantryEntryArgs::REPAIR,
                     EntryQueryMode::CheckLocomotor,
                     rules,
-                    registry,
                 )? == 0
                 {
                     break cell;

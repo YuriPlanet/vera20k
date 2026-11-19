@@ -782,7 +782,7 @@ mod tests {
             if conceal {
                 assert_eq!(sim.object_conceal(20), ConcealOutcome::Concealed);
             } else {
-                sim.detach_all_pointer_expired(20, &rules, None, FrameEffects::empty());
+                sim.detach_all_pointer_expired(20, &rules, FrameEffects::empty());
             }
             assert!(sim.entities().get(20).unwrap().is_object_alive());
             let frame = sim

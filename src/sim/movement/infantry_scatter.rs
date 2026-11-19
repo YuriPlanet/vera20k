@@ -216,7 +216,7 @@ impl Simulation {
                 frame_effects,
             );
         }
-        let Some(destination) = self.foot_scatter_neighbor(id, start, rules, registry)? else {
+        let Some(destination) = self.foot_scatter_neighbor(id, start, rules)? else {
             return Ok(false);
         };
         if let Some(infantry) = self.substrate.entities.get_mut(id) {
@@ -249,9 +249,7 @@ impl Simulation {
         if !self.infantry_scatter_admitted(id, flags, rules, frame_effects)? {
             return Ok(());
         }
-        let Some(destination) =
-            self.select_infantry_scatter_away_from(id, source, rules, registry)?
-        else {
+        let Some(destination) = self.select_infantry_scatter_away_from(id, source, rules)? else {
             return Ok(());
         };
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -273,7 +271,6 @@ impl Simulation {
         id: u64,
         source: (i32, i32),
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<Option<(u16, u16)>, String> {
         let Some(infantry) = self.substrate.entities.get(id) else {
             return Ok(None);
@@ -285,7 +282,7 @@ impl Simulation {
             super::scatter_cell::OctantJitter::Infantry,
             &mut self.scenario_rng,
         );
-        self.foot_scatter_neighbor(id, start, rules, registry)
+        self.foot_scatter_neighbor(id, start, rules)
     }
 
     /// Scatter's `SetDestination(cell, 1)` (`vt+0x480`): the Infantry setter

@@ -123,7 +123,6 @@ fn attack_aim_duel(corpus: &serde_json::Value) -> Option<(Duel, u64, u64)> {
             source_id,
             Some(super::TargetKind::Entity(target_id)),
             &duel.rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("original Unit Assign_Target receiver");
@@ -225,7 +224,6 @@ fn original_aim_query_reads_live_motion_rank_and_facing_without_mutation() {
             source,
             None,
             &duel.rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -320,7 +318,6 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
             source,
             None,
             &duel.rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -457,7 +454,6 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
     assert_read_only_native_aim(&duel, source, expected);
     duel.sim.process_pending_delete_with(
         &duel.rules,
-        None,
         crate::sim::world::FrameEffects::default(),
         1,
         false,

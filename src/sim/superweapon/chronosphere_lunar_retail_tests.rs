@@ -427,7 +427,6 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
                     terrain.native_cell_identity((at.0 as i16, at.1 as i16)),
                     InfantryEntryArgs::REPAIR,
                     rules,
-                    Some(scene.runtime.resources.rules.overlay_registry()),
                 ) == Ok(0)
         })
         .expect("ordinary empty AMCV source choice");
@@ -503,7 +502,6 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
             target_cell,
             InfantryEntryArgs::REPAIR,
             &scene.runtime.resources.rules,
-            Some(scene.runtime.resources.rules.overlay_registry())
         ),
         Ok(7)
     );

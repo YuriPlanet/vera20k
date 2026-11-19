@@ -75,7 +75,6 @@ fn garrison_sellbuilding_exit_cells(rx: u16, ry: u16, width: u16, height: u16) -
 fn choose_garrison_exit_cell(
     sim: &Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     rx: u16,
     ry: u16,
     width: u16,
@@ -92,7 +91,6 @@ fn choose_garrison_exit_cell(
                     cells.lookup((cx as i16, cy as i16)),
                     InfantryEntryArgs::REPAIR,
                     rules,
-                    registry,
                 ),
                 Ok(InfantryEntryClass::Clear)
             )
@@ -197,7 +195,6 @@ fn place_garrison_passenger_at_cell(
         requested,
         PlacementEvidence::EvaluateMark,
         rules,
-        context.registry(),
     ) else {
         return false;
     };
@@ -227,14 +224,8 @@ fn place_garrison_passenger_at_cell(
     // Use its existing target/path owner. Native51B25D..51B26D also clears a
     // reciprocal +2A8 pair; Rust has no corresponding state. That native-only
     // observation does not establish the pair's identity or retail use here.
-    sim.assign_target_represented(
-        passenger_id,
-        None,
-        rules,
-        context.registry(),
-        context.effects(),
-    )
-    .expect("a revealed garrison occupant has a represented target setter");
+    sim.assign_target_represented(passenger_id, None, rules, context.effects())
+        .expect("a revealed garrison occupant has a represented target setter");
     sellbuilding_direct_scatter_handoff(
         sim,
         rules,
@@ -300,22 +291,13 @@ fn eject_garrison_passengers_at_edges(
     };
     let initial_count = occupants.ids().len();
 
-    let exit_cell = choose_garrison_exit_cell(
-        sim,
-        rules,
-        uninit_context.registry(),
-        rx,
-        ry,
-        width,
-        height,
-        first_occupant_id,
-    )
-    .or_else(|| match mode {
-        GarrisonEjectMode::PlayerSell => {
-            Some(garrison_inside_foundation_fallback(rx, ry, width, height))
-        }
-        GarrisonEjectMode::Release | GarrisonEjectMode::Hunt => None,
-    });
+    let exit_cell = choose_garrison_exit_cell(sim, rules, rx, ry, width, height, first_occupant_id)
+        .or_else(|| match mode {
+            GarrisonEjectMode::PlayerSell => {
+                Some(garrison_inside_foundation_fallback(rx, ry, width, height))
+            }
+            GarrisonEjectMode::Release | GarrisonEjectMode::Hunt => None,
+        });
     let mut ejected: usize = 0;
 
     let Some((exit_rx, exit_ry)) = exit_cell else {
@@ -493,7 +475,7 @@ pub(crate) fn sell_building_occupants(
         width,
         height,
         mode,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) else {
         return 0;
     };
@@ -1106,14 +1088,14 @@ pub(crate) mod tests {
         insert_hidden_passenger(&mut sim, 12, 10, "Neutral");
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
+            choose_garrison_exit_cell(&sim, &rules, 10, 10, 2, 2, 11),
             None,
             "slot 0 drives the scan; a later valid passenger must not be probed"
         );
 
         insert_hidden_passenger(&mut sim, 11, 10, "Neutral");
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
+            choose_garrison_exit_cell(&sim, &rules, 10, 10, 2, 2, 11),
             Some((12, 12))
         );
     }
@@ -1126,7 +1108,7 @@ pub(crate) mod tests {
         insert_map_infantry(&mut sim, &rules, 12, 12);
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
+            choose_garrison_exit_cell(&sim, &rules, 10, 10, 2, 2, 11),
             Some((12, 12)),
             "one exterior infantry leaves a free sub-cell, so slot-0 Can_Enter_Cell accepts"
         );
@@ -1135,7 +1117,7 @@ pub(crate) mod tests {
         insert_map_infantry(&mut sim, &rules, 12, 12);
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
+            choose_garrison_exit_cell(&sim, &rules, 10, 10, 2, 2, 11),
             Some((12, 11)),
             "full exterior infantry sub-cells reject the selected cell and continue the scan"
         );

@@ -898,13 +898,12 @@ pub(crate) fn schedule_command_in_sim(
 pub(crate) fn ordinary_cell_move_goal(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     viewer: InternedId,
     entity_id: u64,
     clicked: (u16, u16),
     shift: bool,
 ) -> Option<(u16, u16)> {
-    sim.cell_click_destination(viewer, entity_id, clicked, shift, rules, registry)
+    sim.cell_click_destination(viewer, entity_id, clicked, shift, rules)
         .unwrap_or_else(|cause| {
             log::warn!("Cell click input: {cause}");
             None

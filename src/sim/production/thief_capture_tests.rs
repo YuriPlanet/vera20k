@@ -49,7 +49,6 @@ fn approach(sim: &mut Simulation, rules: &RuleSet, actor: u64, target: u64) {
         actor,
         Some(NavTargetRef::object(target)),
         rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();
@@ -59,7 +58,7 @@ fn approach(sim: &mut Simulation, rules: &RuleSet, actor: u64, target: u64) {
 /// Ready/Commence and Fear, and successful capture consumes that continuation.
 #[test]
 fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
-    let (mut sim, rules, overlays) = scene();
+    let (mut sim, rules, _overlays) = scene();
     let actor = spawn(&mut sim, &rules, "THIEF", "Americans", 15);
     let target = spawn(&mut sim, &rules, "CAR", "Russians", 16);
     // Keep both in their own marked cells, 70 leptons apart across the edge.
@@ -110,7 +109,7 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
             .owned_count(EntityCategory::Infantry, thief),
         1
     );
-    sim.process_pending_delete_with(&rules, Some(&overlays), FrameEffects::default(), 1, true);
+    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
     assert!(!sim.substrate.entities.contains(actor));
     assert_eq!(
         sim.houses[&owner]

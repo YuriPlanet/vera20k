@@ -105,7 +105,6 @@ impl Simulation {
                 previous_cell: None,
             },
             rules,
-            registry,
         )?;
         self.finish_walk_admission_response(
             request,
@@ -357,7 +356,12 @@ impl Simulation {
             if self.foot_path_zone_precheck(id, destination, rules)? {
                 self.walk_failed_path_receiver(id, rules, frame_effects)?;
             } else {
-                self.assign_null_destination(id, rules, None, frame_effects);
+                self.assign_null_destination(
+                    id,
+                    rules,
+                    Some(rules.overlay_registry()),
+                    frame_effects,
+                );
             }
         } else {
             self.walk_short_path_receiver(id, rules)?;
@@ -407,7 +411,7 @@ impl Simulation {
                 .ok_or("Walk code6 owner retired during its callback")?
                 .foot_speed
                 .set_speed_fraction(SIM_ZERO);
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             self.substrate.clear_walk_admission_path(id)?;
             return Ok(());
         }
@@ -508,9 +512,9 @@ impl Simulation {
             .get(id)
             .ok_or("retired Walk failed-path receiver")?;
         if actor.mission.effective().raw() == 15 {
-            self.assign_target_represented(id, None, rules, None, frame_effects)
+            self.assign_target_represented(id, None, rules, frame_effects)
                 .map_err(|error| format!("{error:?}"))?;
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         }
         Ok(())
     }

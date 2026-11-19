@@ -8,25 +8,11 @@ use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::intern::InternedId;
+use crate::sim::scenario_session::NativePlayerIdentity;
 use crate::sim::vision::FogState;
 
 use super::helpers::{parse_foundation_size, world_to_minimap_pixel};
 use super::tracker::{RadarObjectUpdate, RadarProjectionFacts};
-
-pub(super) fn radar_owner_is_human_player(
-    owner: InternedId,
-    local_owner: InternedId,
-    houses: &crate::sim::houses::Houses,
-    game_mode_nonzero: bool,
-) -> bool {
-    if game_mode_nonzero {
-        owner == local_owner
-    } else {
-        houses
-            .get(&owner)
-            .is_some_and(|house| house.is_human() || house.player_control())
-    }
-}
 
 fn radar_packed_cell_from_leptons(x: i32, y: i32) -> (i32, i32) {
     // Coord2Cell uses signed division and then narrows to signed words.
@@ -314,7 +300,7 @@ pub(super) fn build_radar_object_update(
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    game_mode_nonzero: bool,
+    player_identity: NativePlayerIdentity,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     projection: RadarProjectionFacts,
@@ -350,7 +336,12 @@ pub(super) fn build_radar_object_update(
     let facts = entity.radar();
     let foundation = facts.foundation;
     let owner_is_human_player = local_owner.is_none_or(|local_owner| {
-        radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero)
+        crate::sim::world::Simulation::is_human_player_on(
+            player_identity,
+            houses,
+            entity.owner(),
+            Some(local_owner),
+        )
     });
     let [coord_x, coord_y] = entity.center_xy();
     let current_cell = radar_fog_cell_from_leptons(coord_x, coord_y);
@@ -593,7 +584,7 @@ mod tests {
             &FogState::default(),
             &Default::default(),
             true,
-            false,
+            NativePlayerIdentity::HouseFlags,
             None,
             None,
             projection,
@@ -635,7 +626,7 @@ mod tests {
                 sim.fog(),
                 sim.house_alliances(),
                 true,
-                false,
+                sim.session().native_player_identity(),
                 Some(&rules),
                 Some(sim.interner()),
                 visibility_projection(),
@@ -975,7 +966,7 @@ mod tests {
             &FogState::default(),
             &Default::default(),
             true,
-            false,
+            NativePlayerIdentity::HouseFlags,
             None,
             None,
             projection,
@@ -1041,7 +1032,7 @@ mod tests {
                 fog,
                 &Default::default(),
                 false,
-                true,
+                NativePlayerIdentity::PlayerPointer,
                 None,
                 None,
                 visibility_projection(),
@@ -1086,7 +1077,7 @@ mod tests {
                 &fog,
                 &Default::default(),
                 false,
-                true,
+                NativePlayerIdentity::PlayerPointer,
                 None,
                 None,
                 visibility_projection(),
@@ -1151,7 +1142,7 @@ mod tests {
                 &fog,
                 &super::super::helpers::test_alliances(alliances),
                 false,
-                true,
+                NativePlayerIdentity::PlayerPointer,
                 Some(&rules),
                 Some(&interner),
                 visibility_projection(),
@@ -1192,7 +1183,7 @@ mod tests {
             &fog,
             &Default::default(),
             false,
-            true,
+            NativePlayerIdentity::PlayerPointer,
             Some(&rules),
             Some(&interner),
             visibility_projection(),

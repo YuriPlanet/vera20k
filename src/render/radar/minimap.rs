@@ -34,6 +34,7 @@ use crate::render::snapshot::SnapshotObject;
 use crate::rules::house_colors::HouseColorRamps;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
+use crate::sim::scenario_session::NativePlayerIdentity;
 use crate::sim::vision::FogState;
 use std::collections::HashMap;
 
@@ -432,7 +433,7 @@ impl MinimapRenderer {
         fog: &FogState,
         alliances: &crate::sim::house_diplomacy::HouseAlliances,
         full_visibility: bool,
-        game_mode_nonzero: bool,
+        player_identity: NativePlayerIdentity,
         rules: Option<&RuleSet>,
         interner: Option<&crate::sim::intern::StringInterner>,
         overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
@@ -520,7 +521,7 @@ impl MinimapRenderer {
                     fog,
                     alliances,
                     full_visibility,
-                    game_mode_nonzero,
+                    player_identity,
                     rules,
                     interner,
                     projection,
@@ -543,7 +544,7 @@ impl MinimapRenderer {
                 fog,
                 alliances,
                 full_visibility,
-                game_mode_nonzero,
+                player_identity,
                 rules,
                 interner,
                 projection,
@@ -584,7 +585,7 @@ impl MinimapRenderer {
                 fog,
                 alliances,
                 full_visibility,
-                game_mode_nonzero,
+                player_identity,
                 rules,
                 interner,
                 pixel_cell,

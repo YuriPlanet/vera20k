@@ -235,10 +235,7 @@ impl Simulation {
 
         // Fill_In_Data684F81..684F89: Map4ADCD0(1,0) visits mobile sources
         // before the later first-House full pass. This does not consume +24B.
-        self.initialize_scenario_sight(crate::sim::world::UninitContext::new(
-            input.rules,
-            Some(input.overlay_registry),
-        ));
+        self.initialize_scenario_sight(crate::sim::world::UninitContext::new(input.rules));
 
         // Original684C30 performs586BF0 after the zone rebuilds and before its
         // particle/twinkle tail. This command is fresh-load-only: restore writes

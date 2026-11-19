@@ -467,8 +467,8 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
 
 #[test]
 fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
-    let (rules, overlays) = rules_and_overlays();
-    let context = super::UninitContext::new(&rules, Some(&overlays));
+    let (rules, _overlays) = rules_and_overlays();
+    let context = super::UninitContext::new(&rules);
     let mut sim = Simulation::with_seed(0x43f180);
     sim.install_resolved_terrain_for_new_map(gsi_04_10_clear_terrain(16, 16));
     assert!(sim.rebuild_dynamic_navigation(&rules));

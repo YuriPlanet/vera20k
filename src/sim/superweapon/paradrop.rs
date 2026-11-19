@@ -584,7 +584,7 @@ fn board_passengers(
         let _ = sim.add_cargo_members(
             plane,
             &[(passenger, object.size)],
-            crate::sim::world::UninitContext::with_rules(rules).with_effects(frame_effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
         );
     }
 }

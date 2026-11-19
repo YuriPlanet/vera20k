@@ -16,7 +16,6 @@
 //! the existing docking service owns movement, payment, healing and release.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
@@ -127,7 +126,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         if self.session.binary_frame() & 0xF != 0 {
@@ -176,12 +174,11 @@ impl Simulation {
             now,
             &LiveReadyInputProvider { rules },
         );
-        let _ = self.assign_target_represented(id, None, rules, registry, effects);
+        let _ = self.assign_target_represented(id, None, rules, effects);
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(station)),
             rules,
-            registry,
             effects,
         );
     }

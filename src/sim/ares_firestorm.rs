@@ -828,8 +828,8 @@ impl Simulation {
         );
         let at = ProjectileCoord::new(centre.x, centre.y, floor);
         self.ares_immolate_bullet(bullet, at, rules);
-        let retired = self
-            .retire_non_entity_object(bullet, crate::sim::world::UninitContext::with_rules(rules));
+        let retired =
+            self.retire_non_entity_object(bullet, crate::sim::world::UninitContext::new(rules));
         debug_assert!(retired);
         true
     }
@@ -937,7 +937,7 @@ impl Simulation {
                 self.discover_techno(
                     section,
                     owner,
-                    crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                    crate::sim::world::UninitContext::new(rules).with_effects(effects),
                 );
                 if let Some(entity) = self.substrate.entities.get_mut(section) {
                     entity.mission_leaf.set_building_ready_latch(1);

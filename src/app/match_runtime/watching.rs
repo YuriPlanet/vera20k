@@ -161,6 +161,10 @@ fn follow_next(state: &mut AppState) {
         .reset_cameo_seed();
     state.match_state.refresh_relation_colors();
     show_sight(state);
+    // No House update reports the radar of the House now followed: its
+    // housing opens or closes to that House's as a change there would.
+    let available = crate::app::presentation::building_anim::local_has_radar(state);
+    crate::app::presentation::building_anim::set_local_tactical_radar(state, available);
     state.platform.window.request_redraw();
 }
 

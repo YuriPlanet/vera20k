@@ -1035,13 +1035,12 @@ pub(crate) fn spawn_manager_ai(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_id: u64,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         ai(&mut host);
     }
@@ -1061,7 +1060,7 @@ pub(crate) fn commit_spawn_manager_pool(
     let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::with_rules(rules).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) else {
         return;
     };
@@ -1089,13 +1088,12 @@ pub(crate) fn notify_pointer_expired(
     listener_id: u64,
     expired_id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         listener_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         pointer_expired(&mut host, expired_id);
     }
@@ -1109,13 +1107,12 @@ pub(crate) fn clear_all_spawn_targets(
     sim: &mut Simulation,
     owner_id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
     if let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::new(rules, registry).with_effects(frame_effects),
+        UninitContext::new(rules).with_effects(frame_effects),
     ) {
         clear_all_targets(&mut host);
     }
@@ -1407,13 +1404,10 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         requested.put_location(launch);
         requested.copy_level_from(&owner_position);
         let context = self.context.with_unlimbo_facing(Some(launch_dir));
-        let Some((position, placement)) = self.sim.unlimbo_class_entry(
-            child,
-            requested,
-            PlacementEvidence::EvaluateMark,
-            rules,
-            context.registry(),
-        ) else {
+        let Some((position, placement)) =
+            self.sim
+                .unlimbo_class_entry(child, requested, PlacementEvidence::EvaluateMark, rules)
+        else {
             return;
         };
         let _ = self.sim.try_reveal_entity_with_context(
@@ -1510,7 +1504,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             child,
             target,
             self.context.rules(),
-            None,
             FrameEffects::default(),
         );
     }
@@ -1577,13 +1570,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn push(&mut self, child: u64, target: Option<TargetKind>) {
-        self.sim.kamikaze_push(
-            child,
-            target,
-            self.context.rules(),
-            self.context.registry(),
-            self.context.effects(),
-        );
+        self.sim
+            .kamikaze_push(child, target, self.context.rules(), self.context.effects());
     }
 
     fn restart_kamikaze(&mut self) {

@@ -162,7 +162,7 @@ impl<'a> FrameInputs<'a> {
             rules,
             overlay_registry,
             tick_ms,
-            effects: effects.with_overlay_registry(overlay_registry),
+            effects,
         }
     }
 }
@@ -328,17 +328,11 @@ impl Simulation {
                 }
             }
             FrameStep::Shroud => {
-                self.tick_shroud_growth(
-                    UninitContext::new(rules, overlay_registry).with_effects(effects),
-                );
+                self.tick_shroud_growth(UninitContext::new(rules).with_effects(effects));
                 // Logic55B29A/55B2AD: consume prior pending conceal at the signed
                 // pre-increment native frame boundary, before ore, Teams and live objects.
-                self.tick_pending_shroud_conceal(
-                    UninitContext::new(rules, overlay_registry).with_effects(effects),
-                );
-                self.tick_fog_regrowth(
-                    UninitContext::new(rules, overlay_registry).with_effects(effects),
-                );
+                self.tick_pending_shroud_conceal(UninitContext::new(rules).with_effects(effects));
+                self.tick_fog_regrowth(UninitContext::new(rules).with_effects(effects));
             }
             FrameStep::Lighting => self.tick_scenario_lighting_transition(rules),
             FrameStep::OreGrowth => self.tick_ore_growth_rungs(rules, overlay_registry, effects)?,
@@ -650,12 +644,7 @@ impl Simulation {
         frame: &mut FrameCompletion,
         context: Option<NetworkQueueContext>,
     ) -> Result<FrameTailResult, FrameAdvanceError> {
-        let FrameInputs {
-            rules,
-            overlay_registry,
-            effects,
-            ..
-        } = inputs;
+        let FrameInputs { rules, effects, .. } = inputs;
         let pass = if let Some(context) = context {
             match effects.exchange_commands(context, &mut self.network_command_queues()) {
                 Ok(pass) => pass,
@@ -700,7 +689,7 @@ impl Simulation {
             // All input is already admitted before Logic or by the network
             // queue view. `frame.commands` now carries only the replay journal,
             // including earlier wait polls; never admit that journal twice.
-            self.dispatch_owned_commands(&[], rules, frame.execute_tick, overlay_registry, effects)
+            self.dispatch_owned_commands(&[], rules, frame.execute_tick, effects)
         };
         let failure = match result {
             Ok((executed, spawned)) => {
@@ -746,7 +735,7 @@ impl Simulation {
     pub(super) fn commit_frame_tail(&mut self, inputs: FrameInputs<'_>, execute_tick: u64) -> bool {
         let FrameInputs {
             rules,
-            overlay_registry,
+            overlay_registry: _,
             tick_ms,
             effects,
         } = inputs;
@@ -774,13 +763,7 @@ impl Simulation {
         // commit. Alive queue entries keep their position; ready duplicate IDs
         // collapse and physically finalize exactly once.
         self.enter_frame_step(FrameStep::PendingDelete);
-        self.process_pending_delete_with(
-            rules,
-            overlay_registry,
-            effects,
-            1,
-            self.session.started(),
-        );
+        self.process_pending_delete_with(rules, effects, 1, self.session.started());
 
         // MainTick55DEA4 follows Frame++ and ProcessPendingDelete725C70.
         // Network waits and terminal transitions never enter this tail.

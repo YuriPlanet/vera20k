@@ -661,7 +661,7 @@ pub(crate) fn collect_area(
         // BEFORE4896BF captures this cell's residents. Concrete Restore4D8F80
         // runs its destination setter synchronously with all world authorities.
         if let Some((rx, ry)) = detached_cell {
-            let _receipt = world.stop_all_targeting_cell(rx, ry, rules, overlay_registry, effects);
+            let _receipt = world.stop_all_targeting_cell(rx, ry, rules, effects);
             #[cfg(any(test, feature = "test-support"))]
             collector
                 .result
@@ -732,14 +732,7 @@ pub(crate) fn apply_area_damage(
         origin,
     );
     let navigation = run.finish();
-    let receipt = world.absorb_noncombat_damage_effects(
-        rules,
-        overlay_registry,
-        death,
-        pings,
-        navigation,
-        effects,
-    );
+    let receipt = world.absorb_noncombat_damage_effects(rules, death, pings, navigation, effects);
     AreaDamageApply {
         bridge_state_changed: receipt.bridge_state_changed,
         crit_active,
@@ -1218,8 +1211,7 @@ pub(crate) fn commit_terrain(
     // ObjectReceiveDamage5F57AF calls DetachAll before returning lethal4
     // to Terrain71B920. Its observers run before Terrain's nested C4 and
     // the three later DetachAll/UnInit/Limbo announcements.
-    let uninit_context =
-        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
+    let uninit_context = crate::sim::world::UninitContext::new(rules).with_effects(run.effects());
     world.notify_pointer_expired(lethal.stable_id, uninit_context);
     if ignites {
         world.terrain_catch_fire(lethal.stable_id, rules);
@@ -1716,7 +1708,6 @@ fn commit_entity(
             &mut caller_damage,
             world,
             rules,
-            overlay_registry,
             receiver_outcome,
             run.effects(),
             true,
@@ -1794,13 +1785,7 @@ fn commit_entity(
         if starts_berserk {
             // The class setter: Infantry's (`0x0051B1F0`) also resets its
             // action and path head.
-            let _ = world.assign_target_represented(
-                target_id,
-                None,
-                rules,
-                overlay_registry,
-                run.effects(),
-            );
+            let _ = world.assign_target_represented(target_id, None, rules, run.effects());
             let _ = world.mission_queue_exact(
                 target_id,
                 MissionId::from_known(MissionType::Hunt),
@@ -1956,9 +1941,7 @@ fn commit_entity(
                 FatalLifecycleStage::MaintainDamageSmoke { state },
                 target_id,
                 category,
-                crate::sim::world::UninitContext::with_rules(rules)
-                    .with_registry(overlay_registry)
-                    .with_effects(run.effects()),
+                crate::sim::world::UninitContext::new(rules).with_effects(run.effects()),
             );
         };
         if healing_only {
@@ -2000,14 +1983,11 @@ fn commit_entity(
                     .push(ReceiverStageTrace::ShouldRetaliate { target_id });
                 combat_targeting::should_retaliate(world, rules, target_id, attacker_id)
             };
-            if retaliates
-                && retaliation_reaches(world, rules, target_id, attacker_id, overlay_registry)
-            {
+            if retaliates && retaliation_reaches(world, rules, target_id, attacker_id) {
                 world.override_mission_on_damage_response(
                     target_id,
                     attacker_id,
                     rules,
-                    overlay_registry,
                     run.effects(),
                 );
             }
@@ -2096,9 +2076,7 @@ fn commit_entity(
                         FatalLifecycleStage::AfterDeathEffects,
                         target_id,
                         fatal_category,
-                        crate::sim::world::UninitContext::with_rules(rules)
-                            .with_registry(overlay_registry)
-                            .with_effects(run.effects()),
+                        crate::sim::world::UninitContext::new(rules).with_effects(run.effects()),
                     );
                 }
                 if callbacks_enabled(world) {
@@ -2585,8 +2563,7 @@ pub(crate) fn handle_death(
                 if callbacks_enabled(world) {
                     world.stun(
                         dead_id,
-                        crate::sim::world::UninitContext::new(rules, overlay_registry)
-                            .with_effects(run.effects()),
+                        crate::sim::world::UninitContext::new(rules).with_effects(run.effects()),
                     );
                 }
                 // Ares 3.0 1004B050 (hook 0x702216): TiberiumRemains.
@@ -2653,9 +2630,7 @@ pub(crate) fn handle_death(
                     world.kill_passengers(
                         dead_id,
                         attacker,
-                        crate::sim::world::UninitContext::with_rules(rules)
-                            .with_registry(overlay_registry)
-                            .with_effects(run.effects()),
+                        crate::sim::world::UninitContext::new(rules).with_effects(run.effects()),
                     );
                 }
                 // `Fire_Death_Weapon(0)` (`0x0070266D`): its bullet
@@ -2890,8 +2865,7 @@ fn finish_concrete_death(
                 FatalLifecycleStage::BeforeBuildingDestruction,
                 dead_id,
                 category,
-                crate::sim::world::UninitContext::new(rules, overlay_registry)
-                    .with_effects(frame_effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
             );
         }
         concrete_smudge_plans.push(ConcreteDeathSmudgePlan::Building);
@@ -3056,8 +3030,7 @@ fn finish_concrete_death(
         // Unit's receiver runs it next), so its sight leaves now.
         world.release_object_sight_with_context(
             dead_id,
-            crate::sim::world::UninitContext::new(rules, overlay_registry)
-                .with_effects(frame_effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
         );
         // The corpse stays in the store for its death animation; the death
         // arm's OVER_OUT to every contact (`stun`) already
@@ -3101,7 +3074,6 @@ fn finish_concrete_death(
                 dead_id,
                 killing_attacker(world, damage_events, dead_id),
                 rules,
-                overlay_registry,
                 frame_effects,
             )
         {
@@ -3110,8 +3082,7 @@ fn finish_concrete_death(
             // must see its cell cleared, rather than wait for batch delivery.
             world.uninit_with_context(
                 dead_id,
-                crate::sim::world::UninitContext::new(rules, overlay_registry)
-                    .with_effects(frame_effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
             );
         }
         // `AircraftClass::ReceiveDamage` (`0x00416694..0x004166A3`): an
@@ -3120,7 +3091,7 @@ fn finish_concrete_death(
         effects.despawned_ids.push(dead_id);
     } else if crashable
         && callbacks_enabled(world)
-        && world.foot_crash(dead_id, None, rules, overlay_registry, frame_effects)
+        && world.foot_crash(dead_id, None, rules, frame_effects)
     {
         // `UnitClass::ReceiveDamage` (`0x00738457..0x00738475`): an airborne
         // `Crashable=` unit crashes (`Crash(0)`, no attacker) instead of its
@@ -3153,8 +3124,7 @@ fn finish_concrete_death(
         match plan {
             ConcreteDeathSmudgePlan::Infantry(postlude) => {
                 let uninit = callbacks_enabled(world).then(|| {
-                    crate::sim::world::UninitContext::new(rules, overlay_registry)
-                        .with_effects(frame_effects)
+                    crate::sim::world::UninitContext::new(rules).with_effects(frame_effects)
                 });
                 postlude.commit(world, rules, effects, uninit);
             }
@@ -3209,8 +3179,7 @@ fn finish_concrete_death(
                     world.kill_passengers(
                         dead_id,
                         attacker,
-                        crate::sim::world::UninitContext::new(rules, overlay_registry)
-                            .with_effects(frame_effects),
+                        crate::sim::world::UninitContext::new(rules).with_effects(frame_effects),
                     );
                     // Ares 3.0 10017130 (hook 0x441F2C): the Foots on the
                     // foundation leave the rubble.
@@ -3618,7 +3587,10 @@ fn continue_area_damage(
             impact_z_leptons: context.impact.z,
         };
         death.bridge_state_changed |= crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
-            world, rules, std::slice::from_ref(&event), overlay_registry, run.effects(),
+            world,
+            rules,
+            std::slice::from_ref(&event),
+            run.effects(),
         );
     }
     let coord = crate::sim::anim_class::AnimWorldCoord {
@@ -3837,8 +3809,7 @@ fn ares_damage_occupants(
     let victim = occupants[world.scenario_rng.next_range_i32_inclusive(0, last) as usize];
     let fatal_rate = f64::from_bits(ext.uc_fatal_rate.bits());
     let multiplier = f64::from_bits(ext.uc_damage_multiplier.bits());
-    let context =
-        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
+    let context = crate::sim::world::UninitContext::new(rules).with_effects(run.effects());
     if fatal_rate > 0.0 && world.scenario_rng.random_double() < fatal_rate {
         if let Some(building) = world.substrate.entities.get_mut(building_id) {
             building

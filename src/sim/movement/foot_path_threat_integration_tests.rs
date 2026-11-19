@@ -22,7 +22,6 @@ fn request_move(
         mover,
         Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1)),
         rules,
-        Some(registry),
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
@@ -130,8 +129,7 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
         mover,
         false,
         &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
     ));
     assert!(sim.team_script_vm.member_avoids_threats(mover));
     assert_eq!(

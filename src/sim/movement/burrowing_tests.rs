@@ -73,13 +73,7 @@ fn below_ground_drive_routes_through_burrowable_cell_then_resumes_object_target(
             rules.overlay_registry(),
         )
         .unwrap();
-    sim.set_object_height(
-        mover,
-        -1,
-        &rules,
-        Some(rules.overlay_registry()),
-        FrameEffects::default(),
-    );
+    sim.set_object_height(mover, -1, &rules, FrameEffects::default());
     assert_eq!(
         super::air_movement::current_fly_height(
             sim.substrate.entities.get(mover).unwrap(),

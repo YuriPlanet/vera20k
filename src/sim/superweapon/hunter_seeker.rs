@@ -114,7 +114,7 @@ pub(super) fn launch(
             sim.discard_constructed_limbo(id, rules, effects);
             continue;
         }
-        sim.acquire_hunter_seeker_target(id, rules, registry, effects);
+        sim.acquire_hunter_seeker_target(id, rules, effects);
         // 100722F5 loads Area Guard (0xB); a non-harvester (UnitType+0xE0E,
         // `Harvester=`) switches to Attack at1007230C; vt+0x1E8 at10072323.
         let mission = if unit.harvester {

@@ -1368,7 +1368,7 @@ pub(crate) fn board_passenger(
     if absorber_entry {
         sim.substrate.set_infantry_absorber_entry(pax_id, true);
     }
-    let context = UninitContext::new(rules, registry).with_effects(effects);
+    let context = UninitContext::new(rules).with_effects(effects);
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
         if absorber_entry {
             sim.substrate.set_infantry_absorber_entry(pax_id, false);
@@ -1484,7 +1484,7 @@ pub(crate) fn board_passenger(
     }
     if arm == BoardingArm::UnitTransport {
         sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
-        sim.open_topped_passengers_take_target(pax_id, None, rules, registry, effects);
+        sim.open_topped_passengers_take_target(pax_id, None, rules, effects);
     }
     true
 }
@@ -1537,7 +1537,7 @@ pub fn add_garrison_occupant(
     {
         return Ok(false);
     }
-    let context = UninitContext::new(rules, registry).with_effects(effects);
+    let context = UninitContext::new(rules).with_effects(effects);
     if !occupier {
         if assaulter {
             garrison_eject::kill_building_occupants(sim, building_id, Some(pax_id), context);
@@ -1863,7 +1863,6 @@ impl Simulation {
         transport_id: u64,
         target: Option<crate::sim::combat::TargetKind>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         let Some(transport) = self.substrate.entities.get(transport_id) else {
@@ -1883,13 +1882,7 @@ impl Simulation {
         for passenger in passengers {
             // Original71056C dispatches each receiver's virtual+3C8, including
             // Infantry51B1F0's synchronous action/path/latch effects.
-            let _ = self.assign_target_represented(
-                passenger,
-                target,
-                rules,
-                overlay_registry,
-                frame_effects,
-            );
+            let _ = self.assign_target_represented(passenger, target, rules, frame_effects);
         }
     }
 }

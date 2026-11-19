@@ -176,7 +176,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         if !self.substrate.entities.get(id).is_some_and(|entity| {
@@ -191,7 +190,7 @@ impl Simulation {
         // A PerCell/idle callback's restored destination ran synchronously in
         // native code. Publish the existing owed setter before reading the
         // class coordinates, as the active-track continuation already does.
-        self.complete_pending_order(id, rules, registry, effects);
+        self.complete_pending_order(id, rules, effects);
         if let Some(entity) = self.substrate.entities.get_mut_if(id, |entity| {
             entity.locomotor.as_ref().is_some_and(|loco| {
                 // The speed first: a unit at rest is let go without its

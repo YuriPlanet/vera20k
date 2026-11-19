@@ -309,7 +309,7 @@ fn default_rally_reaches_the_first_paid_destroyer_exit_without_an_explicit_click
             .test_arm_ready(owner, ProductionCategory::Ship)
     );
     assert!(production::dispatch_production_changes_for_tests(
-        &mut sim, rules, None
+        &mut sim, rules
     ));
     let ship = sim.substrate.entities.get(ship).unwrap();
     assert!(!ship.lifecycle.in_limbo());

@@ -353,7 +353,6 @@ pub(crate) fn should_retaliate(
     let mut subject = super::fire_error_world::FireSubject {
         world,
         rules,
-        overlay_registry: None,
         fog: Some(world.fog.fire_view(&world.house_alliances)),
         firer: victim,
         obj: victim_type,

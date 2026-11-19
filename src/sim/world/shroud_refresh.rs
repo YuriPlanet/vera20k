@@ -293,10 +293,8 @@ impl Simulation {
             terrain,
             self.session.execution_topology().is_lockstep(),
         );
-        if vision::point_is_shrouded(&self.fog, &cells, player, location)
-            && let Some(entity) = self.substrate.entities.get_mut(id)
-        {
-            entity.selection.deselect();
+        if vision::point_is_shrouded(&self.fog, &cells, player, location) {
+            self.object_deselect(id);
         }
     }
 
@@ -1459,7 +1457,7 @@ impl Simulation {
                     || self.house_is_human_player(entity.owner()),
                     |viewer| {
                         Self::is_human_player_on(
-                            &self.session,
+                            self.session.native_player_identity(),
                             &self.houses,
                             entity.owner(),
                             Some(viewer),
@@ -1600,16 +1598,15 @@ impl Simulation {
     ) -> Vec<crate::sim::intern::InternedId> {
         use crate::sim::scenario_session::NativePlayerIdentity;
 
-        let candidates = match self.session.native_player_identity() {
+        let identity = self.session.native_player_identity();
+        let candidates = match identity {
             NativePlayerIdentity::PlayerPointer if self.owner_is_human(house) => vec![house],
             NativePlayerIdentity::PlayerPointer => Vec::new(),
             NativePlayerIdentity::HouseFlags => self.fog_viewers().to_vec(),
         };
         candidates
             .into_iter()
-            .filter(|&client| {
-                Self::is_human_player_on(&self.session, &self.houses, house, Some(client))
-            })
+            .filter(|&client| Self::is_human_player_on(identity, &self.houses, house, Some(client)))
             .collect()
     }
 
@@ -1798,7 +1795,7 @@ impl Simulation {
         {
             return;
         }
-        let context = UninitContext::with_rules(rules);
+        let context = UninitContext::new(rules);
         // MapClass::Reveal577D90, Reset_Shroud577AB0 and Reshroud577C90
         // call the SAME live4ADEE0/4ADCD0 visitors as diplomacy. Source:
         // original gamemd instructions. Each visitor snapshots its count,
@@ -2544,7 +2541,7 @@ impl Simulation {
             .begin_sight_frame(&self.substrate.entities, self.path_grid.as_deref());
         #[cfg(any(test, feature = "test-support"))]
         if frame.sized {
-            self.admit_sight_on_sized_fog(config, UninitContext::new(rules, None));
+            self.admit_sight_on_sized_fog(config, UninitContext::new(rules));
         }
         // Only that fixture admission reads the reveal settings here.
         #[cfg(not(any(test, feature = "test-support")))]
@@ -2651,7 +2648,7 @@ impl Simulation {
         {
             return;
         }
-        let context = UninitContext::new(rules, None).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         //The two functions each re-read their receiver after callbacks.
         self.release_object_sight_in_view(stable_id, &config, context);
         // The pair shares one read of the settings: the rules, the map's
@@ -3254,7 +3251,7 @@ impl Simulation {
                 stable_id,
                 &remaining,
                 &config,
-                UninitContext::with_rules(rules),
+                UninitContext::new(rules),
                 self.session.current_house(),
             );
         }
@@ -3300,7 +3297,7 @@ impl Simulation {
             true,
             &config,
             Some(&heights),
-            UninitContext::with_rules(rules),
+            UninitContext::new(rules),
             Some(current),
         );
     }
@@ -3361,7 +3358,7 @@ impl Simulation {
         }
         let config = self.sight_reveal_config(rules);
         //The two leaves reload their own receiver after synchronous discovery.
-        let context = UninitContext::new(rules, None).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         self.release_object_sight_event(
             stable_id,
             &due,

@@ -637,7 +637,6 @@ impl<'a> ActionQuery<'a> {
         empty_cell_cursor(
             self.sim,
             self.rules,
-            self.overlays,
             self.viewer,
             best_id,
             cell,
@@ -754,7 +753,6 @@ fn unforced_cell_attack_feedback(
 fn empty_cell_cursor(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     viewer: Option<crate::sim::intern::InternedId>,
     best_id: Option<u64>,
     cell: (u16, u16),
@@ -769,9 +767,7 @@ fn empty_cell_cursor(
     {
         return CursorFeedbackKind::GuardArea;
     }
-    let action = what_action_on_cell(
-        sim, viewer, best_id, cell, modifier, rules, registry, mouse_over,
-    );
+    let action = what_action_on_cell(sim, viewer, best_id, cell, modifier, rules, mouse_over);
     match action {
         MoveAction::None => return CursorFeedbackKind::Default,
         MoveAction::NoMove => return CursorFeedbackKind::Invalid,
@@ -852,7 +848,6 @@ fn what_action_on_cell(
     cell: (u16, u16),
     modifier: crate::app::input::context_order::OrderModifier,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     mouse_over: bool,
 ) -> crate::sim::world::MoveAction {
     use crate::sim::world::{CellActionQuery, MoveAction};
@@ -870,7 +865,7 @@ fn what_action_on_cell(
         mouse_over,
         shift: modifier == crate::app::input::context_order::OrderModifier::Shift,
     };
-    sim.cell_move_action(viewer, id, cell, query, rules, registry)
+    sim.cell_move_action(viewer, id, cell, query, rules)
         .unwrap_or(MoveAction::Move)
 }
 
@@ -3227,7 +3222,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                             Some(empty_cell_cursor(
                                 &sim,
                                 Some(&rules),
-                                None,
                                 sim.session().current_house(),
                                 Some(actor),
                                 (x, 2),
@@ -3296,7 +3290,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                         Some(empty_cell_cursor(
                             &sim,
                             Some(&rules),
-                            None,
                             sim.session().current_house(),
                             Some(actor),
                             (20, y),
@@ -3578,7 +3571,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                  final GetFireError={:?}; occupant={:?}; target={:?}; trace={trace:#?}",
                 // Ask the live legality owner only after failure, so this
                 // diagnostic cannot change the exercised frame sequence.
-                sim.selected_weapon_fire_error(&rules, house, target, true, None),
+                sim.selected_weapon_fire_error(&rules, house, target, true),
                 sim.entities().get(gi),
                 sim.entities().get(target_id),
             );
@@ -3770,14 +3763,13 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 (9, 5),
                 modifier,
                 Some(&rules),
-                None,
                 true,
             )
         };
         assert_eq!(cursor(OrderModifier::Normal), MoveAction::Move);
         assert_eq!(cursor(OrderModifier::ForceMove), MoveAction::Move);
         let goal = sim
-            .cell_click_destination(owner, tank, (9, 5), false, &rules, None)
+            .cell_click_destination(owner, tank, (9, 5), false, &rules)
             .unwrap()
             .unwrap();
         assert!(goal.0 < 8, "{goal:?}");
@@ -3817,7 +3809,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             empty_cell_cursor(
                 &sim,
                 Some(&rules),
-                Some(&registry),
                 Some(owner),
                 Some(miner),
                 cell,
@@ -3846,7 +3837,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             empty_cell_cursor(
                 &sim,
                 Some(&rules),
-                None,
                 Some(owner),
                 None,
                 (9, 5),

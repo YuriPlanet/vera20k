@@ -269,7 +269,7 @@ mod tests {
                 .collect();
             // Startup's global list includes constructed limbo buildings.
             if let Some(&first) = labs.first() {
-                sim.techno_limbo_with_rules(first, &rules, None);
+                sim.techno_limbo_with_rules(first, &rules);
             }
             if let Some(retained) = row["initial_fallback"].as_str() {
                 let id = sim.interner.intern(retained);

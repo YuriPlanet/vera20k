@@ -263,7 +263,6 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         1,
                         requested,
                         rules,
-                        None,
                         crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
@@ -316,7 +315,6 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         4,
                         requested,
                         rules,
-                        None,
                         crate::sim::world::FrameEffects::default(),
                     );
                 }

@@ -20,8 +20,8 @@ impl TacticalRadarBoundary for RadarBoundary {
     }
 }
 
-/// The old app poll remains the fallback for view changes. Once the reached
-/// calls update this same owner, polling its final value cannot replay a cue.
+/// One House frame: its reached calls are the radar's only availability
+/// updates (the app keeps no poll of the final value).
 fn frame(sim: &mut Simulation, rules: &RuleSet, boundary: &RadarBoundary) {
     let commands = sim.take_due_commands();
     sim.advance_app_frame(
@@ -32,8 +32,6 @@ fn frame(sim: &mut Simulation, rules: &RuleSet, boundary: &RadarBoundary) {
         FrameEffects::empty().with_tactical_radar(boundary),
     )
     .expect("ordinary stock House frame");
-    let available = crate::sim::radar::has_radar_for_owner(sim, rules, "Americans");
-    boundary.set_available(sim, rules, available);
 }
 
 #[test]
@@ -139,7 +137,7 @@ fn retail_local_defeat_delivers_radar_off_then_on_in_one_house_frame() {
         assert_eq!(
             *boundary.cues.borrow(),
             expected,
-            "both local transitions must precede final-state reconciliation"
+            "a local defeat delivers both transitions in its House frame"
         );
     }
 }

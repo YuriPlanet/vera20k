@@ -114,7 +114,6 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
         &commands,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         1,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -130,7 +129,7 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
     // infantry_health_zero_alive_true control pins. Do not add a health gate.
     assert!(sim.try_select_object(
         1,
-        UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test(), None)
+        UninitContext::new(crate::rules::ruleset::RuleSet::empty_for_test())
     ));
     assert!(sim.entities().get(1).unwrap().selection.is_selected());
 }
@@ -2567,12 +2566,10 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
             .is_empty()
     );
     // The receiver transaction's commit constructs the AnimList anim.
-    let _ = result.consequences.commit(
-        &mut sim,
-        &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default(),
-    );
+    let _ =
+        result
+            .consequences
+            .commit(&mut sim, &rules, crate::sim::world::FrameEffects::default());
     assert!(
         sim.smudge_grid
             .as_ref()
@@ -2658,12 +2655,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
         let _ = expected_rng.next_range_i32_inclusive(0, 99);
     }
 
-    sim.process_rocket(
-        1,
-        &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default(),
-    );
+    sim.process_rocket(1, &rules, crate::sim::world::FrameEffects::default());
 
     assert!(
         !sim.substrate.entities.get(1).unwrap().is_object_alive(),
@@ -3443,7 +3435,7 @@ fn admit_test_wave(sim: &mut Simulation, rules: &RuleSet, event: &SimFireEvent) 
     let wave = sim
         .prepare_fired_wave(rules, event, 0)
         .expect("wave prepared");
-    sim.admit_fired_wave(event.attacker_id, wave, rules, None);
+    sim.admit_fired_wave(event.attacker_id, wave, rules);
 }
 
 fn sonic_fire_event(
@@ -3560,7 +3552,7 @@ fn target_coord_offset_moves_initial_wave_endpoint_but_not_tracking() {
     admit_test_wave(&mut sim, &rules, &event);
     let id = sim.active_wave_links[&dolphin];
     assert_eq!(
-        sim.wave_update_context(sim.waves.get(id).unwrap(), &rules, None)
+        sim.wave_update_context(sim.waves.get(id).unwrap(), &rules)
             .target_position,
         Some(crate::sim::projectile::ProjectileCoord::new(
             centre.x, centre.y, centre.z
@@ -3602,14 +3594,14 @@ fn ares_wave_tracks_within_weapon_range_and_reverses_by_target_class() {
             .spawn_object("TARGET", "Russians", 16, 10, 0, &rules)
             .unwrap();
         let event = sonic_fire_event(&mut sim, &rules, dolphin, target);
-        sim.commit_fired_wave(&rules, &event, 0, 0, None);
+        sim.commit_fired_wave(&rules, &event, 0, 0);
         let wave = sim.waves.get(sim.active_wave_links[&dolphin]).unwrap();
         assert!(
             wave.active_geometry() && !wave.decaying(),
             "reverse={reverse}"
         );
         let aim = sim
-            .wave_update_context(wave, &rules, None)
+            .wave_update_context(wave, &rules)
             .target_position
             .unwrap();
         let expected = if reverse { aim } else { event.fire_coord };
@@ -3637,7 +3629,7 @@ fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
             .spawn_object("TARGET", "Russians", 12, 10, 0, &rules)
             .unwrap();
         let event = sonic_fire_event(&mut sim, &rules, dolphin, target);
-        sim.commit_fired_wave(&rules, &event, 0, 0, None);
+        sim.commit_fired_wave(&rules, &event, 0, 0);
         sim.substrate
             .entities
             .get_mut(dolphin)
@@ -3832,7 +3824,7 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
 
     process_dummy.stamp_coord(-9, -9);
-    let context = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
+    let context = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
     assert_eq!(
         context.target_position,
@@ -5208,7 +5200,7 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
 /// and longitudinal neighbors; publication must retain its complete raw result.
 #[test]
 fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
-    let (mut sim, rules, registry, native) = concrete_damage_fixture("concrete_220_across_0", 300);
+    let (mut sim, rules, _registry, native) = concrete_damage_fixture("concrete_220_across_0", 300);
     let (rx, ry) = concrete_damage_fixture_coord(&native["input"]["start"]);
     let changed =
         crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
@@ -5222,7 +5214,6 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
                 is_ion_cannon: true,
                 impact_z_leptons: 0,
             }],
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         );
     assert_eq!(changed, native["result"]["returned"].as_u64() == Some(1));
@@ -5324,7 +5315,6 @@ fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
         assert!(sim.foot_continue_mega_mission(
             2,
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         ));
         let unit = sim.substrate.entities.get(2).unwrap();
@@ -5359,7 +5349,7 @@ fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
 #[test]
 fn test_bridge_collapse_is_deterministic_under_replay() {
     fn run_one(seed: u64) -> (u64, crate::sim::rng::SimRngLogicalState) {
-        let (mut sim, rules, registry, native) =
+        let (mut sim, rules, _registry, native) =
             concrete_damage_fixture("concrete_220_across_0", 1500);
         sim.initialize_random_number_system(seed as u32);
         let before_hash = sim.state_hash();
@@ -5368,13 +5358,14 @@ fn test_bridge_collapse_is_deterministic_under_replay() {
         let mapgen_before = sim.mapgen_rng.logical_state();
         let (rx, ry) = concrete_damage_fixture_coord(&native["input"]["start"]);
         assert!(crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
-            &mut sim, &rules,
+            &mut sim,
+            &rules,
             &[BridgeDamageEvent {
                 rx, ry, damage: 2000,
                 warhead_ref: crate::sim::intern::InternedId::default(),
                 is_ion_cannon: false, impact_z_leptons: 0,
             }],
-            Some(&registry), crate::sim::world::FrameEffects::default(),
+            crate::sim::world::FrameEffects::default(),
         ));
         assert_concrete_damage_result(&sim, &native);
         assert_ne!(sim.state_hash(), before_hash);
@@ -5408,7 +5399,7 @@ fn test_bridge_dispatcher_consumes_one_path_gate_draw_per_non_ion_event() {
         .find(|case| case["input"]["name"] == "direct_205")
         .unwrap();
     let strength = gate["ranged_calls"][0]["high"].as_i64().unwrap() as i32;
-    let (mut sim, rules, registry, native) =
+    let (mut sim, rules, _registry, native) =
         concrete_damage_fixture("concrete_205_across_0", strength);
     // Seed31 and damage2000 are the saved harness defaults for direct_205.
     sim.initialize_random_number_system(31);
@@ -5428,7 +5419,6 @@ fn test_bridge_dispatcher_consumes_one_path_gate_draw_per_non_ion_event() {
                 is_ion_cannon: false,
                 impact_z_leptons: 0,
             }],
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         );
     assert!(!collapsed);
@@ -5642,7 +5632,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
     let wingman = sim
         .spawn_object("MTNK", "Americans", 21, 22, 0, &rules)
         .expect("spawn second MTNK");
-    assert!(sim.try_select_object(tank, UninitContext::new(&rules, None)));
+    assert!(sim.try_select_object(tank, UninitContext::new(&rules)));
     // BeingWarpedOut (`+0x270`): a Temporal chain's head.
     sim.substrate
         .entities
@@ -5703,7 +5693,7 @@ fn item83_fresh_selection_rejects_warp_out_but_keeps_preexisting_selection() {
             .is_selected(),
         "an ordinary replacement still deselects an omitted warp-out member"
     );
-    assert!(!sim.try_select_object(tank, UninitContext::new(&rules, None)));
+    assert!(!sim.try_select_object(tank, UninitContext::new(&rules)));
 }
 
 #[test]
@@ -6615,12 +6605,7 @@ fn an_attack_move_click_over_an_object_keeps_it_the_mega_destination() {
         Some(crate::sim::components::NavTargetRef::Object { id: mcv })
     );
 
-    sim.detach_all_pointer_expired(
-        mcv,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
+    sim.detach_all_pointer_expired(mcv, &rules, crate::sim::world::FrameEffects::default());
     let attacker = sim.substrate.entities.get(1).unwrap();
     assert_eq!(attacker.mega_mission.destination(), None);
     assert_eq!(attacker.navigation.nav_com(), None);
@@ -6933,7 +6918,7 @@ fn test_stunning_a_building_detaches_its_attackers() {
         .unwrap()
         .attack_target
         .set_for_test(Some(TargetKind::Entity(1)));
-    sim.stun(1, UninitContext::with_rules(&rules));
+    sim.stun(1, UninitContext::new(&rules));
     assert_eq!(
         sim.substrate
             .entities
@@ -7790,7 +7775,6 @@ fn unit_route_beside_building(
         tank,
         Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1)),
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
@@ -8398,7 +8382,7 @@ fn repro_group_move_of_eight_vehicles_to_one_cell() {
     // (a) What the group-destination distributor rewrites each command to.
     // Same &self read the tick performs, run before any tick mutates state.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
     let assigned: Vec<(u64, (u16, u16))> = staged
         .iter()
         .filter_map(|c| match &c.payload {
@@ -8551,7 +8535,7 @@ fn repro_group_move_short_range_traces_every_tick() {
         .collect();
 
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
     println!("--- repro_group_move_short_range_traces_every_tick ---");
     println!("(a) distributor assignments:");
     for c in &staged {
@@ -8650,7 +8634,7 @@ fn stacking_cell_entry_verdict(
     };
     let cell = terrain.native_cell_identity((rx as i16, ry as i16));
     let args = crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR;
-    match sim.foot_can_enter(mover, cell, args, rules, None) {
+    match sim.foot_can_enter(mover, cell, args, rules) {
         Ok(code) => format!("code={code}"),
         Err(error) => format!("<{error}>"),
     }
@@ -8682,7 +8666,7 @@ fn repro_two_moving_vehicles_pass_through_each_other() {
     // Different targets => different formation keys => runs of length 1 =>
     // the group-destination distributor cannot touch either command.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
     println!("--- repro_two_moving_vehicles_pass_through_each_other ---");
     for c in &staged {
         if let Command::Move {
@@ -9354,7 +9338,6 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
         .unwrap();
     sim.process_pending_delete_with(
         &rules,
-        Some(rules.overlay_registry()),
         crate::sim::world::FrameEffects::default(),
         1,
         sim.session().started(),
@@ -9369,7 +9352,6 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
             .unwrap();
         sim.process_pending_delete_with(
             &rules,
-            Some(rules.overlay_registry()),
             crate::sim::world::FrameEffects::default(),
             1,
             sim.session().started(),
@@ -9574,7 +9556,7 @@ fn group_spread(sim: &Simulation, rules: &RuleSet, ids: &[u64]) -> Vec<(u16, u16
         .iter()
         .map(|&id| cmd_envelope(sim, "Americans", 1, move_command(id, (20, 20))))
         .collect::<Vec<_>>();
-    sim.adjust_staged_megamission_destinations(&mut staged, rules, None, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, rules, None);
     staged
         .iter()
         .map(|command| match command.payload {
@@ -9810,7 +9792,7 @@ fn voxel_anim_builds_its_attached_system_and_smoke_follows_the_anim() {
         &mut sim,
         &rules,
         system,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     assert_eq!(
         sim.particle_systems().get(system).unwrap().coords(),

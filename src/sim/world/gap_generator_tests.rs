@@ -89,7 +89,7 @@ fn insert(
     }
     // Occupancy can discover a Building immediately on a revealed cell, so
     // bind the same Rules that its Type registry lookup requires.
-    let _ = sim.mark_entity_put(id, UninitContext::with_rules(rules));
+    let _ = sim.mark_entity_put(id, UninitContext::new(rules));
     if kind == EntityCategory::Structure {
         // Supply a discovered Building prior for these operational/map controls;
         // the actual campaign discovery admission is tested separately.
@@ -375,7 +375,7 @@ fn reveal_inserted_sight(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         None,
         &vision::VisionConfig::default(),
         None,
-        UninitContext::with_rules(rules),
+        UninitContext::new(rules),
     );
 }
 
@@ -479,7 +479,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
     insert(&mut sim, &rules, 20, first, "GAGAP", 10, 12);
     power(&mut sim, &rules);
     sim.visit_building_operational(20, &rules, None, crate::sim::world::FrameEffects::default()); // gap
-    sim.techno_limbo_with_rules(10, &rules, None); // leave, with its stored sight
+    sim.techno_limbo_with_rules(10, &rules); // leave, with its stored sight
     insert(&mut sim, &rules, 30, last, "GAGAP", 14, 12);
     power(&mut sim, &rules);
     sim.visit_building_operational(30, &rules, None, crate::sim::world::FrameEffects::default()); // second gap
@@ -490,7 +490,6 @@ pub fn gap_operational_power_loss_views() -> Vec<(
         10,
         208,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     refresh(&mut sim, &rules); // real return, not a raw counter assignment
@@ -760,7 +759,7 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
     sim.session.set_current_house_for_test(Some(viewer));
     crate::sim::scenario_bootstrap::apply_launch_shroud_option(
         &mut sim,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     assert!(sim.fog.whole_map_revealed_for_owner(viewer));
     insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
@@ -791,7 +790,7 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
     sim.session.set_current_house_for_test(Some(viewer));
     crate::sim::scenario_bootstrap::apply_launch_shroud_option(
         &mut sim,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     insert(&mut sim, &rules, 1, viewer, "GAGAP", 12, 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
@@ -848,13 +847,13 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
     );
     assert_ne!(viewer, gapper);
     views.push((sim.fog.clone(), viewer, true));
-    sim.techno_limbo_with_rules(source, &rules, None);
+    sim.techno_limbo_with_rules(source, &rules);
     refresh(&mut sim, &rules);
     assert!(!sim.fog.sight_is_latched(source, viewer));
     views.push((sim.fog.clone(), viewer, true));
     for (frame, open) in [(119, true), (120, false)] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.tick_pending_shroud_conceal(UninitContext::with_rules(&rules));
+        sim.tick_pending_shroud_conceal(UninitContext::new(&rules));
         assert_eq!(sim.fog.is_cell_revealed(viewer, 16, 16), open);
         views.push((sim.fog.clone(), viewer, open));
     }
@@ -904,7 +903,7 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
         assert!(!sim.fog.is_cell_revealed(c, 16, 16));
         views.push((sim.fog.clone(), b, c));
     }
-    sim.techno_limbo_with_rules(gap, &rules, None);
+    sim.techno_limbo_with_rules(gap, &rules);
     assert!(!sim.fog.is_cell_revealed(c, 16, 16));
     views.push((sim.fog.clone(), b, c));
     views
@@ -974,7 +973,7 @@ fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sam
         .unwrap()
         .building
         .building_last_operational;
-    let context = UninitContext::with_rules(&rules);
+    let context = UninitContext::new(&rules);
     sim.release_alliance_sight(context);
     assert!(!sim.fog.is_cell_gap_covered(player, 12, 12));
     sim.admit_alliance_sight(context);
@@ -1043,7 +1042,7 @@ fn alliance_callbacks_skip_only_the_allied_map_between_gap_maps() {
     };
     let built = maps(&sim);
     assert!(built[1].1, "the allied map counts the friendly gap");
-    let context = UninitContext::with_rules(&rules);
+    let context = UninitContext::new(&rules);
     sim.release_alliance_sight(context);
     let released = maps(&sim);
     assert_eq!(

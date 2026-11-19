@@ -264,7 +264,7 @@ impl Simulation {
                 },
             ));
         }
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         if self.techno_limbo_with_context(foot, context) != ConcealOutcome::Concealed {
             return false;
         }
@@ -398,7 +398,7 @@ impl Simulation {
                     placement: PlacementEvidence::MarkSucceeded,
                     logic_eligible: true,
                 },
-                UninitContext::new(rules, registry)
+                UninitContext::new(rules)
                     .with_effects(effects)
                     .with_unlimbo_facing(Some(facing)),
             );

@@ -288,7 +288,6 @@ fn limbo_keeps_the_handle_and_the_destructor_releases_it() {
     );
     sim.process_pending_delete_with(
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
         1,
         sim.session.started(),

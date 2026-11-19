@@ -90,7 +90,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     assert!(sim.discover_techno(
         members[0],
         sim.session.current_house().unwrap(),
-        UninitContext::with_rules(&rules),
+        UninitContext::new(&rules),
     ));
     let types = ["098F40EC", "0990A93C"].map(|name| sim.interner.get(name).unwrap());
     let mut cameras = Vec::new();
@@ -301,8 +301,7 @@ impl Fixture {
             .map(|index| {
                 let passenger = self.spawn("E1", 2 + index as u16, 2);
                 assert_eq!(
-                    self.sim
-                        .techno_limbo_with_rules(passenger, &self.rules, None),
+                    self.sim.techno_limbo_with_rules(passenger, &self.rules),
                     ConcealOutcome::Concealed
                 );
                 let entity = self.sim.substrate.entities.get_mut(transport).unwrap();
@@ -1062,12 +1061,8 @@ impl OracleTeam {
 fn load_onto_transport_matches_the_original() {
     for (case, row) in oracle_rows("load").iter().enumerate() {
         let mut team = OracleTeam::new(row, 14);
-        team.sim.team_action_load_onto_transport(
-            team.team,
-            &team.rules,
-            None,
-            FrameEffects::default(),
-        );
+        team.sim
+            .team_action_load_onto_transport(team.team, &team.rules, FrameEffects::default());
         team.check(row, case, true);
     }
 }
@@ -1099,7 +1094,6 @@ fn unload_matches_the_original() {
             team.team,
             int(&row["argument"]),
             &team.rules,
-            None,
             FrameEffects::default(),
         );
         team.check(row, case, false);

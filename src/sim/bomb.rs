@@ -1075,7 +1075,6 @@ impl Simulation {
                 carrier,
                 warhead,
                 rules,
-                overlay_registry,
                 receipt.crit_active,
                 frame_effects,
             )
@@ -1120,15 +1119,8 @@ impl Simulation {
             true,
             origin,
         );
-        effects.bridge_state_changed |= self.bomb_blast_tail(
-            &blast,
-            carrier,
-            warhead,
-            rules,
-            overlay_registry,
-            crit_active,
-            run.effects(),
-        );
+        effects.bridge_state_changed |=
+            self.bomb_blast_tail(&blast, carrier, warhead, rules, crit_active, run.effects());
         Some((effects, pings))
     }
 
@@ -1145,7 +1137,6 @@ impl Simulation {
         carrier: u64,
         warhead: &WarheadType,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         crit_active: bool,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
@@ -1168,7 +1159,6 @@ impl Simulation {
                 self,
                 rules,
                 (rx, ry),
-                overlay_registry,
                 frame_effects,
             )
         } else {

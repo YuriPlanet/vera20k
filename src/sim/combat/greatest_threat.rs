@@ -3169,7 +3169,6 @@ fn probe_is_illegal(
     let subject = super::fire_error_world::FireSubject {
         world,
         rules: ctx.rules,
-        overlay_registry: ctx.los.overlay_registry,
         fog: ctx.fog.map(|fog| fog.fire_view(&world.house_alliances)),
         firer,
         obj: ctx.attacker_obj,

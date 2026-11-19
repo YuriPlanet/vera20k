@@ -763,7 +763,6 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         Some(TargetKind::Entity(target)),
                         &rules,
-                        None,
                         crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
@@ -773,7 +772,6 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         None,
                         &rules,
-                        None,
                         crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
@@ -783,8 +781,7 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         target,
                         &rules,
-                        None,
-                        crate::sim::world::FrameEffects::default()
+                        crate::sim::world::FrameEffects::default(),
                     ));
                 }
                 Some(Event::OutOfRange) => aim_at(&mut sim, building, far),

@@ -1750,10 +1750,7 @@ fn apply_resolved_skirmish_launch_session(
     // after the complete house pass, including zero-budget runs.
     let _ = sim.scenario_rng.next_range_u32_inclusive(0, 0xffff);
 
-    apply_launch_shroud_option(
-        sim,
-        crate::sim::world::UninitContext::new(rules, overlay_registry),
-    );
+    apply_launch_shroud_option(sim, crate::sim::world::UninitContext::new(rules));
 
     SkirmishLaunchApplyResult {
         spawned_mcvs,
@@ -4770,7 +4767,7 @@ mod tests {
         let unseen = left.simulation.state_hash();
         for viewer in [host, guest] {
             for runtime in [&mut left, &mut right] {
-                let context = UninitContext::with_rules(&runtime.resources.rules);
+                let context = UninitContext::new(&runtime.resources.rules);
                 assert!(runtime.simulation.discover_techno(ids[0], viewer, context));
                 assert!(!runtime.simulation.discover_techno(ids[0], viewer, context));
                 assert!(
@@ -4826,7 +4823,7 @@ mod tests {
         for viewer in [last, observer] {
             let before = left.simulation.state_hash();
             for runtime in [&mut left, &mut right] {
-                let context = UninitContext::with_rules(&runtime.resources.rules);
+                let context = UninitContext::new(&runtime.resources.rules);
                 let sim = &mut runtime.simulation;
                 assert!(!sim.techno_discovered_by_viewer(ids[0], viewer));
                 assert!(sim.discover_techno(ids[0], viewer, context));
@@ -4880,7 +4877,7 @@ mod tests {
                 assert!(!sim.discover_techno(
                     ids[0],
                     viewer,
-                    UninitContext::with_rules(&runtime.resources.rules)
+                    UninitContext::new(&runtime.resources.rules)
                 ));
                 assert_eq!((sim.state_hash(), sim.rng_state()), retained);
             }
@@ -4936,10 +4933,10 @@ mod tests {
             let rules = &runtime.resources.rules;
             assert!(!sim.fog.is_cell_revealed(host, 16, 16));
             assert!(!sim.fog.is_cell_revealed(guest, 16, 16));
-            assert!(sim.trigger_reveal_at_waypoint(7, UninitContext::with_rules(rules)));
+            assert!(sim.trigger_reveal_at_waypoint(7, UninitContext::new(rules)));
             assert!(sim.fog.is_cell_revealed(host, 16, 16));
             assert!(sim.fog.is_cell_revealed(guest, 16, 16));
-            assert!(sim.trigger_conceal_at_waypoint(7, UninitContext::with_rules(rules)));
+            assert!(sim.trigger_conceal_at_waypoint(7, UninitContext::new(rules)));
             let id = sim
                 .spawn_object("CAMERA", "Host", 16, 16, 0, rules)
                 .unwrap();
@@ -4979,7 +4976,7 @@ mod tests {
             // Native Limbo6F6B06 releases every represented PlayerPtr,
             // including the owner (DestructionEffects44172F excludes it).
             assert_eq!(
-                sim.techno_limbo_with_context(id, UninitContext::with_rules(rules)),
+                sim.techno_limbo_with_context(id, UninitContext::new(rules)),
                 crate::sim::world::ConcealOutcome::Concealed
             );
             assert!(!sim.fog.holds_alternate_sight(id, guest));

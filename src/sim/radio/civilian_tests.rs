@@ -179,7 +179,7 @@ fn civilian_scatter_into_gate_requests_aircraft_retreat_without_boarding() {
     let effects = FrameEffects::default();
     let target = TargetKind::Cell(22, 20);
     let destination = NavTargetRef::cell(23, 20);
-    sim.assign_target_represented(plane, Some(target), rules, Some(&registry), effects)
+    sim.assign_target_represented(plane, Some(target), rules, effects)
         .unwrap();
     sim.assign_aircraft_destination(plane, Some(destination), rules, effects);
     let queued = sim.substrate.entities.get(plane).unwrap().mission.queued();

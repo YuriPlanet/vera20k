@@ -134,7 +134,6 @@ struct FreshCall<'a> {
     family: TrackFamily,
     args: ProcessMovementArgs,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     frame_effects: FrameEffects<'a>,
 }
 
@@ -158,7 +157,6 @@ impl Simulation {
         family: TrackFamily,
         args: ProcessMovementArgs,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
         let call = FreshCall {
@@ -166,7 +164,6 @@ impl Simulation {
             family,
             args,
             rules,
-            registry,
             frame_effects,
         };
         self.track_process_movement(&call)
@@ -289,7 +286,7 @@ impl Simulation {
         match self.run_track_path_request(
             &request,
             call.rules,
-            call.registry,
+            Some(call.rules.overlay_registry()),
             call.frame_effects,
         )? {
             FootPathOutcome::Deleted => Ok(true),
@@ -387,9 +384,19 @@ impl Simulation {
             return Ok(false);
         }
         //4B345B..4B34D1: Mark0, Unit+1AC(cell, dir, height, 0, 1), Mark1.
-        self.foot_mark_remove(id, rules, call.registry, call.frame_effects);
+        self.foot_mark_remove(
+            id,
+            rules,
+            Some(call.rules.overlay_registry()),
+            call.frame_effects,
+        );
         let code = self.track_can_enter(call, cell, direction, height)?;
-        self.foot_mark_put(id, rules, call.registry, call.frame_effects);
+        self.foot_mark_put(
+            id,
+            rules,
+            Some(call.rules.overlay_registry()),
+            call.frame_effects,
+        );
         let object = self.track_object(id, rules)?;
         let overlay = self.track_overlay(cell);
         //4B34D7..4B351D: the train and crusher coercions.
@@ -404,7 +411,7 @@ impl Simulation {
         //an admitted candidate forces the straight track later.
         let crush_overlay = code == 0
             && overlay.is_some_and(|overlay| {
-                self.overlay_flags(call.registry, overlay)
+                self.overlay_flags(Some(call.rules.overlay_registry()), overlay)
                     .is_some_and(|(crushable, wall)| {
                         crushable || (wall && object.movement_zone == MovementZone::CrusherAll)
                     })
@@ -456,7 +463,7 @@ impl Simulation {
                     call.id,
                     cell,
                     call.rules,
-                    call.registry,
+                    Some(call.rules.overlay_registry()),
                     call.frame_effects,
                 );
                 //4B3C67..4B3C81: code != 7 retires the selector.
@@ -487,7 +494,7 @@ impl Simulation {
                         id,
                         cell,
                         rules,
-                        call.registry,
+                        Some(call.rules.overlay_registry()),
                         call.frame_effects,
                     )?;
                 }
@@ -560,7 +567,12 @@ impl Simulation {
         // An answered re-path searches at the urgency it registered at.
         let urgency = self.batched_code2_urgency(id, urgency);
         let request = self.track_path_request(call, destination, urgency)?;
-        let found = self.foot_find_path(&request, rules, call.registry, call.frame_effects)?;
+        let found = self.foot_find_path(
+            &request,
+            rules,
+            Some(call.rules.overlay_registry()),
+            call.frame_effects,
+        )?;
         //4B3A13..4B3A2A: a vanished Foot sets the out byte.
         if self.substrate.entities.get(id).is_none() {
             return Ok(true);
@@ -580,7 +592,12 @@ impl Simulation {
             return Ok(false);
         }
         //4B3A3E..4B3A56: SetDestination(NULL, 1).
-        self.set_unit_null_destination(id, rules, None, call.frame_effects);
+        self.set_unit_null_destination(
+            id,
+            rules,
+            Some(rules.overlay_registry()),
+            call.frame_effects,
+        );
         Ok(false)
     }
 
@@ -628,8 +645,12 @@ impl Simulation {
             if distance > 0x200 {
                 //Find_Path(cell(destination), IsTrain, 0); see the train residual.
                 let request = self.track_path_request(call, destination, 0)?;
-                let found =
-                    self.foot_find_path(&request, rules, call.registry, call.frame_effects)?;
+                let found = self.foot_find_path(
+                    &request,
+                    rules,
+                    Some(call.rules.overlay_registry()),
+                    call.frame_effects,
+                )?;
                 if found == FindPathResult::Failed {
                     //4B3F40..4B3F55: a vanished Foot sets the out byte.
                     if self.substrate.entities.get(id).is_none() {
@@ -637,7 +658,12 @@ impl Simulation {
                     }
                     //4B3F58..4B3F6E: an unreachable live destination clears.
                     if !self.foot_path_zone_precheck(id, self.live_track_destination(id), rules)? {
-                        self.set_unit_null_destination(id, rules, None, call.frame_effects);
+                        self.set_unit_null_destination(
+                            id,
+                            rules,
+                            Some(rules.overlay_registry()),
+                            call.frame_effects,
+                        );
                     }
                 }
                 second = self
@@ -664,7 +690,7 @@ impl Simulation {
             match self.track_overlay(next_cell) {
                 Some(overlay) => {
                     let (crushable, wall) = self
-                        .overlay_flags(call.registry, overlay)
+                        .overlay_flags(Some(call.rules.overlay_registry()), overlay)
                         .unwrap_or((false, false));
                     //4B3FE1..4B4000: the Unit arm is Drive-only; Ship
                     //6A35E7..6A362C tests the crushable and wall bytes alone.
@@ -722,7 +748,7 @@ impl Simulation {
             id,
             coord_cell(candidate),
             call.rules,
-            call.registry,
+            Some(call.rules.overlay_registry()),
             call.frame_effects,
         );
         //4B4066..4B4089: a false answer (a placed free vehicle): an owner in
@@ -822,7 +848,7 @@ impl Simulation {
                         id,
                         second_cell,
                         rules,
-                        call.registry,
+                        Some(call.rules.overlay_registry()),
                         call.frame_effects,
                     )?;
                 }
@@ -902,8 +928,13 @@ impl Simulation {
             loco.store_track_head(call.family, Some(candidate));
         }
         //4B46DF..4B46FA: the crate question on the head, then limbo.
-        let picked =
-            self.pickup_crate_at(id, reference, call.rules, call.registry, call.frame_effects);
+        let picked = self.pickup_crate_at(
+            id,
+            reference,
+            call.rules,
+            Some(call.rules.overlay_registry()),
+            call.frame_effects,
+        );
         let actor = self
             .substrate
             .entities
@@ -952,7 +983,6 @@ impl Simulation {
                 previous_cell: None,
             },
             call.rules,
-            call.registry,
         )
     }
 
@@ -1240,7 +1270,7 @@ impl Simulation {
                 deck,
                 false,
                 call.rules,
-                call.registry,
+                Some(call.rules.overlay_registry()),
                 call.frame_effects,
             )?;
         }
@@ -1526,7 +1556,6 @@ mod tests {
                     previous_cell: None,
                 },
                 &rules,
-                None,
             )
             .expect("real Unit entry receiver"),
             5,

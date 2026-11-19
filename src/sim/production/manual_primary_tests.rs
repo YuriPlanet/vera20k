@@ -70,7 +70,7 @@ fn stale_primary_events_preserve_then_toggle_each_limbo_peer_flag() {
     };
     // This is the original Event17 receiver's accepted retained-state domain.
     // A common retail producer of an already-primary limbo peer is not claimed.
-    sim.techno_limbo_with_rules(first, &rules, None);
+    sim.techno_limbo_with_rules(first, &rules);
     let toggle = |sim: &mut Simulation, entity_id| {
         assert!(sim.apply_command(
             "Americans",

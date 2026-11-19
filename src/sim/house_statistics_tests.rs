@@ -115,7 +115,7 @@ fn native_null_record_kill_books_each_live_callback_immediately() {
                 1,
                 crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::OwnerChange,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             assert_eq!(
                 house_totals(&sim.houses[&owner]),
@@ -451,7 +451,7 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
                 id,
                 crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::Terminal,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             assert_eq!(
                 u64::from(restored.houses[&owner].stats.units_lost()),

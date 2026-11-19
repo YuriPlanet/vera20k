@@ -191,7 +191,6 @@ impl Simulation {
                             id,
                             Some(NavTargetRef::cell(rx as u16, ry as u16)),
                             rules,
-                            None,
                             effects,
                         )
                         .map_err(|error| error.to_string())?;

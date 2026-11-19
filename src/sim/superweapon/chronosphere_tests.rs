@@ -577,6 +577,59 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
     );
 }
 
+/// A landed Harrier warped onto land gets its Fly back from the warp's END
+/// and flies at its next order: FootClass::AI calls the active locomotor's
+/// Process with no layer test (`0x004DA806..0x004DA877`), so the Fly
+/// Process (`0x004CCB40`) takes it off although the warp left it on the
+/// ground plane.
+#[test]
+fn retail_chrono_warped_harrier_takes_off_at_its_next_order() {
+    use crate::sim::movement::air_movement::current_fly_height;
+    let Some((rules, mut sim, americans)) = retail_world() else {
+        return;
+    };
+    let harrier = spawn(&mut sim, &rules, "ORCA", "Americans", SOURCE);
+    let height = |sim: &Simulation| {
+        let entity = sim.substrate.entities.get(harrier).expect("alive");
+        current_fly_height(entity, sim.resolved_terrain.as_ref())
+    };
+    assert_eq!(height(&sim), 0);
+    charge_chronosphere(&mut sim, americans);
+    click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
+    step(&mut sim, &rules);
+    click(&mut sim, &rules, americans, "ChronoWarpSpecial", TARGET);
+    assert_eq!(
+        locomotors(&sim, harrier),
+        (LocomotorKind::Teleport, Some(LocomotorKind::Fly))
+    );
+    for _ in 0..70 {
+        step(&mut sim, &rules);
+    }
+    let entity = sim.substrate.entities.get(harrier).expect("alive");
+    assert!(entity.chrono_warp().is_none());
+    assert_eq!(locomotors(&sim, harrier), (LocomotorKind::Fly, None));
+    assert_eq!((cell(&sim, harrier), height(&sim)), (TARGET, 0));
+
+    let command = Command::Move {
+        entity_id: harrier,
+        target_rx: TARGET.0 + 8,
+        target_ry: TARGET.1,
+    };
+    assert!(sim.apply_command_with_overlays(
+        "Americans",
+        &command,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let mut flew = false;
+    for _ in 0..30 {
+        step(&mut sim, &rules);
+        flew |= height(&sim) > 0;
+    }
+    assert!(flew, "the warped Harrier takes off");
+}
+
 /// The locomotor chain from the active object down.
 fn chain(sim: &Simulation, id: u64) -> Vec<LocomotorKind> {
     let mut kinds = Vec::new();

@@ -992,7 +992,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     view.fog(),
                     view.house_alliances(),
                     full_visibility,
-                    view.session().game_mode_nonzero(),
+                    view.session().native_player_identity(),
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),

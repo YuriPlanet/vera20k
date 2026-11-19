@@ -230,7 +230,6 @@ mod tests {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: None,
             collapsed: false,
         };
         assert!(!host.validate_bridge_zones((5, 5)).unwrap());
@@ -244,7 +243,6 @@ mod tests {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: None,
             collapsed: false,
         };
         assert!(!host.validate_bridge_zones((5, 5)).unwrap());
@@ -260,7 +258,6 @@ mod tests {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: None,
             collapsed: false,
         };
         host.rebuild_bridge_connectivity().unwrap();

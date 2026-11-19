@@ -802,12 +802,7 @@ fn repair_pointer_expiry_uses_descending_infantry_registry_and_preserves_paid_he
         .unwrap()
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::Object { id: hut }));
-    sim.expire_infantry_bridge_hut_targets(
-        hut,
-        &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default(),
-    );
+    sim.expire_infantry_bridge_hut_targets(hut, &rules, crate::sim::world::FrameEffects::default());
     assert_eq!(sim.scenario_rng.state(), expected.state());
     for id in [a, b, c] {
         let e = sim.substrate.entities.get(id).unwrap();
@@ -860,7 +855,6 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
         sim.expire_infantry_bridge_hut_targets(
             hut,
             &rules,
-            Some(&registry),
             crate::sim::world::FrameEffects::default(),
         );
         let e = sim.substrate.entities.get(id).unwrap();
@@ -1579,7 +1573,6 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         id,
         Some(crate::sim::components::NavTargetRef::cell(20, 15)),
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
     .expect("the Unit setter takes the cell");

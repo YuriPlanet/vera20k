@@ -227,7 +227,7 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
     let target = sim
         .spawn_object("TARGET", "Russians", 16, 16, 0, &rules)
         .unwrap();
-    assert!(sim.acquire_hunter_seeker_target(hunter, &rules, None, FrameEffects::default()));
+    assert!(sim.acquire_hunter_seeker_target(hunter, &rules, FrameEffects::default()));
     assert_eq!(
         sim.substrate
             .entities
@@ -238,7 +238,7 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
         Some(TargetKind::Entity(target))
     );
     let rng = sim.scenario_rng.logical_state();
-    assert!(!sim.acquire_hunter_seeker_target(hunter, &rules, None, FrameEffects::default()));
+    assert!(!sim.acquire_hunter_seeker_target(hunter, &rules, FrameEffects::default()));
     assert_eq!(sim.scenario_rng.logical_state(), rng);
 }
 
@@ -281,7 +281,7 @@ fn computer_hunter_seeker_designated_enemy_rule_controls_the_candidate_pool() {
             .spawn_object("TARGET", "Other", 16, 16, 0, &rules)
             .unwrap();
         assert_eq!(
-            sim.acquire_hunter_seeker_target(hunter, &rules, None, FrameEffects::default()),
+            sim.acquire_hunter_seeker_target(hunter, &rules, FrameEffects::default()),
             acquires,
             "{mode:?}"
         );

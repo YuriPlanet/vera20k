@@ -36,7 +36,6 @@
 //!   executable (`tools.native_inspect calls` and `find-bytes`).
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::position_world_xy;
@@ -319,7 +318,6 @@ impl Simulation {
         entity_id: u64,
         constrained: bool,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let Some(slot) = self.team_can_add(team_id, entity_id, constrained, rules) else {
@@ -377,7 +375,7 @@ impl Simulation {
                 .attach_team_member_trigger_tag(team_id, entity_id);
         }
         if centreless {
-            self.team_calc_center(team_id, rules, registry);
+            self.team_calc_center(team_id, rules);
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.altered = true;
@@ -460,7 +458,13 @@ impl Simulation {
                     && !entity.lifecycle.in_limbo()
             });
         if idles && !no_idle && !self.object_placement_scope_active() {
-            crate::sim::world::enter_idle_mode(self, entity_id, rules, None, frame_effects);
+            crate::sim::world::enter_idle_mode(
+                self,
+                entity_id,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             if !other_initiated && let Some(head) = team.members.first_mut() {
@@ -549,7 +553,6 @@ impl Simulation {
         slot: usize,
         walks: &mut RecruitWalks,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let vm = &self.team_script_vm;
@@ -680,7 +683,7 @@ impl Simulation {
             return false;
         };
         self.team_member_clear_target(winner, rules);
-        self.team_add_member(team_id, winner, false, rules, registry, frame_effects);
+        self.team_add_member(team_id, winner, false, rules, frame_effects);
         true
     }
 

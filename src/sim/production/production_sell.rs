@@ -399,11 +399,7 @@ pub(crate) fn sell_after_owner_change(
             true,
         );
         crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
-        let _ = sim.power_down_building_upgrade(
-            id,
-            rules,
-            frame_effects.with_overlay_registry(registry),
-        );
+        let _ = sim.power_down_building_upgrade(id, rules, frame_effects);
         Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
     }
     // Literal1 keeps Sell_Back's existing Selling/C4 and Buildup gates.
@@ -469,7 +465,7 @@ pub(crate) fn sell_back(
             return true;
         }
         if firestorm_wall {
-            let context = UninitContext::new(rules, registry).with_effects(frame_effects);
+            let context = UninitContext::new(rules).with_effects(frame_effects);
             let _ = sim.techno_limbo_with_context(id, context);
             sim.uninit_with_context(id, context);
         }
@@ -934,7 +930,7 @@ pub(crate) fn sell_complete(
     };
     //449CB1 requests the House strip recheck before target/audio/conversion.
     sim.houses.request_house_tech_tree_recheck(owner);
-    let _ = sim.assign_target_represented(id, None, rules, registry, frame_effects);
+    let _ = sim.assign_target_represented(id, None, rules, frame_effects);
     if !undeploys {
         sim.sound_events
             .emit(SimSoundEvent::StructureSold { owner, type_id });
@@ -943,7 +939,7 @@ pub(crate) fn sell_complete(
         sim.finish_undeploy(id, rules, registry, frame_effects);
         return true;
     }
-    let context = UninitContext::new(rules, registry).with_effects(frame_effects);
+    let context = UninitContext::new(rules).with_effects(frame_effects);
     let Some(building) = sim.substrate.entities.get_mut(id) else {
         return false;
     };

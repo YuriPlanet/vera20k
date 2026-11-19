@@ -110,7 +110,7 @@ pub fn launch(
             None,
             final_pass,
             &config,
-            crate::sim::world::UninitContext::with_rules(rules),
+            crate::sim::world::UninitContext::new(rules),
             crate::sim::vision::MapRevealProjection::Transient,
             sim.session.current_house(),
         );
@@ -173,7 +173,7 @@ pub(super) fn ares_launch(
                 && sim.session.rule_policy().ares_psychic_reveal_exclusions()
         })
         .map(|(w, h)| [(7, w + 5), (13, w + 11), (h + 13, w + h - 15)]);
-    let context = crate::sim::world::UninitContext::with_rules(rules);
+    let context = crate::sim::world::UninitContext::new(rules);
     for final_pass in [false, true] {
         let reveal = |sim: &mut Simulation, cell: (u16, u16)| {
             let (x, y) = (i32::from(cell.0), i32::from(cell.1));

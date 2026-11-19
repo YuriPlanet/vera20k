@@ -265,7 +265,6 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
                 yard,
                 (clicked.0 as i16, clicked.1 as i16),
                 &runtime.resources.rules,
-                Some(runtime.resources.rules.overlay_registry()),
             )
             .unwrap(),
         0,
@@ -283,7 +282,6 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
                     shift: false
                 },
                 &runtime.resources.rules,
-                Some(runtime.resources.rules.overlay_registry())
             )
             .unwrap(),
         MoveAction::Move

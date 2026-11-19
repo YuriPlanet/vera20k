@@ -221,7 +221,6 @@ fn spawn_supplied_ground_mtnk(
                 previous_cell: None,
             },
             &resources.rules,
-            Some(resources.rules.overlay_registry()),
         )
         .unwrap(),
         0
@@ -366,7 +365,6 @@ fn hills_native_fields_and_mtnk_admission_feed_an_ordinary_ramp_move() {
                     previous_cell: None,
                 },
                 &scenario.runtime.resources.rules,
-                Some(scenario.runtime.resources.rules.overlay_registry()),
             )
             .expect("live Unit entry receiver");
         assert_eq!(
@@ -797,7 +795,6 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
                         ),
                     },
                     &resources.rules,
-                    Some(resources.rules.overlay_registry()),
                 )
                 .unwrap();
             assert_eq!(

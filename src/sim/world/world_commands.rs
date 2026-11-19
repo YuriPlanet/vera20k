@@ -114,6 +114,45 @@ impl MegaMissionExecution {
     }
 }
 
+/// `ObjectClass+0x83`, IsSelected: the object is in the player's current
+/// selection. It lives with its owners: `ObjectClass::Select @ 0x005F4520`
+/// sets it ([`Simulation::techno_select`], [`Simulation::try_select_object`]),
+/// `ObjectClass::Deselect @ 0x005F44A0` clears it
+/// ([`Simulation::object_deselect`]), and `Command::Select` commits a
+/// snapshot through `apply_selection_snapshot`. VERA keeps the
+/// current-objects vector as the app's selection ledger (input order and
+/// pending commands), which it reconciles with this byte after the frame.
+/// Combat reads it for selected-unit effects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Selection {
+    selected: bool,
+}
+
+impl Selection {
+    /// The object is selected.
+    pub const fn is_selected(self) -> bool {
+        self.selected
+    }
+
+    /// `ObjectClass::Select`'s write. The MCV deploy and undeploy
+    /// reselections (`world_spawn`) still write it directly.
+    pub(in crate::sim) fn select(&mut self) {
+        self.selected = true;
+    }
+
+    /// `ObjectClass::Deselect`'s write.
+    fn deselect(&mut self) {
+        self.selected = false;
+    }
+
+    /// Install a fixture's byte.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_selected_for_test(&mut self, selected: bool) {
+        self.selected = selected;
+    }
+}
+
 impl Simulation {
     /// HouseClass::Cheer50C8C0, original gamemd. Trigger113 and Event2D
     /// share this owner. Capture the initial Techno count; re-read each live
@@ -1474,7 +1513,7 @@ impl Simulation {
 
         // House4FD018 calls70D4A0, not7258D0 pointer expiry: Restore runs
         // before the conditional target clear, then Team targets detach.
-        self.stop_all_targeting_cell(rx, ry, rules, Some(overlays), effects);
+        self.stop_all_targeting_cell(rx, ry, rules, effects);
 
         if let Some(tail_grid) = tail_grid {
             if self.zone_grid.is_some() {
@@ -1690,7 +1729,6 @@ impl Simulation {
                     *destination,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -1753,7 +1791,7 @@ impl Simulation {
             }
             Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
                 entity_ids,
-                super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+                super::UninitContext::new(rules).with_effects(frame_effects),
             ),
             Command::Scatter { entity_id } => {
                 // Event7 4C7859..4C78D5: clear planning tokens, then Foot,
@@ -1799,7 +1837,6 @@ impl Simulation {
                     Some(combat::TargetKind::Cell(*target_rx, *target_ry)),
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -1814,7 +1851,6 @@ impl Simulation {
                     Some(combat::TargetKind::Entity(*target_id)),
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -1896,13 +1932,7 @@ impl Simulation {
                 self.assign_null_destination(*entity_id, rules, overlay_registry, frame_effects);
                 // Event Stop4C75F8 invokes virtual+3C8 AFTER its null
                 // destination4C75ED, including the Infantry class effects.
-                let _ = self.assign_target_represented(
-                    *entity_id,
-                    None,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                );
+                let _ = self.assign_target_represented(*entity_id, None, rules, frame_effects);
                 // `0x004C75FE..0x004C7624`: a `BalloonHover=` type takes both
                 // again. Its setter's arm (`0x00741983`) kept the NavCom while
                 // the Target stood; without the Target this one clears it.
@@ -1919,13 +1949,7 @@ impl Simulation {
                         overlay_registry,
                         frame_effects,
                     );
-                    let _ = self.assign_target_represented(
-                        *entity_id,
-                        None,
-                        rules,
-                        overlay_registry,
-                        frame_effects,
-                    );
+                    let _ = self.assign_target_represented(*entity_id, None, rules, frame_effects);
                 }
                 // `0x004C762A..0x004C7634`: a spawner's manager drops its
                 // targets, so a queued launch is cancelled and an attacking
@@ -1934,7 +1958,6 @@ impl Simulation {
                     self,
                     *entity_id,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 );
                 // The IDLE arm leaves the installed locomotor alone: a stopped
@@ -1953,13 +1976,7 @@ impl Simulation {
                 //
                 // `0x004C7639..0x004C7650`: an open-topped transport's riders
                 // let go of their targets too.
-                self.open_topped_passengers_take_target(
-                    *entity_id,
-                    None,
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                );
+                self.open_topped_passengers_take_target(*entity_id, None, rules, frame_effects);
                 // `0x004C7655..0x004C765F`: only a Unit (vt+0x2C is 1) goes on
                 // to the miner arm and `0x004C769C..0x004C76AC`, which takes a
                 // Slave Miner off its hunt (`sim::slave_manager`). A selected
@@ -1987,7 +2004,6 @@ impl Simulation {
                     None,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -2003,7 +2019,6 @@ impl Simulation {
                     None,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -2019,7 +2034,6 @@ impl Simulation {
                     *destination,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -2031,7 +2045,6 @@ impl Simulation {
                     None,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
@@ -2083,7 +2096,6 @@ impl Simulation {
                     None,
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted()
@@ -2233,7 +2245,7 @@ impl Simulation {
                             self,
                             rules,
                             *entity_id,
-                            crate::sim::world::UninitContext::new(rules, overlay_registry)
+                            crate::sim::world::UninitContext::new(rules)
                                 .with_effects(frame_effects),
                         );
                 }
@@ -2416,7 +2428,7 @@ impl Simulation {
                     owner,
                     other,
                 ) {
-                    self.make_enemy(owner, other, rules, overlay_registry, frame_effects, true);
+                    self.make_enemy(owner, other, rules, frame_effects, true);
                 } else {
                     self.make_ally(owner, other, rules, overlay_registry, frame_effects, true);
                 }
@@ -2598,7 +2610,6 @@ impl Simulation {
                             None,
                             auxiliary,
                             rules,
-                            overlay_registry,
                             frame_effects,
                         )
                         .accepted()
@@ -2683,7 +2694,6 @@ impl Simulation {
                     Some(combat::TargetKind::Entity(*target_building_id)),
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted()
@@ -2732,7 +2742,6 @@ impl Simulation {
                     Some(combat::TargetKind::Entity(*target_building_id)),
                     auxiliary,
                     rules,
-                    overlay_registry,
                     frame_effects,
                 )
                 .accepted()
@@ -3018,7 +3027,8 @@ impl Simulation {
     /// ([`Self::select_unselects_all`]) before emitting the ordered Select
     /// command. Keep the graphical-client B73550 gate there: replaying this
     /// command must not depend on a renderer.
-    /// Raw lifecycle Select writers use Selection::select and do not raise33.
+    /// The MCV deploy and undeploy reselections still write the byte
+    /// directly ([`Selection::select`]) and raise no event 33.
     pub(crate) fn try_select_object(
         &mut self,
         stable_id: u64,
@@ -3545,7 +3555,6 @@ impl Simulation {
         destination: Option<combat::TargetKind>,
         auxiliary: MegaMissionTarget,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> MegaMissionExecution {
         // A capture after issue does not revoke an event. Event4C7353 queues
@@ -3598,13 +3607,9 @@ impl Simulation {
         if mission == MissionType::AreaGuard && foot {
             // A refused setter is logged, as the ordinary arm below does
             // (a mod type built without a locomotor has no coordinate).
-            if let Err(cause) = self.assign_target_represented(
-                entity_id,
-                None,
-                rules,
-                overlay_registry,
-                frame_effects,
-            ) {
+            if let Err(cause) =
+                self.assign_target_represented(entity_id, None, rules, frame_effects)
+            {
                 log::warn!("Area Guard order target for {entity_id} refused: {cause}");
             }
             // The target token, converted at `0x004C7418` for the
@@ -3614,7 +3619,6 @@ impl Simulation {
                 entity_id,
                 post.map(Into::into),
                 rules,
-                overlay_registry,
                 frame_effects,
             ) {
                 log::warn!("Area Guard order destination for {entity_id} refused: {cause}");
@@ -3633,13 +3637,7 @@ impl Simulation {
         let target = self.resolve_event_token(target);
         // Its changed-null path6FCF5B also resets retained burst state;
         // dropping Target alone cannot.
-        let _ = self.assign_target_represented(
-            entity_id,
-            target,
-            rules,
-            overlay_registry,
-            frame_effects,
-        );
+        let _ = self.assign_target_represented(entity_id, target, rules, frame_effects);
         // `0x004C7474`, then the destination setter: Unit741970,
         // Infantry51AA40, Aircraft41AA80 or Building455D50, whatever the
         // locomotor. Each owns its same-NavCom return, preprocessing and
@@ -3651,19 +3649,12 @@ impl Simulation {
             entity_id,
             destination.map(Into::into),
             rules,
-            overlay_registry,
             frame_effects,
         ) {
             log::warn!("MegaMission destination {entity_id}: {cause}");
         }
         if let Some(target) = target {
-            self.open_topped_passengers_take_target(
-                entity_id,
-                Some(target),
-                rules,
-                overlay_registry,
-                frame_effects,
-            );
+            self.open_topped_passengers_take_target(entity_id, Some(target), rules, frame_effects);
         }
         if foot && auxiliary != MegaMissionTarget::Null {
             let auxiliary = match auxiliary {

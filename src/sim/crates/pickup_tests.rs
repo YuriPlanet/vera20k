@@ -75,7 +75,7 @@ fn place_actor(
             placement: PlacementEvidence::MarkSucceeded,
             logic_eligible: true,
         },
-        crate::sim::world::UninitContext::with_rules(rules),
+        crate::sim::world::UninitContext::new(rules),
     );
     id
 }
@@ -938,8 +938,13 @@ const ARENA_RULES: &str = "[Countries]\n0=Americans\n1=Russians\n[Sides]\nAllied
              [Powerups]\nMoney=20,MONEY,yes,2000\nUnit=20,<none>,no\nHealBase=10,HEALALL,yes\n";
 
 fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
+    // The match's OverlayType table comes with its rules and reads its land
+    // rows from them, so the crate cell keeps `[Clear]`'s speed profile.
+    let rules_ini = format!(
+        "{ARENA_RULES}[OverlayTypes]\n0=WOOD\n[WOOD]\nCrate=yes\nCrateTrigger=yes\nLand=Clear\n"
+    );
     let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
-        &IniFile::from_str(ARENA_RULES),
+        &IniFile::from_str(&rules_ini),
         &IniFile::from_str("[YARD]\nFoundation=4x3\n"),
         &["HealCrate"],
     )
@@ -960,14 +965,7 @@ fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
     let actor = sim
         .spawn_object("TNK", "Americans", 20, 22, 0, &rules)
         .expect("the tank spawns");
-    // The OverlayType table reads its land rows from the same rules, as the
-    // match's table does, so the crate cell keeps `[Clear]`'s speed profile.
-    let registry = OverlayTypeRegistry::from_ini(
-        &IniFile::from_str(&format!(
-            "{ARENA_RULES}[OverlayTypes]\n0=WOOD\n[WOOD]\nCrate=yes\nCrateTrigger=yes\nLand=Clear\n"
-        )),
-        None,
-    );
+    let registry = OverlayTypeRegistry::from_ini(&IniFile::from_str(&rules_ini), None);
     (sim, rules, registry, owner, actor)
 }
 

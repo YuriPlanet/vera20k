@@ -82,7 +82,6 @@ pub(super) fn dock_exit(
     producer_id: u64,
     mover: u64,
     offered: (i16, i16),
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<DockExit> {
     let cell = crate::sim::docking::building_dock::building_dock_cell(
         sim,
@@ -90,7 +89,6 @@ pub(super) fn dock_exit(
         mover,
         offered,
         rules,
-        overlay_registry,
     )?;
     let producer = sim.substrate.entities.get(producer_id)?;
     let producer_type = sim.entity_object_type(producer, rules)?;

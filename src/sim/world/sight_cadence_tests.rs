@@ -201,12 +201,10 @@ fn aircraft_uncached_ground_sight_uses_one_cell_radius_without_replacing_its_sou
         let rng = sim.scenario_rng.native_state_hex();
         let ((), trace) = trace_reveal_calls(|| {
             if resize {
-                assert!(
-                    sim.change_visible_map_area([2, 2, 16, 12], UninitContext::with_rules(&rules))
-                );
+                assert!(sim.change_visible_map_area([2, 2, 16, 12], UninitContext::new(&rules)));
                 assert!(sim.entities().get(id).unwrap().in_playfield());
             } else {
-                sim.grow_shroud(UninitContext::with_rules(&rules));
+                sim.grow_shroud(UninitContext::new(&rules));
             }
         });
         // Native radius1 offset order, also consumed by reveal_area_tests.
@@ -269,13 +267,7 @@ fn aircraft_uncached_airborne_sight_uses_raw_type_range_and_skips_zero() {
         assert!(!sim.session.game_options().fog_of_war);
         let held = sim.fog.sight_admissions_for_test().clone();
         let ((), trace) = trace_reveal_calls(|| {
-            sim.reveal_uncached_object_sight(
-                id,
-                false,
-                false,
-                None,
-                UninitContext::with_rules(&rules),
-            );
+            sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::new(&rules));
         });
         if sight == 0 {
             assert!(trace.walks.is_empty());
@@ -321,15 +313,7 @@ fn aircraft_uncached_sight_rereads_its_location_between_map_passes() {
                 entity.position.put_z(416);
                 entity.sight.set_vision_range_for_test(10);
             },
-            || {
-                sim.reveal_uncached_object_sight(
-                    id,
-                    false,
-                    false,
-                    None,
-                    UninitContext::with_rules(&rules),
-                )
-            },
+            || sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::new(&rules)),
         )
     });
     assert_eq!(trace.walks.len(), 2);
@@ -364,15 +348,7 @@ fn aircraft_uncached_sight_rereads_owner_before_the_second_house_admission() {
     let ((), trace) = trace_reveal_calls(|| {
         with_first_cell_receiver(
             move |sim| sim.substrate.entities.change_owner(id, other),
-            || {
-                sim.reveal_uncached_object_sight(
-                    id,
-                    false,
-                    false,
-                    None,
-                    UninitContext::with_rules(&rules),
-                )
-            },
+            || sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::new(&rules)),
         )
     });
     assert_eq!(trace.walks.len(), 2);
@@ -455,7 +431,7 @@ fn source_release_retains_its_cached_geometry_until_teardown() {
         .unwrap();
     let held = sim.fog.sight_admissions_for_test()[&(id, owner)].clone();
     assert!(held.latched);
-    sim.techno_limbo_with_rules(id, &rules, None);
+    sim.techno_limbo_with_rules(id, &rules);
     let cache = sim.fog.sight_admissions_for_test()[&(id, owner)].clone();
     assert!(!cache.latched);
     assert_eq!((cache.origin, cache.radius), (held.origin, held.radius));
@@ -502,7 +478,6 @@ fn source_release_retains_its_cached_geometry_until_teardown() {
     // removal or the test-only rules-less flush wrapper.
     restored.process_pending_delete_with(
         &rules,
-        None,
         FrameEffects::default(),
         1,
         restored.session.started(),
@@ -579,7 +554,7 @@ fn a_nested_source_release_is_not_resurrected_by_outer_walk_or_next_frame() {
     let id = sim
         .spawn_object("AMCV", "Americans", 16, 16, 0, &rules)
         .unwrap();
-    sim.techno_limbo_with_rules(id, &rules, None);
+    sim.techno_limbo_with_rules(id, &rules);
     //Reset the synthetic knowledge fixture, retaining the same real source
     //object in Limbo; its next successful Unlimbo is the producer under test.
     sim.fog = vision::FogState::new(32, 32);
@@ -597,7 +572,7 @@ fn a_nested_source_release_is_not_resurrected_by_outer_walk_or_next_frame() {
                 !sim.fog.is_ground_open(owner, later.0, later.1),
                 "metadata must not publish later Cell ground early"
             );
-            sim.release_object_sight_with_context(id, UninitContext::with_rules(&callback_rules));
+            sim.release_object_sight_with_context(id, UninitContext::new(&callback_rules));
             let released = &sim.fog.sight_admissions_for_test()[&(id, owner)];
             assert!(!released.latched);
             assert_eq!(
@@ -606,7 +581,7 @@ fn a_nested_source_release_is_not_resurrected_by_outer_walk_or_next_frame() {
             );
         },
         || {
-            sim.reveal_entity_with_context(id, UninitContext::with_rules(&rules));
+            sim.reveal_entity_with_context(id, UninitContext::new(&rules));
             assert!(!sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo());
         },
     );
@@ -643,7 +618,7 @@ fn unlimbo_keeps_its_single_alive_admission_across_sight_callbacks() {
         .unwrap();
     let type_id = sim.substrate.entities.get(id).unwrap().type_ref();
     let category = crate::map::entities::EntityCategory::Unit;
-    sim.techno_limbo_with_rules(id, &rules, None);
+    sim.techno_limbo_with_rules(id, &rules);
     let before = sim.houses[&owner]
         .tracking()
         .active_count(category, type_id);
@@ -660,7 +635,7 @@ fn unlimbo_keeps_its_single_alive_admission_across_sight_callbacks() {
         || {
             sim.reveal_entity_with_context(
                 id,
-                UninitContext::with_rules(&rules).with_unlimbo_facing(Some(37)),
+                UninitContext::new(&rules).with_unlimbo_facing(Some(37)),
             );
         },
     );
@@ -1393,13 +1368,13 @@ fn a_source_event_keeps_one_notification_admission_across_logical_planes() {
     let id = sim
         .spawn_object("AMCV", "Americans", 16, 16, 0, &rules)
         .unwrap();
-    sim.techno_limbo_with_rules(id, &rules, None);
+    sim.techno_limbo_with_rules(id, &rules);
     sim.fog = vision::FogState::new(32, 32);
     let ((), calls) = trace_reveal_calls(|| {
         with_first_cell_receiver(
             move |sim| sim.session.set_current_house_for_test(Some(ally)),
             || {
-                sim.reveal_entity_with_context(id, UninitContext::with_rules(&rules));
+                sim.reveal_entity_with_context(id, UninitContext::new(&rules));
             },
         );
     });
@@ -1518,13 +1493,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             sim.mapgen_rng.native_state_hex(),
         );
         let ((), trace) = trace_reveal_calls(|| {
-            sim.reveal_uncached_object_sight(
-                id,
-                false,
-                false,
-                None,
-                UninitContext::with_rules(rules),
-            );
+            sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::new(rules));
         });
         assert_eq!(
             trace.map_calls,
@@ -1767,7 +1736,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
         );
         let config = sim.sight_reveal_config(rules);
         let heights = sim.sight_height_grid(&config);
-        let context = UninitContext::with_rules(rules);
+        let context = UninitContext::new(rules);
         let rng = (
             sim.scenario_rng.native_state_hex(),
             sim.main_rng.native_state_hex(),
@@ -2006,7 +1975,7 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
         .spawn_object("MTNK", "Americans", 12, 16, 0, &rules)
         .unwrap();
     let flat = sim.fog.sight_admission(id, owner).unwrap().cells.clone();
-    sim.techno_limbo_with_rules(id, &rules, None);
+    sim.techno_limbo_with_rules(id, &rules);
     // A cliff east of the tank, read with the map, before navigation is
     // published.
     let terrain = sim.resolved_terrain.as_mut().unwrap();
@@ -2014,7 +1983,7 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
         terrain.cell_mut_for_test(15, y).unwrap().level = 8;
     }
     sim.path_grid = None;
-    sim.reveal_entity_with_context(id, UninitContext::with_rules(&rules));
+    sim.reveal_entity_with_context(id, UninitContext::new(&rules));
     assert!(!sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo());
     let early = sim.fog.sight_admission(id, owner).unwrap().cells.clone();
     assert_ne!(early, flat, "the cliff hides cells before publication");
@@ -2026,7 +1995,7 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
         early,
         "the same cells after publication"
     );
-    sim.techno_limbo_with_rules(id, &rules, None);
+    sim.techno_limbo_with_rules(id, &rules);
     let config = sim.sight_reveal_config(&rules);
     sim.refresh_sight_sources(&config, &rules);
     for y in 0..32 {
@@ -2154,14 +2123,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     assert!(sim.fog.is_cell_visible(americans, origin.0, origin.1));
 
     let ((), release_trace) = trace_reveal_calls(|| {
-        sim.make_enemy(
-            russians,
-            americans,
-            &rules,
-            None,
-            FrameEffects::default(),
-            false,
-        );
+        sim.make_enemy(russians, americans, &rules, FrameEffects::default(), false);
     });
     assert!(
         release_trace
@@ -2254,14 +2216,7 @@ fn an_ex_ally_keeps_a_mobile_footprint_after_its_next_cell_arrival() {
     assert!(sim.fog.source_sight_is_latched(tank, americans));
     assert!(sim.fog.is_cell_visible(americans, old_cell.0, old_cell.1));
 
-    sim.make_enemy(
-        russians,
-        americans,
-        &rules,
-        None,
-        FrameEffects::default(),
-        false,
-    );
+    sim.make_enemy(russians, americans, &rules, FrameEffects::default(), false);
     assert!(
         sim.fog.is_cell_visible(americans, old_cell.0, old_cell.1),
         "MakeEnemy's mobile arm leaves the prior map footprint"
@@ -2309,7 +2264,7 @@ fn a_tank_promoted_into_the_playfield_reveals_at_its_next_arrival() {
         .unwrap();
     // Fixture: a tank Unlimboed off the playfield, whose stored byte refused
     // its Unlimbo reveal.
-    sim.release_object_sight_with_context(id, UninitContext::with_rules(&rules));
+    sim.release_object_sight_with_context(id, UninitContext::new(&rules));
     sim.fog.forget_sight_source(id);
     sim.substrate
         .entities

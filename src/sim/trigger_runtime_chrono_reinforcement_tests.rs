@@ -422,7 +422,6 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
                 ids[0],
                 Some(crate::sim::combat::TargetKind::Entity(target)),
                 &rules,
-                Some(&overlays),
                 FrameEffects::default(),
             )
             .unwrap();

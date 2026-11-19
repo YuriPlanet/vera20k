@@ -657,7 +657,7 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
         ),
         (2, 1)
     );
-    sim.techno_limbo_with_rules(boat, &rules, None);
+    sim.techno_limbo_with_rules(boat, &rules);
     assert_eq!(sim.houses[&first].tracking().active_for_test().0, 0);
     assert_eq!(
         sim.houses[&first].tracking().navy(),

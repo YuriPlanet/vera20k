@@ -577,7 +577,6 @@ fn teleporter_bound_for_its_refinery(
         miner,
         Some(NavTargetRef::cell(16, 10)),
         &rules,
-        Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
@@ -614,7 +613,6 @@ fn teleporter_behind_a_moving_tank() -> (
         tank,
         Some(NavTargetRef::cell(14, 2)),
         &rules,
-        Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
@@ -630,18 +628,12 @@ fn teleporter_behind_a_moving_tank() -> (
     (sim, rules, registry, miner)
 }
 
-fn process_drive(
-    sim: &mut Simulation,
-    miner: u64,
-    rules: &RuleSet,
-    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-) -> Result<bool, String> {
+fn process_drive(sim: &mut Simulation, miner: u64, rules: &RuleSet) -> Result<bool, String> {
     sim.run_track_process_movement(
         miner,
         crate::sim::movement::track_process::TrackFamily::Drive,
         crate::sim::movement::ProcessMovementArgs::OUTER,
         rules,
-        Some(registry),
         crate::sim::world::FrameEffects::default(),
     )
 }
@@ -674,7 +666,7 @@ fn a_teleporter_its_redirect_stops_takes_its_last_step_without_a_destination() {
     use crate::sim::movement::track_process::TrackFamily;
     let (mut sim, rules, registry, miner) = teleporter_bound_for_its_refinery((14, 10));
 
-    assert_eq!(process_drive(&mut sim, miner, &rules, &registry), Ok(false));
+    assert_eq!(process_drive(&mut sim, miner, &rules), Ok(false));
 
     assert_stopped_for_enter(&sim, miner);
     let e = sim.substrate.entities.get(miner).unwrap();
@@ -700,7 +692,7 @@ fn a_teleporter_its_redirect_stops_waits_behind_a_moving_tank_without_a_destinat
     use crate::sim::movement::track_process::TrackFamily;
     let (mut sim, rules, registry, miner) = teleporter_behind_a_moving_tank();
 
-    assert_eq!(process_drive(&mut sim, miner, &rules, &registry), Ok(false));
+    assert_eq!(process_drive(&mut sim, miner, &rules), Ok(false));
 
     assert_stopped_for_enter(&sim, miner);
     let e = sim.substrate.entities.get(miner).unwrap();
@@ -734,9 +726,9 @@ fn batched_the_teleporter_ladder_waits_and_keeps_the_redirect_navcom() {
 
     for frame in 100..103 {
         sim.session.set_binary_frame_for_test(frame);
-        sim.answer_batched_path_searches(&rules, Some(&registry));
+        sim.answer_batched_path_searches(&rules);
         assert_eq!(
-            process_drive(&mut sim, miner, &rules, &registry),
+            process_drive(&mut sim, miner, &rules),
             Ok(false),
             "frame {frame}"
         );
@@ -1239,8 +1231,7 @@ fn null_destination_mid_track_stops_the_tank_at_its_track_end() {
                     id,
                     attacker,
                     &rules,
-                    Some(&registry),
-                    crate::sim::world::FrameEffects::default()
+                    crate::sim::world::FrameEffects::default(),
                 ));
                 assert_eq!(
                     sim.substrate
@@ -1344,8 +1335,7 @@ fn restore_mid_track_heads_for_the_restored_order_at_the_track_end() {
         id,
         attacker,
         &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
     ));
     sim.session.set_binary_frame_for_test(frame);
     order(&mut sim, &rules, id, (10, 16));
@@ -1356,13 +1346,8 @@ fn restore_mid_track_heads_for_the_restored_order_at_the_track_end() {
         .attack_target
         .set_for_test(None);
     assert!(
-        sim.mission_restore_represented(
-            id,
-            &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default()
-        )
-        .unwrap()
+        sim.mission_restore_represented(id, &rules, crate::sim::world::FrameEffects::default(),)
+            .unwrap()
     );
     let e = sim.substrate.entities.get(id).unwrap();
     assert_eq!(e.navigation.nav_com(), Some(NavTargetRef::cell(20, 10)));

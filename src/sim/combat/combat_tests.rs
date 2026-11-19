@@ -2793,7 +2793,6 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
         let subject = super::fire_error_world::FireSubject {
             world: &sim,
             rules,
-            overlay_registry: Some(&registry),
             fog: Some(sim.fog.fire_view(&sim.house_alliances)),
             firer: actor,
             obj: sniper,
@@ -3815,7 +3814,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         &mut sim,
         &rules,
         system_id,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     assert_eq!(
         sim.particle_systems().get(system_id).unwrap().coords(),
@@ -3890,10 +3889,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         Some(system_id),
         "mark-only Destroy retains +0x310 until the system's own Limbo"
     );
-    sim.retire_particle_system(
-        system_id,
-        crate::sim::world::UninitContext::with_rules(&rules),
-    );
+    sim.retire_particle_system(system_id, crate::sim::world::UninitContext::new(&rules));
     assert!(sim.particle_systems().get(system_id).is_some());
     assert_eq!(
         sim.substrate
@@ -7123,7 +7119,6 @@ fn an_illegal_shot_is_still_in_range() {
     let code = crate::sim::combat::fire_error_world::FireSubject {
         world: &sim,
         rules: &rules,
-        overlay_registry: None,
         fog: None,
         firer: tank,
         obj: rules.object("MTNK").unwrap(),

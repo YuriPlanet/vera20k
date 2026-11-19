@@ -24,7 +24,6 @@
 //! Ares merges them ([`Simulation::ares_visceroid_merge`], hook `0x00739F21`).
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
@@ -59,7 +58,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -124,7 +122,6 @@ impl Simulation {
                     other,
                     Some(NavTargetRef::object(id)),
                     rules,
-                    registry,
                     effects,
                 );
                 self.set_idle_wander(id, -1);
@@ -147,14 +144,13 @@ impl Simulation {
         };
         let (dx, dy) = DIRECTION_DELTAS[(direction & 7) as usize];
         let target = (cell.0 + dx, cell.1 + dy);
-        if self.wander_cell_admits(id, cell, target, direction, rules, registry)
+        if self.wander_cell_admits(id, cell, target, direction, rules)
             && let (Ok(rx), Ok(ry)) = (u16::try_from(target.0), u16::try_from(target.1))
         {
             let _ = self.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(rx, ry)),
                 rules,
-                registry,
                 effects,
             );
             return;
@@ -187,7 +183,6 @@ impl Simulation {
         target: (i32, i32),
         direction: i32,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> bool {
         let (Some(terrain), Some(entity)) = (
             self.resolved_terrain.as_ref(),
@@ -207,7 +202,7 @@ impl Simulation {
             ),
             previous_cell: Some(cells.lookup(narrow(cell))),
         };
-        self.foot_can_enter(id, cells.lookup(narrow(target)), args, rules, registry)
+        self.foot_can_enter(id, cells.lookup(narrow(target)), args, rules)
             .is_ok_and(|code| code == 0)
     }
 
@@ -224,7 +219,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let small = |sim: &Self, entity: &crate::sim::game_entity::GameEntity| {
@@ -272,7 +266,7 @@ impl Simulation {
         self.refresh_spatial_threat(other, rules, None);
         self.uninit_with_context(
             id,
-            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(effects),
         );
         true
     }

@@ -55,7 +55,6 @@ impl AegisScene {
                     aegis,
                     Some(TargetKind::Entity(target)),
                     &rules,
-                    None,
                     FrameEffects::default(),
                 )
                 .is_ok()
@@ -221,7 +220,6 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 Some(TargetKind::Entity(other)),
                 &scene.rules,
-                None,
                 FrameEffects::default(),
             )
             .is_ok()
@@ -230,13 +228,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
     assert!(
         scene
             .world
-            .assign_target_represented(
-                scene.aegis,
-                None,
-                &scene.rules,
-                None,
-                FrameEffects::default(),
-            )
+            .assign_target_represented(scene.aegis, None, &scene.rules, FrameEffects::default(),)
             .is_ok()
     );
     // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps the
@@ -254,7 +246,6 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 Some(TargetKind::Entity(scene.target)),
                 &scene.rules,
-                None,
                 FrameEffects::default(),
             )
             .is_ok()

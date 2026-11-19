@@ -225,7 +225,7 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
         CanBuild::No
     );
     sim.change_owner_with_rules(member, owner, &rules, None, FrameEffects::default());
-    sim.techno_limbo_with_rules(member, &rules, None);
+    sim.techno_limbo_with_rules(member, &rules);
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
@@ -245,13 +245,7 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
         1,
         "UnInit leaves ctor-to-dtor tracking until physical destruction"
     );
-    sim.process_pending_delete_with(
-        &rules,
-        None,
-        FrameEffects::default(),
-        1,
-        sim.session.started(),
-    );
+    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, sim.session.started());
     assert_eq!(
         sim.houses[&owner]
             .tracking()
@@ -366,12 +360,7 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
             FrameEffects::default(),
         )
         .unwrap();
-    assert!(sim.try_install_building_upgrade(
-        temporary,
-        host,
-        &rules,
-        UninitContext::with_rules(&rules),
-    ));
+    assert!(sim.try_install_building_upgrade(temporary, host, &rules, UninitContext::new(&rules),));
     assert!(
         !sim.entities()
             .get(temporary)
@@ -379,13 +368,7 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
             .lifecycle
             .object_alive()
     );
-    sim.process_pending_delete_with(
-        &rules,
-        None,
-        FrameEffects::default(),
-        1,
-        sim.session.started(),
-    );
+    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, sim.session.started());
     assert!(sim.entities().get(temporary).is_none());
     admission(&sim, CanBuild::No);
     sim.change_owner_with_rules(host, owner, &rules, None, FrameEffects::default());

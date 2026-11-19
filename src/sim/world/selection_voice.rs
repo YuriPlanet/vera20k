@@ -280,7 +280,11 @@ impl Simulation {
             && object.resource_gatherer
             && object.resource_destination
             && let Some(TargetKind::Cell(x, y)) = entity.archive_target()
-            && crate::sim::miner::ore_scan::cell_is_tiberium_land(self, None, (x, y))
+            && crate::sim::miner::ore_scan::cell_is_tiberium_land(
+                self,
+                Some(rules.overlay_registry()),
+                (x, y),
+            )
             && let Some(sound) = object.voice_harvest()
         {
             return Self::queue_voice_request(Some(sound), voices_enabled, human_player);

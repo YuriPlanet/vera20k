@@ -79,7 +79,7 @@ fn capacity_matches_original_signed_transfer_slices() {
         ));
         if remove {
             assert_eq!(sim.houses[&owner].tracking().storage_capacity(), 100);
-            sim.techno_limbo_with_rules(target, &rules, None);
+            sim.techno_limbo_with_rules(target, &rules);
         }
         assert_eq!(
             sim.houses[&owner].tracking().storage_capacity(),
@@ -106,7 +106,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         logic_eligible: true,
     };
     assert!(matches!(
-        sim.try_reveal_entity_with_context(target, rejected, UninitContext::with_rules(&rules)),
+        sim.try_reveal_entity_with_context(target, rejected, UninitContext::new(&rules)),
         RevealOutcome::Failed(_)
     ));
     assert_eq!(sim.houses[&first].tracking().storage_capacity(), 0);
@@ -144,8 +144,8 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         ),
         (18, 23)
     );
-    sim.techno_limbo_with_rules(target, &rules, None);
-    sim.techno_limbo_with_rules(target, &rules, None);
+    sim.techno_limbo_with_rules(target, &rules);
+    sim.techno_limbo_with_rules(target, &rules);
     assert_eq!(sim.houses[&second].tracking().storage_capacity(), 0);
     sim.change_owner_with_rules(target, first, &rules, None, FrameEffects::default());
     assert_eq!(

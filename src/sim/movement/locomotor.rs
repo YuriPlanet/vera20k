@@ -73,8 +73,9 @@ pub(crate) struct LocomotorHashFields<'a> {
 /// [`Self::end_piggyback`]).
 ///
 /// `balloon_hover`, `speed_type` and `movement_zone` cache the
-/// Foot's type: set at construction, copied into a BEGIN's temporary and never
-/// written afterwards, so every object of one unit holds the same values.
+/// Foot's type: set at construction, copied into a BEGIN's temporary and
+/// rebound on every object at a type store ([`Self::rebind_type_caches`]), so
+/// every object of one unit holds the same values.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LocomotorState {
     /// Which locomotor class this object is.
@@ -96,7 +97,9 @@ pub struct LocomotorState {
     runtime_payload: LocomotorRuntimePayload,
     /// Which spatial layer the unit currently occupies: the Foot's position,
     /// cached on the active object. `Bridge` is the Ground layer with the
-    /// Foot's OnBridge set.
+    /// Foot's OnBridge set. A Fly or Jumpjet answers its layer from its
+    /// height and a Rocket as Air (`world::entity_layer`); nothing reads a
+    /// Fly's or Rocket's cache, and only VeraX AutoLoad reads a Jumpjet's.
     layer: MovementLayer,
     /// Stay airborne after reaching destination (BalloonHover=yes).
     balloon_hover: bool,
@@ -128,7 +131,8 @@ impl LocomotorState {
 
     /// Ares conversion1004382D..100438AD compares the two Type CLSIDs, not
     /// the active (possibly piggybacked) locomotor. Equal CLSIDs retain the
-    /// instance and its timers; VERA's derived type caches still need rebinding.
+    /// instance and its timers, whose type caches the type store has already
+    /// rebound ([`Self::rebind_type_caches`]).
     pub(crate) fn change_type_binding(
         &mut self,
         old_type_kind: LocomotorKind,
@@ -141,13 +145,20 @@ impl LocomotorState {
             // world position and bridge/air occupancy are not constructor state.
             replacement.layer = self.layer;
             *self = replacement;
-        } else {
-            self.balloon_hover = object.balloon_hover;
-            self.speed_type = object.speed_type;
-            self.movement_zone = object.movement_zone;
-            if let Some(saved) = self.piggyback.as_mut() {
-                saved.change_type_binding(old_type_kind, object, frame);
-            }
+        }
+    }
+
+    /// Rebind the type caches of this object and every object suspended
+    /// beneath it to the Foot's new type `object`. Native locomotors read
+    /// `BalloonHover=`, `SpeedType=` and `MovementZone=` from the Type when
+    /// they use them, so every type store (Unit `+0x6C4`) changes them at
+    /// once, a bare one included.
+    pub(crate) fn rebind_type_caches(&mut self, object: &ObjectType) {
+        self.balloon_hover = object.balloon_hover;
+        self.speed_type = object.speed_type;
+        self.movement_zone = object.movement_zone;
+        if let Some(saved) = self.piggyback.as_mut() {
+            saved.rebind_type_caches(object);
         }
     }
 

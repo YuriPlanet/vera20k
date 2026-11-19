@@ -424,15 +424,7 @@ fn click_fire(
         };
         // 10035130's draining arm calls SWTypeExt::Deactivate after the timer.
         if was_draining && !called_launch {
-            super::deactivate_ares_handler(
-                sim,
-                rules,
-                owner,
-                sw_type_id,
-                sw,
-                human,
-                frame_effects.with_overlay_registry(overlay_registry),
-            );
+            super::deactivate_ares_handler(sim, rules, owner, sw_type_id, sw, human, frame_effects);
         }
         if called_launch {
             let effect_launched = launch(

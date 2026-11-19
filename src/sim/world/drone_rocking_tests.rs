@@ -860,7 +860,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
         .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     scene.sim.techno_limbo_with_context(
         scene.drone,
-        super::UninitContext::with_rules(&scene.rules).with_effects(FrameEffects::default()),
+        super::UninitContext::new(&scene.rules).with_effects(FrameEffects::default()),
     );
     for (index, id) in [(0, scene.drone), (1, scene.tank)] {
         compare_drone_actor(
