@@ -17,6 +17,8 @@ fn entry_follows_the_native_gadget_and_tab_rules_per_mode() {
         (Hotkey, campaign, None, Nothing),
         (SidebarButton, offline, battle, Diplomacy),
         (Hotkey, offline, battle, Diplomacy),
+        (SidebarButton, SessionMode::Other, None, Diplomacy),
+        (Hotkey, SessionMode::Other, None, Diplomacy),
         (SidebarButton, SessionMode::Lan, battle, Diplomacy),
         (SidebarButton, SessionMode::Lan, coop, MissionBriefing),
         (SidebarButton, SessionMode::Wol, coop, MissionBriefing),
@@ -25,7 +27,11 @@ fn entry_follows_the_native_gadget_and_tab_rules_per_mode() {
         (SidebarButton, offline, coop, Diplomacy),
     ] {
         assert_eq!(
-            requested_state(request, mode, mode.stock_rule_policy(class)),
+            requested_state(
+                request,
+                mode.execution_topology(),
+                mode.stock_rule_policy(class)
+            ),
             expected,
             "{request:?} in {mode:?} with {class:?}"
         );
@@ -36,10 +42,25 @@ fn entry_follows_the_native_gadget_and_tab_rules_per_mode() {
         .stock_rule_policy(battle)
         .with_network_diplomacy_briefing(true);
     assert_eq!(
-        requested_state(SidebarButton, lan, briefing),
+        requested_state(SidebarButton, lan.execution_topology(), briefing),
         MissionBriefing
     );
-    assert_eq!(requested_state(Hotkey, lan, briefing), Diplomacy);
+    assert_eq!(
+        requested_state(Hotkey, lan.execution_topology(), briefing),
+        Diplomacy
+    );
+
+    let rules = offline
+        .stock_rule_policy(battle)
+        .with_uses_campaign_diplomacy(true);
+    assert_eq!(
+        requested_state(SidebarButton, offline.execution_topology(), rules),
+        MissionBriefing
+    );
+    assert_eq!(
+        requested_state(Hotkey, offline.execution_topology(), rules),
+        Nothing
+    );
 }
 
 struct Fixture {

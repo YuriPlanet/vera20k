@@ -108,9 +108,8 @@ impl Simulation {
 
         #[cfg(any(test, feature = "test-support"))]
         let mut skirmish_order = [None; 4];
-        let crates = if input.skirmish_session.is_some()
-            && input.construction_rules.crates_use_runtime_slots()
-        {
+        let uses_match_crates = input.construction_rules.uses_match_crates();
+        let crates = if input.skirmish_session.is_some() && uses_match_crates {
             let player_count = crate::sim::crates::human_player_count(self);
             #[cfg(any(test, feature = "test-support"))]
             {
@@ -131,7 +130,7 @@ impl Simulation {
             None
         };
 
-        if self.session.rule_policy().ai_searches_for_enemy() {
+        if self.session.rule_policy().runs_ai_strategy() {
             // ScenarioClass::Post_Map_Init006869EA..00686A2B starts every
             // nonhuman/nonpassive House's timer, before its credit grant.
             // The timer writes consume no RNG and do not affect credits or

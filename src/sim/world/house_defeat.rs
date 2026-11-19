@@ -285,7 +285,7 @@ impl Simulation {
         let outcome_policy = self.session.rule_policy();
         // HouseClass::Update 0x004F8E86..0x004F8EB7 gates defeat past frame zero.
         let defeat_gate = defeat_pass
-            && outcome_policy.automatic_house_defeat()
+            && outcome_policy.uses_elimination_results()
             && (self.session.binary_frame() as i32) > 0;
         // Logic55B68D reloads the live House count after each complete body.
         // A House's power/radar and activation must precede its own teams,
@@ -421,7 +421,7 @@ impl Simulation {
     /// The PlayerControl route and its input lock at 0x00684240 apply
     /// to local outcomes. Lockstep announcements follow the current viewpoint.
     fn outcomes_follow_player_control(&self) -> bool {
-        self.session.rule_policy().outcomes_follow_player_control()
+        !self.session.rule_policy().uses_elimination_results()
             && !self.session.execution_topology().is_lockstep()
     }
 
@@ -1001,11 +1001,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        if !self
-            .session
-            .rule_policy()
-            .ares_returns_defeated_structures()
-        {
+        if !self.session.rule_policy().uses_elimination_results() {
             return false;
         }
         let Some(entity) = self.substrate.entities.get(id) else {

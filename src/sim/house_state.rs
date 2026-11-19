@@ -2781,16 +2781,6 @@ impl HouseState {
         self.is_human || (policy.counts_player_control_as_human() && self.player_control)
     }
 
-    /// HouseClass's power (AI_AssessPower508CBD..508CF0), radar
-    /// (UpdateTacticalRadarAvailability508ECD..508EF1) and SpySat
-    /// (Update_SpySat508FA2..508FDF) scans share this discovery admission.
-    /// Source: original gamemd instructions. Noncampaign scans admit hidden
-    /// providers, including the current player's; campaign computer Houses
-    /// do too. Only controlled campaign Houses require Techno+41B.
-    pub(crate) const fn building_services_require_discovery(&self, policy: RulePolicy) -> bool {
-        policy.building_services_use_discovery() && self.is_controlled_by_human(policy)
-    }
-
     /// The cell the house bases itself around: the alternate base centre
     /// (`+0x5494`) unless it is the empty cell `(0, 0)` (`0xA8EF98`, zeroed
     /// by its static initializer `0x004F50A0`), else the primary (`+0x5490`,
@@ -3725,6 +3715,32 @@ mod outcome_tests {
 #[cfg(all(test, tests_sim_h_o))]
 mod difficulty_tests {
     use super::{HouseDifficulty, HouseState, NativeF64Bits};
+
+    #[test]
+    fn campaign_can_admit_country_difficulty_biases() {
+        use crate::rules::ruleset::{CountryDifficultyBiases, GeneralRules};
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
+        let general = GeneralRules::default();
+        let country = CountryDifficultyBiases {
+            rof: NativeF64Bits::from_bits(0.5f64.to_bits()),
+            ..CountryDifficultyBiases::default()
+        };
+        let campaign_policy = ScenarioGameMode::Campaign.stock_rule_policy(None);
+        let skirmish_policy = ScenarioGameMode::Skirmish.stock_rule_policy(None);
+        let mut rof_for = |policy| {
+            house.set_difficulty(HouseDifficulty::Normal, &general, country, policy, 0, 0);
+            house.rof_bias()
+        };
+        let campaign_rof = rof_for(campaign_policy);
+        let skirmish_rof = rof_for(skirmish_policy);
+        assert_ne!(campaign_rof, skirmish_rof);
+        assert_eq!(
+            rof_for(campaign_policy.with_uses_country_difficulty_biases(true)),
+            skirmish_rof
+        );
+    }
 
     #[test]
     fn native_difficulty_values_are_hardest_first() {

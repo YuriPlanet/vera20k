@@ -337,7 +337,7 @@ pub(crate) fn sell_after_owner_change(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    if !sim.session.rule_policy().allows_ai_sale_after_capture() {
+    if !sim.session.rule_policy().uses_ai_economy() {
         return;
     }
     let Some(building) = sim

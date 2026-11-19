@@ -57,10 +57,7 @@ impl Simulation {
             .get(&team_type)
             .is_some_and(|metadata| matches!(metadata.house, Some(TeamTypeHouse::Country(_))));
         country
-            || !self
-                .session
-                .rule_policy()
-                .rejects_defeated_player_at_reinforcements()
+            || !self.session.rule_policy().uses_house_team_rules()
             || !self
                 .houses
                 .get(&house)

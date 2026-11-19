@@ -1018,13 +1018,13 @@ fn mcv_deploy_hunt_follows_admitted_rules_and_house_control() {
     let campaign = ScenarioGameMode::from_game_mode(0);
     let skirmish = ScenarioGameMode::from_game_mode(5);
     let campaign_rules = campaign.stock_rule_policy(None);
-    let campaign_hunt = campaign_rules.with_ai_mcv_deploy_hunt(true);
+    let campaign_managed_base = campaign_rules.with_uses_managed_ai_base(true);
     for (mode, policy, player_control, hunts) in [
         (campaign, campaign_rules, false, false),
         // Mode 5 treats the House's PlayerControl byte differently from mode 0.
         (skirmish, skirmish.stock_rule_policy(None), true, true),
-        (campaign, campaign_hunt, false, true),
-        (campaign, campaign_hunt, true, false),
+        (campaign, campaign_managed_base, false, true),
+        (campaign, campaign_managed_base, true, false),
     ] {
         let (mut sim, rules, id) = house_fixture(false, BUILDABLE);
         sim.install_session_admission(mode, None, policy);

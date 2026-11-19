@@ -1589,8 +1589,7 @@ impl ScenarioSession {
     /// The original campaign uses PlayerPtr discovery for local physics.
     /// Offline Skirmish has its own vision path even though it runs locally.
     pub(crate) const fn uses_local_player_shroud(&self) -> bool {
-        !self.execution_topology().is_lockstep()
-            && matches!(self.game_mode, ScenarioGameMode::Campaign)
+        self.rule_policy.uses_campaign_discovery() && !self.execution_topology().is_lockstep()
     }
 
     /// TeamClass::AI Script 22 (0x006E9583) can read Map580BC0's

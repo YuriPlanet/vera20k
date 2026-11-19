@@ -805,7 +805,7 @@ fn base_plan_recalc_deploy_respects_policy_human_control_and_nonyard_targets() {
         (
             false,
             skirmish,
-            skirmish_rules.with_recalculates_ai_base_after_mcv_deploy(false),
+            skirmish_rules.with_uses_managed_ai_base(false),
         ),
     ] {
         let mut sim = deploy_sim(&rules);

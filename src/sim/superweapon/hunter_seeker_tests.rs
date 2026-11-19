@@ -246,7 +246,7 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
 fn computer_hunter_seeker_designated_enemy_rule_controls_the_candidate_pool() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let unrestricted_ai =
-        RulePolicy::stock_multiplayer().with_hunter_seeker_limits_ai_to_designated_enemy(false);
+        RulePolicy::stock_multiplayer().with_uses_directed_hunter_seeker_targeting(false);
     for (mode, policy, acquires) in [
         (
             ScenarioGameMode::Campaign,

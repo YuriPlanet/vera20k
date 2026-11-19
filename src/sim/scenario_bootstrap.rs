@@ -7422,7 +7422,7 @@ mod tests {
         let stock = sim.session.rule_policy();
         let no_slots = sim
             .clone()
-            .finalize_scenario_post_map(post_map(stock.with_crates_use_runtime_slots(false)))
+            .finalize_scenario_post_map(post_map(stock.with_uses_match_crates(false)))
             .unwrap();
         assert!(no_slots.crates.is_none());
         let output = sim.finalize_scenario_post_map(post_map(stock)).unwrap();

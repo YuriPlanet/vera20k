@@ -59,14 +59,12 @@ fn campaign_trigger_difficulty_uses_the_scenario_row() {
     };
     assert!(eligible(&easy, &rules, owner, trigger));
 
-    let policy = RulePolicy::stock_campaign().with_ai_triggers_require_multiplayer_flag(true);
+    let policy = RulePolicy::stock_campaign().with_uses_house_team_rules(true);
     easy.session
         .install_admission(ScenarioGameMode::Campaign, None, policy);
-    assert!(!eligible(&easy, &rules, owner, trigger));
-
-    let policy = RulePolicy::stock_campaign().with_ai_trigger_uses_house_difficulty(true);
-    easy.session
-        .install_admission(ScenarioGameMode::Campaign, None, policy);
+    let admission = AiTriggerAdmission::resolve(&easy.session, &easy.houses[&owner]);
+    assert!(admission.uses_house_team_rules);
+    assert_eq!(admission.difficulty, 1, "the House remains on Normal");
     assert!(!eligible(&easy, &rules, owner, trigger));
 
     easy.session.set_game_mode(ScenarioGameMode::Skirmish);
@@ -145,9 +143,7 @@ fn campaign_recruitment_fallback_checks_autocreate_flags_and_team_identity() {
             &rules,
             sim.team_script_vm.team_type_definition(team_type).unwrap(),
             owner,
-            sim.session
-                .rule_policy()
-                .team_admits_recruits_without_factory(),
+            !sim.session.rule_policy().uses_house_team_rules(),
         )
     };
     assert!(
@@ -157,7 +153,7 @@ fn campaign_recruitment_fallback_checks_autocreate_flags_and_team_identity() {
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     assert!(!admitted(&sim));
 
-    let policy = RulePolicy::stock_multiplayer().with_team_admits_recruits_without_factory(true);
+    let policy = RulePolicy::stock_multiplayer().with_uses_house_team_rules(false);
     sim.session
         .install_admission(ScenarioGameMode::Skirmish, None, policy);
     assert!(admitted(&sim));
@@ -242,9 +238,7 @@ fn retail_all05_initiate_team_accepts_its_campaign_barracks() {
         &rules,
         team_type,
         owner,
-        sim.session
-            .rule_policy()
-            .team_admits_recruits_without_factory(),
+        !sim.session.rule_policy().uses_house_team_rules(),
     ));
     // The ordinary factory arm, using the stock map's country and complete
     // campaign rules/AI passes; this controlled arena does not play ALL05.
@@ -261,9 +255,7 @@ fn retail_all05_initiate_team_accepts_its_campaign_barracks() {
         &rules,
         team_type,
         owner,
-        sim.session
-            .rule_policy()
-            .team_admits_recruits_without_factory(),
+        !sim.session.rule_policy().uses_house_team_rules(),
     ));
 }
 
@@ -310,9 +302,7 @@ fn ares_team_factory_admission_honours_the_entry_count_build_limit() {
             &rules,
             team_type,
             owner,
-            sim.session
-                .rule_policy()
-                .team_admits_recruits_without_factory(),
+            !sim.session.rule_policy().uses_house_team_rules(),
         )
     };
     assert!(!admitted("no,no,no"));

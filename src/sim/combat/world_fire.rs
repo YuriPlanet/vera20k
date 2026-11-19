@@ -1238,10 +1238,7 @@ fn reveal_on_fire(
     // FireAt6FDE73..6FDF5A / 6FF66C..6FF73D may read PlayerPtr's
     // discovery byte. It cannot supply shared input to lockstep.
     let uses_local_discovery = !world.session.execution_topology().is_lockstep()
-        && world
-            .session
-            .rule_policy()
-            .fire_disclosure_uses_local_discovery();
+        && world.session.rule_policy().uses_campaign_discovery();
     for &house in viewers {
         let Some(firer) = world.substrate.entities.get(firer_id) else {
             return;
@@ -3461,8 +3458,7 @@ mod reveal_on_fire_tests {
 
     #[test]
     fn a_mapped_but_undiscovered_firer_reveals_its_surroundings_under_local_discovery_policy() {
-        let local_discovery =
-            RulePolicy::stock_multiplayer().with_fire_disclosure_uses_local_discovery(true);
+        let local_discovery = RulePolicy::stock_multiplayer().with_uses_campaign_discovery(true);
         for (mode, policy, reveals) in [
             (
                 ScenarioGameMode::Campaign,

@@ -2426,7 +2426,7 @@ impl Simulation {
         if (config.require_playfield_membership() && !entity.in_playfield())
             // TechnoClass::See 0x0070ADDE..0x0070ADEF gates this direct
             // sight admission for a MultiplayPassive House.
-            || (!self.session.rule_policy().passive_houses_cast_direct_sight()
+            || (!self.session.rule_policy().uses_campaign_discovery()
                 && config.passive_owner(entity.owner()))
         {
             return;
