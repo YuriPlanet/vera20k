@@ -200,8 +200,23 @@ fn direct_reaches(src: (i64, i64, i64), target: (i64, i64, i64), range: i64, pla
 }
 
 /// The `planar` argument of [`direct_reaches`] for `attacker`.
-fn direct_reach_is_planar(attacker: &GameEntity, ares: bool) -> bool {
-    ares && attacker.category() == EntityCategory::Aircraft
+///
+/// Phobos `CylinderRangefinding` (`Ext/Techno/Hooks.Firing.cpp:1265-1274`,
+/// hook `0x6F755A`): this weapon's value wins and an unset weapon falls back
+/// to `[General]`; `yes` measures direct range in the plan for every techno.
+/// The Ares arm (`0x6F7561`, hook `1005C450`) takes that branch for an
+/// Aircraft firer.
+fn direct_reach_is_planar(attacker: &GameEntity, weapon: &WeaponType, rules: &RuleSet) -> bool {
+    #[cfg(feature = "phobos")]
+    if weapon
+        .phobos_cylinder_rangefinding
+        .unwrap_or(rules.phobos_globals.cylinder_rangefinding)
+    {
+        return true;
+    }
+    #[cfg(not(feature = "phobos"))]
+    let _ = weapon;
+    rules.ares() && attacker.category() == EntityCategory::Aircraft
 }
 
 /// `0x006F727E..0x006F729F`: an occupied building
@@ -768,7 +783,7 @@ pub(crate) fn compute_range_target(
         src,
         (tx, ty, tz),
         max_range_lep,
-        direct_reach_is_planar(attacker, rules.ares()),
+        direct_reach_is_planar(attacker, weapon, rules),
     ) {
         return false;
     }
@@ -1587,7 +1602,7 @@ pub fn mapless_in_range(
         src,
         target,
         range + foundation,
-        direct_reach_is_planar(attacker, rules.ares()),
+        direct_reach_is_planar(attacker, weapon, rules),
     )
 }
 
