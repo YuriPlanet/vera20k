@@ -153,7 +153,7 @@ fn no_factories_event_matches_original_incoming_house_list_and_raw_class() {
             sim.houses
                 .get_mut(&houses[index])
                 .unwrap()
-                .tracking_mut()
+                .tracking_mut_for_test()
                 .set_buildings_for_test(int(&house["tracked_buildings"]));
         }
         sim.houses.reorder_for_test(

@@ -213,7 +213,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                         sim.houses
                             .get_mut(&owner)
                             .unwrap()
-                            .tracking_mut()
+                            .tracking_mut_for_test()
                             .set_owned_for_test(
                                 EntityCategory::from(category(family)),
                                 query,

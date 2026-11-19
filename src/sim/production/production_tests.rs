@@ -568,7 +568,7 @@ pub(super) fn spawn_structure(
     ge.set_in_playfield(true);
     ge.finish_building_construction_for_test();
     ge.building_art.set_actually_placed_for_test(true);
-    ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
+    *ge.tracking_facts_mut_for_test() = crate::sim::house_tracking::TrackingFacts::of(
         crate::map::entities::EntityCategory::Structure,
         rules.object(type_id),
         rules,
@@ -581,18 +581,16 @@ pub(super) fn spawn_structure(
     sim.append_house_base_building_for_test(sid);
     // Its house counts it as tracked and on the map, as CanBuild's
     // prerequisites read them.
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         sid,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
     sim.house_added_to_game(sid, rules);
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_factory(
         &mut sim.substrate,
         &mut sim.houses,
         sid,
-        |tracking, entity| tracking.increment_factory_count(entity),
     );
     if sim.next_stable_object_id() <= sid {
         sim.set_next_stable_object_id_for_test(sid + 1);

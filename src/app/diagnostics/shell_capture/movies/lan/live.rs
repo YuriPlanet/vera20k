@@ -1305,6 +1305,14 @@ impl LiveLanCapture {
             state.frontend.screen == GameScreen::InGame,
             "live LAN match left gameplay before completion"
         );
+        // Observe the frame this render admitted before another pass can
+        // admit the next one. A lent runtime publishes no entities.
+        if self.battle.is_some() && state.match_state.sim_runtime.is_lent() {
+            if !state.match_state.sim_runtime.pass_may_run(true) {
+                return Ok(());
+            }
+            crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
+        }
         if self.battle.is_none() && self.mass.is_none() && self.latency.is_none() {
             let simulation = &state
                 .match_state

@@ -146,22 +146,21 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
     let gapowr = sim.interner.intern("GAPOWR");
     let house = sim.houses.get_mut(&owner).unwrap();
     house
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_active_for_test(EntityCategory::Structure, gapowr, 1);
-    sim.substrate
+    *sim.substrate
         .entities
         .get_mut(PRODUCER)
         .unwrap()
-        .tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
+        .tracking_facts_mut_for_test() = crate::sim::house_tracking::TrackingFacts::of(
         EntityCategory::Structure,
         rules.object("FACTORY"),
         &rules,
     );
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_factory(
         &mut sim.substrate,
         &mut sim.houses,
         PRODUCER,
-        |tracking, entity| tracking.increment_factory_count(entity),
     );
     (sim, rules, owner)
 }
@@ -597,7 +596,7 @@ fn native_local_low_power_advice_guard_and_eight_speed_delay_values() {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_active_for_test(
                 EntityCategory::Structure,
                 gapowr,

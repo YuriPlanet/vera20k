@@ -15,6 +15,9 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::{FacingClass, ground_pose};
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
+/// Only the live type store can request a fresh projection for a registered actor.
+pub(in crate::sim) struct LiveTypeStore(());
+
 impl Simulation {
     /// Installed Ares TechnoClass_Update1004B320..1004B39C, hooked at6F9E50:
     /// sample Object+8C before GetCell5F6960 and Cell+EC, then reuse the one
@@ -83,7 +86,7 @@ impl Simulation {
         let actor = self.substrate.entities.get_mut(id)?;
         actor.type_ref = new_type;
         actor.is_voxel = GameEntity::object_uses_voxel(&destination.id, destination, rules);
-        actor.refresh_type_projection(Some(destination), rules);
+        actor.refresh_after_type_store(LiveTypeStore(()), destination, rules);
         Some(actor)
     }
 
@@ -125,12 +128,7 @@ impl Simulation {
         {
             self.house_removed_from_game(id, rules, effects);
         }
-        Self::update_house_tracking(
-            &mut self.substrate,
-            &mut self.houses,
-            id,
-            HouseTracking::remove_tracking,
-        );
+        HouseTracking::unregister_object(&mut self.substrate, &mut self.houses, id);
 
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -149,12 +147,7 @@ impl Simulation {
         // converting a transport is the visible case, keeping its old capacity.
         crate::sim::miner::Miner::change_type_binding(&mut actor.miner, destination);
         health.apply(actor);
-        Self::update_house_tracking(
-            &mut self.substrate,
-            &mut self.houses,
-            id,
-            HouseTracking::add_tracking,
-        );
+        HouseTracking::register_object(&mut self.substrate, &mut self.houses, id);
         if self
             .substrate
             .entities

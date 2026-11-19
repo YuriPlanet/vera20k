@@ -307,7 +307,7 @@ fn naval_land_events_match_original_signed_tracking_and_country_selection() {
             sim.houses
                 .get_mut(owner)
                 .unwrap()
-                .tracking_mut()
+                .tracking_mut_for_test()
                 .set_naval_land_for_test(
                     integer(&counts[0]),
                     integer(&counts[1]),
@@ -916,7 +916,7 @@ fn building_loss_event_matches_original_tracked_count_and_country_order() {
             sim.houses
                 .get_mut(owner)
                 .unwrap()
-                .tracking_mut()
+                .tracking_mut_for_test()
                 .set_buildings_for_test(integer(&case["tracked_buildings"][index]));
         }
         let actor = case["actor_owner"].as_u64().map(|index| {
@@ -1045,7 +1045,7 @@ fn building_loss_event_retail_all04_sets_the_rescue_route_local() {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_buildings_for_test(buildings);
         sim.dispatch_live_tag_event(
             tag,
