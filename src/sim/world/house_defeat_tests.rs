@@ -636,9 +636,12 @@ fn native_house_result_zero_and_allow_win_heads() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
         house.supply_result_flags_for_test(won, !won, timer);
         house.supply_allow_win_tag_state(input["allow_win"].as_i64().unwrap() as i32, timer);
+        let mode = crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+            input["game_mode"].as_i64().unwrap() as i32,
+        );
         let ready = house.pending_outcome(
             input["frame"].as_i64().unwrap() as i32,
-            input["game_mode"].as_i64().unwrap() != 0,
+            mode.stock_rule_policy(None),
         );
         assert_eq!(ready.is_some(), row["gate"] == "result_wait", "{name}");
     }

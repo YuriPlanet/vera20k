@@ -4072,7 +4072,7 @@ fn mission_announce_then_end_uses_the_player_house_and_shared_timer() {
     );
     assert!(sim.ready_outcome_for_owner(player).is_none());
     let kind = sim.houses[&player]
-        .pending_outcome(15, false)
+        .pending_outcome(15, sim.session.rule_policy())
         .expect("native shared timer admits the current House");
     sim.houses.get_mut(&player).unwrap().complete_outcome(kind);
     sim.session.admit_outcome(kind);

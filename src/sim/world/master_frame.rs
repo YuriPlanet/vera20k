@@ -913,7 +913,7 @@ impl Simulation {
             let kind = self.houses.get(owner).and_then(|house| {
                 house.pending_outcome(
                     self.session.binary_frame() as i32,
-                    self.session.game_mode_nonzero(),
+                    self.session.rule_policy(),
                 )
             });
             if kind != Some(pending.cursor.kind) {

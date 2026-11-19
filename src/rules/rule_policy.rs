@@ -91,6 +91,12 @@ impl RulePolicy {
         self.skips_network_score_dialog
     }
 
+    /// `HouseClass::Update @ 0x004F8440` checks the AllowWin count only
+    /// in the mode-zero victory arm (`0x004F85F7..0x004F8605`).
+    pub(crate) const fn victory_requires_cleared_allow_win_tags(self) -> bool {
+        matches!(self.bootstrap, BootstrapRuleProfile::Campaign)
+    }
+
     /// `TeamTypeClass::Create_Team @ 0x006F09C0` checks mode at 0x006F0A16.
     pub(crate) const fn team_creation_limit_scope(self) -> TeamLimitScope {
         match self.bootstrap {

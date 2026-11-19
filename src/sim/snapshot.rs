@@ -5908,9 +5908,10 @@ mod tests {
             45
         );
 
-        assert_eq!(restored_house.pending_outcome(189, true), None);
+        let outcome_policy = restored.session().rule_policy();
+        assert_eq!(restored_house.pending_outcome(189, outcome_policy), None);
         assert_eq!(
-            restored_house.pending_outcome(190, true),
+            restored_house.pending_outcome(190, outcome_policy),
             Some(HouseOutcomeKind::Victory)
         );
     }
