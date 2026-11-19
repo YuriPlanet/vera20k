@@ -4474,7 +4474,7 @@ impl Simulation {
         // BuildingClass owns this pass before the common TechnoClass Limbo can
         // clear committed type/cell facts or broadcast another expiry callback.
         Self::invalidate_base_plan_from_building_limbo(
-            self.session.rule_policy().ai_base,
+            self.session.rule_policy().ai_base(),
             &self.substrate,
             &mut self.houses,
             stable_id,

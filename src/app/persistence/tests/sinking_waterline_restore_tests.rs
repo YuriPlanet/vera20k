@@ -33,7 +33,8 @@ fn sinking_waterline_envelope_preserves_native_short_without_changing_simulation
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let loaded = GameSnapshot::load_validated(&bytes, 1, 2, LOAD_FIXTURE_MAP_NAME).unwrap();
     assert_eq!(loaded.sinking_waterlines, waterlines);
     assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
@@ -93,7 +94,8 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let terrain = load_fixture_terrain();
     let mut presentation = SinkingWaterlines::default();
     presentation.restore([(id, 7), (999, 8)]);

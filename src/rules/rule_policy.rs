@@ -1,10 +1,9 @@
-//! Rule choices projected from the admitted scenario and multiplayer mode.
+//! Rule choices admitted for scenario construction and live simulation.
 
 /// Selects the native rule path used when building a scenario.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
-#[repr(u8)]
 pub enum BootstrapRuleProfile {
     #[default]
     Campaign,
@@ -26,14 +25,12 @@ impl BootstrapRuleProfile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(u8)]
 pub enum AllowWinTagsPolicy {
     RequireClear,
     Ignore,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(u8)]
 pub enum ComputerParanoidPolicy {
     Disabled,
     React,
@@ -41,7 +38,6 @@ pub enum ComputerParanoidPolicy {
 
 /// Admission of map-authored crate overlays at load time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(u8)]
 pub enum AuthoredCratePolicy {
     Keep,
     Skip,
@@ -49,7 +45,6 @@ pub enum AuthoredCratePolicy {
 
 /// Whether the AI may replace unavailable or invalidated base-plan nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(u8)]
 pub enum AiBasePolicy {
     RetainAuthoredNodes,
     ReplaceUnavailableNodes,
@@ -57,7 +52,6 @@ pub enum AiBasePolicy {
 
 /// How factory selection interprets `DoubleOwned=`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(u8)]
 pub enum DoubleOwnedPolicy {
     OwnerMask,
     AllCountries,
@@ -65,30 +59,19 @@ pub enum DoubleOwnedPolicy {
 
 /// The set of live TeamClass instances that count toward a TeamType's `Max=`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(u8)]
 pub(crate) enum TeamLimitScope {
     AllHouses,
     PerHouse,
 }
 
-/// Independently selectable rules. Stock live sessions derive their preset
-/// from the saved mode and mode class. Network-only behavior separately
-/// checks the session's execution topology at the point of use. Offline
-/// Skirmish (GameMode 5) uses the multiplayer preset with local execution.
+/// Independently selectable rules. Stock admission and legacy decoding choose
+/// a preset from the mode and mode class. Live sessions retain the admitted
+/// value. Offline Skirmish (GameMode 5) uses multiplayer rules with local
+/// execution. Binary choices share one flag word; named selectors describe
+/// the behavior at subsystem boundaries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[repr(C)]
 pub struct RulePolicy {
-    bootstrap: BootstrapRuleProfile,
-    pub allow_win_tags: AllowWinTagsPolicy,
-    pub computer_paranoid: ComputerParanoidPolicy,
-    pub crates: AuthoredCratePolicy,
-    pub ai_base: AiBasePolicy,
-    pub double_owned: DoubleOwnedPolicy,
-    pub mod_map_additions: bool,
-    team_limit: TeamLimitScope,
-    dissolve_unfilled_teams: bool,
-    shared_allied_victory: bool,
-    skips_network_score_dialog: bool,
+    flags: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<RulePolicy>() <= 16);
@@ -100,81 +83,202 @@ impl Default for RulePolicy {
 }
 
 impl RulePolicy {
+    const MULTIPLAYER_BOOTSTRAP: u32 = 1 << 0;
+    const IGNORE_ALLOW_WIN_TAGS: u32 = 1 << 1;
+    const PARANOID_REACTIONS: u32 = 1 << 2;
+    const SKIP_AUTHORED_CRATES: u32 = 1 << 3;
+    const REPLACE_UNAVAILABLE_BASE_NODES: u32 = 1 << 4;
+    const DOUBLE_OWNED_ALL_COUNTRIES: u32 = 1 << 5;
+    const MOD_MAP_ADDITIONS: u32 = 1 << 6;
+    const TEAM_LIMIT_PER_HOUSE: u32 = 1 << 7;
+    const DISSOLVE_UNFILLED_TEAMS: u32 = 1 << 8;
+    const SHARED_ALLIED_VICTORY: u32 = 1 << 9;
+    const SKIP_NETWORK_SCORE_DIALOG: u32 = 1 << 10;
+
     pub const fn stock_campaign() -> Self {
-        Self {
-            bootstrap: BootstrapRuleProfile::Campaign,
-            allow_win_tags: AllowWinTagsPolicy::RequireClear,
-            computer_paranoid: ComputerParanoidPolicy::Disabled,
-            crates: AuthoredCratePolicy::Keep,
-            ai_base: AiBasePolicy::RetainAuthoredNodes,
-            double_owned: DoubleOwnedPolicy::OwnerMask,
-            mod_map_additions: false,
-            team_limit: TeamLimitScope::AllHouses,
-            dissolve_unfilled_teams: false,
-            shared_allied_victory: false,
-            skips_network_score_dialog: false,
-        }
+        Self { flags: 0 }
     }
 
     pub const fn stock_multiplayer() -> Self {
-        Self {
-            bootstrap: BootstrapRuleProfile::Multiplayer,
-            allow_win_tags: AllowWinTagsPolicy::Ignore,
-            computer_paranoid: ComputerParanoidPolicy::React,
-            crates: AuthoredCratePolicy::Skip,
-            ai_base: AiBasePolicy::ReplaceUnavailableNodes,
-            double_owned: DoubleOwnedPolicy::AllCountries,
-            mod_map_additions: true,
-            team_limit: TeamLimitScope::PerHouse,
-            dissolve_unfilled_teams: true,
-            shared_allied_victory: false,
-            skips_network_score_dialog: false,
-        }
+        Self::stock_campaign()
+            .with_bootstrap(BootstrapRuleProfile::Multiplayer)
+            .with_allow_win_tags(AllowWinTagsPolicy::Ignore)
+            .with_computer_paranoid(ComputerParanoidPolicy::React)
+            .with_crates(AuthoredCratePolicy::Skip)
+            .with_ai_base(AiBasePolicy::ReplaceUnavailableNodes)
+            .with_double_owned(DoubleOwnedPolicy::AllCountries)
+            .with_mod_map_additions(true)
+            .with_team_creation_limit_scope(TeamLimitScope::PerHouse)
+            .with_dissolve_unfilled_teams(true)
     }
 
-    pub(crate) const fn with_mode_outcomes(
-        mut self,
-        shared_allied_victory: bool,
-        skips_network_score_dialog: bool,
-    ) -> Self {
-        self.shared_allied_victory = shared_allied_victory;
-        self.skips_network_score_dialog = skips_network_score_dialog;
+    const fn has_flag(self, flag: u32) -> bool {
+        self.flags & flag != 0
+    }
+
+    const fn with_flag(mut self, flag: u32, enabled: bool) -> Self {
+        if enabled {
+            self.flags |= flag;
+        } else {
+            self.flags &= !flag;
+        }
         self
     }
 
     pub const fn bootstrap(self) -> BootstrapRuleProfile {
-        self.bootstrap
+        if self.has_flag(Self::MULTIPLAYER_BOOTSTRAP) {
+            BootstrapRuleProfile::Multiplayer
+        } else {
+            BootstrapRuleProfile::Campaign
+        }
+    }
+
+    pub const fn with_bootstrap(self, profile: BootstrapRuleProfile) -> Self {
+        self.with_flag(
+            Self::MULTIPLAYER_BOOTSTRAP,
+            profile.uses_multiplayer_rules(),
+        )
+    }
+
+    pub const fn allow_win_tags(self) -> AllowWinTagsPolicy {
+        if self.has_flag(Self::IGNORE_ALLOW_WIN_TAGS) {
+            AllowWinTagsPolicy::Ignore
+        } else {
+            AllowWinTagsPolicy::RequireClear
+        }
+    }
+
+    pub const fn with_allow_win_tags(self, policy: AllowWinTagsPolicy) -> Self {
+        self.with_flag(
+            Self::IGNORE_ALLOW_WIN_TAGS,
+            matches!(policy, AllowWinTagsPolicy::Ignore),
+        )
+    }
+
+    pub const fn computer_paranoid(self) -> ComputerParanoidPolicy {
+        if self.has_flag(Self::PARANOID_REACTIONS) {
+            ComputerParanoidPolicy::React
+        } else {
+            ComputerParanoidPolicy::Disabled
+        }
+    }
+
+    pub const fn with_computer_paranoid(self, policy: ComputerParanoidPolicy) -> Self {
+        self.with_flag(
+            Self::PARANOID_REACTIONS,
+            matches!(policy, ComputerParanoidPolicy::React),
+        )
+    }
+
+    pub const fn crates(self) -> AuthoredCratePolicy {
+        if self.has_flag(Self::SKIP_AUTHORED_CRATES) {
+            AuthoredCratePolicy::Skip
+        } else {
+            AuthoredCratePolicy::Keep
+        }
+    }
+
+    pub const fn with_crates(self, policy: AuthoredCratePolicy) -> Self {
+        self.with_flag(
+            Self::SKIP_AUTHORED_CRATES,
+            matches!(policy, AuthoredCratePolicy::Skip),
+        )
+    }
+
+    pub const fn ai_base(self) -> AiBasePolicy {
+        if self.has_flag(Self::REPLACE_UNAVAILABLE_BASE_NODES) {
+            AiBasePolicy::ReplaceUnavailableNodes
+        } else {
+            AiBasePolicy::RetainAuthoredNodes
+        }
+    }
+
+    pub const fn with_ai_base(self, policy: AiBasePolicy) -> Self {
+        self.with_flag(
+            Self::REPLACE_UNAVAILABLE_BASE_NODES,
+            matches!(policy, AiBasePolicy::ReplaceUnavailableNodes),
+        )
+    }
+
+    pub const fn double_owned(self) -> DoubleOwnedPolicy {
+        if self.has_flag(Self::DOUBLE_OWNED_ALL_COUNTRIES) {
+            DoubleOwnedPolicy::AllCountries
+        } else {
+            DoubleOwnedPolicy::OwnerMask
+        }
+    }
+
+    pub const fn with_double_owned(self, policy: DoubleOwnedPolicy) -> Self {
+        self.with_flag(
+            Self::DOUBLE_OWNED_ALL_COUNTRIES,
+            matches!(policy, DoubleOwnedPolicy::AllCountries),
+        )
+    }
+
+    pub const fn mod_map_additions(self) -> bool {
+        self.has_flag(Self::MOD_MAP_ADDITIONS)
+    }
+
+    pub const fn with_mod_map_additions(self, enabled: bool) -> Self {
+        self.with_flag(Self::MOD_MAP_ADDITIONS, enabled)
     }
 
     pub const fn shared_allied_victory(self) -> bool {
-        self.shared_allied_victory
+        self.has_flag(Self::SHARED_ALLIED_VICTORY)
+    }
+
+    pub const fn with_shared_allied_victory(self, enabled: bool) -> Self {
+        self.with_flag(Self::SHARED_ALLIED_VICTORY, enabled)
     }
 
     pub const fn skips_network_score_dialog(self) -> bool {
-        self.skips_network_score_dialog
+        self.has_flag(Self::SKIP_NETWORK_SCORE_DIALOG)
+    }
+
+    pub const fn with_skips_network_score_dialog(self, enabled: bool) -> Self {
+        self.with_flag(Self::SKIP_NETWORK_SCORE_DIALOG, enabled)
     }
 
     /// `HouseClass::Update @ 0x004F8440` checks the AllowWin count only
     /// in the mode-zero victory arm (`0x004F85F7..0x004F8605`).
     pub(crate) const fn victory_requires_cleared_allow_win_tags(self) -> bool {
-        matches!(self.allow_win_tags, AllowWinTagsPolicy::RequireClear)
+        matches!(self.allow_win_tags(), AllowWinTagsPolicy::RequireClear)
     }
 
     /// Admission of diplomacy and base requests into `Computer_Paranoid @
     /// 0x00501640`. Each caller applies its own House and Rules checks.
     pub(crate) const fn permits_paranoid_reactions(self) -> bool {
-        matches!(self.computer_paranoid, ComputerParanoidPolicy::React)
+        matches!(self.computer_paranoid(), ComputerParanoidPolicy::React)
     }
 
     /// `TeamTypeClass::Create_Team @ 0x006F09C0` checks mode at 0x006F0A16.
     pub(crate) const fn team_creation_limit_scope(self) -> TeamLimitScope {
-        self.team_limit
+        if self.has_flag(Self::TEAM_LIMIT_PER_HOUSE) {
+            TeamLimitScope::PerHouse
+        } else {
+            TeamLimitScope::AllHouses
+        }
+    }
+
+    pub(crate) const fn with_team_creation_limit_scope(self, scope: TeamLimitScope) -> Self {
+        self.with_flag(
+            Self::TEAM_LIMIT_PER_HOUSE,
+            matches!(scope, TeamLimitScope::PerHouse),
+        )
+    }
+
+    pub const fn dissolves_unfilled_teams(self) -> bool {
+        self.has_flag(Self::DISSOLVE_UNFILLED_TEAMS)
+    }
+
+    pub const fn with_dissolve_unfilled_teams(self, enabled: bool) -> Self {
+        self.with_flag(Self::DISSOLVE_UNFILLED_TEAMS, enabled)
     }
 
     /// `TeamClass::AI @ 0x006E9140` uses `DissolveUnfilledTeamDelay=` for
     /// never-full empty teams in the nonzero mode arm at `0x006E92AD`.
     pub(crate) const fn unfilled_team_timeout(self, delay: i32) -> Option<i32> {
-        if self.dissolve_unfilled_teams {
+        if self.dissolves_unfilled_teams() {
             Some(delay)
         } else {
             None

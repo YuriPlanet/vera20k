@@ -812,6 +812,10 @@ impl ReplayStartup {
             "standalone replay requires a started frame-zero world"
         );
         anyhow::ensure!(
+            sim.session().has_stock_rule_policy(),
+            "the standalone replay layout requires a stock rule policy"
+        );
+        anyhow::ensure!(
             sim.path_batch_stats().is_some()
                 && sim.target_scans_batched()
                 && sim.effect_anims_presented(),

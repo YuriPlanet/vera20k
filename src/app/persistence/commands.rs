@@ -20,6 +20,8 @@ pub(crate) enum SaveCommandError {
     Terrain(#[from] crate::map::resolved_terrain::SavedTerrainError),
     #[error("Could not capture the local view: {0}")]
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
+    #[error("Could not encode the saved game: {0}")]
+    Encode(#[source] crate::util::save_codec::Error),
     #[error("Could not save the game: {0}")]
     Write(#[from] crate::app::persistence::SaveWriteError),
 }
@@ -339,28 +341,31 @@ impl PreparedSave<'_> {
             Some(&self.local_view),
             Some(&self.resources),
         );
-        let tick = sim.session().tick();
-        let result = match destination {
-            SaveDestination::Existing(path) => repository
-                .overwrite_existing(path, &bytes)
-                .map(|()| path.to_path_buf()),
-            SaveDestination::InitialCampaign(filename) => {
-                repository.write_initial_campaign(filename, &bytes)
+        let result = bytes.map_err(SaveCommandError::Encode).and_then(|bytes| {
+            match destination {
+                SaveDestination::Existing(path) => repository
+                    .overwrite_existing(path, &bytes)
+                    .map(|()| path.to_path_buf()),
+                SaveDestination::InitialCampaign(filename) => {
+                    repository.write_initial_campaign(filename, &bytes)
+                }
+                SaveDestination::New => {
+                    let tick = sim.session().tick();
+                    let filename = match self.sanitized {
+                        Some(name) => format!("save_{name}_tick{tick}_{}.bin", self.timestamp),
+                        None => format!("save_tick{tick}_{}.bin", self.timestamp),
+                    };
+                    repository.write_named(&filename, &bytes)
+                }
             }
-            SaveDestination::New => {
-                let filename = match self.sanitized {
-                    Some(name) => format!("save_{name}_tick{tick}_{}.bin", self.timestamp),
-                    None => format!("save_tick{tick}_{}.bin", self.timestamp),
-                };
-                repository.write_named(&filename, &bytes)
-            }
-        };
-        // Keep synchronous IO dwell out of the source clock, including failure.
+            .map_err(Into::into)
+        });
+        // Keep synchronous save dwell out of the source clock, including failure.
         clock.finish_save(
             clock_save,
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         );
-        result.map_err(Into::into)
+        result
     }
 }
 

@@ -82,7 +82,7 @@ const NOTES: [&str; 10] = [
 /// cooperative one too, or on a random map, which reads its rules while it is
 /// made.
 pub(crate) fn reach(startup: &crate::app::match_bootstrap::LoadingStartup) -> bool {
-    startup.match_spec().rules().mod_map_additions
+    startup.match_spec().rules().mod_map_additions()
         && !crate::map::rmg::is_seed_selection(startup.physical_map_file())
 }
 

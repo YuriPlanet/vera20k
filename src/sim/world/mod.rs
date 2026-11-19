@@ -3905,9 +3905,20 @@ impl Simulation {
     // App and harness entry points into sub-owners. Each runs the sub-owner's
     // own operation; the client never holds a mutable sub-owner.
 
-    /// The loader's GameMode install, at startup or from an admitted save
-    /// ([`ScenarioSession::set_game_mode`]).
+    /// Stock mode install for synthetic and diagnostic scenarios.
     pub fn install_session_mode(&mut self, mode: crate::sim::scenario_session::ScenarioGameMode) {
+        let class = self.session.multiplayer_mode_class();
+        self.install_session_admission(mode, class, mode.stock_rule_policy(class));
+    }
+
+    /// Install the live choices from startup admission before map and House
+    /// initialization. This keeps construction rules separate for native replays.
+    pub fn install_session_admission(
+        &mut self,
+        mode: crate::sim::scenario_session::ScenarioGameMode,
+        class: Option<crate::skirmish_modes::MpModeClass>,
+        rule_policy: crate::rules::rule_policy::RulePolicy,
+    ) {
         if mode.is_network() && !self.session.game_mode().is_network() {
             // VERA network adaptation: Init_Random_Number_System52FC20 seeds
             // Scenario/Main, leaving process MapGen alone. MapGen598030 also
@@ -3923,7 +3934,7 @@ impl Simulation {
             // MapGen their seeded state, from which it advances on its own.
             self.mapgen_rng = SimRng::new(self.session.seed());
         }
-        self.session.set_game_mode(mode);
+        self.session.install_admission(mode, class, rule_policy);
     }
 
     /// The accepted network setup's MaxAhead ([`ScenarioSession::install_network_timing`]).

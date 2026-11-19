@@ -650,7 +650,7 @@ impl GameSnapshot {
         description: &str,
         save_timestamp: u64,
         presentation: SavedPresentationRef<'_>,
-    ) -> Vec<u8> {
+    ) -> Result<Vec<u8>, save_codec::Error> {
         // Retail provenance: Save_Game_To_File @ 0x0067CEF0 supplies a distinct
         // outer file identity; Write_Savegame_Metadata_To_Storage @ 0x006812E0
         // writes public Version=1, exact internal version, and Scenario
@@ -687,7 +687,7 @@ impl GameSnapshot {
             local_view,
             scenario_resources,
         };
-        save_codec::serialize(&snapshot).expect("snapshot serialization should not fail")
+        save_codec::serialize(&snapshot)
     }
 
     /// Serialize a headless save with metadata owned by the active session.
@@ -717,10 +717,12 @@ impl GameSnapshot {
             None,
             None,
         )
+        .expect("serialize stock snapshot fixture")
     }
 
     /// Save the app's retained presentation alongside the simulation. A headless
     /// caller uses `save_validated`, whose presentation supplement is empty.
+    /// Fails if the session's rules cannot be represented in this save layout.
     pub fn save_validated_with_presentation(
         sim: &Simulation,
         map_hash: u64,
@@ -733,7 +735,7 @@ impl GameSnapshot {
         tactical_view: Option<&SavedTacticalView>,
         local_view: Option<&SavedLocalView>,
         scenario_resources: Option<&SavedScenarioResourcesRef<'_>>,
-    ) -> Vec<u8> {
+    ) -> Result<Vec<u8>, save_codec::Error> {
         Self::serialize(
             sim,
             map_hash,
@@ -886,6 +888,7 @@ impl GameSnapshot {
             save_timestamp,
             (&[], &[], None, None, None, None),
         )
+        .expect("serialize stock snapshot fixture")
     }
 
     /// Deserialize an internal current-layout checkpoint without content validation.
@@ -4004,6 +4007,79 @@ mod tests {
             .passenger_role_mut_for_test()
             .clear_carrier_relation();
         assert_ne!(restored.state_hash(), before);
+    }
+
+    #[test]
+    fn stock_offline_modes_restore_their_distinct_rules_and_reject_unsaved_overrides() {
+        use crate::rules::rule_policy::{AllowWinTagsPolicy, RulePolicy};
+        use crate::sim::scenario_session::{
+            ExecutionTopology, ScenarioDescriptor, ScenarioGameMode,
+        };
+
+        let save = |sim: &Simulation| {
+            GameSnapshot::save_validated_with_presentation(
+                sim,
+                0,
+                0,
+                "offline rules",
+                0,
+                &[],
+                &[],
+                None,
+                None,
+                None,
+                None,
+            )
+        };
+        for (raw_mode, rule_policy) in [
+            (0, RulePolicy::stock_campaign()),
+            (5, RulePolicy::stock_multiplayer()),
+        ] {
+            let sim = Simulation::synthetic(
+                0,
+                &ScenarioDescriptor {
+                    rule_policy,
+                    ..Default::default()
+                },
+            );
+            let bytes = save(&sim).unwrap();
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            restored.restore_after_snapshot_load().unwrap();
+            assert_eq!(
+                restored.session.game_mode(),
+                ScenarioGameMode::from_game_mode(raw_mode),
+            );
+            assert_eq!(
+                restored.session.execution_topology(),
+                ExecutionTopology::LocalOffline
+            );
+            assert_eq!(restored.session.rule_policy(), rule_policy);
+            assert_eq!(restored.state_hash(), sim.state_hash());
+        }
+
+        let custom =
+            RulePolicy::stock_multiplayer().with_allow_win_tags(AllowWinTagsPolicy::RequireClear);
+        let mut sim = Simulation::synthetic(
+            0,
+            &ScenarioDescriptor {
+                rule_policy: custom,
+                ..Default::default()
+            },
+        );
+        assert_eq!(sim.session.rule_policy(), custom);
+        let mode = ScenarioGameMode::from_game_mode(5);
+        let class = crate::skirmish_modes::MpModeClass::Battle;
+        let mut stock = sim.clone();
+        stock.install_session_mode(mode);
+        stock
+            .session
+            .install_multiplayer_house_identity(class, vec![]);
+        sim.install_session_admission(mode, Some(class), custom);
+        sim.session
+            .install_multiplayer_house_identity(class, vec![]);
+        assert_eq!(sim.session.rule_policy(), custom);
+        assert_ne!(sim.state_hash(), stock.state_hash());
+        assert!(save(&sim).unwrap_err().to_string().contains("rule policy"));
     }
 
     #[test]
