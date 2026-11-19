@@ -96,10 +96,10 @@ fn fill_reactor(sim: &mut Simulation, id: u64, count: usize) {
     let mut cargo = PassengerCargo::new(5, 0.0);
     let ids: Vec<(u64, f64)> = (0..count).map(|i| (900 + i as u64, 1.0)).collect();
     cargo.board_forced_chain(&ids);
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    *sim.entities_mut_for_test()
+        .get_mut_for_test(id)
         .unwrap()
-        .passenger_role = PassengerRole::transport(cargo);
+        .passenger_role_mut_for_test() = PassengerRole::transport(cargo);
 }
 
 /// An actor whose `pos` matches `actors()`'s fixed `[1024, 2560]`, i.e. the

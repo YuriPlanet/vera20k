@@ -210,7 +210,7 @@ fn nearby_reactors(
             continue;
         }
         let capacity = object.passengers.max(0) as u32;
-        let aboard = entity.passenger_role.cargo().map_or(0, |cargo| cargo.count());
+        let aboard = entity.passenger_role().cargo().map_or(0, |cargo| cargo.count());
         let free = capacity.saturating_sub(aboard);
         if free == 0 {
             continue;
@@ -556,7 +556,7 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                         b,
                         po,
                         bo,
-                        b.passenger_role.occupants(),
+                        b.passenger_role().occupants(),
                         rules,
                         sim,
                     )
