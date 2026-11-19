@@ -20,6 +20,7 @@ use crate::assets::tmp_file::TmpFile;
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
 use crate::map::map_file::MapError;
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::object_image::ImageTheater;
 
 /// Marker for "no tile" after raw Pack5 compatibility translation.
 ///
@@ -741,12 +742,14 @@ pub fn theater_names_and_extensions() -> impl Iterator<Item = (&'static str, &'s
         .map(|(name, def)| (*name, def.extension))
 }
 
-/// Look up the theater definition for a theater name (e.g., "TEMPERATE").
+/// Look up the theater definition for a theater name (e.g., "TEMPERATE"):
+/// the definition of the theater `FindTheater @ 0x0048DBE0`
+/// ([`ImageTheater::from_name`]) finds for it, `None` when it finds none.
 fn theater_def(name: &str) -> Option<&'static TheaterDef> {
-    let upper: String = name.to_ascii_uppercase();
+    let theater = ImageTheater::from_name(name);
     THEATER_DEFS
         .iter()
-        .find(|(n, _)| *n == upper)
+        .find(|(identifier, _)| ImageTheater::from_name(identifier) == theater)
         .map(|(_, def)| def)
 }
 
