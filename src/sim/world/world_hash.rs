@@ -2001,12 +2001,12 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
             .wh_anim_remaining_creation_interval
             .hash_state(hasher);
     }
-    if entity.tracking_facts.naval_combatant() {
+    if entity.tracking_facts().naval_combatant() {
         // Retained across reload: later Remove_Tracking must use the same
         // Naval/Passengers admission as construction, even while in limbo.
         b"naval-tracking-eligibility-v1".hash(hasher);
     }
-    entity.tracking_facts.hash_retained_inputs(hasher);
+    entity.tracking_facts().hash_retained_inputs(hasher);
     if let Some(multiplier) = entity.ares.factory_plant_multiplier {
         b"ares-plant-multiplier-v1".hash(hasher);
         multiplier.hash(hasher);

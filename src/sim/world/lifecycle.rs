@@ -11,6 +11,7 @@ use crate::sim::cell_rect::{CellRect, resolve_reservation_real_cell, scan_cell_r
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::house_tracking::HouseTracking;
 use crate::sim::intern::InternedId;
 use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::occupancy::{
@@ -1745,12 +1746,7 @@ impl Simulation {
             self.recalculate_house_base_geometry(owner, context.rules());
         }
         // Building440D13: IncrementFactoryCount right after it.
-        Self::update_house_tracking(
-            &mut self.substrate,
-            &mut self.houses,
-            stable_id,
-            |tracking, entity| tracking.increment_factory_count(entity),
-        );
+        HouseTracking::register_factory(&mut self.substrate, &mut self.houses, stable_id);
         // Building440D1E, after IncrementFactoryCount and before +544.
         if let Some(owner) = self
             .substrate
@@ -4223,12 +4219,7 @@ impl Simulation {
             {
                 self.clear_building_damage_fire_slots(stable_id, context.rules());
             }
-            Self::update_house_tracking(
-                &mut self.substrate,
-                &mut self.houses,
-                stable_id,
-                |tracking, entity| tracking.recount(entity),
-            );
+            HouseTracking::unregister_factory(&mut self.substrate, &mut self.houses, stable_id);
             // Building445D99 follows Recount and precedes Techno Limbo.
             // The non-factory prerequisite path stops here: its strip
             // cancellation is decided only after this frame's Factory sweep.
@@ -4472,9 +4463,7 @@ impl Simulation {
             {
                 let owner = entity.owner();
                 if let Some(house) = self.houses.get_mut(&owner) {
-                    house
-                        .tracking_mut()
-                        .limbo_airport_docks(object.number_of_docks);
+                    house.limbo_airport_docks(object.number_of_docks);
                 }
             }
         }
@@ -7263,12 +7252,7 @@ impl Simulation {
         // The admitted entity store contains constructor-complete concrete
         // types; the native null-Type branch is outside that representation.
         if (game_state as u8) != 0 {
-            Self::update_house_tracking(
-                &mut self.substrate,
-                &mut self.houses,
-                stable_id,
-                crate::sim::house_tracking::HouseTracking::remove_tracking,
-            );
+            HouseTracking::unregister_object(&mut self.substrate, &mut self.houses, stable_id);
         }
         // Infantry517E33..517E6C resets movement animation/water/prone/Doing,
         // then calls FootLimbo4DB260 even when already hidden in Cargo. The

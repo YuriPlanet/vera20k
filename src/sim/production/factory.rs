@@ -2163,17 +2163,16 @@ mod tests {
                 false,
             );
             producer.lifecycle.set_in_limbo_for_test(false);
-            producer.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
+            *producer.tracking_facts_mut_for_test() = crate::sim::house_tracking::TrackingFacts::of(
                 EntityCategory::Structure,
                 rules.object("PRODUCER"),
                 &rules,
             );
             sim.substrate.entities.insert(producer);
-            crate::sim::world::Simulation::update_house_tracking(
+            crate::sim::house_tracking::HouseTracking::register_factory(
                 &mut sim.substrate,
                 &mut sim.houses,
                 1,
-                |tracking, entity| tracking.increment_factory_count(entity),
             );
             let mut power = PowerState::default();
             power.set_total_output_for_test(input["power_output"].as_i64().unwrap() as i32);

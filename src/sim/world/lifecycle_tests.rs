@@ -4761,11 +4761,10 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
         .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     // As its construction would: Add_Tracking.
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         1,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
     let _ = sim.reveal(1);
 
@@ -4912,11 +4911,10 @@ fn lifecycle_authority_uninit_records_once_and_the_drain_removes_the_tracking() 
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         1,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
 
     sim.uninit(1);
@@ -5406,7 +5404,9 @@ fn dont_score_victims_book_no_kill_no_loss_and_no_points() {
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     let victim = sim.substrate.entities.get_mut(1).unwrap();
     victim.health.set_for_test(0);
-    victim.tracking_facts.set_dont_score_for_test(true);
+    victim
+        .tracking_facts_mut_for_test()
+        .set_dont_score_for_test(true);
     // Retained attribution does not bypass the victim's DontScore gate.
     victim
         .kill_record
@@ -5472,11 +5472,10 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         1,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
     let _ = sim.reveal(1);
 

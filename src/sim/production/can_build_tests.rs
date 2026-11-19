@@ -293,7 +293,6 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
     // The row's counters are the house's whole count, its factories'
     // objects included.
     let mut tracking = HouseTracking::default();
-    tracking.add_airport_docks(house["docks"].as_i64().map_or(0, |docks| docks as i32));
     for (key, active) in [("owned", false), ("active", true)] {
         for counter in row[key].as_array().into_iter().flatten() {
             let type_id = sim.interner.get(counter[1].as_str().unwrap()).unwrap();
@@ -306,10 +305,9 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
             }
         }
     }
-    sim.houses
-        .get_mut(&owner)
-        .unwrap()
-        .set_tracking_for_test(tracking);
+    let state = sim.houses.get_mut(&owner).unwrap();
+    state.set_tracking_for_test(tracking);
+    state.add_airport_docks(house["docks"].as_i64().map_or(0, |docks| docks as i32));
     (sim, owner)
 }
 
@@ -603,7 +601,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let on_map = |sim: &mut Simulation, house, category, name: &str, count| {
         let type_id = sim.interner.get(name).unwrap();
-        let tracking = sim.houses.get_mut(&house).unwrap().tracking_mut();
+        let tracking = sim.houses.get_mut(&house).unwrap().tracking_mut_for_test();
         tracking.set_active_for_test(category, type_id, count);
         tracking.set_owned_for_test(category, type_id, count);
     };
@@ -637,7 +635,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
 
     let americans = sim.interner.intern("Americans");
     let mut house = HouseState::new(americans, 0, None, true, 0, 10);
-    house.tracking_mut().add_airport_docks(4);
+    house.add_airport_docks(4);
     sim.houses.register(house);
     let orca = rules.object("ORCA").unwrap();
     assert!(orca.airport_bound);

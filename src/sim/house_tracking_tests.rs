@@ -280,7 +280,7 @@ fn nominal_active_counts_match_executed_native_histories() {
             entity.mark_nominal_survivor();
         }
         let entity = entity.clone();
-        let tracking = sim.houses.get_mut(&owner).unwrap().tracking_mut();
+        let tracking = sim.houses.get_mut(&owner).unwrap().tracking_mut_for_test();
         tracking.set_active_for_test(
             EntityCategory::Infantry,
             entity.type_ref(),
@@ -412,11 +412,7 @@ fn a_helipads_docks_follow_its_opening_capture_and_limbo() {
         .unwrap();
     assert_eq!(docks(&sim), (4, 0));
     let add_docks = |sim: &mut Simulation, house, docks| {
-        sim.houses
-            .get_mut(&house)
-            .unwrap()
-            .tracking_mut()
-            .add_airport_docks(docks);
+        sim.houses.get_mut(&house).unwrap().add_airport_docks(docks);
     };
     add_docks(&mut sim, first, -3);
     sim.change_owner_with_rules(
@@ -688,7 +684,7 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
         .houses
         .get_mut(&second)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_naval_land_for_test(1, 0, 0);
     assert_ne!(
         restored.state_hash(),
@@ -699,31 +695,31 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
         .houses
         .get_mut(&second)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_naval_land_for_test(1, 1, 0);
-    let facts = restored
+    let facts = *restored
         .substrate
         .entities
         .get(boat)
         .unwrap()
-        .tracking_facts;
-    restored
+        .tracking_facts();
+    *restored
         .substrate
         .entities
         .get_mut(boat)
         .unwrap()
-        .tracking_facts = Default::default();
+        .tracking_facts_mut_for_test() = Default::default();
     assert_ne!(
         restored.state_hash(),
         expected_hash,
         "future removal admission also participates in the hash"
     );
-    restored
+    *restored
         .substrate
         .entities
         .get_mut(boat)
         .unwrap()
-        .tracking_facts = facts;
+        .tracking_facts_mut_for_test() = facts;
     assert_eq!(restored.state_hash(), expected_hash);
 
     for candidate in [&mut sim, &mut restored] {

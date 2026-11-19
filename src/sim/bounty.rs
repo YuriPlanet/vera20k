@@ -347,7 +347,7 @@ mod tests {
             .entities
             .get_mut(penalty)
             .unwrap()
-            .tracking_facts
+            .tracking_facts_mut_for_test()
             .set_dont_score_for_test(true);
         record(&mut sim, penalty, source);
         assert_eq!(
@@ -359,7 +359,7 @@ mod tests {
             .entities
             .get_mut(penalty)
             .unwrap()
-            .tracking_facts
+            .tracking_facts_mut_for_test()
             .set_dont_score_for_test(false);
         record(&mut sim, penalty, source);
         assert_eq!(sim.houses[&owner].economy().credits(), 0);
