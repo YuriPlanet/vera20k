@@ -24,6 +24,7 @@ use crate::map::theater::TileKey;
 use crate::render::batch::SpriteInstance;
 use crate::render::surface_line::SurfaceStroke;
 use crate::ui::sidebar::SidebarView;
+use crate::util::time::{Duration, Instant};
 #[path = "ferry_lines.rs"]
 mod ferry_lines;
 #[path = "planning_lines.rs"]
@@ -57,6 +58,20 @@ pub(super) struct WorldInstances {
     /// PixelFX water/ore sparkles — 1-pixel cell dots emitted per frame.
     /// Empty when the live `[Options] DetailLevel` projection is zero.
     pub cell_sparkles: Vec<SpriteInstance>,
+    /// What the terrain tile walk and the Display object walk took, for the
+    /// performance panel's Most CPU row (`RenderPhases::terrain`,
+    /// `RenderPhases::objects`).
+    pub spans: WorldSpans,
+}
+
+/// Two parts of phase 1's time, measured inside `build_world_instances`.
+#[derive(Clone, Copy, Default)]
+pub(super) struct WorldSpans {
+    /// The visible terrain tiles.
+    pub terrain: Duration,
+    /// The Display members: units, infantry, buildings, debris and bullets,
+    /// voxel image renders included.
+    pub objects: Duration,
 }
 
 /// Debug visualization overlays (toggled by hotkeys at runtime).
@@ -174,6 +189,7 @@ pub(super) fn build_world_instances(
     cursor: &crate::app::input::cursor::CursorTargets,
 ) -> WorldInstances {
     let hover = cursor.hover;
+    let terrain_started = Instant::now();
     // The draw before hands its tile list back (`render_game`).
     let terrain_buffer = std::mem::take(
         &mut state
@@ -226,6 +242,7 @@ pub(super) fn build_world_instances(
             walk: Vec::new(),
         }
     };
+    let terrain_span = terrain_started.elapsed();
 
     // Map overlays and walls remain in the fixed per-cell draw plan. Terrain
     // objects join live Ground registrations below; low bridges (LOBRDG*) ride
@@ -285,6 +302,7 @@ pub(super) fn build_world_instances(
     let smudge_cuts = smudges.cuts(&terrain.walk);
     let smudge = smudges.instances;
 
+    let objects_started = Instant::now();
     state
         .renderer
         .vxl_pose_frame_cache
@@ -367,6 +385,7 @@ pub(super) fn build_world_instances(
             }
         }
     }
+    let objects_span = objects_started.elapsed();
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
     let display_inputs = state
         .match_state
@@ -659,6 +678,10 @@ pub(super) fn build_world_instances(
         bridge_body_shadow,
         particle_draws,
         cell_sparkles,
+        spans: WorldSpans {
+            terrain: terrain_span,
+            objects: objects_span,
+        },
     }
 }
 
