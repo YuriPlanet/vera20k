@@ -1052,7 +1052,7 @@ impl Simulation {
         //50B716 loads A83D4C, the persisted native current-house input.
         //Presentation viewer binding cannot change this receiver's result.
         Self::is_human_player_on(
-            !session.uses_local_player_shroud(),
+            session.native_player_identity(),
             houses,
             owner,
             session.current_house(),
@@ -1061,24 +1061,21 @@ impl Simulation {
 
     /// [`Self::is_human_player`] asked on the client whose `PlayerPtr`
     /// (`[0x00A83D4C]`, read at `0x0050B716`) is `player`: a represented
-    /// network client's own house, or the current house. `player_ptr_arm` is
-    /// `!ScenarioSession::uses_local_player_shroud()`, the nonzero-mode arm.
-    /// The client's radar asks it with the Houses and session of the world it
-    /// draws.
+    /// network client's own house, or the current house. The client's radar
+    /// asks with the Houses and identity rule of the world it draws.
     pub fn is_human_player_on(
-        player_ptr_arm: bool,
+        identity: crate::sim::scenario_session::NativePlayerIdentity,
         houses: &crate::sim::houses::Houses,
         owner: InternedId,
         player: Option<InternedId>,
     ) -> bool {
-        // House50B6F0: nonzero session mode compares exactly to PlayerPtr;
-        // mode zero uses the two native human/control flags.
-        if player_ptr_arm {
-            player == Some(owner)
-        } else {
-            houses.get(&owner).is_some_and(|h| {
-                h.is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
-            })
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        match identity {
+            NativePlayerIdentity::PlayerPointer => player == Some(owner),
+            NativePlayerIdentity::HouseFlags => houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human() || house.player_control()),
         }
     }
 
@@ -1090,12 +1087,14 @@ impl Simulation {
     /// identity). Keep this distinct from `house_is_human_player`: its
     /// mode-zero branch also admits the separate `IsHuman` flag.
     pub fn house_controls_selection(&self, owner: InternedId) -> bool {
-        if self.session.game_mode_nonzero() {
-            self.house_is_human_player(owner)
-        } else {
-            self.houses
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        match self.session.native_player_identity() {
+            NativePlayerIdentity::PlayerPointer => self.house_is_human_player(owner),
+            NativePlayerIdentity::HouseFlags => self
+                .houses
                 .get(&owner)
-                .is_some_and(|house| house.player_control())
+                .is_some_and(|house| house.player_control()),
         }
     }
 

@@ -8,7 +8,7 @@
 use std::cell::UnsafeCell;
 use std::num::NonZero;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use rodio::Player;
@@ -25,9 +25,10 @@ pub struct SpscRing {
     /// reads others. Safety follows from the head/tail discipline.
     buffer: Box<[UnsafeCell<f32>]>,
     /// Producer-incremented; consumer reads with Acquire.
-    head: AtomicUsize,
+    head: AtomicU64,
     /// Consumer-incremented; producer reads with Acquire.
-    tail: AtomicUsize,
+    tail: AtomicU64,
+    underrun: AtomicBool,
 }
 
 // SAFETY: the producer only writes slots outside [tail, head) and publishes
@@ -47,8 +48,9 @@ impl SpscRing {
             capacity,
             mask: capacity - 1,
             buffer,
-            head: AtomicUsize::new(0),
-            tail: AtomicUsize::new(0),
+            head: AtomicU64::new(0),
+            tail: AtomicU64::new(0),
+            underrun: AtomicBool::new(false),
         })
     }
 
@@ -56,16 +58,17 @@ impl SpscRing {
     pub fn push(&self, samples: &[f32]) -> usize {
         let head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Acquire);
-        let free = self.capacity - head.wrapping_sub(tail);
+        let free = self.capacity - head.wrapping_sub(tail) as usize;
         let n = samples.len().min(free);
         for (i, sample) in samples.iter().take(n).enumerate() {
-            let idx = (head + i) & self.mask;
+            let idx = (head as usize).wrapping_add(i) & self.mask;
             // SAFETY: the consumer cannot read this slot until `head` is published.
             unsafe {
                 *self.buffer[idx].get() = *sample;
             }
         }
-        self.head.store(head.wrapping_add(n), Ordering::Release);
+        self.head
+            .store(head.wrapping_add(n as u64), Ordering::Release);
         n
     }
 
@@ -76,7 +79,7 @@ impl SpscRing {
         if head == tail {
             return None;
         }
-        let idx = tail & self.mask;
+        let idx = tail as usize & self.mask;
         // SAFETY: the producer cannot overwrite this slot until `tail` advances.
         let v = unsafe { *self.buffer[idx].get() };
         self.tail.store(tail.wrapping_add(1), Ordering::Release);
@@ -97,6 +100,7 @@ pub struct BinkAudioSource {
     ring: Arc<SpscRing>,
     sample_rate: NonZero<u32>,
     channels: NonZero<u16>,
+    had_sample: bool,
 }
 
 impl BinkAudioSource {
@@ -105,6 +109,7 @@ impl BinkAudioSource {
             ring,
             sample_rate: NonZero::new(sample_rate)?,
             channels: NonZero::new(channels)?,
+            had_sample: false,
         })
     }
 }
@@ -114,7 +119,15 @@ impl Iterator for BinkAudioSource {
     fn next(&mut self) -> Option<f32> {
         // Always Some: silence-fill on underrun. The Source must never end
         // unless the owner drops the player.
-        Some(self.ring.pop().unwrap_or(0.0))
+        if let Some(sample) = self.ring.pop() {
+            self.had_sample = true;
+            return Some(sample);
+        }
+        if self.had_sample {
+            self.ring.underrun.store(true, Ordering::Release);
+            self.had_sample = false;
+        }
+        Some(0.0)
     }
 }
 
@@ -147,12 +160,25 @@ pub struct MovieAudioStream {
 
 impl MovieAudioStream {
     pub fn connect(mixer: &Mixer, sample_rate: u32, channels: u16, volume: f32) -> Option<Self> {
+        Self::connect_with_activity(mixer, sample_rate, channels, volume, true)
+    }
+
+    pub(crate) fn connect_with_activity(
+        mixer: &Mixer,
+        sample_rate: u32,
+        channels: u16,
+        volume: f32,
+        active: bool,
+    ) -> Option<Self> {
         let ring = SpscRing::new(RING_TARGET_SAMPLES_PER_CHANNEL * channels as usize);
         let source = BinkAudioSource::new(ring.clone(), sample_rate, channels)?;
         // Queue the source before the mixer inspects its format. Connecting
         // an empty Player first lets rodio 0.22.2's UniformSourceIterator
         // cache the empty queue's mono/default rate for the initial span.
         let (player, output) = Player::new();
+        if !active {
+            player.pause();
+        }
         player.set_volume(volume.clamp(0.0, 1.0));
         player.append(source);
         mixer.add(output);
@@ -188,7 +214,22 @@ impl MovieAudioStream {
     }
 
     pub fn resume(&self) {
+        self.ring.underrun.store(false, Ordering::Release);
         self.player.play();
+    }
+
+    /// Take an underrun notification and read the current media cursor. The
+    /// producer may already have refilled the ring since the consumer went dry.
+    pub(crate) fn take_underrun_position(&self) -> Option<Duration> {
+        if !self.ring.underrun.swap(false, Ordering::AcqRel) {
+            return None;
+        }
+        let samples = self.ring.tail.load(Ordering::Acquire);
+        let rate = u64::from(self.channels) * u64::from(self.sample_rate);
+        Some(Duration::new(
+            samples / rate,
+            (u128::from(samples % rate) * 1_000_000_000 / u128::from(rate)) as u32,
+        ))
     }
 
     pub fn position(&self) -> Duration {
@@ -217,6 +258,31 @@ impl Drop for MovieAudioStream {
 #[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retail_radio_peaks_clip_before_overlap_and_voice_volume() {
+        use crate::assets::{bink_audio::BinkAudioDecoder, bink_file::BinkFile};
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        assets.load_nested("MOVIES01.MIX").unwrap();
+        let archive = assets.archive("MOVIES01.MIX").unwrap();
+        let clip = archive.get_by_name("A02_P01E.BIK").unwrap();
+        let file = BinkFile::parse(clip.to_vec().into()).unwrap();
+        let mut decoder = BinkAudioDecoder::new(file.header.audio_tracks[0]).unwrap();
+        let (mixer, output) = rodio::mixer::mixer(1.try_into().unwrap(), 22050.try_into().unwrap());
+        let stream = MovieAudioStream::connect(&mixer, 22050, 1, 0.5).unwrap();
+        for frame in [9, 10] {
+            let packets = file.audio_packets(frame).unwrap();
+            let samples = decoder.decode_packet(packets[0].bytes).unwrap();
+            assert_eq!(stream.push(&samples), samples.len());
+        }
+        // BINKW32 BinkGetTrackData (0x1000B1A0) on these packets returned
+        // -32768 at frame 9 sample 1576 and -30691 at frame 10 sample 19.
+        let heard: Vec<_> = output.take(1940).collect();
+        assert_eq!(heard[1576], -0.5);
+        assert!((heard[1920 + 19] * 65536.0 + 30691.0).abs() < 2.0);
+    }
 
     #[test]
     fn push_pop_round_trip() {

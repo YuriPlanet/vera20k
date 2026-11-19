@@ -363,25 +363,8 @@ pub(crate) fn render_menu_page(
     // timer (`0x006071E0`; the teardown also stops it with 0x4E2), so the
     // shell background shows and the movie clock starts after the slide.
     let sliding = wave.is_some();
-    if sliding {
-        state.frontend.main_menu_movie_last_step = Instant::now();
-    } else if let Some(movie) = state.frontend.main_menu_movie.as_mut() {
-        let now = Instant::now();
-        let elapsed = now
-            .duration_since(state.frontend.main_menu_movie_last_step)
-            .as_secs_f64();
-        state.frontend.main_menu_movie_last_step = now;
-        if let Err(err) = movie.step(&state.renderer.gpu, elapsed) {
-            log::warn!(
-                "Failed to step RA2TS movie for dialog 0x{:X}: {err:#}",
-                view.spec.dialog.0
-            );
-            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
-                "VERA:MenuMovieFailed",
-                &[("error", &format!("{err:#}"))],
-            ));
-            return Ok(MenuPageRenderResult::Fallback);
-        }
+    if !super::main_menu_shell_render::step_ra2ts_movie(state, !sliding) {
+        return Ok(MenuPageRenderResult::Fallback);
     }
 
     let layout = shell_layout::menu_page_layout(state, view.spec);

@@ -259,6 +259,9 @@ pub struct SkirmishShellLayout {
     /// VERA's Game Options ([`super::game_options`]), on gamemd's Choose Map
     /// tile under Start Game.
     pub game_options_button: RectPx,
+    /// VERA's Setups, the tile under Choose Map, which opens the page that
+    /// saves and loads named setups; gamemd's `0x102` has no such button.
+    pub setups_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
     pub column_labels: SkirmishColumnLabelRects,
@@ -638,6 +641,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     layout.start_button = layout.start_button.translate(dx, dy);
     layout.choose_map_button = layout.choose_map_button.translate(dx, dy);
     layout.game_options_button = layout.game_options_button.translate(dx, dy);
+    layout.setups_button = layout.setups_button.translate(dx, dy);
     layout.back_button = layout.back_button.translate(dx, dy);
     layout.map_preview = layout.map_preview.translate(dx, dy);
     layout.column_labels.players = layout.column_labels.players.translate(dx, dy);
@@ -880,11 +884,12 @@ pub fn compute_layout_for_rows(
     let opponent_scrollbar = opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT);
     let back_button = back_rect(screen_w, panel);
     // Not retail. VERA's Game Options takes gamemd's Choose Map tile, under
-    // Start Game, and Choose Map moves one tile down. Every panel has that
-    // tile free above Back, the six-tile one of the smallest window (640x480)
-    // too.
+    // Start Game, Choose Map moves one tile down and VERA's Setups takes the
+    // tile under it. Every panel has those two tiles free above Back, the
+    // six-tile one of the smallest window (640x480) too.
     let game_options_button = choose_map_tile;
     let choose_map_button = choose_map_tile.translate(0, SDBTNBKGD_H);
+    let setups_button = choose_map_button.translate(0, SDBTNBKGD_H);
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -896,6 +901,7 @@ pub fn compute_layout_for_rows(
         ),
         choose_map_button,
         game_options_button,
+        setups_button,
         back_button,
         map_preview: right_static(
             AnchorRule::RightAnchor,
@@ -1459,6 +1465,10 @@ pub enum SavedSeedControl {
     List,
     /// The file-name edit 0x526; Save only.
     NameEdit0x526,
+    /// VERA's Setups page's Load and Delete, under its Save; the retail
+    /// browsers have one action each.
+    Load,
+    Delete,
     ScrollUp,
     ScrollDown,
     ScrollThumb,
@@ -1477,6 +1487,9 @@ pub struct SavedSeedLayout {
     /// Present only in Save mode.
     pub name_edit: Option<RectPx>,
     pub action: RectPx,
+    /// VERA's Setups page only: Load and Delete under the action, Save.
+    pub load: Option<RectPx>,
+    pub delete: Option<RectPx>,
     pub back: RectPx,
     pub blank: RectPx,
 }
@@ -1511,6 +1524,8 @@ pub fn compute_saved_seed_layout(
         list: rect_of(SEED_LIST_RECTS[index]),
         name_edit: (mode == SavedSeedMode::Save).then(|| rect_of(SEED_NAME_EDIT_RECT)),
         action: right_button(SEED_ACTION_Y, SEED_ACTION_H),
+        load: None,
+        delete: None,
         back: back_rect(screen_w, panel),
         blank: rect_of(SEED_BLANK_RECTS[index]),
     }
@@ -1595,6 +1610,7 @@ impl ScaledRects for SkirmishShellLayout {
             start_button: self.start_button.scaled_rects(scale),
             choose_map_button: self.choose_map_button.scaled_rects(scale),
             game_options_button: self.game_options_button.scaled_rects(scale),
+            setups_button: self.setups_button.scaled_rects(scale),
             back_button: self.back_button.scaled_rects(scale),
             map_preview: self.map_preview.scaled_rects(scale),
             column_labels: self.column_labels.scaled_rects(scale),
@@ -1679,6 +1695,8 @@ impl ScaledRects for SavedSeedLayout {
             list: self.list.scaled_rects(scale),
             name_edit: self.name_edit.scaled_rects(scale),
             action: self.action.scaled_rects(scale),
+            load: self.load.scaled_rects(scale),
+            delete: self.delete.scaled_rects(scale),
             back: self.back.scaled_rects(scale),
             blank: self.blank.scaled_rects(scale),
         }
@@ -1732,6 +1750,21 @@ pub fn compute_responsive_random_map_setup_layout(
     compute_random_map_setup_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32).scaled_rects(scale)
 }
 
+/// VERA's Setups page: the Save browser (list, name field, Save), with Load
+/// and Delete on the two tiles under Save, above Back at 640x480 too.
+pub fn compute_setups_layout(screen_w: u32, screen_h: u32) -> SavedSeedLayout {
+    let mut layout = compute_saved_seed_layout(SavedSeedMode::Save, screen_w, screen_h);
+    layout.load = Some(layout.action.translate(0, SDBTNBKGD_H));
+    layout.delete = Some(layout.action.translate(0, 2 * SDBTNBKGD_H));
+    layout
+}
+
+/// The responsive variant of [`compute_setups_layout`].
+pub fn compute_responsive_setups_layout(screen_w: u32, screen_h: u32) -> SavedSeedLayout {
+    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
+    compute_setups_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32).scaled_rects(scale)
+}
+
 /// The responsive variant of [`compute_saved_seed_layout`].
 pub fn compute_responsive_saved_seed_layout(
     mode: SavedSeedMode,
@@ -1754,6 +1787,12 @@ pub fn saved_seed_control_at(layout: &SavedSeedLayout, x: i32, y: i32) -> Option
     }
     if layout.action.contains(x, y) {
         return Some(SavedSeedControl::Action);
+    }
+    if layout.load.is_some_and(|rect| rect.contains(x, y)) {
+        return Some(SavedSeedControl::Load);
+    }
+    if layout.delete.is_some_and(|rect| rect.contains(x, y)) {
+        return Some(SavedSeedControl::Delete);
     }
     if layout.back.contains(x, y) {
         return Some(SavedSeedControl::Back0x686);
@@ -1814,6 +1853,36 @@ mod tests {
         assert_eq!(chooser.dialog, RectPx::new(240, 0, 1440, 1080));
     }
 
+    /// VERA's Setups page puts Load and Delete on the two tiles under Save,
+    /// above Back on the smallest window too, and a press on each finds it
+    /// (at 640x480 the browser's list reaches under the column's left edge,
+    /// Save's too, so the press lands on the right).
+    #[test]
+    fn setups_page_stacks_load_and_delete_under_save_above_back() {
+        use super::{SDBTNBKGD_H, SavedSeedControl, compute_setups_layout, saved_seed_control_at};
+        for layout in [
+            compute_setups_layout(640, 480),
+            compute_setups_layout(800, 600),
+        ] {
+            let load = layout.load.unwrap();
+            let delete = layout.delete.unwrap();
+            assert_eq!(load, layout.action.translate(0, SDBTNBKGD_H));
+            assert_eq!(delete, load.translate(0, SDBTNBKGD_H));
+            assert!(delete.y + delete.h <= layout.back.y, "{layout:?}");
+            assert_eq!(
+                saved_seed_control_at(&layout, load.x + load.w - 4, load.y + 4),
+                Some(SavedSeedControl::Load)
+            );
+            assert_eq!(
+                saved_seed_control_at(&layout, delete.x + delete.w - 4, delete.y + 4),
+                Some(SavedSeedControl::Delete)
+            );
+        }
+        // The retail browsers have neither.
+        let seeds = compute_saved_seed_layout(SavedSeedMode::Save, 800, 600);
+        assert_eq!((seeds.load, seeds.delete), (None, None));
+    }
+
     #[test]
     fn key_rects_match_800x600() {
         let layout = compute_layout(800, 600);
@@ -1851,6 +1920,8 @@ mod tests {
         // moves one down.
         assert_eq!(layout.game_options_button, RectPx::new(484, 283, 156, 42));
         assert_eq!(layout.choose_map_button, RectPx::new(484, 325, 156, 42));
+        // VERA's Setups takes the last tile above Back.
+        assert_eq!(layout.setups_button, RectPx::new(484, 367, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(484, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(484, 409, 156, 42));
     }
@@ -1926,8 +1997,8 @@ mod tests {
     }
 
     /// VERA's Game Options sits second in every panel, under Start Game, with
-    /// Choose Map a tile under it and above Back: on the smallest window,
-    /// 640x480, and on a page grown to thirteen rows.
+    /// Choose Map and VERA's Setups a tile apart under it and above Back: on
+    /// the smallest window, 640x480, and on a page grown to thirteen rows.
     #[test]
     fn game_options_sits_second_in_every_panel() {
         use super::{SDBTNBKGD_H, compute_layout_for_rows};
@@ -1939,12 +2010,13 @@ mod tests {
                 layout.start_button,
                 layout.game_options_button,
                 layout.choose_map_button,
+                layout.setups_button,
             ];
             for pair in column.windows(2) {
                 assert_eq!(pair[1], pair[0].translate(0, SDBTNBKGD_H));
             }
-            let choose = layout.choose_map_button;
-            assert!(choose.y + choose.h <= layout.back_button.y);
+            let setups = layout.setups_button;
+            assert!(setups.y + setups.h <= layout.back_button.y);
         }
     }
 

@@ -579,6 +579,7 @@ fn render_original_body_pixels(
             if production {
                 let voxel_images =
                     RefCell::new(crate::render::voxel_image_cache::VoxelImageCache::default());
+                let zshape_skips = std::cell::RefCell::default();
                 build_shp_instances_from_inputs(
                     &ShpInputs {
                         runtime: &runtime,
@@ -587,6 +588,7 @@ fn render_original_body_pixels(
                         overlay_atlas: None,
                         unit_atlas: None,
                         voxel_images: &voxel_images,
+                        zshape_skips: &zshape_skips,
                         depth_tested_images: None,
                         camera: view.camera_pos,
                         render_size: size,

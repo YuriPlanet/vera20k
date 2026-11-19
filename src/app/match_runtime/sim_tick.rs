@@ -55,6 +55,30 @@ pub(crate) fn flush_replay_log(state: &mut AppState) {
     }
 }
 
+/// Capture the initial world before either a frame or a skirmish cheat can change it.
+pub(crate) fn prepare_replay_recording(state: &mut AppState) {
+    if let Some(rt) = state.match_state.sim_runtime.runtime() {
+        let _ = state.match_state.match_diagnostics.get_or_begin_replay(rt);
+        state.match_state.match_diagnostics.retain_replay_startup(
+            rt,
+            // A network match's session owns its launch; an offline
+            // skirmish's stays with the startup that installed it.
+            state
+                .match_state
+                .session
+                .network_setup()
+                .or_else(|| state.match_state.startup.offline_launch()),
+            state.match_state.loaded_map_source.as_ref(),
+            state.match_state.loaded_map_hash,
+            state
+                .match_state
+                .live_network
+                .as_ref()
+                .is_some_and(|live| live.dispatches_every_frame()),
+        );
+    }
+}
+
 /// Timeline-boundary close (new match install, in-scenario load): a write
 /// failure discards the segment instead of retaining it, so the next
 /// timeline can never append under the previous timeline's header.
@@ -1853,26 +1877,7 @@ fn advance_one_simulation_frame(
         crate::app::presentation::building_anim::drain_pending_sound_events(state);
     }
 
-    if let Some(rt) = state.match_state.sim_runtime.runtime() {
-        let _ = state.match_state.match_diagnostics.get_or_begin_replay(rt);
-        state.match_state.match_diagnostics.retain_replay_startup(
-            rt,
-            // A network match's session owns its launch; an offline
-            // skirmish's stays with the startup that installed it.
-            state
-                .match_state
-                .session
-                .network_setup()
-                .or_else(|| state.match_state.startup.offline_launch()),
-            state.match_state.loaded_map_source.as_ref(),
-            state.match_state.loaded_map_hash,
-            state
-                .match_state
-                .live_network
-                .as_ref()
-                .is_some_and(|live| live.dispatches_every_frame()),
-        );
-    }
+    prepare_replay_recording(state);
 
     let unit_voice_owners = state
         .audio

@@ -242,6 +242,7 @@ pub mod replay;
 mod replay_determinism_tests;
 pub mod runtime;
 pub mod selection;
+pub mod skirmish_cheats;
 
 // --- Snapshot serialization (mid-match save/load) ---
 pub mod snapshot;

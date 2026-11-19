@@ -669,7 +669,7 @@ fn radar_pixel_shroud_is_tested_at_the_cells_floor() {
             &fog,
             &Default::default(),
             false,
-            true,
+            NativePlayerIdentity::PlayerPointer,
             Some(&rules),
             Some(&interner),
             pixel_cell,
@@ -684,7 +684,9 @@ fn radar_pixel_shroud_is_tested_at_the_cells_floor() {
 }
 
 #[test]
-fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_human() {
+fn radar_pixel_player_identity_is_independent_of_discovery_policy() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
     let local = test_intern("Local");
     let (entities, interner, mut houses) = radar_gate_fixture("SecondHuman");
     let second = test_intern("SecondHuman");
@@ -699,34 +701,37 @@ fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_hu
     };
     let rules = radar_gate_rules("");
 
-    assert!(radar_pixel_candidate_eligible(
-        entry,
-        &radar_frame(&entities, &interner, None, 0),
-        &houses,
-        Some(local),
-        &fog,
-        &Default::default(),
-        false,
-        false,
-        Some(&rules),
-        Some(&interner),
-        Some((0, 0)),
-        None,
-    ));
-    assert!(!radar_pixel_candidate_eligible(
-        entry,
-        &radar_frame(&entities, &interner, None, 0),
-        &houses,
-        Some(local),
-        &fog,
-        &Default::default(),
-        false,
-        true,
-        Some(&rules),
-        Some(&interner),
-        Some((0, 0)),
-        None,
-    ));
+    let mut sim = crate::sim::world::Simulation::new();
+    let frame = radar_frame(&entities, &interner, None, 0);
+    for (mode, campaign_discovery, expected) in [
+        (ScenarioGameMode::Campaign, true, true),
+        (ScenarioGameMode::Campaign, false, true),
+        (ScenarioGameMode::Skirmish, false, false),
+        (ScenarioGameMode::Skirmish, true, false),
+    ] {
+        let policy = mode
+            .stock_rule_policy(None)
+            .with_uses_campaign_discovery(campaign_discovery);
+        sim.install_session_admission(mode, None, policy);
+        assert_eq!(
+            radar_pixel_candidate_eligible(
+                entry,
+                &frame,
+                &houses,
+                Some(local),
+                &fog,
+                &Default::default(),
+                false,
+                sim.session().native_player_identity(),
+                Some(&rules),
+                Some(&interner),
+                Some((0, 0)),
+                None,
+            ),
+            expected,
+            "{mode:?} with campaign discovery {campaign_discovery}"
+        );
+    }
 }
 
 #[test]
@@ -750,7 +755,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        true,
+        NativePlayerIdentity::PlayerPointer,
         Some(&rules),
         Some(&interner),
         Some((0, 0)),
@@ -768,7 +773,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        true,
+        NativePlayerIdentity::PlayerPointer,
         Some(&rules),
         Some(&interner),
         Some((0, 0)),
@@ -790,7 +795,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        true,
+        NativePlayerIdentity::PlayerPointer,
         Some(&rules),
         Some(&interner),
         Some((0, 0)),
@@ -823,7 +828,7 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         &fog,
         &Default::default(),
         true,
-        true,
+        NativePlayerIdentity::PlayerPointer,
         Some(&hidden),
         Some(&interner),
         Some((0, 0)),
@@ -837,7 +842,7 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         &fog,
         &Default::default(),
         true,
-        true,
+        NativePlayerIdentity::PlayerPointer,
         Some(&restored),
         Some(&interner),
         Some((0, 0)),
@@ -869,7 +874,7 @@ fn radar_pixel_fogged_but_explored_cell_passes_render_gate_without_gap_proxy() {
         &fog,
         &Default::default(),
         false,
-        true,
+        NativePlayerIdentity::PlayerPointer,
         Some(&radar_gate_rules("")),
         Some(&interner),
         Some((0, 0)),

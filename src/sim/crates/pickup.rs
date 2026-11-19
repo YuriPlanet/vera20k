@@ -124,7 +124,7 @@ pub(super) fn select_pickup_outcome(
             .unwrap_or(POWERUP_COUNT);
     }
     let mut solo_money = 0;
-    if policy.crates_use_authored_default_payload() && stored_selection == 0 {
+    if !policy.uses_match_crates() && stored_selection == 0 {
         let crate_rules = &rules.crate_rules;
         solo_money = crate_rules.solo_crate_money;
         for (image, selection) in [
@@ -393,7 +393,7 @@ pub(crate) fn pickup_crate(
         return true;
     }
     let policy = sim.session.rule_policy();
-    if !policy.crates_allow_passive_collectors()
+    if policy.uses_match_crates()
         && sim
             .houses
             .get(&owner)
@@ -444,7 +444,7 @@ pub(crate) fn pickup_crate(
     );
     let mut powerup = selection.powerup;
     let mut preempted = false;
-    if policy.crates_validate_pickup_payload() {
+    if policy.uses_match_crates() {
         if mcv_preempt(sim, rules, owner) {
             powerup = POWERUP_UNIT;
             preempted = true;
@@ -456,7 +456,7 @@ pub(crate) fn pickup_crate(
     }
     // `0x00481D86`: removal, then the replacement crate.
     let _ = remove_pickup_crate(sim, rules, registry, cell);
-    if policy.crates_use_runtime_slots() && sim.session.game_options().crates {
+    if policy.uses_match_crates() && sim.session.game_options().crates {
         if let Err(error) = place_one_random_crate(
             sim,
             rules,
@@ -546,7 +546,7 @@ pub(crate) fn pickup_crate(
                 // PlayerPtr in mode0 when IsHumanPlayer50B6F0 admits the
                 // collector, including the random and Unit-fallback routes.
                 // Lockstep never reads the process-local PlayerPtr for payment.
-                let recipient = if policy.crates_pay_local_player()
+                let recipient = if !policy.uses_match_crates()
                     && !sim.session.execution_topology().is_lockstep()
                     && sim.house_is_human_player(owner)
                 {

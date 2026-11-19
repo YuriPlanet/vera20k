@@ -7,9 +7,6 @@
 
 pub(crate) mod account;
 pub(crate) mod commands;
-// The browser has no DirectX 12.
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) mod directx12_start;
 pub(crate) mod intro_play;
 pub(crate) mod options;
 pub(crate) mod options_profile;

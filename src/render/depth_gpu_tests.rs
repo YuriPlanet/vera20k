@@ -21,7 +21,9 @@ use super::batch::{CameraUniform, SpriteInstance};
 use super::draw_state::DrawState;
 use super::frame_readback::PendingTextureReadback;
 use super::gpu::block_on;
-use super::native_z::{Z_GRADIENT_ZSHAPE_CLIP_FLAG, Z_GRADIENT_ZSHAPE_FLAG, ZGradient};
+use super::native_z::{
+    Z_GRADIENT_ZSHAPE_CLIP_FLAG, Z_GRADIENT_ZSHAPE_FLAG, ZGradient, zshape_skip_overshoot,
+};
 
 const SIDE: u32 = 8;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
@@ -64,6 +66,9 @@ struct Layer {
     z_bytes: Vec<u8>,
     source_size: [u32; 2],
     indices: Vec<u8>,
+    /// The skip table's one slot for this layer (`render::zshape_skips`): a
+    /// byte per frame row, read when `fx_params.w` is 1. Empty binds no rows.
+    skip_rows: Vec<u8>,
     palette_override: Option<Vec<u8>>,
     /// A palette-indexed SHP page: these palette rows take the colour binding
     /// in place of `rgba`, and the instance's `source_palette` picks the row.
@@ -89,6 +94,7 @@ impl Layer {
             z_bytes: vec![0; (SIDE * SIDE) as usize],
             source_size: [SIDE; 2],
             indices: vec![33; (SIDE * SIDE) as usize],
+            skip_rows: Vec::new(),
             palette_override: None,
             palette_rows: None,
         }
@@ -383,15 +389,30 @@ impl Gpu {
                 layout: &pipeline.get_bind_group_layout(1),
                 entries: &texture_entries,
             });
+            let skip_table = self.texture(
+                wgpu::TextureFormat::R8Uint,
+                if layer.skip_rows.is_empty() {
+                    &[0]
+                } else {
+                    &layer.skip_rows
+                },
+                [layer.skip_rows.len().max(1) as u32, 1],
+            );
             let zshape_group = matches!(layer.shader, Shader::SpriteRead | Shader::SpriteWrite)
                 .then(|| {
                     self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("Depth test zshape group"),
                         layout: &pipeline.get_bind_group_layout(2),
-                        entries: &[wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&z_source),
-                        }],
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&z_source),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::TextureView(&skip_table),
+                            },
+                        ],
                     })
                 });
             let instances = self
@@ -1259,7 +1280,7 @@ fn building_zshape_uses_constant_raw_seed_and_signed_shape_bytes() {
 /// transparent run moves dest, Z and A on to the run's end
 /// (0x0049915D..0x0049918F) but not the z-shape pointer, which drawn pixels
 /// and later runs advance (0x00499234, 0x004991C7): the rest of the row reads
-/// its shape that many columns back.
+/// its shape that many columns back, by the skip table's byte for the row.
 #[test]
 #[ignore = "requires a wgpu adapter; run explicitly"]
 fn building_zshape_trails_a_left_edge_skip_that_ends_inside_a_run() {
@@ -1279,7 +1300,6 @@ fn building_zshape_trails_a_left_edge_skip_that_ends_inside_a_run() {
         building.instance.size = [width as f32, 1.0];
         building.instance.zshape_origin = building.instance.position;
         building.instance.z_gradient = ZGradient::Vertical as u32 | Z_GRADIENT_ZSHAPE_FLAG;
-        building.instance.draw_state.fx_params[3] = skip as f32;
         building.source_size = [width, 1];
         building.rgba = BLUE.repeat(width as usize);
         building.indices = vec![33; width as usize];
@@ -1287,6 +1307,9 @@ fn building_zshape_trails_a_left_edge_skip_that_ends_inside_a_run() {
         for x in 0..clear {
             building.hole(x, 0);
         }
+        // Slot 1 of the skip table holds the row's overshoot.
+        building.skip_rows = vec![zshape_skip_overshoot(&building.indices, skip as usize)];
+        building.instance.draw_state.fx_params[3] = 1.0;
         for x in lane {
             building.z_bytes[x as usize] = 129;
         }
@@ -1666,6 +1689,7 @@ pub(crate) fn render_terrain_lighting_probe(
         z_bytes: tile.depth.clone(),
         source_size: [tile.width, tile.height],
         indices: Vec::new(),
+        skip_rows: Vec::new(),
         palette_override: None,
         palette_rows: None,
     };

@@ -51,6 +51,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
             .as_ref()
             .map(|zshape| zshape.frame_offset),
         view_left: crate::app::presentation::render::tactical_world_view(state).camera[0],
+        zshape_skips: &presentation.zshape_skips,
         detail_level: presentation.in_game_options.detail_level as i32,
     };
     // A saved picture far off the view puts no pixel on it: its cell passes
@@ -158,6 +159,8 @@ struct FrozenDrawInputs<'a> {
     building_zshape: Option<(i32, i32)>,
     /// The world column of the tactical view's left edge.
     view_left: i32,
+    /// The skip table the left-edge building bodies of this picture fill.
+    zshape_skips: &'a std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     detail_level: i32,
 }
 
@@ -260,8 +263,12 @@ fn frozen_building_pieces(
             instance.zshape_origin = [origin.0 as f32, origin.1 as f32];
         }
         if instance.z_gradient & native_z::Z_GRADIENT_ZSHAPE_FLAG != 0 {
+            let skip = native_z::zshape_lead_skip(input.view_left, instance.position[0]);
             instance.draw_state.fx_params[3] =
-                native_z::zshape_lead_skip(input.view_left, instance.position[0]);
+                input
+                    .zshape_skips
+                    .borrow_mut()
+                    .slot(input.atlas, &body_key, entry, skip);
         }
         pieces.push(piece(entry, instance, RenderZPolicy::ReadWrite));
     }
@@ -472,6 +479,7 @@ mod tests {
         lighting.retint_normal_rgb([1200, 800, 600]);
         lighting.reset_cell_converts(None);
         let colors = [("A".into(), HouseColorIndex(1))].into_iter().collect();
+        let zshape_skips = std::cell::RefCell::default();
         let input = FrozenDrawInputs {
             interner: &interner,
             rules: &rules,
@@ -484,6 +492,7 @@ mod tests {
             },
             building_zshape: Some((0, 0)),
             view_left: 0,
+            zshape_skips: &zshape_skips,
             detail_level: 2,
         };
         let record = FoggedObjectFootprintRecord {

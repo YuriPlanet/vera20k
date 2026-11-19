@@ -101,6 +101,11 @@ pub(crate) fn movie_rect(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: i3
     [(screen_w - w) / 2, (screen_h - h) / 2, w, h]
 }
 
+/// Hidden windows park the fullscreen renderer even if the platform still reports focus.
+pub(crate) fn playback_active(state: &crate::app::AppState) -> bool {
+    state.platform.window_active && !state.platform.window_hidden
+}
+
 pub(crate) struct FullscreenMovie {
     playback: crate::app::movie_playback::MoviePlayback,
     return_to: MovieReturn,
@@ -113,6 +118,7 @@ impl FullscreenMovie {
         voice_volume: f32,
         subtitles: Option<SubtitleTrack>,
         return_to: MovieReturn,
+        active: bool,
     ) -> Self {
         Self {
             playback: crate::app::movie_playback::MoviePlayback::new(
@@ -120,6 +126,7 @@ impl FullscreenMovie {
                 mixer,
                 voice_volume,
                 subtitles,
+                active,
             ),
             return_to,
         }
@@ -130,7 +137,12 @@ impl FullscreenMovie {
     pub(crate) fn set_active(&mut self, active: bool) {
         self.playback.set_active(active);
     }
-    pub(crate) fn step(&mut self, gpu: &crate::render::gpu::GpuContext) -> Result<bool> {
+    pub(crate) fn step(
+        &mut self,
+        gpu: &crate::render::gpu::GpuContext,
+        voice_volume: f32,
+    ) -> Result<bool> {
+        self.playback.set_voice_volume(voice_volume);
         self.playback.step(gpu)
     }
     pub(crate) fn abort(&mut self) {

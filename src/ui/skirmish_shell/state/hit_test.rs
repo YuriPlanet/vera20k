@@ -165,6 +165,7 @@ pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::GameOptions) => {
             Some(crate::ui::skirmish_shell::game_options::GAME_OPTIONS_HELP)
         }
+        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::Setups) => Some("VERA:SetupsHelp"),
         SkirmishHoverTarget::GameOptions(control) => control.status_help_key(),
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => {
             Some("STT:SkirmishButtonBack")
@@ -393,6 +394,7 @@ pub fn action_for_owner_draw_button(button: OwnerDrawButton) -> SkirmishShellAct
         OwnerDrawButton::StartGame0x617 => SkirmishShellAction::StartGame,
         OwnerDrawButton::ChooseMap0x5aa => SkirmishShellAction::ChooseMap,
         OwnerDrawButton::GameOptions => SkirmishShellAction::GameOptions,
+        OwnerDrawButton::Setups => SkirmishShellAction::Setups,
         OwnerDrawButton::Back0x5c0 => SkirmishShellAction::BackOrExit,
     }
 }
@@ -410,6 +412,9 @@ pub fn hit_test_owner_draw_button(
     }
     if layout.game_options_button.contains(x, y) {
         return Some(OwnerDrawButton::GameOptions);
+    }
+    if layout.setups_button.contains(x, y) {
+        return Some(OwnerDrawButton::Setups);
     }
     if layout.back_button.contains(x, y) {
         return Some(OwnerDrawButton::Back0x5c0);
@@ -452,6 +457,7 @@ pub fn apply_action(
         SkirmishShellAction::BackOrExit => SkirmishShellAction::BackOrExit,
         SkirmishShellAction::ChooseMap => SkirmishShellAction::ChooseMap,
         SkirmishShellAction::GameOptions => SkirmishShellAction::GameOptions,
+        SkirmishShellAction::Setups => SkirmishShellAction::Setups,
         SkirmishShellAction::SelectMap(idx) => {
             accept_selected_map(state, maps, idx);
             SkirmishShellAction::None

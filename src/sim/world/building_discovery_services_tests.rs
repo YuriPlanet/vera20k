@@ -138,6 +138,28 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
                 .discovered_by_current_house()
         );
     }
+    // A custom discovery policy cannot require the local +41B projection
+    // for services in lockstep, even when the provider belongs to a human.
+    let mut lockstep = hidden.clone();
+    let mode = crate::sim::scenario_session::ScenarioGameMode::Lan;
+    let policy = mode
+        .stock_rule_policy(None)
+        .with_uses_campaign_discovery(true);
+    lockstep.install_session_admission(mode, None, policy);
+    lockstep
+        .houses
+        .get_mut(&remote)
+        .unwrap()
+        .set_is_human_for_test(true);
+    Simulation::invalidate_house_power(&lockstep.houses, &mut lockstep.power_states, remote, true);
+    lockstep.assess_house_derived_state(remote, &rules, FrameEffects::default());
+    assert_eq!(lockstep.power_states()[&remote].total_output(), 200);
+    assert!(power_system::has_active_radar(
+        lockstep.power_states(),
+        remote
+    ));
+    assert!(lockstep.houses[&remote].spy_sat_active());
+
     // The same undiscovered providers are admitted outside campaign mode.
     // This invokes the production House prefix on the restored hidden prior;
     // the fixture does not run skirmish defeat on its intentionally empty Player.

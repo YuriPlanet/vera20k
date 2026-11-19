@@ -1113,7 +1113,7 @@ fn full_foot_entry<'a>(
         // Infantry51C193..51C1AF always checks computer ownership.
         // Unit73F3EC..73F41D also gates crate avoidance at 0x0073F405.
         if flags.crate_type
-            && (infantry || live.sim.session.rule_policy().ai_vehicles_avoid_crates())
+            && (infantry || !live.sim.session.rule_policy().uses_match_crates())
             && !live.sim.owner_is_human(e.owner())
         {
             return Ok(7);
@@ -2096,10 +2096,7 @@ mod tests {
         assert_eq!(probe(&sim, truck), Ok(0));
         assert_eq!(probe(&sim, infantry), Ok(7));
 
-        let policy = sim
-            .session
-            .rule_policy()
-            .with_ai_vehicles_avoid_crates(true);
+        let policy = sim.session.rule_policy().with_uses_match_crates(false);
         assert_eq!(policy.crates(), AuthoredCratePolicy::Skip);
         sim.install_session_admission(skirmish, None, policy);
         assert_eq!(probe(&sim, truck), Ok(7));

@@ -16,6 +16,7 @@ use crate::app::{App, AppState};
 use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
+use crate::sim::scenario_session::ExecutionTopology;
 use crate::sim::world::Simulation;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::diplomacy::{
@@ -48,15 +49,17 @@ pub(crate) enum RequestedState {
 /// whenever GameMode is not 0, co-op included, and nothing in campaign.
 pub(crate) fn requested_state(
     request: DiplomacyRequest,
-    mode: SessionMode,
+    topology: ExecutionTopology,
     rule_policy: RulePolicy,
 ) -> RequestedState {
     match request {
-        DiplomacyRequest::Hotkey if mode.is_nonzero() => RequestedState::Diplomacy,
-        DiplomacyRequest::Hotkey => RequestedState::Nothing,
+        DiplomacyRequest::Hotkey if rule_policy.uses_campaign_diplomacy() => {
+            RequestedState::Nothing
+        }
+        DiplomacyRequest::Hotkey => RequestedState::Diplomacy,
         DiplomacyRequest::SidebarButton
-            if !mode.is_nonzero()
-                || (mode.execution_topology().is_lockstep()
+            if rule_policy.uses_campaign_diplomacy()
+                || (topology.is_lockstep()
                     && rule_policy.restates_mission_for_network_diplomacy()) =>
         {
             RequestedState::MissionBriefing
@@ -68,11 +71,14 @@ pub(crate) fn requested_state(
 /// Write the requested state; `State_Machine` admits it on the way in.
 pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
     let mode = state.match_state.session_mode();
-    let rule_policy = state.match_state.sim_runtime.runtime().map_or_else(
-        || mode.stock_rule_policy(None),
-        |runtime| runtime.simulation.session().rule_policy(),
+    let (topology, rule_policy) = state.match_state.sim_runtime.runtime().map_or_else(
+        || (mode.execution_topology(), mode.stock_rule_policy(None)),
+        |runtime| {
+            let session = runtime.simulation.session();
+            (session.execution_topology(), session.rule_policy())
+        },
     );
-    match requested_state(request, mode, rule_policy) {
+    match requested_state(request, topology, rule_policy) {
         RequestedState::Nothing => {}
         RequestedState::Diplomacy => {
             App::enter_in_game_menu_state(state, InGameMenuState::Diplomacy);

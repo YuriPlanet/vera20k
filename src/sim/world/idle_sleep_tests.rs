@@ -83,6 +83,21 @@ fn a_sleeping_building_matches_its_awake_twin_hash_by_hash() {
 }
 
 #[test]
+fn the_admitted_sleep_policy_keeps_an_eligible_skirmish_building_awake() {
+    let rules = rules();
+    let mode = ScenarioGameMode::Skirmish;
+    let stock = mode.stock_rule_policy(None);
+    for (policy, expected) in [(stock, 1), (stock.with_allows_idle_object_sleep(false), 0)] {
+        let (mut sim, grid) = power_plant(&rules, true);
+        sim.session.install_admission(mode, None, policy);
+        for _ in 0..40 {
+            tick(&mut sim, &rules, &grid);
+        }
+        assert_eq!(sim.idle_sleep_counts().0, expected);
+    }
+}
+
+#[test]
 fn every_turn_sleeping_would_skip_changes_only_the_owed_counters() {
     let rules = rules();
     let (mut sim, grid) = power_plant(&rules, true);

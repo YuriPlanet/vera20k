@@ -27,6 +27,7 @@ use crate::render::snapshot::SnapshotObject;
 use crate::rules::house_colors::HouseColorRamps;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
+use crate::sim::scenario_session::NativePlayerIdentity;
 use crate::sim::vision::FogState;
 use crate::util::lookup_hash::{LookupMap, LookupSet};
 
@@ -163,7 +164,7 @@ pub(super) fn radar_pixel_candidate_eligible(
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    player_ptr_arm: bool,
+    player_identity: NativePlayerIdentity,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     pixel_cell: Option<(u16, u16)>,
@@ -180,7 +181,7 @@ pub(super) fn radar_pixel_candidate_eligible(
         if !full_visibility {
             let (rx, ry) = pixel_cell.unwrap_or((entity.position().rx(), entity.position().ry()));
             let owner_is_human = crate::sim::world::Simulation::is_human_player_on(
-                player_ptr_arm,
+                player_identity,
                 houses,
                 entity.owner(),
                 Some(local_owner),

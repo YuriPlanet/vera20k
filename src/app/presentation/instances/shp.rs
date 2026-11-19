@@ -58,6 +58,8 @@ pub(crate) struct ShpInputs<'a> {
     pub overlay_atlas: Option<&'a crate::render::overlay_atlas::OverlayAtlas>,
     pub unit_atlas: Option<&'a crate::render::unit_atlas::UnitAtlas>,
     pub voxel_images: &'a std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
+    /// The skip table the left-edge building bodies of this picture fill.
+    pub zshape_skips: &'a std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     /// Renders a building gun's depth-tested image; None draws the atlas's.
     pub depth_tested_images: Option<super::units::DepthTestedImages<'a>>,
     pub camera: [f32; 2],
@@ -118,6 +120,7 @@ pub(crate) fn shp_inputs<'a>(
         overlay_atlas: presentation.overlay_atlas.as_ref(),
         unit_atlas: presentation.unit_atlas.as_ref(),
         voxel_images: &presentation.voxel_images,
+        zshape_skips: &presentation.zshape_skips,
         depth_tested_images: super::units::DepthTestedImages::of(state),
         camera,
         render_size: [state.render_width(), state.render_height()],
@@ -757,10 +760,14 @@ pub(crate) fn shp_visitor<'a>(
                 zshape_origin,
             };
             if z_gradient & native_z::Z_GRADIENT_ZSHAPE_FLAG != 0 {
-                instance.draw_state.fx_params[3] = native_z::zshape_lead_skip(
+                let skip = native_z::zshape_lead_skip(
                     input.building_viewport.camera[0],
                     instance.position[0],
                 );
+                instance.draw_state.fx_params[3] = input
+                    .zshape_skips
+                    .borrow_mut()
+                    .slot(atlas, &body_key, entry, skip);
             }
             (ObjectTexture::ShpPage(entry.page as usize), instance)
         });

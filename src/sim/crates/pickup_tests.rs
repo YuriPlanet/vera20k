@@ -526,11 +526,9 @@ fn authored_crates_are_consumed_even_with_runtime_slots_enabled() {
         (AuthoredCratePolicy::Keep, false),
     ] {
         let (mut sim, rules, registry, _owner, actor) = multiplayer_fixture(POWERUP_SPEED as u8);
-        sim.install_session_admission(
-            mode,
-            None,
-            mode.stock_rule_policy(None).with_crates(authored_crates),
-        );
+        let policy = mode.stock_rule_policy(None).with_crates(authored_crates);
+        assert!(policy.uses_match_crates());
+        sim.install_session_admission(mode, None, policy);
         // The map overlay has no slot because the scenario did not place it
         // through the random crate owner.
         *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot::default();
