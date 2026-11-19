@@ -161,6 +161,14 @@ pub(crate) struct DiagnosticsState {
     pub(crate) parity_digest_sink: Option<crate::sim::parity_digest::ParityDigestSink>,
     /// Rolling frame-time statistics for map observation metadata.
     pub(crate) frame_timer: FrameTimer,
+    /// The perf build's per-frame CSV recorder. Compiled only with `perf`.
+    #[cfg(feature = "perf")]
+    pub(crate) perf_recorder: crate::app::diagnostics::perf_recorder::PerfRecorder,
+    /// The latest committed tick's SIM snapshot, written at the tick tail
+    /// (runtime home) and read at present time (runtime may be lent). Keeps
+    /// the perf CSV's SIM columns populated while a tick is on the SIM thread.
+    #[cfg(feature = "perf")]
+    pub(crate) perf_last_tick: Option<crate::app::diagnostics::perf_recorder::PerfTickSnapshot>,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) render_timing: RenderTimingMeter,
     /// The last render breakdown with samples. A hidden window stops rendering,
@@ -218,6 +226,10 @@ impl DiagnosticsState {
             debug_show_foot_path: false,
             parity_digest_sink,
             frame_timer: FrameTimer::new(),
+            #[cfg(feature = "perf")]
+            perf_recorder: crate::app::diagnostics::perf_recorder::PerfRecorder::new(),
+            #[cfg(feature = "perf")]
+            perf_last_tick: None,
             #[cfg(feature = "telemetry-dashboard")]
             render_timing: Default::default(),
             #[cfg(feature = "telemetry-dashboard")]

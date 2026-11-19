@@ -58,14 +58,28 @@ impl LoadedMapSource {
     /// Lookup name and external mission directory after restoring a saved world.
     /// A moved install can find its own copy by basename. Its old parent no
     /// longer supplies the directory for the next mission.
-    pub fn restored_loose_lookup(&self) -> (Option<&str>, Option<&Path>) {
+    ///
+    /// VERA: a saved game is a file from a stranger, so its path is asked about
+    /// only inside a map folder ([`saved_map_folder`]). Any other path, such as
+    /// a network share or a device, is never touched and counts as moved. Under
+    /// `launch_dir` the next mission is looked for there, as the launch did.
+    pub fn restored_loose_lookup<'a>(
+        &'a self,
+        ra2_dir: Option<&'a Path>,
+        launch_dir: Option<&'a Path>,
+    ) -> (Option<&'a str>, Option<&'a Path>) {
         let Self::Loose { path, .. } = self else {
             return (None, None);
         };
-        if crate::util::file_system::is_file(path) {
+        let folder = saved_map_folder(ra2_dir, launch_dir, path);
+        if folder.is_some() && crate::util::file_system::is_file(path) {
             return (
                 path.to_str().or_else(|| saved_path::basename(path)),
-                path.parent().filter(|dir| !dir.as_os_str().is_empty()),
+                if folder == launch_dir {
+                    launch_dir
+                } else {
+                    path.parent().filter(|dir| !dir.as_os_str().is_empty())
+                },
             );
         }
         (saved_path::basename(path), None)
@@ -116,22 +130,90 @@ pub fn portable_map_name(name: &str) -> &str {
     }
 }
 
+/// A logical file name: one that stays inside the folder it is joined to and
+/// names a file there. No drive, root, `.` or `..` part and no Windows device,
+/// under both separator spellings whatever OS runs the game, so a name from a
+/// peer, a map, a mod or a saved game is admitted alike everywhere and can
+/// never name a host path, a network share or a device.
+pub fn is_logical_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 1024
+        && !name.chars().any(char::is_control)
+        && !name.contains(':')
+        && name.split(['/', '\\']).all(|part| {
+            !part.is_empty() && part != "." && part != ".." && !is_windows_device_name(part)
+        })
+}
+
+/// Whether Windows reads `part` as a device in whatever folder it is, as it
+/// does up to Windows 10: `CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9` and
+/// `LPT0`-`LPT9` (also with a superscript 1-3), with any extension. Opening
+/// such a name reads or writes the device, not a file
+/// (Microsoft, "Naming Files, Paths, and Namespaces").
+fn is_windows_device_name(part: &str) -> bool {
+    let device = part
+        .split('.')
+        .next()
+        .unwrap_or(part)
+        .trim_end()
+        .to_ascii_uppercase();
+    let mut rest = device.chars().skip(3);
+    matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ((device.starts_with("COM") || device.starts_with("LPT"))
+            && matches!(
+                rest.next(),
+                Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}')
+            )
+            && rest.next().is_none())
+}
+
 /// A multiplayer map name is a VFS-relative logical identity, never a peer's
-/// host path. Check both separator spellings independently of the local OS so
-/// a LAN/online name has the same admission on every client. Absolute cache
-/// paths remain internal `LoadedMapSource` values and do not pass this boundary.
+/// host path, with the same admission on every client. Absolute cache paths
+/// remain internal `LoadedMapSource` values and do not pass this boundary.
 pub fn validate_network_map_name(name: &str) -> Result<()> {
     anyhow::ensure!(
-        !name.is_empty()
-            && name.len() <= 1024
-            && !name.chars().any(char::is_control)
-            && !name.contains(':')
-            && name
-                .split(['/', '\\'])
-                .all(|part| !part.is_empty() && part != "." && part != ".."),
+        is_logical_name(name),
         "invalid logical multiplayer map name"
     );
     Ok(())
+}
+
+/// The map folder that holds a loose map path a saved game recorded, or `None`
+/// when the path may not be opened again. A save is a file from a stranger, so
+/// its path counts only inside a folder this game already reads maps from:
+/// `launch_dir`, the folder an external launch named, or [`local_map_path`]'s.
+/// Any other path, such as a network share or a device, is never touched: the
+/// test reads the path's text only, because asking the file system about a
+/// share already contacts it.
+fn saved_map_folder<'a>(
+    ra2_dir: Option<&'a Path>,
+    launch_dir: Option<&'a Path>,
+    path: &Path,
+) -> Option<&'a Path> {
+    let roots = launch_dir
+        .into_iter()
+        .chain(mod_dir())
+        .chain(ra2_dir)
+        .chain(downloaded_maps_dir());
+    saved_map_folder_in(roots, path)
+}
+
+/// A folder counts only with a name of its own: an unset one, or a drive or
+/// file-system root, would hold every path.
+fn saved_map_folder_in<'a>(
+    roots: impl IntoIterator<Item = &'a Path>,
+    path: &Path,
+) -> Option<&'a Path> {
+    use std::path::Component;
+    if path.components().any(|part| part == Component::ParentDir) {
+        return None;
+    }
+    roots.into_iter().find(|root| {
+        root.components()
+            .any(|part| matches!(part, Component::Normal(_)))
+            && path != *root
+            && path.starts_with(root)
+    })
 }
 
 /// Identity of the seed bytes consumed by the normal generated-map loader.
@@ -807,9 +889,9 @@ fn write_staged(
 
 /// The name a received or downloaded map is kept under in VERA's Maps folder: the
 /// last part of `host_file` with `.yrm` for its extension. Refused when that
-/// would be hidden (a leading dot), hold a character Windows forbids in file
-/// names, or be a name Windows reserves, so a name that passes is one every
-/// platform can save.
+/// would be hidden (a leading dot) or hold a character Windows forbids in file
+/// names; a name Windows reserves is no logical name ([`is_logical_name`]). A
+/// name that passes is one every platform can save.
 pub fn kept_map_file_name(host_file: &str) -> Result<String> {
     validate_network_map_name(host_file)?;
     let stem = host_file
@@ -824,17 +906,6 @@ pub fn kept_map_file_name(host_file: &str) -> Result<String> {
                 && !stem.contains(['<', '>', '"', '|', '?', '*'])
         })
         .ok_or_else(|| anyhow::anyhow!("received map has no file name"))?;
-    let device = stem
-        .split('.')
-        .next()
-        .unwrap_or(stem)
-        .trim_end()
-        .to_ascii_uppercase();
-    let reserved = matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (device.len() == 4
-            && (device.starts_with("COM") || device.starts_with("LPT"))
-            && device.as_bytes()[3].is_ascii_digit());
-    anyhow::ensure!(!reserved, "received map has a reserved file name");
     Ok(format!("{stem}.yrm"))
 }
 
@@ -1694,6 +1765,8 @@ mod tests {
         assert!(validate_network_map_name("RandMap.Sed").is_ok());
         assert!(validate_network_map_name("../outside.map").is_err());
         assert!(validate_network_map_name("C:\\outside.map").is_err());
+        assert!(validate_network_map_name("Maps/com1.map").is_err());
+        assert!(validate_network_map_name("Maps/Comet.map").is_ok());
         let root = TestDirectory::new("network-logical-map-name");
         let cache = root.path().join("NetworkMaps");
         let loaded = install_received_map(
@@ -1715,6 +1788,24 @@ mod tests {
             Some((SOURCE_TEST_MAP.len(), SOURCE_TEST_MAP_SHA256))
         );
         assert!(load_map_by_name_or_path_with_assets(root.path(), absolute, &assets).is_ok());
+    }
+
+    #[test]
+    fn a_saved_map_path_counts_only_inside_a_map_folder() {
+        let game = Path::new("/games/ra2");
+        let folder = |path: &Path| saved_map_folder_in([game], path);
+        assert_eq!(folder(&game.join("Maps/mission.map")), Some(game));
+        assert_eq!(folder(&game.join("../outside/mission.map")), None);
+        assert_eq!(folder(Path::new("/games/ra2-other/mission.map")), None);
+        assert_eq!(folder(game), None, "the folder itself is no map");
+        for unnamed in ["", "/"] {
+            let path = Path::new(unnamed).join("mission.map");
+            assert_eq!(
+                saved_map_folder_in([Path::new(unnamed)], &path),
+                None,
+                "an unset folder or a root holds nothing: {unnamed:?}"
+            );
+        }
     }
 
     #[test]

@@ -323,8 +323,8 @@ pub(crate) fn online_preview(
 
 /// The briefing of the catalog row `record_index` (`map::basic::
 /// briefing_text`): an online row's from its catalog header, which keeps the
-/// map's whole `[Basic]` section, a loose map's from its file. The retail
-/// maps in mixfiles carry none.
+/// map's whole `[Basic]` section, a loose map's from its file and the active
+/// string table. The retail maps in mixfiles carry none.
 pub(crate) fn briefing(state: &AppState, record_index: usize) -> Option<String> {
     let record = state
         .frontend
@@ -338,7 +338,8 @@ pub(crate) fn briefing(state: &AppState, record_index: usize) -> Option<String> 
         SkirmishScenarioSource::LooseYrm(_) => {
             let path =
                 crate::map::source::local_map_path(state.ra2_dir()?, &record.file_name).ok()?;
-            crate::map::basic::briefing_text(&crate::util::file_system::read(path).ok()?)
+            let bytes = crate::util::file_system::read(path).ok()?;
+            crate::map::basic::briefing_text_with_csf(&bytes, state.process_assets.csf.as_ref())
         }
         _ => None,
     }

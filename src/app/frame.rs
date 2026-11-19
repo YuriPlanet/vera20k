@@ -1756,6 +1756,45 @@ impl App {
                 .renderer
                 .performance_overlay
                 .record_render_phases(phases);
+            #[cfg(feature = "perf")]
+            {
+                use crate::app::diagnostics::perf_recorder::PerfRow;
+                // The SIM fields come from the snapshot captured at the last
+                // committed tick's tail, not from `home_runtime()` — while a
+                // tick is lent to the SIM thread the runtime is away, and
+                // reading it here left ~99% of rows blank under load. The
+                // snapshot persists across all draws of that tick instead.
+                // It is the most recent tick, not a sum of the ticks this
+                // picture spans: a "where the frame went" diagnostic, not a
+                // billing ledger.
+                let tick_snapshot = state.diag.perf_last_tick;
+                let (tick, binary_frame, objects, houses, sim, path) = match tick_snapshot {
+                    Some(snap) => (
+                        snap.tick,
+                        snap.binary_frame,
+                        snap.objects,
+                        snap.houses,
+                        snap.sim,
+                        snap.path,
+                    ),
+                    None => (0, 0, 0, 0, None, None),
+                };
+                let wall_ms = presented_at.duration_since(draw_started).as_secs_f64() * 1000.0;
+                // The GPU read is destructive and windowed (lags a few frames);
+                // in a perf build it steals the panel's sample if both show.
+                let gpu_ms = state.renderer.gpu.timer.take_frame_ms();
+                state.diag.perf_recorder.record(PerfRow {
+                    tick,
+                    binary_frame,
+                    wall_ms,
+                    objects,
+                    houses,
+                    sim,
+                    render: Some(phases),
+                    path,
+                    gpu_ms,
+                });
+            }
         }
         let battlefield = state.frontend.screen == GameScreen::InGame;
         state.platform.frame_pacer.record_presented(

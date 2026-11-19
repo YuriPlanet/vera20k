@@ -430,7 +430,7 @@ pub(crate) fn camera(size: [u32; 2]) -> CameraUniform {
         world_height: 1000.0,
         _pad: 0.0,
         native_z_origin_y: 0.0,
-        _native_z_pad: 0.0,
+        native_z_pan: 0.0,
     }
 }
 pub(crate) fn encoded(word: u16, format: wgpu::TextureFormat) -> [u8; 4] {
@@ -1223,7 +1223,7 @@ fn production_tree_camera_zoom_matches_unscissored_shp_coverage() {
                 0.0,
                 "frame camera must reset previous origin"
             );
-            batch.update_native_z_origin(&gpu.queue, 7.0 / zoom);
+            batch.update_native_z_origin(&gpu.queue, 7.0 / zoom, 0);
             let cam = batch.camera_uniform();
             assert_eq!(cam.camera_pos, raw_camera.map(f32::round));
             assert_eq!(cam.native_z_origin_y, 7.0 / zoom);

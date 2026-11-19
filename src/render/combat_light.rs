@@ -114,7 +114,7 @@ impl CombatLightRenderer {
                     _pad: 0.0,
 
                     native_z_origin_y: 0.0,
-                    _native_z_pad: 0.0,
+                    native_z_pan: 0.0,
                 }),
             ),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -334,7 +334,7 @@ impl CombatLightRenderer {
             _pad: 0.0,
 
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            native_z_pan: 0.0,
         };
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
         self.prepared_indices.clear();

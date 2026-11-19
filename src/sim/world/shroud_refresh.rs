@@ -933,13 +933,7 @@ impl Simulation {
             }
         });
         for &viewer in viewers {
-            let notify_view = if network {
-                self.houses
-                    .get(&viewer)
-                    .is_some_and(|house| house.is_human())
-            } else {
-                notification_viewer == Some(viewer)
-            };
+            let notify_view = self.reveal_notifies_viewer(viewer, notification_viewer);
             if projection == vision::MapRevealProjection::Source
                 && !self.session.game_options().fog_of_war
                 && !notify_view
@@ -968,6 +962,24 @@ impl Simulation {
         //Keep the admitted local XYZ captured before any synchronous callback;
         //a logical other-viewer projection is not another admitted native call.
         local_origin.filter(|_| (network && !viewers.is_empty()) || notification_viewer.is_some())
+    }
+
+    /// Whether a reveal's MapCell4A9CA0 discovery notification reaches
+    /// `viewer`'s plane: in a network game every human plane, since each
+    /// peer is its own player's native client; otherwise only the admitted
+    /// local player's.
+    pub(crate) fn reveal_notifies_viewer(
+        &self,
+        viewer: InternedId,
+        notification_viewer: Option<InternedId>,
+    ) -> bool {
+        if self.session.game_mode().is_network() {
+            self.houses
+                .get(&viewer)
+                .is_some_and(|house| house.is_human())
+        } else {
+            notification_viewer == Some(viewer)
+        }
     }
 
     /// MapCell4A9CA0 after the range/House gates, including its synchronous

@@ -1969,7 +1969,9 @@ fn advance_one_simulation_frame(
     // Report points need the ledger whether or not a dashboard is
     // attached; `publish_if_due` only runs with a client. Elsewhere
     // the performance panel's Most CPU row reads it while the panel shows.
-    sim.set_frame_profiling(cfg!(feature = "telemetry-dashboard") || fps_panel_shown);
+    sim.set_frame_profiling(
+        cfg!(feature = "telemetry-dashboard") || cfg!(feature = "perf") || fps_panel_shown,
+    );
     // Delay-zero AnimClass construction can emit StartSound during the
     // final map-load sweep. Keep it until this first tactical drain;
     // `drain(..)` below still consumes every event exactly once.
@@ -2441,6 +2443,24 @@ fn finish_simulation_frame(
             // its cost from that thread's part; the exchange adds no sample.
             if let Some(tick_cost) = tick_cost {
                 let tick_ms = tick_cost.as_secs_f32() * 1000.0;
+                // Capture the committed tick's SIM snapshot while the runtime
+                // is home (this is the tick tail). The perf recorder reads this
+                // at present time, when the runtime may be lent to the SIM
+                // thread and `home_runtime()` is None.
+                #[cfg(feature = "perf")]
+                {
+                    use crate::app::diagnostics::perf_recorder::PerfTickSnapshot;
+                    let sim = rt.simulation.frame_profile().last_frame();
+                    let path = rt.simulation.path_batch_stats();
+                    state.diag.perf_last_tick = Some(PerfTickSnapshot {
+                        tick: rt.simulation.session().tick(),
+                        binary_frame: rt.simulation.session().binary_frame(),
+                        objects: rt.simulation.entities().len(),
+                        houses: rt.simulation.houses().len(),
+                        sim,
+                        path,
+                    });
+                }
                 state.match_state.network_quality.record_tick(tick_ms);
                 // The relay's pace reports carry the simulation's own cost.
                 if let Some(live) = state.match_state.live_network.as_mut() {

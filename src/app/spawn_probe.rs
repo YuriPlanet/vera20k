@@ -462,7 +462,12 @@ fn mission_chain(
         .unwrap_or(0);
     let mut chain = Vec::new();
     let mut current = first.to_ascii_uppercase();
-    while chain.len() < MAX_CAMPAIGN_MISSIONS && !chain.contains(&current) {
+    // A name campaign startup refuses (`match_bootstrap::prepare_campaign_scenario`)
+    // is no mission, and is never handed to the file system here either.
+    while chain.len() < MAX_CAMPAIGN_MISSIONS
+        && !chain.contains(&current)
+        && crate::map::source::is_logical_name(&current)
+    {
         chain.push(current.clone());
         let Ok(map) =
             crate::map::source::load_map_ini_by_name_or_path_with_assets(root, &current, assets)
@@ -624,6 +629,16 @@ mod tests {
                 hsv: [0; 3],
             })
             .collect()
+    }
+
+    #[test]
+    fn a_campaign_name_that_is_no_map_name_is_no_mission() {
+        let root = crate::map::source::test_support::TestDirectory::new("probe-mission-name");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        for name in [r"\\host\share\A.MAP", "../A.MAP"] {
+            let chain = mission_chain(root.path(), &assets, None, &[], name);
+            assert!(chain.is_empty(), "{name}");
+        }
     }
 
     #[test]

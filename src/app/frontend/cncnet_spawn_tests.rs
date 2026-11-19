@@ -96,14 +96,16 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
     );
     assert_eq!(metadata.load_message_key(), "MISSION:AL1");
 
-    let next = startup.next_mission(
-        "ALL02uMd.map".into(),
-        2,
-        1,
-        3,
-        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
-        &mut OrdinaryMatchSeedClock,
-    );
+    let next = startup
+        .next_mission(
+            "ALL02uMd.map".into(),
+            2,
+            1,
+            3,
+            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            &mut OrdinaryMatchSeedClock,
+        )
+        .unwrap();
     assert_eq!(next.scenario(), "ALL02UMD.MAP");
     let loaded =
         load_map_by_name_or_path_with_assets(retail.path(), next.selected_map_file(), &assets)
@@ -112,14 +114,16 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
         matches!(loaded.source, LoadedMapSource::Loose { path, .. } if path == client.path().join("ALL02uMd.map"))
     );
 
-    let archived = next.next_mission(
-        "all03md.map".into(),
-        3,
-        1,
-        3,
-        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
-        &mut OrdinaryMatchSeedClock,
-    );
+    let archived = next
+        .next_mission(
+            "all03md.map".into(),
+            3,
+            1,
+            3,
+            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            &mut OrdinaryMatchSeedClock,
+        )
+        .unwrap();
     let loaded =
         load_map_by_name_or_path_with_assets(retail.path(), archived.selected_map_file(), &assets)
             .unwrap();

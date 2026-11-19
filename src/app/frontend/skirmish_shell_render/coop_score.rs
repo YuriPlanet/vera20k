@@ -21,8 +21,9 @@ use super::{
 };
 use crate::app::AppState;
 use crate::render::shell_text::{self, ShellAlign};
+use crate::ui::campaign_score_shell::campaign_score_background_rect;
 use crate::ui::coop_score_shell::*;
-use crate::ui::shell::geom::{self, RectPx};
+use crate::ui::shell::geom::RectPx;
 use crate::util::time::Instant;
 
 pub(crate) fn render_coop_score(
@@ -112,14 +113,7 @@ pub(crate) fn render_coop_score(
         } else {
             (width as i32, height as i32)
         };
-        let (x, y) = geom::dialog_origin(aw, ah);
-        let small = chrome_layout.authored_width() == 640;
-        let rect = scale.scale_rect(RectPx::new(
-            x,
-            y,
-            if small { 472 } else { 632 },
-            if small { 448 } else { 568 },
-        ));
+        let rect = scale.scale_rect(campaign_score_background_rect(aw, ah));
         let mut sprites = Vec::with_capacity(1);
         crate::render::shell_paint::push_entry_sized(
             &mut sprites,

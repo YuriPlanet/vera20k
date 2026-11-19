@@ -50,6 +50,12 @@ pub(crate) fn commit_prepared_load(
     // A validated saved timeline replaces the outgoing fresh-L0 evidence and
     // remains available to the ordinary pump and exact diagnostic stepping.
     state.process_assets.refresh_campaigns_if_available();
+    // The outgoing campaign's external folder stays a map folder for the save.
+    let launch_dir = state
+        .match_state
+        .startup
+        .installed_campaign()
+        .and_then(|campaign| campaign.scenario_directory());
     let campaign = state.process_assets.campaigns().and_then(|campaigns| {
         crate::app::match_bootstrap::PreparedCampaignStartup::from_saved_scenario(
             campaigns,
@@ -60,6 +66,12 @@ pub(crate) fn commit_prepared_load(
                 .expect("prepared saved game installs a runtime")
                 .simulation,
             committed.map.source(),
+            state
+                .platform
+                .game_config
+                .as_ref()
+                .map(|config| config.paths.ra2_dir.as_path()),
+            launch_dir,
         )
     });
     state.match_state.startup.acknowledge_saved_load(campaign);

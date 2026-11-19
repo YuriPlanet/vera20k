@@ -169,9 +169,19 @@ fn account_call(request: &crate::ui::wol_account::AccountRequest) -> (&'static s
 
 impl Request {
     /// The periodic requests a waiting copy already covers: the 10 s retry
-    /// of a player's `renew_relay` and a watcher's `renew_watch`.
+    /// of a player's `renew_relay` and a watcher's `renew_watch`, and the
+    /// lobby's lists, asked for every few seconds.
     fn repeats(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Channels(kind), Self::Channels(other)) => kind == other,
+            (
+                Self::Matches {
+                    refused_options: None,
+                },
+                Self::Matches {
+                    refused_options: None,
+                },
+            ) => true,
             (
                 Self::Command {
                     operation, payload, ..
@@ -1024,6 +1034,29 @@ macro_rules! serial_driver {
         }
     }
 
+    /// A lobby list's answer. A failure that keeps the session says so once
+    /// until a list arrives again: the lobby asks every few seconds.
+    $($asynchronous)? fn list_finished(
+        &mut self,
+        result: Result<ChannelList, RequestFailure>,
+        refresh_failed: &mut bool,
+        output: &Sender<Response>,
+    ) {
+        match result {
+            Ok(channels) => {
+                *refresh_failed = false;
+                let _ = output.send(Response::Channels(channels));
+            }
+            Err(error) => {
+                if !platform_await!(self.session_failed(error, output))
+                    && !std::mem::replace(refresh_failed, true)
+                {
+                    let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
+                }
+            }
+        }
+    }
+
     $($asynchronous)? fn poll_finished(
         &mut self,
         result: Result<(), RequestFailure>,
@@ -1085,6 +1118,7 @@ macro_rules! serial_driver {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     let mut streams = stream::Streams::new(&client.base);
     let mut failed_polls = 0_u8;
+    let mut refresh_failed = false;
     let mut next_poll = Instant::now();
     let mut queued = VecDeque::new();
     loop {
@@ -1315,20 +1349,12 @@ macro_rules! serial_driver {
                 }
             }
             Some(Request::Channels(kind)) => {
-                match platform_await!(client
+                let list = platform_await!(client
                     .request(&format!("/v1/channels?kind={kind}"), None))
                     .and_then(|value| {
                         serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))
-                    }) {
-                    Ok(channels) => {
-                        let _ = output.send(Response::Channels(channels));
-                    }
-                    Err(error) => {
-                        if !platform_await!(client.session_failed(error, &output)) {
-                            let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
-                        }
-                    }
-                }
+                    });
+                platform_await!(client.list_finished(list, &mut refresh_failed, &output));
             }
             Some(Request::Matches { refused_options }) => {
                 match platform_await!(client.request("/v1/matches", None)).and_then(|value| {
@@ -1944,6 +1970,53 @@ mod tests {
             })
             .collect();
         assert_eq!(ids, [Some(2), Some(4), Some(6), Some(8), Some(9)]);
+    }
+
+    #[test]
+    fn a_waiting_lobby_list_covers_the_next_one() {
+        let (requests, input) = std::sync::mpsc::channel();
+        let matches = |refused_options| Request::Matches { refused_options };
+        for request in [
+            Request::Channels(41),
+            Request::Channels(0),
+            matches(None),
+            matches(None),
+            matches(Some(1)),
+            matches(Some(1)),
+        ] {
+            requests.send(request).unwrap();
+        }
+        let mut queued = VecDeque::new();
+        queue_arrivals(&input, Some(&Request::Channels(41)), &mut queued);
+        let kept: Vec<_> = queued
+            .iter()
+            .map(|request| match request {
+                Request::Channels(kind) => u64::from(*kind),
+                Request::Matches { refused_options } => 100 + refused_options.unwrap_or(0),
+                _ => u64::MAX,
+            })
+            .collect();
+        assert_eq!(kept, [0, 100, 101, 101]);
+    }
+
+    #[test]
+    fn a_lobby_that_stops_listing_says_so_once_until_it_lists_again() {
+        let (output, input) = std::sync::mpsc::channel();
+        let mut client = signed_in_client(1);
+        let mut failed = false;
+        let list = || ChannelList {
+            kind: 41,
+            channels: Vec::new(),
+        };
+        for _ in 0..2 {
+            client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
+        }
+        assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
+        assert!(input.try_recv().is_err());
+        client.list_finished(Ok(list()), &mut failed, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Channels(_))));
+        client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
     }
 
     #[test]

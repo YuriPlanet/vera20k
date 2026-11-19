@@ -285,7 +285,9 @@ pub(super) fn draw_native_object_pass<'a>(
             // Only an opaque body's unsafe signed candidates need manual
             // replay, one composite per instance: an ordinary run can coalesce
             // many Display parents, unlike native parent-grouped blend sources.
-            if is_opaque_voxel_run(run) && voxel_needs_manual_depth(instance, camera) {
+            if (is_opaque_voxel_run(run) && voxel_needs_manual_depth(instance, camera))
+                || shp_needs_manual_depth(run, instance, camera)
+            {
                 if let Some((source, material, kind)) = packed_binding(run.target) {
                     let piece = PackedCompositePiece {
                         index,
@@ -726,16 +728,47 @@ fn is_opaque_voxel_run(run: &ObjectDrawRun) -> bool {
         && run.render_z == RenderZPolicy::ReadOnly
 }
 
+/// Selector-0 copy semantics, which the packed replay reproduces.
+fn copies_opaquely(instance: &crate::render::batch::SpriteInstance) -> bool {
+    instance.draw_state.native_selector_bits() == 0
+        && instance.alpha == 1.0
+        && instance.draw_state.fx_params[0] == 1.0
+        && instance.draw_state.fx_flags & !crate::render::draw_state::FX_SINKING_CLIP == 0
+        && instance.palette_light.0[0] >> 24 != 0
+}
+
+/// Whether an opaque SHP body that writes Z (building bodies: leaves
+/// 0x004958D0 / 0x004990E0) can reach a negative signed candidate. Native
+/// always draws one; the depth test refuses it wherever its low 16 bits are
+/// not below the stored word (zsprite_shader.wgsl `fs_write`), so such a body
+/// replays through the packed path's signed compare.
+///
+/// RESIDUAL: in a depth-tested interval that replay leaves the pixels' shadow
+/// count as it was, where the ordinary store restarts it
+/// ([`restarts_shadow_count`]). Only bodies about 32K rows from the Z seed
+/// replay this way.
+fn shp_needs_manual_depth(
+    run: &ObjectDrawRun,
+    instance: &crate::render::batch::SpriteInstance,
+    camera: crate::render::batch::CameraUniform,
+) -> bool {
+    let round = |value: f32| value.round_ties_even() as i32;
+    run.packed_parent.is_none()
+        && matches!(run.target, ObjectTexture::ShpPage(_))
+        && run.render_z == RenderZPolicy::ReadWrite
+        && copies_opaquely(instance)
+        && crate::render::native_z::shp_candidate_may_be_negative(
+            [round(instance.position[1]), round(instance.size[1]).max(1)],
+            round(instance.z_adjust),
+            camera.native_z_origin_row(),
+        )
+}
+
 fn voxel_needs_manual_depth(
     instance: &crate::render::batch::SpriteInstance,
     camera: crate::render::batch::CameraUniform,
 ) -> bool {
-    if instance.draw_state.native_selector_bits() != 0
-        || instance.alpha != 1.0
-        || instance.draw_state.fx_params[0] != 1.0
-        || instance.draw_state.fx_flags & !crate::render::draw_state::FX_SINKING_CLIP != 0
-        || instance.palette_light.0[0] >> 24 == 0
-    {
+    if !copies_opaquely(instance) {
         return false;
     }
     // GPU location13 aliases the CPU's zshape_origin as voxel z_rect.
@@ -744,21 +777,12 @@ fn voxel_needs_manual_depth(
     } else {
         [instance.position[1], instance.size[1]]
     };
-    let camera_row = (camera.camera_pos[1] + camera.native_z_origin_y).round() as i32;
-    let clip_height = if instance.draw_state.fx_params[3] > 0.0 {
-        instance.draw_state.fx_params[3]
-    } else {
-        camera.screen_size[1] / camera.zoom
-    };
-    let Some(bottom) = camera_row.checked_add(clip_height.round() as i32) else {
-        return true;
-    };
     crate::render::native_z::voxel_depth_range(
         [rect[0].round() as i32, (rect[1].round() as i32).max(1)],
         instance.z_gradient,
         instance.z_adjust.round() as i32,
-        camera_row,
-        [camera_row, bottom],
+        camera.native_z_origin_row(),
+        camera.view_rows(instance.draw_state.fx_params[3]),
     )
     .is_none_or(|[min, max]| min < 0 || max > i32::from(u16::MAX))
 }
@@ -858,6 +882,39 @@ mod tests {
         assert!(
             voxel_needs_manual_depth(&safe, camera),
             "the shared composite rect owns row Z"
+        );
+    }
+
+    #[test]
+    fn a_writing_shp_body_near_signed_zero_replays_manually() {
+        let camera = crate::render::terrain_draw_gpu_tests::camera([64, 96]);
+        let mut body = SpriteInstance {
+            position: [27.0, 43.0],
+            size: [18.0, 15.0],
+            alpha: 1.0,
+            tint: crate::map::lighting::DEFAULT_TINT,
+            palette_light: crate::render::palette_light::PaletteLight::new(
+                [1000; 3], 53, 1000, true,
+            ),
+            draw_state: DrawState::default(),
+            z_adjust: -65.0,
+            ..Default::default()
+        };
+        let mut run = ObjectDrawRun {
+            target: ObjectTexture::ShpPage(0),
+            render_z: RenderZPolicy::ReadWrite,
+            packed_parent: None,
+            start: 0,
+            count: 1,
+        };
+        assert!(!shp_needs_manual_depth(&run, &body, camera));
+        // Rows whose unstepped seed is about 100 above signed zero.
+        body.position[1] = (camera.native_z_origin_row() + 32_668) as f32;
+        assert!(shp_needs_manual_depth(&run, &body, camera));
+        run.render_z = RenderZPolicy::ReadOnly;
+        assert!(
+            !shp_needs_manual_depth(&run, &body, camera),
+            "a read-only body tests a negative candidate as 0 instead"
         );
     }
 
