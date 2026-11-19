@@ -15,6 +15,11 @@ const DROP: (u16, u16) = (13, 5);
 
 #[test]
 fn a_previous_worlds_ferry_cannot_board_units_in_a_fresh_world() {
+    // Without retail data (RA2_DIR) the fixture prints SKIPPED; each scene
+    // then loads its own copy.
+    if crate::rules::retail_ini_fixture::retail_battle_rules().is_none() {
+        return;
+    }
     let scene = || {
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules()
             .expect("retail rules are required for the ferry isolation regression");
