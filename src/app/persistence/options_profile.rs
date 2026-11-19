@@ -324,9 +324,9 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] BuildingProductionQueue=`: a BuildingType PRODUCE queues
     /// behind a running or completed building instead of being dropped or
     /// abandoning the held product. The next building starts only after the
-    /// held one is placed. The app carries this onto the frame, so the
-    /// simulation reads it without any ruleset field: it is neither saved in
-    /// a scenario nor hashed. Off by default, so gamemd play is unchanged.
+    /// held one is placed. A rule switch (`rules::personal_rules`): offline
+    /// scenarios read it as `[General] BuildingProductionQueue=yes`; network
+    /// rooms play without it. Off by default, so gamemd play is unchanged.
     pub(crate) building_production_queue: bool,
     /// `[VERA] CompactSuperTimers=`: the battlefield's super weapon timer
     /// list shows at most six lines, the player's own first, with an arrow
@@ -2611,7 +2611,8 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
         assert!(!read(b"").building_production_queue);
         let mut profile = read(b"[VERA]\nBuildingProductionQueue=yes\nUnowned=keep\n");
         assert!(profile.building_production_queue);
-        let written = profile.transform_settings(b"[VERA]\nBuildingProductionQueue=yes\nUnowned=keep\n");
+        let written =
+            profile.transform_settings(b"[VERA]\nBuildingProductionQueue=yes\nUnowned=keep\n");
         assert!(read(&written).building_production_queue);
         profile.building_production_queue = false;
         let written = profile.transform_settings(&written);

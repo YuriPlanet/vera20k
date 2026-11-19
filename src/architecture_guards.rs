@@ -1997,6 +1997,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ),
         (
             "rules/personal_rules.rs",
+            "set_building_production_queue",
+            "VERA's own switch with no native member: the Options page's Building Production \
+             Queue box, which the app passes in for the rules the next scenario reads",
+        ),
+        (
+            "rules/personal_rules.rs",
             "set_terrain_deformation",
             "VERA's own switch with no native member: the skirmish Game Options' Terrain \
              Deformation box, which the app passes in for the rules the next scenario reads",
