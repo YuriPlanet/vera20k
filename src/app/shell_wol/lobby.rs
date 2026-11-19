@@ -1871,8 +1871,15 @@ fn refill_games(state: &mut AppState) {
     if lobby.ui.is_modern() {
         rows.extend(watch_rows(&lobby.matches, &crate::i18n::tr(WATCH_LIST_TAG)));
     }
+    let layout = layout(state);
+    let (x, y) = state.match_state.input.cursor_px();
     if let Some(lobby) = lobby_mut(state) {
         lobby.ui.replace_games(rows);
+        // VERA: the list is refilled every few seconds, and a pointer resting
+        // on a row keeps that row's status help.
+        if lobby.ui.popup.is_none() {
+            lobby.ui.hover_games(&layout, x, y);
+        }
     }
 }
 

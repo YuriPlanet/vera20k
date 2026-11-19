@@ -188,7 +188,8 @@ and save layout.
 The online lobby asks for its game list, and the matches to watch with it, every
 5 seconds while it is the front window, so a game someone creates shows up within
 that; gamemd's lobby asked every 30 (`SetTimer(0, 30000)`). Refresh still asks at
-once, and the lobbies list keeps its 53 seconds. No request or reply changes: an older
+once, and the lobbies list keeps its 53 seconds. A lobby that stops answering the list
+says so once until a list arrives again. No request or reply changes: an older
 game keeps asking every 30 seconds, and a rollback restores that.
 
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
