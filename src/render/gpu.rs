@@ -572,13 +572,6 @@ impl GpuContext {
         self.lost.get().map(String::as_str)
     }
 
-    /// Whether the game draws with DirectX 12 (`[VERA] DirectX12=` or
-    /// `WGPU_BACKEND`).
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-    pub(crate) fn draws_with_directx12(&self) -> bool {
-        self.adapter_info.backend == wgpu::Backend::Dx12
-    }
-
     /// Whether the window currently owns a render surface.
     #[cfg(target_os = "android")]
     pub(crate) fn has_surface(&self) -> bool {
