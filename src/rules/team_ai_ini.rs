@@ -13,6 +13,7 @@ use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 use crate::rules::ini_value::{
     crt_atoi, parse_leading_f64, scan_decimal_i32, strtrim_ascii, truncate_native_bytes,
 };
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::util::native_x87::NativeF64Bits;
 
 const SCRIPT_ACTION_CAPACITY: usize = 50;
@@ -215,7 +216,7 @@ pub struct TeamAiIniRegistry {
     fixed_definitions: FixedTeamAiDefinitions,
     team_type_read_transactions: Vec<TeamTypeReadTransaction>,
     fixed_team_type_read_count: usize,
-    game_mode_nonzero: bool,
+    bootstrap_rule_profile: BootstrapRuleProfile,
 }
 
 impl TeamAiIniRegistry {
@@ -228,7 +229,7 @@ impl TeamAiIniRegistry {
     pub fn load_retail(
         assets: &AssetManager,
         scenario: &IniFile,
-        game_mode_nonzero: bool,
+        bootstrap_rule_profile: impl Into<BootstrapRuleProfile>,
     ) -> Result<Self, String> {
         let name = assets.ini_roots().ai();
         let mut fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
@@ -236,7 +237,7 @@ impl TeamAiIniRegistry {
         // checkDigest=1 before Full_Init68797F..6879DA consumes its registries.
         // Raw source inspection and metadata keep their unchecked INI view.
         fixed.remove_digest_for_checked_load();
-        let registry = Self::from_sources(&fixed, scenario, game_mode_nonzero);
+        let registry = Self::from_sources(&fixed, scenario, bootstrap_rule_profile);
         // Only a root that is not an AI INI at all is refused. A listed type
         // with no section, or a TaskForce entry that does not scan, is a
         // diagnostic: TeamTypeClass::LoadFromINIList (`0x006F19B0`) allocates
@@ -260,9 +261,13 @@ impl TeamAiIniRegistry {
     ///
     /// Retail provenance: `ScenarioClass::Full_Init @ 0x00686B20`, exact
     /// calls `0x0068797A..0x006879E3`.
-    pub fn from_sources(fixed_aimd: &IniFile, scenario: &IniFile, game_mode_nonzero: bool) -> Self {
+    pub fn from_sources(
+        fixed_aimd: &IniFile,
+        scenario: &IniFile,
+        bootstrap_rule_profile: impl Into<BootstrapRuleProfile>,
+    ) -> Self {
         let mut registry = Self {
-            game_mode_nonzero,
+            bootstrap_rule_profile: bootstrap_rule_profile.into(),
             ..Self::default()
         };
 
@@ -286,7 +291,7 @@ impl TeamAiIniRegistry {
         registry.fixed_counts.ai_triggers = registry.ai_triggers.len();
         registry.fixed_definitions.ai_triggers = registry.ai_triggers.clone();
         registry.read_ai_triggers(scenario, TeamAiDefinitionSource::Scenario);
-        registry.read_ai_trigger_enables(scenario, game_mode_nonzero);
+        registry.read_ai_trigger_enables(scenario);
 
         registry
     }
@@ -342,12 +347,12 @@ impl TeamAiIniRegistry {
                 [..self.fixed_team_type_read_count]
                 .to_vec(),
             fixed_team_type_read_count: self.fixed_team_type_read_count,
-            game_mode_nonzero: self.game_mode_nonzero,
+            bootstrap_rule_profile: self.bootstrap_rule_profile,
         }
     }
 
-    pub(crate) fn game_mode_nonzero(&self) -> bool {
-        self.game_mode_nonzero
+    pub(crate) const fn bootstrap_rule_profile(&self) -> BootstrapRuleProfile {
+        self.bootstrap_rule_profile
     }
 
     /// TeamTypes are read from fixed AIMD and then from the map before either
@@ -657,10 +662,13 @@ impl TeamAiIniRegistry {
         }
     }
 
-    fn read_ai_trigger_enables(&mut self, scenario: &IniFile, game_mode_nonzero: bool) {
+    fn read_ai_trigger_enables(&mut self, scenario: &IniFile) {
         let Some(section) = scenario.section("AITriggerTypesEnable") else {
             return;
         };
+        let force_enabled = self
+            .bootstrap_rule_profile
+            .forces_listed_ai_trigger_enables();
         let index = identity_index(self.ai_triggers.iter().map(|entry| entry.id.as_str()));
         for id in section.keys() {
             let Some(position) = index.get(&canonical_identity(id)).copied() else {
@@ -673,7 +681,7 @@ impl TeamAiIniRegistry {
             // `0x0041F451` ReadBool(false): a false authored value disables
             // only when `g_GameMode == 0`; every listed key is enabled in
             // skirmish/MP.
-            self.ai_triggers[position].enabled = section.read_bool(id, false) || game_mode_nonzero;
+            self.ai_triggers[position].enabled = section.read_bool(id, false) || force_enabled;
         }
     }
 }
@@ -1043,7 +1051,8 @@ mod tests {
             eighteen_tokens("ordinary listed false", "<none>")
         ));
 
-        let campaign = TeamAiIniRegistry::from_sources(&fixed, &scenario, false);
+        let campaign =
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, BootstrapRuleProfile::Campaign);
         let by_id = |id: &str| {
             campaign
                 .ai_triggers
@@ -1066,7 +1075,8 @@ mod tests {
             "mode zero honors a listed false value"
         );
 
-        let skirmish = TeamAiIniRegistry::from_sources(&fixed, &scenario, true);
+        let skirmish =
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, BootstrapRuleProfile::Multiplayer);
         assert!(
             skirmish
                 .ai_triggers

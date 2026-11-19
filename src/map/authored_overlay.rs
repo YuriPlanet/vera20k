@@ -21,6 +21,7 @@ use crate::map::resolved_terrain::{
 };
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
 
 pub(crate) const NO_OVERLAY_IDENTITY: i32 = -1;
@@ -462,7 +463,7 @@ pub(crate) struct AuthoredOverlayFinalizer<'load, 'resources, H> {
     tiberium_types: &'resources TiberiumTypeRegistry,
     overlay_shp_ids: &'resources BTreeSet<u8>,
     signed_new_ini_format: i32,
-    game_mode_nonzero: bool,
+    bootstrap_rule_profile: BootstrapRuleProfile,
     host: &'load mut H,
 }
 
@@ -475,7 +476,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         tiberium_types: &'resources TiberiumTypeRegistry,
         overlay_shp_ids: &'resources BTreeSet<u8>,
         signed_new_ini_format: i32,
-        game_mode_nonzero: bool,
+        bootstrap_rule_profile: BootstrapRuleProfile,
         host: &'load mut H,
     ) -> Self {
         let cells = LiveOverlayCells::empty_for_terrain(terrain);
@@ -488,7 +489,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
             tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            game_mode_nonzero,
+            bootstrap_rule_profile,
             host,
         }
     }
@@ -501,7 +502,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         tiberium_types: &'resources TiberiumTypeRegistry,
         overlay_shp_ids: &'resources BTreeSet<u8>,
         signed_new_ini_format: i32,
-        game_mode_nonzero: bool,
+        bootstrap_rule_profile: impl Into<BootstrapRuleProfile>,
         host: &'load mut H,
     ) -> Self {
         let cells = LiveOverlayCells::empty_for_terrain(terrain);
@@ -515,7 +516,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
             tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            game_mode_nonzero,
+            bootstrap_rule_profile: bootstrap_rule_profile.into(),
             host,
         }
     }
@@ -610,7 +611,9 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         if !self.overlay_shp_ids.contains(&overlay_id) && flags.cell_anim.is_none() {
             return Ok(());
         }
-        if self.game_mode_nonzero && flags.crate_type {
+        // ReadMapOverlayPacks 0x005FD469..0x005FD47C skips a crate
+        // before construction in nonzero GameMode.
+        if flags.crate_type && !self.bootstrap_rule_profile.loads_authored_crates() {
             return Ok(());
         }
         let packed = (x as i16, y as i16);
@@ -1731,7 +1734,7 @@ mod tests {
             &tiberium_types,
             &crate_shp,
             4,
-            true,
+            BootstrapRuleProfile::Multiplayer,
             &mut rejected_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1751,7 +1754,7 @@ mod tests {
             &tiberium_types,
             &crate_shp,
             4,
-            false,
+            BootstrapRuleProfile::Campaign,
             &mut accepted_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))

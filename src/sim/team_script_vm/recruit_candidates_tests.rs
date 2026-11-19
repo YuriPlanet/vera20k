@@ -65,7 +65,7 @@ fn forming_team(entries: &[(&str, i32)]) -> (Simulation, RuleSet, u64, [u64; 2],
         transport_crossing_required: false,
     });
     let team = vm
-        .construct_team(team_type, owner, true, 0, false, None)
+        .construct_team(team_type, owner, TeamLimitScope::PerHouse, 0, false, None)
         .unwrap();
     (sim, rules, team, e1, e3)
 }

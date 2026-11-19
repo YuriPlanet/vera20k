@@ -28,6 +28,7 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::intern::InternedId;
 use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
 use crate::sim::scenario_session::ScenarioDescriptor;
@@ -319,8 +320,14 @@ fn load_with_assets(
     let bound_scenario_prefix = scenario_prefix_plan
         .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
         .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
-    let team_ai_registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, true)?;
+    // This entry constructs a noncampaign scenario. The exact replay mode
+    // is installed separately for the simulation.
+    let bootstrap_rule_profile = BootstrapRuleProfile::Multiplayer;
+    let team_ai_registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        bootstrap_rule_profile,
+    )?;
     let theater = theater::load_theater(assets, &map.header.theater)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
@@ -341,7 +348,7 @@ fn load_with_assets(
         seed,
         map_name: map_file_name.to_string(),
         theater: map.header.theater.clone(),
-        game_mode_nonzero: true,
+        game_mode_nonzero: bootstrap_rule_profile.uses_multiplayer_rules(),
         no_damage: false,
         // Non-campaign: the session staging word's Harvester Truce byte
         // (`0x005E7495..0x005E74D4`) replaces the map's bit at

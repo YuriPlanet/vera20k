@@ -697,11 +697,7 @@ impl ScenarioGameMode {
         self,
         class: Option<crate::skirmish_modes::MpModeClass>,
     ) -> RulePolicy {
-        let bootstrap = if self.is_nonzero() {
-            BootstrapRuleProfile::Multiplayer
-        } else {
-            BootstrapRuleProfile::Campaign
-        };
+        let bootstrap = self.bootstrap_rule_profile();
         match class {
             Some(class) => {
                 let policy = class.policy();
@@ -716,6 +712,9 @@ impl ScenarioGameMode {
     }
     pub const fn is_nonzero(self) -> bool {
         !matches!(self, Self::Campaign)
+    }
+    pub const fn bootstrap_rule_profile(self) -> BootstrapRuleProfile {
+        BootstrapRuleProfile::from_nonzero(self.is_nonzero())
     }
     /// The stable wire spelling shared by every consumer that names a session's
     /// `GameMode` as text (dashboard telemetry).
@@ -821,6 +820,10 @@ pub struct ScenarioDescriptor {
 }
 
 impl ScenarioDescriptor {
+    pub(crate) const fn bootstrap_rule_profile(&self) -> BootstrapRuleProfile {
+        BootstrapRuleProfile::from_nonzero(self.game_mode_nonzero)
+    }
+
     /// Seed normal scenario initialization from a native recording header.
     ///
     /// Map bounds, theater, objects, and active registration order are rebuilt
