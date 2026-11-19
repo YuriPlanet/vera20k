@@ -286,6 +286,7 @@ impl Simulation {
         let defeat_gate = defeat_pass
             && self.session.game_mode_nonzero()
             && (self.session.binary_frame() as i32) > 0;
+        let outcome_policy = self.session.rule_policy();
         // Logic55B68D reloads the live House count after each complete body.
         // A House's power/radar and activation must precede its own teams,
         // EVA, defeat and production; no global half-body sweeps intervene.
@@ -302,10 +303,7 @@ impl Simulation {
                 self.assess_house_derived_state(owner, rules, frame_effects);
                 self.update_house_anger_and_activation(owner, rules);
                 self.houses.get(&owner).and_then(|house| {
-                    house.pending_outcome(
-                        self.session.binary_frame() as i32,
-                        self.session.game_mode_nonzero(),
-                    )
+                    house.pending_outcome(self.session.binary_frame() as i32, outcome_policy)
                 })
             };
             if let Some(kind) = kind {

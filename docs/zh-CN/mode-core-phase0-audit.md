@@ -78,6 +78,11 @@ $map = (Resolve-Path target/scale/mode-core-match30.map).Path
 活跃小队继续由 `TeamScriptVm` 持有。普通创建按战役全局或非零模式逐阵营执行 `Max=`，AI 触发候选筛选继续逐阵营检查，触发器建队与增援沿用已有豁免。非零模式下，从未满编的空队在严格超过 `DissolveUnfilledTeamDelay=` 后解散。满足离场条件时，事件 23 仍先于销毁。
 [小队存续与创建](../../src/sim/team_script_vm.rs) · [AI 触发筛选](../../src/sim/ai_team_creation.rs)
 
-`AllowWin`、`Paranoid`、基地建造、`DoubleOwned=`、威胁与经济决策拥有各自的原版调用条件，按各自行为链继续迁移。
+`Paranoid`、基地建造、`DoubleOwned=`、威胁与经济决策拥有各自的原版调用条件，按各自行为链继续迁移。
 
 在 `48e858260` 和首切片上分别按 R03 的同一组参数运行 300 帧，终局哈希均为 `a442638ed2f52f75`。两次运行的预热后平均耗时分别为 77.34 和 61.02 ms，全程 P95 分别为 93.05 和 74.39 ms。耗时各取一次样本。
+
+### AllowWin 胜利门控
+
+实时 House 更新和挂起帧的存档恢复校验都通过 `HouseState::pending_outcome` 使用同一条规则。结果计时器到期后，单人战役的胜利仍受正数 `AllowWin` 计数阻塞。非零模式的胜利和各模式的失败只检查原有结果计时器。地图 TagType 注册和活动 Tag 析构继续分别持有计数与 60 帧计时器写入。
+[House 判定](../../src/sim/house_state.rs) · [挂起帧恢复](../../src/sim/world/master_frame.rs) · [Tag 生命周期](../../src/sim/trigger_runtime.rs)
