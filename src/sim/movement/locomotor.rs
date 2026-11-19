@@ -96,7 +96,9 @@ pub struct LocomotorState {
     runtime_payload: LocomotorRuntimePayload,
     /// Which spatial layer the unit currently occupies: the Foot's position,
     /// cached on the active object. `Bridge` is the Ground layer with the
-    /// Foot's OnBridge set.
+    /// Foot's OnBridge set. A Fly or Jumpjet answers its layer from its
+    /// height and a Rocket as Air (`world::entity_layer`); nothing reads a
+    /// Fly's or Rocket's cache, and only VeraX AutoLoad reads a Jumpjet's.
     layer: MovementLayer,
     /// Stay airborne after reaching destination (BalloonHover=yes).
     balloon_hover: bool,
