@@ -707,6 +707,9 @@ pub(crate) struct LauncherOptionsLabels {
     /// menu's Game Controls page.
     pub(crate) back: String,
     pub(crate) game_controls: String,
+    /// Localized states beside the two checkbox lamps in VERA's Esc menu.
+    yes: String,
+    no: String,
     low: String,
     high: String,
     easy: String,
@@ -728,6 +731,8 @@ impl LauncherOptionsLabels {
         Self {
             back: in_game(0),
             game_controls: in_game(1),
+            yes: csf("GUI:Yes").unwrap_or_else(|| "Yes".to_owned()),
+            no: csf("GUI:No").unwrap_or_else(|| "No".to_owned()),
             options: label(0),
             main_menu: label(1),
             keyboard: label(2),
@@ -1575,6 +1580,10 @@ impl OptionsDialogState {
         if !(0..18).contains(&frame.local_x) || !(0..18).contains(&frame.local_y) {
             return;
         }
+        self.toggle_checkbox(id);
+    }
+
+    fn toggle_checkbox(&mut self, id: LauncherCheckboxId) {
         let slot = match id {
             LauncherCheckboxId::Tooltips => &mut self.values.tooltips,
             LauncherCheckboxId::TargetLines => &mut self.values.target_lines,
