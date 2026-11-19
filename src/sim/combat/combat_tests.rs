@@ -10699,7 +10699,9 @@ fn gsi_08_12_a_dont_score_victim_pays_no_experience() {
 
     for victim_id in 2..=6u64 {
         let mut victim = make_entity_owned(victim_id, "HTNK", 8, 5, 1, "Americans");
-        victim.tracking_facts.set_dont_score_for_test(true);
+        victim
+            .tracking_facts_mut_for_test()
+            .set_dont_score_for_test(true);
         store.insert(victim);
         install_entity_attack_target_for_test(&mut store, 1, victim_id);
         // Each victim is a fresh shot: clear the reload the last kill armed.

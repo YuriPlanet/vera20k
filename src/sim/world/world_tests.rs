@@ -2697,8 +2697,12 @@ fn insert_house_with_counts(
 ) -> crate::sim::intern::InternedId {
     let owner = sim.interner.intern(name);
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
-    house.tracking_mut().set_buildings_for_test(buildings);
-    house.tracking_mut().set_active_units_for_test(units);
+    house
+        .tracking_mut_for_test()
+        .set_buildings_for_test(buildings);
+    house
+        .tracking_mut_for_test()
+        .set_active_units_for_test(units);
     sim.houses.register(house);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
@@ -2726,11 +2730,10 @@ fn insert_test_entity_for_owner(
     entity.set_category_for_test(category);
     sim.substrate.entities.insert(entity);
     // As its construction would: Add_Tracking.
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         stable_id,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
 }
 
@@ -4648,13 +4651,13 @@ fn gsi_05_16_a_captured_insignificant_garrison_does_not_keep_its_house_alive() {
     );
     garrison.set_owner_for_test(civilian);
     garrison.set_type_ref_for_test(sim.interner.intern("CAGAS01"));
-    garrison.tracking_facts = crate::sim::house_tracking::TrackingFacts::insignificant_for_test();
+    *garrison.tracking_facts_mut_for_test() =
+        crate::sim::house_tracking::TrackingFacts::insignificant_for_test();
     sim.substrate.entities.insert(garrison);
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         1,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
 
     // The passenger reconciler uses this chokepoint when the first occupant
@@ -4776,7 +4779,7 @@ fn one_way_alliance_does_not_end_the_game() {
         sim.houses
             .get_mut(&opponent)
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_buildings_for_test(0);
         check_defeat_now(&mut sim, Some(&rules));
         assert!(sim.houses[&opponent].is_defeated());

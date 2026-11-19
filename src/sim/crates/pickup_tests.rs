@@ -1825,11 +1825,11 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
             EntityCategory::Structure,
             "GACNST",
         );
-        sim.houses
-            .get_mut(&owner)
-            .unwrap()
-            .tracking_mut()
-            .add_tracking(sim.substrate.entities.get_mut(yard).unwrap());
+        crate::sim::house_tracking::HouseTracking::register_object(
+            &mut sim.substrate,
+            &mut sim.houses,
+            yard,
+        );
         let actor = sim
             .spawn_object("MTNK", "Americans", 10, 11, 0, &rules)
             .unwrap();

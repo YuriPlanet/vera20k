@@ -275,6 +275,7 @@ pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
 pub use substrate::DeferredDeleteQueue;
 pub(crate) use substrate::{DeferredDeleteTicket, ObjectKind, ObjectSubstrate};
 pub use substrate::{EnterOrderCounter, StableIdCursor};
+pub(in crate::sim) use world_spawn::TypeProjectionWrite;
 pub(crate) use world_spawn::{CrushableFacts, MoverFacts, TypeFacts};
 pub use world_spawn::{GeneratedTechnoInitError, GeneratedTechnoInitTable};
 
@@ -302,6 +303,7 @@ use crate::sim::dirty_cells::DirtyCells;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
+use crate::sim::house_tracking::HouseTracking;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
@@ -596,8 +598,8 @@ pub struct AresUnitLostLine {
     pub eva: InternedId,
     /// A Foot creates the radar event; a building creates none.
     pub radar_event: bool,
-}
 
+}
 
 /// The native playback destination for a map-authored sound reference.
 #[derive(Debug, Clone)]
@@ -6254,32 +6256,6 @@ impl Simulation {
             .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()))
     }
 
-    /// Apply `house_tracking`'s Add_Tracking or Remove_Tracking for an object
-    /// on its owner's house.
-    pub(in crate::sim) fn update_house_tracking(
-        substrate: &mut ObjectSubstrate,
-        houses: &mut Houses,
-        stable_id: u64,
-        update: fn(
-            &mut crate::sim::house_tracking::HouseTracking,
-            &mut crate::sim::game_entity::GameEntity,
-        ),
-    ) {
-        let Some(owner) = substrate
-            .entities
-            .get(stable_id)
-            .map(crate::sim::game_entity::GameEntity::owner)
-        else {
-            return;
-        };
-        if let (Some(entity), Some(house)) = (
-            substrate.entities.get_mut(stable_id),
-            houses.get_mut(&owner),
-        ) {
-            update(house.tracking_mut(), entity);
-        }
-    }
-
     /// `BuildingClass::OnConstructionComplete`'s self-heal grant
     /// (`0x00446382..0x004463B4`): a structure joins its owner's house with the
     /// type's `InfantryGainSelfHeal` (`+0x1564` → house `+0x164`) and
@@ -6384,8 +6360,7 @@ impl Simulation {
             return;
         };
         if let Some(house) = self.houses.get_mut(&entity.owner()) {
-            let factors = house.cost_factors();
-            house.tracking_mut().added_to_game(entity, &factors);
+            house.add_to_game_tracking(entity);
             if entity.category() == EntityCategory::Structure {
                 let drain = power_system::building_power_drain(entity, rules, &self.interner);
                 self.power_states
@@ -6420,7 +6395,7 @@ impl Simulation {
         let owner = entity.owner();
         let structure = entity.category() == EntityCategory::Structure;
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.tracking_mut().removed_from_game_prefix(entity);
+            house.remove_from_game_tracking_prefix(entity);
         }
         self.powered_center_removed(stable_id, rules, effects);
         //50277B resumes after the callback prelude. Pin the original House
@@ -6428,8 +6403,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            let factors = house.cost_factors();
-            house.tracking_mut().removed_from_game(entity, &factors);
+            house.remove_from_game_tracking(entity);
         }
         // With Ares: the building's store leaves the House's
         // (`0x00502801..0x00502821`, `sim::ares_tiberium_storage`).
@@ -7010,19 +6984,13 @@ impl Simulation {
         }
         #[cfg(feature = "phobos")]
         self.phobos_tracking_change_owner(stable_id, new_owner);
-        Self::update_house_tracking(
+        // 7015E6 adds the object to its new House before the actor's owner store.
+        HouseTracking::transfer_registration(
             &mut self.substrate,
             &mut self.houses,
             stable_id,
-            crate::sim::house_tracking::HouseTracking::remove_tracking,
+            new_owner,
         );
-        //7015E6 receives the NEW House before the object owner changes.
-        //Call the one native Add_Tracking owner with that explicit receiver.
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            && let Some(house) = self.houses.get_mut(&new_owner)
-        {
-            house.tracking_mut().add_tracking(entity);
-        }
         // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
         // calls and precedes both the capture stats and owner pointer store.
         // Buildings retain their own existing44936E/449379 recheck tail.
@@ -7048,7 +7016,7 @@ impl Simulation {
         {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
-            if !entity.tracking_facts.dont_score() {
+            if !entity.tracking_facts().dont_score() {
                 house.stats_mut().record_kill(category, old_house);
             }
         }
@@ -7126,12 +7094,7 @@ impl Simulation {
         // and joins the new one's (IncrementFactoryCount, `0x00448CDD`),
         // whether it is in limbo or not.
         if let Some(entity) = self.substrate.entities.get(stable_id) {
-            if let Some(house) = self.houses.get_mut(&old_owner) {
-                house.tracking_mut().recount(entity);
-            }
-            if let Some(house) = self.houses.get_mut(&new_owner) {
-                house.tracking_mut().increment_factory_count(entity);
-            }
+            HouseTracking::transfer_factory(&mut self.houses, entity, old_owner, new_owner);
         }
         // A Helipad's docks leave the old house's AirportDocks
         // (`0x00448B4C..0x00448B6A`) and join the new one's
@@ -7147,7 +7110,7 @@ impl Simulation {
         {
             for (owner, delta) in [(old_owner, docks.wrapping_neg()), (new_owner, docks)] {
                 if let Some(house) = self.houses.get_mut(&owner) {
-                    house.tracking_mut().add_airport_docks(delta);
+                    house.add_airport_docks(delta);
                 }
             }
         }

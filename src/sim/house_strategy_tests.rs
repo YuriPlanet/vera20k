@@ -313,14 +313,16 @@ fn the_strategy_matches_native() {
             }
         }
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.tracking_mut().set_buildings_for_test(counted);
+        house
+            .tracking_mut_for_test()
+            .set_buildings_for_test(counted);
         // The rows answer Check_Build_Need with `need`. A refinery and a
         // gatherer make VERA's answer 0, as for -1, which the urgency loop
         // never matches; without them it is 1, and Manage_Build_Queue,
         // whose rows only record the call, finds no economy type in these
         // rules to rebuild.
         if !(1..=4).contains(&int(&row["need"])) {
-            house.tracking_mut().set_economy_for_test(1, 1, 0);
+            house.tracking_mut_for_test().set_economy_for_test(1, 1, 0);
         }
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
@@ -431,7 +433,7 @@ fn the_fire_sale_matches_native() {
             .collect();
         let house = sim.houses.get_mut(&owner).unwrap();
         house
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_buildings_for_test(int(&row["current"]));
 
         fire_sale(
@@ -934,10 +936,10 @@ fn last_legs_fixture(general: &str) -> (Simulation, RuleSet, InternedId, u64) {
     let owner = names[0];
     let plain = spawn_building(&mut sim, owner, "PLAIN", 1000, false);
     let house = sim.houses.get_mut(&owner).unwrap();
-    house.tracking_mut().set_buildings_for_test(1);
+    house.tracking_mut_for_test().set_buildings_for_test(1);
     // A destination and a gatherer make Check_Build_Need answer 0, so only
     // the no-factory block acts.
-    house.tracking_mut().set_economy_for_test(1, 1, 0);
+    house.tracking_mut_for_test().set_economy_for_test(1, 1, 0);
     house.economy_mut().set_credits_for_test(1000);
     sim.session.set_binary_frame_for_test(1000);
     (sim, rules, owner, plain)
