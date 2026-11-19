@@ -61,6 +61,7 @@ mod cooperative_round;
 #[cfg(feature = "debug-tools")]
 pub(crate) mod debug_tools;
 pub(crate) mod diagnostics;
+pub(crate) mod quit_guard;
 /// Which screen the game opens on: the Display list's own translation between
 /// VERA's profile value and the window system's monitors.
 pub(crate) mod display_target;

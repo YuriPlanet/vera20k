@@ -1421,6 +1421,24 @@ impl ApplicationHandler for App {
                     let is_escape: bool =
                         code == KeyCode::Escape && event.state.is_pressed() && !event.repeat;
                     let in_game: bool = state.frontend.screen == GameScreen::InGame;
+                    // macOS: when winit delivers Cmd+Q itself (the monitor
+                    // left it alone), a running match treats it like Escape;
+                    // the menus keep AppKit's own quit.
+                    #[cfg(target_os = "macos")]
+                    if in_game
+                        && event.state.is_pressed()
+                        && !event.repeat
+                        && crate::app::quit_guard::is_quit_shortcut(
+                            event.text.as_deref(),
+                            state.platform.live_modifiers.super_key(),
+                            state.platform.live_modifiers.control_key(),
+                            state.platform.live_modifiers.alt_key(),
+                        )
+                    {
+                        Self::apply_quit_action(state);
+                        state.platform.window.request_redraw();
+                        return;
+                    }
                     let paused_at_event = in_game && state.match_state.paused();
                     let locally_paused_at_event = in_game && state.match_state.local_paused();
 
@@ -2070,6 +2088,18 @@ impl ApplicationHandler for App {
         // For the performance panel's Ticks row.
         if let Some(state) = self.state.as_mut() {
             state.platform.frame_pacer.count_loop_turn();
+            // macOS Cmd+Q during a match becomes the pause menu instead of a
+            // process exit (see `quit_guard`). The monitor only records it
+            // while a match is running; serving it here keeps the request out
+            // of the render path and clears it when the menus are up.
+            #[cfg(target_os = "macos")]
+            {
+                let in_match = state.frontend.screen == GameScreen::InGame;
+                crate::app::quit_guard::set_in_match(in_match);
+                if crate::app::quit_guard::take_quit_request() && in_match {
+                    Self::apply_quit_action(state);
+                }
+            }
         }
         // A tick on the simulation thread has ended (its wake brought this
         // call): finish it, replay the window events it held, then service

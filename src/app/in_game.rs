@@ -324,6 +324,19 @@ impl App {
     /// Existing modals handle their own Escape. In the world, ProcessCommand
     /// 55DEE0 resolves bindings first; Options is its55E079 fallback. Opening
     /// B5 before that lookup would consume a reloaded custom Escape binding.
+    /// Serves a Cmd+Q that arrived during a match: exactly what Escape does
+    /// where it lands (close a modal, or open the pause menu from the world).
+    #[cfg(target_os = "macos")]
+    pub(super) fn apply_quit_action(state: &mut AppState) {
+        use crate::app::quit_guard::QuitAction;
+        match crate::app::quit_guard::quit_action(true, Self::in_game_menu_owns_escape(state)) {
+            QuitAction::CloseMenu => Self::route_in_game_menu_escape(state),
+            QuitAction::OpenPauseMenu => crate::app::input::dispatch::open_pause_menu(state),
+            QuitAction::Ignore => {}
+        }
+        state.platform.window.request_redraw();
+    }
+
     pub(super) fn in_game_menu_owns_escape(state: &AppState) -> bool {
         crate::ui::pause_menu::escape_belongs_to_modal_machine(
             state.match_state.match_presentation.in_game_menu,
