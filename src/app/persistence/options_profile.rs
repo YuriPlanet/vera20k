@@ -33,9 +33,7 @@ const AUDIO_SECTION: &str = "Audio";
 const WONLINE_SECTION: &str = "WOnline";
 const NETWORK_SECTION: &str = "Network";
 /// VERA's own display preferences. gamemd never reads this section.
-pub(super) const VERA_SECTION: &str = "VERA";
-/// `[VERA] DirectX12=`, which `directx12_start` also turns off.
-pub(super) const DIRECTX12_KEY: &str = "DirectX12";
+const VERA_SECTION: &str = "VERA";
 /// Destination units `OptionsClass__ReadFromINI` passes for NetID (`push 0xC8`).
 const NET_ID_UNITS: usize = 0xC8;
 /// Destination units `[VERA] Display=`'s ReadString copies into. A VERA key, so
@@ -192,12 +190,6 @@ pub(crate) struct RetailOptionsProfile {
     /// (`GpuContext::set_vsync`). On by default; untick it for lower input
     /// latency, with tearing. Presentation only.
     pub(crate) vsync: bool,
-    /// `[VERA] DirectX12=`: on Windows the game draws through DirectX 12
-    /// instead of Vulkan, which wgpu takes first (`GpuContext::new`). Off by
-    /// default; read at launch, so a change applies at the next start, and a
-    /// start on it that never finished turns it off
-    /// (`persistence::directx12_start`). Presentation only.
-    pub(crate) directx12: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
@@ -409,7 +401,6 @@ impl Default for RetailOptionsProfile {
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
-            directx12: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -452,7 +443,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 39],
+    pub(crate) vera: [(&'static str, String); 38],
 }
 
 impl RetailOptionsLoad {
@@ -666,7 +657,6 @@ impl RetailOptionsProfile {
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.vsync = vera.read_bool("VSync", self.vsync);
-            self.directx12 = vera.read_bool(DIRECTX12_KEY, self.directx12);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -880,7 +870,6 @@ impl RetailOptionsProfile {
                     format_bool(self.smooth_online_menus).to_string(),
                 ),
                 ("VSync", format_bool(self.vsync).to_string()),
-                (DIRECTX12_KEY, format_bool(self.directx12).to_string()),
                 (
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
@@ -1878,22 +1867,6 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let ini = IniFile::from_bytes(&off).unwrap();
         assert!(!ini.section(VERA_SECTION).unwrap().read_bool("VSync", true));
         assert!(!load_snapshot(&startup, &off).retained_profile.vsync);
-    }
-
-    #[test]
-    fn directx12_starts_off_and_a_ticked_box_round_trips() {
-        let startup = RetailStartupOptions::default();
-        assert!(
-            !load_snapshot(&startup, b"[VERA]\n")
-                .retained_profile
-                .directx12
-        );
-        let on = RetailOptionsProfile {
-            directx12: true,
-            ..RetailOptionsProfile::default()
-        }
-        .transform_settings(b"");
-        assert!(load_snapshot(&startup, &on).retained_profile.directx12);
     }
 
     #[test]
