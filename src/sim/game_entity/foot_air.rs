@@ -56,7 +56,12 @@ impl GameEntity {
 
     /// The bucket and enter order write, made only by
     /// [`EntityStore::set_air_membership`](crate::sim::entity_store::EntityStore::set_air_membership).
-    pub(crate) fn set_air_membership_from_store(&mut self, bucket: Option<u16>, enter_order: u64) {
+    pub(crate) fn set_air_membership_from_store(
+        &mut self,
+        bucket: Option<u16>,
+        enter_order: u64,
+        _: crate::sim::entity_store::AirMembershipAuthority,
+    ) {
         self.foot_air.air_spatial_bucket = bucket;
         self.foot_air.air_spatial_enter_order = enter_order;
     }

@@ -51,7 +51,11 @@ impl GameEntity {
     }
     /// UpdateSparkle10062FE0 holds its new sparkle, through
     /// [`EntityStore::hold_emp_sparkle`](crate::sim::entity_store::EntityStore::hold_emp_sparkle).
-    pub(in crate::sim) fn hold_emp_sparkle(&mut self, anim: u64) {
+    pub(in crate::sim) fn hold_emp_sparkle(
+        &mut self,
+        anim: u64,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) {
         self.emp.sparkle = Some(anim);
     }
     pub(crate) fn emp_anim_pointer_expired(&mut self, expired: u64) {

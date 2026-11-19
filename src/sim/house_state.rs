@@ -1319,9 +1319,10 @@ impl HouseState {
 
     // ---- Sub-owners: their own operations carry the rules ----------------
 
-    /// `sim::house_tracking` changes these counts together with each actor's
-    /// infantry latches.
-    pub(super) fn tracking_mut(&mut self) -> &mut crate::sim::house_tracking::HouseTracking {
+    pub(super) fn tracking_mut(
+        &mut self,
+        _: crate::sim::house_tracking::TrackingWrite,
+    ) -> &mut crate::sim::house_tracking::HouseTracking {
         &mut self.tracking
     }
 

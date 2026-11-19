@@ -151,6 +151,10 @@ mod phobos;
 #[cfg(feature = "phobos")]
 pub(crate) use phobos::{PhobosLimboControl, PhobosPlacement};
 
+/// House counts and the infantry latches that gate them are written together.
+pub(super) struct TrackingWrite(());
+const WRITE: TrackingWrite = TrackingWrite(());
+
 /// The type facts the counters test, fixed when the Techno is constructed
 /// ([`TrackingFacts::of`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -587,25 +591,25 @@ pub struct HouseTracking {
 
 impl HouseState {
     pub(super) fn add_airport_docks(&mut self, docks: i32) {
-        self.tracking_mut().add_airport_docks(docks);
+        self.tracking_mut(WRITE).add_airport_docks(docks);
     }
 
     pub(super) fn limbo_airport_docks(&mut self, docks: i32) {
-        self.tracking_mut().limbo_airport_docks(docks);
+        self.tracking_mut(WRITE).limbo_airport_docks(docks);
     }
 
     pub(super) fn add_to_game_tracking(&mut self, entity: &GameEntity) {
         let factors = self.cost_factors();
-        self.tracking_mut().added_to_game(entity, &factors);
+        self.tracking_mut(WRITE).added_to_game(entity, &factors);
     }
 
     pub(super) fn remove_from_game_tracking_prefix(&mut self, entity: &GameEntity) {
-        self.tracking_mut().removed_from_game_prefix(entity);
+        self.tracking_mut(WRITE).removed_from_game_prefix(entity);
     }
 
     pub(super) fn remove_from_game_tracking(&mut self, entity: &GameEntity) {
         let factors = self.cost_factors();
-        self.tracking_mut().removed_from_game(entity, &factors);
+        self.tracking_mut(WRITE).removed_from_game(entity, &factors);
     }
 }
 
@@ -622,7 +626,7 @@ impl HouseTracking {
         if let Some(entity) = substrate.entities.get_mut(id)
             && let Some(house) = houses.get_mut(&entity.owner())
         {
-            update(house.tracking_mut(), entity);
+            update(house.tracking_mut(WRITE), entity);
         }
     }
 
@@ -648,7 +652,7 @@ impl HouseTracking {
         if let Some(entity) = substrate.entities.get_mut(id)
             && let Some(house) = houses.get_mut(&new_owner)
         {
-            house.tracking_mut().add_tracking(entity);
+            house.tracking_mut(WRITE).add_tracking(entity);
         }
     }
 
@@ -677,10 +681,10 @@ impl HouseTracking {
         new_owner: InternedId,
     ) {
         if let Some(house) = houses.get_mut(&old_owner) {
-            house.tracking_mut().recount(entity);
+            house.tracking_mut(WRITE).recount(entity);
         }
         if let Some(house) = houses.get_mut(&new_owner) {
-            house.tracking_mut().increment_factory_count(entity);
+            house.tracking_mut(WRITE).increment_factory_count(entity);
         }
     }
 
@@ -726,9 +730,9 @@ impl HouseTracking {
             }
             EntityCategory::Infantry => {
                 let count_total = if delta > 0 {
-                    entity.house_tracking_latches_mut().add_total()
+                    entity.house_tracking_latches_mut(WRITE).add_total()
                 } else {
-                    entity.house_tracking_latches_mut().remove_total()
+                    entity.house_tracking_latches_mut(WRITE).remove_total()
                 };
                 if count_total {
                     self.infantry = self.infantry.wrapping_add(delta);
@@ -750,7 +754,7 @@ impl HouseTracking {
     /// (`0x0051A327..0x0051A348`): a set `+0x438` lowers the total and clears.
     fn absorber_entry(&mut self, entity: &mut GameEntity) {
         if entity.category() == EntityCategory::Infantry
-            && entity.house_tracking_latches_mut().remove_total()
+            && entity.house_tracking_latches_mut(WRITE).remove_total()
         {
             self.infantry = self.infantry.wrapping_sub(1);
         }
@@ -760,7 +764,7 @@ impl HouseTracking {
     /// `0x00442F6D..0x00442FA1`, Mission_Selling `0x0044A510..0x0044A548`).
     fn restore_absorbed_infantry(&mut self, entity: &mut GameEntity) {
         if entity.category() == EntityCategory::Infantry
-            && entity.house_tracking_latches_mut().restore_absorbed()
+            && entity.house_tracking_latches_mut(WRITE).restore_absorbed()
         {
             self.infantry = self.infantry.wrapping_add(1);
         }
@@ -1199,7 +1203,7 @@ impl Simulation {
         ) else {
             return;
         };
-        house.tracking_mut().absorber_entry(entity);
+        house.tracking_mut(WRITE).absorber_entry(entity);
     }
 
     /// Successful reveals from a Bio Reactor, SpawnSurvivors or Selling restore
@@ -1226,7 +1230,7 @@ impl Simulation {
         ) else {
             return;
         };
-        house.tracking_mut().restore_absorbed_infantry(entity);
+        house.tracking_mut(WRITE).restore_absorbed_infantry(entity);
     }
 }
 
@@ -1240,7 +1244,9 @@ impl crate::sim::world::ObjectSubstrate {
             .get_mut(stable_id)
             .filter(|entity| entity.category() == EntityCategory::Infantry)
         {
-            entity.house_tracking_latches_mut().set_absorbed(absorbed);
+            entity
+                .house_tracking_latches_mut(WRITE)
+                .set_absorbed(absorbed);
         }
     }
 }
