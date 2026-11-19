@@ -136,8 +136,7 @@ impl Selection {
     }
 
     /// `ObjectClass::Select`'s write. The MCV deploy and undeploy
-    /// reselections (`world_spawn`) and the Ares rubble kick-outs
-    /// (`ares_rubble`) still write it directly.
+    /// reselections (`world_spawn`) still write it directly.
     pub(in crate::sim) fn select(&mut self) {
         self.selected = true;
     }
@@ -3058,9 +3057,8 @@ impl Simulation {
     /// ([`Self::select_unselects_all`]) before emitting the ordered Select
     /// command. Keep the graphical-client B73550 gate there: replaying this
     /// command must not depend on a renderer.
-    /// The MCV deploy and undeploy reselections and the Ares rubble
-    /// kick-outs still write the byte directly ([`Selection::select`]) and
-    /// raise no event 33.
+    /// The MCV deploy and undeploy reselections still write the byte
+    /// directly ([`Selection::select`]) and raise no event 33.
     pub(crate) fn try_select_object(
         &mut self,
         stable_id: u64,
