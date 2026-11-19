@@ -550,9 +550,10 @@ mod tests {
             glam::IVec3::new(256, 256, 0),
             false,
             &mut packets,
+            &rules,
         )
         .unwrap();
-        sim.admit_death_debris(packets);
+        sim.admit_death_debris(packets, &rules);
         let id = sim.voxel_anims().ids()[0];
         sim.visit_voxel_anim(id, &rules, FrameEffects::default())
             .unwrap();

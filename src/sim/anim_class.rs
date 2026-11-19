@@ -6833,7 +6833,14 @@ mod long_tail_contract_tests {
                 translucent_ramp: true,
                 current_frame,
                 end_frame: 15,
+                #[cfg(not(feature = "phobos"))]
                 explicit_translucency: 0,
+                #[cfg(feature = "phobos")]
+                translucency_level: None,
+                #[cfg(feature = "phobos")]
+                translucency_cloaked_level: None,
+                #[cfg(feature = "phobos")]
+                cloaked_translucency_answers: false,
                 instance_ramp: 0,
             });
             assert_eq!(

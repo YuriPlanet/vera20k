@@ -35,7 +35,7 @@ fn cloak_transitions_record_the_phobos_anim_edge() {
         .get_mut(unit)
         .unwrap()
         .cloak
-        .get_or_insert_with(|| CloakRuntime::new(0));
+        .get_or_insert_with(|| Box::new(CloakRuntime::new(0)));
     let start = cloak.start_cloaking(0, 1, false);
     assert!(start.transitioned);
     assert!(cloak.take_pending_anim().is_some());

@@ -55,7 +55,9 @@ fn hunt_scene(fix: bool, hunter: &str) -> (Option<u64>, u64, Option<DisplayLayer
     // A freshly constructed aircraft is still on the Ground layer; its takeoff
     // makes the Display re-submit it to Air. Stand in for that re-submission:
     // the gate under test reads `LastLayer`, which the Display owns.
-    Simulation::submit_overhead_display(&mut sim.substrate, aircraft, DisplayLayer::AIR);
+    sim.substrate
+        .display
+        .submit(aircraft, Some(DisplayLayer::AIR));
     let layer = sim.display_layers().layer_of(aircraft);
     let held = sim
         .greatest_threat_represented(&rules, None, hunter_id, ScanMission::Hunt, None)

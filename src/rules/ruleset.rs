@@ -17498,10 +17498,18 @@ Projectile=Invisible
         ))
         .unwrap();
         assert_eq!(rules.general.tunnel_speed, SimFixed::MAX);
-        assert_eq!(rules.general.ship_sinking_weight, SimFixed::MIN);
+        // The two weights are native doubles: an out-of-range literal scans as
+        // infinity and the bits are kept.
+        assert_eq!(
+            rules.general.ship_sinking_weight,
+            crate::util::native_x87::NativeF64Bits::from_bits(f64::NEG_INFINITY.to_bits())
+        );
         assert_eq!(rules.radiation.light_factor, SimFixed::MAX);
         let tank = rules.object("TANK").unwrap();
-        assert_eq!(tank.weight, SimFixed::MAX);
+        assert_eq!(
+            tank.weight,
+            crate::util::native_x87::NativeF64Bits::from_bits(f64::INFINITY.to_bits())
+        );
         assert_eq!(tank.jumpjet_params.speed, SimFixed::MAX);
         // The infinite spin keeps the constructor value.
         let piece = rules.voxel_anim_type(rules.voxel_anim_type_id_by_name("PIECE").unwrap());

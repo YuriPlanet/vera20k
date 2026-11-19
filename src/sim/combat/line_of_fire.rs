@@ -1241,6 +1241,7 @@ mod tests {
             1,
             7,
             MovementLayer::Ground,
+            None,
             CellListInsertion::AppendBuilding,
         );
         let firer = test_intern("Firer");
@@ -1280,9 +1281,14 @@ mod tests {
         };
         let rules = rules_for("");
         assert_eq!(blocks(&rules, "GUN", None, &enemies), Some((4, 1)));
-        assert_eq!(blocks(&rules, "GUN", Some(7), &enemies), "its own target");
+        assert_eq!(
+            blocks(&rules, "GUN", Some(7), &enemies),
+            None,
+            "its own target"
+        );
         assert_eq!(
             blocks(&rules, "PIERCE", None, &enemies),
+            Some((4, 1)),
             "SolidLevel 1 >= 1"
         );
         assert_eq!(

@@ -48,6 +48,7 @@ fn scene(delay_key: &str, with_owner: bool) -> (Simulation, RuleSet, u64, Option
         IVec3::new(10 * 256, 10 * 256, 0),
         true,
         &mut Vec::new(),
+        &rules,
     )
     .expect("the piece stays inside the launch domain");
     let id = sim.substrate.voxel_anims.ids()[0];

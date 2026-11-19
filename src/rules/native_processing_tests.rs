@@ -4658,7 +4658,7 @@ fn phobos_shadow_indices_frames_read_the_image_section_on_every_pass() {
 fn audio_visual_dig_retains_its_anim_type_across_layers() {
     let fresh = RuleSet::from_ini(&IniFile::empty()).unwrap();
     assert!(
-        fresh.general.dig_anim.is_empty(),
+        fresh.general.dig_anim.is_none(),
         "ctor665A10 leaves Rules+294 null"
     );
     let mut layers = RulesLayerStack::new(IniFile::from_str("[AudioVisual]\nDig=DIGANIM\n"));
@@ -4669,7 +4669,7 @@ fn audio_visual_dig_retains_its_anim_type_across_layers() {
     let processed = layers.process().unwrap();
     let rules = RuleSet::from_processed_rules(&processed).unwrap();
     assert_eq!(
-        rules.general.dig_anim, "DIGANIM",
+        rules.general.dig_anim.as_deref(), Some("DIGANIM"),
         "a later layer without the key keeps the previous AnimType"
     );
     layers.push(
@@ -4679,7 +4679,7 @@ fn audio_visual_dig_retains_its_anim_type_across_layers() {
     let processed = layers.process().unwrap();
     let rules = RuleSet::from_processed_rules(&processed).unwrap();
     assert_eq!(
-        rules.general.dig_anim, "DIGOUT",
+        rules.general.dig_anim.as_deref(), Some("DIGOUT"),
         "a present key replaces the pointer"
     );
 }

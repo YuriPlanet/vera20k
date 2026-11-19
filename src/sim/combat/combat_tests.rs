@@ -3448,10 +3448,9 @@ fn a_freshly_mind_controlled_source_is_shielded_from_its_former_allies_retaliati
         controller.set_owner_for_test(sim.interner.intern("Source"));
         controller.set_type_ref_for_test(sim.interner.intern("SOURCE"));
         controller.set_category_for_test(EntityCategory::Unit);
-        controller.capture_manager = Some(CaptureManagerState::with_nodes_for_test(&[(
-            GATE_SOURCE,
-            original_owner,
-        )]));
+        controller.capture_manager = Some(Box::new(
+            CaptureManagerState::with_nodes_for_test(&[(GATE_SOURCE, original_owner)]),
+        ));
         sim.substrate.entities.insert(controller);
         sim.substrate
             .entities
@@ -3519,10 +3518,10 @@ fn a_freshly_mind_controlled_source_is_shielded_from_its_former_allies_retaliati
         .entities
         .get_mut(CONTROLLER)
         .unwrap()
-        .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&[(
-        GATE_SOURCE,
-        origin,
-    )]));
+        .capture_manager = Some(Box::new(CaptureManagerState::with_nodes_for_test(&[(
+            GATE_SOURCE,
+            origin,
+        )])));
     sim.house_alliances_mut_for_test()
         .insert("VICTIM".to_string(), ["ORIGIN".to_string()].into());
     sim.substrate
@@ -3554,10 +3553,10 @@ fn a_freshly_mind_controlled_source_is_shielded_from_its_former_allies_retaliati
         .entities
         .get_mut(CONTROLLER)
         .unwrap()
-        .capture_manager = Some(CaptureManagerState::with_nodes_for_test(&[(
-        GATE_SOURCE,
-        source_owner,
-    )]));
+        .capture_manager = Some(Box::new(CaptureManagerState::with_nodes_for_test(&[(
+            GATE_SOURCE,
+            source_owner,
+        )])));
     sim.substrate
         .entities
         .get_mut(GATE_SOURCE)

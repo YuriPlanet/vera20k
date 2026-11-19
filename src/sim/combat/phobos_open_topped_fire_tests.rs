@@ -70,7 +70,7 @@ fn scene(decloak_to_fire: bool) -> (Simulation, RuleSet, u64, u64) {
     sim.entities_mut_for_test()
         .get_mut(carrier)
         .expect("carrier")
-        .cloak = Some(cloak);
+        .cloak = Some(Box::new(cloak));
     assert!(
         sim.assign_target_represented(
             rider,

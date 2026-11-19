@@ -54,7 +54,7 @@ fn a_disarmed_target_deletes_the_manager() {
     let (mut sim, psi) = world(&rules);
     assert_eq!(
         sim.entities().get(psi).unwrap().capture_manager,
-        Some(CaptureManagerState::constructed(1, false)),
+        Some(Box::new(CaptureManagerState::constructed(1, false))),
         "the controller starts with its primary mind-control limit"
     );
     convert(&mut sim, &rules);
@@ -76,7 +76,7 @@ fn the_new_limit_and_infinite_flag_are_adopted() {
     convert(&mut sim, &rules);
     assert_eq!(
         sim.entities().get(psi).unwrap().capture_manager,
-        Some(CaptureManagerState::constructed(3, true)),
+        Some(Box::new(CaptureManagerState::constructed(3, true))),
         "max capture 3 and InfiniteMindControl=yes are adopted"
     );
 
@@ -85,7 +85,7 @@ fn the_new_limit_and_infinite_flag_are_adopted() {
     convert(&mut sim, &rules);
     assert_eq!(
         sim.entities().get(psi).unwrap().capture_manager,
-        Some(CaptureManagerState::constructed(1, false)),
+        Some(Box::new(CaptureManagerState::constructed(1, false))),
         "without the key the old manager survives"
     );
 }

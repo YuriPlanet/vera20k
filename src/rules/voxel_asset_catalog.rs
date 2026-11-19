@@ -44,6 +44,8 @@ impl VoxelPart {
         Self {
             vxl: Arc::new(vxl),
             hva: hva.map(Arc::new),
+            // No image name reached this part, so its identity stays empty.
+            identity: (String::new(), None),
         }
     }
 

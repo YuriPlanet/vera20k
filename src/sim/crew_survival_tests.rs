@@ -2897,8 +2897,7 @@ fn prevent_occupant_escape_kills_a_dying_buildings_occupants() {
         .get_mut(plant)
         .unwrap()
         .passenger_role
-        .occupants_mut()
-        .add(occupant);
+        .set_occupants_for_test(vec![occupant], 0);
     kill_by_with(&mut sim, &rules, plant, attacker, ORDINARY, "PWH");
     assert!(
         sim.entities().get(plant).is_none_or(|building| building

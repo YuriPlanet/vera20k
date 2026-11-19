@@ -181,9 +181,9 @@ fn follow_if_mind_control_is_full_needs_a_full_capture_manager() {
     sim.entities_mut_for_test()
         .get_mut(follower)
         .expect("follower")
-        .capture_manager = Some(
+        .capture_manager = Some(Box::new(
         crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(0, false, &[]),
-    );
+    ));
     sim.foot_arrival_target_handler(follower, &rules, ObjectAiCtx::default());
     let entity = sim.entities().get(follower).expect("follower");
     assert_eq!(

@@ -3479,7 +3479,7 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
         let mut sim = sim(9);
         let tank = spawn(&mut sim, &held_rules, "HTNK", "Americans", 12, 10);
         let cleg = spawn(&mut sim, &held_rules, "CLEG", "Russians", 10, 10);
-        chain(&mut sim, tank, &[cleg], 4000);
+        chain(&mut sim, &held_rules, tank, &[cleg], 4000);
         let held = sim.substrate.entities.get_mut(tank).unwrap();
         held.rearm_timer
             .set_for_test(crate::sim::timer::CdTimer::started(40, 100));
@@ -3536,7 +3536,7 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
     let rules = rules();
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
-    chain(&mut sim, tank, &[cleg], 4000);
+    chain(&mut sim, &rules, tank, &[cleg], 4000);
     let held = sim.substrate.entities.get_mut(tank).unwrap();
     held.rearm_timer
         .set_for_test(crate::sim::timer::CdTimer::started(40, 100));
@@ -3599,7 +3599,7 @@ fn warp_per_step_needs_a_resolved_warhead_for_the_extension() {
         let mut sim = sim(11);
         let tank = spawn(&mut sim, rules, "HTNK", "Americans", 12, 10);
         let cleg = spawn(&mut sim, rules, "CLEG", "Russians", 10, 10);
-        chain(&mut sim, tank, &[cleg], 4000);
+        chain(&mut sim, &rules, tank, &[cleg], 4000);
         sim.substrate
             .entities
             .get_mut(cleg)

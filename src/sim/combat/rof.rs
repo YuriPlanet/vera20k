@@ -508,6 +508,8 @@ mod tests {
                     attached_rof: attached,
                     #[cfg(feature = "phobos")]
                     rof_random_delay: None,
+                    #[cfg(feature = "phobos")]
+                    force_full_rearm: false,
                     rof_ability: false,
                     veteran_rof: 1.0,
                     occupants: None,

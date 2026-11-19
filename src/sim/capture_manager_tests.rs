@@ -3186,7 +3186,7 @@ fn phobos_overload_tables_sound_and_particle_count_override_the_rules() {
             .entities
             .get_mut(mind)
             .unwrap()
-            .capture_manager = Some(manager);
+            .capture_manager = Some(Box::new(manager));
         let before = sim.entities().get(mind).unwrap().health.current();
         sim.sound_events.clear_for_test();
         let rng_before = sim.scenario_rng.logical_state();
@@ -3293,7 +3293,7 @@ fn phobos_overload_count_needs_more_links_than_the_bound() {
             .entities
             .get_mut(mind)
             .unwrap()
-            .capture_manager = Some(manager);
+            .capture_manager = Some(Box::new(manager));
         let before = sim.entities().get(mind).unwrap().health.current();
         sim.sound_events.clear_for_test();
         sim.capture_manager_update(mind, &rules, None, FrameEffects::default());

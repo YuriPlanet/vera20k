@@ -141,6 +141,7 @@ fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
             false,
             0.25,
             false,
+            crate::rules::ares_switch::ares_way(),
         );
         drop(host);
         assert_eq!(

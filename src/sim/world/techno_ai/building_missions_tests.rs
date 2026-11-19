@@ -2241,6 +2241,7 @@ fn an_anim_delayed_burst_only_holds_the_first_shot() {
             .entities
             .get(building)
             .unwrap()
+            .building
             .pending_building_fire
             .pending()
             .is_some();

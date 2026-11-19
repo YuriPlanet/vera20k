@@ -115,7 +115,7 @@ fn veins_anim_damages_the_occupant_every_other_frame() {
     assert!(rules.object("IMMUNE").unwrap().immune_to_veins);
     let mut grid = OverlayGrid::new(32, 32);
     grid.place_overlay(12, 12, 126, 0x30);
-    sim.install_overlay_grid_for_load(grid);
+    sim.overlay_grid = Some(grid);
     let civ = insert_occupant(&mut sim, &rules, "CIV", 12, 12);
     let anim = spawn_veins(&mut sim, &rules, 12, 12);
 
@@ -140,7 +140,7 @@ fn veins_anim_skips_immune_types_and_retires_off_the_weed_cell() {
     let (mut sim, rules) = fixture();
     let mut grid = OverlayGrid::new(32, 32);
     grid.place_overlay(12, 12, 126, 0x30);
-    sim.install_overlay_grid_for_load(grid);
+    sim.overlay_grid = Some(grid);
     let immune = insert_occupant(&mut sim, &rules, "IMMUNE", 12, 12);
     let anim = spawn_veins(&mut sim, &rules, 12, 12);
     prime(&mut sim, &rules, anim);
