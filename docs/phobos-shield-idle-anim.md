@@ -73,8 +73,16 @@ translucent draw.
 
 ## Residuals
 
-- `AreAnimsHidden` (`ShieldClass.h:82..86`, the `ShowShield`/`Attached`
-  visibility chain) is not ported; the create/update gates treat it false.
+- `AreAnimsHidden` (`ShieldClass.h:82..86`, `ShieldClass.cpp:481`/`:1078`) follows
+  the tunnel writes now: `FootExt::UpdateOnTunnelEnter/Exit` sets it from
+  `TunnelLocomotionClass_Process_KillAnims @ 0x728F74` and `RestoreAnims @
+  0x728E5F` (`Ext/Techno/Hooks.Misc.cpp:487-527`), so
+  `update_idle_anim` kills the idle anim and skips the create gate while the
+  owner's `Tunnel` locomotor is in `DugIn`/`Digging`, and recreates it once the
+  state reaches `PreDigOut`
+  (`a_tunnel_owner_hides_and_restores_the_shield_idle_anim`). The other
+  writers of that flag (the shield's own disarm/`ShowShield` path) stay out of
+  scope; the create/update gates treat them false.
 - A retype caused by shield damage or self-healing happens on the next shield
   AI visit rather than synchronously inside `ReceiveDamage`/`SelfHealing`; the
   object's AI runs every frame, so the visible state converges within a tick.

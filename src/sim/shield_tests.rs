@@ -1342,6 +1342,65 @@ fn a_temporal_freeze_hides_the_idle_anim() {
     );
 }
 
+/// `AreAnimsHidden` (`ShieldClass.h:82-86`, `ShieldClass.cpp:481`) as
+/// `FootExt::UpdateOnTunnelEnter/Exit` writes it from
+/// `TunnelLocomotionClass_Process_KillAnims @ 0x728F74` and `RestoreAnims @
+/// 0x728E5F` (`Ext/Techno/Hooks.Misc.cpp:487-527`): a sunk or travelling
+/// tunnel owner kills its shield idle animation and blocks the create gate
+/// until it starts to surface.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_tunnel_owner_hides_and_restores_the_shield_idle_anim() {
+    let rules = idle_rules("IdleAnim=IDLE", "");
+    let (mut sim, _) = scene(&rules);
+    sim.intern_rule_type_ids(&rules);
+    let arm = |sim: &mut Simulation, state: crate::sim::movement::TunnelState| {
+        sim.substrate.entities.get_mut(1).unwrap().locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Tunnel,
+            ),
+        );
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .expect("the fixture installs a Tunnel locomotor")
+            .tunnel_runtime_mut_for_test()
+            .expect("for_test_kind built a Tunnel payload")
+            .set_state_and_timer_for_test(state, 0, 10);
+    };
+    arm(&mut sim, crate::sim::movement::TunnelState::DiggingIn);
+    super::tick(&mut sim, 1, &rules);
+    assert_eq!(
+        idle_anims(&sim, "IDLE").len(),
+        1,
+        "digging in still shows the idle anim"
+    );
+    arm(&mut sim, crate::sim::movement::TunnelState::DugIn);
+    super::tick(&mut sim, 1, &rules);
+    sim.flush_pending_delete();
+    assert_eq!(
+        idle_anims(&sim, "IDLE").len(),
+        0,
+        "AreAnimsHidden kills the idle anim"
+    );
+    super::tick(&mut sim, 1, &rules);
+    assert_eq!(
+        idle_anims(&sim, "IDLE").len(),
+        0,
+        "the create gate stays closed while travelling"
+    );
+    arm(&mut sim, crate::sim::movement::TunnelState::PreDigOut);
+    super::tick(&mut sim, 1, &rules);
+    assert_eq!(
+        idle_anims(&sim, "IDLE").len(),
+        1,
+        "surfacing lets the AI recreate it"
+    );
+}
+
 /// `CloakCheck` (`ShieldClass.cpp:493..500`): a cloaking object kills the
 /// idle anim when the anim type's `DetachOnCloak` is set (the default).
 #[cfg(feature = "phobos")]
