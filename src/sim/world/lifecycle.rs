@@ -3053,6 +3053,10 @@ impl Simulation {
     /// keeps its own AircraftTracker membership (Add `0x004134A0`, Remove
     /// `0x004135D0`, Update `0x004138C0`), and `FootClass::Limbo` removes a
     /// tracked object ([`ObjectSubstrate::release_foot_air_tracker_before_limbo`](crate::sim::world::ObjectSubstrate::release_foot_air_tracker_before_limbo)).
+    /// `FootClass::AI` calls the active locomotor's Process with no layer
+    /// test (`0x004DA806..0x004DA877`), so every live Fly runs, whatever
+    /// layer its locomotor caches: one a Chrono Warp or an Ares UnitDelivery
+    /// left on the ground plane takes off at its next order.
     pub(crate) fn tick_air_movement_with_cell_lists_one(
         &mut self,
         stable_id: u64,
@@ -3062,7 +3066,6 @@ impl Simulation {
     ) -> Result<crate::sim::movement::air_movement::AirMovementTickStats, super::FrameAdvanceError>
     {
         use crate::rules::locomotor_type::LocomotorKind;
-        use crate::sim::movement::locomotor::MovementLayer;
 
         let fly = self
             .substrate
@@ -3071,10 +3074,10 @@ impl Simulation {
             .is_some_and(|entity| {
                 entity.lifecycle.object_alive
                     && !entity.lifecycle.in_limbo
-                    && entity.locomotor.as_ref().is_some_and(|locomotor| {
-                        locomotor.active_kind() == LocomotorKind::Fly
-                            && locomotor.layer() == MovementLayer::Air
-                    })
+                    && entity
+                        .locomotor
+                        .as_ref()
+                        .is_some_and(|locomotor| locomotor.active_kind() == LocomotorKind::Fly)
             });
         if fly {
             return Ok(self.fly_process(stable_id, rules, registry, effects));
