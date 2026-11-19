@@ -275,7 +275,6 @@ pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
 pub use substrate::DeferredDeleteQueue;
 pub(crate) use substrate::{DeferredDeleteTicket, ObjectKind, ObjectSubstrate};
 pub use substrate::{EnterOrderCounter, StableIdCursor};
-pub(in crate::sim) use world_spawn::TypeProjectionWrite;
 pub(crate) use world_spawn::{CrushableFacts, MoverFacts, TypeFacts};
 pub use world_spawn::{GeneratedTechnoInitError, GeneratedTechnoInitTable};
 

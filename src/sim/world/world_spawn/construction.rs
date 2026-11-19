@@ -20,9 +20,6 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::vision::MAX_SIGHT_RANGE;
 use crate::sim::world::Simulation;
 
-/// Grants the type projection its write to the actor's retained house-count inputs.
-pub(in crate::sim) struct TypeProjectionWrite(());
-
 /// Existing initialization differences are explicit here. In particular map
 /// import currently omits Ship state and Fly Idle setup.
 /// This is a Rust compatibility policy, not a claim of native equivalence.
@@ -466,7 +463,7 @@ impl GameEntity {
     /// stores and Ares conversion10043740 share these caches without replaying constructors,
     /// manager allocation, passenger setup or discovery-history writes.
     fn refresh_type_projection(&mut self, object: Option<&ObjectType>, rules: &RuleSet) {
-        self.stamp_scoring_flags(TypeProjectionWrite(()), object, rules);
+        self.stamp_scoring_flags(object, rules);
         if let Some(object) = object {
             self.sight.stamp_type_sight(object.sight);
             self.crushable_facts = CrushableFacts::stamp(object);

@@ -8,7 +8,6 @@
 mod authored_health;
 mod construction;
 mod wall_unlimbo;
-pub(in crate::sim) use construction::TypeProjectionWrite;
 pub(crate) use construction::{CrushableFacts, MoverFacts, TypeFacts};
 
 use crate::sim::house_tracking::HouseTracking;

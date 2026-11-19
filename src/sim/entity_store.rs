@@ -30,19 +30,6 @@ use crate::sim::intern::InternedId;
 use crate::sim::touch_log::{TouchLogs, Touched};
 use crate::util::lookup_hash::LookupMap;
 
-/// Only this module can authorize a live indexed-owner write.
-/// Payload consumers can read owner identity but cannot construct this capability.
-pub(crate) struct OwnerChangeAuthority(());
-
-/// Only this module can write an entity's AircraftTracker membership, so the
-/// airborne set ([`EntityStore::airborne`]) changes with it.
-pub(crate) struct AirMembershipAuthority(());
-
-/// Only this module can store an Anim in a field [`GameEntity::held_anims`]
-/// names, so the anim-holder index notes the holder
-/// ([`EntityStore::write_held_anim`]).
-pub(super) struct AnimHolderAuthority(());
-
 /// Container for all game entities, keyed by stable_id.
 ///
 /// All iteration methods return entities in ascending stable_id order, which
@@ -1022,15 +1009,11 @@ impl EntityStore {
     }
 
     pub(super) fn hold_parachute_animation(&mut self, holder: u64, anim: u64) -> Option<()> {
-        self.write_held_anim(holder, |entity, authority| {
-            entity.hold_parachute_animation(anim, authority)
-        })
+        self.write_held_anim(holder, |entity| entity.hold_parachute_animation(anim))
     }
 
     pub(super) fn hold_emp_sparkle(&mut self, holder: u64, anim: u64) -> Option<()> {
-        self.write_held_anim(holder, |entity, authority| {
-            entity.hold_emp_sparkle(anim, authority)
-        })
+        self.write_held_anim(holder, |entity| entity.hold_emp_sparkle(anim))
     }
 
     /// Return the Anim replaced at `index`, if the effect held one.
@@ -1040,35 +1023,32 @@ impl EntityStore {
         index: usize,
         anim: u64,
     ) -> Option<u64> {
-        self.write_held_anim(holder, |entity, authority| {
-            entity.hold_attached_effect_anim(index, anim, authority)
+        self.write_held_anim(holder, |entity| {
+            entity.hold_attached_effect_anim(index, anim)
         })
         .flatten()
     }
 
     pub(super) fn begin_parasite_grapple(&mut self, holder: u64, anim: Option<u64>) -> Option<()> {
-        self.write_held_anim(holder, |entity, authority| {
-            entity.parasite.begin_grapple(anim, authority)
-        })
-        .flatten()
+        self.write_held_anim(holder, |entity| entity.parasite.begin_grapple(anim))
+            .flatten()
     }
 
     /// Store an Anim in one of `holder`'s fields [`GameEntity::held_anims`]
     /// names through `write`, that field's own write, then note every Anim
-    /// the holder holds for [`Self::take_anim_holders`]. The only route to
-    /// such a store: those writes take an [`AnimHolderAuthority`], which
-    /// only this module makes. Clearing a field needs no note. `None` when
-    /// `holder` is not stored.
+    /// the holder holds for [`Self::take_anim_holders`]. Every production
+    /// store goes through the four methods above; clearing a field needs no
+    /// note. `None` when `holder` is not stored.
     fn write_held_anim<R>(
         &mut self,
         holder: u64,
-        write: impl FnOnce(&mut GameEntity, AnimHolderAuthority) -> R,
+        write: impl FnOnce(&mut GameEntity) -> R,
     ) -> Option<R> {
         let slot = self.slot(holder)?;
         self.touched.note(holder, self.slot_of.len());
         self.wake_slot(slot as usize);
         let entity = self.entities[slot as usize].as_deref_mut()?;
-        let written = write(entity, AnimHolderAuthority(()));
+        let written = write(entity);
         self.anim_holders
             .extend(entity.held_anims().map(|anim| (anim, holder)));
         Some(written)
@@ -1124,7 +1104,7 @@ impl EntityStore {
             && e.owner() != new_owner
         {
             let (old_owner, category) = (e.owner(), e.category());
-            e.set_owner_from_store(new_owner, OwnerChangeAuthority(()));
+            e.set_owner_from_store(new_owner);
             self.owners[slot as usize] = new_owner;
             self.unlist_owned(stable_id, (old_owner, category));
             self.list_owned(stable_id, (new_owner, category));
@@ -1191,7 +1171,7 @@ impl EntityStore {
         if let Some(entry) = airborne_entry(entity) {
             self.airborne.remove(&entry);
         }
-        entity.set_air_membership_from_store(bucket, enter_order, AirMembershipAuthority(()));
+        entity.set_air_membership_from_store(bucket, enter_order);
         if let Some(bucket) = bucket {
             self.airborne.insert((bucket, enter_order, stable_id));
         }

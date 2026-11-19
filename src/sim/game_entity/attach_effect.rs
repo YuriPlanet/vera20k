@@ -258,7 +258,6 @@ impl GameEntity {
         &mut self,
         index: usize,
         anim: u64,
-        _: crate::sim::entity_store::AnimHolderAuthority,
     ) -> Option<u64> {
         self.ares
             .attach_effects
