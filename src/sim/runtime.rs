@@ -893,7 +893,6 @@ where
         rules,
         overlay_registry,
         &map_data.basic,
-        &map_data.special_flags,
         (map_data.header.width as u16, map_data.header.height as u16),
     )?;
     Ok(())
@@ -1055,7 +1054,6 @@ where
         let stats = initialize_native_tiberium_queues(
             sim,
             &map_data.basic,
-            &map_data.special_flags,
             rules,
             overlay_registry,
             (map_data.header.width as u16, map_data.header.height as u16),
@@ -1133,7 +1131,6 @@ where
 pub(crate) fn initialize_native_tiberium_queues(
     sim: &mut Simulation,
     basic: &crate::map::basic::BasicSection,
-    special_flags: &crate::map::basic::SpecialFlagsSection,
     rules: &RuleSet,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     native_rect: (u16, u16),
@@ -1142,7 +1139,7 @@ pub(crate) fn initialize_native_tiberium_queues(
     crate::rules::overlay_types::TiberiumImageError,
 > {
     sim.ore_growth_config
-        .reload_for_scenario(basic, special_flags, &sim.session);
+        .reload_for_scenario(basic, &sim.session);
     let overlay_grid = sim.overlay_grid.as_ref();
     let (width, height) = overlay_grid
         .map(|grid| (grid.width(), grid.height()))

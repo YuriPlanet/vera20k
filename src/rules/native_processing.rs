@@ -2389,13 +2389,16 @@ impl ProcessedRulesLayers {
             .map(move |member| (member.native_stored_id.as_str(), state(member)))
     }
 
-    /// `[CombatDamage] DeathWeapon=` (Rules+FDC) after the last pass.
+    /// `[CombatDamage] AmmoCrateDamage=` (ReadCombatDamage 66BBDE) after the
+    /// last pass.
     pub(crate) fn ammo_crate_damage(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
             .rules_ammo_crate_damage
     }
 
+    /// `[CombatDamage] TiberiumExplosionDamage=` (Rules+568, ReadCombatDamage
+    /// 66BC37) after the last pass.
     pub(crate) fn tiberium_explosion_damage(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
@@ -2442,6 +2445,7 @@ impl ProcessedRulesLayers {
             .map(|member| &member.tiberium_ext)
     }
 
+    /// `[CombatDamage] DeathWeapon=` (Rules+FDC) after the last pass.
     pub(crate) fn combat_damage_death_weapon(&self) -> Option<&str> {
         self.native_type_construction_trace
             .registry_state()

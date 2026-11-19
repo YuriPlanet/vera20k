@@ -90,7 +90,8 @@ pub fn build_options_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -
                     "[BUILD-DIAG]   structure '{}' building_up={} factory_type={:?}",
                     ts,
                     e.building_up(),
-                    rules.factory_type(ts)
+                    sim.entity_object_type(e, rules)
+                        .and_then(|object| object.factory_type())
                 );
             }
         }

@@ -7360,7 +7360,6 @@ mod tests {
         let _ = crate::sim::runtime::initialize_native_tiberium_queues(
             &mut sim,
             &map.basic,
-            &map.special_flags,
             &rules,
             &overlays,
             (SIZE, SIZE),

@@ -30,9 +30,7 @@ use crate::rules::native_processing::{
     CountryProjection, CountryVeterancyState, ProcessedRulesLayers, RulesLayerStack,
     SideProjection, house_type_index_of_name,
 };
-use crate::rules::object_type::{
-    BuildCategory, FactoryType, HouseMasks, ObjectCategory, ObjectType,
-};
+use crate::rules::object_type::{BuildCategory, HouseMasks, ObjectCategory, ObjectType};
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
 use crate::rules::particle_type::{ParticleType, ParticleTypeId};
 use crate::rules::phobos_switch::phobos_read;
@@ -4295,9 +4293,10 @@ impl GeneralRules {
             game_forming_sound: None,
             game_closed_sound: None,
             message_delay_minutes,
-            shroud_grow: audio_visual.read_bool("ShroudGrow", defaults.shroud_grow),
-            shroud_rate: audio_visual.read_double_bits("ShroudRate", defaults.shroud_rate),
-            fog_rate: audio_visual.read_double_bits("FogRate", defaults.fog_rate),
+            // Projected from the retained AudioVisual pass after processing.
+            shroud_grow: defaults.shroud_grow,
+            shroud_rate: defaults.shroud_rate,
+            fog_rate: defaults.fog_rate,
             speak_delay_minutes: audio_visual.read_double("SpeakDelay", 0.0),
             gui_combo_open_sound: audio_visual
                 .read_name("GUIComboOpenSound", 0x80)
@@ -4998,11 +4997,6 @@ pub struct RuleSet {
     pub aircraft_ids: Vec<String>,
     /// Building IDs in registry order.
     pub building_ids: Vec<String>,
-    /// Maps structure ID (uppercase) → FactoryType for quick lookup.
-    /// Built once at load time from all ObjectType entries with Factory= set.
-    /// Used by production_tech to determine what a building produces without
-    /// hardcoding building names.
-    pub factory_map: HashMap<String, FactoryType>,
     /// The `[General] Prerequisite*` lists (Rules `+0x358..+0x3E4`), in
     /// [`PrerequisiteGroup::ALL`] order: an on-map building of any of them
     /// meets that group in CanBuild.
@@ -7186,17 +7180,7 @@ impl RuleSet {
             }
         }
 
-        // Step 5: Build factory lookup map from Factory= keys on all objects.
-        let factory_map: HashMap<String, FactoryType> = object_list
-            .iter()
-            .filter_map(|obj| {
-                obj.factory_type()
-                    .map(|ft| (obj.id.to_ascii_uppercase(), ft))
-            })
-            .collect();
-        log::info!("Factory map: {} entries", factory_map.len());
-
-        // Step 6: Parse superweapon type registry.
+        // Step 5: Parse superweapon type registry.
         let ares_super_weapon_metadata: BTreeMap<_, _> = if crate::rules::ares_switch::ares_way() {
             processed
                 .super_weapon_availability_states()
@@ -7416,7 +7400,6 @@ impl RuleSet {
             vehicle_ids,
             aircraft_ids,
             building_ids,
-            factory_map,
             prerequisite_lists: Default::default(),
             ares_prerequisites: None,
             ares_armors: processed.ares_armors().cloned(),
@@ -11350,14 +11333,6 @@ impl RuleSet {
     #[cfg(any(test, feature = "test-support"))]
     pub fn particle_system_type_count(&self) -> usize {
         self.particle_system_types.len()
-    }
-
-    /// Look up the factory type for a structure by ID (case-insensitive).
-    /// Returns None if the structure has no Factory= key in rules.ini.
-    pub fn factory_type(&self, structure_id: &str) -> Option<FactoryType> {
-        crate::util::native_string::with_ascii_uppercase(structure_id, |key| {
-            self.factory_map.get(key).copied()
-        })
     }
 
     /// `group`'s `[General] Prerequisite*` list.

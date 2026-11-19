@@ -2747,7 +2747,7 @@ mod tests {
 
     mod gsi_17_04_tests {
         use super::flat_terrain;
-        use crate::map::basic::{BasicSection, SpecialFlagsSection};
+        use crate::map::basic::BasicSection;
         use crate::map::entities::EntityCategory;
         use crate::map::map_file::MapHeader;
         use crate::rules::ini_parser::IniFile;
@@ -3157,10 +3157,11 @@ mod tests {
                 "the tree is not an ore spawner"
             );
 
+            sim.session.set_tiberium_grows_flag_for_test(true);
+            sim.session.set_tiberium_spreads_flag_for_test(true);
             let stats = crate::sim::runtime::initialize_native_tiberium_queues(
                 &mut sim,
                 &BasicSection::default(),
-                &SpecialFlagsSection::default(),
                 &rules,
                 &registry,
                 (8, 8),

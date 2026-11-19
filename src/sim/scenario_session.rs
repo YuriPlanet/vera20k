@@ -798,7 +798,7 @@ pub struct ScenarioDescriptor {
     /// paths; `Full_Init @ 0x00687C23` copies the session dword into the
     /// scenario when GameMode != 0). Its only reader is the growth driver's
     /// timer reload (`0x00722CA4`: `Growth * 0.3` when set, `* 1.0` when not).
-    /// Campaign (GameMode 0) reads the map key instead (`0x006B8CA0`).
+    /// Campaign (GameMode 0) stores the map key here instead (`0x006B8CA0`).
     pub tiberium_grows_flag: bool,
     /// Native `ScenarioClass` flags bit `0x80` (`TiberiumSpreads`), forced on
     /// by the same skirmish/multiplayer sites. Gates

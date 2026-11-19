@@ -36,13 +36,11 @@ pub(super) fn finish_generated_ore(
     rules: &crate::rules::ruleset::RuleSet,
     overlay_registry: &OverlayTypeRegistry,
     basic: &crate::map::basic::BasicSection,
-    special_flags: &crate::map::basic::SpecialFlagsSection,
     native_rect: (u16, u16),
 ) -> Result<GeneratedCellAttributesReceipt, crate::rules::overlay_types::TiberiumImageError> {
     let queues = crate::sim::runtime::initialize_native_tiberium_queues(
         sim,
         basic,
-        special_flags,
         rules,
         overlay_registry,
         native_rect,
@@ -172,7 +170,7 @@ mod tests {
     use super::*;
     use crate::map::tiberium_cell::ORE_DENSITY_BY_NEIGHBOR_COUNT;
 
-    use crate::map::basic::{BasicSection, SpecialFlagsSection};
+    use crate::map::basic::BasicSection;
     use crate::map::resolved_terrain::ResolvedTerrainCell;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
@@ -375,18 +373,13 @@ mod tests {
         let scenario_before = sim.scenario_rng.state();
         let main_before = sim.main_rng.state();
         let basic = BasicSection::default();
-        let special_flags = SpecialFlagsSection::default();
+        sim.session.set_tiberium_grows_flag_for_test(true);
+        sim.session.set_tiberium_spreads_flag_for_test(true);
 
         sim.overlay_grid = Some(grid);
-        let receipt = finish_generated_ore(
-            &mut sim,
-            &rules,
-            &registry,
-            &basic,
-            &special_flags,
-            (MAP_WIDTH, MAP_HEIGHT),
-        )
-        .unwrap();
+        let receipt =
+            finish_generated_ore(&mut sim, &rules, &registry, &basic, (MAP_WIDTH, MAP_HEIGHT))
+                .unwrap();
         assert_eq!(sim.overlay_grid().unwrap().cell(7, 7).overlay_data, 11);
         assert_eq!(receipt.germinated_cells, 18);
         let class = &sim.ore_growth_state.native_tiberium_state().classes[0];
