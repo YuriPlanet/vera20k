@@ -8701,8 +8701,6 @@ impl RulesPassProcessor {
                         if let Some(types) = types {
                             state.types = types;
                         }
-                        let delay = raw.read_int("SW.Deferment", state.deferment);
-                        state.deferment = if delay < 0 { 20 } else { delay };
                         state.base_normal = raw.read_bool("Deliver.BaseNormal", state.base_normal);
                         if let Some(owner) = raw.read_name("Deliver.Owner", 2048) {
                             state.owner = match owner.to_ascii_lowercase().as_str() {

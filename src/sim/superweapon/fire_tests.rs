@@ -358,7 +358,6 @@ fn default_build_scene(
                     category: crate::rules::object_type::ObjectCategory::Building,
                     id: "YARD".into(),
                 }],
-                deferment: 0,
                 ..UnitDeliveryRules::default()
             })
         }

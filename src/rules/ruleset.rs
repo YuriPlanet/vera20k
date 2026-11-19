@@ -12693,29 +12693,6 @@ SpawnCount=3
     }
 
     #[test]
-    fn unit_delivery_negative_deferment_keeps_the_twenty_frame_fallback() {
-        let _ares = crate::rules::ares_switch::read_ares_way(true);
-        let mut layers = RulesLayerStack::new(IniFile::from_str(
-            "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\nSW.Deferment=-1",
-        ));
-        layers.push(
-            crate::rules::native_processing::RulesLayerKind::Scenario,
-            IniFile::from_str("[Delivery]\nRechargeTime=2"),
-        );
-        let rules = RuleSet::from_rules_layers(&layers).unwrap();
-        assert_eq!(
-            rules
-                .super_weapon("Delivery")
-                .unwrap()
-                .unit_delivery
-                .as_ref()
-                .unwrap()
-                .deferment,
-            20
-        );
-    }
-
-    #[test]
     fn unit_delivery_activation_sound_binding_keeps_known_values_across_unknown_layers() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
