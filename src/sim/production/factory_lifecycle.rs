@@ -130,9 +130,10 @@ impl HouseFactoryAbandonment {
 /// [`settle_abandoned`]), and a BuildingType always takes the create path
 /// (`0x004C9C95..0x004C9C98`). The sidebar refuses a busy structure strip, so
 /// only a building PRODUCE sent before an earlier one executed reaches either
-/// branch. Phobos `[General] BuildingProductionQueue=yes` skips both the busy
-/// refusal (`0x4FA520`) and the held-product abandon (`0x4C9C7B`), so the
-/// PRODUCE appends to the factory queue instead.
+/// branch. `[General] BuildingProductionQueue=yes` (Phobos' key, which VERA's
+/// Building Production Queue option also sets through the scenario's rules)
+/// skips both the busy refusal (`0x4FA520`) and the held-product abandon
+/// (`0x4C9C7B`), so the PRODUCE appends to the factory queue instead.
 pub fn enqueue_by_type(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -191,10 +192,7 @@ pub(crate) fn enqueue_selected(
     };
     let type_interned = sim.interner.intern(type_id);
     let building = obj.category == ObjectCategory::Building;
-    #[cfg(feature = "phobos")]
     let building_production_queue = rules.general.building_production_queue;
-    #[cfg(not(feature = "phobos"))]
-    let building_production_queue = false;
     // Phobos `HouseClass_BeginProduction_SkipBuilding 0x4FA520`.
     if selection.rtti == 7
         && !building_production_queue
@@ -649,10 +647,15 @@ pub fn cancel_production_for_owner(
     };
     let owner_id = sim.interner.intern(owner);
     let abandonment = HouseFactoryAbandonment::capture(sim, owner_id, category);
-    let outcome = sim
-        .production
-        .edit_factories()
-        .cancel_one(owner_id, category, type_id, all, build_cat);
+    let building_queue = rules.general.building_production_queue;
+    let outcome = sim.production.edit_factories().cancel_one(
+        owner_id,
+        category,
+        type_id,
+        all,
+        build_cat,
+        building_queue,
+    );
     match outcome {
         CancelOutcome::NoMatch => false,
         CancelOutcome::QueuedRemoved => true,

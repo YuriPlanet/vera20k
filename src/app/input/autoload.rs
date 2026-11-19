@@ -351,6 +351,7 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
     for order in orders {
         schedule_command(state, &owner, order);
     }
+    crate::app::input::messages::post_eva_auto_loaded(state, count);
     log::info!("VeraX AutoLoad: issued {count} enter orders");
 }
 

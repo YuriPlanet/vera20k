@@ -70,6 +70,10 @@ struct HudMore {
     /// with the frame so the label never reads the live simulation while a
     /// frame is being drawn; empty for anything but such a Structure.
     super_charges: Vec<crate::sim::superweapon::SuperChargeLine>,
+    /// VERA's detailed object status lines ([VERA] DetailedEvaText): reload,
+    /// building repair, unit repair. Each string is formatted at capture time
+    /// from frozen sim facts, so the draw pass reads no live simulation.
+    info_lines: Vec<String>,
 }
 
 impl HudMore {
@@ -80,6 +84,7 @@ impl HudMore {
             && self.bomb.is_none()
             && self.digital_values.is_empty()
             && self.super_charges.is_empty()
+            && self.info_lines.is_empty()
     }
 }
 
@@ -190,6 +195,7 @@ impl HudFacts {
             } else {
                 Vec::new()
             },
+            info_lines: status_info_lines(entity, object, rules, at.binary_frame),
         };
         Self {
             get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
@@ -244,6 +250,11 @@ impl HudFacts {
         self.more().map_or(&[], |more| &more.super_charges)
     }
 
+    /// VERA's detailed status lines, already formatted at capture time.
+    pub(crate) fn info_lines(&self) -> &[String] {
+        self.more().map_or(&[], |more| &more.info_lines)
+    }
+
     fn toggled_off(&self) -> bool {
         self.structure
             .is_some_and(|structure| structure.toggled_off)
@@ -254,6 +265,96 @@ impl HudFacts {
             .is_some_and(|structure| structure.shows_production_to_observer)
     }
 }
+
+/// Remaining repair time (frames→seconds) and cost for a repairing building,
+/// from the same per-period heal/cost loop `production_repair::repair_step`
+/// uses. `step` is health healed per period, `period_frames` the frames per
+/// period, `cost` the money paid per period. `None` when nothing is missing or
+/// the cadence is degenerate. Pure: every input is a frozen fact.
+fn building_repair_estimate(
+    strength: i32,
+    health: i32,
+    step: i32,
+    period_frames: i32,
+    cost_per_period: i32,
+) -> Option<(i32, i32)> {
+    let missing = strength - health;
+    if step <= 0 || period_frames <= 0 || missing <= 0 {
+        return None;
+    }
+    let periods = (missing + step - 1) / step; // ceil, all positive
+    let seconds = periods
+        .saturating_mul(period_frames)
+        / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+    Some((seconds, periods.saturating_mul(cost_per_period)))
+}
+
+/// VERA's detailed object status lines, resolved from frozen sim facts at
+/// capture time (`HudFacts::capture`) so the draw pass never reads live state.
+/// Every number comes from the object's own sim fields plus Rules; nothing
+/// writes back. The strings are complete and localized.
+///
+/// Two kinds are enabled here, both single-entity facts:
+/// - ammo reload: the Techno's reload clock while a magazine is incomplete;
+/// - building repair: the per-period heal/cost loop on a repairing building.
+/// Unit repair is depot-side (its progress lives on the servicing Building,
+/// keyed by radio contact) and is intentionally not shown here: the unit has
+/// no reliable single owning repair clock to report.
+fn status_info_lines(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: Option<&crate::rules::object_type::ObjectType>,
+    rules: &RuleSet,
+    frame: u32,
+) -> Vec<String> {
+    let frame = frame as i32;
+    let mut lines = Vec::new();
+
+    // Ammo reload: only a Techno with a limited magazine that is not full and
+    // whose reload clock is actually running. Mirrors DigitalInfoType::Reload.
+    if let Some(object) = object {
+        if object.ammo > 0 {
+            let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
+            if ammo < object.ammo {
+                let timer = entity.ammo_reload_timer();
+                let remaining = timer.remaining(frame);
+                if remaining > 0 {
+                    let seconds = remaining / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+                    if let Some(template) = crate::i18n::find("VERA:InfoReload") {
+                        let time = crate::app::presentation::super_timers::time_text(seconds);
+                        lines.push(crate::i18n::fill(&template, &[("time", &time)]));
+                    }
+                }
+            }
+        }
+    }
+
+    // Building repair: a repairing Structure heals `RepairStep` per
+    // `RepairRate` period and pays `repair_step_cost` each period. Remaining
+    // periods = ceil(missing health / RepairStep); time and cost follow.
+    if entity.category() == EntityCategory::Structure
+        && entity.building.repairing.is_on()
+        && let Some(object) = object
+    {
+        let period = crate::sim::combat::veterancy::self_heal_interval_frames(
+            rules.general.repair_rate_minutes,
+        );
+        let step_cost = crate::sim::production::repair_step_cost(rules, object);
+        if let Some((seconds, cost)) = building_repair_estimate(
+            object.strength,
+            entity.health.current(),
+            rules.general.repair_step,
+            period,
+            step_cost,
+        ) && let Some(template) = crate::i18n::find("VERA:InfoBuildingRepair")
+        {
+            let time = crate::app::presentation::super_timers::time_text(seconds);
+            lines.push(crate::i18n::fill(&template, &[("time", &time), ("cost", &cost)]));
+        }
+    }
+
+    lines
+}
+
 /// Authentic pip counts for unit health bars.
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
@@ -681,7 +782,7 @@ fn status_text_tint(
 /// The shared7BB020/7BAD90/434120 material geometry. Callers supply their
 /// already measured/clipped backing and native glyph origin; group and
 /// Building labels deliberately use different rectangles and alignment.
-fn status_text_instances(
+pub(crate) fn status_text_instances(
     font: &BitFont,
     text: &str,
     origin: [f32; 2],
@@ -927,6 +1028,7 @@ pub(crate) fn build_building_status_render_instances(
     tactical_clip: [i32; 4],
     rules: &RuleSet,
     superweapon_building_timers: bool,
+    detailed_eva_text: bool,
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
@@ -973,13 +1075,21 @@ pub(crate) fn build_building_status_render_instances(
             } else {
                 &[]
             };
+        // VERA's detailed status rows (building repair): the same frozen
+        // capture, gated by DetailedEvaText, drawn for every visible building
+        // like the Super lines. Not restricted to the selected building.
+        let info_lines: &[String] = if detailed_eva_text && visible {
+            entity.hud.info_lines()
+        } else {
+            &[]
+        };
         // DrawExtraInfo needs the building selected, including when it is
         // also hovered.
         let label = (entity.selection.is_selected()
             && body_opportunities.contains(&entity.stable_id()))
         .then(|| building_status_text(entity, object, allied, primary, ares_form))
         .flatten();
-        if label.is_none() && lines.is_empty() {
+        if label.is_none() && lines.is_empty() && info_lines.is_empty() {
             continue;
         }
         let location = entity.hud.location;
@@ -1035,6 +1145,27 @@ pub(crate) fn build_building_status_render_instances(
             ];
             labels.push(status_text_instances(
                 font, &text, origin, measure, camera, tint,
+            ));
+        }
+        // VERA info rows stack below the Super rows (super first, then info),
+        // each a complete already-localized string from the frozen capture.
+        for (row, text) in info_lines.iter().enumerate() {
+            let anchor = [
+                anchor[0],
+                anchor[1].wrapping_add(
+                    line_height.wrapping_mul((lines.len() + row + 1) as i32),
+                ),
+            ];
+            let measure = font.compute_text_rect(text, anchor, 0x149, [4, 2]);
+            if !rect_overlaps(measure, tactical_clip) {
+                continue;
+            }
+            let origin = [
+                measure[0].wrapping_add(4) as f32 + camera[0],
+                measure[1].wrapping_add(2) as f32 + camera[1],
+            ];
+            labels.push(status_text_instances(
+                font, text, origin, measure, camera, tint,
             ));
         }
         let Some(label) = label else {
@@ -1228,6 +1359,7 @@ pub(crate) fn build_building_status_instances(
             .match_state
             .match_presentation
             .superweapon_building_timers,
+        state.persistence.options_profile.detailed_eva_text,
     )
 }
 
@@ -1364,6 +1496,9 @@ pub(crate) struct TechnoExtras {
     pub digital_text: Vec<StatusTextOverlayInstances>,
     /// Phobos DigitalDisplay custom-SHP glyphs: catalog index + sprite.
     pub digital_shapes: Vec<(u32, SpriteInstance)>,
+    /// VERA detailed status rows (reload/unit repair), one backing+glyph set
+    /// per frozen info line, drawn after the group label.
+    pub info_text: Vec<StatusTextOverlayInstances>,
     ///709A90's group tail follows this parent's pip scale, not a global sweep.
     pub group: StatusTextOverlayInstances,
     ///6F5E8D..5EDE: after health/pips/group, plain600 at the caller point.
@@ -2880,6 +3015,21 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
+    /// Repair estimate: missing health is rounded up to whole heal steps, and
+    /// both the time (frames→seconds) and the money follow the step count.
+    #[test]
+    fn building_repair_estimate_rounds_up_steps_and_costs_each() {
+        use super::building_repair_estimate as estimate;
+        // 15 fps; 10 missing health at 4/step = 3 steps; 15f period = 3s; 7/step.
+        assert_eq!(estimate(100, 90, 4, 15, 7), Some((3, 21)));
+        // An exact multiple needs no extra step.
+        assert_eq!(estimate(100, 92, 4, 15, 7), Some((2, 14)));
+        // Full health, zero cadence, or no cost cadence show nothing.
+        assert_eq!(estimate(100, 100, 4, 15, 7), None);
+        assert_eq!(estimate(100, 90, 0, 15, 7), None);
+        assert_eq!(estimate(100, 90, 4, 0, 7), None);
+    }
+
     #[cfg(not(feature = "phobos"))]
     #[test]
     fn ares_enemy_insignia_checks_the_owners_allies_and_the_observer_house() {

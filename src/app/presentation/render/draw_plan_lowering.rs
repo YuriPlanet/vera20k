@@ -484,6 +484,12 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     let text_end = lowered.extras_instances.len() as u32;
                     digital_text.push((rectangles_start..rectangles_end, rectangles_end..text_end));
                 }
+                // VERA detailed status rows: no per-entry index needed, just
+                // the backing + glyph instances in draw order.
+                for text in strip.info_text {
+                    lowered.extras_instances.extend(text.rectangles);
+                    lowered.extras_instances.extend(text.text);
+                }
                 let digital_shapes = strip
                     .digital_shapes
                     .into_iter()

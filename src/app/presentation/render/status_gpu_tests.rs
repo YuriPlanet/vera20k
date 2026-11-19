@@ -1045,6 +1045,7 @@ fn native_building_status_labels(fixture: &'static str) {
                 rules,
                 // The native comparison draws gamemd's labels only.
                 false,
+                false, // VERA detailed EVA text off for the native comparison
             );
             assert_eq!(
                 labels.runs.len(),

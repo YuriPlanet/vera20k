@@ -404,6 +404,7 @@ impl App {
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
+        personal_rules.set_building_production_queue(options_profile.building_production_queue);
         // The Ares setting holds for the whole launch, as the mod does.
         let ares_setting = spawn_ares.unwrap_or(options_profile.ares);
         if ares_setting != crate::util::ares_launch::AresSetting::Auto {

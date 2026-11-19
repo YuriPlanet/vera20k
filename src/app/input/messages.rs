@@ -280,6 +280,13 @@ pub(crate) enum HudMessage {
         label: &'static str,
         type_id: crate::sim::intern::InternedId,
     },
+    /// VERA's optional detailed EVA text for an alert with no single subject
+    /// object (base/harvester under attack, infiltration, new construction).
+    /// Unlike [`Self::EvaObjectLine`] it names no type, so the sim event need
+    /// not carry an id. `label` selects the VERA template, resolved verbatim.
+    EvaTextLine {
+        label: &'static str,
+    },
 }
 
 impl HudMessage {
@@ -293,7 +300,7 @@ impl HudMessage {
             Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
             Self::Alliance { formed: true, .. } => "TXT_HAS_ALLIED",
             Self::Alliance { formed: false, .. } => "TXT_AT_WAR",
-            Self::EvaObjectLine { .. } => return None,
+            Self::EvaObjectLine { .. } | Self::EvaTextLine { .. } => return None,
         })
     }
 
@@ -312,7 +319,7 @@ impl HudMessage {
             }
             Self::BeaconHelp(_) => Some(BEACON_HELP_TIMEOUT_MS),
             // `post_hud_message` posts these through `post_eva_text`.
-            Self::EvaObjectLine { .. } => None,
+            Self::EvaObjectLine { .. } | Self::EvaTextLine { .. } => None,
         }
     }
 
@@ -517,6 +524,10 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         }
         return;
     }
+    if let HudMessage::EvaTextLine { label } = message {
+        post_eva_plain_text(state, label);
+        return;
+    }
     let Some(key) = message.csf_key() else {
         return;
     };
@@ -615,6 +626,45 @@ fn post_eva_type_line(state: &mut AppState, label: &str, type_key: &str) {
 /// object's `{name}` filled in. The rows are subtitles, not chat: `silent`
 /// skips the `IncomingMessage` insert sound and the typing reveal, so the
 /// EVA voice stays the only sound.
+/// Detailed EVA text for a newly unlocked construction option. The voice is
+/// app-local (sidebar cameo insert), so its text is posted beside that voice
+/// rather than through the sim sound-events bridge.
+pub(crate) fn post_eva_new_construction(state: &mut AppState) {
+    post_eva_plain_text(state, "VERA:EvaNewConstruction");
+}
+
+/// Post one detailed EVA row with no subject object: `label` is a complete
+/// VERA template (no `{name}` slot), used for alerts whose sim event carries
+/// no type id. Shares the switch and the subtitle styling with
+/// [`post_eva_text`].
+fn post_eva_plain_text(state: &mut AppState, label: &str) {
+    if !state.persistence.options_profile.detailed_eva_text {
+        return;
+    }
+    let Some(text) = crate::i18n::find(label) else {
+        return;
+    };
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = house_message_rgb(
+        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        &state.match_state.match_presentation.house_color_map,
+        Some(&rules.color_schemes),
+    );
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms,
+            silent: true,
+        },
+    );
+}
+
 fn post_eva_text(state: &mut AppState, label: &str, name: &str) {
     if !state.persistence.options_profile.detailed_eva_text {
         return;
@@ -623,6 +673,45 @@ fn post_eva_text(state: &mut AppState, label: &str, name: &str) {
         return;
     };
     let text = crate::i18n::fill(&template, &[("name", &name)]);
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = house_message_rgb(
+        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        &state.match_state.match_presentation.house_color_map,
+        Some(&rules.color_schemes),
+    );
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms,
+            silent: true,
+        },
+    );
+}
+
+/// The localized AutoLoad result line for `count` issued Enter orders.
+#[cfg(feature = "verax")]
+fn auto_loaded_line(count: usize) -> Option<String> {
+    let template = crate::i18n::find("VERA:EvaAutoLoaded")?;
+    Some(crate::i18n::fill(&template, &[("count", &count)]))
+}
+
+/// VERA's AutoLoad result line: the number of Enter orders Ctrl+D issued.
+/// Shares the detailed-EVA text lane and every one of its gates; the count is
+/// the number of orders the hotkey actually scheduled, never a guess.
+#[cfg(feature = "verax")]
+pub(crate) fn post_eva_auto_loaded(state: &mut AppState, count: usize) {
+    if !state.persistence.options_profile.detailed_eva_text {
+        return;
+    }
+    let Some(text) = auto_loaded_line(count) else {
+        return;
+    };
     let Some(rules) = state.rules() else {
         return;
     };

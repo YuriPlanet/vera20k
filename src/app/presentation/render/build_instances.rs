@@ -508,6 +508,46 @@ pub(super) fn build_world_instances(
                     state.health_bar_mode(),
                 );
                 status.group = group_labels.remove(&parent.parent.id).unwrap_or_default();
+                // VERA detailed status rows (reload / unit repair): built here
+                // because the GAME.FNT atlas lives on the renderer. The texts
+                // are frozen strings captured with the frame; only the glyph
+                // geometry is produced at draw time. Uses the same health-bar
+                // visibility admission the pips already passed.
+                if state.persistence.options_profile.detailed_eva_text
+                    && !entity.hud.info_lines().is_empty()
+                {
+                    let font = &state.renderer.bit_font;
+                    let camera = [
+                        state.match_state.input.camera_x,
+                        state.match_state.input.camera_y,
+                    ];
+                    let coord = entity.hud.get_coords;
+                    let (base_x, base_y) = crate::util::lepton::absolute_leptons_to_screen(
+                        coord.x, coord.y, coord.z,
+                    );
+                    let tint = [1.0_f32, 1.0, 1.0];
+                    let line_height = font.cell_height() as f32 + 2.0;
+                    for (row, text) in entity.hud.info_lines().iter().enumerate() {
+                        let origin = [
+                            base_x - 4.0,
+                            base_y + 10.0 + row as f32 * line_height,
+                        ];
+                        let measure = font.compute_text_rect(
+                            text,
+                            [
+                                (origin[0] - camera[0]).round() as i32,
+                                (origin[1] - camera[1]).round() as i32,
+                            ],
+                            0x149,
+                            [4, 2],
+                        );
+                        status.info_text.push(
+                            crate::app::presentation::ui_overlays::status_text_instances(
+                                font, text, origin, measure, camera, tint,
+                            ),
+                        );
+                    }
+                }
                 // Phobos DigitalDisplay: built here because the GAME.FNT atlas
                 // lives on the renderer; the value/position owner is
                 // presentation::digital_display.

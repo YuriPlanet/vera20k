@@ -763,6 +763,13 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules.set_superweapon_limit(limit);
     }
 
+    /// The Options page's Building Production Queue, read by the next scenario.
+    pub fn set_building_production_queue(&mut self, on: bool) {
+        self.sources
+            .personal_rules
+            .set_building_production_queue(on);
+    }
+
     /// The root every scenario's Rules start from: the selected root with the
     /// Options switches applied.
     pub(crate) fn scenario_root(&self) -> Cow<'_, IniFile> {
