@@ -598,8 +598,8 @@ pub struct AresUnitLostLine {
     pub eva: InternedId,
     /// A Foot creates the radar event; a building creates none.
     pub radar_event: bool,
-
 }
+
 
 /// The native playback destination for a map-authored sound reference.
 #[derive(Debug, Clone)]
