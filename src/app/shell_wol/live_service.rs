@@ -2821,7 +2821,14 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
-                if service.is_room_publication(id) {
+                if service.is_room_publication(id)
+                    && let Some(key) =
+                        crate::app::shell_network_setup::lobby_refused_building_queue(state)
+                {
+                    // The newest room rule first: a lobby from before it lists
+                    // matches, so the capability check below cannot tell.
+                    notice(state, &tr(key));
+                } else if service.is_room_publication(id) {
                     notice(state, &tr("VERA:OnlineRequestRefused"));
                     // Only a fresh 404 for this publication can confirm rollback.
                     let _ = service.requests.send(http::Request::Matches {

@@ -246,6 +246,10 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
             let rules = &mut options.host_rules;
             rules.terrain_deformation = !rules.terrain_deformation;
         }
+        BUILDING_QUEUE => {
+            let rules = &mut options.host_rules;
+            rules.building_production_queue = !rules.building_production_queue;
+        }
         _ => anyhow::bail!("unknown setup checkbox"),
     }
     state.match_state.session.set_network_options(options)?;

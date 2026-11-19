@@ -112,7 +112,8 @@ the original, another INI is compared with the retail archives' own entry, else
 `ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another
 tile with the one a retail install reads (`map::theater::changed_tiles`), both found at
 startup; the message names three and counts the rest, which the log lists. Personal
-rules, Terrain Deformation and the Superweapon Limit need nothing: Quick Match's room has no
+rules, Terrain Deformation, the Superweapon Limit and the Building Production Queue
+need nothing: Quick Match's room has no
 [room rules](#room-rules), so its match plays without them. A difference none of
 these catches still meets the guest's admission: after `WOL:MatchErrorJoiningGame` its
 status page says the games differ (`VERA:MatchStartMismatch`), the log records both
@@ -721,8 +722,10 @@ OptionsClass (`0x005E4DE1`), while `room.options.game_speed` is the selected set
 value (`0x005E4E01`) copied at launch (`0x005E74AA`).
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
-Terrain Deformation box and [Superweapon Limit](superweapon-limit.md). They open as the
-host's skirmish Game Options have them and the host can change them in the room's Game Options. They travel with the host's options, online as
+Terrain Deformation box, [Superweapon Limit](superweapon-limit.md) and
+[Building Production Queue](phobos-building-queue.md). They open as the
+host's skirmish Game Options and Options page have them, and the host can change them in
+the room's Game Options. They travel with the host's options, online as
 `launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
 `room.options.host_rules`. Every player's game, the host's too, plays
 them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
@@ -732,7 +735,9 @@ same whichever rules a room plays. Offline games play the player's own, a networ
 replay the room's it recorded. A Quick Match room has none: the guest's game drops
 any its host sends, and the lobby refuses them there. A launcher's network game
 (`tools/spawn`) has no host to share them, so each player plays their own, which its
-`ExpectedRulesDigest` compares, and the start barrier compares again. So the room's
+`ExpectedRulesDigest` compares, and the start barrier compares again; it plays
+without the Building Production Queue, which its probe leaves out too, so a player's
+Options page cannot keep a launch from starting. So the room's
 door, the native rules hash (LAN's join check, online the room's `ex_info`), leaves
 the switches out, while the rules
 digest compares the ones each game plays.
@@ -761,6 +766,16 @@ it, in a room that cannot start as its players' versions differ, and an older LA
 is refused at the build check. A lobby from before it refuses the field; the host's game
 turns the limit off, says so and sends its options again with its other rules. A
 rollback past it plays every room without it, as offline games then do.
+The Building Production Queue came after that, as
+`host_rules.building_production_queue` (`true`, left out while off). An older guest
+cannot read options that carry it, in a room that cannot start as its players'
+versions differ, and an older LAN guest is refused at the build check. A lobby from
+before it lists matches, so the capability check that retires the older rules cannot
+tell it apart: the host's game turns the queue off whenever the lobby refuses options
+that carry it, says so and sends its options again with its other rules
+(`shell_network_setup::lobby_refused_building_queue`). A rollback of the game plays
+every room without it; a rollback of the lobby refuses it again, which the host's
+game handles the same way.
 
 The player's [Ares setting](ares.md#the-ares-setting) (`[VERA] Ares=`, or a launch
 file's `[Settings] Ares=`) is not a room rule: like the mod, each game reads it at start
