@@ -782,6 +782,16 @@ impl WolLobbyState {
         self.game_list.hot_row = None;
     }
 
+    /// VERA: the game row under a pointer at (`x`, `y`) in shell pixels. A
+    /// refill clears it, and the list is refilled every few seconds while the
+    /// pointer may rest on a row whose status help is being read.
+    pub(crate) fn hover_games(&mut self, layout: &WolLobbyLayout, x: i32, y: i32) {
+        let count = self.game_rows.len();
+        let list = &mut self.game_list;
+        let geometry = list.geometry(layout.games, count, layout.page.scale);
+        list.hot_row = geometry.row_at(count, list.top_index, x, y);
+    }
+
     /// `0x007806C0`: the current channel's row is selected.
     pub(crate) fn replace_lobbies(&mut self, rows: Vec<WolLobbyRow>, current: Option<&str>) {
         let top = self
@@ -1133,6 +1143,15 @@ mod tests {
         assert_eq!(lobby.game_list.selected, Some(2));
         lobby.replace_games(vec![row("a")]);
         assert_eq!(lobby.game_list.selected, None);
+
+        // A pointer resting on the second row keeps it hot across a refill.
+        let layout = lobby.layout(800, 600, false);
+        let list = lobby.game_list.geometry(layout.games, 2, layout.page.scale);
+        let (x, y) = (list.content.x + 1, list.content.y + list.metrics.row_h + 1);
+        lobby.replace_games(vec![row("a"), row("b")]);
+        assert_eq!(lobby.game_list.hot_row, None);
+        lobby.hover_games(&layout, x, y);
+        assert_eq!(lobby.game_list.hot_row, Some(1));
 
         let player = |name: &str| WolPlayerRow {
             name: name.into(),

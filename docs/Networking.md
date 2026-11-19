@@ -185,6 +185,13 @@ refused by the existing build check. Saved custom sound references use a new aut
 snapshot layout; older layouts are refused. A rollback uses its earlier audio resolution
 and save layout.
 
+The online lobby asks for its game list, and the matches to watch with it, every
+5 seconds while it is the front window, so a game someone creates shows up within
+that; gamemd's lobby asked every 30 (`SetTimer(0, 30000)`). Refresh still asks at
+once, and the lobbies list keeps its 53 seconds. A lobby that stops answering the list
+says so once until a list arrives again. No request or reply changes: an older
+game keeps asking every 30 seconds, and a rollback restores that.
+
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
 languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
 by default and saved as `[VERA] TranslateMatches=`. With a language chosen, other
@@ -1048,7 +1055,7 @@ map's right edge), then Escape must return it to the online lobby, and it leaves
 the Main Menu.
 Run it beside `online-live-host` and `online-live-guest` for two other
 accounts. Their `--online-frames` must keep their first match going well past the
-watcher's start: the list poll takes up to 30 seconds, the watcher sees the match two
+watcher's start: the list poll takes up to 5 seconds, the watcher sees the match two
 minutes behind and needs 300 frames after catching up, and it catches up only when it
 joins more than two minutes into the match. The host's room must let everyone watch,
 as the Create Game Watching choice's default does; Quick Match games
