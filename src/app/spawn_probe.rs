@@ -61,6 +61,10 @@ pub(crate) struct ProbeReport {
     /// older build's report lacks the field, and that build would start the
     /// game for `--generate-map` instead.
     pub generate_map: bool,
+    /// The most houses a launch with one human and no `[Relay]` seats
+    /// (`SKIRMISH_MAX_SLOT_COUNT`); every other launch seats at most thirty.
+    /// An older build's report lacks the field, and that build seats thirty.
+    pub max_offline_houses: u8,
 }
 
 /// One `[Battles]` campaign of the game data, as the campaign startup reads it.
@@ -335,6 +339,7 @@ pub(crate) fn probe(
         colors,
         campaigns,
         generate_map: true,
+        max_offline_houses: crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as u8,
     })
 }
 
@@ -786,6 +791,7 @@ mod tests {
                 }],
             }],
             generate_map: true,
+            max_offline_houses: 120,
         };
         let value = serde_json::to_value(&report).unwrap();
         let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
@@ -800,6 +806,7 @@ mod tests {
                 "game_modes",
                 "generate_map",
                 "map",
+                "max_offline_houses",
                 "max_start_waypoints",
                 "rules_digest",
                 "version"
