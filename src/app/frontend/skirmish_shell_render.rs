@@ -337,11 +337,23 @@ fn build_skirmish_shell_instances(
     }
 
     // VERA's Setups page covers `0x102` as the seed browser covers `0x105`:
-    // the panel, the strip, the page background, then the browser.
+    // the panel, the strip, the page background, then the browser. The
+    // panel keeps `0x102`'s top art, the map button framing the preview.
     if let (Some(browser), Some(setups_layout)) = (shell.setups_browser.as_ref(), setups_layout) {
-        push_right_panel_base_instances(&mut instances, atlas, layout, false);
+        push_right_panel_base_instances(
+            &mut instances,
+            atlas,
+            layout,
+            right_panel_frame10_overlay_active(shell),
+        );
         push_lower_strip_instance(&mut instances, atlas, layout);
         let interior = push_generic_shell_background_instances(&mut instances, atlas, layout);
+        push_steady_optional_chrome_instances(
+            &mut instances,
+            atlas,
+            layout,
+            ShellDialogChromeProfile::SkirmishSetup0x102,
+        );
         push_saved_browser_modal_instances(
             &mut instances,
             atlas,
