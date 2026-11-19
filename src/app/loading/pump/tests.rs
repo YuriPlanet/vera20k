@@ -115,6 +115,51 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
 }
 
 #[test]
+fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
+    use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
+    use crate::sim::scenario_session::{ExecutionTopology, ScenarioDescriptor, ScenarioGameMode};
+    use crate::sim::world::Simulation;
+    use crate::skirmish_modes::MpModeClass;
+
+    let session = test_launch_session(LaunchCountry::America);
+    let skirmish_rules = RulePolicy::stock_multiplayer();
+    let install = |raw_mode| {
+        let game_mode = ScenarioGameMode::from_game_mode(raw_mode);
+        let startup = LoadingStartup::Replay {
+            session: session.clone(),
+            seed: crate::app::match_bootstrap::MatchSeed {
+                value: 73,
+                source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
+                seed_authority_certifying: false,
+            },
+            game_mode,
+            native_id_prefix: 0,
+        };
+        let construction_rules = startup
+            .match_spec_for_construction(BootstrapRuleProfile::Multiplayer)
+            .rules();
+        assert_eq!(construction_rules, skirmish_rules);
+        let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
+            rule_policy: construction_rules,
+            ..Default::default()
+        });
+        crate::app::loading::init::install_startup_session_mode(&mut sim, &startup);
+        assert_eq!(sim.session().game_mode(), game_mode);
+        assert_eq!(
+            sim.session().execution_topology(),
+            ExecutionTopology::LocalOffline
+        );
+        assert_eq!(
+            sim.session().multiplayer_mode_class(),
+            Some(MpModeClass::Battle)
+        );
+        sim.session().rule_policy()
+    };
+    assert_eq!(install(0), RulePolicy::stock_campaign());
+    assert_eq!(install(5), skirmish_rules);
+}
+
+#[test]
 #[ignore = "slow; retail warm/cold ordered online startup"]
 fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
     cold_and_warm_rules_share_world_and_agreement_identity(
@@ -2356,7 +2401,7 @@ fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
         Some(accepted.max_ahead_frames())
     );
     assert_eq!(
-        sim.session().game_mode().command_queue_route(),
+        sim.session().execution_topology().command_queue_route(),
         crate::sim::world::CommandQueueRoute::Multiplayer
     );
 }

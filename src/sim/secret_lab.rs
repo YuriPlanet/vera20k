@@ -269,7 +269,7 @@ mod tests {
                 .collect();
             // Startup's global list includes constructed limbo buildings.
             if let Some(&first) = labs.first() {
-                sim.techno_limbo_with_rules(first, &rules, None);
+                sim.techno_limbo_with_rules(first, &rules);
             }
             if let Some(retained) = row["initial_fallback"].as_str() {
                 let id = sim.interner.intern(retained);
@@ -316,6 +316,8 @@ mod tests {
                             map_height: 0,
                             fill_silos: false,
                             rules: &rules,
+                            construction_rules:
+                                crate::rules::rule_policy::RulePolicy::stock_campaign(),
                             overlay_registry: &overlays,
                             house_roster: &roster,
                             skirmish_session: None,

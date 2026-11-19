@@ -168,13 +168,7 @@ impl PatrolHost for WorldPatrol<'_> {
     }
 
     fn enter_idle(&mut self) {
-        super::enter_idle_mode_for(
-            self.sim,
-            self.id,
-            self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
-        );
+        super::enter_idle_mode_for(self.sim, self.id, self.rules, self.ctx.effects);
     }
 
     fn assign_attack_cell(&mut self) {
@@ -192,7 +186,6 @@ impl PatrolHost for WorldPatrol<'_> {
                 team,
                 self.nav().map(|nav| TargetKind::from(nav).into()),
                 self.rules,
-                self.ctx.overlay_registry,
                 self.ctx.effects,
             );
         }
@@ -247,13 +240,7 @@ impl PatrolHost for WorldPatrol<'_> {
             destination: (mission == MissionType::Enter).then_some(NavTargetRef::object(object)),
         };
         self.sim
-            .mission_override_represented(
-                self.id,
-                packet,
-                self.rules,
-                self.ctx.overlay_registry,
-                self.ctx.effects,
-            )
+            .mission_override_represented(self.id, packet, self.rules, self.ctx.effects)
             .expect("represented Patrol override setters");
     }
 

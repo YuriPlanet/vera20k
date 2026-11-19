@@ -1001,10 +1001,7 @@ mod tests {
             sim.entities().get(disc).unwrap().drain.target(),
             Some(refinery)
         );
-        assert!(sim.unmark_entity_remove(
-            refinery,
-            crate::sim::world::UninitContext::with_rules(&rules)
-        ));
+        assert!(sim.unmark_entity_remove(refinery, crate::sim::world::UninitContext::new(&rules)));
         sim.session.set_binary_frame_for_test(17);
         drain_unit_ai_step(&mut sim, disc, &rules);
         assert_eq!(

@@ -263,7 +263,6 @@ impl PaidHead {
                     &commands,
                     rules,
                     sim.session.tick(),
-                    None,
                     FrameEffects::default(),
                 );
                 assert_eq!(executed, 1);
@@ -294,7 +293,7 @@ impl PaidHead {
                 FrameEffects::default(),
             )),
             "online_barracks_limbo" => {
-                sim.techno_limbo_with_rules(self.barracks, rules, None);
+                sim.techno_limbo_with_rules(self.barracks, rules);
             }
             "original_temporal_release" => crate::sim::world::Simulation::temporal_let_go(
                 &mut sim.substrate,

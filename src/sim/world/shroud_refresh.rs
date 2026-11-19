@@ -228,7 +228,7 @@ impl Simulation {
     /// every human's map in immutable House order; local input identity never
     /// selects shared fog. Offline/campaign retains its one current viewpoint.
     pub(crate) fn represented_player_maps(&self) -> Vec<InternedId> {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             self.network_player_maps().collect()
         } else {
             self.offline_player_map().into_iter().collect()
@@ -291,12 +291,10 @@ impl Simulation {
         let location = crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
         let cells = crate::map::resolved_terrain::NativeCellQuery::for_local_input(
             terrain,
-            self.session.game_mode().is_network(),
+            self.session.execution_topology().is_lockstep(),
         );
-        if vision::point_is_shrouded(&self.fog, &cells, player, location)
-            && let Some(entity) = self.substrate.entities.get_mut(id)
-        {
-            entity.selection.deselect();
+        if vision::point_is_shrouded(&self.fog, &cells, player, location) {
+            self.object_deselect(id);
         }
     }
 
@@ -709,7 +707,7 @@ impl Simulation {
         if viewers.is_empty() {
             return false;
         }
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         let viewers: Vec<_> = viewers
             .into_iter()
             .filter(|&viewer| !self.fog.whole_map_revealed_for_owner(viewer))
@@ -918,7 +916,7 @@ impl Simulation {
         // native player admission may deliver gameplay notifications. A
         // projected AI/other plane is not another native client callback.
         let notification_viewer = notification_viewer.filter(|viewer| viewers.contains(viewer));
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         let (cells, local_origin) = config.collect_area_cells(
             cell,
             radius,
@@ -933,13 +931,7 @@ impl Simulation {
             }
         });
         for &viewer in viewers {
-            let notify_view = if network {
-                self.houses
-                    .get(&viewer)
-                    .is_some_and(|house| house.is_human())
-            } else {
-                notification_viewer == Some(viewer)
-            };
+            let notify_view = self.reveal_notifies_viewer(viewer, notification_viewer);
             if projection == vision::MapRevealProjection::Source
                 && !self.session.game_options().fog_of_war
                 && !notify_view
@@ -968,6 +960,24 @@ impl Simulation {
         //Keep the admitted local XYZ captured before any synchronous callback;
         //a logical other-viewer projection is not another admitted native call.
         local_origin.filter(|_| (network && !viewers.is_empty()) || notification_viewer.is_some())
+    }
+
+    /// Whether a reveal's MapCell4A9CA0 discovery notification reaches
+    /// `viewer`'s plane: in a network game every human plane, since each
+    /// peer is its own player's native client; otherwise only the admitted
+    /// local player's.
+    pub(crate) fn reveal_notifies_viewer(
+        &self,
+        viewer: InternedId,
+        notification_viewer: Option<InternedId>,
+    ) -> bool {
+        if self.session.execution_topology().is_lockstep() {
+            self.houses
+                .get(&viewer)
+                .is_some_and(|house| house.is_human())
+        } else {
+            notification_viewer == Some(viewer)
+        }
     }
 
     /// MapCell4A9CA0 after the range/House gates, including its synchronous
@@ -1124,7 +1134,7 @@ impl Simulation {
         if let Some(state) = house.and_then(|house| self.houses.get_mut(&house)) {
             state.mark_map_clear();
         }
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             // Map577F4F admits PlayerPtr or NULL. VERA retains each human's
             // map, so a named human updates that same map on every peer;
             // NULL (Shroud=no) updates every represented human in House order.
@@ -1165,7 +1175,7 @@ impl Simulation {
     /// sight/gap counters and sustained sources are untouched. Current
     /// PlayerPtr is reread for every receiver after synchronous callbacks.
     pub(crate) fn trigger_reveal_entire_map(&mut self, context: UninitContext<'_>) -> bool {
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         let viewers = self.represented_player_maps();
         if viewers.is_empty()
             || viewers
@@ -1365,7 +1375,7 @@ impl Simulation {
         for &viewer in &viewers {
             self.fog.store_cleared_map(viewer, cells.clone());
         }
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             for &viewer in &viewers {
                 self.refresh_techno_shroud(false, false, Some(viewer), context);
             }
@@ -1411,7 +1421,7 @@ impl Simulation {
                 self.fog.grow_shroud(viewer, size, cells.as_ref());
             }
         }
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             for viewer in viewers {
                 self.refresh_techno_shroud(false, false, Some(viewer), context);
             }
@@ -1441,15 +1451,19 @@ impl Simulation {
                 if skip_buildings && building {
                     return None;
                 }
-                // House50B6F0 compares against PlayerPtr in a nonzero
-                // mode. Project that same test onto the explicit viewer;
-                // the process-local receiver belongs only to ordinary calls.
-                let human = only_viewer
-                    .filter(|_| self.session.game_mode_nonzero())
-                    .map_or_else(
-                        || self.house_is_human_player(entity.owner()),
-                        |viewer| entity.owner() == viewer,
-                    );
+                // House50B6F0 compares against the explicit viewer when
+                // supplied; a campaign still asks the two House flags.
+                let human = only_viewer.map_or_else(
+                    || self.house_is_human_player(entity.owner()),
+                    |viewer| {
+                        Self::is_human_player_on(
+                            self.session.native_player_identity(),
+                            &self.houses,
+                            entity.owner(),
+                            Some(viewer),
+                        )
+                    },
+                );
                 if human {
                     // RESIDUAL (dormant in stock play, which leaves FogOfWar off): `0x004ADFF0`
                     // admits a human object by its discovered byte (Techno+0x41B); outside
@@ -1457,7 +1471,7 @@ impl Simulation {
                     let discovered = only_viewer.map_or_else(
                         || entity.discovery.discovered_by_current_house(),
                         |viewer| {
-                            if self.session.game_mode().is_network() {
+                            if self.session.execution_topology().is_lockstep() {
                                 self.techno_discovered_by_viewer(id, viewer)
                             } else {
                                 self.fog.sight_is_latched(id, viewer)
@@ -1552,7 +1566,7 @@ impl Simulation {
     }
 
     fn read_fog_viewers(&self) -> Vec<crate::sim::intern::InternedId> {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             return self.represented_player_maps();
         }
         let current = self.session.current_house();
@@ -1582,25 +1596,22 @@ impl Simulation {
         &self,
         house: crate::sim::intern::InternedId,
     ) -> Vec<crate::sim::intern::InternedId> {
-        let candidates = if self.session.game_mode_nonzero() {
-            if self.owner_is_human(house) {
-                vec![house]
-            } else {
-                Vec::new()
-            }
-        } else {
-            self.fog_viewers().to_vec()
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        let identity = self.session.native_player_identity();
+        let candidates = match identity {
+            NativePlayerIdentity::PlayerPointer if self.owner_is_human(house) => vec![house],
+            NativePlayerIdentity::PlayerPointer => Vec::new(),
+            NativePlayerIdentity::HouseFlags => self.fog_viewers().to_vec(),
         };
         candidates
             .into_iter()
-            .filter(|&client| {
-                Self::is_human_player_on(&self.session, &self.houses, house, Some(client))
-            })
+            .filter(|&client| Self::is_human_player_on(identity, &self.houses, house, Some(client)))
             .collect()
     }
 
     fn fog_clients_current_first(&self) -> Vec<crate::sim::intern::InternedId> {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             return self.represented_player_maps();
         }
         let mut clients = self.fog_viewers().to_vec();
@@ -1784,7 +1795,7 @@ impl Simulation {
         {
             return;
         }
-        let context = UninitContext::with_rules(rules);
+        let context = UninitContext::new(rules);
         // MapClass::Reveal577D90, Reset_Shroud577AB0 and Reshroud577C90
         // call the SAME live4ADEE0/4ADCD0 visitors as diplomacy. Source:
         // original gamemd instructions. Each visitor snapshots its count,
@@ -2410,7 +2421,10 @@ impl Simulation {
         let notification_viewer = self.session.current_house();
         let config = self.sight_reveal_config(context.rules());
         if (config.require_playfield_membership() && !entity.in_playfield())
-            || (self.session.game_mode_nonzero() && config.passive_owner(entity.owner()))
+            // TechnoClass::See 0x0070ADDE..0x0070ADEF gates this direct
+            // sight admission for a MultiplayPassive House.
+            || (!self.session.rule_policy().uses_campaign_discovery()
+                && config.passive_owner(entity.owner()))
         {
             return;
         }
@@ -2527,7 +2541,7 @@ impl Simulation {
             .begin_sight_frame(&self.substrate.entities, self.path_grid.as_deref());
         #[cfg(any(test, feature = "test-support"))]
         if frame.sized {
-            self.admit_sight_on_sized_fog(config, UninitContext::new(rules, None));
+            self.admit_sight_on_sized_fog(config, UninitContext::new(rules));
         }
         // Only that fixture admission reads the reveal settings here.
         #[cfg(not(any(test, feature = "test-support")))]
@@ -2634,7 +2648,7 @@ impl Simulation {
         {
             return;
         }
-        let context = UninitContext::new(rules, None).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         //The two functions each re-read their receiver after callbacks.
         self.release_object_sight_in_view(stable_id, &config, context);
         // The pair shares one read of the settings: the rules, the map's
@@ -2830,7 +2844,7 @@ impl Simulation {
         owner: InternedId,
         context: UninitContext<'_>,
     ) {
-        let represented_view = if self.session.game_mode().is_network() {
+        let represented_view = if self.session.execution_topology().is_lockstep() {
             self.houses
                 .get(&owner)
                 .is_some_and(|house| house.is_human())
@@ -2880,7 +2894,7 @@ impl Simulation {
             .filter(|viewer| clients.contains(viewer))
             .collect();
         let config = self.sight_reveal_config(context.rules());
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         // Map4ADEE0/4ADCD0 retain registration and viewer order. Scratch is
         // local to this invocation: callbacks may reenter the same walk.
         // Followups name viewers by their index in `viewers`.
@@ -3120,7 +3134,7 @@ impl Simulation {
         let viewers =
             only_viewer.map_or_else(|| self.fog_clients_current_first(), |viewer| vec![viewer]);
         for viewer in viewers {
-            if self.session.game_mode().is_network()
+            if self.session.execution_topology().is_lockstep()
                 && self
                     .substrate
                     .entities
@@ -3208,7 +3222,7 @@ impl Simulation {
             }
         }
         for &client in &clients {
-            if self.session.game_mode().is_network()
+            if self.session.execution_topology().is_lockstep()
                 && skip_owner
                 && self
                     .substrate
@@ -3237,7 +3251,7 @@ impl Simulation {
                 stable_id,
                 &remaining,
                 &config,
-                UninitContext::with_rules(rules),
+                UninitContext::new(rules),
                 self.session.current_house(),
             );
         }
@@ -3283,7 +3297,7 @@ impl Simulation {
             true,
             &config,
             Some(&heights),
-            UninitContext::with_rules(rules),
+            UninitContext::new(rules),
             Some(current),
         );
     }
@@ -3344,7 +3358,7 @@ impl Simulation {
         }
         let config = self.sight_reveal_config(rules);
         //The two leaves reload their own receiver after synchronous discovery.
-        let context = UninitContext::new(rules, None).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         self.release_object_sight_event(
             stable_id,
             &due,

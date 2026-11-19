@@ -833,7 +833,7 @@ mod tests {
         rules.install_art_fixture(ArtRegistry::from_ini(&art));
         rules.bind_anim_frame_count_for_test("TYPECHUTE", 6);
         let mut sim = crate::sim::world::Simulation::new();
-        sim.substrate.entities.insert(
+        sim.entities_mut_for_test().insert(
             crate::sim::game_entity::GameEntity::test_default_of_category(
                 1,
                 "E1",
@@ -901,8 +901,7 @@ mod tests {
         );
 
         let mut sim = Simulation::new();
-        sim.substrate
-            .entities
+        sim.entities_mut_for_test()
             .insert(GameEntity::test_default_of_category(
                 1,
                 "E1",
@@ -924,7 +923,7 @@ mod tests {
             ));
         let attach = |sim: &mut Simulation, rules: &RuleSet| {
             let anim = sim.attach_parachute_anim(rules, 1).unwrap();
-            Simulation::wind_down_parachute_anim(&mut sim.substrate, 1);
+            Simulation::wind_down_parachute_anim(sim.substrate_mut_for_test(), 1);
             assert_eq!(sim.anim(anim).unwrap().owner_entity(), Some(1));
             assert_eq!(sim.anim(anim).unwrap().runtime().loop_remaining, 0);
             sim.interner

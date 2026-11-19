@@ -300,7 +300,6 @@ fn repack(runtime: &mut SimRuntime, input: &mut MatchInputState, original: u64) 
     let (commands, _) = crate::app::input::context_order::building_cell_orders(
         &runtime.simulation,
         &runtime.resources.rules,
-        Some(runtime.resources.rules.overlay_registry()),
         &input.selection_order,
         owner,
         (26, 20),

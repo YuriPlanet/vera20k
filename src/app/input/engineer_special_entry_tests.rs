@@ -46,8 +46,7 @@ fn scene_with_repair_step(
         .spawn_object("ENGINEER", "Americans", 10, 12, 0, &rules)
         .unwrap();
     if hospital {
-        sim.entities_mut_for_test()
-            .get_mut(actor)
+        sim.entity_mut_for_test(actor)
             .unwrap()
             .health
             .set_for_test(30);
@@ -196,8 +195,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
 #[test]
 fn damaged_grinders_keep_the_repair_action_and_healthy_patients_do_not_enter() {
     let (mut sim, rules, actor, hover) = scene(false);
-    sim.entities_mut_for_test()
-        .get_mut(hover.stable_id)
+    sim.entity_mut_for_test(hover.stable_id)
         .unwrap()
         .health
         .set_for_test(500);
@@ -210,8 +208,7 @@ fn damaged_grinders_keep_the_repair_action_and_healthy_patients_do_not_enter() {
         }]
     );
     let (mut sim, rules, actor, hover) = scene(true);
-    sim.entities_mut_for_test()
-        .get_mut(actor)
+    sim.entity_mut_for_test(actor)
         .unwrap()
         .health
         .set_for_test(75);
@@ -228,8 +225,7 @@ fn hospital_can_load_preserves_native_ammo_admission() {
     //admit. This query is separate from the clicked Enter's CAN_DOCK0E.
     for ammo in [0, 1, -1] {
         let (mut sim, rules, actor, hover) = scene(true);
-        sim.entities_mut_for_test()
-            .get_mut(hover.stable_id)
+        sim.entity_mut_for_test(hover.stable_id)
             .unwrap()
             .install_ammo_for_test(Some(crate::sim::ammo::TechnoAmmo::new(ammo)));
         assert_eq!(
@@ -317,7 +313,7 @@ fn destroying_a_hospital_cleans_up_its_hidden_patient() {
         if sim.entities().get(actor).unwrap().in_limbo() {
             sim.uninit_with_context(
                 hover.stable_id,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             //UnInit makes the objects inactive; the frame's existing
             //retirement phase removes their retained storage.

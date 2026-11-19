@@ -237,6 +237,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         tactical: [0, 0, size[0], size[1]],
         zoom: 1.0,
         axis: DepthAxis::NONE,
+        z_seed: crate::render::native_z::DEFAULT_Z,
         atlas: Some(&atlas),
         detail: &detail,
         detail_level: 2,

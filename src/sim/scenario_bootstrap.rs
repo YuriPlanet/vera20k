@@ -1437,10 +1437,11 @@ pub(crate) fn apply_skirmish_launch_alliances(
     rules: &RuleSet,
 ) {
     let slots = normalized_launch_slots(session);
+    let rule_policy = sim.session.rule_policy();
     sim.install_house_alliances(
         crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(launch_alliance_map(
             &slots,
-            &session.mode,
+            rule_policy,
         )),
         rules,
     );
@@ -1749,10 +1750,7 @@ fn apply_resolved_skirmish_launch_session(
     // after the complete house pass, including zero-budget runs.
     let _ = sim.scenario_rng.next_range_u32_inclusive(0, 0xffff);
 
-    apply_launch_shroud_option(
-        sim,
-        crate::sim::world::UninitContext::new(rules, overlay_registry),
-    );
+    apply_launch_shroud_option(sim, crate::sim::world::UninitContext::new(rules));
 
     SkirmishLaunchApplyResult {
         spawned_mcvs,
@@ -2045,7 +2043,7 @@ pub fn populate_launch_houses(
             difficulty,
             &rules.general,
             rules.country_difficulty_biases(country_name),
-            sim.session.game_mode_nonzero(),
+            sim.session.rule_policy(),
             sim.houses.order().len() as i32,
             sim.session.binary_frame() as i32,
         );
@@ -2159,7 +2157,7 @@ pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses
     }
 }
 
-/// The launch diplomacy graph: team and co-op alliances between the slots.
+/// The launch diplomacy graph for explicit teams and same-role alliances.
 ///
 /// A map House's `Allies=` takes no part. `HouseClass::Read_INI @ 0x005009B0`,
 /// its only reader on an authored map, runs only when `Session.GameMode` is 0
@@ -2167,7 +2165,7 @@ pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses
 /// @ 0x00687F10` builds Neutral and Special with no allies.
 pub fn launch_alliance_map(
     slots: &[NormalizedSkirmishSlot],
-    mode: &crate::skirmish_launch::SkirmishLaunchMode,
+    policy: crate::rules::rule_policy::RulePolicy,
 ) -> crate::map::houses::HouseAllianceMap {
     let mut alliances = crate::map::houses::HouseAllianceMap::new();
     for slot in slots {
@@ -2192,7 +2190,7 @@ pub fn launch_alliance_map(
             alliances.entry(right_key).or_default().insert(left_key);
         }
     }
-    if mode.class == crate::skirmish_modes::MpModeClass::Cooperative {
+    if policy.allies_starting_houses_by_role() {
         for left in slots {
             for right in slots {
                 if left.owner_name == right.owner_name || left.is_human != right.is_human {
@@ -2453,7 +2451,7 @@ fn ares_place_starting_construction_yard(
     if width > 2 || height > 2 {
         house.set_base_center((spawn_rx.wrapping_sub(1), spawn_ry.wrapping_sub(1)));
     }
-    if !house.is_controlled_by_human(sim.session.game_mode_nonzero()) {
+    if !house.is_controlled_by_human(sim.session.rule_policy()) {
         let cell = house.base_origin();
         sim.refresh_ai_base_after_deploy(
             owner_id,
@@ -3376,10 +3374,8 @@ impl ScenarioBootstrapRng {
                     game_options,
                     campaign_index,
                     restart_carry_over,
+                    map_data.special_flags.fog_of_war,
                 )?;
-                simulation.session.install_campaign_fog_of_war(
-                    map_data.special_flags.fog_of_war.unwrap_or(false),
-                );
                 simulation.install_native_unique_id_cursor(
                     crate::sim::native_identity::NativeUniqueIdCursor::begin_campaign_prefix(
                         early_events.len(),
@@ -3756,7 +3752,8 @@ pub fn initialize_map_roster_houses(
         // IQ (+0x1D0) and CurrentIQ (+0x24C) (0x00500DBA..0x00500DC0).
         house_state.install_scenario_iq(house.scenario_current_iq(rules.general.max_iq_levels));
         if let Some((player, computer)) = campaign_difficulties {
-            let difficulty = if house_state.is_controlled_by_human(false) {
+            let policy = sim.session.rule_policy();
+            let difficulty = if house_state.is_controlled_by_human(policy) {
                 player
             } else {
                 computer
@@ -3767,7 +3764,7 @@ pub fn initialize_map_roster_houses(
                 country_name.map_or_else(Default::default, |name| {
                     rules.country_difficulty_biases(name)
                 }),
-                false,
+                policy,
                 index as i32,
                 frame,
             );
@@ -3799,6 +3796,49 @@ mod tests {
         let mut ini = IniFile::from_str(CONTROLLED_STOCK_COUNTRIES);
         ini.merge(&IniFile::from_str(source));
         ini
+    }
+
+    #[test]
+    fn starting_role_alliances_follow_admitted_rules_without_replacing_teams() {
+        use crate::map::houses::are_houses_mutually_allied;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::skirmish_launch::AiDifficulty;
+
+        let mut launch = crate::headless_scenario::battle_session(
+            "XMP03T4.MAP",
+            &[
+                (LaunchCountry::Russia, AiDifficulty::Normal),
+                (LaunchCountry::Cuba, AiDifficulty::Normal),
+            ],
+        );
+        launch.local_slot_mut().team = LaunchTeam::Team(0);
+        launch.opponents[0].team = LaunchTeam::Team(0);
+        let rules = RuleSet::from_ini(&launch_fixture_ini("")).unwrap();
+        let mut sim = Simulation::new();
+        populate_launch_houses(&mut sim, &normalized_launch_slots(&launch), &rules);
+        let mode = ScenarioGameMode::from_game_mode(5);
+        let class = Some(launch.mode.class);
+        let stock = mode.stock_rule_policy(class);
+
+        sim.install_session_admission(mode, class, stock);
+        apply_skirmish_launch_alliances(&mut sim, &launch, &rules);
+        let alliances = sim.house_alliances.as_map();
+        assert!(are_houses_mutually_allied(alliances, "Player", "Computer1"));
+        assert!(!are_houses_mutually_allied(
+            alliances,
+            "Computer1",
+            "Computer2"
+        ));
+
+        sim.install_session_admission(mode, class, stock.with_starting_house_role_alliances(true));
+        apply_skirmish_launch_alliances(&mut sim, &launch, &rules);
+        let alliances = sim.house_alliances.as_map();
+        assert!(are_houses_mutually_allied(alliances, "Player", "Computer1"));
+        assert!(are_houses_mutually_allied(
+            alliances,
+            "Computer1",
+            "Computer2"
+        ));
     }
 
     fn starting_country_native_fixture(passive: bool) -> (serde_json::Value, RuleSet) {
@@ -4543,6 +4583,7 @@ mod tests {
             rules: &rules,
             overlay_registry: rules.overlay_registry(),
             house_roster: &HouseRoster::default(),
+            construction_rules: sim.session.rule_policy(),
             skirmish_session: Some(&launch),
             campaign_map: None,
         })
@@ -4559,6 +4600,7 @@ mod tests {
 
     #[test]
     fn scripted_result_network_views_keep_both_humans_and_local_exit_consistent() {
+        use crate::rules::rule_policy::RulePolicy;
         use crate::rules::team_ai_ini::TeamAiIniRegistry;
         use crate::sim::house_state::HouseOutcomeKind;
         let mut finals = Vec::new();
@@ -4573,7 +4615,11 @@ mod tests {
                 [ScriptTypes]\n0=RESULT-SCRIPT\n[RESULT-SCRIPT]\n0=23,77\n\
                 [TaskForces]\n0=RESULT-FORCE\n[RESULT-FORCE]\nGroup=-1\n0=1,MTNK\n",
             );
-            let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &ini, true);
+            let registry = TeamAiIniRegistry::from_sources(
+                &IniFile::empty(),
+                &ini,
+                RulePolicy::stock_multiplayer(),
+            );
             sim.install_team_ai_registry(&registry, rules);
             let ty = sim.interner.get("RESULT-TEAM").unwrap();
             let team = sim.create_team(ty, Some(owner), rules).unwrap();
@@ -4721,7 +4767,7 @@ mod tests {
         let unseen = left.simulation.state_hash();
         for viewer in [host, guest] {
             for runtime in [&mut left, &mut right] {
-                let context = UninitContext::with_rules(&runtime.resources.rules);
+                let context = UninitContext::new(&runtime.resources.rules);
                 assert!(runtime.simulation.discover_techno(ids[0], viewer, context));
                 assert!(!runtime.simulation.discover_techno(ids[0], viewer, context));
                 assert!(
@@ -4777,7 +4823,7 @@ mod tests {
         for viewer in [last, observer] {
             let before = left.simulation.state_hash();
             for runtime in [&mut left, &mut right] {
-                let context = UninitContext::with_rules(&runtime.resources.rules);
+                let context = UninitContext::new(&runtime.resources.rules);
                 let sim = &mut runtime.simulation;
                 assert!(!sim.techno_discovered_by_viewer(ids[0], viewer));
                 assert!(sim.discover_techno(ids[0], viewer, context));
@@ -4831,7 +4877,7 @@ mod tests {
                 assert!(!sim.discover_techno(
                     ids[0],
                     viewer,
-                    UninitContext::with_rules(&runtime.resources.rules)
+                    UninitContext::new(&runtime.resources.rules)
                 ));
                 assert_eq!((sim.state_hash(), sim.rng_state()), retained);
             }
@@ -4887,10 +4933,10 @@ mod tests {
             let rules = &runtime.resources.rules;
             assert!(!sim.fog.is_cell_revealed(host, 16, 16));
             assert!(!sim.fog.is_cell_revealed(guest, 16, 16));
-            assert!(sim.trigger_reveal_at_waypoint(7, UninitContext::with_rules(rules)));
+            assert!(sim.trigger_reveal_at_waypoint(7, UninitContext::new(rules)));
             assert!(sim.fog.is_cell_revealed(host, 16, 16));
             assert!(sim.fog.is_cell_revealed(guest, 16, 16));
-            assert!(sim.trigger_conceal_at_waypoint(7, UninitContext::with_rules(rules)));
+            assert!(sim.trigger_conceal_at_waypoint(7, UninitContext::new(rules)));
             let id = sim
                 .spawn_object("CAMERA", "Host", 16, 16, 0, rules)
                 .unwrap();
@@ -4930,7 +4976,7 @@ mod tests {
             // Native Limbo6F6B06 releases every represented PlayerPtr,
             // including the owner (DestructionEffects44172F excludes it).
             assert_eq!(
-                sim.techno_limbo_with_context(id, UninitContext::with_rules(rules)),
+                sim.techno_limbo_with_context(id, UninitContext::new(rules)),
                 crate::sim::world::ConcealOutcome::Concealed
             );
             assert!(!sim.fog.holds_alternate_sight(id, guest));
@@ -5724,7 +5770,7 @@ mod tests {
             }
             for block_placement in [false, true] {
                 let mut scenario = descriptor(0xA83D4C);
-                scenario.game_mode_nonzero = true;
+                scenario.rule_policy = crate::rules::rule_policy::RulePolicy::stock_multiplayer();
                 scenario.map_width = 96;
                 scenario.map_height = 96;
                 scenario.mp_start_waypoints.insert(0, (40, 40));
@@ -7228,7 +7274,7 @@ mod tests {
         let mut scenario = descriptor(seed);
         scenario.map_name = "RandMap.SED".to_string();
         scenario.theater = "TEMPERATE".to_string();
-        scenario.game_mode_nonzero = true;
+        scenario.rule_policy = crate::rules::rule_policy::RulePolicy::stock_multiplayer();
         scenario.map_width = SIZE;
         scenario.map_height = SIZE;
         scenario.mp_start_waypoints.insert(0, (start.rx, start.ry));
@@ -7355,23 +7401,28 @@ mod tests {
         let _ = crate::sim::runtime::initialize_native_tiberium_queues(
             &mut sim,
             &map.basic,
-            &map.special_flags,
             &rules,
             &overlays,
             (SIZE, SIZE),
         );
-        let output = sim
-            .finalize_scenario_post_map(ScenarioPostMapInput {
-                map_width: SIZE,
-                map_height: SIZE,
-                fill_silos: false,
-                rules: &rules,
-                overlay_registry: &overlays,
-                house_roster: &house_roster,
-                skirmish_session: Some(&launch),
-                campaign_map: None,
-            })
+        let post_map = |construction_rules| ScenarioPostMapInput {
+            map_width: SIZE,
+            map_height: SIZE,
+            fill_silos: false,
+            rules: &rules,
+            overlay_registry: &overlays,
+            house_roster: &house_roster,
+            construction_rules,
+            skirmish_session: Some(&launch),
+            campaign_map: None,
+        };
+        let stock = sim.session.rule_policy();
+        let no_slots = sim
+            .clone()
+            .finalize_scenario_post_map(post_map(stock.with_uses_match_crates(false)))
             .unwrap();
+        assert!(no_slots.crates.is_none());
+        let output = sim.finalize_scenario_post_map(post_map(stock)).unwrap();
         assert_eq!(
             output.crates,
             Some(crate::sim::crates::CratePlacement {

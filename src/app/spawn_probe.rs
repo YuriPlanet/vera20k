@@ -61,6 +61,10 @@ pub(crate) struct ProbeReport {
     /// older build's report lacks the field, and that build would start the
     /// game for `--generate-map` instead.
     pub generate_map: bool,
+    /// The most houses a launch with one human and no `[Relay]` seats
+    /// (`SKIRMISH_MAX_SLOT_COUNT`); every other launch seats at most thirty.
+    /// An older build's report lacks the field, and that build seats thirty.
+    pub max_offline_houses: u8,
 }
 
 /// One `[Battles]` campaign of the game data, as the campaign startup reads it.
@@ -335,6 +339,7 @@ pub(crate) fn probe(
         colors,
         campaigns,
         generate_map: true,
+        max_offline_houses: crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as u8,
     })
 }
 
@@ -462,7 +467,12 @@ fn mission_chain(
         .unwrap_or(0);
     let mut chain = Vec::new();
     let mut current = first.to_ascii_uppercase();
-    while chain.len() < MAX_CAMPAIGN_MISSIONS && !chain.contains(&current) {
+    // A name campaign startup refuses (`match_bootstrap::prepare_campaign_scenario`)
+    // is no mission, and is never handed to the file system here either.
+    while chain.len() < MAX_CAMPAIGN_MISSIONS
+        && !chain.contains(&current)
+        && crate::map::source::is_logical_name(&current)
+    {
         chain.push(current.clone());
         let Ok(map) =
             crate::map::source::load_map_ini_by_name_or_path_with_assets(root, &current, assets)
@@ -627,6 +637,16 @@ mod tests {
     }
 
     #[test]
+    fn a_campaign_name_that_is_no_map_name_is_no_mission() {
+        let root = crate::map::source::test_support::TestDirectory::new("probe-mission-name");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        for name in [r"\\host\share\A.MAP", "../A.MAP"] {
+            let chain = mission_chain(root.path(), &assets, None, &[], name);
+            assert!(chain.is_empty(), "{name}");
+        }
+    }
+
+    #[test]
     fn vanilla_colors_are_the_eight_priorities_through_the_linked_color_table() {
         let colors = color_names(&schemes(20), SkirmishColorMode::VANILLA);
         let names: Vec<_> = colors.iter().map(|c| (c.index, c.name.as_str())).collect();
@@ -771,6 +791,7 @@ mod tests {
                 }],
             }],
             generate_map: true,
+            max_offline_houses: 120,
         };
         let value = serde_json::to_value(&report).unwrap();
         let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
@@ -785,6 +806,7 @@ mod tests {
                 "game_modes",
                 "generate_map",
                 "map",
+                "max_offline_houses",
                 "max_start_waypoints",
                 "rules_digest",
                 "version"

@@ -32,7 +32,7 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
     sim.resolve_type_handles(&rules);
     sim.fog = vision::FogState::new(33, 33);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
@@ -56,7 +56,10 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
     sim.fog.ensure_viewer(player);
     sim.fog.ensure_viewer(remote);
     assert_eq!(sim.session.current_house(), Some(player));
-    assert!(sim.houses[&remote].is_controlled_by_human(false));
+    assert!(
+        sim.houses[&remote]
+            .is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+    );
     assert!(!sim.houses[&remote].is_human());
     assert!(
         !sim.house_alliances()
@@ -135,6 +138,28 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
                 .discovered_by_current_house()
         );
     }
+    // A custom discovery policy cannot require the local +41B projection
+    // for services in lockstep, even when the provider belongs to a human.
+    let mut lockstep = hidden.clone();
+    let mode = crate::sim::scenario_session::ScenarioGameMode::Lan;
+    let policy = mode
+        .stock_rule_policy(None)
+        .with_uses_campaign_discovery(true);
+    lockstep.install_session_admission(mode, None, policy);
+    lockstep
+        .houses
+        .get_mut(&remote)
+        .unwrap()
+        .set_is_human_for_test(true);
+    Simulation::invalidate_house_power(&lockstep.houses, &mut lockstep.power_states, remote, true);
+    lockstep.assess_house_derived_state(remote, &rules, FrameEffects::default());
+    assert_eq!(lockstep.power_states()[&remote].total_output(), 200);
+    assert!(power_system::has_active_radar(
+        lockstep.power_states(),
+        remote
+    ));
+    assert!(lockstep.houses[&remote].spy_sat_active());
+
     // The same undiscovered providers are admitted outside campaign mode.
     // This invokes the production House prefix on the restored hidden prior;
     // the fixture does not run skirmish defeat on its intentionally empty Player.
@@ -211,10 +236,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
     assert!(!clean_power.radar_recheck_for_test());
     assert!(!sim.houses[&remote].spy_sat_active());
     for waypoint in 0..3 {
-        assert!(sim.trigger_reveal_at_waypoint(
-            waypoint,
-            UninitContext::new(&rules, Some(rules.overlay_registry())),
-        ));
+        assert!(sim.trigger_reveal_at_waypoint(waypoint, UninitContext::new(&rules),));
     }
     // Supply a retained +41B=false history over genuinely mapped ground.
     // Keep the real prior House assessment, rather than inventing power or
@@ -271,7 +293,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
     // Building before returning, even with no following object-AI visit.
     assert!(sim.change_visible_map_area(
         [0, 0, 16, 16],
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     for id in ids {
         assert!(

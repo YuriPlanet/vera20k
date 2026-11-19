@@ -45,10 +45,11 @@ rebinding), push subscription included; a replay or forgery cannot. This
 skips the path check the handshake makes, a deliberate trade-off: an on-path
 attacker who forwards a copy first can divert the reader's push stream until
 the client's next datagram moves it back, which such an attacker could disrupt
-anyway; source address spoofing is out of scope. A datagram with an unknown session is dropped without an HMAC, one with
-a wrong tag only by itself; the relay reports both counts (`mac_failures`,
-`unknown_sessions`) and an alert per session past 4,096 failures in a fixed
-minute (`session_alerts`). No count ever drops a valid datagram.
+anyway; source address spoofing is out of scope. A datagram with an unknown
+session is dropped without an HMAC and counts in `unregistered`, one with a
+wrong tag only by itself and counts in `authentication`; a session past 4,096
+wrong tags in a fixed minute adds one `session_alerts`. No count ever drops a
+valid datagram.
 
 Each player gets eight handshakes/second, admitted or not, enough for paired
 old/new routes during renewal; Leave acknowledgements, which need no admission,
@@ -151,7 +152,8 @@ evenly, and count a backlog only beyond a whole turn.
 
 Clients send everything but Ready (request 0), Pull (2), Leave (3) and Pause
 (5) in one control request, UPLINK (8), scheduled by the client session
-(`services/relay/adaptive-transport/spec.md` holds the full rules):
+(`adaptive-transport/spec.md` holds the fields and scheduling rules,
+`bandwidth-compaction/spec.md` §7 this encoding):
 
 ```
 [8][flags][recv_next varint][down_high varint][down_bits u64][srtt_ms varint][base_ms varint][rttvar_ms varint][link]

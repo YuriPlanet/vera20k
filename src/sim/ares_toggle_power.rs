@@ -46,7 +46,7 @@ impl Simulation {
             || globals.toggle_power_iq > house.current_iq()
             || buildings.is_empty()
             || power.has_drained_power_source()
-            || house.is_controlled_by_human(self.session.game_mode_nonzero())
+            || house.is_controlled_by_human(self.session.rule_policy())
             || power.blackout_remaining(frame) > 0
         {
             return;
@@ -55,8 +55,7 @@ impl Simulation {
             return;
         }
         let (output, drain) = power.effective_totals();
-        // HasLowPower, inlined: a drain above the output.
-        let low_power = drain != 0 && drain > output;
+        let low_power = power.has_low_power();
         // (expendability, UniqueID, id, drain), sorted least expendable
         // first; the UniqueID tie-break makes the order total.
         let mut candidates: Vec<(i32, i32, u64, i32)> = buildings

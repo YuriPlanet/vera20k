@@ -87,7 +87,6 @@ fn tire_water_expiry_requires_strictly_below_the_deck_plane() {
         assert_eq!(sim.display_layers().layer_of(id), None);
         sim.process_pending_delete_with(
             &resources.rules,
-            Some(resources.rules.overlay_registry()),
             super::FrameEffects::default(),
             1,
             sim.session.started(),
@@ -157,7 +156,6 @@ fn tire_out_of_domain_update_deletes_without_water_expiry_effects() {
     assert_eq!(sim.display_layers().layer_of(id), None);
     sim.process_pending_delete_with(
         &resources.rules,
-        Some(resources.rules.overlay_registry()),
         super::FrameEffects::default(),
         1,
         sim.session.started(),

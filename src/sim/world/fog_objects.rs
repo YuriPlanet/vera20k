@@ -349,18 +349,18 @@ mod tests {
         let (mut sim, mut rules, _) = world();
         sim.session.set_binary_frame_for_test(7);
         let initial = sim.session.shroud_growth_timer();
-        sim.tick_shroud_growth(UninitContext::with_rules(&rules));
+        sim.tick_shroud_growth(UninitContext::new(&rules));
         assert_eq!(sim.session.shroud_growth_timer(), initial);
         rules.general.shroud_grow = true;
         rules.general.shroud_rate = crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO;
-        sim.tick_shroud_growth(UninitContext::with_rules(&rules));
+        sim.tick_shroud_growth(UninitContext::new(&rules));
         assert_eq!(sim.session.shroud_growth_timer(), initial);
         rules.general.shroud_rate =
             crate::util::native_x87::NativeF64Bits::from_bits(f64::NAN.to_bits());
-        sim.tick_shroud_growth(UninitContext::with_rules(&rules));
+        sim.tick_shroud_growth(UninitContext::new(&rules));
         assert_eq!(sim.session.shroud_growth_timer(), initial);
         rules.general.shroud_rate = crate::rules::ruleset::default_shroud_rate();
-        sim.tick_shroud_growth(UninitContext::with_rules(&rules));
+        sim.tick_shroud_growth(UninitContext::new(&rules));
         assert_eq!(
             sim.session.shroud_growth_timer(),
             crate::sim::timer::CdTimer::started(7, 3600)
@@ -371,7 +371,7 @@ mod tests {
     fn frozen_foundation_survives_damage_destruction_and_load_until_revealed() {
         let (mut sim, rules, viewer) = world();
         let id = place(&mut sim, &rules);
-        let context = UninitContext::with_rules(&rules);
+        let context = UninitContext::new(&rules);
         for cell in [(12, 12), (13, 12), (12, 13)] {
             sim.fog_cell(viewer, cell, context);
             assert!(sim.fog.fogged_objects().is_empty());
@@ -430,7 +430,7 @@ mod tests {
     #[test]
     fn building_placed_in_existing_fog_stays_hidden_until_revealed() {
         let (mut sim, rules, viewer) = world();
-        let context = UninitContext::with_rules(&rules);
+        let context = UninitContext::new(&rules);
         for cell in [(12, 12), (13, 12), (12, 13), (13, 13)] {
             sim.fog_cell(viewer, cell, context);
         }
@@ -472,19 +472,19 @@ mod tests {
                 z: 0,
             });
         sim.reveal_entity_with_rules(scout, &rules);
-        sim.tick_fog_regrowth(UninitContext::with_rules(&rules));
+        sim.tick_fog_regrowth(UninitContext::new(&rules));
         assert!(
             !sim.fog.is_object_fogged(viewer, building),
             "live scout protects the building"
         );
         let deadline = sim.session.fog_regrow_timer().duration();
         assert!(deadline > 0);
-        sim.techno_limbo_with_context(scout, UninitContext::with_rules(&rules));
+        sim.techno_limbo_with_context(scout, UninitContext::new(&rules));
         sim.session.set_binary_frame_for_test(deadline as u32 - 1);
-        sim.tick_fog_regrowth(UninitContext::with_rules(&rules));
+        sim.tick_fog_regrowth(UninitContext::new(&rules));
         assert!(!sim.fog.is_object_fogged(viewer, building));
         sim.session.set_binary_frame_for_test(deadline as u32);
-        sim.tick_fog_regrowth(UninitContext::with_rules(&rules));
+        sim.tick_fog_regrowth(UninitContext::new(&rules));
         // RegrowFog4ACC50 removes one frontier at a time: the old sight's
         // outer ring fogs first, then the next period consumes its new edge.
         assert!(sim.fog.is_cell_object_fogged(viewer, (8, 12), None));
@@ -492,7 +492,7 @@ mod tests {
         for period in 2..=5 {
             sim.session
                 .set_binary_frame_for_test((period * deadline) as u32);
-            sim.tick_fog_regrowth(UninitContext::with_rules(&rules));
+            sim.tick_fog_regrowth(UninitContext::new(&rules));
         }
         assert!(sim.fog.is_object_fogged(viewer, building));
         assert_eq!(sim.session.fog_regrow_timer().start_frame(), 5 * deadline);
@@ -547,10 +547,10 @@ mod tests {
         let (mut second, _, _, _, _) = make_peer();
         second.session.set_current_house_for_test(Some(remote));
         assert_eq!(first.state_hash(), second.state_hash());
-        first.initialize_fog_of_war(UninitContext::with_rules(&rules));
-        second.initialize_fog_of_war(UninitContext::with_rules(&rules));
-        first.tick_fog_regrowth(UninitContext::with_rules(&rules));
-        second.tick_fog_regrowth(UninitContext::with_rules(&rules));
+        first.initialize_fog_of_war(UninitContext::new(&rules));
+        second.initialize_fog_of_war(UninitContext::new(&rules));
+        first.tick_fog_regrowth(UninitContext::new(&rules));
+        second.tick_fog_regrowth(UninitContext::new(&rules));
         assert!(!first.fog.is_object_fogged(viewer, building));
         assert!(first.fog.is_object_fogged(remote, building));
         // These are the complete fog owner and timer hashes. Other owners

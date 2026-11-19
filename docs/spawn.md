@@ -20,6 +20,10 @@ in `game_modes`, the `map` given (`file`, `byte_length`, `source_sha256` for
 (`countries`), the `Color=` values (`colors`), the `campaigns` a single-player launch may start,
 and `"generate_map": true` when the build has the random-map command below. A build without it
 lacks the field and would start the game for `--generate-map`, so check it first.
+`max_offline_houses` is the most houses a launch with one human and no `[Relay]` section seats,
+120, as offline Skirmish does: `AIPlayers` up to 119, AI rows `Multi2` to `Multi120`, starts
+(`[SpawnLocations]`) and `[HouseTeams]` numbers 0 to 119. Every other launch seats at most 30
+houses, with starts and teams 0 to 29. A build that lacks the field seats 30 in every launch.
 The game folder comes from `config.toml` unless `--ra2-dir` names one, the mod from `config.toml`
 unless `--mod` or `--no-mod` chooses, and the Ares setting from VERA.INI unless `--ares` names the
 one `spawn.ini`'s `[Settings] Ares=` will. In the browser, `probe(map_name)` returns the same JSON
@@ -42,7 +46,7 @@ options:
 | Key | Values |
 | --- | --- |
 | `Width`, `Height` | the same value: 0 to 3 for Small to Very Large, 4 to 7 for 160, 250, 350 and 500 cells |
-| `NumPlayers` | 2 to 30 |
+| `NumPlayers` | 2 to 120; a map for more than 30 plays offline |
 | `Seed` | 0 to 65535; required |
 | `MapType` | 0 archipelago, 1 continent, 2 team continent, 3 inland, 4 mountainous |
 | `Theater` | 0 temperate, 1 snow |

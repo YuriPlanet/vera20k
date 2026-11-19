@@ -52,6 +52,6 @@
     "response_time": "0x005424C0",
     "set_timing": "0x00540C60"
   },
-  "replay_command": "python -m tools.storage_oracle.lan_lobby --messages",
-  "payload_sha256": "e80923949dd6cfa1852ebd58e610a9dfc9fd48e6535d11023717393c5487db26"
+  "replay_command": "python -m tools.storage_oracle.lan_messages",
+  "payload_sha256": "5b69712d7292b1ab12d82ee3d2d79432fc817bef83b372fc490b4e6f2534dfd6"
 }

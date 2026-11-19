@@ -174,6 +174,7 @@ fn save(sim: &Simulation, rules: &RuleSet, order: Option<&SavedSidebarOrder>) ->
         None,
         None,
     )
+    .unwrap()
 }
 
 fn prepare(

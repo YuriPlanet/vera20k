@@ -1318,6 +1318,55 @@ fn ffa_combo_keeps_explicit_teams_despite_allies_disabled() {
 }
 
 #[test]
+fn shrinking_selected_random_map_removes_slot_eight_from_launch() {
+    let modes = stock_skirmish_modes();
+    let layout = compute_choose_map_modal_layout(800, 600);
+    let mut records = vec![SkirmishScenarioRecord::random_map_sentinel(
+        0,
+        "Random Map",
+        8,
+    )];
+    let mut shell = SkirmishShellState::default();
+    let maps = [records[0].to_map_menu_entry()];
+    assert!(accept_selected_map(&mut shell, &maps, 0));
+    // Slot 2 already has an AI. Enable slot 8 so both would fit by count alone.
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::AiType(6),
+        SkirmishComboItem::AiType(SkirmishAiRowType::Hard),
+    );
+
+    let mut chooser = ChooseMapModalState::open(
+        ChooseMapContext::Skirmish,
+        1,
+        Some(shell.selected_map_idx),
+        &modes,
+        &records,
+        &layout,
+    );
+    let chosen = chooser
+        .create_random_map(&mut records, &modes, "Random Map", 3, &layout)
+        .unwrap();
+    let maps: Vec<_> = records
+        .iter()
+        .map(SkirmishScenarioRecord::to_map_menu_entry)
+        .collect();
+    assert!(ai_rows_beyond_limit_occupied(
+        &shell.opponents,
+        maps[chosen].player_capacity
+    ));
+    assert!(accept_selected_map(&mut shell, &maps, chosen));
+
+    let launch = launch_session(&shell, &maps, &modes, false).unwrap();
+    let ai_slots: Vec<_> = launch
+        .opponents
+        .iter()
+        .map(|ai| ai.raw_slot_index + 1)
+        .collect();
+    assert_eq!(ai_slots, [2]);
+}
+
+#[test]
 fn accepted_map_shrink_resets_and_hides_complete_opponent_rows_atomically() {
     let maps = [
         test_map_entry_with_starts("eight.mmx", 8),

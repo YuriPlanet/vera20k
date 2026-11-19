@@ -99,9 +99,8 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
             ];
             let mut uniform = camera(size);
             uniform.camera_pos = cam;
-            // Existing native-shape GPU fixtures transport supplied buffer
-            // baselines through this origin, preserving the producer's bias.
-            uniform.native_z_origin_y = input["depth_baseline"].as_i64().unwrap() as f32 - 32768.0;
+            // The capture's Z buffer seeds at its baseline (`native_z::ZSeed`).
+            uniform.native_z_pan = (32768 - input["depth_baseline"].as_i64().unwrap()) as f32;
             batch.write_camera(&gpu.queue, uniform);
             let fog = crate::render::shroud_buffer::ShroudBuffer::fixture(
                 &gpu.device,

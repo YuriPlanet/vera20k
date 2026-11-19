@@ -177,7 +177,7 @@ fn can_load(sim: &mut Simulation, rules: &RuleSet, from: u64, building: u64) -> 
 }
 
 fn seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    sim.foot_enter_bio_reactor(id, rules, None, FrameEffects::default())
+    sim.foot_enter_bio_reactor(id, rules, FrameEffects::default())
 }
 
 fn entity(sim: &Simulation, id: u64) -> &GameEntity {
@@ -226,15 +226,15 @@ fn seek_team(sim: &mut Simulation, action_id: i32, members: Vec<u64>) -> u64 {
 }
 
 fn garrison_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    sim.foot_enter_battle_bunker(id, rules, None, FrameEffects::default())
+    sim.foot_enter_battle_bunker(id, rules, FrameEffects::default())
 }
 
 fn whole_map_garrison_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    sim.foot_enter_nearest_occupiable(id, rules, None, FrameEffects::default())
+    sim.foot_enter_nearest_occupiable(id, rules, FrameEffects::default())
 }
 
 fn tank_bunker_seek(sim: &mut Simulation, rules: &RuleSet, id: u64) -> bool {
-    sim.foot_enter_tank_bunker(id, rules, None, FrameEffects::default())
+    sim.foot_enter_tank_bunker(id, rules, FrameEffects::default())
 }
 
 /// The bunker's native install status and its first radio contact.
@@ -962,7 +962,6 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
         &mut sim,
         &rules,
         reactor,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
@@ -1033,7 +1032,6 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
         &mut sim,
         &rules,
         reactor,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     assert!(
@@ -1152,7 +1150,6 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
         &mut sim,
         &rules,
         reactor,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -1245,7 +1242,6 @@ fn a_bio_reactor_scan_uses_location_cell_on_a_multi_cell_foundation() {
         &mut sim,
         &rules,
         reactor,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -1299,7 +1295,6 @@ fn a_bio_reactor_scan_uses_infantry_cell_entry_with_building_height() {
         &mut sim,
         &rules,
         reactor,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -1378,7 +1373,6 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
         &mut sim,
         &rules,
         reactor,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -1438,7 +1432,6 @@ fn a_player_control_only_bio_reactor_owner_does_not_clear_the_seek_latch() {
         &mut sim,
         &rules,
         reactor,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
 
@@ -1543,7 +1536,6 @@ fn a_bio_reactor_unload_only_dirties_power_for_positive_extra_power() {
             &mut sim,
             &rules,
             reactor,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
 
@@ -1659,7 +1651,6 @@ fn a_full_bio_reactor_takes_an_arriving_contact() {
         foot,
         Some(NavTargetRef::object(reactor)),
         &rules,
-        None,
         FrameEffects::default(),
     );
     assert_eq!(entity(&sim, foot).radio_contacts.slot(0), Some(reactor));
@@ -1895,7 +1886,8 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
             .entities
             .get_mut(near)
             .unwrap()
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .add_for_test(id);
     }
     sim.substrate
@@ -2023,7 +2015,8 @@ fn two_occupiers_garrison_in_arrival_order_and_fire_in_that_order() {
     for (index, expected) in [(0, near), (1, far)] {
         let building = sim.substrate.entities.get_mut(bunker).unwrap();
         building
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .set_fire_index_for_test(index);
         assert_eq!(
             crate::sim::combat::combat_weapon::firing_occupant_id(entity(&sim, bunker), object),
@@ -2053,7 +2046,8 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
             .entities
             .get_mut(bunker)
             .unwrap()
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .add_for_test(id);
     }
 

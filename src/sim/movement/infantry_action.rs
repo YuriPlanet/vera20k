@@ -427,7 +427,8 @@ impl Simulation {
         // re-enters Stop_Driver, whose own Do_Action finds the action it
         // just wrote. The Can_Enter_Cell it runs reads no overlay here.
         if actor.health.current() == 0
-            && let Err(cause) = self.infantry_stop_driver(id, rules, None, effects)
+            && let Err(cause) =
+                self.infantry_stop_driver(id, rules, Some(rules.overlay_registry()), effects)
         {
             log::debug!("infantry {id} Do_Action Stop_Driver: {cause}");
         }
@@ -597,7 +598,7 @@ impl Simulation {
                     // UnInit owns Limbo and eventual Foot sound release.
                     self.uninit_with_context(
                         id,
-                        crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
+                        crate::sim::world::UninitContext::new(rules).with_effects(effects),
                     );
                     true
                 }
@@ -636,7 +637,7 @@ impl Simulation {
                     self.leave_dead_body(id, rules);
                     self.uninit_with_context(
                         id,
-                        crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
+                        crate::sim::world::UninitContext::new(rules).with_effects(effects),
                     );
                     true
                 }
@@ -743,7 +744,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
@@ -778,7 +778,6 @@ impl Simulation {
                 0
             },
             rules,
-            registry,
             effects,
         );
         if let Err(cause) = self.infantry_do_action(id, DO_AIR_DEATH_FINISH, true, rules, effects) {
@@ -844,7 +843,6 @@ impl Simulation {
                     previous_cell: None,
                 },
                 rules,
-                registry,
             )?;
             if answer == super::infantry_entry::InfantryEntryClass::Impassable7 {
                 return Ok(());

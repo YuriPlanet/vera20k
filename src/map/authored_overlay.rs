@@ -21,6 +21,7 @@ use crate::map::resolved_terrain::{
 };
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::AuthoredCratePolicy;
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
 
 pub(crate) const NO_OVERLAY_IDENTITY: i32 = -1;
@@ -141,10 +142,11 @@ impl NativeOverlayMapShape {
         crate::map::playfield::size_diamond_contains(self.width, self.height, (x, y))
     }
 
-    /// Exact real-cell anti-diagonal order used by `Full_Init @ 0x00686B20`
-    /// through `CellIterator_Init @ 0x00578350` / `Next @ 0x00578290`:
-    /// increasing `x`, decreasing `y` for each sum in
-    /// `W+1 ..= W+2H`. Dimensions must fit the selected cell grid.
+    /// The real cells `Full_Init @ 0x00686B20` visits: the allocated-cell
+    /// walk over the cells [`Self::admits`]
+    /// ([`SizeDiamond::allocated_cells`](crate::map::playfield::SizeDiamond::allocated_cells)),
+    /// which on a Size one cell wide ends after (1, 1). Dimensions must fit
+    /// the selected cell grid.
     pub(crate) fn recalc_cells(self) -> Vec<(i16, i16)> {
         if !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.width)
             || !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.height)
@@ -153,13 +155,11 @@ impl NativeOverlayMapShape {
         }
         let mut cells =
             Vec::with_capacity(usize::try_from(self.height * (2 * self.width - 1)).unwrap_or(0));
-        for sum in self.width + 1..=self.width + 2 * self.height {
-            let first_x = (sum - self.width) / 2 + 1;
-            let last_x = (sum + self.width - 1) / 2;
-            for x in first_x..=last_x {
-                cells.push((x as i16, (sum - x) as i16));
-            }
-        }
+        cells.extend(
+            crate::map::playfield::SizeDiamond::from_size(self.width, self.height)
+                .allocated_cells()
+                .map(|(x, y)| (x as i16, y as i16)),
+        );
         cells
     }
 }
@@ -462,7 +462,7 @@ pub(crate) struct AuthoredOverlayFinalizer<'load, 'resources, H> {
     tiberium_types: &'resources TiberiumTypeRegistry,
     overlay_shp_ids: &'resources BTreeSet<u8>,
     signed_new_ini_format: i32,
-    game_mode_nonzero: bool,
+    authored_crate_policy: AuthoredCratePolicy,
     host: &'load mut H,
 }
 
@@ -475,7 +475,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         tiberium_types: &'resources TiberiumTypeRegistry,
         overlay_shp_ids: &'resources BTreeSet<u8>,
         signed_new_ini_format: i32,
-        game_mode_nonzero: bool,
+        authored_crate_policy: AuthoredCratePolicy,
         host: &'load mut H,
     ) -> Self {
         let cells = LiveOverlayCells::empty_for_terrain(terrain);
@@ -488,7 +488,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
             tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            game_mode_nonzero,
+            authored_crate_policy,
             host,
         }
     }
@@ -501,7 +501,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         tiberium_types: &'resources TiberiumTypeRegistry,
         overlay_shp_ids: &'resources BTreeSet<u8>,
         signed_new_ini_format: i32,
-        game_mode_nonzero: bool,
+        authored_crate_policy: AuthoredCratePolicy,
         host: &'load mut H,
     ) -> Self {
         let cells = LiveOverlayCells::empty_for_terrain(terrain);
@@ -515,7 +515,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
             tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            game_mode_nonzero,
+            authored_crate_policy,
             host,
         }
     }
@@ -610,7 +610,9 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         if !self.overlay_shp_ids.contains(&overlay_id) && flags.cell_anim.is_none() {
             return Ok(());
         }
-        if self.game_mode_nonzero && flags.crate_type {
+        // ReadMapOverlayPacks 0x005FD469..0x005FD47C skips a crate
+        // before construction in nonzero GameMode.
+        if flags.crate_type && self.authored_crate_policy == AuthoredCratePolicy::Skip {
             return Ok(());
         }
         let packed = (x as i16, y as i16);
@@ -1438,6 +1440,16 @@ mod tests {
     }
 
     #[test]
+    fn a_one_cell_wide_walk_ends_at_its_first_null() {
+        // The walk steps from (1, 1) to (2, 1), outside a one-wide Size, where
+        // Next @ 0x00578290 returns null before the diagonal's (2, 2).
+        assert_eq!(
+            NativeOverlayMapShape::new(1, 3).recalc_cells(),
+            vec![(1, 1)]
+        );
+    }
+
+    #[test]
     fn authored_rows_data_drain_and_first_sweep_form_one_consuming_transaction() {
         let mut terrain = flat_terrain(6, 6);
         let shape = NativeOverlayMapShape::new(2, 2);
@@ -1454,7 +1466,7 @@ mod tests {
             &tiberium_types,
             &shp_ids,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(packs)
@@ -1533,7 +1545,7 @@ mod tests {
             &tiberium_types,
             &shp_ids,
             1,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(packs)
@@ -1575,7 +1587,7 @@ mod tests {
             &tiberium_types,
             &malformed_shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut malformed_host,
         )
         .run(raw_packs(&[(0, 0, 1)], &[]));
@@ -1597,7 +1609,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut null_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1618,7 +1630,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut slope_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1656,7 +1668,7 @@ mod tests {
             &tiberium_types,
             &b2_shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut b2_host,
         )
         .run(raw_packs(&[(2, 1, 0xB2)], &[]))
@@ -1689,7 +1701,7 @@ mod tests {
             &tiberium_types,
             &BTreeSet::new(),
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut cell_anim_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1731,7 +1743,7 @@ mod tests {
             &tiberium_types,
             &crate_shp,
             4,
-            true,
+            AuthoredCratePolicy::Skip,
             &mut rejected_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1751,7 +1763,7 @@ mod tests {
             &tiberium_types,
             &crate_shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut accepted_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1784,7 +1796,7 @@ mod tests {
             &tiberium_types,
             &BTreeSet::new(),
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut rejected_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[(2, 1, 7)]))
@@ -1805,7 +1817,7 @@ mod tests {
             &tiberium_types,
             &low_shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut short_host,
         )
         .run(raw_packs(&[(2, 2, 0x7B)], &[(0, 0, 37)]))
@@ -1840,7 +1852,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut no_data_host,
         )
         .run(raw_packs(&identity_rows, &[]))
@@ -1881,7 +1893,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut data_host,
         )
         .run(raw_packs(&identity_rows, &data_rows))
@@ -1907,7 +1919,7 @@ mod tests {
             &crate_tiberium,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut crate_host,
         )
         .run(raw_packs(&[(4, 3, 0)], &[]))
@@ -1941,7 +1953,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(raw_packs(&[(8, 8, 0x7B), (12, 8, 0x7A)], &[]))
@@ -2060,7 +2072,7 @@ mod tests {
                 &tiberium_types,
                 &shp_ids,
                 4,
-                false,
+                AuthoredCratePolicy::Keep,
                 &mut host,
             )
             .run(packs)
@@ -2109,7 +2121,7 @@ mod tests {
             &tiberium_types,
             &shp_ids,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(packs)
@@ -2182,7 +2194,7 @@ mod tests {
             &tiberium_types,
             &shp_ids,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(packs)

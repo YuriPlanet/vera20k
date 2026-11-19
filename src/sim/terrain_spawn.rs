@@ -1025,7 +1025,7 @@ mod tests {
         );
         // Controlled inherited UnInit, not a claim that stock immune drills
         // can be killed by a weapon. Expiry bypasses the non-head middle ID.
-        sim.uninit_with_context(middle, UninitContext::new(&rules, Some(&registry)));
+        sim.uninit_with_context(middle, UninitContext::new(&rules));
         assert_eq!(
             sim.terrain_objects.members_at((2, 2)).collect::<Vec<_>>(),
             [head, older]
@@ -1077,14 +1077,14 @@ mod tests {
             "common late drain removes only the retired instance"
         );
         let retained_stage = sim.terrain_objects.animations()[&older].clone();
-        sim.uninit_with_context(head, UninitContext::new(&rules, Some(&registry)));
+        sim.uninit_with_context(head, UninitContext::new(&rules));
         assert_eq!(sim.terrain_objects.id_at((2, 2)), Some(older));
         assert!(sim.terrain_objects.spawning_cells().contains(&(2, 2)));
         assert_eq!(sim.terrain_objects.animations()[&older], retained_stage);
         assert!(sim.terrain_objects.get(older).unwrap().in_logic_vector());
         assert!(sim.substrate.display.layer_of(older).is_some());
         assert_eq!(count(&mut sim), 1);
-        sim.uninit_with_context(older, UninitContext::new(&rules, Some(&registry)));
+        sim.uninit_with_context(older, UninitContext::new(&rules));
         assert_eq!(sim.terrain_objects.id_at((2, 2)), None);
         assert!(sim.terrain_objects.spawning_cells().is_empty());
         assert_eq!(count(&mut sim), 0);
@@ -1478,7 +1478,7 @@ mod tests {
             0
         );
         assert!(sim.substrate.pending_delete.contains_object(&id));
-        sim.process_pending_delete_with(&rules, Some(&registry), FrameEffects::default(), 1, true);
+        sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
         assert!(sim.terrain_objects.get(id).is_none());
     }
 
@@ -1551,7 +1551,7 @@ mod tests {
                 .terrain_object_occupation
                 .is_some()
         );
-        restored.uninit_with_context(newer, UninitContext::new(&rules, Some(&registry)));
+        restored.uninit_with_context(newer, UninitContext::new(&rules));
         // RemoveContent47EAF0 clears shared Next only when found: the first
         // recipient keeps older, the later heads receive the now-null Next.
         assert_eq!(restored.terrain_objects.id_at((1, 1)), Some(older));
@@ -1560,7 +1560,7 @@ mod tests {
         }
         assert_eq!(restored.terrain_objects.id_at((3, 3)), Some(older));
         assert!(restored.terrain_objects.get(older).unwrap().is_live());
-        restored.process_pending_delete_with(&rules, Some(&registry), Default::default(), 1, true);
+        restored.process_pending_delete_with(&rules, Default::default(), 1, true);
         assert!(restored.terrain_objects.get(newer).is_none());
         // Keep the exposed older object live; later native destruction of a
         // foreign direct head is a separate dangling-pointer boundary.
@@ -1640,7 +1640,7 @@ mod tests {
             0
         );
         assert!(sim.rebuild_dynamic_navigation(&rules));
-        sim.uninit_with_context(id, UninitContext::new(&rules, Some(&registry)));
+        sim.uninit_with_context(id, UninitContext::new(&rules));
         assert!(sim.terrain_objects.cell_index().is_empty());
         assert_eq!(
             sim.substrate
@@ -2156,7 +2156,7 @@ mod tests {
         assert!(initializing.rebuild_dynamic_navigation(&rules));
         let path = initializing.path_grid_snapshot().unwrap();
         initializing.with_object_placement_scope(|sim| {
-            sim.uninit_with_context(id, UninitContext::with_rules(&rules));
+            sim.uninit_with_context(id, UninitContext::new(&rules));
         });
         assert!(initializing.dirty_cells.radar().is_empty());
         assert!(std::sync::Arc::ptr_eq(
@@ -2171,7 +2171,7 @@ mod tests {
             .unwrap()
             .native_cell_identity((9, 9));
         let path = restored.path_grid_snapshot().unwrap();
-        restored.uninit_with_context(id, UninitContext::with_rules(&rules));
+        restored.uninit_with_context(id, UninitContext::new(&rules));
         assert!(std::sync::Arc::ptr_eq(
             &path,
             &restored.path_grid_snapshot().unwrap()
@@ -2210,7 +2210,7 @@ mod tests {
         );
         restored.dirty_cells.clear_radar_for_test();
         let path = restored.path_grid_snapshot().unwrap();
-        restored.process_pending_delete_with(&rules, Some(&registry), Default::default(), 1, true);
+        restored.process_pending_delete_with(&rules, Default::default(), 1, true);
         assert!(std::sync::Arc::ptr_eq(
             &path,
             &restored.path_grid_snapshot().unwrap()
@@ -2326,7 +2326,7 @@ mod tests {
 
         // Fresh MapPickUp56884C sees the null list and cannot unmark the
         // older Cell member. TerrainLimbo's independent suffix still runs.
-        sim.uninit_with_context(unknown_id, UninitContext::with_rules(&rules));
+        sim.uninit_with_context(unknown_id, UninitContext::new(&rules));
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(2, 2) & 0x1C,
             known_raw_bits
@@ -2360,19 +2360,13 @@ mod tests {
                 .native_unique_id(),
             native_id
         );
-        restored.uninit_with_context(unknown_id, UninitContext::with_rules(&loaded_rules));
+        restored.uninit_with_context(unknown_id, UninitContext::new(&loaded_rules));
         assert_eq!(
             restored.substrate.raw_cell_occupation.ground_bits(2, 2) & 0x1C,
             0
         );
         assert_eq!(restored.terrain_objects.id_at((2, 2)), Some(known_id));
-        restored.process_pending_delete_with(
-            &loaded_rules,
-            Some(&overlays),
-            Default::default(),
-            1,
-            true,
-        );
+        restored.process_pending_delete_with(&loaded_rules, Default::default(), 1, true);
         assert!(restored.terrain_objects.get(unknown_id).is_none());
         assert!(restored.terrain_objects.get(known_id).unwrap().is_live());
         assert_eq!(

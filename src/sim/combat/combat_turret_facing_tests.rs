@@ -127,7 +127,6 @@ fn retail_ifv_retargets_its_turret_during_an_unfinished_turn() {
         super::fire_error_world::FireSubject {
             world: &sim,
             rules,
-            overlay_registry: None,
             fog: None,
             firer: actor,
             obj,

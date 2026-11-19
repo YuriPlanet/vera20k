@@ -34,6 +34,7 @@ mod text;
 pub(crate) use preview::{
     SkirmishPreviewTexture, is_random_map_sentinel_entry, start_marker_picture,
 };
+pub(super) use text::text_covered_by_overlay;
 
 pub(crate) use text::{
     combo_item_label, skirmish_right_panel_label_strings, skirmish_selected_map_name,

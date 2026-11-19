@@ -394,7 +394,6 @@ fn native_fire_error_corpus() {
         let code = crate::sim::combat::fire_error_world::FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: entity(&sim, firer),
             obj: rules.object(firer_type).unwrap(),
@@ -1563,7 +1562,6 @@ fn ares_death_bombs_wait_for_their_carrier_and_resist_engineers() {
     let code = crate::sim::combat::fire_error_world::FireSubject {
         world: &sim,
         rules: &rules,
-        overlay_registry: None,
         fog: None,
         firer: entity(&sim, engineer),
         obj: rules.object("ENGINEER").unwrap(),

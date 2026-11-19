@@ -29,13 +29,6 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 
 ติดปัญหาอยู่ใช่ไหม ดูที่[หน้าช่วยเหลือ](https://vera20k.org/th/help)
 
-ขณะนี้กำลังพัฒนาอย่างต่อเนื่อง การต่อสู้ภายในเครื่องเล่นได้บน Windows, macOS และ Linux
-แคมเปญใช้งานได้บางส่วน และตอนนี้มีโหมดผู้เล่นหลายคนออนไลน์ (ทดลอง) แล้ว
-ดูเวอร์ชันก่อนหน้าและสิ่งที่เปลี่ยนในแต่ละเวอร์ชันได้ใน[หน้ารุ่นที่เผยแพร่](https://github.com/YuriPlanet/vera20k/releases)
-
-หากต้องการเริ่มการต่อสู้ภายในเครื่องหรือแคมเปญของ YR แบบผู้เล่นคนเดียวผ่านไคลเอนต์ CnCNet
-โปรดดู[การตั้งค่าไคลเอนต์แบบออฟไลน์](integrations/cncnet/README.md)
-
 ## เป้าหมายของโครงการ
 
 1. คงรูปแบบการเล่น ภาพ และบรรยากาศของ Red Alert 2: Yuri's Revenge ต้นฉบับไว้
@@ -119,6 +112,7 @@ Command & Conquer และ Red Alert เป็นเครื่องหมา
 VERA20K ไม่มีความเกี่ยวข้องกับ Electronic Arts และไม่ได้รับการรับรองจาก Electronic Arts
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **โปรดอ่าน[ประกาศทางกฎหมาย](LEGAL.md)ก่อนแชร์ ขาย หรือ fork VERA20K**

@@ -105,11 +105,12 @@ pub struct VoxelAnimType {
     pub warhead: Option<String>,
     /// `+0x2FC`. Particle system carried while alive.
     pub attached_system: Option<String>,
-    /// The `ShareBodyData`/`ShareTurretData`/`ShareBarrelData` + `ShareSource`
-    /// group. All three destinations are the single body VXL slot
-    /// (`+0xB0`/`+0xB4`) — the type has only one model — so only the SOURCE
-    /// offset differs between them.
-    pub share_source: Option<String>,
+    /// The `ShareBodyData`/`ShareTurretData`/`ShareBarrelData` flags. All
+    /// three destinations are the single body VXL slot (`+0xB0`/`+0xB4`) —
+    /// the type has only one model — so only the `ShareSource=` offset
+    /// differs between them. Only the ordered Process owner reads the flags
+    /// (`voxel_anim_type_projections`) and resolves `ShareSource=` into
+    /// `model_slots`.
     pub share_body_data: bool,
     pub share_turret_data: bool,
     pub share_barrel_data: bool,
@@ -147,7 +148,6 @@ impl VoxelAnimType {
             damage_radius: 0,
             warhead: None,
             attached_system: None,
-            share_source: None,
             share_body_data: false,
             share_turret_data: false,
             share_barrel_data: false,
@@ -179,9 +179,10 @@ impl VoxelAnimType {
 
         // ReadString 0x80 ahead of each type or sound lookup
         // (`0x0074B207`-`0x0074B4C1`). The Type references (`Spawns=`, `BounceAnim=`,
-        // `ExpireAnim=`, `TrailerAnim=`, `Warhead=`, `AttachedSystem=`) keep
-        // the constructor's nulls: only the ordered Process owner reads them
-        // (`VoxelAnimTypeReferences`), and `RuleSet` publishes them.
+        // `ExpireAnim=`, `TrailerAnim=`, `Warhead=`, `AttachedSystem=`) and the
+        // `Share*Data=` flags keep the constructor's values: only the ordered
+        // Process owner reads them (`VoxelAnimTypeReferences`,
+        // `voxel_anim_type_projections`), and `RuleSet` publishes them.
         out.spawn_count = section.read_int("SpawnCount", out.spawn_count);
         out.start_sound = section
             .read_type_name("StartSound", 0x80)
@@ -191,13 +192,6 @@ impl VoxelAnimType {
             .map(str::to_string);
         out.damage = read_damage(section, out.damage);
         out.damage_radius = section.read_int("DamageRadius", out.damage_radius);
-
-        out.share_source = section
-            .read_type_name("ShareSource", 0x80)
-            .map(str::to_string);
-        out.share_body_data = section.read_bool("ShareBodyData", false);
-        out.share_turret_data = section.read_bool("ShareTurretData", false);
-        out.share_barrel_data = section.read_bool("ShareBarrelData", false);
         out
     }
 

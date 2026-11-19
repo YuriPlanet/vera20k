@@ -72,7 +72,7 @@ fn miner_at(
 }
 
 fn nudge(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    unit_ai_nudge_off_refinery_pad(sim, id, rules, None, FrameEffects::default());
+    unit_ai_nudge_off_refinery_pad(sim, id, rules, FrameEffects::default());
 }
 
 fn moving(sim: &Simulation, id: u64) -> bool {
@@ -172,7 +172,6 @@ fn a_moving_miner_on_the_pad_is_left_alone() {
         miner,
         Some(NavTargetRef::cell(30, 20)),
         &rules,
-        None,
         FrameEffects::default(),
     );
     assert_eq!(

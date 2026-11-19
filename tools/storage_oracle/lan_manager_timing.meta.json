@@ -39,6 +39,6 @@
     "reset_stats": "0x0048BAA0",
     "record_response": "0x0048BA10"
   },
-  "replay_command": "python -m tools.storage_oracle.lan_lobby --manager-timing",
+  "replay_command": "python -m tools.storage_oracle.lan_global",
   "payload_sha256": "1b07e79bca29d78739aa3a8b026cfff4f5d0eb5d7f8f42f6ce9c245175de6fd9"
 }

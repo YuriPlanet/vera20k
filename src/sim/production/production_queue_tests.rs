@@ -211,9 +211,7 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
     );
     let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
     let rng = sim.scenario_rng.logical_state();
-    assert!(dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_busy_factory_exit_receiver(&sim, &rules, product, 3);
     assert_eq!(sim.scenario_rng.logical_state(), rng);
     assert!(sim.production.is_primary_factory(1));
@@ -255,9 +253,7 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
         .base_projection_mut()
         .replace_buildings_for_test(vec![1, 2, 4, 3, 5]);
     let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
-    assert!(dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_busy_factory_exit_receiver(&sim, &rules, product, 5);
     assert_eq!(
         sim.production.factories().building_factory(2),
@@ -285,9 +281,7 @@ fn ares_busy_factory_exit_takes_another_type_that_can_build_the_product() {
         .base_projection_mut()
         .replace_buildings_for_test(vec![1, 4, 3, 2]);
     let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
-    assert!(dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_busy_factory_exit_receiver(&sim, &rules, product, 4);
 }
 
@@ -494,9 +488,7 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
     );
     let credits = sim.houses[&owner].economy().credits();
     let refund = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
-    assert!(!dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     // ExitObject4444B3's busy return1 still copies Archive; the direct native
     // rows below preserve that boundary. Human HousePlace4FB57F then sees
     // producer+524zero and abandons this paid product, not the queued tail.
@@ -1526,7 +1518,6 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
                 observer,
                 Some(crate::sim::combat::TargetKind::Entity(object)),
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
@@ -1986,7 +1977,7 @@ fn published_completions_dispatch_each_owners_next_frame_place() {
             .test_arm_ready(soviet_id, ProductionCategory::Infantry)
     );
 
-    let spawned = dispatch_production_changes_for_tests(&mut sim, &rules, None);
+    let spawned = dispatch_production_changes_for_tests(&mut sim, &rules);
     assert!(spawned, "At least one queue completion should spawn");
     assert!(
         sim.production.factories().is_empty(),
@@ -2094,9 +2085,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
     // test_arm_ready supplies paid Balance0; the wallet above is its supplied
     // post-payment balance. HousePlace4FB0E0 refunds and abandons a present producer's refused exit,
     // then StartNextQueued constructs the next graph (4FB587..4FB62A).
-    assert!(!dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_eq!(credits_for_owner(&sim, "Americans"), 1700);
     for id in std::iter::once(held).chain(children) {
         assert!(!sim.substrate.entities.contains(id));
@@ -2123,9 +2112,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
     assert_eq!(projected[0].progress, 0);
     let allocated = sim.next_stable_object_id();
     for _ in 0..3 {
-        assert!(!dispatch_production_changes_for_tests(
-            &mut sim, &rules, None
-        ));
+        assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     }
     assert_eq!(
         super::lifecycle_tests::held_id(&sim, americans_id, ProductionCategory::Vehicle),
@@ -2181,9 +2168,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(children.len(), 3);
     let owned = sim.owned_object_counts(americans_id).1;
     let mut expected = sim.scenario_rng.clone();
-    assert!(!dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     for id in std::iter::once(refused).chain(children) {
         assert!(!sim.substrate.entities.contains(id));
     }
@@ -2216,9 +2201,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
             .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Vehicle)
     );
-    assert!(dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     let delivered = sim.substrate.entities.get(successor).unwrap();
     assert!(!delivered.lifecycle.in_limbo() && delivered.lifecycle.cell_marked());
     assert_eq!(super::lifecycle_tests::children(&sim, successor).len(), 3);
@@ -2335,9 +2318,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
             .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Building)
     );
-    assert!(!dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_eq!(
         ready_buildings_for_owner(&sim, &rules, "Americans").len(),
         1
@@ -2701,7 +2682,6 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
             product,
             (0, 0),
             &rules,
-            None,
         )
         .expect("a free dock Cell");
         let rng = sim.rng_state();

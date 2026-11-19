@@ -719,7 +719,7 @@ impl ScenarioServiceInput {
             Self::Pause => sim.session.pause_scenario(0),
             Self::Resume => sim.session.resume_scenario(),
             Self::ExpireTimedPause => sim.session.expire_scenario_pause(),
-            Self::StepChronoScreen => sim.session.process_chrono_screen_effect(),
+            Self::StepChronoScreen => sim.step_chrono_screen(),
         }
     }
 }
@@ -810,6 +810,10 @@ impl ReplayStartup {
                 && sim.session().binary_frame() == 0
                 && sim.session().started(),
             "standalone replay requires a started frame-zero world"
+        );
+        anyhow::ensure!(
+            sim.session().has_stock_rule_policy(),
+            "the standalone replay layout requires a stock rule policy"
         );
         anyhow::ensure!(
             sim.path_batch_stats().is_some()
@@ -1195,6 +1199,22 @@ impl ReplayPlayback {
         effects: crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput> {
         let entry = &self.replay.ticks[self.index];
+        // A JSON replay carries raw interned ids, and `StringInterner::resolve`
+        // panics on an unknown one. A recorded id was interned before its
+        // command was issued and playback rebuilds the same interner, so a
+        // genuine replay passes; a hand-edited one ends playback with this
+        // message, which the replay failure path shows in the game.
+        // SynchronizedRecord's placeholder owner is index 0, always interned.
+        let interned = runtime.simulation.interner().len();
+        let known = |id: crate::sim::intern::InternedId| (id.index() as usize) < interned;
+        anyhow::ensure!(
+            entry
+                .commands
+                .iter()
+                .all(|command| known(command.owner) && command.payload.interned_ids().all(known)),
+            "replay command names an unknown house or type at tick {}",
+            entry.tick
+        );
         let commands = runtime
             .simulation
             .take_due_replay_commands(entry.commands.iter().cloned());
@@ -2255,6 +2275,70 @@ mod tests {
             assert!(fixture.pending_network_failure().is_none());
             assert_eq!(fixture.session().binary_frame(), frame + 1);
         }
+    }
+
+    /// Play one recorded command built from the replay's real House id and
+    /// return the playback error.
+    fn play_unknown_id(
+        command: impl FnOnce(crate::sim::intern::InternedId) -> CommandEnvelope,
+    ) -> String {
+        use crate::sim::runtime::SimRuntime;
+        let mut sim = Simulation::with_seed(73);
+        let human = sim.interner.intern("Human");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                human, 0, None, true, 0, 10,
+            ));
+        let mut runtime = SimRuntime::from_simulation(sim);
+        let mut replay = ReplayLog::new(ReplayHeader {
+            version: REPLAY_VERSION,
+            tick_hz: 15,
+            seed: 73,
+            map_name: runtime.simulation.session().map_name().to_owned(),
+            rules_hash: 0,
+            pixel_conversion_bounds: runtime.simulation.session().pixel_conversion_bounds(),
+        });
+        replay.record_tick(0, vec![command(human)], None);
+        let mut playback =
+            ReplayPlayback::from_runtime(&mut runtime, std::sync::Arc::new(replay), 33).unwrap();
+        let error = playback
+            .advance(&mut runtime, crate::sim::world::FrameEffects::empty())
+            .unwrap_err();
+        assert_eq!(playback.failure(), Some(format!("{error:#}").as_str()));
+        format!("{error:#}")
+    }
+
+    #[test]
+    fn replay_refuses_a_command_from_an_unknown_house() {
+        let error = play_unknown_id(|_| {
+            let select = Command::Select {
+                entity_ids: Vec::new(),
+                additive: false,
+            };
+            CommandEnvelope::new(
+                crate::sim::intern::InternedId::from_index(u32::MAX),
+                0,
+                select,
+            )
+        });
+        assert_eq!(
+            error,
+            "replay command names an unknown house or type at tick 0"
+        );
+    }
+
+    #[test]
+    fn replay_refuses_a_command_naming_an_unknown_type() {
+        let error = play_unknown_id(|human| {
+            let queue = Command::QueueProduction {
+                type_id: crate::sim::intern::InternedId::from_index(u32::MAX),
+            };
+            CommandEnvelope::new(human, 0, queue)
+        });
+        assert_eq!(
+            error,
+            "replay command names an unknown house or type at tick 0"
+        );
     }
 
     #[test]

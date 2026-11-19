@@ -132,7 +132,10 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         occupants.push(occupant_id);
     }
     let building = sim.substrate.entities.get_mut(id).unwrap();
-    building.garrison_mut_for_test().set_ids_for_test(occupants);
+    building
+        .passenger_role_mut_for_test()
+        .occupants_mut()
+        .set_ids_for_test(occupants);
     building.health.set_for_test(integer(&input["current_hp"]));
     building.building_art.damage_state_active = input["retained_damage_state"].as_bool().unwrap();
     (sim, rules, id)

@@ -75,21 +75,19 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         if contact {
             // Supplied existing radio state. The sale owner must retire both
             // sides, rather than requiring an empty link at input time.
-            sim.entities_mut_for_test()
-                .get_mut(yard)
+            sim.entity_mut_for_test(yard)
                 .unwrap()
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(peer)
+            sim.entity_mut_for_test(peer)
                 .unwrap()
                 .radio_contacts
                 .insert(yard)
                 .unwrap();
         }
         let (orders, announce) =
-            building_cell_orders(&sim, &rules, None, &[yard], owner, (23, 20), false, false);
+            building_cell_orders(&sim, &rules, &[yard], owner, (23, 20), false, false);
         assert!(!announce);
         assert!(
             matches!(orders.as_slice(), [Command::SetRally { .. }, Command::SellBuilding { entity_id }]
@@ -197,8 +195,7 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
             .spawn_object("GAPOWR", "Americans", 5, 5, 0, &rules)
             .unwrap();
         if contact {
-            sim.entities_mut_for_test()
-                .get_mut(yard)
+            sim.entity_mut_for_test(yard)
                 .unwrap()
                 .radio_contacts
                 .insert(peer)
@@ -210,7 +207,7 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
             "{name}"
         );
         let (orders, _) =
-            building_cell_orders(&sim, &rules, None, &[yard], owner, (23, 20), false, false);
+            building_cell_orders(&sim, &rules, &[yard], owner, (23, 20), false, false);
         assert_eq!(!orders.is_empty(), admitted, "{name}");
     }
 }
@@ -454,7 +451,6 @@ fn a_yard_neither_archives_nor_packs_up_over_a_cell_it_cannot_stand_on() {
                 shift,
             },
             &rules,
-            None,
         )
         .unwrap()
     };
@@ -510,8 +506,7 @@ fn a_yard_click_whose_rally_search_misses_archives_its_own_cell() {
     let yard = sim
         .spawn_object("GACNST", "Americans", 6, 6, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(yard)
+    sim.entity_mut_for_test(yard)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(12, 12)));
     let own = sim.object_coords_cell(yard).unwrap();
@@ -623,7 +618,6 @@ fn a_yard_click_past_the_playfield_edge_packs_up_toward_the_clamped_cell() {
                 shift: false,
             },
             &rules,
-            None,
         )
         .unwrap()
     };
@@ -839,8 +833,7 @@ fn an_object_archive_whose_target_is_gone_clears_the_archive() {
     let yard = sim
         .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(yard)
+    sim.entity_mut_for_test(yard)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(20, 12)));
     assert!(sim.apply_command(
@@ -1008,8 +1001,7 @@ fn a_ground_click_during_build_up_repacks_and_a_second_redirects_the_mcv() {
     let yard = yard.expect("the MCV deploys");
     assert!(sim.entities().get(yard).unwrap().building_up());
     let click = |sim: &mut Simulation, cell| {
-        let (orders, _) =
-            building_cell_orders(sim, &rules, None, &[yard], owner, cell, false, false);
+        let (orders, _) = building_cell_orders(sim, &rules, &[yard], owner, cell, false, false);
         assert!(
             matches!(
                 orders.as_slice(),

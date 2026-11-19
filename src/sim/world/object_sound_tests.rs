@@ -476,7 +476,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
     assert!(
         sim.retire_non_entity_object(
             id,
-            crate::sim::world::UninitContext::with_rules(&rules)
+            crate::sim::world::UninitContext::new(&rules)
                 .with_effects(FrameEffects::for_sound(&direct))
         )
     );

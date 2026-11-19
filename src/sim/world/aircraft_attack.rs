@@ -5,7 +5,6 @@
 //! state 3 returns a one-tick delay. States 4..9 run through the receiver
 //! (`combat::aircraft_release`), in the same dispatch.
 use super::{FrameEffects, Simulation};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::attack_mission;
 use crate::sim::combat::TargetKind;
@@ -194,7 +193,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (u8, i32) {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
@@ -211,7 +209,6 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                registry,
                 effects,
             },
         );
@@ -230,14 +227,13 @@ struct WorldExit<'a> {
     sim: &'a mut Simulation,
     id: u64,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
 }
 
 impl attack_mission::ExitHost for WorldExit<'_> {
     fn clear_target(&mut self) {
         self.sim
-            .assign_target_represented(self.id, None, self.rules, None, FrameEffects::default())
+            .assign_target_represented(self.id, None, self.rules, FrameEffects::default())
             .expect("aircraft dispatch");
     }
 
@@ -268,7 +264,6 @@ impl attack_mission::ExitHost for WorldExit<'_> {
             self.sim,
             self.id,
             self.rules,
-            self.registry,
             self.effects,
         );
     }

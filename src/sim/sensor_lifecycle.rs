@@ -573,13 +573,13 @@ mod tests {
         assert!(sim.fog.has_sensor_for_house(americans, 33, 30));
         assert!(!sim.fog.has_sensor_for_house(americans, 48, 30));
 
-        sim.techno_limbo_with_rules(first, &rules, None);
+        sim.techno_limbo_with_rules(first, &rules);
         assert!(
             sim.fog.has_sensor_for_house(americans, 33, 30),
             "the overlapping second deposit remains positive"
         );
         let counters = sim.fog.sensors_by_house().clone();
-        sim.techno_limbo_with_rules(first, &rules, None);
+        sim.techno_limbo_with_rules(first, &rules);
         assert_eq!(
             sim.fog.sensors_by_house(),
             &counters,
@@ -607,7 +607,7 @@ mod tests {
         assert!(sim.fog.has_sensor_for_house(soviet, 57, 30));
 
         // FootLimbo4DB376 removes the live owner's current-coordinate circle.
-        sim.techno_limbo_with_rules(second, &rules, None);
+        sim.techno_limbo_with_rules(second, &rules);
         assert!(!sim.fog.has_sensor_for_house(soviet, 57, 30));
     }
 
@@ -625,7 +625,7 @@ mod tests {
         let owner = sim.substrate.entities.get(id).unwrap().owner();
         let index = 30 * usize::from(sim.fog.width()) + 40;
         assert_eq!(sim.fog.sensors_by_house()[&owner][index], 1);
-        sim.techno_limbo_with_rules(id, &rules, None);
+        sim.techno_limbo_with_rules(id, &rules);
         assert_eq!(sim.fog.sensors_by_house()[&owner][index], 0);
 
         let position = sim.substrate.entities.get(id).unwrap().position;
@@ -636,7 +636,7 @@ mod tests {
                 placement: crate::sim::world::PlacementEvidence::EvaluateMark,
                 logic_eligible: true,
             },
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         assert!(matches!(
             outcome,
@@ -744,7 +744,7 @@ mod tests {
         assert!(!sim.fog.has_sensor_for_house(owner, 41, 41));
         assert!(!sim.fog.detects_disguise_for_house(owner, 41, 41));
 
-        sim.techno_limbo_with_rules(id, &rules, None);
+        sim.techno_limbo_with_rules(id, &rules);
         let row = 41 * usize::from(sim.fog.width());
         // `CloakRadiusInCells=` defaults to 20; `DetectDisguiseRange=15`.
         assert_eq!(sim.fog.sensors_by_house()[&owner][row + 60], -1);
@@ -809,7 +809,7 @@ mod tests {
             .unwrap()
             .set_building_online_for_test(false);
         visit(&mut sim);
-        sim.techno_limbo_with_rules(id, &rules, None);
+        sim.techno_limbo_with_rules(id, &rules);
         assert_eq!((sensor(&sim, 27), sensor(&sim, 60)), (0, 0));
     }
 
@@ -876,7 +876,7 @@ mod tests {
                 && !sim.fog.detects_disguise_for_house(americans, 55, 41),
             "nor grants the captor one"
         );
-        sim.techno_limbo_with_rules(id, &rules, None);
+        sim.techno_limbo_with_rules(id, &rules);
 
         let row = 41 * usize::from(sim.fog.width());
         let inside = row + 55; // inside both the 15-cell add and the 20-cell remove

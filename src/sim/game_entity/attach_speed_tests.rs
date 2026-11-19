@@ -264,8 +264,8 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
     // owner so passive enemy fire cannot refresh it during the comparison.
     // This is Rust integration, not a native movement-distance golden.
     let (mut ordinary, _, normal_target, normal_source) = scene();
-    sim.techno_limbo_with_rules(source, &rules, None);
-    ordinary.techno_limbo_with_rules(normal_source, &rules, None);
+    sim.techno_limbo_with_rules(source, &rules);
+    ordinary.techno_limbo_with_rules(normal_source, &rules);
     let start = crate::sim::movement::ground_pose::position_world_coord(
         &sim.entities().get(target).unwrap().position,
     );

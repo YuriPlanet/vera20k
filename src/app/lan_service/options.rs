@@ -38,6 +38,10 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
     }
     let agreement = crate::app::shell_network_setup::agreement::local(state)?;
     let random_map = crate::app::shell_network_setup::maps::host_generated_manifest(state)?;
+    // The room carries the applied speed, the world's while one is installed:
+    // another player's speed event in the last match changed only the world.
+    // Build_Options_String reads that global, [0xA8EB60], at 0x005DBC68.
+    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
     let session = &state.match_state.session;
     ensure!(session.host(), "only the host publishes full LAN options");
     let room = projected_room(
@@ -560,7 +564,6 @@ fn host_options(
     }
     launch.ai_player_count = opponents.len() as i32;
     launch.opponents = opponents;
-    launch.use_live_house_rows();
     let vacancies = std::array::from_fn(|row| {
         session
             .network_vacancy(row as u8)

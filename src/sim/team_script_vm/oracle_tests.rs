@@ -1,7 +1,6 @@
 //! `tools/ai_team_oracle.py`'s AI trigger weight feedback (`0x0041FD60`,
 //! `0x0041FE20`), the team destructor's AI trigger loop (`0x006E8E02..
-//! 0x006E8E3E`) and the empty-team dissolve test (`0x006E929B..0x006E92D8`),
-//! replayed.
+//! 0x006E8E3E`) replayed.
 
 use serde_json::Value;
 
@@ -15,14 +14,12 @@ fn bits(value: &Value) -> NativeF64Bits {
 
 /// Retail's `AITriggerSuccessWeightDelta=20`, `AITriggerFailureWeightDelta=-50`
 /// and `AITriggerTrackRecordCoefficient=1` unless the row says otherwise.
-fn feedback_rules(row: &Value, game_mode_nonzero: bool, dissolve_delay: i32) -> TeamRules {
+fn feedback_rules(row: &Value) -> AiTriggerFeedbackRules {
     let or = |key: &str, value: f64| {
         row.get(key)
             .map_or(NativeF64Bits::from_bits(value.to_bits()), bits)
     };
-    TeamRules {
-        game_mode_nonzero,
-        dissolve_unfilled_team_delay: dissolve_delay,
+    AiTriggerFeedbackRules {
         success_weight_delta: or("success_delta", 20.0),
         failure_weight_delta: or("failure_delta", -50.0),
         track_record_coefficient: or("coefficient", 1.0),
@@ -43,11 +40,7 @@ fn native_state(result: &Value) -> (u64, i32, i32) {
 
 /// A VM with TeamTypes `TEAMTYPE0..=2`, and the new team of the first for
 /// house `OWNER`, built at `frame`.
-fn one_team(
-    interner: &mut StringInterner,
-    game_mode_nonzero: bool,
-    frame: i32,
-) -> (TeamScriptVm, u64, Vec<InternedId>) {
+fn one_team(interner: &mut StringInterner, frame: i32) -> (TeamScriptVm, u64, Vec<InternedId>) {
     let mut vm = TeamScriptVm::default();
     let script = interner.intern("SCRIPT");
     let task_force = interner.intern("TASKFORCE");
@@ -82,7 +75,14 @@ fn one_team(
         .collect();
     let owner = interner.intern("OWNER");
     let team = vm
-        .construct_team(team_types[0], owner, game_mode_nonzero, frame, false, None)
+        .construct_team(
+            team_types[0],
+            owner,
+            TeamLimitScope::PerHouse,
+            frame,
+            false,
+            None,
+        )
         .unwrap();
     (vm, team, team_types)
 }
@@ -91,7 +91,7 @@ fn one_team(
 fn the_destructor_feeds_back_the_triggers_the_original_does() {
     for row in rows("destructor") {
         let mut interner = StringInterner::new();
-        let (mut vm, team, team_types) = one_team(&mut interner, true, 0);
+        let (mut vm, team, team_types) = one_team(&mut interner, 0);
         let mut triggers = Vec::new();
         for (slot, trigger) in row["triggers"].as_array().unwrap().iter().enumerate() {
             let id = interner.intern(&format!("TRIGGER{slot}"));
@@ -112,7 +112,7 @@ fn the_destructor_feeds_back_the_triggers_the_original_does() {
         vm.teams.get_mut(&team).unwrap().succeeded = flag(&row["succeeded"]);
 
         // The destructor's feedback half; its member release is `destroy_team`'s.
-        vm.record_trigger_outcome(team, &feedback_rules(&row, true, 5000));
+        vm.record_trigger_outcome(team, &feedback_rules(&row));
 
         let results = row["results"].as_array().unwrap();
         for (id, result) in triggers.iter().zip(results) {

@@ -82,7 +82,6 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
     crate::sim::runtime::initialize_native_tiberium_queues(
         &mut sim,
         &map.basic,
-        &map.special_flags,
         &rules,
         &overlays,
         (32, 32),

@@ -1,12 +1,12 @@
 //! Unit selection system — tracks which entities the player has selected.
 //!
-//! Manages selection state: click-to-select single units, drag-to-select
-//! groups, and each object's IsSelected byte ([`Selection`]). The render loop
-//! reads it to draw selection highlights.
+//! Manages selection state: click-to-select single units and drag-to-select
+//! groups. Each object's IsSelected byte
+//! ([`Selection`](crate::sim::world::Selection)) lives with its Select and
+//! Deselect owners in `sim::world`; the render loop reads it to draw
+//! selection highlights.
 //!
 //! ## Design
-//! - [`Selection`] is the object's IsSelected byte, which `Select` and
-//!   `Deselect` write.
 //! - `SelectionState` tracks the current drag rectangle (if any) and provides
 //!   methods for selecting entities by screen-space rectangle or single click.
 //! - Selection is player-side state, not part of the deterministic simulation.
@@ -15,45 +15,6 @@
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/components (Position, Owner, Selected, Category).
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
-
-/// `ObjectClass+0x83`, IsSelected: the object is in the player's current
-/// selection. `ObjectClass::Select @ 0x005F4520` sets it ([`Self::select`]);
-/// `ObjectClass::Deselect @ 0x005F44A0` clears it ([`Self::deselect`]).
-/// `Command::Select` commits it through `apply_selection_snapshot`; Limbo,
-/// Destroy, a Temporal erase, a power-down, a lift, a bunker install, the
-/// crew and parasite paths, a non-player object's cloak and a non-player
-/// object moving over shroud call Select or Deselect too. VERA keeps the
-/// current-objects vector as the app's selection ledger (input order and
-/// pending commands), which it reconciles with this byte after the frame.
-/// Combat reads it for selected-unit effects.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
-pub struct Selection {
-    selected: bool,
-}
-
-impl Selection {
-    /// The object is selected.
-    pub const fn is_selected(self) -> bool {
-        self.selected
-    }
-
-    /// `ObjectClass::Select`'s write.
-    pub(crate) fn select(&mut self) {
-        self.selected = true;
-    }
-
-    /// `ObjectClass::Deselect`'s write.
-    pub(crate) fn deselect(&mut self) {
-        self.selected = false;
-    }
-
-    /// Install a fixture's byte.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn set_selected_for_test(&mut self, selected: bool) {
-        self.selected = selected;
-    }
-}
 
 /// Drag phase tracks the two-stage selection state machine:
 /// mouse-down sets `Pending`, reaching the effective 5px threshold activates

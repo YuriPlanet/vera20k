@@ -733,7 +733,7 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     add_house(&mut sim, "Americans", false);
     let owner = sim.interner.get("Americans").unwrap();
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let policy = sim.session.rule_policy();
     let house = sim.houses.get_mut(&owner).unwrap();
     house.set_current_iq_for_test(5);
     // Scenario setup's SetDifficulty supplies the RepairDelay the latch timer
@@ -742,7 +742,7 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
         crate::sim::house_state::HouseDifficulty::Normal,
         &rules.general,
         Default::default(),
-        game_mode_nonzero,
+        policy,
         0,
         0,
     );
@@ -791,10 +791,23 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
 }
 
 #[test]
-fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
-    let rules = make_recalc_mcv_rules("0,0,0");
+fn base_plan_recalc_deploy_respects_policy_human_control_and_nonyard_targets() {
+    use crate::sim::scenario_session::ScenarioGameMode;
 
-    for (is_human, game_mode_nonzero) in [(true, true), (false, false)] {
+    let rules = make_recalc_mcv_rules("0,0,0");
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let skirmish_rules = skirmish.stock_rule_policy(None);
+
+    for (is_human, mode, policy) in [
+        (true, skirmish, skirmish_rules),
+        (false, campaign, campaign.stock_rule_policy(None)),
+        (
+            false,
+            skirmish,
+            skirmish_rules.with_uses_managed_ai_base(false),
+        ),
+    ] {
         let mut sim = deploy_sim(&rules);
         add_house(&mut sim, "Americans", is_human);
         let owner = sim.interner.get("Americans").unwrap();
@@ -802,9 +815,7 @@ fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
             .get_mut(&owner)
             .unwrap()
             .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
-        sim.session.set_game_mode(
-            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
-        );
+        sim.install_session_admission(mode, None, policy);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0x5566_7788);
         let mcv = sim
             .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
@@ -1208,7 +1219,7 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
         .unwrap(),
         &rules.general,
         Default::default(),
-        sim.session.game_mode_nonzero(),
+        sim.session.rule_policy(),
         0,
         0,
     );

@@ -3308,16 +3308,19 @@ impl MatchSession {
         }
     }
 
-    /// 0x0064AAE0's kick proposal for participant `target_source`, sent to
-    /// every other connected node.
-    pub(crate) fn request_kick_proposal(&mut self, target_source: usize) {
+    /// Queue a request the service sends while the match runs.
+    fn queue_frozen_request(&mut self, request: NetworkSendRequest) {
         if let Some(network) = self.network.as_mut()
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
-            network
-                .send_requests
-                .push(NetworkSendRequest::ProposeKick { target_source });
+            network.send_requests.push(request);
         }
+    }
+
+    /// 0x0064AAE0's kick proposal for participant `target_source`, sent to
+    /// every other connected node.
+    pub(crate) fn request_kick_proposal(&mut self, target_source: usize) {
+        self.queue_frozen_request(NetworkSendRequest::ProposeKick { target_source });
     }
 
     /// One in-battle chat packet to `recipients`.
@@ -3338,33 +3341,15 @@ impl MatchSession {
         &mut self,
         record: crate::net::lan_messages::ingame::BeaconRecord,
     ) {
-        if let Some(network) = self.network.as_mut()
-            && matches!(network.phase, NetworkPhase::Frozen { .. })
-        {
-            network
-                .send_requests
-                .push(NetworkSendRequest::Beacon(record));
-        }
+        self.queue_frozen_request(NetworkSendRequest::Beacon(record));
     }
 
     pub(crate) fn request_beacon_text(&mut self, house: i8, slot: i8, text: Vec<u16>) {
-        if let Some(network) = self.network.as_mut()
-            && matches!(network.phase, NetworkPhase::Frozen { .. })
-        {
-            network
-                .send_requests
-                .push(NetworkSendRequest::BeaconText { house, slot, text });
-        }
+        self.queue_frozen_request(NetworkSendRequest::BeaconText { house, slot, text });
     }
 
     pub(crate) fn request_taunt(&mut self, recipients: Vec<usize>, byte: u8) {
-        if let Some(network) = self.network.as_mut()
-            && matches!(network.phase, NetworkPhase::Frozen { .. })
-        {
-            network
-                .send_requests
-                .push(NetworkSendRequest::Taunt { recipients, byte });
-        }
+        self.queue_frozen_request(NetworkSendRequest::Taunt { recipients, byte });
     }
 
     /// The frozen launch's owner key of the House network participant
@@ -5650,7 +5635,11 @@ mod tests {
             (SessionMode::Wol, CommandQueueRoute::Multiplayer),
             (SessionMode::Other, CommandQueueRoute::SinglePlayer),
         ] {
-            assert_eq!(mode.command_queue_route(), route, "{mode:?}");
+            assert_eq!(
+                mode.execution_topology().command_queue_route(),
+                route,
+                "{mode:?}"
+            );
         }
     }
 

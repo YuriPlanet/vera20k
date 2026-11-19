@@ -16,7 +16,6 @@ use crate::sim::world::FrameEffects;
 pub(crate) fn damage_ordinary(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     input: CellCoord,
     family: Family,
     frame_effects: FrameEffects<'_>,
@@ -24,7 +23,6 @@ pub(crate) fn damage_ordinary(
     let mut live = LivePublication {
         sim,
         rules,
-        registry,
         collapsed: false,
         frame_effects,
     };
@@ -46,14 +44,12 @@ pub(crate) fn damage_ordinary(
 pub(crate) fn repair_from_engineer(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     engineer: u64,
     frame_effects: FrameEffects<'_>,
 ) -> Result<bool, String> {
     let mut live = LivePublication {
         sim,
         rules,
-        registry,
         collapsed: false,
         frame_effects,
     };
@@ -180,8 +176,8 @@ impl RepairHost for LiveOrdinary<'_, '_> {
                 let Some((w, h)) = sim.map_size_diamond() else {
                     return false;
                 };
-                let (x, y) = (i32::from(p.0), i32::from(p.1));
-                x + y > w && x - y < w && y - x < w && x + y <= w + 2 * h
+                // The 573540/570050 search loop is bounded by In_Bounds 0x00568300.
+                crate::map::playfield::size_diamond_contains(w, h, p)
             }
         }
     }
@@ -297,7 +293,7 @@ impl OrdinaryDamageHost for LiveOrdinary<'_, '_> {
             live.sim.dispatch_bridge_cell_tag_event(
                 cell,
                 live.rules,
-                live.registry,
+                Some(live.rules.overlay_registry()),
                 live.frame_effects,
             );
             self.live.coord(cell)

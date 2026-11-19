@@ -21,7 +21,6 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         use crate::map::entities::EntityCategory;
@@ -52,16 +51,24 @@ impl crate::sim::world::Simulation {
         let policy = origin
             .and_then(|origin| rules.super_weapon_metadata(self.interner.resolve(origin.sw_type)))
             .map(|metadata| metadata.targeting());
-        let multiplayer = self.session.game_mode_nonzero();
-        let human = house.is_controlled_by_human(multiplayer);
-        let favourite_only = multiplayer && !human && house.enemy_house().is_some();
-        let prefer_players = multiplayer && human && settings.is_none_or(|s| !s.random_only);
+        // Ares AcquireHunterSeekerTarget 10042E40..10043171: the AI may
+        // substitute its designated enemy for AffectsHouse. Human launches
+        // may prune the pool to nonpassive Houses unless RandomOnly plays.
+        let rules_policy = self.session.rule_policy();
+        let human = house.is_controlled_by_human(rules_policy);
+        let directed = rules_policy.uses_directed_hunter_seeker_targeting();
+        let designated_enemy = if !human && directed {
+            house.enemy_house()
+        } else {
+            None
+        };
+        let prefer_players = human && directed && settings.is_none_or(|s| !s.random_only);
         let mut preferred = false;
         let mut candidates = Vec::new();
         // EntityStore preserves TechnoClass::Array's construction order.
         for candidate in self.substrate.entities.values() {
-            if if favourite_only {
-                Some(candidate.owner()) != house.enemy_house()
+            if if let Some(enemy) = designated_enemy {
+                candidate.owner() != enemy
             } else {
                 !policy
                     .map_or(HouseMask::ENEMIES, |p| p.affects_house())
@@ -148,7 +155,6 @@ impl crate::sim::world::Simulation {
             id,
             Some(TargetKind::Entity(candidates[picked as usize])),
             rules,
-            registry,
             effects,
         )
         .expect("live Fly target setter");
@@ -206,7 +212,6 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         if !self.is_hunter_seeker(id, rules) {
@@ -225,9 +230,9 @@ impl crate::sim::world::Simulation {
                     || target.is_warped_out()
             });
         if lost {
-            let _ = self.assign_target_represented(id, None, rules, registry, effects);
+            let _ = self.assign_target_represented(id, None, rules, effects);
         }
-        self.ares_hunter_seeker_reacquire(id, rules, registry, effects);
+        self.ares_hunter_seeker_reacquire(id, rules, effects);
         true
     }
 
@@ -476,6 +481,7 @@ impl crate::sim::world::Simulation {
                 flags: 0,
             });
         if let Some(warhead_type) = self.interner.warhead_type(warhead, rules) {
+            // 1004DDB2..1004DDBD: DamageArea(coord, damage, hunter, warhead, 1, NULL).
             let _ = crate::sim::combat::world_receiver::apply_area_damage(
                 self,
                 rules,

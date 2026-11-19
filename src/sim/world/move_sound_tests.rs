@@ -382,7 +382,6 @@ fn ordinary_uninit_then_physical_destruction_detaches_without_a_foot_hard_stop()
         expected.extend(native_effects(original_destructor, true));
         sim.process_pending_delete_with(
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
             1,
             false,

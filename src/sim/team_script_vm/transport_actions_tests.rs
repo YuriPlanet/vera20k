@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::passenger::PassengerRole;
@@ -40,7 +41,8 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
         )
         .unwrap()
         .into_parts();
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_campaign()).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x6E9ACF);
@@ -48,7 +50,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session
-        .initialize_campaign_startup(1, 2, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 2, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
@@ -88,7 +90,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     assert!(sim.discover_techno(
         members[0],
         sim.session.current_house().unwrap(),
-        UninitContext::with_rules(&rules),
+        UninitContext::new(&rules),
     ));
     let types = ["098F40EC", "0990A93C"].map(|name| sim.interner.get(name).unwrap());
     let mut cameras = Vec::new();
@@ -253,7 +255,11 @@ impl Fixture {
              [TaskForces]\n0=CARRY_TF\n[CARRY_TF]\n0=1,APC\n1=2,E1\n",
             if returns { "yes" } else { "no" },
         ));
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_team_ai_registry(&registry, &rules);
@@ -295,8 +301,7 @@ impl Fixture {
             .map(|index| {
                 let passenger = self.spawn("E1", 2 + index as u16, 2);
                 assert_eq!(
-                    self.sim
-                        .techno_limbo_with_rules(passenger, &self.rules, None),
+                    self.sim.techno_limbo_with_rules(passenger, &self.rules),
                     ConcealOutcome::Concealed
                 );
                 let entity = self.sim.substrate.entities.get_mut(transport).unwrap();
@@ -455,7 +460,11 @@ fn retail_team_ai() -> Option<(RuleSet, Simulation)> {
     use crate::rules::retail_ini_fixture::retail_ini;
     let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -746,7 +755,11 @@ impl OracleTeam {
              [TaskForces]\n0=ROW_TF\n[ROW_TF]\n{entries}",
             if returns { "yes" } else { "no" },
         ));
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_team_ai_registry(&registry, &rules);
@@ -1048,12 +1061,8 @@ impl OracleTeam {
 fn load_onto_transport_matches_the_original() {
     for (case, row) in oracle_rows("load").iter().enumerate() {
         let mut team = OracleTeam::new(row, 14);
-        team.sim.team_action_load_onto_transport(
-            team.team,
-            &team.rules,
-            None,
-            FrameEffects::default(),
-        );
+        team.sim
+            .team_action_load_onto_transport(team.team, &team.rules, FrameEffects::default());
         team.check(row, case, true);
     }
 }
@@ -1085,7 +1094,6 @@ fn unload_matches_the_original() {
             team.team,
             int(&row["argument"]),
             &team.rules,
-            None,
             FrameEffects::default(),
         );
         team.check(row, case, false);

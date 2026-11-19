@@ -31,13 +31,6 @@ VERA20K محرك جديد للعبة Red Alert 2: Yuri's Revenge. يُلعب م�
 
 هل واجهتك مشكلة؟ راجع [صفحة المساعدة](https://vera20k.org/ar/help).
 
-المشروع قيد التطوير النشط: المناوشات قابلة للعب على Windows وmacOS وLinux، والحملات تعمل جزئيًا،
-واللعب الجماعي عبر الإنترنت (تجريبي) متاح الآن. تجد الإصدارات السابقة وما تغيّر في كل منها في [صفحة
-الإصدارات](https://github.com/YuriPlanet/vera20k/releases).
-
-لتشغيل مناوشات YR أو حملاتها للاعب واحد عبر عميل CnCNet، راجع
-[إعداد العميل دون اتصال](integrations/cncnet/README.md).
-
 ## أهداف المشروع
 
 1. الحفاظ على أسلوب اللعب والمظهر والأجواء في لعبة Red Alert 2: Yuri's Revenge الأصلية.
@@ -131,6 +124,7 @@ Command & Conquer وRed Alert علامتين تجاريتين لشركة Electro
 لا يتبع VERA20K شركة Electronic Arts ولا يحظى بتأييدها.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **اقرأ [الإشعار القانوني](LEGAL.md) قبل أن تشارك VERA20K أو تبيعه أو تنشئ نسخة متفرعة منه.**

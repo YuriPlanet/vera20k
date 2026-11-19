@@ -29,7 +29,7 @@ pub mod x87;
 
 pub use build::GeneratedMapRun;
 pub use description::SeedDescription;
-pub use grid::{DiamondScan, GridCell, RmgGrid};
+pub use grid::{GridCell, RmgGrid};
 pub use options::RmgOptions;
 pub use rng::RmgRng;
 pub use scratch::RmgScratch;

@@ -57,6 +57,9 @@ pub(crate) struct RendererState {
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
     /// The finished terrain layer, kept while its inputs hold still.
     pub(crate) terrain_picture: crate::app::presentation::render::terrain_picture::TerrainPicture,
+    /// gamemd's Z-buffer row seed, which lives as long as its Z buffer: one
+    /// per process, until the view's size changes.
+    pub(crate) native_z_seed: crate::render::native_z::ZSeed,
 }
 
 impl RendererState {

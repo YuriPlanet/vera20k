@@ -151,7 +151,7 @@ mod tests {
                 upgrade,
                 host,
                 &rules,
-                UninitContext::with_rules(&rules),
+                UninitContext::new(&rules),
             ));
             let actual = sim.substrate.entities.get(host).unwrap();
             assert_eq!(actual.building_upgrades().count(), count);
@@ -182,12 +182,7 @@ mod tests {
                 row["name"]
             );
             assert_eq!(
-                sim.try_install_building_upgrade(
-                    upgrade,
-                    host,
-                    &rules,
-                    UninitContext::with_rules(&rules)
-                ),
+                sim.try_install_building_upgrade(upgrade, host, &rules, UninitContext::new(&rules)),
                 row["install"]["admitted"] == true,
                 "{}",
                 row["name"]

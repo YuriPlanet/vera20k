@@ -410,7 +410,7 @@ impl Simulation {
             crate::sim::spawn_manager::kill_all_spawns_with_context(
                 self,
                 target,
-                UninitContext::new(rules, registry).with_effects(effects),
+                UninitContext::new(rules).with_effects(effects),
             );
         }
         if self
@@ -546,9 +546,10 @@ impl Simulation {
             target,
             ares,
         );
-        // 0x0071B16D: ObjectClass::Deselect.
-        if let Some(entity) = self.substrate.entities.get_mut(target) {
-            entity.selection.deselect();
+        // 0x0071B167..0x0071B175: with a current House (`0x00A83D4C`), the
+        // victim's Deselect (vt+0x150, `ObjectClass::Deselect`).
+        if self.session.current_house().is_some() {
+            self.object_deselect(target);
         }
     }
 
@@ -861,7 +862,7 @@ impl Simulation {
                 self.ares_kill_tunnel_feet_if_last(
                     target,
                     Some(head),
-                    UninitContext::new(rules, registry).with_effects(effects),
+                    UninitContext::new(rules).with_effects(effects),
                 );
             }
             // Temporal71A9A0..71A9A7: only positive true Occupants count
@@ -876,7 +877,7 @@ impl Simulation {
                     self,
                     target,
                     None,
-                    UninitContext::new(rules, registry).with_effects(effects),
+                    UninitContext::new(rules).with_effects(effects),
                 );
             }
             // TemporalClass::Update (0x0071A9AC..0x0071A9DC) scalar-deletes Cargo
@@ -884,7 +885,7 @@ impl Simulation {
             // the admitted live object pass, whose active GameState is 1.
             self.scalar_delete_building_cargo(
                 target,
-                UninitContext::new(rules, registry).with_effects(effects),
+                UninitContext::new(rules).with_effects(effects),
                 1,
             );
             // 0x0071A9EE..0x0071AA15: a Tank Bunker releases its occupant
@@ -955,14 +956,11 @@ impl Simulation {
             target,
             crate::sim::combat::KillSource::Techno(Some(head)),
             crate::sim::combat::KillCallback::Terminal,
-            UninitContext::new(rules, registry).with_effects(effects),
+            UninitContext::new(rules).with_effects(effects),
         );
         let target_owner = self.substrate.entities.get(target).map(GameEntity::owner);
         // vtable +0xF8 UnInit: no death effects, no survivors.
-        self.uninit_with_context(
-            target,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        self.uninit_with_context(target, UninitContext::new(rules).with_effects(effects));
         //71AA5A..71AA60 requests the owner's House tail; the actual late
         //Building destructor separately calls hold/revoke43BEF0.
         if category == EntityCategory::Structure
@@ -1115,7 +1113,13 @@ impl Simulation {
                 EntityCategory::Unit | EntityCategory::Infantry
             )
         }) {
-            crate::sim::world::enter_idle_mode(self, attacker, rules, None, effects);
+            crate::sim::world::enter_idle_mode(
+                self,
+                attacker,
+                rules,
+                Some(rules.overlay_registry()),
+                effects,
+            );
         }
     }
 
@@ -1496,7 +1500,7 @@ impl Simulation {
             // Each frozen class calls virtual +3C8 (Infantry51BBEF), not
             // the Techno base write set. Its reached tail also clears a
             // Tesla Trooper's automatic charging intent at51B33F.
-            let _ = self.assign_target_represented(id, None, rules, registry, ctx.effects);
+            let _ = self.assign_target_represented(id, None, rules, ctx.effects);
         }
         let clears_destination = category != EntityCategory::Structure
             && self

@@ -228,15 +228,17 @@ fn initial_campaign_paths_preserve_parent_and_fail_without_creating_it() {
         relative,
         repository.directory().join("missions/ALL01UMD.sav")
     );
-    let absolute = repository.directory().join("absolute.sav");
-    std::fs::write(&absolute, snapshot("older automatic slot", 0)).unwrap();
-    assert_eq!(
-        repository
-            .write_initial_campaign(absolute.to_str().unwrap(), &bytes)
-            .unwrap(),
-        absolute
-    );
-    assert_eq!(repository.read(&absolute).unwrap(), bytes);
+    // VERA: a mission name that would leave the save folder writes nothing,
+    // where native 67CF13 creates the file wherever the name points.
+    let outside = repository
+        .directory()
+        .with_file_name(format!("outside-{}.sav", std::process::id()));
+    let sibling = format!("../{}", outside.file_name().unwrap().to_str().unwrap());
+    for escaping in [sibling.as_str(), outside.to_str().unwrap()] {
+        let refused = repository.write_initial_campaign(escaping, &bytes).is_err();
+        let written = std::fs::remove_file(&outside).is_ok();
+        assert!(refused && !written, "{escaping}");
+    }
     std::fs::remove_dir_all(repository.directory()).unwrap();
 }
 

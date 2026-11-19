@@ -441,7 +441,6 @@ fn an_area_guard_that_approached_its_target_skips_the_idle_action() {
         id,
         target,
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
     .unwrap();

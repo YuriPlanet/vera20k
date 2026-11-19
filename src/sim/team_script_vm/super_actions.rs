@@ -178,13 +178,7 @@ impl Simulation {
                         registry,
                         frame_effects,
                     );
-                    self.team_assign_mission_target(
-                        team_id,
-                        Some(target),
-                        rules,
-                        registry,
-                        frame_effects,
-                    );
+                    self.team_assign_mission_target(team_id, Some(target), rules, frame_effects);
                 }
             }
             Some((_, _, SuperStep::Finish)) | None => {}

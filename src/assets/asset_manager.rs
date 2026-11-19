@@ -181,6 +181,26 @@ pub struct AssetResolutionRef<'a> {
     pub entry_id: i32,
 }
 
+/// The current lookup winner. A loose file retains its physical path alongside
+/// the bytes borrowed from its snapshot. A MIX member is identified by its
+/// archive and entry ID.
+#[derive(Clone, Copy)]
+pub(crate) enum ResolvedAssetFile<'a> {
+    Loose {
+        path: &'a Path,
+        entry: AssetResolutionRef<'a>,
+    },
+    Mix(AssetResolutionRef<'a>),
+}
+
+impl<'a> ResolvedAssetFile<'a> {
+    fn entry(self) -> AssetResolutionRef<'a> {
+        match self {
+            Self::Loose { entry, .. } | Self::Mix(entry) => entry,
+        }
+    }
+}
+
 /// Identity of the bytes actually consumed by one side of the audio pair.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AudioSourceIdentity {
@@ -801,14 +821,13 @@ impl AssetManager {
     /// MIXes; missing pair members must not become available from later mounts.
     fn select_audio_pair(&mut self) {
         let select = |name: &str| {
-            let source = self.resolve_ref(name)?;
+            let file = self.resolve_file(name)?;
+            let entry = file.entry();
             Some(SelectedAudioFile {
-                source_archive: source.source_archive.to_owned(),
-                entry_id: source.entry_id,
-                loose_name: self
-                    .loose_asset(name)
-                    .filter(|loose| loose.source_name == source.source_archive)
-                    .map(|_| name.to_owned()),
+                source_archive: entry.source_archive.to_owned(),
+                entry_id: entry.entry_id,
+                loose_name: matches!(file, ResolvedAssetFile::Loose { .. })
+                    .then(|| name.to_owned()),
             })
         };
         // Installed hook4011C0 -> Audio_Load1005ADD0: audio, ares, audio01..99.
@@ -962,14 +981,8 @@ impl AssetManager {
 
     /// Look up a file by name and return both the bytes and source archive name.
     pub fn get_with_source(&self, name: &str) -> Option<(Vec<u8>, String)> {
-        if let Some((loose, bytes)) = self.loose_bytes(name) {
-            return Some((bytes.to_vec(), loose.source_name.clone()));
-        }
-        let (named, entry_id) = self.lookup_asset_entry(name)?;
-        named
-            .archive
-            .get_by_id(entry_id)
-            .map(|data| (data.to_vec(), named.name.clone()))
+        let (bytes, source) = self.get_with_source_ref(name)?;
+        Some((bytes.to_vec(), source.to_owned()))
     }
 
     /// Look up a file by name and return both the borrowed bytes and source archive name.
@@ -980,7 +993,11 @@ impl AssetManager {
 
     /// Resolve one file through the normal first-match archive lookup.
     pub fn resolve_ref(&self, name: &str) -> Option<AssetResolutionRef<'_>> {
-        self.resolve_ref_with_limit(name, None)
+        self.resolve_file(name).map(ResolvedAssetFile::entry)
+    }
+
+    fn resolve_file(&self, name: &str) -> Option<ResolvedAssetFile<'_>> {
+        self.resolve_file_with_limit(name, None)
             .expect("unbounded asset resolution cannot exceed a read limit")
     }
 
@@ -992,24 +1009,31 @@ impl AssetManager {
         name: &str,
         maximum: usize,
     ) -> Result<Option<AssetResolutionRef<'_>>, AssetError> {
-        self.resolve_ref_with_limit(name, Some(maximum))
+        Ok(self
+            .resolve_file_with_limit(name, Some(maximum))?
+            .map(ResolvedAssetFile::entry))
     }
 
-    fn resolve_ref_with_limit(
+    /// Select the bytes and their physical source together, within the caller's
+    /// optional read limit. An unreadable loose file can fall back to MIX.
+    pub(crate) fn resolve_file_with_limit(
         &self,
         name: &str,
         maximum: Option<usize>,
-    ) -> Result<Option<AssetResolutionRef<'_>>, AssetError> {
+    ) -> Result<Option<ResolvedAssetFile<'_>>, AssetError> {
         if let Some(loose) = self.loose_asset(name) {
             let bytes = match maximum {
                 Some(maximum) => loose.bytes_bounded(maximum)?,
                 None => loose.bytes(),
             };
             if let Some(bytes) = bytes {
-                return Ok(Some(AssetResolutionRef {
-                    bytes,
-                    source_archive: loose.source_name.as_str(),
-                    entry_id: mix_hash(name),
+                return Ok(Some(ResolvedAssetFile::Loose {
+                    path: &loose.path,
+                    entry: AssetResolutionRef {
+                        bytes,
+                        source_archive: &loose.source_name,
+                        entry_id: mix_hash(name),
+                    },
                 }));
             }
         }
@@ -1022,11 +1046,11 @@ impl AssetManager {
         if let Some(maximum) = maximum {
             check_asset_read_limit(bytes.len() as u64, maximum)?;
         }
-        Ok(Some(AssetResolutionRef {
+        Ok(Some(ResolvedAssetFile::Mix(AssetResolutionRef {
             bytes,
-            source_archive: named.name.as_str(),
+            source_archive: &named.name,
             entry_id,
-        }))
+        })))
     }
 
     /// Load through retail's `LoadFileFromMIX @ 0x005B40B0` boundary.
@@ -1515,12 +1539,7 @@ impl AssetManager {
     /// Retail provenance: Append-before-tail registration — `MixFileClass` registered constructor @ `0x005B3C20`.
     fn append_registered_archive(&mut self, named: NamedArchive) {
         let archive_index = self.archives.len();
-        for entry in named.archive.entries() {
-            self.lookup_index.entry(entry.id).or_insert(AssetLocation {
-                archive_index,
-                entry_id: entry.id,
-            });
-        }
+        index_first_matches(&mut self.lookup_index, archive_index, &named.archive);
         log::info!(
             "Registered {} at priority {} ({} entries)",
             named.name,
@@ -2013,13 +2032,24 @@ impl AssetManager {
         self.lookup_index.clear();
 
         for (archive_index, named) in self.archives.iter().enumerate() {
-            for entry in named.archive.entries() {
-                self.lookup_index.entry(entry.id).or_insert(AssetLocation {
-                    archive_index,
-                    entry_id: entry.id,
-                });
-            }
+            index_first_matches(&mut self.lookup_index, archive_index, &named.archive);
         }
+    }
+}
+
+/// Index `archive`, mounted at `archive_index`, behind the archives `index`
+/// already holds: an entry id an earlier archive holds keeps that archive, as
+/// first-match resolution (`MixFileSystem__Resolve_First @ 0x005B4430`) finds.
+fn index_first_matches(
+    index: &mut HashMap<i32, AssetLocation>,
+    archive_index: usize,
+    archive: &MixArchive,
+) {
+    for entry in archive.entries() {
+        index.entry(entry.id).or_insert(AssetLocation {
+            archive_index,
+            entry_id: entry.id,
+        });
     }
 }
 

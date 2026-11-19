@@ -342,7 +342,7 @@ fn spent_patrol_overrides_enter_and_preserves_suspended_leg() {
         Some(NavTargetRef::object(dock))
     );
     assert_eq!(entity.mission.handler_state(), 0);
-    super::super::enter_idle_mode_for(&mut sim, plane, &rules, None, FrameEffects::default());
+    super::super::enter_idle_mode_for(&mut sim, plane, &rules, FrameEffects::default());
     let entity = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(entity.mission.current().known(), Some(MissionType::Patrol));
     assert_eq!(entity.navigation.nav_com(), destination);
@@ -419,7 +419,7 @@ fn patrol_initialization_updates_the_team_through_its_target_owner() {
         .team_script_vm
         .create_team(owner, script, vec![plane, wing], 0);
     let old = TeamTarget::Cell { x: 18, y: 10 };
-    sim.team_assign_mission_target(team, Some(old), &rules, None, FrameEffects::default());
+    sim.team_assign_mission_target(team, Some(old), &rules, FrameEffects::default());
     sim.assign_aircraft_destination(
         wing,
         Some(NavTargetRef::cell(18, 10)),
@@ -430,7 +430,6 @@ fn patrol_initialization_updates_the_team_through_its_target_owner() {
         wing,
         Some(old.target_kind()),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();

@@ -409,15 +409,13 @@ impl Simulation {
         aircraft: u64,
         unit: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let _ = self.techno_limbo_with_context(unit, context);
         let Some(type_ref) = self.substrate.entities.get_mut(unit).map(|cargo| {
             cargo.on_bridge.store(false);
             cargo.on_carryall.set(true);
-            cargo.set_inside_transport(aircraft, false);
             cargo.type_ref()
         }) else {
             return;
@@ -425,7 +423,7 @@ impl Simulation {
         let size = self
             .object_type(type_ref, rules)
             .map_or(1.0, |object| object.size);
-        let _ = self.add_cargo_passenger_chain(aircraft, &[(unit, size)], context);
+        let _ = self.add_cargo_members(aircraft, &[(unit, size)], context);
     }
 
     /// `AircraftClass::AI`'s Carryall block (`0x00415136..0x00415184`), after
@@ -548,7 +546,6 @@ impl Simulation {
         let _ = depart_cargo_head(
             self,
             rules,
-            registry,
             aircraft,
             DepartureRoute::Carryall,
             |sim, cargo| {
@@ -571,7 +568,6 @@ impl Simulation {
                     requested,
                     PlacementEvidence::EvaluateMark,
                     rules,
-                    registry,
                 ) else {
                     return Err(DepartureFailure::Placement);
                 };
@@ -633,10 +629,7 @@ impl Simulation {
                 locomotor.power_off();
             }
         }
-        self.refresh_object_sight_border(
-            cargo,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        self.refresh_object_sight_border(cargo, UninitContext::new(rules).with_effects(effects));
         let nearby = self.techno_nearby_location(aircraft, None, rules);
         if self
             .substrate
@@ -665,7 +658,7 @@ impl Simulation {
         // to start (vt+0x1E8(5, 1)) and its team takes it again.
         if ares {
             if let Some(entity) = self.substrate.entities.get_mut(cargo) {
-                entity.clear_transporter();
+                entity.passenger_role_mut().clear_transporter();
             }
             let _ = self.mission_queue_exact(
                 cargo,
@@ -675,7 +668,7 @@ impl Simulation {
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
             if let Some((team, _)) = self.team_script_vm.team_for_member(cargo) {
-                self.team_add_member(team, cargo, false, rules, registry, effects);
+                self.team_add_member(team, cargo, false, rules, effects);
             }
         }
         let destination = nearby

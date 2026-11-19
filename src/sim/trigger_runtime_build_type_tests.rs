@@ -289,7 +289,7 @@ fn building_discovery_updates_last_type_only_after_admission_outside_init() {
         } else {
             owner
         };
-        let context = UninitContext::new(&rules, None);
+        let context = UninitContext::new(&rules);
         let returned = if integer(&row["scenario_init"]) == 2 {
             sim.with_object_placement_scope(|sim| {
                 sim.with_object_placement_scope(|sim| sim.discover_techno(id, viewer, context))

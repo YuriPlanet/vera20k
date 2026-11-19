@@ -413,10 +413,9 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
         assert_eq!(warning.owner_house(), Some(owner));
         assert!(warning.draw_runtime().hidden);
         assert_eq!(warning.draw_flags(), 0x600);
-        assert!(sim.retire_non_entity_object(
-            bullet_id,
-            crate::sim::world::UninitContext::with_rules(&rules)
-        ));
+        assert!(
+            sim.retire_non_entity_object(bullet_id, crate::sim::world::UninitContext::new(&rules))
+        );
         assert!(sim.substrate.pending_delete.contains_object(&warning_id));
         sim.process_pending_delete();
         assert!(sim.substrate.anims.get(warning_id).is_none());

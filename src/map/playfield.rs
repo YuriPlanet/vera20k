@@ -6,6 +6,7 @@
 
 use crate::map::cell_index::packed_cell_coord;
 use crate::map::map_file::MapHeader;
+use crate::map::resolved_terrain::NativeAllocatedCellCursor;
 
 /// The five final MapClass fields consumed by the isometric playfield query.
 ///
@@ -78,7 +79,9 @@ impl PlayfieldBounds {
     ///
     /// RMG establishes synthetic LocalSize `(2,5,genW,genH)` and immediately
     /// runs `0x00567230`; those values are stable under its clip/margin rules.
-    /// This seam exists for that post-normalization RMG state, not raw headers.
+    /// This seam exists for that post-normalization RMG state, not raw headers,
+    /// and for the explicit rect `MapClass::IsCellInViewRegion @ 0x00578640`
+    /// tests in LocalSize's place.
     pub const fn from_normalized_local_size(
         map_width: i32,
         left: i32,
@@ -107,6 +110,8 @@ impl PlayfieldBounds {
 
     /// Mode-one `MapClass::IsCellInPlayfield @ 0x00578460` after its caller
     /// supplies the selected CellClass's signed level and unsigned slope byte.
+    /// `MapClass::IsCellInViewRegion @ 0x00578640` with checkLevel set is the
+    /// same arithmetic over a caller's rect and the same `Size` width.
     pub const fn contains_height_aware_packed(self, x: i32, y: i32, level: i8, slope: u8) -> bool {
         let (x, y) = packed_cell_coord(x, y);
         let height = self.slope_adjusted_height(x.wrapping_add(y), level, slope);
@@ -153,6 +158,13 @@ impl PlayfieldBounds {
 }
 
 /// The allocated Size diamond (`MapClass::In_Bounds @ 0x00568300`).
+///
+/// A scenario's cells are exactly the ones `In_Bounds` admits:
+/// `MapClass::Clear @ 0x00565B00` deletes every cell and nulls its slot
+/// (`Clear_Scene @ 0x006851F0` calls it at 0x00685318, and `Full_Init` calls
+/// `Clear_Scene` at 0x00686B65), then `MapClass::Resize @ 0x00565C10`
+/// allocates a cell for each coordinate that passes the same test
+/// (0x00566379..0x005663AD).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SizeDiamond {
     near: i32,
@@ -172,6 +184,7 @@ impl SizeDiamond {
         Self { near, far }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) const fn bounds(self) -> (i32, i32) {
         (self.near, self.far)
     }
@@ -179,6 +192,36 @@ impl SizeDiamond {
     pub(super) const fn contains(self, x: i32, y: i32) -> bool {
         let sum = x + y;
         self.near < sum && x - y < self.near && y - x < self.near && sum <= self.far
+    }
+
+    /// The allocated cells in the order of the allocated-cell walk
+    /// (`CellIterator_Init @ 0x00578350` / `Next @ 0x00578290`,
+    /// [`NativeAllocatedCellCursor`]): rows of rising `x + y` from `W + 1`,
+    /// each with rising `x`. `Next` returns null at the first coordinate
+    /// outside the diamond, which ends the walk: past the far diagonal
+    /// `x + y == W + 2H`, or at (2, 1) when `W` is 1, before the diagonal's
+    /// other cells.
+    pub(super) fn allocated_cells(self) -> AllocatedCellWalk {
+        AllocatedCellWalk {
+            cursor: NativeAllocatedCellCursor::reset(self.near),
+            diamond: self,
+        }
+    }
+}
+
+/// [`SizeDiamond::allocated_cells`].
+#[derive(Debug, Clone)]
+pub struct AllocatedCellWalk {
+    cursor: NativeAllocatedCellCursor,
+    diamond: SizeDiamond,
+}
+
+impl Iterator for AllocatedCellWalk {
+    type Item = (i32, i32);
+
+    fn next(&mut self) -> Option<(i32, i32)> {
+        let (x, y) = self.cursor.take_coord(self.diamond.near);
+        self.diamond.contains(x, y).then_some((x, y))
     }
 }
 

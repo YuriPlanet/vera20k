@@ -406,6 +406,12 @@ impl App {
             }
             Ok(super::initialize::InitializationStep::Ready(state, events)) => {
                 let mut state = *state;
+                // Startup has built every renderer and its shaders: a start
+                // on DirectX 12 works here (`persistence::directx12_start`).
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                if let Some(config) = &state.platform.game_config {
+                    crate::app::persistence::directx12_start::finish(config.paths.settings_dir());
+                }
                 // Resizes may have arrived while startup owned the renderer.
                 Self::follow_window_size(&mut state);
                 if let Some(request) = self.replay_request.take() {
@@ -517,6 +523,17 @@ impl App {
                 event_loop.exit();
             }
         }
+    }
+
+    /// Close the game as a closed window does: finish what the shell has
+    /// open, then exit, or first leave the network (`begin_network_goodbye`).
+    pub(super) fn close_game(state: &mut AppState, event_loop: &ActiveEventLoop) {
+        Self::prepare_shell_terminal_exit(state);
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if Self::begin_network_goodbye(state) {
+            return;
+        }
+        event_loop.exit();
     }
 }
 
@@ -1056,12 +1073,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => {
                 log::info!("Close requested");
-                Self::prepare_shell_terminal_exit(state);
-                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-                if Self::begin_network_goodbye(state) {
-                    return;
-                }
-                event_loop.exit();
+                Self::close_game(state, event_loop);
             }
             WindowEvent::Resized(size) => {
                 // A zero dimension is how Windows reports a minimise — that
@@ -1183,6 +1195,7 @@ impl ApplicationHandler for App {
                 // `WM_SETCURSOR` with it), so VERA stops drawing mouse.shp rather
                 // than fighting it for the same pixel.
                 state.platform.pointer_in_client = false;
+                crate::app::input::tooltips::on_button_event(state);
                 state.platform.window.request_redraw();
             }
             WindowEvent::ModifiersChanged(_) => {
@@ -2091,7 +2104,9 @@ impl ApplicationHandler for App {
                 return;
             }
             #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-            if Self::poll_network_goodbye(state, event_loop) {
+            if Self::poll_network_goodbye(state, event_loop)
+                || Self::close_after_graphics_loss(state, event_loop)
+            {
                 return;
             }
             Self::follow_window_full_screen(state);
@@ -2411,6 +2426,15 @@ impl ApplicationHandler for App {
             crate::app::mods::left(state);
         }
         log::logger().flush();
+        // A lost graphics device closed the game: say so once the replay is
+        // written and the network left.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(state) = self.state.as_mut()
+            && let Some(lost) = state.frontend.graphics_lost.take()
+        {
+            Self::leave_screen(state);
+            crate::app::system_dialog::report_graphics_lost(&lost);
+        }
         // A confirmed quit (its cascade's Theme Stop(0), 0x0052E7EC, has run)
         // or a page unload tears down a running game.
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]

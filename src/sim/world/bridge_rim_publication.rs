@@ -87,7 +87,7 @@ impl HighBridgeRimHost for LiveRim<'_, '_> {
         publication.sim.dispatch_bridge_cell_tag_event(
             cell,
             publication.rules,
-            publication.registry,
+            Some(publication.rules.overlay_registry()),
             publication.frame_effects,
         );
     }

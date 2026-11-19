@@ -560,6 +560,7 @@ impl Simulation {
             .and_then(|name| rules.warhead(name))
         {
             let warhead_ref = self.interner.intern(&warhead.id);
+            // 1004BE4D..1004BE59: DamageArea(coord, sum, unit, warhead, 0, NULL).
             crate::sim::combat::world_receiver::apply_area_damage(
                 self,
                 rules,

@@ -168,7 +168,7 @@ impl InfantryDeathPostlude {
                     .get(self.id)
                     .and_then(|entity| world.object_type(entity.type_ref(), rules))
                     .is_some_and(|object| object.crashable)
-                && world.foot_crash(self.id, None, rules, context.registry(), context.effects())
+                && world.foot_crash(self.id, None, rules, context.effects())
             {
                 return;
             }
@@ -573,10 +573,7 @@ impl Simulation {
             if let Err(cause) = self.infantry_stop_driver(id, rules, overlay_registry, effects) {
                 log::debug!("infantry {id} death Stop_Driver: {cause}");
             }
-            self.stun(
-                id,
-                super::UninitContext::new(rules, overlay_registry).with_effects(effects),
-            );
+            self.stun(id, super::UninitContext::new(rules).with_effects(effects));
         }
         // `InfantryClass::ReceiveDamage 0x0051810E..0x0051812E`, before the
         // death ladder: Queue_Mission(-1) (refused), Queue_Mission(Guard),
@@ -628,7 +625,7 @@ impl Simulation {
                 ReceiverDeathRecipe::WaterSplash
             }
             InfantryDeathArm::JumpJetExplode { crashable } => {
-                if crashable && self.foot_crash(id, None, rules, overlay_registry, effects) {
+                if crashable && self.foot_crash(id, None, rules, effects) {
                     ReceiverDeathRecipe::CrashExplode
                 } else {
                     ReceiverDeathRecipe::ExternalAnim(INFANTRY_EXPLODE_INF_DEATH)

@@ -6,6 +6,7 @@ use super::*;
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::snapshot::GameSnapshot;
 
@@ -63,7 +64,8 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
     )
     .unwrap();
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
-    let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let teams =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     for survivor in [false, true] {
         let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4CD510);
         sim.intern_rule_type_ids(rules);

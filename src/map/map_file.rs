@@ -11,6 +11,7 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on assets/ (MIX archives), rules/ (INI parser), util/ (base64, lzo).
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 #[cfg(any(test, feature = "test-support"))]
 use std::path::Path;
@@ -506,14 +507,14 @@ pub fn load_from_path(path: &Path) -> Result<MapFile, MapError> {
 /// Callers recording source identity can hash this same buffer before passing
 /// ownership here. Wrapped maps retain the existing inner-entry selection.
 pub fn load_from_bytes(bytes: Vec<u8>) -> Result<MapFile, MapError> {
-    MapFile::from_ini(ini_from_file_bytes(bytes)?)
+    MapFile::from_ini(ini_from_file_bytes(bytes.into())?)
 }
 
 /// Select and parse the map INI without decoding terrain or preview packs.
 /// Menu metadata and full loading share this raw/wrapped-file decision.
-pub(crate) fn ini_from_file_bytes(bytes: Vec<u8>) -> Result<IniFile, MapError> {
+pub(crate) fn ini_from_file_bytes(bytes: Cow<'_, [u8]>) -> Result<IniFile, MapError> {
     if is_mix_header(&bytes) {
-        let archive: MixArchive = MixArchive::from_bytes(bytes)?;
+        let archive = MixArchive::from_bytes(bytes.into_owned())?;
         pick_map_ini(&archive, false)
     } else {
         Ok(IniFile::from_bytes(&bytes)?)
@@ -644,13 +645,10 @@ pub fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
         .section("Map")
         .ok_or(MapError::MissingSection { name: "Map".into() })?;
 
-    // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70`: the theater name read
-    // (`0x00475870`, 0x80 bytes), `Fill` as a 0x20-byte ReadString, ReadInt
-    // `Level`, and ReadRect for both rectangles.
-    let theater: String = map_section
-        .read_name("Theater", 0x80)
-        .unwrap_or("TEMPERATE")
-        .to_uppercase();
+    // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70`: the theater read
+    // ([`crate::rules::object_image::read_map_theater`]), `Fill` as a
+    // 0x20-byte ReadString, ReadInt `Level`, and ReadRect for both rectangles.
+    let theater = crate::rules::object_image::read_map_theater(ini);
     let fill = map_section.read_string("Fill", "Clear", 0x20);
     let level = map_section.read_int("Level", 0);
 

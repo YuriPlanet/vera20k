@@ -1844,7 +1844,7 @@ pub(crate) fn tick_house_superweapon_instances(
         && sim
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+            .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     for type_id in house_super_order(sim, rules, owner) {
         let sw = rules.super_weapon(sim.interner.resolve(type_id));
         let (fade, ready, drain_ended) = {
@@ -2003,7 +2003,7 @@ pub(super) fn deactivate_ares_handler(
         76,
         crate::sim::trigger_runtime::AresEventSource::Super(typ),
         rules,
-        effects.overlay_registry(),
+        Some(rules.overlay_registry()),
         effects,
     );
 }
@@ -2123,7 +2123,7 @@ pub(crate) fn tick_active_superweapon_effects(
         sim.update_lighting();
     }
     let dominator = psychic_dominator::process(sim, rules, overlay_registry, frame_effects);
-    let chrono = sim.session.process_chrono_screen_effect();
+    let chrono = sim.step_chrono_screen();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     if rules.ares_form() {
@@ -2221,8 +2221,7 @@ pub fn super_weapon_available(
         let Some(house) = sim.houses.get(&owner) else {
             return false;
         };
-        if !policy.allows_controller(house.is_controlled_by_human(sim.session.game_mode_nonzero()))
-        {
+        if !policy.allows_controller(house.is_controlled_by_human(sim.session.rule_policy())) {
             return false;
         }
         if metadata
@@ -2968,9 +2967,10 @@ pub(crate) fn spy_grant_super(
         return false;
     };
     let on_hold = sw.is_powered
-        && sim.power_states.get(&owner).is_some_and(|state| {
-            state.total_drain() != 0 && state.total_output() < state.total_drain()
-        });
+        && sim
+            .power_states
+            .get(&owner)
+            .is_some_and(|state| state.has_low_power());
     let granted = grant_super(
         &sim.interner,
         &sim.session,

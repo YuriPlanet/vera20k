@@ -685,16 +685,11 @@ impl ClientSession {
             }
             Some(_) => {}
             None => {
-                self.ordering = Some(ClientOrdering {
-                    certificate: certificate.to_vec(),
+                self.ordering = Some(ClientOrdering::new(
+                    certificate.to_vec(),
                     agreement,
-                    sealed: VecDeque::new(),
-                    next_batch: 1,
-                    accepted_through: 0,
-                    restoring: false,
-                    leave: None,
-                    link: crate::link::ClientLink::new(parsed.tick_hz),
-                });
+                    parsed.tick_hz,
+                ));
             }
         }
         let mut payload = vec![READY_REQUEST];

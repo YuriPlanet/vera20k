@@ -51,7 +51,6 @@ fn fire_error(sim: &Simulation, rules: &RuleSet, scorer: u64, target: u64) -> Fi
     FireSubject {
         world: sim,
         rules,
-        overlay_registry: None,
         fog: None,
         firer: sim.substrate.entities.get(scorer).unwrap(),
         obj: rules.object("SCORER").unwrap(),

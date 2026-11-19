@@ -131,7 +131,7 @@ fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() 
         let house = sim.houses.get_mut(owner).unwrap();
         house.set_is_human_for_test(true);
         house
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_for_test(i32::from(index >= 2), &[], (0, 0, 0), &[]);
     }
     sim.check_defeat(None, None);
@@ -167,7 +167,7 @@ fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() 
     sim.houses
         .get_mut(&owners[2])
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_for_test(0, &[], (0, 0, 0), &[]);
     sim.check_defeat(None, None);
     assert_eq!(defeats(&mut sim), [(owners[2], true)]);
@@ -204,7 +204,7 @@ fn cooperative_defeated_local_waits_for_partner_and_shares_completed_victory() {
         let house = sim.houses.get_mut(owner).unwrap();
         house.set_is_human_for_test(index < 2);
         house
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_for_test(i32::from(index != 0), &[], (0, 0, 0), &[]);
     }
     sim.check_defeat(None, None);
@@ -213,7 +213,7 @@ fn cooperative_defeated_local_waits_for_partner_and_shares_completed_victory() {
     sim.houses
         .get_mut(&owners[2])
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_for_test(0, &[], (0, 0, 0), &[]);
     sim.check_defeat(None, None);
     assert!(sim.houses[&owners[0]].has_won());
@@ -232,7 +232,9 @@ fn network_result_world(local: usize) -> (Simulation, Vec<InternedId>) {
         let house = sim.houses.get_mut(owner).unwrap();
         house.set_is_human_for_test(index < 2);
         house.set_multiplay_passive_for_test(index == 2);
-        house.tracking_mut().set_for_test(1, &[], (0, 0, 0), &[]);
+        house
+            .tracking_mut_for_test()
+            .set_for_test(1, &[], (0, 0, 0), &[]);
     }
     (sim, owners)
 }
@@ -280,7 +282,7 @@ fn network_completion_keeps_shared_house_results_and_only_local_exit_and_vox() {
         sim.houses
             .get_mut(&owners[1])
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_for_test(0, &[], (0, 0, 0), &[]);
         sim.check_defeat(Some(&rules), None);
         assert!(sim.houses[&owners[0]].has_won());
@@ -336,7 +338,7 @@ fn network_match_winners_are_the_humans_the_completion_flags_to_win() {
     sim.houses
         .get_mut(&owners[1])
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_for_test(0, &[], (0, 0, 0), &[]);
     sim.check_defeat(Some(&rules), None);
     assert_eq!(sim.network_match_winners(), Some(vec![owners[0]]));
@@ -366,14 +368,14 @@ fn a_match_only_ai_play_runs_until_one_ai_is_left() {
         house.set_is_human_for_test(index < 2);
         house.set_current_iq_for_test(rules.general.max_iq_levels);
         house
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_for_test(i32::from(index >= 2), &[], (0, 0, 0), &[]);
     }
     let defeat = |sim: &mut Simulation, owner: InternedId| {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_for_test(0, &[], (0, 0, 0), &[]);
         sim.check_defeat(Some(&rules), None);
     };
@@ -634,9 +636,12 @@ fn native_house_result_zero_and_allow_win_heads() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
         house.supply_result_flags_for_test(won, !won, timer);
         house.supply_allow_win_tag_state(input["allow_win"].as_i64().unwrap() as i32, timer);
+        let mode = crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+            input["game_mode"].as_i64().unwrap() as i32,
+        );
         let ready = house.pending_outcome(
             input["frame"].as_i64().unwrap() as i32,
-            input["game_mode"].as_i64().unwrap() != 0,
+            mode.stock_rule_policy(None),
         );
         assert_eq!(ready.is_some(), row["gate"] == "result_wait", "{name}");
     }
@@ -701,7 +706,7 @@ fn native_defeat_gate_corpus() {
             let state = sim.houses.get_mut(&house).unwrap();
             state.set_is_defeated_for_test(int("defeated") != 0);
             state.set_multiplay_passive_for_test(int("passive") != 0);
-            state.tracking_mut().set_for_test(
+            state.tracking_mut_for_test().set_for_test(
                 int("buildings"),
                 &base_units,
                 (
@@ -727,6 +732,28 @@ fn native_defeat_gate_corpus() {
             native_defeats,
             "{name}"
         );
+    }
+}
+
+#[test]
+fn elimination_policy_controls_the_automatic_house_defeat_gate() {
+    use crate::sim::scenario_session::ScenarioGameMode::{Campaign, Skirmish};
+
+    let rules = rules(3);
+    let stock_skirmish = Skirmish.stock_rule_policy(None);
+    for (mode, policy, defeated) in [
+        (Campaign, Campaign.stock_rule_policy(None), false),
+        (Skirmish, stock_skirmish, true),
+        (
+            Skirmish,
+            stock_skirmish.with_uses_elimination_results(false),
+            false,
+        ),
+    ] {
+        let (mut sim, houses) = sim_with_houses(&[0]);
+        sim.session.install_admission(mode, None, policy);
+        sim.check_defeat(Some(&rules), None);
+        assert_eq!(sim.houses[&houses[0]].is_defeated(), defeated);
     }
 }
 
@@ -814,7 +841,7 @@ fn ares_normal_defeat_gate_matches_executed_object_array_controls() {
         sim.houses
             .get_mut(&houses[0])
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_for_test(
                 int("buildings"),
                 &[],

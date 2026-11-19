@@ -238,7 +238,6 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     scene.source,
                     Some(TargetKind::Entity(scene.target)),
                     &scene.rules,
-                    None,
                     FrameEffects::default(),
                 )
                 .unwrap();
@@ -323,13 +322,9 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                 );
             }
             compare_native_phase(&scene, native_phase(row, "before_deferred_destruction"));
-            scene.sim.process_pending_delete_with(
-                &scene.rules,
-                None,
-                FrameEffects::default(),
-                1,
-                true,
-            );
+            scene
+                .sim
+                .process_pending_delete_with(&scene.rules, FrameEffects::default(), 1, true);
             assert!(scene.sim.substrate.entities.get(scene.source).is_none());
             compare_native_rng(&scene.sim, native_phase(row, "after_deferred_destruction"));
         });

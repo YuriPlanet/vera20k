@@ -30,9 +30,7 @@ impl LivePublication<'_> {
                 "bridge reconstruction requires native type24/25/237/238 and frame-1".into(),
             );
         }
-        let registry = self
-            .registry
-            .ok_or("missing live bridge OverlayType registry")?;
+        let registry = self.rules.overlay_registry();
         let flags = registry
             .flags(overlay)
             .ok_or("missing bridge OverlayType")?;

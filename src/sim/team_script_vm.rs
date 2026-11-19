@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::{CountryIdx, GeneralRules};
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::intern::InternedId;
@@ -352,7 +353,12 @@ impl AiTriggerTrackRecord {
     /// while `n <= 0`), and `w'` is stored as a double and clamped: below
     /// `min` it becomes `min`, above `max` it becomes `max`
     /// (`TEST AH,0x41`, so an unordered compare keeps it).
-    fn record(&mut self, succeeded: bool, bounds: [NativeF64Bits; 2], rules: &TeamRules) {
+    fn record(
+        &mut self,
+        succeeded: bool,
+        bounds: [NativeF64Bits; 2],
+        rules: &AiTriggerFeedbackRules,
+    ) {
         type X = X87Chop53;
         let load = |bits: NativeF64Bits| {
             X::load_f64(bits).expect("AI trigger weights and Rules deltas are finite")
@@ -401,13 +407,9 @@ impl AiTriggerTrackRecord {
     }
 }
 
-/// What `TeamClass` reads beyond its own object: the game mode and the Rules
-/// keys of the empty-team dissolve and the AI trigger feedback.
+/// The Rules keys the team destructor reads for AI trigger feedback.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct TeamRules {
-    game_mode_nonzero: bool,
-    /// `[General] DissolveUnfilledTeamDelay=` (`Rules+0x1190`).
-    dissolve_unfilled_team_delay: i32,
+struct AiTriggerFeedbackRules {
     /// `[General] AITriggerSuccessWeightDelta=` (`Rules+0xC0`).
     success_weight_delta: NativeF64Bits,
     /// `[General] AITriggerFailureWeightDelta=` (`Rules+0xC8`).
@@ -416,11 +418,9 @@ pub(crate) struct TeamRules {
     track_record_coefficient: NativeF64Bits,
 }
 
-impl TeamRules {
-    pub(crate) fn new(general: &GeneralRules, game_mode_nonzero: bool) -> Self {
+impl AiTriggerFeedbackRules {
+    fn new(general: &GeneralRules) -> Self {
         Self {
-            game_mode_nonzero,
-            dissolve_unfilled_team_delay: general.dissolve_unfilled_team_delay,
             success_weight_delta: general.ai_trigger_success_weight_delta,
             failure_weight_delta: general.ai_trigger_failure_weight_delta,
             track_record_coefficient: general.ai_trigger_track_record_coefficient,
@@ -618,12 +618,12 @@ impl TeamScriptState {
     /// been full (`+0x78`) or, in a multiplayer game, one whose age
     /// (`Frame - +0x50`, wrapping) is above `DissolveUnfilledTeamDelay=`
     /// (signed) is destroyed.
-    fn dissolves(&self, rules: &TeamRules, current_frame: i32) -> bool {
+    fn dissolves(&self, current_frame: i32, unfilled_team_timeout: Option<i32>) -> bool {
         self.members.is_empty()
             && (self.has_been_full
-                || (rules.game_mode_nonzero
-                    && current_frame.wrapping_sub(self.created_frame)
-                        > rules.dissolve_unfilled_team_delay))
+                || unfilled_team_timeout.is_some_and(|timeout| {
+                    current_frame.wrapping_sub(self.created_frame) > timeout
+                }))
     }
 
     pub fn owner(&self) -> InternedId {
@@ -914,12 +914,12 @@ impl TeamScriptVm {
         &mut self,
         team_type_id: InternedId,
         owner: InternedId,
-        game_mode_nonzero: bool,
+        limit_scope: TeamLimitScope,
         current_frame: i32,
         placement_scope_active: bool,
         initial_zone: Option<TeamTarget>,
     ) -> Option<u64> {
-        if !placement_scope_active && self.at_max_teams(team_type_id, owner, !game_mode_nonzero) {
+        if !placement_scope_active && self.at_max_teams(team_type_id, owner, limit_scope) {
             return None;
         }
         self.construct_team_instance(team_type_id, owner, current_frame, initial_zone)
@@ -956,7 +956,7 @@ impl TeamScriptVm {
     /// the team's outcome (`+0x84`: success, else failure; see
     /// [`AiTriggerTrackRecord::record`]). The destructor then removes the
     /// members and the team (`membership::destroy_team`).
-    fn record_trigger_outcome(&mut self, team_id: u64, rules: &TeamRules) {
+    fn record_trigger_outcome(&mut self, team_id: u64, rules: &AiTriggerFeedbackRules) {
         let Some(team) = self.teams.get(&team_id) else {
             return;
         };
@@ -995,18 +995,19 @@ impl TeamScriptVm {
 
     /// Whether the TeamType's `Max=` (`+0xB8`; -1, none, for a TeamType
     /// without metadata), when not negative, is reached by `owner`'s teams of
-    /// the type (`0x005095D0`), or with `every_house` by every house's (the
+    /// the type (`0x005095D0`), or by every house's (the
     /// campaign's `+0xDC`).
     pub(crate) fn at_max_teams(
         &self,
         team_type_id: InternedId,
         owner: InternedId,
-        every_house: bool,
+        limit_scope: TeamLimitScope,
     ) -> bool {
         let max_teams = self
             .team_type_ini
             .get(&team_type_id)
             .map_or(-1, |metadata| metadata.max_teams);
+        let every_house = limit_scope == TeamLimitScope::AllHouses;
         max_teams >= 0
             && self
                 .teams
@@ -1766,6 +1767,7 @@ mod tests {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
 
+    use crate::rules::rule_policy::RulePolicy;
     use crate::rules::ruleset::RuleSet;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::intern::StringInterner;
@@ -1934,7 +1936,7 @@ mod tests {
         register_team_type(&mut vm, team_type, Vec::new());
 
         let team = vm
-            .construct_team(team_type, owner, true, -19, false, None)
+            .construct_team(team_type, owner, TeamLimitScope::PerHouse, -19, false, None)
             .unwrap();
         let state = vm.team(team).unwrap();
         assert!(!state.has_been_full);
@@ -1981,7 +1983,7 @@ mod tests {
         let mut vm = TeamScriptVm::default();
         register_team_type(&mut vm, team_type, Vec::new());
         let team = vm
-            .construct_team(team_type, owner, true, 0, false, None)
+            .construct_team(team_type, owner, TeamLimitScope::PerHouse, 0, false, None)
             .unwrap();
         let constructed = state_hash_at(&vm, 0);
 
@@ -2028,7 +2030,8 @@ mod tests {
              [AITriggerTypes]\nAT=Trigger,TT1,British,2,4,E1,{comparison},40,10,40,1,0,1,0,TT2,1,0,1\n"
         ));
         let map = IniFile::from_str("[TaskForces]\n0=TF1\n[TF1]\n0=-2,E1\nGroup=9\n");
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &map, true);
+        let registry =
+            TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_multiplayer());
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2185,7 +2188,11 @@ mod tests {
              AT2=Threshold up,UP,<all>,99,0,<none>,{comparison},1,1,1,1,0,1,0,<none>,1,1,1\n\
              AT3=Missing default,DEFAULTED,<all>,99,0,<none>,{comparison},1,1,1,1,0,1,0,<none>,1,1,1\n"
         ));
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2211,7 +2218,11 @@ mod tests {
             "an omitted TechLevel keeps the native constructor value in nonzero modes"
         );
 
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -2267,7 +2278,11 @@ mod tests {
              [BUILDING_TF]\n0=1,BLD\n\
              [DUP_TF]\n0=1,DUP\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2388,7 +2403,11 @@ mod tests {
             "[AITriggerTypes]\n\
              AT=Duplicate,<none>,<all>,0,0,DUP,{comparison},1,1,1,1,0,1,0,<none>,1,1,1\n"
         ));
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2435,7 +2454,11 @@ mod tests {
              [ScriptTypes]\n0=FIRST_SCRIPT\n[FIRST_SCRIPT]\n0=2,0\n\
              [TaskForces]\n0=FIRST_TF\n[FIRST_TF]\n0=1,E1\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2478,7 +2501,11 @@ mod tests {
         .expect("minimal rules");
         let fixed =
             IniFile::from_str("[TaskForces]\n0=PARTIAL_TF\n[PARTIAL_TF]\n0=1,E1\n1=2,GHOST\n");
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2521,7 +2548,8 @@ mod tests {
              [TaskForces]\n0=LATER_TF\n1=EARLIER_TF\n\
              [EARLIER_TF]\n0=1,E1\n[LATER_TF]\n0=2,E1\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &map, true);
+        let registry =
+            TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_multiplayer());
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2566,7 +2594,11 @@ mod tests {
              [ScriptTypes]\n0=FIRST_SCRIPT\n[FIRST_SCRIPT]\n0=2,0\n\
              [TaskForces]\n0=FIRST_TF\n[FIRST_TF]\n0=1,E1\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2603,7 +2635,11 @@ mod tests {
         .expect("minimal rules");
         let fixed =
             IniFile::from_str("[TeamTypes]\n0=ONLY\n[ONLY]\nScript=NONE\nTaskForce=<NONE>\n");
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2648,7 +2684,11 @@ mod tests {
         let aimd = IniFile::from_bytes(&aimd_bytes).expect("parse aimd.ini");
         let rules_ini = IniFile::from_bytes(&rules_bytes).expect("parse rulesmd.ini");
         let rules = RuleSet::from_ini(&rules_ini).expect("load retail rules");
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            RulePolicy::stock_multiplayer(),
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2770,8 +2810,11 @@ mod tests {
             "every game-mode-nonzero retail AITrigger threshold must match the native oracle"
         );
 
-        let zero_mode_registry =
-            TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), false);
+        let zero_mode_registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
         let mut zero_mode_interner = StringInterner::new();
         let (zero_mode_vm, zero_mode_diagnostics) =
             TeamScriptVm::from_ini_registry(&zero_mode_registry, &mut zero_mode_interner, &rules);

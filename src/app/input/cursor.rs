@@ -130,6 +130,7 @@ pub(crate) fn answer_kept_questions(state: &AppState) {
     current_cursor_feedback_kind(state, &targets);
     crate::app::input::ferry::armed_click_accepted(state);
     crate::app::input::planning_mode::hover_node(state);
+    crate::app::input::tooltips::answer_kept_tactical_tip(state);
 }
 
 fn find_cursor_feedback_kind(
@@ -636,7 +637,6 @@ impl<'a> ActionQuery<'a> {
         empty_cell_cursor(
             self.sim,
             self.rules,
-            self.overlays,
             self.viewer,
             best_id,
             cell,
@@ -753,7 +753,6 @@ fn unforced_cell_attack_feedback(
 fn empty_cell_cursor(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     viewer: Option<crate::sim::intern::InternedId>,
     best_id: Option<u64>,
     cell: (u16, u16),
@@ -768,9 +767,7 @@ fn empty_cell_cursor(
     {
         return CursorFeedbackKind::GuardArea;
     }
-    let action = what_action_on_cell(
-        sim, viewer, best_id, cell, modifier, rules, registry, mouse_over,
-    );
+    let action = what_action_on_cell(sim, viewer, best_id, cell, modifier, rules, mouse_over);
     match action {
         MoveAction::None => return CursorFeedbackKind::Default,
         MoveAction::NoMove => return CursorFeedbackKind::Invalid,
@@ -851,7 +848,6 @@ fn what_action_on_cell(
     cell: (u16, u16),
     modifier: crate::app::input::context_order::OrderModifier,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     mouse_over: bool,
 ) -> crate::sim::world::MoveAction {
     use crate::sim::world::{CellActionQuery, MoveAction};
@@ -869,7 +865,7 @@ fn what_action_on_cell(
         mouse_over,
         shift: modifier == crate::app::input::context_order::OrderModifier::Shift,
     };
-    sim.cell_move_action(viewer, id, cell, query, rules, registry)
+    sim.cell_move_action(viewer, id, cell, query, rules)
         .unwrap_or(MoveAction::Move)
 }
 
@@ -2771,7 +2767,7 @@ mod tests {
         let house = sim.interner().get("Americans");
         sim.session_mut_for_test().set_current_house_for_test(house);
         // 4. Mark the SEAL as selected (mirrors clicking it in-game).
-        if let Some(e) = sim.entities_mut_for_test().get_mut(seal_id) {
+        if let Some(e) = sim.entity_mut_for_test(seal_id) {
             e.selection.set_selected_for_test(true);
         }
 
@@ -2831,7 +2827,7 @@ mod tests {
             .spawn_object("GAREFN", "Americans", 10, 10, 0, &rules)
             .expect("Refinery spawned");
 
-        if let Some(e) = sim.entities_mut_for_test().get_mut(miner_id) {
+        if let Some(e) = sim.entity_mut_for_test(miner_id) {
             e.selection.set_selected_for_test(true);
         }
         // What_Action's Enter is a human player's (House `0x0050B6F0`).
@@ -3179,15 +3175,13 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             let case = &row["input"];
             let (mut sim, rules, actor) = stationary_attack_fixture();
             if case["installed"].as_bool().unwrap() {
-                sim.entities_mut_for_test()
-                    .get_mut(actor)
+                sim.entity_mut_for_test(actor)
                     .unwrap()
                     .bunker
                     .set_bunker_link_for_test(BunkerLink::Installed(99));
             }
             // Active rearm never belongs to WhatAction's control/range gate.
-            sim.entities_mut_for_test()
-                .get_mut(actor)
+            sim.entity_mut_for_test(actor)
                 .unwrap()
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::started(0, 999));
@@ -3228,7 +3222,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                             Some(empty_cell_cursor(
                                 &sim,
                                 Some(&rules),
-                                None,
                                 sim.session().current_house(),
                                 Some(actor),
                                 (x, 2),
@@ -3269,13 +3262,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             .spawn_object_limbo_at_height("GI", "Americans", 1, 10, 0, 0, &rules)
             .unwrap();
         // Garrison fire reads BuildingClass's occupants, not transport Cargo.
-        sim.entities_mut_for_test()
-            .get_mut(house)
+        sim.entity_mut_for_test(house)
             .unwrap()
             .passenger_role_mut_for_test()
             .set_occupants_for_test(vec![gi], 0);
-        sim.entities_mut_for_test()
-            .get_mut(gi)
+        sim.entity_mut_for_test(gi)
             .unwrap()
             .set_passenger_role_for_test(PassengerRole::inside_for_test(house, false));
         assert!(rules.object("HOUSE").unwrap().primary().is_none());
@@ -3299,7 +3290,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                         Some(empty_cell_cursor(
                             &sim,
                             Some(&rules),
-                            None,
                             sim.session().current_house(),
                             Some(actor),
                             (20, y),
@@ -3352,8 +3342,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 kind.deploy_fire,
                 case["deploy_fire"].as_bool().unwrap_or(false)
             );
-            sim.entities_mut_for_test()
-                .get_mut(actor)
+            sim.entity_mut_for_test(actor)
                 .unwrap()
                 .set_unit_simple_deploy_for_test(
                     case["deployed"].as_bool().unwrap_or(false),
@@ -3491,13 +3480,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             let target_id = sim
                 .spawn_object("TANK", "Americans", 4, 10, 0, &rules)
                 .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(house)
+            sim.entity_mut_for_test(house)
                 .unwrap()
                 .passenger_role_mut_for_test()
                 .set_occupants_for_test(vec![gi], 0);
-            sim.entities_mut_for_test()
-                .get_mut(gi)
+            sim.entity_mut_for_test(gi)
                 .unwrap()
                 .set_passenger_role_for_test(PassengerRole::inside_for_test(house, false));
             let occupant = sim.entities().get(gi).unwrap();
@@ -3584,7 +3571,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                  final GetFireError={:?}; occupant={:?}; target={:?}; trace={trace:#?}",
                 // Ask the live legality owner only after failure, so this
                 // diagnostic cannot change the exercised frame sequence.
-                sim.selected_weapon_fire_error(&rules, house, target, true, None),
+                sim.selected_weapon_fire_error(&rules, house, target, true),
                 sim.entities().get(gi),
                 sim.entities().get(target_id),
             );
@@ -3601,13 +3588,12 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         let target = sim
             .spawn_object("TANK", "Soviets", 4, 2, 0, &rules)
             .unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(actor)
+        sim.entity_mut_for_test(actor)
             .unwrap()
             .bunker
             .set_bunker_link_for_test(BunkerLink::Installed(99));
         for id in [actor, target] {
-            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            let entity = sim.entity_mut_for_test(id).unwrap();
             entity.lifecycle.set_cell_marked_for_test(true);
             entity.position.set_exact_z_leptons_for_test(Some(900));
         }
@@ -3666,7 +3652,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         // Z and marked state force source +54 and target +50/+54 to read the
         // native fallback Cell rather than bypassing the query as limbo objects.
         for id in [actor_id, target_id] {
-            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            let entity = sim.entity_mut_for_test(id).unwrap();
             entity.position.set_exact_z_leptons_for_test(Some(900));
             entity.lifecycle.set_cell_marked_for_test(true);
         }
@@ -3777,14 +3763,13 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 (9, 5),
                 modifier,
                 Some(&rules),
-                None,
                 true,
             )
         };
         assert_eq!(cursor(OrderModifier::Normal), MoveAction::Move);
         assert_eq!(cursor(OrderModifier::ForceMove), MoveAction::Move);
         let goal = sim
-            .cell_click_destination(owner, tank, (9, 5), false, &rules, None)
+            .cell_click_destination(owner, tank, (9, 5), false, &rules)
             .unwrap()
             .unwrap();
         assert!(goal.0 < 8, "{goal:?}");
@@ -3824,7 +3809,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             empty_cell_cursor(
                 &sim,
                 Some(&rules),
-                Some(&registry),
                 Some(owner),
                 Some(miner),
                 cell,
@@ -3853,7 +3837,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             empty_cell_cursor(
                 &sim,
                 Some(&rules),
-                None,
                 Some(owner),
                 None,
                 (9, 5),
@@ -3913,8 +3896,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             )
         };
         assert_eq!(best(&sim), Some(tank));
-        sim.entities_mut_for_test()
-            .get_mut(tank)
+        sim.entity_mut_for_test(tank)
             .unwrap()
             .berserk
             .set_active_for_test(true);
@@ -3969,7 +3951,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             .expect("far tank");
         // Nudge the far tank's sub-cell offset toward the target so that both
         // sit two cell indices away but the far one is closer in leptons.
-        if let Some(e) = sim.entities_mut_for_test().get_mut(far) {
+        if let Some(e) = sim.entity_mut_for_test(far) {
             e.position
                 .set_sub_x_for_test(crate::util::fixed_math::SimFixed::from_num(-120));
         }
@@ -4035,8 +4017,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     .unwrap();
                 // A damaged friendly hut and a capturable hostile hut must
                 // still terminate this branch instead of taking those fallbacks.
-                sim.entities_mut_for_test()
-                    .get_mut(hut)
+                sim.entity_mut_for_test(hut)
                     .unwrap()
                     .health
                     .set_for_test(150);

@@ -163,6 +163,7 @@ fn assert_shp_light(
             .collect(),
     );
     let voxel_images = std::cell::RefCell::default();
+    let zshape_skips = std::cell::RefCell::default();
     let colors =
         crate::map::houses::HouseColorMap::from([(owner_name.clone(), HouseColorIndex(0))]);
     let location = crate::sim::movement::ground_pose::object_location(actor, Some(terrain));
@@ -179,6 +180,7 @@ fn assert_shp_light(
             overlay_atlas: None,
             unit_atlas: None,
             voxel_images: &voxel_images,
+            zshape_skips: &zshape_skips,
             depth_tested_images: None,
             camera: [screen.0 - 400.0, screen.1 - 300.0],
             render_size: [800, 600],
@@ -196,7 +198,7 @@ fn assert_shp_light(
             ignore_visibility: true,
             lighting: light,
             house_colors: &colors,
-            building_zshape: false,
+            building_zshape: None,
         },
         &mut draws,
         &NativeDisplayOrder::from_world(&sim, None),

@@ -10,6 +10,7 @@ use super::{DefinitionReference, TagAttachment};
 use crate::headless_scenario::HeadlessScenario;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, SharedCellDummy};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::mission::MissionType;
 use crate::sim::scenario_bootstrap::{
@@ -54,8 +55,12 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         )
         .expect("campaign Rules process prefix")
         .into_parts();
-    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-        .expect("campaign AI definitions");
+    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .expect("campaign AI definitions");
     let theater =
         crate::map::theater::load_theater(&mut assets, &map.header.theater).expect("ALL01 theater");
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
@@ -68,7 +73,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         seed: 0x44A1_EF,
         map_name: map_name.into(),
         theater: map.header.theater.clone(),
-        game_mode_nonzero: false,
+        rule_policy: crate::rules::rule_policy::RulePolicy::stock_campaign(),
         free_radar: map.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
         train_crate: map.basic.train_crate.unwrap_or(false),
@@ -182,9 +187,15 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&teams, &rules);
-    let post =
-        crate::sim::runtime::finalize_constructed_scenario(&mut sim, &map, &rules, &roster, None)
-            .unwrap();
+    let post = crate::sim::runtime::finalize_constructed_scenario(
+        &mut sim,
+        &map,
+        &rules,
+        &roster,
+        crate::rules::rule_policy::RulePolicy::stock_campaign(),
+        None,
+    )
+    .unwrap();
     assert!(post.navigation_published && sim.path_grid().is_some());
     if remove_home {
         assert_eq!((map.header.width, map.header.height), (65, 120));
@@ -248,7 +259,10 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
     let player = sim.session.current_house().expect("campaign Player");
     assert_eq!(sim.interner.resolve(player), "Americans");
     assert!(!sim.session.game_mode_nonzero());
-    assert!(sim.houses[&player].is_controlled_by_human(false));
+    assert!(
+        sim.houses[&player]
+            .is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+    );
     assert_eq!(
         sim.session.waypoint_cell(496),
         Some((WAYPOINT.0 as i16, WAYPOINT.1 as i16))
@@ -340,10 +354,7 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
             .then_some((cell.rx, cell.ry))
         })
         .expect("allocated cell outside friendly sight and waypoint reveal");
-    sim.reveal_entire_map(
-        Some(player),
-        UninitContext::new(rules, Some(runtime.resources.rules.overlay_registry())),
-    );
+    sim.reveal_entire_map(Some(player), UninitContext::new(rules));
     assert!(sim.fog.is_ground_unshrouded(player, far.0, far.1));
     assert!(sim.fog.is_ground_unshrouded(player, WAYPOINT.0, WAYPOINT.1));
     sim.trigger_runtime.action_trace.clear();
@@ -481,13 +492,9 @@ fn stock_all02_hidden_player_flak_waits_for_discovery() {
         Some(MissionType::Guard)
     );
     let runtime = &mut scene.runtime;
-    runtime.simulation.reveal_entire_map(
-        Some(player),
-        UninitContext::new(
-            &runtime.resources.rules,
-            Some(runtime.resources.rules.overlay_registry()),
-        ),
-    );
+    runtime
+        .simulation
+        .reveal_entire_map(Some(player), UninitContext::new(&runtime.resources.rules));
     let entity = runtime.simulation.entities().get(flak).unwrap();
     assert!(entity.discovery.discovered_by_current_house());
     assert!(

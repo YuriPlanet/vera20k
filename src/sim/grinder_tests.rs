@@ -5,6 +5,7 @@
 use super::*;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::combat::TargetKind;
 use crate::sim::mission::MissionDispatchTimer;
@@ -120,7 +121,7 @@ fn grinder_seek_keeps_the_last_registered_building_on_distance_ties() {
     let first = spawn(&mut sim, &rules, "GRINDER", "Russians", 10, 10);
     let last = spawn(&mut sim, &rules, "GRINDER", "Russians", 20, 10);
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 15, 10);
-    assert!(sim.foot_enter_grinder(civ, &rules, None, FrameEffects::default()));
+    assert!(sim.foot_enter_grinder(civ, &rules, FrameEffects::default()));
     assert_eq!(
         sim.substrate
             .entities
@@ -130,8 +131,8 @@ fn grinder_seek_keeps_the_last_registered_building_on_distance_ties() {
             .nav_com(),
         Some(NavTargetRef::object(last))
     );
-    sim.uninit_with_context(last, crate::sim::world::UninitContext::new(&rules, None));
-    assert!(sim.foot_enter_grinder(civ, &rules, None, FrameEffects::default()));
+    sim.uninit_with_context(last, crate::sim::world::UninitContext::new(&rules));
+    assert!(sim.foot_enter_grinder(civ, &rules, FrameEffects::default()));
     assert_eq!(
         sim.substrate
             .entities
@@ -150,7 +151,7 @@ fn vehicle_eaten_walk_reaches_the_grinder_and_refunds_once() {
     let grinder = spawn(&mut sim, &rules, "GRINDER", "Russians", 18, 10);
     let tank = spawn(&mut sim, &rules, "TANK", "Russians", 10, 10);
     let credits = sim.houses[&owner].economy().credits();
-    assert!(sim.foot_enter_grinder(tank, &rules, None, FrameEffects::default()));
+    assert!(sim.foot_enter_grinder(tank, &rules, FrameEffects::default()));
     for _ in 0..500 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
         if sim.entities().get(tank).is_none() {
@@ -183,7 +184,7 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
     let outer = spawn(&mut sim, &rules, "TANK", "Russians", 11, 10);
     let nested = spawn(&mut sim, &rules, "CIV", "Russians", 12, 10);
     let sibling = spawn(&mut sim, &rules, "CIV", "Russians", 13, 10);
-    let context = crate::sim::world::UninitContext::new(&rules, None);
+    let context = crate::sim::world::UninitContext::new(&rules);
     assert!(sim.add_cargo_passenger_chain(outer, &[(nested, 1.0)], context));
     assert!(sim.add_cargo_passenger_chain(tank, &[(sibling, 1.0)], context));
     assert!(sim.add_cargo_passenger_chain(tank, &[(outer, 1.0)], context));
@@ -387,7 +388,8 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         .into_parts();
     rules.install_art_data(ArtRegistry::from_ini(&art));
     let aimd = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI").unwrap();
-    let teams = TeamAiIniRegistry::from_sources(&aimd.ini, &authored.ini, true);
+    let teams =
+        TeamAiIniRegistry::from_sources(&aimd.ini, &authored.ini, RulePolicy::stock_multiplayer());
     // The actual AA civilian origin is beside this Neutral building. Keep
     // that relationship in the flat crop so Action80 must also exercise
     // reinforcement65D8E0's generic building ExitObject path.
@@ -677,9 +679,9 @@ fn eaten_idles_when_its_grinder_expires_without_falling_back_to_hunt() {
     let (mut sim, rules) = fixture();
     let grinder = spawn(&mut sim, &rules, "GRINDER", "Russians", 18, 10);
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 10);
-    assert!(sim.foot_enter_grinder(civ, &rules, None, FrameEffects::default()));
+    assert!(sim.foot_enter_grinder(civ, &rules, FrameEffects::default()));
     mission(&mut sim, civ, MissionType::Eaten, MissionId::NONE);
-    sim.uninit_with_context(grinder, crate::sim::world::UninitContext::new(&rules, None));
+    sim.uninit_with_context(grinder, crate::sim::world::UninitContext::new(&rules));
     assert_eq!(
         sim.substrate
             .entities
@@ -795,7 +797,11 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
         [Tags]\nOWNER_TAG=0,Owner,OWNER\nDONE_TAG=0,Done,DONE\n",
     )
     .unwrap();
-    let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
+    let teams = TeamAiIniRegistry::from_sources(
+        &IniFile::from_str(""),
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    );
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.classify_map_triggers(&rules);
     sim.attach_object_trigger_tag(grinder, Some("OWNER_TAG"));

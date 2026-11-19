@@ -74,7 +74,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         use crate::sim::mission::{MissionId, MissionType};
@@ -87,7 +86,7 @@ impl Simulation {
         if has_target(self) {
             return;
         }
-        self.acquire_hunter_seeker_target(id, rules, registry, frame_effects);
+        self.acquire_hunter_seeker_target(id, rules, frame_effects);
         if !has_target(self) {
             return;
         }
@@ -125,7 +124,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         if rules.ares()
@@ -136,7 +134,7 @@ impl Simulation {
                 .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
                 .is_some_and(|object| object.hunter_seeker)
         {
-            self.ares_hunter_seeker_reacquire(id, rules, registry, frame_effects);
+            self.ares_hunter_seeker_reacquire(id, rules, frame_effects);
             return;
         }
         let entity = self
@@ -292,7 +290,7 @@ impl Simulation {
                     .store(true);
             }
         }
-        self.set_object_height(id, base, rules, registry, frame_effects);
+        self.set_object_height(id, base, rules, frame_effects);
         self.substrate.aircraft_tracker_remove(id);
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let fly = entity
@@ -377,7 +375,7 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
-        self.assign_null_destination(id, rules, None, frame_effects);
+        self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
     }
 
     /// `FootClass::IsLandZoneClear @ 0x004DDC60` (vt+0x550) for `destination`:
@@ -592,7 +590,7 @@ impl Simulation {
             );
             true
         } else {
-            self.receive_own_health_c4(id, rules, None, frame_effects);
+            self.receive_own_health_c4(id, rules, Some(rules.overlay_registry()), frame_effects);
             if let Some(state) = self
                 .substrate
                 .entities
@@ -1123,14 +1121,9 @@ mod tests {
                 .clone()
         };
         let (mut sim, rules) = fixture(row);
-        sim.apply_fly_landing_callback(
-            1,
-            &hunter,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
+        sim.apply_fly_landing_callback(1, &hunter, crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).landing() && !fly(&sim).target_speed_is_zero());
-        sim.apply_fly_landing_callback(1, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.apply_fly_landing_callback(1, &rules, crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).target_speed_is_zero());
     }
 

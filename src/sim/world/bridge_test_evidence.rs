@@ -423,7 +423,6 @@ fn damage_bridge(
         &mut runtime.simulation,
         &runtime.resources.rules,
         &[event],
-        Some(runtime.resources.rules.overlay_registry()),
         crate::sim::world::FrameEffects::default(),
     )
 }

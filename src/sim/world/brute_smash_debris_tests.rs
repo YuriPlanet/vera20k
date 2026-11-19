@@ -673,7 +673,7 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
         if retired {
             // Production retirement clears live membership and queues late
             // deletion; retained store presence must not resurrect the tail.
-            assert!(world.retire_non_entity_object(id, super::UninitContext::with_rules(&rules)));
+            assert!(world.retire_non_entity_object(id, super::UninitContext::new(&rules)));
             assert!(world.projectiles.get(id).is_some());
             assert!(world.substrate.pending_delete.contains_object(&id));
         }

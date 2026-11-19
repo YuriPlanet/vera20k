@@ -1401,11 +1401,14 @@ mod tests {
                 actor.type_facts.set_foundation_for_test(
                     rules.object("ATKR").unwrap().foundation.clone().into(),
                 );
-                actor.garrison_mut_for_test().set_ids_for_test(
-                    (2..2 + building["occupants"].as_u64().unwrap_or(1))
-                        .rev()
-                        .collect(),
-                );
+                actor
+                    .passenger_role_mut_for_test()
+                    .occupants_mut()
+                    .set_ids_for_test(
+                        (2..2 + building["occupants"].as_u64().unwrap_or(1))
+                            .rev()
+                            .collect(),
+                    );
                 EntityCategory::Structure
             } else if input["unit"] == true {
                 EntityCategory::Unit

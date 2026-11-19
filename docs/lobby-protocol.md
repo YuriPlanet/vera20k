@@ -67,7 +67,9 @@ refused request records nothing. Responses and
 Sequences increase within a session. An event appears once logically even when
 responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`. The
 `kind=41` list leaves out game rooms whose host's game is on another version than the
-caller's ([sign-in headers](#sign-in-headers)).
+caller's ([sign-in headers](#sign-in-headers)). A game in the lobby asks for the
+`kind=41` list, and `GET /v1/matches` with it, every 5 seconds (30 before), and for
+`kind=0` every 53.
 Clients poll at most once per second. Responses contain at most 256 events and
 256 KiB of UTF-8 JSON.
 `GET /v1/events/stream?after=<cursor>` with a WebSocket upgrade and the bearer (400
@@ -174,8 +176,10 @@ or 512 bytes with 400 `invalid_options`;
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
 its human rows, AI rows and launch options). The game's tests keep `tests/fixtures/lobby/`
 current: `options.json` holds rooms' options as the game sends them at the limits it
-reaches, and `start_staging.json` holds `W` records, each with whether the game takes it
-for its seed's capacity. The lobby requires `launch.pre_fill_house_roster` because
+reaches, `start_staging.json` holds `W` records, each with whether the game takes it
+for its seed's capacity, and `game_contract.json` holds the selectable setup speeds
+with each one's FPS and the map chunk size.
+The lobby requires `launch.pre_fill_house_roster` because
 guests decode it before rebuilding it from the rows. The lobby accepts setup speeds
 0 to 6 and VERA's 8 in `launch.options.game_speed`. An older lobby can forward another
 speed, which current guests refuse with the invalid-update line. `launch.options.teams`, a VERA room's
@@ -328,6 +332,8 @@ the same version and flags; clients reject a renewal whose flags differ. The sig
 mask includes all human sources (including observers); AI has no source. FPS
 follows launch speed `[60,45,30,20,15,12,10]` for stored settings 0–6;
 VERA's setting 8 selects 90 FPS. Setting 7 is not a selectable setup speed.
+`tests/fixtures/lobby/game_contract.json` lists these rows from the game's own table,
+and the relay accepts no other FPS (`FRAME_RATES` in `services/relay-protocol`).
 The certificate lasts 24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay
 binds the first matching startup agreement to this roster/clock and starts once
@@ -634,10 +640,19 @@ since a match starts only between equal versions (`ready`, `start`). It arrives
 as a notice does: at once in the public channel or a game room that has not started,
 otherwise on the next public-channel join. Its phrase key `NewRelease` makes a game
 check for updates again, as a 426 does.
+latest.json also names the release's `build`, its multiplayer build
+([build check](Networking.md#build-check)), from the releases that log it
+(`.github/release/downloads.md`). A session on the release's version whose sign-in
+names another build receives one line the same way, `NotRelease` with `version`: its
+game is not the release, so it plays only with players on its own build.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
-versions, or both builds when the versions are the same.
-Where the join could not tell, since one of the games names no build, the same line
+versions (`VersionMismatch`). When the versions are the same, the line names no build:
+where latest.json names that version's `build` and only one of the two games has it,
+it names the other one's player as not on the release (`ReleaseMismatch` for the
+joining player, `HostReleaseMismatch` for the host), and otherwise says the joining
+player has another build than the room (`BuildMismatch`); each has `name` and `version`.
+Where the join could not tell, since one of the games names no build, `VersionMismatch`
 with both agreement `version` strings goes to the room once when a member's `ready` or
 `map_status` names another one than the host's, since such a room cannot start.
 A member on the host's build whose `rules_digest` differs from the host's makes the room

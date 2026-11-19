@@ -96,6 +96,8 @@ pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
 pub(crate) const HAS_VSYNC: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const VSYNC_LABEL: &str = "VERA:VSync";
 pub(crate) const VSYNC_HELP: &str = "VERA:VSyncHelp";
+pub(crate) const DIRECTX12_LABEL: &str = "VERA:DirectX12";
+pub(crate) const DIRECTX12_HELP: &str = "VERA:DirectX12Help";
 /// The General page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
@@ -705,6 +707,9 @@ pub(crate) struct LauncherOptionsLabels {
     /// menu's Game Controls page.
     pub(crate) back: String,
     pub(crate) game_controls: String,
+    /// Localized states beside the two checkbox lamps in VERA's Esc menu.
+    yes: String,
+    no: String,
     low: String,
     high: String,
     easy: String,
@@ -726,6 +731,8 @@ impl LauncherOptionsLabels {
         Self {
             back: in_game(0),
             game_controls: in_game(1),
+            yes: csf("GUI:Yes").unwrap_or_else(|| "Yes".to_owned()),
+            no: csf("GUI:No").unwrap_or_else(|| "No".to_owned()),
             options: label(0),
             main_menu: label(1),
             keyboard: label(2),
@@ -876,6 +883,10 @@ pub(crate) enum LauncherCheckboxId {
     /// (`GpuContext::set_vsync`). On by default; saved, and the next frame
     /// follows it.
     VSync,
+    /// VERA's own box, on Windows only: the game draws through DirectX 12
+    /// instead of Vulkan (`GpuContext::new`). Saved; the next start follows
+    /// it, since the graphics API is chosen once, at launch.
+    DirectX12,
     /// VERA's own box: the setup screens' map preview shows VERA's own
     /// drawing of the whole map (`app::map_picture`) instead of the
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
@@ -971,6 +982,7 @@ pub(crate) enum LauncherOptionsEvent {
     SmoothSidebarChanged(bool),
     SmoothOnlineMenusChanged(bool),
     VSyncChanged(bool),
+    DirectX12Changed(bool),
     HdMapPreviewsChanged(bool),
     PerformanceStatsChanged(bool),
     ShowStringKeysChanged(bool),
@@ -1037,6 +1049,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) smooth_sidebar: bool,
     pub(crate) smooth_online_menus: bool,
     pub(crate) vsync: bool,
+    pub(crate) directx12: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) auto_repair: bool,
@@ -1102,6 +1115,7 @@ impl Default for LauncherOptionsValues {
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
+            directx12: false,
             hd_map_previews: true,
             shift_queue: false,
             auto_repair: false,
@@ -1566,6 +1580,10 @@ impl OptionsDialogState {
         if !(0..18).contains(&frame.local_x) || !(0..18).contains(&frame.local_y) {
             return;
         }
+        self.toggle_checkbox(id);
+    }
+
+    fn toggle_checkbox(&mut self, id: LauncherCheckboxId) {
         let slot = match id {
             LauncherCheckboxId::Tooltips => &mut self.values.tooltips,
             LauncherCheckboxId::TargetLines => &mut self.values.target_lines,
@@ -1584,6 +1602,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::SmoothOnlineMenus => &mut self.values.smooth_online_menus,
             LauncherCheckboxId::VSync => &mut self.values.vsync,
+            LauncherCheckboxId::DirectX12 => &mut self.values.directx12,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
             LauncherCheckboxId::ShowStringKeys => &mut self.values.show_string_keys,
@@ -1642,6 +1661,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::VSync => self
                 .pending_events
                 .push(LauncherOptionsEvent::VSyncChanged(checked)),
+            LauncherCheckboxId::DirectX12 => self
+                .pending_events
+                .push(LauncherOptionsEvent::DirectX12Changed(checked)),
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
@@ -1898,6 +1920,20 @@ impl Category {
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
+            // Windows adds DirectX 12 under VSync, below the sliders, so
+            // they keep their places.
+            Self::Display if crate::render::gpu::HAS_DIRECTX12 => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::Slider(Slider::HouseColorStrength),
+                Setting::List(List::ColorVision),
+                Setting::Slider(Slider::Detail),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::VSync),
+                Setting::Checkbox(Check::DirectX12),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::PerformanceStats),
+            ],
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
@@ -1943,9 +1979,6 @@ impl Category {
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
             ],
-            // The Offline Internet Test Service stays off every page: it swaps
-            // Internet for stand-in servers, so only `[VERA] WolTestService=`
-            // turns it on.
             Self::General if !HAS_HD_MAP_PREVIEWS => &[
                 Setting::List(List::Language),
                 Setting::Checkbox(Check::YrOriginalStyle),
@@ -2657,6 +2690,8 @@ mod tests {
             ]
             .map(Setting::Checkbox),
         )
+        // Only Windows has DirectX 12 and its box.
+        .chain(crate::render::gpu::HAS_DIRECTX12.then_some(Setting::Checkbox(Check::DirectX12)))
         .collect();
         for setting in &every {
             let pages = placed.iter().filter(|placed| *placed == setting).count();

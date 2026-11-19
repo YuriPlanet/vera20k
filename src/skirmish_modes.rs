@@ -45,6 +45,8 @@ pub struct ModePolicy {
     /// (`0x00653918..0x00653938`). Cooperative (`0x007EE27C`) overrides base
     /// `0x005C0E30`/`0x005C0E40` (false) with `0x005C4EE0`/`0x005C4EF0` (true).
     pub restates_mission_for_diplomacy: bool,
+    /// At launch, pair human Houses with humans and AI Houses with AI.
+    pub allies_starting_houses_by_role: bool,
     /// Whether VERA's network room seats players into numbered teams when
     /// alliances are allowed outside clan rooms.
     pub room_teams: bool,
@@ -59,6 +61,8 @@ pub struct ModePolicy {
     /// contenders are allied and a human survives, defeated human allies win
     /// too.
     pub shared_allied_victory: bool,
+    /// Whether VERA's mod additions apply to authored maps in this mode.
+    pub allows_mod_map_additions: bool,
 }
 
 impl MpModeClass {
@@ -80,10 +84,12 @@ impl MpModeClass {
                 setup_player_limit: None,
                 permits_all_allied: false,
                 restates_mission_for_diplomacy: false,
+                allies_starting_houses_by_role: false,
                 room_teams: true,
                 shared_start_positions: true,
                 skips_network_score_dialog: false,
                 shared_allied_victory: false,
+                allows_mod_map_additions: true,
             },
             Self::ManBattle | Self::Siege | Self::Unholy => ModePolicy {
                 lists_in_skirmish: false,
@@ -91,10 +97,12 @@ impl MpModeClass {
                 setup_player_limit: None,
                 permits_all_allied: false,
                 restates_mission_for_diplomacy: false,
+                allies_starting_houses_by_role: false,
                 room_teams: true,
                 shared_start_positions: true,
                 skips_network_score_dialog: false,
                 shared_allied_victory: false,
+                allows_mod_map_additions: true,
             },
             Self::Cooperative => ModePolicy {
                 lists_in_skirmish: false,
@@ -102,10 +110,12 @@ impl MpModeClass {
                 setup_player_limit: Some(2),
                 permits_all_allied: true,
                 restates_mission_for_diplomacy: true,
+                allies_starting_houses_by_role: true,
                 room_teams: false,
                 shared_start_positions: false,
                 skips_network_score_dialog: true,
                 shared_allied_victory: true,
+                allows_mod_map_additions: false,
             },
         }
     }

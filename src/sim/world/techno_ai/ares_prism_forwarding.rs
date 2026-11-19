@@ -916,15 +916,7 @@ pub(super) fn update_prism(
                 .entities
                 .get(id)
                 .and_then(|entity| entity.attack_target.target())
-                && fire_error_at(
-                    sim,
-                    rules,
-                    id,
-                    Some(target),
-                    weapon,
-                    true,
-                    ctx.overlay_registry,
-                ) == FireError::Ok
+                && fire_error_at(sim, rules, id, Some(target), weapon, true) == FireError::Ok
             {
                 *bridge_state_changed |= sim
                     .commit_fire_visit(

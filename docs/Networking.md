@@ -30,6 +30,10 @@ select Easy, Normal or Hard AI from an open player slot in Battle or Free For Al
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
+A room's map name is a logical name (`map::source::is_logical_name`): a game refuses one
+with a drive, a root, a `.` or `..` part, or a part Windows reads as a device, such as
+`CON` or `COM1`. Refusing the device part changes no packets: an older build still admits
+such a name, and a rollback admits it again.
 Games with two or more human players number their objects from one agreed start, so
 a player whose game already ran the random-map dialog or an earlier match numbers
 them as one just opened does; nothing new is exchanged, and older builds are
@@ -138,6 +142,18 @@ names vera20k.org (`web_link::DOWNLOAD_PAGE`), but a release signed by a new key
 still points to the GitHub releases. Nothing exchanged changes: a released game
 shows only the text with its link, and a rollback does the same.
 
+A game on the newest release's version can still be another build, such as a dev build
+or one built from source. latest.json names the release's own `build`, read from the
+`Multiplayer build:` line its program logs at start-up (`src/entry.rs`,
+`.github/release/downloads.md`). A game of that version whose sign-in names another
+build hears that it is not the release (phrase `NotRelease`), and when a player joins a
+room on another build of the room's version, the room's line names whose game is not
+the release (`ReleaseMismatch`, `HostReleaseMismatch`) or says that the builds differ
+(`BuildMismatch`), without the build hashes ([lobby protocol](lobby-protocol.md)). They
+are chat lines: a released game without the keys shows the lobby's English text, a
+lobby rollback names the builds again, and a latest.json without `build`, from a
+release before it or a rollback to one, leaves `BuildMismatch` alone.
+
 A relay deploy reaches every version the lobby admits, from `OLDEST_ADMITTED` in
 `tools/relay_compat.py` on. Before a relay change merges, the Relay compatibility
 workflow plays a client built on the relay protocol crate of each of those releases,
@@ -180,6 +196,13 @@ differences are refused. This changes no messages: older builds are
 refused by the existing build check. Saved custom sound references use a new automatic
 snapshot layout; older layouts are refused. A rollback uses its earlier audio resolution
 and save layout.
+
+The online lobby asks for its game list, and the matches to watch with it, every
+5 seconds while it is the front window, so a game someone creates shows up within
+that; gamemd's lobby asked every 30 (`SetTimer(0, 30000)`). Refresh still asks at
+once, and the lobbies list keeps its 53 seconds. A lobby that stops answering the list
+says so once until a list arrives again. No request or reply changes: an older
+game keeps asking every 30 seconds, and a rollback restores that.
 
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
 languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
@@ -281,19 +304,18 @@ Redundancy follows each player's measured link
 unacknowledged batches, the receive watermark, the per-hop receipt feedback,
 checksums and pace. The relay pushes each turn packed, with the reader's
 unacknowledged records piggybacked into the space the turn leaves. A good link
-sends each batch and turn once. A lossy or jittery link also gets 16 ms uplink
-copies and 8 ms downlink repeats. A congested link gets neither, and a silent
-one only probes. Losses that the receipt feedback shows are retransmitted by the
-relay; a lasting gap falls back to the existing replay reader. Clients and relay
-ship together: older clients are not supported.
+sends each batch and turn once. A lossy link also gets 16 ms uplink copies and
+8 ms downlink repeats; a jittery link gets only the downlink repeats. A congested
+link gets neither, and a silent one only probes. Losses that the receipt feedback
+shows are retransmitted by the relay; a lasting gap falls back to the existing
+replay reader. Clients and relay ship together: older clients are not supported.
 
 Every datagram uses the compact envelope
 (`services/relay/bandwidth-compaction/spec.md`): a 32-bit session the relay
 assigns at admission, a 32-bit hop sequence and a 4-byte truncated HMAC, 13 bytes
 in all. History packs encode each record relative to the previous one and decode
 alone. The receiving client rebuilds the same canonical records, so journal,
-replay and federation are unchanged. Measured traffic is in
-`services/relay/adaptive-transport/results.md`.
+replay and federation are unchanged.
 
 In a match played through one relay, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
@@ -684,7 +706,8 @@ in a release), which the hash already covers; they are refused as any other buil
   carries it. The lobby hides rooms and matches of another build, or of another version
   where a game names no build, and starts a match only when every player's is equal
   ([lobby protocol](lobby-protocol.md#sign-in-headers)); a watcher's game compares its own
-  with the match's before it loads.
+  with the match's before it loads. A game of the newest release's version on another
+  build is told it is not the release ([current production path](#current-production-path)).
 - Start: every network start folds it into the start identity the relay and LAN's startup
   compare (`StartupAgreement`), so a launcher's match of two builds, which no lobby
   compares, is refused at its start.
@@ -692,6 +715,10 @@ in a release), which the hash already covers; they are refused as any other buil
   reports it ([external launches](spawn.md#probe)).
 
 ### Room rules
+
+LAN carries two speed values. `HostRoom.current_speed` applies to the guest's live
+OptionsClass (`0x005E4DE1`), while `room.options.game_speed` is the selected setup
+value (`0x005E4E01`) copied at launch (`0x005E74AA`).
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
 Terrain Deformation box and [Superweapon Limit](superweapon-limit.md). They open as the
@@ -762,9 +789,10 @@ watcher's own version with two or more people in them, one of them playing, or, 
 game that signed in with `Vera-Watch-AI: 1`, where only AI play while everyone in the
 room watches; on a relay that lets watchers in,
 and never one from a room with a password, a clan room, a generated map or a co-op
-mission: a watcher's game cannot yet rebuild their starts. A host chooses in Create
-Game who may watch the room's games: everyone 2 minutes behind (the default), nobody,
-or everyone live. Quick Match and ranked games are always watched 2 minutes behind.
+mission: a watcher's game cannot yet rebuild their starts. Create Game starts Watching
+on Live. The host can also choose a two-minute delay or turn Watching off. The next
+room uses the host's last confirmed choice in the same session. Quick Match and ranked
+games always have a two-minute viewing delay.
 
 A lone observer normally plays an AI match locally, so there is no stream for
 others to watch ([above](#current-production-path)). To make it watchable, the
@@ -925,6 +953,24 @@ They require isolated mutable copies of the retail game directory, each with a
 followed by a newline. Set each process's `RA2_DIR` to its own copy and keep its
 own `config.toml`.
 
+The single-process `lan-*` targets (listed in
+`src/app/diagnostics/shell_capture/movies/lan.rs`) enter Main Menu Network and the
+real BB/BC/BD handlers; declared service events stand in for the remote side:
+discovery, admission, host options, readiness, map reports and completion. They
+write LAN and MultiPlayer preferences, so give them an isolated `RA2_DIR` and a
+`[paths] settings_dir` outside it, never a player's profile. The WOL persona
+targets (`wolinfoMD.ini`) and `lan-guest-random-map` (the received `RandMap.Sed`
+and `RandMap.img`) write into that settings directory only when it holds the same
+marker. `lan-transfer-loading-first` writes the original `XMP29U2.MAP` as
+`CONTROLLED.MAP` into the marked game copy and checks the production parser's
+name, length and SHA-256; it refuses an existing file and removes only the
+unchanged file it created. The `lan-*-loading-first` targets stop at the network
+loading boundary, while `lan-host-abort-return` and `lan-guest-abort-return` go on
+through pause, Abort and the queued EXIT back to the LAN lobby.
+`lan-0xbb-join-denied` and `lan-0xbb-join-denied-return` answer a real Join with
+reason 1; `lan-0xbb-join-timeout-return` sends no answer and waits out the normal
+600 × 16 ms join timer.
+
 After building the normal app with `--profile fast`, run the host with
 `--shell-capture lan-live-host --width 800 --height 600 --cursor-x 400
 --cursor-y 300 --output <new-host-directory> --lan-bind 127.0.0.1:32100
@@ -962,7 +1008,7 @@ the task's validation records, not the tree.
 
 The `online-live-host` and `online-live-guest` targets play a match in a VERA room on
 the deployed lobby and relay (`VERA20K_LOBBY_URL` names another HTTPS lobby, such as a
-staging one), with the offline test service off. They take the LAN pair's window,
+staging one). They take the LAN pair's window,
 cursor and output flags and isolated copies, but no `--lan-*` option. The host takes
 `--online-account <host>`, a name that leaves room for `'s_game` in a 24-character
 room name; the guest takes `--online-account <guest> --online-host <host>`. They play
@@ -970,7 +1016,9 @@ two players for 7,200 frames, and `--online-frames N` changes the count. More th
 players (`--online-players N` on every process, one guest process for each further
 account) also needs `--online-simple-input` or `--online-mass-input`.
 `online-live-timeout-host` and `online-live-quit-host` pair with
-`online-live-failure-guest` as their LAN namesakes do. `lan-live-desync-host` with
+`online-live-failure-guest` as their LAN namesakes do, except that this guest writes
+`<output>.prefix.json` after the shared 300-frame prefix and then stays in the match:
+kill its process by hand to make the peer disappear. `lan-live-desync-host` with
 `lan-live-desync-guest` expects the desync box once the `lan-fault-proxy` tool between
 them damages a FRAMEINFO checksum past the shared 300-frame prefix. The parser's
 errors give each target's option rules. A launcher's
@@ -1000,7 +1048,7 @@ Campaign; seed its settings folder with a `coopsave.ini` section for the pair
 human House to win, BC6 offers only Quit, both press it and the campaign-end dialog
 `0xBC7` opens. The host stays on it; the guest presses Continue back to the lobby.
 The `online-live-coop-host` and `online-live-coop-guest` targets play the same campaign
-in a VERA room on the deployed lobby and relay, with the offline test service off. Each
+in a VERA room on the deployed lobby and relay. Each
 takes `--online-account <name>`; the guest also takes `--online-host <host name>`. The
 host uses the Soviet row through Choose Map and the guest joins. At native frame 150
 both flag every human House to win, both press BC6's Continue, and the kept room comes
@@ -1024,11 +1072,10 @@ move the view within 10 seconds (it turns left halfway, for a view already at th
 map's right edge), then Escape must return it to the online lobby, and it leaves for
 the Main Menu.
 Run it beside `online-live-host` and `online-live-guest` for two other
-accounts. Their `--online-frames` must keep their first match going well past the
-watcher's start: the list poll takes up to 30 seconds, the watcher sees the match two
-minutes behind and needs 300 frames after catching up, and it catches up only when it
-joins more than two minutes into the match. The host's room must let everyone watch,
-as the Create Game Watching choice's default does; Quick Match games
+accounts. Set their `--online-frames` so the match lasts through the list poll (up to
+5 seconds), the granted viewing delay and 300 frames after the watcher catches up.
+To see catch-up on a two-minute stream, join more than two minutes into the match.
+The host's room must allow watching. Quick Match games
 (`--online-quick-match` on both) can always be watched. The manifest's `lan.watch`
 records the match, the grant's delay, whether catch-up was seen and the frame it ended,
 the frames played after it, the views Tab went through, how far the right drag moved

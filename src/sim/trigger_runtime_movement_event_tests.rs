@@ -4,6 +4,8 @@
 use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit};
 use super::*;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::RulePolicy;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
@@ -645,7 +647,7 @@ fn retail_infantry_map_event(
         &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map.ini,
-            true,
+            RulePolicy::stock_multiplayer(),
         ),
         &rules,
     );
@@ -657,9 +659,9 @@ fn add_infantry_map_event_team(sim: &mut Simulation, rules: &RuleSet, actor: u64
     let typ = sim.interner.get("MATCH").unwrap();
     let id = sim
         .team_script_vm
-        .construct_team(typ, owner, true, 0, false, None)
+        .construct_team(typ, owner, TeamLimitScope::PerHouse, 0, false, None)
         .unwrap();
-    assert!(sim.team_add_member(id, actor, false, rules, None, FrameEffects::default()));
+    assert!(sim.team_add_member(id, actor, false, rules, FrameEffects::default()));
     id
 }
 
@@ -909,7 +911,6 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
         infantry,
         Some(crate::sim::components::NavTargetRef::object(reactor)),
         &rules,
-        Some(&registry),
         FrameEffects::default(),
     );
     assert_eq!(
@@ -1274,6 +1275,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 None,
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         sim.session.game_options_mut_for_test().short_game = false;

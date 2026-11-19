@@ -85,7 +85,6 @@ fn head_for(sim: &mut Simulation, rules: &RuleSet, id: u64, building: u64) {
         id,
         Some(NavTargetRef::object(building)),
         rules,
-        None,
         FrameEffects::default(),
     )
     .unwrap();
@@ -235,7 +234,6 @@ fn a_capturing_infantryman_heads_for_its_building_target() {
             id,
             Some(TargetKind::Entity(plant)),
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();

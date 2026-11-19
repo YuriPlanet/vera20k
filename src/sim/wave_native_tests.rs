@@ -412,7 +412,7 @@ fn original_fire_at_births_match_the_production_magnetic_commit() {
         let mut event = crate::sim::world::SimFireEvent::for_test(source);
         event.target = TargetKind::Entity(target);
         event.fire_coord = fire.coord;
-        sim.commit_fired_wave(rules, &event, 3, 0, None);
+        sim.commit_fired_wave(rules, &event, 3, 0);
         let wave = sim.waves.get(sim.active_wave_id(source).unwrap()).unwrap();
         assert_state(wave, &row["after"], true);
     }

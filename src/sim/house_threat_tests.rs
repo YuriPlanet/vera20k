@@ -512,3 +512,20 @@ fn the_presentation_copy_leaves_the_threat_grids_with_the_live_world() {
         grid
     );
 }
+
+/// The copy holds no base reservations either (CellClass `+0xDC`, read only
+/// by the AI's base planning): a city map's buildings reserve tens of
+/// thousands of cells, which cloned took most of the copy. The live world
+/// keeps its own.
+#[test]
+fn the_presentation_copy_leaves_the_base_reservations_with_the_live_world() {
+    let mut sim = Simulation::new();
+    sim.base_reservations_mut_for_test().reserve(None, 3, 4, 2);
+    let reserved = sim.base_reservations().raw_mask(None, 3, 4);
+    assert_ne!(reserved, 0);
+
+    let copy = sim.presentation_copy(None, None);
+
+    assert_eq!(copy.base_reservations().entries().len(), 0);
+    assert_eq!(sim.base_reservations().raw_mask(None, 3, 4), reserved);
+}

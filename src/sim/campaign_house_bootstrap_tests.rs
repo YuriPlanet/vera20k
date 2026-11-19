@@ -319,6 +319,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 None,
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         sim.native_unique_ids = Some(NativeUniqueIdCursor::begin_campaign_prefix(

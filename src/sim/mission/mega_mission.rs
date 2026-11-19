@@ -223,7 +223,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -237,22 +236,16 @@ impl Simulation {
         } = entity.mega_mission;
         if let Some(destination) = destination {
             self.foot_queue_mission_now(id, MissionType::Move, rules);
-            if let Err(cause) = self.assign_destination_represented(
-                id,
-                Some(destination.into()),
-                rules,
-                registry,
-                effects,
-            ) {
+            if let Err(cause) =
+                self.assign_destination_represented(id, Some(destination.into()), rules, effects)
+            {
                 log::debug!("attack-move {id} resumes to {destination:?}: {cause}");
             }
             return true;
         }
         if let Some(target) = target {
             self.foot_queue_mission_now(id, MissionType::Attack, rules);
-            if let Err(cause) =
-                self.assign_target_represented(id, Some(target), rules, registry, effects)
-            {
+            if let Err(cause) = self.assign_target_represented(id, Some(target), rules, effects) {
                 log::debug!("attack-move {id} resumes on {target:?}: {cause}");
             }
             return true;
@@ -271,7 +264,6 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -286,7 +278,7 @@ impl Simulation {
             self.substrate.foot_clear_all_tarcom(id);
             return false;
         }
-        self.foot_continue_mega_mission(id, rules, registry, effects)
+        self.foot_continue_mega_mission(id, rules, effects)
     }
 
     /// `FootClass::Arrival_Target_Handler @ 0x004DF3A0` (vt+0x4CC), which the
@@ -408,7 +400,7 @@ impl Simulation {
         if crate::sim::world::weapon_at_index(self, rules, id, 1)
             .is_some_and(|weapon| weapon.never_use)
         {
-            return crate::sim::world::can_fire_at(self, rules, id, target, 1, registry);
+            return crate::sim::world::can_fire_at(self, rules, id, target, 1);
         }
         self.techno_can_fire_at_target(id, target, rules, registry)
     }

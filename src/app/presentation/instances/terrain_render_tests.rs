@@ -2,6 +2,7 @@
 //! The corpus stops at the shape sink; this compares instance inputs, not pixels.
 
 use super::{native_terrain_instance, terrain_draw_frame};
+use crate::render::native_z::ZGradient;
 use crate::render::overlay_atlas::OverlaySpriteEntry;
 use crate::render::terrain_draw::TerrainPiece;
 
@@ -99,7 +100,7 @@ fn terrain_retained_xyz_projection_and_piece_z_match_original_render() {
                 "{row}: shared body/shadow point"
             );
             assert_eq!(
-                i64::from(piece.z_gradient),
+                ZGradient::from_index(piece.z_gradient) as i64,
                 draw["gradient"].as_i64().unwrap(),
                 "{row}: gradient"
             );

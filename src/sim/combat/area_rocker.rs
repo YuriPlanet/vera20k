@@ -517,7 +517,7 @@ mod tests {
             .get_mut(upper)
             .unwrap()
             .set_on_bridge(true);
-        assert!(world.mark_entity_put(upper, crate::sim::world::UninitContext::with_rules(&rules)));
+        assert!(world.mark_entity_put(upper, crate::sim::world::UninitContext::new(&rules)));
         CALLS.with_borrow_mut(|capture| *capture = Some(Vec::new()));
         apply(
             &mut world,

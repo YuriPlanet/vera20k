@@ -79,7 +79,7 @@ impl Simulation {
         if self.replaying_recorded_commands {
             return false;
         }
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         let mut prepared = Vec::new();
         let mut valid = true;
         for command in commands {
@@ -141,8 +141,10 @@ impl Simulation {
         command: CommandEnvelope,
         prepared: &mut Vec<(QueuedCommand, bool)>,
     ) -> bool {
-        if Self::command_uses_frame_ingress(&command.payload, self.session.game_mode().is_network())
-        {
+        if Self::command_uses_frame_ingress(
+            &command.payload,
+            self.session.execution_topology().is_lockstep(),
+        ) {
             prepared.push((QueuedCommand::from_envelope(command), true));
             return true;
         }
@@ -211,7 +213,7 @@ impl Simulation {
     }
 
     fn local_command_slots(&self, include_control_reserve: bool) -> usize {
-        if !self.session.game_mode().is_network() {
+        if !self.session.execution_topology().is_lockstep() {
             return crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY
                 .saturating_sub(self.local_commands.native_len())
                 .saturating_sub(self.pending_commands.native_len())
@@ -239,11 +241,11 @@ impl Simulation {
     /// This process's command sender: its current House's index, or its own
     /// network source while players share Houses.
     pub(super) fn local_command_source(&self) -> Option<i8> {
-        if let Some(source) = self.session.local_shared_house_source() {
+        let view = self.session.local_view_identity();
+        if let Some(source) = view.shared_house_source {
             return Some(source);
         }
-        self.session
-            .current_house()
+        view.current_house
             .and_then(|owner| {
                 self.houses
                     .order()
@@ -283,14 +285,14 @@ impl Simulation {
         let accepted = self.pending_commands.admit_bounded(
             command,
             self.dispatch_reserved_slots,
-            if self.session.game_mode().is_network() {
+            if self.session.execution_topology().is_lockstep() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
             } else {
                 // Room stays for the queued input, so its transfer is never refused.
                 crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY
                     .saturating_sub(self.local_commands.native_len())
             },
-            if self.session.game_mode().is_network() {
+            if self.session.execution_topology().is_lockstep() {
                 crate::sim::command_queue::NETWORK_SOURCE_DOLIST_CAPACITY
             } else {
                 usize::MAX
@@ -357,7 +359,7 @@ impl Simulation {
         }
         let record = !Self::command_uses_frame_ingress(
             &command.payload,
-            self.session.game_mode().is_network(),
+            self.session.execution_topology().is_lockstep(),
         );
         self.admit_queued_command(
             QueuedCommand::from_envelope(command),
@@ -582,7 +584,7 @@ impl Simulation {
     /// and semantic tail events stay in place until the canonical DoList scan.
     pub fn take_due_commands(&mut self) -> Vec<CommandEnvelope> {
         let execute_tick = self.session.tick().saturating_add(1);
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         self.pending_commands
             .take_where(|entry| {
                 entry.semantic().is_some_and(|command| {
@@ -633,7 +635,7 @@ impl Simulation {
         for command in commands {
             if Self::command_uses_frame_ingress(
                 &command.payload,
-                self.session.game_mode().is_network(),
+                self.session.execution_topology().is_lockstep(),
             ) {
                 self.frame_command_admissions.push(command.clone());
             } else {
@@ -932,7 +934,6 @@ impl Simulation {
     fn group_destination_candidate_facts(
         &self,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         terrain: &ResolvedTerrainGrid,
         zones: &ZoneGrid,
         target: &GroupMemberTarget,
@@ -967,7 +968,6 @@ impl Simulation {
                 args,
                 crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
                 rules,
-                registry,
             )
             .unwrap_or_else(|error| {
                 log::warn!("group destination entry for {id}: {error}");
@@ -997,7 +997,6 @@ impl Simulation {
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         sender: Option<InternedId>,
     ) {
         let (Some(terrain), Some(zones)) =
@@ -1089,11 +1088,11 @@ impl Simulation {
                         }
                         let target = member_target.as_ref().expect("read for this member");
                         self.group_destination_candidate_facts(
-                            rules, registry, terrain, zones, target, candidate,
+                            rules, terrain, zones, target, candidate,
                         )
                     },
                 );
-                self.keep_jumpjets_off_promised_cells(&members, &mut assignments, rules, registry);
+                self.keep_jumpjets_off_promised_cells(&members, &mut assignments, rules);
                 for assignment in assignments {
                     let Some(command) = commands.get_mut(run_start + assignment.command_index)
                     else {
@@ -1117,7 +1116,6 @@ impl Simulation {
         members: &[group_destination::GroupDestinationMember],
         assignments: &mut [group_destination::GroupDestinationAssignment],
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let range = rules.general.jumpjet_land_nearby;
         if range <= 0 {
@@ -1169,7 +1167,6 @@ impl Simulation {
                             InfantryEntryArgs::REPAIR,
                             crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
                             rules,
-                            registry,
                         )
                         .is_ok_and(|code| code == 0);
                     (clear && !promised((x, y), &given)).then_some((x, y))
@@ -1194,7 +1191,7 @@ impl Simulation {
         for command in commands.into_iter().filter(|command| {
             Self::command_uses_frame_ingress(
                 &command.payload,
-                self.session.game_mode().is_network(),
+                self.session.execution_topology().is_lockstep(),
             ) && command.execute_tick <= execute_tick
         }) {
             if !house_order.contains(&command.owner) {
@@ -1220,7 +1217,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> usize {
         let mut executed_commands = 0usize;
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         for owner in self.due_command_house_order(commands.iter(), execute_tick) {
             for command in commands.iter().filter(|command| {
                 command.execute_tick <= execute_tick
@@ -1236,7 +1233,12 @@ impl Simulation {
                     Command::Select { .. }
                     | Command::AssignControlGroup { .. }
                     | Command::MoveFlash { .. } => {
-                        let _ = self.apply_one_due_command(command, rules, None, frame_effects);
+                        let _ = self.apply_one_due_command(
+                            command,
+                            rules,
+                            Some(rules.overlay_registry()),
+                            frame_effects,
+                        );
                     }
                     _ => unreachable!("frame-ingress predicate admitted a tail command"),
                 }
@@ -1260,22 +1262,17 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> (usize, bool) {
-        self.dispatch_owned_commands(
-            commands,
-            rules,
-            execute_tick,
-            overlay_registry,
-            frame_effects,
-        )
-        .expect("component command dispatch must succeed")
+        self.dispatch_owned_commands(commands, rules, execute_tick, frame_effects)
+            .expect("component command dispatch must succeed")
     }
 
     /// How Execute_DoList scans this session's DoList.
     pub(super) fn command_dispatch_mode(&self) -> CommandDispatchMode {
-        if self.session.game_mode().command_queue_route() == super::CommandQueueRoute::Multiplayer {
+        if self.session.execution_topology().command_queue_route()
+            == super::CommandQueueRoute::Multiplayer
+        {
             CommandDispatchMode::Network
         } else {
             CommandDispatchMode::SinglePlayer
@@ -1287,10 +1284,9 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         for command in commands
             .iter()
             .filter(|command| !Self::command_uses_frame_ingress(&command.payload, is_network))
@@ -1342,7 +1338,6 @@ impl Simulation {
         let mut host = WorldCommandHost {
             sim: self,
             rules,
-            overlay_registry,
             frame_effects,
             execute_tick,
             spawned: false,
@@ -1454,7 +1449,6 @@ impl FormationCommand for QueuedCommand {
 struct WorldCommandHost<'a, 'r, 'e> {
     sim: &'a mut Simulation,
     rules: &'r RuleSet,
-    overlay_registry: Option<&'r crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'e>,
     execute_tick: u64,
     spawned: bool,
@@ -1488,12 +1482,8 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
     }
 
     fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        self.sim.adjust_staged_megamission_destinations(
-            entries,
-            self.rules,
-            self.overlay_registry,
-            Some(house.owner),
-        );
+        self.sim
+            .adjust_staged_megamission_destinations(entries, self.rules, Some(house.owner));
     }
 
     fn execute(
@@ -1532,7 +1522,7 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             let (applied, spawned) = self.sim.apply_one_due_command(
                 &command,
                 self.rules,
-                self.overlay_registry,
+                Some(self.rules.overlay_registry()),
                 self.frame_effects,
             );
             self.sim.executing_record_sender = None;

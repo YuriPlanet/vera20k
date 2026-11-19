@@ -30,7 +30,7 @@ use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
 use crate::sim::intern::InternedId;
 use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
-use crate::sim::scenario_session::ScenarioDescriptor;
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
 use crate::sim::world::Simulation;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession};
 
@@ -319,8 +319,12 @@ fn load_with_assets(
     let bound_scenario_prefix = scenario_prefix_plan
         .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
         .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
+    // This entry constructs a noncampaign scenario even when a replay
+    // installs the live mode and rules of a campaign.
+    let mode_class = Some(launch.session().mode.class);
+    let rule_policy = ScenarioGameMode::Skirmish.stock_rule_policy(mode_class);
     let team_ai_registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, true)?;
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
     let theater = theater::load_theater(assets, &map.header.theater)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
@@ -341,7 +345,7 @@ fn load_with_assets(
         seed,
         map_name: map_file_name.to_string(),
         theater: map.header.theater.clone(),
-        game_mode_nonzero: true,
+        rule_policy,
         no_damage: false,
         // Non-campaign: the session staging word's Harvester Truce byte
         // (`0x005E7495..0x005E74D4`) replaces the map's bit at
@@ -380,7 +384,11 @@ fn load_with_assets(
     // CreateHouses687FCE..688092 gives WOL humans their node name; other
     // modes use "<human player>". The House owner hashes that native identity,
     // so restoring GameMode after construction cannot reconstruct a WOL start.
-    sim.install_session_mode(game_mode);
+    sim.install_session_admission(
+        game_mode,
+        mode_class,
+        game_mode.stock_rule_policy(mode_class),
+    );
     if let Some(checkpoint) = accepted_native_id_prefix {
         sim.install_accepted_native_id_prefix(checkpoint)
             .map_err(|error| format!("replay native-ID prefix: {error}"))?;
@@ -521,6 +529,7 @@ fn load_with_assets(
         &map,
         &rules,
         &house_roster,
+        descriptor.rule_policy,
         Some(&launch),
     )
     .map_err(|error| error.to_string())?;
@@ -877,18 +886,8 @@ mod retail_construction_tests {
             baseline.native_unique_id().map(|id| id.wrapping_add(1))
         );
         assert_eq!(signed.sim().rng_state(), control.sim().rng_state());
-        assert_eq!(
-            signed.sim().substrate.raw_cell_occupation.ground_bits(0, 0),
-            0
-        );
-        assert_eq!(
-            signed
-                .sim()
-                .substrate
-                .raw_cell_occupation
-                .ground_bits(u16::MAX, 0),
-            0
-        );
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(0, 0), 0);
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(u16::MAX, 0), 0);
     }
 
     #[test]
@@ -966,8 +965,7 @@ mod retail_construction_tests {
         assert_eq!(sim.terrain_objects().cell_index().len(), 1);
         use crate::sim::occupancy::CellObjectMember;
         let building = sim
-            .substrate
-            .occupancy
+            .occupancy()
             .first_building_on_layer(
                 26,
                 60,
@@ -1031,7 +1029,7 @@ mod retail_construction_tests {
             alias.health() - 1
         );
         loaded.dirty_cells.clear_radar_for_test();
-        loaded.uninit_with_context(alias_id, UninitContext::with_rules(rules));
+        loaded.uninit_with_context(alias_id, UninitContext::new(rules));
         assert_eq!(
             loaded
                 .terrain_objects()
@@ -1040,13 +1038,7 @@ mod retail_construction_tests {
             [ordinary_id]
         );
         assert_eq!(loaded.dirty_cells.radar(), [alias.cell()]);
-        loaded.process_pending_delete_with(
-            rules,
-            Some(rules.overlay_registry()),
-            Default::default(),
-            1,
-            true,
-        );
+        loaded.process_pending_delete_with(rules, Default::default(), 1, true);
         assert!(loaded.terrain_objects().get(alias_id).is_none());
         assert!(loaded.terrain_objects().get(ordinary_id).unwrap().is_live());
         assert_eq!(
@@ -1074,7 +1066,7 @@ mod retail_construction_tests {
                 crate::map::resolved_terrain::zone_class::GROUND;
             base.zone_ids_mut_for_test()[index] = cluster;
         }
-        loaded.uninit_with_context(hole_id, UninitContext::with_rules(rules));
+        loaded.uninit_with_context(hole_id, UninitContext::new(rules));
         assert_eq!(
             loaded
                 .zone_grid
@@ -1225,9 +1217,7 @@ mod retail_construction_tests {
         );
         assert_eq!(
             late.sim()
-                .substrate
-                .raw_cell_occupation
-                .ground_bits(source.rx, source.ry)
+                .ground_occupation_bits_for_test(source.rx, source.ry)
                 & 0x1C,
             0
         );
@@ -1458,7 +1448,7 @@ mod retail_construction_tests {
             .sim()
             .houses
             .iter()
-            .filter(|(_, house)| !house.is_controlled_by_human(true) && !house.multiplay_passive())
+            .filter(|(_, house)| !house.is_human() && !house.multiplay_passive())
             .map(|(&id, _)| id)
             .collect();
         assert_eq!(computers.len(), opponents.len());
@@ -1601,8 +1591,7 @@ mod retail_construction_tests {
                     .path_grid()
                     .is_some_and(|grid| grid.is_walkable_for_infantry(rx, ry));
                 let empty = sim
-                    .substrate
-                    .occupancy
+                    .occupancy()
                     .get(rx, ry)
                     .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground));
                 (walkable && empty).then_some((rx, ry))
@@ -1845,12 +1834,11 @@ mod retail_construction_tests {
             let human = sim
                 .houses
                 .iter()
-                .find(|(_, house)| house.is_controlled_by_human(true))
+                .find(|(_, house)| house.is_human())
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -1875,8 +1863,7 @@ mod retail_construction_tests {
             let runtime = &mut scenario.runtime;
             let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
             let yards: Vec<String> = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .filter(|(_, entity)| entity.owner() == human)
                 .map(|(_, entity)| sim.interner.resolve(entity.type_ref()).to_string())
@@ -1901,7 +1888,7 @@ mod retail_construction_tests {
                 };
                 sim.path_grid()
                     .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
-                    && sim.substrate.occupancy.get(x, y).is_none_or(|cell| {
+                    && sim.occupancy().get(x, y).is_none_or(|cell| {
                         cell.is_empty_on(crate::sim::movement::locomotor::MovementLayer::Ground)
                     })
             };
@@ -2098,12 +2085,11 @@ mod retail_construction_tests {
             let human = sim
                 .houses
                 .iter()
-                .find(|(_, house)| house.is_controlled_by_human(true))
+                .find(|(_, house)| house.is_human())
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -2128,8 +2114,7 @@ mod retail_construction_tests {
             let runtime = &mut scenario.runtime;
             let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
             let yard = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -2288,8 +2273,7 @@ mod retail_construction_tests {
                     sim.path_grid()
                         .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
                         && sim
-                            .substrate
-                            .occupancy
+                            .occupancy()
                             .get(x, y)
                             .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground))
                 })
@@ -3027,15 +3011,16 @@ mod retail_construction_tests {
             rhino,
             Some(TargetKind::Entity(gi)),
             rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("the Rhino takes the GI as its target");
         let now = sim.session.binary_frame();
-        sim.substrate
+        sim.substrate_mut_for_test()
             .mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
             .expect("the Rhino takes Attack");
-        let _ = sim.substrate.mission_commence_exact(rhino, now);
+        let _ = sim
+            .substrate_mut_for_test()
+            .mission_commence_exact(rhino, now);
         let (mut charged, mut died, mut gi_cell, mut crushed) = (None, None, None, false);
         for frame in 1..=600u32 {
             let output = tick_with_due_commands(&mut scenario);
@@ -3213,8 +3198,7 @@ mod retail_construction_tests {
             )
         };
         let mcv = sim
-            .substrate
-            .entities
+            .entities()
             .iter_sorted()
             .find(|(_, entity)| entity.owner() == soviet)
             .map(|(id, _)| id)
@@ -3240,8 +3224,7 @@ mod retail_construction_tests {
         // test, which only DWORD -1 skips (`0x006F7E36`), then rejects every
         // quarry of a spy standing there.
         let american_yard = sim
-            .substrate
-            .entities
+            .entities()
             .iter_sorted()
             .find(|(_, entity)| is_american_yard(entity))
             .map(|(id, _)| id)
@@ -3355,8 +3338,7 @@ mod retail_construction_tests {
             )
         };
         let mcv_of = |sim: &Simulation, house| {
-            sim.substrate
-                .entities
+            sim.entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == house)
                 .map(|(id, _)| id)
@@ -3381,14 +3363,13 @@ mod retail_construction_tests {
             .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
         let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
         let now = sim.session.binary_frame();
-        sim.substrate
+        sim.substrate_mut_for_test()
             .mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
         sim.assign_target_represented(
             tanya,
             Some(TargetKind::Entity(reactor)),
             rules,
-            None,
             FrameEffects::default(),
         )
         .unwrap();
@@ -3478,7 +3459,7 @@ mod retail_construction_tests {
         let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
         let strength = rules.object("HARV").expect("retail HARV").strength;
         let at = {
-            let entity = sim.substrate.entities.get_mut(miner).unwrap();
+            let entity = sim.entity_mut_for_test(miner).unwrap();
             entity.health.set_for_test(strength / 2);
             (
                 i32::from(entity.position.rx()),

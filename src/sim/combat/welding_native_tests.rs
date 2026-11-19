@@ -482,7 +482,6 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                     roles["owner"],
                     target(&roles, requested),
                     rules,
-                    None,
                     crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
@@ -917,7 +916,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         let before_rng = rng(world);
         world.uninit_with_context(
             child_id,
-            crate::sim::world::UninitContext::with_rules(&retail.rules),
+            crate::sim::world::UninitContext::new(&retail.rules),
         );
         assert!(
             !world
@@ -933,7 +932,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         // another ticket, which the existing common drain collapses.
         world.uninit_with_context(
             child_id,
-            crate::sim::world::UninitContext::with_rules(&retail.rules),
+            crate::sim::world::UninitContext::new(&retail.rules),
         );
         assert_eq!(
             world.substrate.pending_delete.object_ids(),

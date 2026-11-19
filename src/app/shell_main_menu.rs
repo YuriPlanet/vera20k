@@ -39,15 +39,16 @@ fn dispatch_shell_controller_confirmed_quit(operations: &mut impl ConfirmedQuitO
 impl AppState {
     /// Puts `tag`'s language in use as a pick in the Language list does:
     /// from the next frame every label reads in it, as the string table takes
-    /// its texts, the map titles read from the table follow, and the fonts
-    /// take its script's letter forms. False, changing nothing, when no
-    /// language file provides `tag`.
+    /// its texts and the map titles read from the table follow; the fonts
+    /// take its script's letter forms and reading direction by themselves
+    /// (`TextEngine::follow_interface_language`), as after a reload of the
+    /// language files. False, changing nothing, when no language file
+    /// provides `tag`.
     pub(crate) fn use_language(&mut self, tag: &str) -> bool {
         if !crate::i18n::select(tag) {
             return false;
         }
         self.refresh_string_key_labels();
-        self.renderer.bit_font.set_locale(tag);
         true
     }
 
@@ -257,6 +258,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.vsync = vsync;
         App::sync_present_mode(self);
     }
+    fn store_directx12(&mut self, enabled: bool) {
+        // The graphics API is chosen once, at launch: the next start reads
+        // it (`GpuContext::new`).
+        self.persistence.options_profile.directx12 = enabled;
+    }
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.
         self.persistence.options_profile.hd_map_previews = enabled;
@@ -314,7 +320,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
             && let Some(terrain) = runtime.simulation.resolved_terrain()
         {
             let presentation = &mut self.state.match_state.match_presentation;
-            presentation.lighting.refresh(
+            presentation.lighting.set_detail_level(
                 terrain,
                 &runtime.simulation,
                 presentation.in_game_options.detail_level,
@@ -1264,8 +1270,9 @@ impl App {
 
     /// While the Developer page's String Keys box is ticked, reload a language
     /// file rewritten in the settings folder or the checkout's `src/i18n`, so
-    /// its texts (and their keys) follow without a restart. Returns the next
-    /// check, keeping the event loop awake for it even on a still screen.
+    /// its texts (and their keys) follow without a restart, as after a pick
+    /// in the Language list ([`Self::use_language`]). Returns the next check,
+    /// keeping the event loop awake for it even on a still screen.
     pub(super) fn poll_language_files(state: &mut AppState) -> Option<Instant> {
         if !crate::i18n::string_keys_enabled() {
             return None;

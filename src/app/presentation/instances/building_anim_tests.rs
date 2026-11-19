@@ -274,7 +274,7 @@ fn high_terrain_building_slots_keep_their_offsets_and_depth() {
     let order = NativeDisplayOrder::from_world(&sim, None);
     let flat = emit(&sim, &rules, building, &atlas, &order);
     assert!(!flat.is_empty());
-    let entity = sim.entities_mut_for_test().get_mut(building).unwrap();
+    let entity = sim.entity_mut_for_test(building).unwrap();
     entity.position.set_z_for_test(36);
     entity.position.set_exact_z_leptons_for_test(Some(3744));
     let slots = *entity.building_art.anim_slots();
@@ -287,14 +287,16 @@ fn high_terrain_building_slots_keep_their_offsets_and_depth() {
     }
     let raised = emit(&sim, &rules, building, &atlas, &order);
     assert_eq!(flat.len(), raised.len());
+    // gamemd lifts the building and its slots by AdjustForZ alone.
+    let lift = crate::util::native_x87::adjust_for_z_standard(3744) as f32;
     for (flat, raised) in flat.iter().zip(&raised) {
         for (flat, raised) in flat.pieces.iter().zip(&raised.pieces) {
             assert_eq!(raised.instance.position[0], flat.instance.position[0]);
             assert_eq!(
                 raised.instance.position[1],
-                flat.instance.position[1] - 540.0
+                flat.instance.position[1] - lift
             );
-            assert_eq!(raised.instance.z_adjust, flat.instance.z_adjust - 540.0);
+            assert_eq!(raised.instance.z_adjust, flat.instance.z_adjust - lift);
             assert_eq!(raised.instance.depth, flat.instance.depth);
         }
     }
@@ -732,8 +734,7 @@ fn bunker_migration_keeps_active_anim_offsets_start_and_independent_membership()
         assert_eq!(before[0].pieces[0].instance.source_palette, 1);
         // The retained Anim coordinate is the owner. A changed body coordinate
         // cannot silently recalculate its child's location in presentation.
-        sim.entities_mut_for_test()
-            .get_mut(building)
+        sim.entity_mut_for_test(building)
             .unwrap()
             .position
             .set_rx_for_test(2);

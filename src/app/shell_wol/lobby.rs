@@ -51,8 +51,10 @@ const PUBLIC_LOBBY_TITLE: &str = "VERA20K Online";
 const PUBLIC_LOBBY_BASE: usize = 2;
 /// `0x00788800`/`0x00789B60`: at most 150 x 100 ms for the leave.
 const LEAVE_WAIT: Duration = Duration::from_millis(15_000);
-/// `SetTimer(0, 30000)`: the game list; `SetTimer(1, 53000)`: the lobbies.
-const GAMES_PERIOD: Duration = Duration::from_millis(30_000);
+/// The game list. VERA asks every 5 s, so a game someone creates shows up
+/// soon; native `SetTimer(0, 30000)` asked every 30.
+const GAMES_PERIOD: Duration = Duration::from_millis(5_000);
+/// `SetTimer(1, 53000)`: the lobbies.
 const LOBBIES_PERIOD: Duration = Duration::from_millis(53_000);
 /// Refresh `0x55D` disables itself for `SetTimer(0x55D, 3000)`.
 const REFRESH_HOLD: Duration = Duration::from_millis(3000);
@@ -1869,8 +1871,15 @@ fn refill_games(state: &mut AppState) {
     if lobby.ui.is_modern() {
         rows.extend(watch_rows(&lobby.matches, &crate::i18n::tr(WATCH_LIST_TAG)));
     }
+    let layout = layout(state);
+    let (x, y) = state.match_state.input.cursor_px();
     if let Some(lobby) = lobby_mut(state) {
         lobby.ui.replace_games(rows);
+        // VERA: the list is refilled every few seconds, and a pointer resting
+        // on a row keeps that row's status help.
+        if lobby.ui.popup.is_none() {
+            lobby.ui.hover_games(&layout, x, y);
+        }
     }
 }
 
@@ -4419,10 +4428,26 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
                 Some((POPUP_PASSWORD, layout.password)),
                 layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
                 layout.ranked.map(|rect| (CREATE_RANKED, rect)),
-                layout.watching.map(|(_, rect)| (CREATE_WATCHING, rect)),
+                layout.watching.map(|rect| (CREATE_WATCHING, rect)),
             ]
             .into_iter()
             .flatten()
+            .map(|(id, rect)| {
+                if layout.name.is_some() && !matches!(id, POPUP_OK | POPUP_CANCEL) {
+                    let label = layout.setting_label(rect);
+                    (
+                        id,
+                        crate::ui::shell::geom::RectPx::new(
+                            label.x,
+                            rect.y,
+                            rect.x + rect.w - label.x,
+                            rect.h,
+                        ),
+                    )
+                } else {
+                    (id, rect)
+                }
+            })
             .collect()
         }
         WolPopupKind::Password(_) => {
@@ -4568,7 +4593,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     CREATE_CLAN => rects.clan,
                     CREATE_LIMIT => Some(rects.limit),
                     CREATE_RANKED => rects.ranked,
-                    CREATE_WATCHING => rects.watching.map(|(_, rect)| rect),
+                    CREATE_WATCHING => rects.watching,
                     _ => rects.observe,
                 };
                 if window.is_some_and(|window| {
@@ -5146,25 +5171,9 @@ mod tests {
     }
 
     #[test]
-    fn saved_test_preference_cannot_load_demo_games_in_ordinary_play() {
-        let saved_test_service = true;
-        assert_eq!(
-            super::super::provider_for_visit(saved_test_service, None),
-            service::WolProvider::Online
-        );
-        assert_eq!(
-            super::super::provider_for_visit(
-                saved_test_service,
-                Some(winit::dpi::PhysicalSize::new(800, 600)),
-            ),
-            service::WolProvider::TestService
-        );
-    }
-
-    #[test]
     fn normal_test_service_keeps_the_simplified_ui_and_only_vera20k_online() {
         let mut visit = crate::app::shell_wol::WolVisit::open(false);
-        visit.set_provider(service::WolProvider::TestService);
+        visit.provider = service::WolProvider::TestService;
         assert!(visit.modern_ui());
         let channels: Vec<_> = ["Lob_41_0", "Lob_41_1", "Lob_41_2"]
             .into_iter()
@@ -5255,6 +5264,16 @@ mod tests {
 
     fn names(lobby: &WolLobby) -> Vec<&str> {
         lobby.members.iter().map(|m| m.name.as_str()).collect()
+    }
+
+    /// VERA lists the games again five seconds on, so a new game shows up
+    /// soon; the lobbies keep native `SetTimer(1, 53000)`.
+    #[test]
+    fn a_runner_lists_the_games_again_after_five_seconds() {
+        let now = Instant::now();
+        let lobby = new_runner(Runner::Lobby, false, false, now, true);
+        assert_eq!(lobby.games_at - now, Duration::from_secs(5));
+        assert_eq!(lobby.lobbies_at - now, Duration::from_secs(53));
     }
 
     /// The user-list sink sorts a chat lobby's users but keeps a game

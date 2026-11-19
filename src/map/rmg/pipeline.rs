@@ -189,6 +189,13 @@ pub(super) fn run_pipeline(
     let local_rect = geometry.local_size();
     let [_, _, gen_w, gen_h] = local_rect;
     let stride = geometry.stride();
+    let playfield = PlayfieldBounds::from_normalized_local_size(
+        map_w,
+        local_rect[0],
+        local_rect[1],
+        gen_w,
+        gen_h,
+    );
     // Emit-form start positions, filled in once `Starts` has produced them so
     // every later boundary can hand them to the observer.
     let mut waypoints: Vec<(u8, u16, u16)> = Vec::new();
@@ -276,13 +283,6 @@ pub(super) fn run_pipeline(
         regions = island_passes::run(&mut ctx);
 
         // Then the ramps and low-bridge decks (step 6 of 0x0058EF10).
-        let playfield = PlayfieldBounds::from_normalized_local_size(
-            map_w,
-            local_rect[0],
-            local_rect[1],
-            gen_w,
-            gen_h,
-        );
         let mut ctx = CarveCtx {
             grid: &mut *grid,
             scratch: &mut *scratch,
@@ -330,8 +330,7 @@ pub(super) fn run_pipeline(
     // ---- Starts (needs the zone field) ------------------------------------
     let (outcome, start_tech_placements) = {
         let zone_params = ZoneParams {
-            map_w,
-            local_rect,
+            playfield,
             wheel_impassable: inputs.wheel_impassable,
             cliff_back_impassability: inputs.cliff_back_impassability,
             overlays: inputs.overlay_zones,
@@ -371,8 +370,7 @@ pub(super) fn run_pipeline(
         let start_tech_placements = {
             let tech_args = TechArgs {
                 map_type: inputs.map_type,
-                map_w,
-                local_rect,
+                playfield,
                 stride: stride as i32,
                 cliff_back_impassability: inputs.cliff_back_impassability,
             };
@@ -420,8 +418,7 @@ pub(super) fn run_pipeline(
     let driver_placements = {
         let args = TechArgs {
             map_type: inputs.map_type,
-            map_w,
-            local_rect,
+            playfield,
             stride: stride as i32,
             cliff_back_impassability: inputs.cliff_back_impassability,
         };
@@ -448,8 +445,7 @@ pub(super) fn run_pipeline(
             tib_option: inputs.tib_option,
             min_tib: inputs.min_tib,
             max_tib: inputs.max_tib,
-            map_w,
-            local_rect,
+            playfield,
         };
         let run = |grid: &mut RmgGrid,
                    scratch: &mut RmgScratch,
@@ -486,13 +482,6 @@ pub(super) fn run_pipeline(
     // ---- Urban areas (Ares hook 0x598FB8 / VERA opt-in, before the recalc) -
     let mut urban_area_objects = Vec::new();
     if let (Some(urban_inputs), Some(recalc_rock)) = (inputs.urban_areas, urban_rock.as_ref()) {
-        let playfield = PlayfieldBounds::from_normalized_local_size(
-            map_w,
-            local_rect[0],
-            local_rect[1],
-            local_rect[2],
-            local_rect[3],
-        );
         let args = urban_areas::UrbanArgs {
             urban_presence: inputs.urban_presence,
             map_w,
@@ -659,8 +648,7 @@ pub(super) fn run_pipeline(
         grid,
         scratch,
         ids: inputs.ids,
-        map_w,
-        local_rect,
+        playfield,
     };
     let mut out = super::embellish::EmbellishOutput {
         objects: &mut urban_area_objects,
@@ -884,8 +872,7 @@ mod tests {
         let empty_regions = Regions::default();
         let args = TechArgs {
             map_type: 3,
-            map_w: 74,
-            local_rect: [2, 5, 70, 70],
+            playfield,
             stride: STRIDE as i32,
             cliff_back_impassability: 2,
         };

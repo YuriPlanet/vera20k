@@ -67,6 +67,8 @@ pub(crate) mod display_target;
 mod frame;
 pub mod frontend;
 mod game_data_check;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+mod graphics_lost;
 mod handler;
 mod hidden_run;
 mod in_game;
@@ -94,7 +96,7 @@ pub(crate) mod os_clipboard;
 pub(crate) mod phobos_version;
 pub(crate) mod presentation;
 pub(crate) mod process_assets;
-#[cfg(feature = "telemetry-dashboard")]
+#[cfg(any(feature = "telemetry-dashboard", feature = "perf"))]
 pub(crate) mod process_stats;
 pub(crate) mod radar_movie;
 pub(crate) mod random_map_file;

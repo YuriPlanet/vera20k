@@ -426,9 +426,10 @@ fn spawn_wild(rules: &RuleSet) -> SpawnFoots {
 /// their streets (the same survey): temperate kinds, snow-laden ones on Snow
 /// and palms and cacti on Desert.
 fn street_trees(theater_name: &str) -> Vec<String> {
-    let range = match theater_name.to_ascii_uppercase().as_str() {
-        "SNOW" => 20..=28,
-        "DESERT" => 31..=36,
+    use crate::rules::object_image::ImageTheater;
+    let range = match ImageTheater::from_name(theater_name) {
+        ImageTheater::Snow => 20..=28,
+        ImageTheater::Desert => 31..=36,
         _ => 1..=12,
     };
     range.map(|index| format!("TREE{index:02}")).collect()

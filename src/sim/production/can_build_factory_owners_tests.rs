@@ -50,10 +50,19 @@ fn campaign_does_not_apply_the_ares_skirmish_superweapon_shell_gate() {
     assert!(!rules.is_build_tech("TARGET"));
     factory(&mut sim, &rules, 1, "YARD");
     sim.session.game_options_mut_for_test().super_weapons = false;
-    for (nonzero_mode, expected) in [(false, CanBuild::Yes), (true, CanBuild::No)] {
-        sim.session.set_game_mode(
-            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(nonzero_mode),
-        );
+    use crate::sim::scenario_session::ScenarioGameMode::{Campaign, Skirmish};
+
+    let campaign = Campaign.stock_rule_policy(None);
+    for (mode, policy, expected) in [
+        (Campaign, campaign, CanBuild::Yes),
+        (Skirmish, Skirmish.stock_rule_policy(None), CanBuild::No),
+        (
+            Campaign,
+            campaign.with_uses_room_options(true),
+            CanBuild::No,
+        ),
+    ] {
+        sim.session.install_admission(mode, None, policy);
         // Native10021A00 returns false immediately for mode0. Otherwise it
         //may refuse this Type. All other production prerequisites are supplied.
         assert_eq!(

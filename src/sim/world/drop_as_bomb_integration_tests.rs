@@ -116,17 +116,20 @@ fn boarded_transport(sim: &mut Simulation, rules: &RuleSet, kind: &str) -> (u64,
 /// around its initial Location. Collapse below will use the real producer.
 fn put_on_deck(sim: &mut Simulation, rules: &RuleSet, id: u64, water: bool) {
     sim.foot_mark_remove(id, rules, None, FrameEffects::default());
-    let cell = sim
-        .resolved_terrain
-        .as_mut()
-        .unwrap()
-        .cell_mut_for_test(CELL.0, CELL.1)
-        .unwrap();
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    if water {
+        // A Water tile under the deck: the Recalc(-1) the landing's
+        // Place_Down runs reads the cell's land back from it.
+        crate::map::resolved_terrain::install_water_repair_test_catalog(terrain);
+    }
+    let cell = terrain.cell_mut_for_test(CELL.0, CELL.1).unwrap();
     cell.bridge_facts.raw_flags |= crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     cell.has_bridge_deck = true;
     cell.bridge_walkable = true;
     cell.bridge_deck_level = cell.level + 4;
     if water {
+        cell.final_tile_index = 1;
+        cell.final_sub_tile = 0;
         cell.land_type = LandType::Water.as_index();
         cell.base_land_type = cell.land_type;
     }
@@ -584,11 +587,10 @@ fn attached_animation_retirement_releases_a_landed_paratrooper() {
         z: 600,
         ..ground_pose::position_world_coord(&sim.substrate.entities.get(infantry).unwrap().position)
     };
-    sim.techno_limbo_with_rules(infantry, &rules, None);
+    sim.techno_limbo_with_rules(infantry, &rules);
     crate::sim::aircraft::drop_payload::spawn_parachuted(
         &mut sim,
         &rules,
-        None,
         infantry,
         landing,
         0,

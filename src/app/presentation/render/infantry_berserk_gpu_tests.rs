@@ -393,7 +393,8 @@ fn render_original_body_pixels(
         let sim = &runtime.simulation;
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
         let mut view = camera(size);
-        view.native_z_origin_y = int(&surface["depth_baseline"]) as f32 - 32768.;
+        // The capture's Z buffer seeds at its baseline (`native_z::ZSeed`).
+        view.native_z_pan = (32768 - int(&surface["depth_baseline"])) as f32;
         batch.write_camera(&gpu.queue, view);
         let atlas = build_sprite_atlas(
             &gpu.device,
@@ -485,11 +486,7 @@ fn render_original_body_pixels(
                 ];
                 batch.write_camera(&gpu.queue, view);
             }
-            let gi = runtime
-                .simulation
-                .entities_mut_for_test()
-                .get_mut(1)
-                .unwrap();
+            let gi = runtime.simulation.entity_mut_for_test(1).unwrap();
             gi.berserk
                 .set_active_for_test(input["berserk"].as_bool().unwrap());
             gi.body_facing = FacingClass::new(int(&input["facing"]) as u16, 0);
@@ -582,6 +579,7 @@ fn render_original_body_pixels(
             if production {
                 let voxel_images =
                     RefCell::new(crate::render::voxel_image_cache::VoxelImageCache::default());
+                let zshape_skips = std::cell::RefCell::default();
                 build_shp_instances_from_inputs(
                     &ShpInputs {
                         runtime: &runtime,
@@ -590,6 +588,7 @@ fn render_original_body_pixels(
                         overlay_atlas: None,
                         unit_atlas: None,
                         voxel_images: &voxel_images,
+                        zshape_skips: &zshape_skips,
                         depth_tested_images: None,
                         camera: view.camera_pos,
                         render_size: size,
@@ -605,7 +604,7 @@ fn render_original_body_pixels(
                         ignore_visibility: true,
                         lighting: &light_grid,
                         house_colors: &house_colors,
-                        building_zshape: false,
+                        building_zshape: None,
                     },
                     &mut objects,
                     &order,

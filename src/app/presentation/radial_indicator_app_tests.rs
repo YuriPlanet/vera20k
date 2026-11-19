@@ -488,8 +488,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
         .unwrap();
     // A retained dummy target makes the dummy coordinate part of lockstep
     // state. This supplied prior isolates rendering from target acquisition.
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             u16::MAX,
@@ -984,8 +983,7 @@ fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
     let mut sim = state(&rules);
     insert_enhancer(&mut sim, "ENH", "Americans", (16, 16), false);
     assert!(placement_query(&sim, &rules, "GAPOWR", (18, 16), true).is_empty());
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .set_building_online_for_test(true);
     assert_eq!(

@@ -112,6 +112,9 @@ pub(crate) fn restore_tactical_view(
     state: &mut AppState,
     saved: Option<crate::sim::snapshot::SavedTacticalView>,
 ) {
+    // A loaded game gets a new Z buffer (`Set_View_Dimensions` from
+    // `Load_Game_Content_From_Stream`), so the Z seed starts over.
+    state.renderer.native_z_seed.reset();
     state.match_state.input.pending_camera_scroll = PendingCameraScroll::default();
     let Some(saved) = saved else {
         return;
@@ -1979,6 +1982,12 @@ pub(crate) fn tactical_viewport_px(state: &AppState) -> (u32, u32, u32, u32) {
     state.sidebar_frame().tactical_rect()
 }
 
+/// The tactical view's height in world pixels, where a blit clipped to the
+/// view ends (`DrawState::fx_params` w).
+pub(crate) fn tactical_view_height(state: &AppState) -> f32 {
+    tactical_viewport_px(state).3 as f32 / state.match_state.input.zoom_level
+}
+
 /// The tactical dimensions of the current match frame: Active YR's frame less
 /// the sidebar column and the bottom strip, at the Sidebar size
 /// (`ui::sidebar::SidebarFrame::tactical_size`).
@@ -2149,6 +2158,8 @@ pub(crate) fn apply_home_camera(state: &mut AppState, coord: Option<[i32; 3]>) {
         crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
     );
     state.match_state.input.follow_target = None;
+    // A complete redraw (`0x00731832`): the move keeps the Z seed.
+    state.renderer.native_z_seed.complete_redraw();
 }
 
 /// `CenterView` (Numpad 5 in the stock archive): snap the tactical view onto the
@@ -2183,6 +2194,9 @@ pub(crate) fn center_view_on_selection(state: &mut AppState) {
         return;
     };
     center_camera_on_lepton_point(state, cx, cy, cz);
+    // Every caller asks for a complete redraw next (`0x00536688`,
+    // `0x00536AF8`, `0x00536E1A`, `0x007314AA`), so the move keeps the Z seed.
+    state.renderer.native_z_seed.complete_redraw();
 }
 
 /// `Follow` (F): latch the camera onto the selection, or let it go.
@@ -2224,8 +2238,9 @@ pub(crate) fn toggle_follow_target(state: &mut AppState) {
 /// 0x005F5306 and `ObjectClass__Deselect` 0x005F4513 — so the camera is handed
 /// back when the followed object dies, leaves the selection, or runs
 /// Detach_All in this Logic visit while it lives on (a cloaking submarine)
-/// or a logic Select's Unselect_All deselects it before a later Select
-/// selects it again ([`LifecycleOutput::FollowReleased`] in `outputs`).
+/// or a Deselect (a logic Select's Unselect_All, or Limbo as in an Ares rubble
+/// kick-out) drops it before a later Select in the same visit selects it
+/// again ([`LifecycleOutput::FollowReleased`] in `outputs`).
 ///
 /// [`LifecycleOutput::FollowReleased`]: crate::sim::world::LifecycleOutput::FollowReleased
 pub(crate) fn update_follow_camera(

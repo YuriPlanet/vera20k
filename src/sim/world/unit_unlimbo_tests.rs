@@ -947,7 +947,7 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
         assert_stage(&sim, id, &initial["stage_after"], name);
         assert_stage(&sim, id, &row["limbo"]["stage_before"], name);
         assert_eq!(
-            sim.techno_limbo_with_rules(id, &base_rules, Some(&registry)),
+            sim.techno_limbo_with_rules(id, &base_rules),
             super::ConcealOutcome::Concealed,
             "{name}: shared Limbo owner prepares the reused object"
         );
@@ -1512,7 +1512,7 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
             "{} scope{} mode{}",
             input["kind"], input["scenario_init_counter"], input["actual_game_mode"]
         );
-        let (mut sim, rules, registry) = entry_test_fixture::fixture_with_rules(
+        let (mut sim, rules, _registry) = entry_test_fixture::fixture_with_rules(
             "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeedType=Track\n[O0]\nCrate=yes\n",
         );
         sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
@@ -1556,7 +1556,7 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
             &mut |sim| {
                 let cell = NativeCellQuery::canonical(sim.resolved_terrain.as_ref().unwrap())
                     .lookup((11, 10));
-                sim.foot_can_enter(90, cell, InfantryEntryArgs::REPAIR, &rules, Some(&registry))
+                sim.foot_can_enter(90, cell, InfantryEntryArgs::REPAIR, &rules)
                     .unwrap()
             },
         );

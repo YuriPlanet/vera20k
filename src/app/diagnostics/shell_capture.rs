@@ -23,13 +23,9 @@ use crate::ui::main_menu_dialogs::options::Category;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
 
-pub(crate) mod fault_files;
-pub(crate) mod loading_host_loss;
-pub(crate) mod loading_runtime;
 mod movies;
 mod score;
 mod skirmish;
-pub(crate) mod startup_host_loss;
 pub(crate) use skirmish::PresentedShell;
 
 pub(crate) const CAPTURE_FLAG: &str = "--shell-capture";
@@ -1235,68 +1231,12 @@ pub(crate) struct LiveOnlineConfig {
     pub simple_input: bool,
     pub latency: bool,
     pub mass_input: bool,
-    /// Public coordinator nonce; only diagnostic Observe input waits for ACK.
-    pub network_checkpoint: Option<String>,
-    /// Public nonce for the later exit/HTTPS-retry/reentry acceptance only.
-    pub exit_checkpoint: Option<String>,
-    /// External owned kill during first loading, followed by a normal two-player rematch.
-    pub loading_host_loss: Option<String>,
-    /// External owned kill after ordinary100, before the original host installs live gameplay.
-    pub startup_host_loss: Option<String>,
     /// Each round queues through the lobby's Quick Match; the matchbot sets
     /// the match up and the configured host must be its host.
     pub quick_match: bool,
-    pub loading_output: Option<PathBuf>,
-    pub loading_cancel: Option<LoadingCancelConfig>,
-    pub observe_loading: bool,
     pub profile_check: bool,
-    pub exit_prefix_output: Option<PathBuf>,
-    /// Nonsecret real-command/checksum prefix, written before external faults.
+    /// Nonsecret real-command/checksum prefix, written before the peer is killed.
     pub failure_prefix_output: Option<PathBuf>,
-}
-
-/// Diagnostic intent only; cancellation still runs the real service owner.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LoadingCancelKind {
-    Https,
-    Departure,
-}
-impl LoadingCancelKind {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Https => "https",
-            Self::Departure => "departure",
-        }
-    }
-}
-#[derive(Debug, Clone)]
-pub(crate) struct LoadingCancelConfig {
-    pub checkpoint_id: String,
-    pub kind: LoadingCancelKind,
-    pub output: PathBuf,
-}
-
-/// The victim is terminated externally by the owned-process runner. This
-/// chooses only the capture checkpoint; the LAN service retains its real lease.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LanSetupCrash {
-    Host,
-    Guest,
-    MapHost,
-}
-
-impl LanSetupCrash {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Host => "host",
-            Self::Guest => "guest",
-            Self::MapHost => "map-host",
-        }
-    }
-
-    pub(crate) fn host(self) -> bool {
-        matches!(self, Self::Host | Self::MapHost)
-    }
 }
 
 /// Only socket routing differs between these diagnostic modes. Production
@@ -1333,10 +1273,8 @@ pub(crate) struct LiveLanConfig {
     pub isolation_seed: Option<u32>,
     /// Host-only history fixture for round one; round two uses `map`.
     pub prior_map: Option<String>,
-    /// Optional real pre-GO process-loss checkpoint. It never changes a timer.
-    pub setup_crash: Option<LanSetupCrash>,
     pub profile_check: bool,
-    /// Written before an external LAN proxy/process fault; contains no secrets.
+    /// Written before `lan-fault-proxy` damages a checksum; contains no secrets.
     pub failure_prefix_output: Option<PathBuf>,
 }
 
@@ -1373,7 +1311,8 @@ impl ShellCaptureRequest {
         }
     }
 
-    /// Select only the diagnostic visit; never change the saved profile.
+    /// The provider this capture's WOL visit opens with (`prepare_state`);
+    /// none opens it online.
     pub(crate) fn wol_welcome_provider(&self) -> Option<crate::app::shell_wol::WolProvider> {
         match self.checkpoint.movies_target() {
             Some(movies::MoviesTarget::WolWelcome { provider, .. }) => Some(provider),
@@ -1421,13 +1360,6 @@ impl ShellCaptureRequest {
     }
 }
 
-fn public_coordinator_nonce(value: &str) -> bool {
-    value.len() == 32
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 /// Parse the normal/capture launch boundary without changing ordinary no-arg
 /// startup. Capture mode is deliberately strict so a misspelled automation
 /// command cannot open an interactive window.
@@ -1459,7 +1391,6 @@ where
     let mut lan_map = None;
     let mut lan_isolation_seed = None;
     let mut lan_prior_map = None;
-    let mut lan_setup_crash = None;
     let mut online_account = None;
     let mut online_host = None;
     let mut online_map = None;
@@ -1472,13 +1403,6 @@ where
     let mut online_quick_match = false;
     let mut online_latency = false;
     let mut online_mass = false;
-    let mut online_network_checkpoint = None;
-    let mut online_exit_checkpoint = None;
-    let mut online_loading_host_loss = None;
-    let mut online_startup_host_loss = None;
-    let mut online_loading_cancel = None;
-    let mut online_loading_cancel_checkpoint = None;
-    let mut observe_loading = false;
     let mut profile_check = false;
     let mut language = None;
 
@@ -1573,15 +1497,6 @@ where
                 next_utf8(&mut args, "value after --lan-prior-map")?,
                 "--lan-prior-map",
             )?,
-            "--lan-setup-crash" => {
-                let victim = match next_utf8(&mut args, "value after --lan-setup-crash")?.as_str() {
-                    "host" => LanSetupCrash::Host,
-                    "guest" => LanSetupCrash::Guest,
-                    "map-host" => LanSetupCrash::MapHost,
-                    _ => bail!("--lan-setup-crash requires host, guest or map-host"),
-                };
-                set_once(&mut lan_setup_crash, victim, "--lan-setup-crash")?;
-            }
             "--online-account" => set_once(
                 &mut online_account,
                 next_utf8(&mut args, "value after --online-account")?,
@@ -1644,39 +1559,6 @@ where
                 ensure!(!online_mass, "duplicate --online-mass-input");
                 online_mass = true;
             }
-            "--online-network-checkpoint" => set_once(
-                &mut online_network_checkpoint,
-                next_utf8(&mut args, "value after --online-network-checkpoint")?,
-                "--online-network-checkpoint",
-            )?,
-            "--online-loading-host-loss" => set_once(
-                &mut online_loading_host_loss,
-                next_utf8(&mut args, "value after --online-loading-host-loss")?,
-                "--online-loading-host-loss",
-            )?,
-            "--online-startup-host-loss" => set_once(
-                &mut online_startup_host_loss,
-                next_utf8(&mut args, "value after --online-startup-host-loss")?,
-                "--online-startup-host-loss",
-            )?,
-            "--online-loading-cancel" => {
-                let kind =
-                    match next_utf8(&mut args, "value after --online-loading-cancel")?.as_str() {
-                        "https" => LoadingCancelKind::Https,
-                        "departure" => LoadingCancelKind::Departure,
-                        _ => bail!("--online-loading-cancel requires https or departure"),
-                    };
-                set_once(&mut online_loading_cancel, kind, "--online-loading-cancel")?;
-            }
-            "--online-loading-cancel-checkpoint" => set_once(
-                &mut online_loading_cancel_checkpoint,
-                next_utf8(&mut args, "value after --online-loading-cancel-checkpoint")?,
-                "--online-loading-cancel-checkpoint",
-            )?,
-            "--online-observe-loading" => {
-                ensure!(!observe_loading, "duplicate --online-observe-loading");
-                observe_loading = true;
-            }
             "--network-profile-check" => {
                 ensure!(!profile_check, "duplicate --network-profile-check");
                 profile_check = true;
@@ -1685,11 +1567,6 @@ where
                 &mut language,
                 next_utf8(&mut args, "value after --language")?,
                 "--language",
-            )?,
-            "--online-exit-checkpoint" => set_once(
-                &mut online_exit_checkpoint,
-                next_utf8(&mut args, "value after --online-exit-checkpoint")?,
-                "--online-exit-checkpoint",
             )?,
             "--online-latency" => {
                 ensure!(!online_latency, "duplicate --online-latency");
@@ -1761,8 +1638,8 @@ where
             "--lan-production-broadcast requires a normal LAN live host or guest checkpoint"
         );
         ensure!(
-            lan_bind.is_none() && lan_peer.is_none() && lan_setup_crash.is_none(),
-            "--lan-production-broadcast cannot override sockets or combine with a fault checkpoint"
+            lan_bind.is_none() && lan_peer.is_none(),
+            "--lan-production-broadcast cannot override sockets"
         );
     }
     if profile_check {
@@ -1772,13 +1649,8 @@ where
                 ShellCaptureCheckpoint::Lan(
                     movies::LanTarget::OnlineHost | movies::LanTarget::LiveHost
                 )
-            ) && lan_setup_crash.is_none()
-                && online_loading_host_loss.is_none()
-                && online_startup_host_loss.is_none()
-                && online_network_checkpoint.is_none()
-                && online_exit_checkpoint.is_none()
-                && online_loading_cancel.is_none(),
-            "profile check requires a normal host checkpoint without another fault"
+            ),
+            "profile check requires a normal host checkpoint"
         );
         ensure!(
             if online {
@@ -1813,14 +1685,7 @@ where
                     && !online_simple
                     && !online_latency
                     && !online_mass
-                    && !online_quick_match
-                    && !observe_loading
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()
-                    && online_loading_cancel_checkpoint.is_none()),
+                    && !online_quick_match),
             "online watch capture requires --online-host and no other online option; the host's match sets everything else"
         );
         let host = online_host.unwrap_or_else(|| account.clone());
@@ -1868,12 +1733,7 @@ where
                     && online_mode_id.is_none()
                     && !online_mass
                     && !online_latency
-                    && !profile_check
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()),
+                    && !profile_check),
             "online co-op capture requires two players and no map, start, AI, mode or other diagnostic option; the campaign picks its maps"
         );
         ensure!(
@@ -1882,12 +1742,7 @@ where
                     && !online_failure
                     && !online_mass
                     && online_ai.is_none()
-                    && !profile_check
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()),
+                    && !profile_check),
             "--online-latency requires a normal online pair without another diagnostic mode"
         );
         let frames = online_frames.unwrap_or(if online_latency {
@@ -1917,69 +1772,10 @@ where
                     && online_ai.is_some()
                     && frames >= 600
                     && !online_mass
-                    && !profile_check
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()
-                    && online_loading_cancel_checkpoint.is_none(),
-                "AI/mode capture requires one online host, explicit AI, at least600 frames and no separate fault/profile/mass case"
+                    && !profile_check,
+                "AI/mode capture requires one online host, explicit AI, at least600 frames and no separate profile/mass case"
             );
         }
-        ensure!(
-            online_network_checkpoint.as_ref().is_none_or(|nonce| {
-                !online_failure
-                    && players == 2
-                    && online_simple
-                    && !online_mass
-                    && frames >= 600
-                    && public_coordinator_nonce(nonce)
-            }),
-            "network checkpoint requires a normal simple online pair, at least600 frames and a32-digit lowercase hex nonce"
-        );
-        ensure!(
-            online_exit_checkpoint.as_ref().is_none_or(|nonce| {
-                !online_failure
-                    && online_network_checkpoint.is_none()
-                    && players == 2
-                    && online_simple
-                    && !online_mass
-                    && public_coordinator_nonce(nonce)
-            }),
-            "exit checkpoint requires a normal simple online pair and a32-digit lowercase hex nonce; other external faults are separate runs"
-        );
-        ensure!(
-            online_loading_host_loss.as_ref().is_none_or(|nonce| {
-                !online_failure
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_map.is_none()
-                    && online_start.is_none()
-                    && players == 3
-                    && online_simple
-                    && !online_mass
-                    && frames >= 1024
-                    && public_coordinator_nonce(nonce)
-            }),
-            "loading host loss requires a normal simple three-player online match, at least1024 frames and a32-digit lowercase hex nonce; map/start overrides and other faults are separate runs"
-        );
-        ensure!(
-            online_startup_host_loss.as_ref().is_none_or(|nonce| {
-                !online_failure
-                    && online_loading_host_loss.is_none()
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_map.is_none()
-                    && online_start.is_none()
-                    && players == 3
-                    && online_simple
-                    && !online_mass
-                    && public_coordinator_nonce(nonce)
-            }),
-            "startup host loss requires a normal simple three-player online match and a32-digit lowercase hex nonce; loading/map/start and other faults are separate runs"
-        );
         ensure!(
             players <= 2 || online_simple || online_mass,
             "more than two players requires --online-simple-input or --online-mass-input"
@@ -1994,12 +1790,7 @@ where
                     && !online_failure
                     && !online_latency
                     && !online_mass
-                    && !profile_check
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_loading_cancel.is_none()),
+                    && !profile_check),
             "--online-quick-match requires a normal online pair; the matchbot sets the match up"
         );
         ensure!(
@@ -2009,49 +1800,6 @@ where
                 || players <= 8,
             "random maps support two to eight players"
         );
-        ensure!(
-            online_loading_cancel.is_some() == online_loading_cancel_checkpoint.is_some(),
-            "loading cancellation requires both kind and checkpoint nonce"
-        );
-        if let Some(nonce) = online_loading_cancel_checkpoint.as_deref() {
-            ensure!(
-                public_coordinator_nonce(nonce)
-                    && players == 2
-                    && online_simple
-                    && !online_mass
-                    && !online_failure
-                    && online_loading_host_loss.is_none()
-                    && online_startup_host_loss.is_none()
-                    && online_network_checkpoint.is_none()
-                    && online_exit_checkpoint.is_none()
-                    && online_map.is_none()
-                    && online_start.is_none()
-                    && !profile_check,
-                "loading cancellation requires a normal simple online pair and32 lowercase hex nonce without another fault/map/start"
-            );
-            for kind in ["ready", "control", "returned"] {
-                ensure!(
-                    !loading_runtime::sidecar(&output_dir, kind).try_exists()?,
-                    "loading cancellation output already exists"
-                );
-            }
-        }
-        if online_loading_host_loss.is_some() {
-            for kind in ["ready", "complete", "killed", "prefix", "removed"] {
-                ensure!(
-                    !loading_host_loss::sidecar(&output_dir, kind).try_exists()?,
-                    "loading fault output already exists"
-                );
-            }
-        }
-        if online_startup_host_loss.is_some() {
-            for kind in ["ready", "install", "prefix", "killed", "failure", "ack"] {
-                ensure!(
-                    !startup_host_loss::sidecar(&output_dir, kind).try_exists()?,
-                    "startup fault output already exists"
-                );
-            }
-        }
         Some(LiveOnlineConfig {
             account,
             host,
@@ -2068,7 +1816,7 @@ where
                 || online_ai.is_some(),
             latency: online_latency,
             mass_input: online_mass,
-            failure_prefix_output: if online_failure || online_network_checkpoint.is_some() {
+            failure_prefix_output: if online_failure {
                 let mut path = output_dir.as_os_str().to_owned();
                 path.push(".prefix.json");
                 let path = PathBuf::from(path);
@@ -2077,31 +1825,7 @@ where
             } else {
                 None
             },
-            network_checkpoint: online_network_checkpoint,
-            exit_prefix_output: if online_exit_checkpoint.is_some() {
-                let mut path = output_dir.as_os_str().to_owned();
-                path.push(".exit.json");
-                let path = PathBuf::from(path);
-                ensure!(!path.exists(), "exit checkpoint output already exists");
-                Some(path)
-            } else {
-                None
-            },
-            loading_cancel: online_loading_cancel.map(|kind| LoadingCancelConfig {
-                checkpoint_id: online_loading_cancel_checkpoint
-                    .expect("validated loading cancel nonce"),
-                kind,
-                output: output_dir.clone(),
-            }),
-            observe_loading,
             profile_check,
-            exit_checkpoint: online_exit_checkpoint,
-            loading_output: online_loading_host_loss
-                .as_ref()
-                .or(online_startup_host_loss.as_ref())
-                .map(|_| output_dir.clone()),
-            loading_host_loss: online_loading_host_loss,
-            startup_host_loss: online_startup_host_loss,
             quick_match: online_quick_match,
         })
     } else {
@@ -2117,13 +1841,6 @@ where
                 && !online_simple
                 && !online_latency
                 && !online_mass
-                && online_network_checkpoint.is_none()
-                && online_exit_checkpoint.is_none()
-                && online_loading_host_loss.is_none()
-                && online_startup_host_loss.is_none()
-                && online_loading_cancel.is_none()
-                && online_loading_cancel_checkpoint.is_none()
-                && !observe_loading
                 && !online_quick_match,
             "online options require an online live checkpoint"
         );
@@ -2173,7 +1890,7 @@ where
                     ShellCaptureCheckpoint::Lan(
                         movies::LanTarget::LiveHost | movies::LanTarget::LiveGuest
                     )
-                ) && lan_setup_crash.is_none(),
+                ),
             "--lan-isolation-seed requires a normal live LAN host or guest"
         );
         if let Some(file) = lan_prior_map.as_deref() {
@@ -2187,33 +1904,10 @@ where
             );
             crate::map::source::validate_network_map_name(file)?;
         }
-        ensure!(
-            lan_setup_crash.is_none()
-                || matches!(
-                    checkpoint,
-                    ShellCaptureCheckpoint::Lan(
-                        movies::LanTarget::LiveHost | movies::LanTarget::LiveGuest
-                    )
-                ),
-            "--lan-setup-crash requires a normal LAN live host or guest checkpoint"
-        );
-        ensure!(
-            match lan_setup_crash {
-                Some(LanSetupCrash::MapHost) => match checkpoint {
-                    ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveHost) => lan_map
-                        .as_deref()
-                        .is_some_and(|map| !crate::map::rmg::is_seed_selection(map)),
-                    ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveGuest) => lan_map.is_none(),
-                    _ => false,
-                },
-                Some(_) => lan_map.is_none(),
-                None => true,
-            },
-            "map-host requires an authored host map; resident host/guest crash uses the resident map"
-        );
-        let failure_prefix_output = if lan_setup_crash.is_some()
-            || matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.desync_failure())
-        {
+        let failure_prefix_output = if matches!(
+            checkpoint,
+            ShellCaptureCheckpoint::Lan(target) if target.desync_failure()
+        ) {
             let mut path = output_dir.as_os_str().to_owned();
             path.push(".prefix.json");
             let path = PathBuf::from(path);
@@ -2227,7 +1921,6 @@ where
             map: lan_map,
             isolation_seed: lan_isolation_seed,
             prior_map: lan_prior_map,
-            setup_crash: lan_setup_crash,
             profile_check,
             failure_prefix_output,
         })
@@ -2238,8 +1931,7 @@ where
                 && lan_peer.is_none()
                 && lan_map.is_none()
                 && lan_isolation_seed.is_none()
-                && lan_prior_map.is_none()
-                && lan_setup_crash.is_none(),
+                && lan_prior_map.is_none(),
             "LAN socket options require a live LAN checkpoint"
         );
         None
@@ -2540,7 +2232,6 @@ pub(crate) struct ShellCaptureSession {
     entry_sequence: Option<EntrySequenceState>,
     skirmish: Option<skirmish::SkirmishCapture>,
     movies: Option<movies::MoviesCapture>,
-    wol_welcome_provider_selected: bool,
     score: Option<score::ScoreCapture>,
     campaign_score: Option<score::CampaignScoreCapture>,
     outcome: Option<std::result::Result<(), String>>,
@@ -2671,7 +2362,6 @@ impl ShellCaptureSession {
             entry_sequence,
             skirmish,
             movies,
-            wol_welcome_provider_selected: false,
             score,
             campaign_score,
             outcome: None,
@@ -2722,6 +2412,7 @@ impl ShellCaptureSession {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;
         state.frontend.native_shell_ui = self.request.native_shell_ui();
+        state.frontend.wol_capture_provider = self.request.wol_welcome_provider();
         // As the Language list applies a pick; a language no file provides
         // fails the capture instead of drawing English under its name.
         let language = self
@@ -2839,26 +2530,6 @@ impl ShellCaptureSession {
                 ) == (self.request.width, self.request.height),
                 "latency capture surface changed from the requested dimensions"
             );
-        }
-        // A native visit opened with the retail welcome (`prepare_state`);
-        // the normal online visit has none and needs no selection.
-        if let Some(visit) = state.frontend.wol.as_mut()
-            && !self.wol_welcome_provider_selected
-            && matches!(visit.page, crate::app::shell_wol::WolPage::Welcome)
-            && let Some(provider) = self.request.wol_welcome_provider()
-        {
-            visit.set_provider(provider);
-            self.wol_welcome_provider_selected = true;
-            // Normal Online entry skips native persona I/O. Only after the
-            // explicit native diagnostic selection may its existing owner
-            // prefill and reopen the welcome.
-            crate::app::shell_wol::persona::enter_wol_main(state);
-            crate::app::App::reopen_wol_welcome(state);
-            // The ordinary reducer rearms the selected page's entry before
-            // any controlled driver reads its controls. Native fixtures are
-            // confined to the capture's separately marked profile.
-            crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
-            return Ok(());
         }
         if let Some(capture) = &mut self.skirmish {
             capture.after_present(state, rendered, self.frames_seen)?;
@@ -3427,29 +3098,6 @@ fn entry_sequence_manifest(
     }
 }
 
-/// One read-only startup projection for normal gameplay and the real loader.
-/// Source membership remains the frozen launch; House IDs come only from the
-/// constructed world supplied by its owner, never a previous resident runtime.
-pub(crate) fn network_startup_receipt(
-    state: &AppState,
-    launch: &crate::skirmish_launch::SkirmishLaunchSession,
-    sim: Option<&crate::sim::world::Simulation>,
-) -> Result<serde_json::Value> {
-    Ok(serde_json::json!({
-        "match_id":crate::app::shell_wol::online_match_id(state),
-        "seed":state.match_state.session.network_start_seed(),
-        "map":launch.selected_map_file,
-        "max_ahead":state.match_state.session.network_max_ahead_frames(),
-        "local_source":launch.local_player_index,
-        "sources":launch.humans.iter().enumerate().map(|(source,human)|serde_json::json!({
-            "source":source,"name":human.name,"raw_row":human.raw_slot_index,"slot":human.slot,
-            "house":sim.and_then(|sim|crate::app::match_runtime::network_match::source_house(
-                &state.match_state.session,sim,source)),
-            "endpoint":state.match_state.session.network_endpoint(source).map(|address|address.to_string())
-        })).collect::<Vec<_>>()
-    }))
-}
-
 fn write_new_file(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
@@ -3634,7 +3282,6 @@ mod tests {
                 map: None,
                 isolation_seed: None,
                 prior_map: None,
-                setup_crash: None,
                 profile_check: false,
                 failure_prefix_output: None,
             })
@@ -3691,7 +3338,7 @@ mod tests {
     }
 
     #[test]
-    fn production_lan_broadcast_rejects_socket_or_fault_overrides() {
+    fn production_lan_broadcast_rejects_socket_overrides() {
         let output = new_output_path("lan-production-conflict");
         let mut values = valid_args(&output);
         values[1] = "lan-live-host".into();
@@ -3699,7 +3346,6 @@ mod tests {
         for extra in [
             args(&["--lan-bind", "127.0.0.1:31000"]),
             args(&["--lan-peer", "127.0.0.1:31010"]),
-            args(&["--lan-setup-crash", "guest"]),
         ] {
             let mut invalid = values.clone();
             invalid.extend(extra);
@@ -3707,7 +3353,7 @@ mod tests {
                 parse_launch_args(invalid)
                     .unwrap_err()
                     .to_string()
-                    .contains("cannot override sockets or combine with a fault")
+                    .contains("cannot override sockets")
             );
         }
         values.push("--lan-production-broadcast".into());
@@ -3815,69 +3461,6 @@ mod tests {
         );
         values[1] = "lan-live-desync-guest".into();
         assert!(parse_launch_args(values).is_ok());
-    }
-
-    #[test]
-    fn editable_lan_crash_checkpoint_requires_a_real_pair_and_owned_prefix() {
-        let output = new_output_path("lan-setup-crash");
-        let mut values = valid_args(&output);
-        values[1] = "lan-live-host".into();
-        values.extend(args(&[
-            "--lan-bind",
-            "127.0.0.1:31000",
-            "--lan-peer",
-            "127.0.0.1:31010",
-            "--lan-setup-crash",
-            "guest",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture")
-        };
-        let lan = request.live_lan.unwrap();
-        assert_eq!(lan.setup_crash, Some(LanSetupCrash::Guest));
-        assert_eq!(
-            lan.failure_prefix_output,
-            Some(PathBuf::from(format!("{}.prefix.json", output.display())))
-        );
-        values[1] = "lan-live-guest".into();
-        *values.last_mut().unwrap() = "host".into();
-        assert!(parse_launch_args(values.clone()).is_ok());
-        values[1] = "lan-battle-guest".into();
-        assert!(parse_launch_args(values.clone()).is_err());
-        values[1] = "lan-live-guest".into();
-        *values.last_mut().unwrap() = "timeout".into();
-        assert!(parse_launch_args(values).is_err());
-    }
-
-    #[test]
-    fn interrupted_map_host_checkpoint_requires_authored_host_selection() {
-        let output = new_output_path("lan-map-crash");
-        let mut values = valid_args(&output);
-        values[1] = "lan-live-host".into();
-        values.extend(args(&[
-            "--lan-bind",
-            "127.0.0.1:31000",
-            "--lan-peer",
-            "127.0.0.1:31010",
-            "--lan-setup-crash",
-            "map-host",
-        ]));
-        assert!(parse_launch_args(values.clone()).is_err());
-        values[1] = "lan-live-guest".into();
-        assert!(parse_launch_args(values.clone()).is_ok());
-        values[1] = "lan-live-host".into();
-        values.extend(args(&["--lan-map", "transfer.yrm"]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture");
-        };
-        assert_eq!(
-            request.live_lan.unwrap().setup_crash,
-            Some(LanSetupCrash::MapHost)
-        );
-        *values.last_mut().unwrap() = "RandMap.Sed".into();
-        assert!(parse_launch_args(values).is_err());
     }
 
     #[test]
@@ -4128,150 +3711,6 @@ mod tests {
         let mut values = valid_args(&output);
         values[1] = "online-live-failure-guest".into();
         values.extend(args(&["--online-account", "Peer"]));
-        assert!(parse_launch_args(values).is_err());
-    }
-
-    #[test]
-    fn network_checkpoint_requires_a_normal_pair_and_a_bounded_public_nonce() {
-        let output = new_output_path("online-network-checkpoint");
-        let mut values = valid_args(&output);
-        values[1] = "online-live-host".into();
-        values.extend(args(&[
-            "--online-account",
-            "Host",
-            "--online-simple-input",
-            "--online-frames",
-            "600",
-            "--online-network-checkpoint",
-            "0123456789abcdef0123456789abcdef",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture");
-        };
-        assert_eq!(
-            request.live_online.unwrap().network_checkpoint.as_deref(),
-            Some("0123456789abcdef0123456789abcdef")
-        );
-        let frames = values.iter().position(|value| value == "600").unwrap();
-        values[frames] = "300".into();
-        assert!(parse_launch_args(values.clone()).is_err());
-        values[frames] = "600".into();
-        values[1] = "online-live-timeout-host".into();
-        assert!(parse_launch_args(values).is_err());
-    }
-
-    #[test]
-    fn loading_cancellation_and_progress_are_explicit_normal_online_inputs() {
-        let output = new_output_path("online-loading-cancel");
-        let mut values = valid_args(&output);
-        values[1] = "online-live-host".into();
-        values.extend(args(&[
-            "--online-account",
-            "CaptureHost",
-            "--online-simple-input",
-            "--online-loading-cancel",
-            "https",
-            "--online-loading-cancel-checkpoint",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "--online-observe-loading",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture")
-        };
-        let config = request.live_online.unwrap();
-        assert!(config.observe_loading);
-        assert_eq!(
-            config.loading_cancel.unwrap().kind,
-            LoadingCancelKind::Https
-        );
-        values.extend(args(&["--online-players", "3"]));
-        assert!(parse_launch_args(values).is_err());
-        let mut wrong = valid_args(&output);
-        wrong[1] = "online-live-host".into();
-        wrong.extend(args(&[
-            "--online-account",
-            "CaptureHost",
-            "--online-simple-input",
-            "--online-loading-cancel",
-            "departure",
-        ]));
-        assert!(parse_launch_args(wrong).is_err());
-    }
-
-    #[test]
-    fn loading_host_loss_requires_the_normal_three_player_input_route() {
-        let output = new_output_path("online-loading-host-loss");
-        let mut values = valid_args(&output);
-        values[1] = "online-live-guest".into();
-        values.extend(args(&[
-            "--online-account",
-            "Guest",
-            "--online-host",
-            "Host",
-            "--online-simple-input",
-            "--online-players",
-            "3",
-            "--online-frames",
-            "1024",
-            "--online-loading-host-loss",
-            "0123456789abcdef0123456789abcdef",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture");
-        };
-        let config = request.live_online.unwrap();
-        assert_eq!(config.players, 3);
-        assert_eq!(config.loading_output, Some(output));
-        assert_eq!(
-            config.loading_host_loss.as_deref(),
-            Some("0123456789abcdef0123456789abcdef")
-        );
-        let count = values.iter().position(|value| value == "3").unwrap();
-        values[count] = "2".into();
-        assert!(parse_launch_args(values.clone()).is_err());
-        values[count] = "3".into();
-        values.extend(args(&["--online-map", "custom.map"]));
-        assert!(parse_launch_args(values).is_err());
-    }
-
-    #[test]
-    fn exit_reentry_checkpoint_uses_a_separate_public_nonce_and_normal_pair() {
-        let output = new_output_path("online-exit-checkpoint");
-        let mut values = valid_args(&output);
-        values[1] = "online-live-guest".into();
-        values.extend(args(&[
-            "--online-account",
-            "Guest",
-            "--online-host",
-            "Host",
-            "--online-simple-input",
-            "--online-exit-checkpoint",
-            "0123456789abcdef0123456789abcdef",
-        ]));
-        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
-        else {
-            panic!("capture");
-        };
-        let config = request.live_online.unwrap();
-        assert!(config.failure_prefix_output.is_none());
-        assert!(
-            config
-                .exit_prefix_output
-                .unwrap()
-                .to_string_lossy()
-                .ends_with(".exit.json")
-        );
-        assert_eq!(
-            config.exit_checkpoint.as_deref(),
-            Some("0123456789abcdef0123456789abcdef")
-        );
-        *values.last_mut().unwrap() = "short".into();
-        assert!(parse_launch_args(values.clone()).is_err());
-        *values.last_mut().unwrap() = "0123456789abcdef0123456789abcdef".into();
-        values[1] = "online-live-timeout-host".into();
         assert!(parse_launch_args(values).is_err());
     }
 

@@ -19,7 +19,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::{CellLightGrid, LightingConfig, build_cell_light_grid_from_heights};
 use crate::render::batch::{BatchRenderer, DepthAxis, InstanceBufferPool};
-use crate::render::native_z::{ZGradient, pack_z_gradient, stored_z};
+use crate::render::native_z::{ZGradient, pack_z_gradient, shp_frame_flag, stored_z};
 use crate::render::palette_light::PaletteLight;
 use crate::render::shroud_buffer::ShroudBuffer;
 use crate::render::sprite_atlas::{
@@ -100,8 +100,7 @@ impl Scene {
         // than measuring Infantry Unlimbo's subcell choice. Match that input
         // boundary through the Location owner; the complete ordinary producer
         // and its subcell admission remain covered by the lifecycle test.
-        sim.entities_mut_for_test()
-            .get_mut(body)
+        sim.entity_mut_for_test(body)
             .unwrap()
             .position
             .put_location(DriveCoord {
@@ -222,6 +221,7 @@ impl Scene {
         );
         let order = NativeDisplayOrder::from_world(&sim, None);
         let voxel_images = RefCell::new(VoxelImageCache::default());
+        let zshape_skips = std::cell::RefCell::default();
         let mut parents = Vec::new();
         build_shp_instances_from_inputs(
             &ShpInputs {
@@ -231,6 +231,7 @@ impl Scene {
                 overlay_atlas: None,
                 unit_atlas: None,
                 voxel_images: &voxel_images,
+                zshape_skips: &zshape_skips,
                 depth_tested_images: None,
                 camera: vera_camera(),
                 render_size: SIZE,
@@ -245,7 +246,7 @@ impl Scene {
                 ignore_visibility: true,
                 lighting: light,
                 house_colors: colors,
-                building_zshape: false,
+                building_zshape: None,
             },
             &mut parents,
             &order,
@@ -272,6 +273,7 @@ impl Scene {
             tactical: CLIP,
             zoom: 1.,
             axis: DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
             atlas: Some(atlas),
             detail: &detail,
             detail_level: 2,
@@ -476,7 +478,9 @@ fn retail_parachute_actual_emitter_matches_original_component_planes() {
                 if actual_position != wanted_position
                     || piece.render_z != RenderZPolicy::ReadOnly
                     || sprite.z_adjust != integer(&call["z_adjust"]) as f32
-                    || sprite.z_gradient != pack_z_gradient(ZGradient::Vertical, false)
+                    || sprite.z_gradient
+                        != pack_z_gradient(ZGradient::Vertical, false)
+                            | shp_frame_flag(raw.format & 2 != 0)
                     || sprite.palette_light
                         != PaletteLight::color_scheme([1000; 3], integer(&call["intensity"]))
                 {

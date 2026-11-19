@@ -1,4 +1,5 @@
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::{TeamAiDefinitionSource, TeamAiIniRegistry};
 use crate::sim::house_state::HouseState;
@@ -29,7 +30,11 @@ fn recruiting_team_fixture() -> (Simulation, RuleSet, u64, [u64; 2]) {
          [TaskForces]\n0=F\n[F]\n0=2,E1\n\
          [AITriggerTypes]\nA=Trigger,TT,<all>,2,4,<none>,{comparison},40,10,60,1,0,1,0,<none>,1,1,1\n"
     ));
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::with_seed(0xA11CE);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
@@ -223,7 +228,8 @@ fn production_install_resolves_both_ai_team_buffers_in_fixed_and_map_passes() {
     let scenario = IniFile::from_str(&format!(
         "[AITriggerTypes]\nB=Map,{secondary}suffix,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,{primary}suffix,1,1,1\n"
     ));
-    let registry = TeamAiIniRegistry::from_sources(&fixed, &scenario, true);
+    let registry =
+        TeamAiIniRegistry::from_sources(&fixed, &scenario, RulePolicy::stock_multiplayer());
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -310,14 +316,15 @@ fn team_lookup_ordinary_ai_recruits_and_moves_first_name() {
             .bind_native_rules_receipt(receipt, &launch, &rules)
             .unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &map.ini, true);
+        let registry =
+            TeamAiIniRegistry::from_sources(&fixed, &map.ini, RulePolicy::stock_multiplayer());
         // Use the production prefix admission for both RNG and native IDs;
         // the controlled terrain and named House are installed below.
         let (mut sim, _) = ScenarioBootstrapRng::new(0x6F0FC0)
             .into_stock_offline_staged_simulation(
                 &ScenarioDescriptor {
                     seed: 0x6F0FC0,
-                    game_mode_nonzero: true,
+                    rule_policy: crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
                     ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
                     ..Default::default()
                 },
@@ -431,8 +438,11 @@ fn production_install_keeps_fixed_and_scenario_resolution_losses_as_diagnostics(
          [TaskForces]\n0=F\n[F]\n0=1,GHOST\n\
          [AITriggerTypes]\nA=Trigger,TT,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,<none>,1,1,1\n"
     ));
-    let fixed_registry =
-        TeamAiIniRegistry::from_sources(&fixed_with_unknown, &IniFile::from_str(""), true);
+    let fixed_registry = TeamAiIniRegistry::from_sources(
+        &fixed_with_unknown,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     assert!(fixed_registry.fixed_source_is_complete());
 
     let mut fixed_sim = Simulation::new();
@@ -471,7 +481,8 @@ fn production_install_keeps_fixed_and_scenario_resolution_losses_as_diagnostics(
          [AITriggerTypes]\nA=Trigger,TT,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,<none>,1,1,1\n"
     ));
     let scenario = IniFile::from_str("[TaskForces]\n0=MAP_F\n[MAP_F]\n0=1,GHOST\n");
-    let scenario_registry = TeamAiIniRegistry::from_sources(&clean_fixed, &scenario, true);
+    let scenario_registry =
+        TeamAiIniRegistry::from_sources(&clean_fixed, &scenario, RulePolicy::stock_multiplayer());
     assert!(scenario_registry.fixed_source_is_complete());
 
     let mut scenario_sim = Simulation::new();
@@ -504,7 +515,11 @@ fn fixed_trigger_naming_an_absent_team_type_installs_without_a_team() {
     let fixed = IniFile::from_str(&format!(
         "[AITriggerTypes]\nA=Dangling,NO_SUCH_TT,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,<none>,1,1,1\n"
     ));
-    let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &fixed,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -542,7 +557,8 @@ fn production_install_diagnoses_fixed_resolution_loss_under_same_identity_map_ov
          [TaskForces]\n0=F\n[F]\n0=1,E1\n\
          [AITriggerTypes]\nA=Map repair,TT,<all>,2,4,E1,{comparison},40,10,40,1,0,1,0,<none>,1,1,1\n"
     ));
-    let registry = TeamAiIniRegistry::from_sources(&fixed, &scenario, true);
+    let registry =
+        TeamAiIniRegistry::from_sources(&fixed, &scenario, RulePolicy::stock_multiplayer());
     assert!(registry.fixed_source_is_complete());
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
@@ -592,7 +608,11 @@ fn team_fixture(
          [TaskForces]\n0=F\n[F]\n0=2,{member}\n\
          [AITriggerTypes]\nA=Trigger,TT,<all>,2,4,<none>,{comparison},40,10,60,1,0,1,0,<none>,1,1,1\n"
     ));
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::with_seed(0xA77AC);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);

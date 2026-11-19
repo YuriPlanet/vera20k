@@ -21,13 +21,7 @@ pub(in crate::sim) fn fly_to_expiry(sim: &mut Simulation, rules: &RuleSet, id: u
     for _ in 0..1000 {
         sim.visit_voxel_anim(id, rules, FrameEffects::default())
             .unwrap();
-        sim.process_pending_delete_with(
-            rules,
-            Some(rules.overlay_registry()),
-            FrameEffects::default(),
-            1,
-            sim.session().started(),
-        );
+        sim.process_pending_delete_with(rules, FrameEffects::default(), 1, sim.session().started());
         let Some(piece) = sim.voxel_anims().get(id) else {
             return impact;
         };

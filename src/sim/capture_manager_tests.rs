@@ -832,7 +832,6 @@ fn a_computer_building_guards_without_a_fate_roll() {
         yuri,
         plant,
         &rules,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     let entity = sim.substrate.entities.get(plant).unwrap();
@@ -927,7 +926,6 @@ fn native_decide_unit_fate_corpus() {
             yuri,
             unit,
             rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
 
@@ -2571,7 +2569,7 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
     sim.free_unit(controller, first, &rules, None, FrameEffects::default());
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 1);
-    sim.uninit_with_context(second, UninitContext::new(&rules, None));
+    sim.uninit_with_context(second, UninitContext::new(&rules));
     assert!(sim.capture_link_coordinates(controller, &rules).is_empty());
 }
 

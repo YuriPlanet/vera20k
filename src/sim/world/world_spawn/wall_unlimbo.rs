@@ -71,7 +71,6 @@ impl Simulation {
             super::super::object_entry::classify_object(
                 self,
                 rules,
-                Some(registry),
                 CellObjectMember::Entity(id),
                 cell,
                 InfantryEntryArgs::REPAIR,
@@ -101,7 +100,6 @@ impl Simulation {
             super::super::object_entry::classify_object(
                 self,
                 rules,
-                Some(registry),
                 CellObjectMember::Entity(id),
                 cells.lookup_world(coord.x, coord.y),
                 InfantryEntryArgs::REPAIR,
@@ -225,7 +223,7 @@ impl Simulation {
             rules,
             effects,
         );
-        let context = UninitContext::new(rules, Some(registry)).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         //44082D/440856 reread type/owner for the final0/final1 pair. No live
         //source, cached radius or567DA0 border belongs to this early arm.
         for final_pass in [false, true] {
@@ -321,7 +319,6 @@ impl Simulation {
             super::super::object_entry::classify_object(
                 self,
                 rules,
-                registry,
                 CellObjectMember::Entity(id),
                 cell,
                 InfantryEntryArgs::REPAIR,
@@ -353,10 +350,7 @@ impl Simulation {
                 })
             });
         if let Some(fence) = own_fence {
-            self.uninit_with_context(
-                fence,
-                UninitContext::new(rules, registry).with_effects(effects),
-            );
+            self.uninit_with_context(fence, UninitContext::new(rules).with_effects(effects));
         }
     }
 

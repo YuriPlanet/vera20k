@@ -688,11 +688,6 @@ impl LiveCommandSession {
         true
     }
 
-    /// Read-only reference to the immutable install-time certificate.
-    pub fn startup_agreement(&self) -> &StartupAgreement {
-        self.startup.agreement()
-    }
-
     /// A kick/cancel before release cannot elect a smaller initial set. The
     /// snapshot remains immutable even while ordinary cleanup removes sockets.
     /// A failed startup remains uncertified throughout that cleanup. A relay

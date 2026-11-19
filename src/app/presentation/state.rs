@@ -32,6 +32,9 @@ pub(crate) struct MatchPresentationState {
     /// The original voxel image caches and UseBuffer flag every voxel draw
     /// replays: which style and barrel pitch each type's stored images hold.
     pub(crate) voxel_images: std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
+    /// The skip table of the building bodies the view's left edge cuts in
+    /// this picture, and the frames it decoded for them.
+    pub(crate) zshape_skips: std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     pub(crate) tile_atlas: Option<TileAtlas>,
     /// BUILDNGZ.SHA z-shape bound at group 2 of the Z-writing building draw.
     pub(crate) building_zshape: Option<crate::render::building_zshape::BuildingZShape>,
@@ -297,8 +300,9 @@ pub(crate) struct MatchPresentationState {
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
     /// What BBB's init (4E1FE0) reads when the menu opens: the [Options]
     /// values, the speed context and whether the Game Speed row shows.
-    /// `game_speed` mirrors the launched sim; a moved Game Speed on the menu's
-    /// Game Controls page queues an authoritative transition on close.
+    /// `game_speed` mirrors the world's speed, which BBB's init reads again
+    /// (`app::input::in_game_options`); a moved Game Speed on the menu's Game
+    /// Controls page queues an authoritative transition on close.
     pub(crate) in_game_options: crate::ui::shell::in_game_options_state::InGameOptionsState,
 }
 

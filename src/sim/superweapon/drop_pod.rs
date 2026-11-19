@@ -221,14 +221,7 @@ pub(super) fn launch(
                 found.0.wrapping_add(dx as i16),
                 found.1.wrapping_add(dy as i16),
             );
-            if can_enter(
-                sim,
-                rules,
-                id,
-                neighbour,
-                EntryQueryMode::CheckLocomotor,
-                registry,
-            ) {
+            if can_enter(sim, rules, id, neighbour, EntryQueryMode::CheckLocomotor) {
                 target = neighbour;
                 break;
             }
@@ -254,9 +247,8 @@ fn can_enter(
     id: u64,
     cell: (i16, i16),
     mode: EntryQueryMode,
-    registry: Option<&OverlayTypeRegistry>,
 ) -> bool {
-    sim.mover_can_enter(id, cell, InfantryEntryArgs::REPAIR, mode, rules, registry)
+    sim.mover_can_enter(id, cell, InfantryEntryArgs::REPAIR, mode, rules)
         .is_ok_and(|code| code == 0)
 }
 
@@ -278,14 +270,7 @@ pub(crate) fn create_with_drop_pod(
 ) -> bool {
     // GetCellAt(CoordStruct), toward zero.
     let cell = ((coord.x / 256) as i16, (coord.y / 256) as i16);
-    if !can_enter(
-        sim,
-        rules,
-        id,
-        cell,
-        EntryQueryMode::SkipLocomotor,
-        registry,
-    ) {
+    if !can_enter(sim, rules, id, cell, EntryQueryMode::SkipLocomotor) {
         return false;
     }
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
@@ -650,7 +635,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        self.set_object_height(id, 0, rules, registry, effects);
+        self.set_object_height(id, 0, rules, effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -658,10 +643,7 @@ impl Simulation {
             entity,
             self.resolved_terrain.as_ref(),
         );
-        let _ = self.techno_limbo_with_context(
-            id,
-            UninitContext::new(rules, registry).with_effects(effects),
-        );
+        let _ = self.techno_limbo_with_context(id, UninitContext::new(rules).with_effects(effects));
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.end_ares_drop_pod();
         }
@@ -693,7 +675,7 @@ impl Simulation {
         }
         // Mark(DOWN) refuses the Foot the Unlimbo marked.
         let _ = self.foot_mark_put(id, rules, registry, effects);
-        self.set_object_height(id, 0, rules, registry, effects);
+        self.set_object_height(id, 0, rules, effects);
         crate::sim::world::enter_idle_mode(self, id, rules, registry, effects);
         let now = self.session.binary_frame();
         let _ = self.substrate.mission_commence_exact(id, now);

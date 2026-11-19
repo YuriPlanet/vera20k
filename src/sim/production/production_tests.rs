@@ -568,7 +568,7 @@ pub(super) fn spawn_structure(
     ge.set_in_playfield(true);
     ge.finish_building_construction_for_test();
     ge.building_art.set_actually_placed_for_test(true);
-    ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
+    *ge.tracking_facts_mut_for_test() = crate::sim::house_tracking::TrackingFacts::of(
         crate::map::entities::EntityCategory::Structure,
         rules.object(type_id),
         rules,
@@ -577,22 +577,20 @@ pub(super) fn spawn_structure(
     stamp_type_foundation(sim, rules, sid);
     // Use the lifecycle boundary so the fixture is a placed (not factory-held)
     // structure and raw-store consumers see the same Mark state as gameplay.
-    let _ = sim.mark_entity_put(sid, crate::sim::world::UninitContext::with_rules(rules));
+    let _ = sim.mark_entity_put(sid, crate::sim::world::UninitContext::new(rules));
     sim.append_house_base_building_for_test(sid);
     // Its house counts it as tracked and on the map, as CanBuild's
     // prerequisites read them.
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_object(
         &mut sim.substrate,
         &mut sim.houses,
         sid,
-        crate::sim::house_tracking::HouseTracking::add_tracking,
     );
     sim.house_added_to_game(sid, rules);
-    Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::register_factory(
         &mut sim.substrate,
         &mut sim.houses,
         sid,
-        |tracking, entity| tracking.increment_factory_count(entity),
     );
     if sim.next_stable_object_id() <= sid {
         sim.set_next_stable_object_id_for_test(sid + 1);
@@ -1008,7 +1006,7 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     );
 
     assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     let destroyer = sim
         .substrate
@@ -1129,7 +1127,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     let held = super::lifecycle_tests::held_id(&sim, americans, ProductionCategory::Ship);
     let credits = credits_for_owner(&sim, "Americans");
     assert!(
-        !super::dispatch_production_changes_for_tests(&mut sim, &rules, None),
+        !super::dispatch_production_changes_for_tests(&mut sim, &rules),
         "nonzero Unit CanEnter rejects the selected producer's one attempt"
     );
     let selected = sim.substrate.entities.get(1).unwrap();
@@ -1259,7 +1257,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     let credits = credits_for_owner(&sim, "Americans");
     let mut expected = sim.scenario_rng.clone();
     assert!(!super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     assert_eq!(
         sim.substrate.entities.get(1).unwrap().mission.queued(),
@@ -1297,7 +1295,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     *sim.production.factories_mut() = save_codec::deserialize(&bytes).unwrap();
     // Publishing alone does not invent another PLACE for an unfinished successor.
     assert!(!super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     assert_eq!(
         super::lifecycle_tests::held_id(&sim, americans, ProductionCategory::Ship),
@@ -1318,7 +1316,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
     assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     let delivered = sim.substrate.entities.get(successor).unwrap();
     assert!(delivered.lifecycle.cell_marked() && !delivered.lifecycle.in_limbo());
@@ -1378,9 +1376,7 @@ fn deliver_naval_yard_ship(sim: &mut Simulation, rules: &RuleSet) -> (u16, u16) 
             .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
-    assert!(super::dispatch_production_changes_for_tests(
-        sim, rules, None
-    ));
+    assert!(super::dispatch_production_changes_for_tests(sim, rules));
     sim.substrate
         .entities
         .values()
@@ -1456,7 +1452,7 @@ fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
 
     sim.clear_lifecycle_test_events_for_test();
     assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     let produced = sim
         .substrate
@@ -1601,7 +1597,7 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     );
 
     assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
+        &mut sim, &rules
     ));
     let produced = sim
         .substrate

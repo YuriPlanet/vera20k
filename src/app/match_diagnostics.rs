@@ -33,10 +33,11 @@ pub(crate) struct MatchDiagnosticsState {
     pub(crate) replay_log: Option<ReplayLog>,
     command_executions: Option<CommandExecutionLog>,
     actor_presentation: std::cell::RefCell<Option<ActorPresentationProbe>>,
-    loading_cancel: Option<Vec<LoadingCancelObservation>>,
     replay_playback: Option<ReplayPlaybackState>,
     replay_capture_output: Option<PathBuf>,
     replay_artifact_sha256: Option<String>,
+    /// The startup refusal the active segment already logged.
+    replay_startup_refusal: Option<String>,
 }
 
 enum ReplayPlaybackState {
@@ -176,7 +177,6 @@ struct ActorPresentationProbe {
     submitted: Option<ActorPresentation>,
 }
 pub(crate) struct CommandTimingObservation {
-    pub publisher: Option<i8>,
     pub fps: Option<u16>,
     pub frame_send_rate: Option<u8>,
     pub max_ahead: Option<i32>,
@@ -221,7 +221,6 @@ impl CommandExecutionLog {
                 .session()
                 .network_command_timing()
                 .map(|timing| CommandTimingObservation {
-                    publisher: sim.network_timing_host_house(),
                     fps: Some(timing.frames_per_second()),
                     frame_send_rate: Some(timing.frame_send_rate().get()),
                     max_ahead: sim.session().network_max_ahead_frames(),
@@ -231,15 +230,6 @@ impl CommandExecutionLog {
             mission: entity.map(|e| (e.mission.current().raw(), e.mission.queued().raw())),
         });
     }
-}
-
-#[derive(Clone, serde::Serialize)]
-pub(crate) struct LoadingCancelObservation {
-    pub event: &'static str,
-    pub match_id: Option<String>,
-    pub source: Option<usize>,
-    pub worker_owner_taken: bool,
-    pub loading_active: bool,
 }
 
 pub(crate) struct ReplayLogFlush {
@@ -477,41 +467,8 @@ impl MatchDiagnosticsState {
         Ok(())
     }
 
-    pub(crate) fn begin_loading_cancel_observation(&mut self) {
-        self.loading_cancel.get_or_insert_with(Vec::new);
-    }
-    pub(crate) fn observe_loading_cancel(
-        &mut self,
-        event: &'static str,
-        match_id: Option<String>,
-        source: Option<usize>,
-        worker_owner_taken: bool,
-        loading_active: bool,
-    ) {
-        if let Some(log) = self.loading_cancel.as_mut() {
-            if log.len() < 16 {
-                log.push(LoadingCancelObservation {
-                    event,
-                    match_id,
-                    source,
-                    worker_owner_taken,
-                    loading_active,
-                });
-            }
-        }
-    }
-    pub(crate) fn loading_cancel_observations(&self) -> Option<&[LoadingCancelObservation]> {
-        self.loading_cancel.as_deref()
-    }
-    pub(crate) fn end_loading_cancel_observation(&mut self) {
-        self.loading_cancel = None;
-    }
-
     pub(crate) fn begin_command_observation(&mut self) {
         self.command_executions = Some(CommandExecutionLog::default());
-    }
-    pub(crate) fn command_observations_mut(&mut self) -> Option<&mut CommandExecutionLog> {
-        self.command_executions.as_mut()
     }
     pub(crate) fn take_command_observations(
         &mut self,
@@ -541,6 +498,9 @@ impl MatchDiagnosticsState {
         if runtime.simulation.trainer_modified() {
             self.replay_log = None;
             return None;
+        }
+        if self.replay_log.is_none() {
+            self.replay_startup_refusal = None;
         }
         Some(self.replay_log.get_or_insert_with(|| {
             let sim = &runtime.simulation;
@@ -587,8 +547,23 @@ impl MatchDiagnosticsState {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;
                 log.startup = Some(Box::new(startup));
             }
-            Err(error) => log::warn!("This match's replay cannot be replayed: {error:#}"),
+            Err(error) => {
+                if let Some(refusal) = self.new_replay_startup_refusal(&error) {
+                    log::warn!("This match's replay cannot be replayed: {refusal}");
+                }
+            }
         }
+    }
+
+    /// A segment reports each refusal once. A network match retries startup on
+    /// every frame pass while it waits at frame zero, and gets the same answer.
+    fn new_replay_startup_refusal(&mut self, error: &anyhow::Error) -> Option<String> {
+        let refusal = format!("{error:#}");
+        if self.replay_startup_refusal.as_deref() == Some(refusal.as_str()) {
+            return None;
+        }
+        self.replay_startup_refusal = Some(refusal.clone());
+        Some(refusal)
     }
 
     /// Persist and consume the active segment. `Ok(None)` when there is no
@@ -904,6 +879,22 @@ mod tests {
             replay_log: Some(sample_log()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_segment_logs_its_replay_startup_refusal_once() {
+        let runtime = crate::sim::runtime::SimRuntime::from_simulation(
+            crate::sim::world::Simulation::with_seed(17),
+        );
+        let mut diagnostics = MatchDiagnosticsState::default();
+        diagnostics.get_or_begin_replay(&runtime).unwrap();
+        let refusal = anyhow::anyhow!("generated/legacy maps lack authored replay startup");
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_none());
+        // The next segment reports its own refusal.
+        diagnostics.replay_log = None;
+        diagnostics.get_or_begin_replay(&runtime).unwrap();
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
     }
 
     #[test]

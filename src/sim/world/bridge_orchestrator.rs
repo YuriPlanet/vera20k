@@ -84,7 +84,6 @@ pub fn apply_bridge_damage_events(
         sim,
         rules,
         events,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
 }
@@ -93,7 +92,6 @@ pub(crate) fn apply_bridge_damage_events_with_overlay_registry(
     sim: &mut Simulation,
     rules: &RuleSet,
     events: &[BridgeDamageEvent],
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     let mut collapsed = false;
@@ -101,8 +99,7 @@ pub(crate) fn apply_bridge_damage_events_with_overlay_registry(
     // the live body driver. Otherwise its immediate fallout would overtake an
     // earlier event's still-pending direct/head fallout.
     for event in events {
-        collapsed |=
-            apply_one_bridge_damage_event(sim, rules, event, overlay_registry, frame_effects);
+        collapsed |= apply_one_bridge_damage_event(sim, rules, event, frame_effects);
     }
     collapsed
 }
@@ -147,7 +144,7 @@ pub(crate) fn damage_at_waypoint(
     if sim.session.waypoint_is_valid(waypoint)
         && let Some(cell) = sim.session.waypoint_cell(waypoint)
     {
-        let mut drivers = BridgeDamageDrivers::new(sim, rules, overlay_registry, frame_effects);
+        let mut drivers = BridgeDamageDrivers::new(sim, rules, frame_effects);
         for _ in 0..4 {
             if drivers.apply_damage_to_cell(cell) {
                 break;
@@ -164,7 +161,6 @@ fn apply_one_bridge_damage_event(
     sim: &mut Simulation,
     rules: &RuleSet,
     event: &BridgeDamageEvent,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     let events = std::slice::from_ref(event);
@@ -176,14 +172,7 @@ fn apply_one_bridge_damage_event(
     };
 
     // Every driver publishes its cascade synchronously.
-    damage_dispatch::run(
-        sim,
-        events,
-        bridge_strength,
-        rules,
-        overlay_registry,
-        frame_effects,
-    )
+    damage_dispatch::run(sim, events, bridge_strength, rules, frame_effects)
 }
 
 /// Bridge-collapse dispatch from a `BridgeRepairHut` death event (C4 timer
@@ -220,7 +209,6 @@ pub(crate) fn dispatch_bridge_collapse_from_hut(
         sim,
         rules,
         hut_center,
-        None,
         crate::sim::world::FrameEffects::default(),
     )
 }
@@ -229,7 +217,6 @@ pub(crate) fn dispatch_bridge_collapse_from_hut_with_overlay_registry(
     sim: &mut Simulation,
     rules: &RuleSet,
     hut_center: (u16, u16),
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     let scan: Vec<(u16, u16)> = hut_destroy_5x5_scan(hut_center).collect();
@@ -238,7 +225,7 @@ pub(crate) fn dispatch_bridge_collapse_from_hut_with_overlay_registry(
         return false;
     }
     let seed_axis = find_destroy_overlay_seed(&|x, y| bridge_overlay_at(sim, x, y), &scan, family);
-    let mut host = BridgeDamageDrivers::new(sim, rules, overlay_registry, frame_effects);
+    let mut host = BridgeDamageDrivers::new(sim, rules, frame_effects);
     let fallback = if let Some((rx, ry, axis)) = seed_axis {
         run_hut_collapse_bounded(&mut host, family, axis, rx, ry);
         HutFallbackExecution::default()
@@ -246,7 +233,7 @@ pub(crate) fn dispatch_bridge_collapse_from_hut_with_overlay_registry(
         run_hut_fallback(&mut host, family, hut_center)
     };
     let BridgeDamageDrivers { sim, collapsed, .. } = host;
-    finish_hut_fallback(sim, rules, fallback, overlay_registry, frame_effects) || collapsed
+    finish_hut_fallback(sim, rules, fallback, frame_effects) || collapsed
 }
 
 /// Engineer WhatAction's complete Map587410 admission. Each ordinary input
@@ -357,14 +344,12 @@ fn finish_hut_fallback(
     sim: &mut Simulation,
     rules: &RuleSet,
     extra: HutFallbackExecution,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     let rim_collapsed = extra.rim_cell.is_some_and(|ramp| {
         live_publication::update_adjacent_bridges(
             sim,
             rules,
-            overlay_registry,
             ramp,
             HutBridgeFamily::High,
             frame_effects,
@@ -782,7 +767,7 @@ pub(super) fn blow_up_bridge_cell_fallout(
         sim,
         rx,
         ry,
-        super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+        super::UninitContext::new(rules).with_effects(frame_effects),
     );
     //47DDD5..47DE2B publishes after ground/deck receivers, before debris
     //draws/constructors. Direct callers also leave pending entries for save;
@@ -1120,7 +1105,6 @@ mod tests {
             id,
             -8,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             crate::sim::world::FrameEffects::default(),
         ) {
             frames += 1;
@@ -1352,7 +1336,6 @@ mod tests {
             &[event],
             bridge_strength,
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         );
 
@@ -1548,7 +1531,6 @@ mod tests {
                 simulation,
                 &resources.rules,
                 hut,
-                Some(resources.rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(

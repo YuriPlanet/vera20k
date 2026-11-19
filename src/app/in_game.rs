@@ -128,11 +128,8 @@ impl App {
         state.match_state.startup.clear();
         state.match_state.scenario_elapsed_clock.reset();
         state.audio.stop_theme();
-        // F11: leaving a match silences match audio completely. Previously
-        // only music stopped — live SFX, the voice player, and queued EVA
-        // lines survived and played over the main menu, and the SFX output
-        // scale stayed wherever the exit cascade left it (this Esc route
-        // bypasses drive_scenario_exit entirely).
+        // Leaving the scenario silences all match audio: live SFX, voices and
+        // queued EVA lines stop, and the sound master returns to full.
         if let Some(ref mut sfx) = state.audio.sfx_player {
             sfx.stop_all();
         }

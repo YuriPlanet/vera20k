@@ -880,7 +880,6 @@ fn drop_payload_matches_native() {
                 &mut sim,
                 plane,
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
         });
@@ -1040,7 +1039,6 @@ fn spawn_parachuted_matches_native() {
                 &mut sim,
                 plane,
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
         });

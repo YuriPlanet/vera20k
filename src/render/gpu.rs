@@ -34,6 +34,10 @@ mod web_present;
 /// clamped to the adapter's own maximum anyway.
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
+/// Whether this build can draw through DirectX 12, which only Windows has.
+/// Options shows its DirectX 12 box, and startup honors it, only here.
+pub(crate) const HAS_DIRECTX12: bool = cfg!(target_os = "windows");
+
 /// True on the browser's WebGL2 fallback device, which has no storage buffers,
 /// compute or reinterpreting texture views. Renderers that use those select
 /// render-target equivalents there; every other device keeps its ordinary path.
@@ -186,6 +190,9 @@ pub struct GpuContext {
     pub surface_format: wgpu::TextureFormat,
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
+    /// What the driver said when it lost the device ([`Self::device_lost`]).
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    lost: Arc<std::sync::OnceLock<String>>,
     capture_target: Option<CaptureTarget>,
     /// The GPU time of each frame, while the Performance Stats panel shows.
     pub(crate) timer: super::gpu_timer::GpuTimer,
@@ -214,7 +221,7 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
     ) -> Result<Self> {
-        Self::new_async(window, display, false).await
+        Self::new_async(window, display, false, false).await
     }
 
     /// Initialize wgpu with the given window.
@@ -223,12 +230,16 @@ impl GpuContext {
     /// winit's sync ApplicationHandler::resumed().
     /// `hidden_capture` is the startup owner's deliberate capture choice, not
     /// the current visibility/occlusion of a player's ordinary window.
+    /// `directx12` draws through DirectX 12 alone, as Options' box asks
+    /// (`persistence::directx12_start`); only [`HAS_DIRECTX12`] builds ask.
     pub fn new(
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
+        directx12: bool,
     ) -> Result<Self> {
-        block_on(Self::new_async(window, display, hidden_capture)).context(GraphicsUnavailable)
+        block_on(Self::new_async(window, display, hidden_capture, directx12))
+            .context(GraphicsUnavailable)
     }
 
     /// Async initialization — called by new() via block_on().
@@ -236,16 +247,27 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
+        directx12: bool,
     ) -> Result<Self> {
-        // The standard override selects a backend for reproducible
-        // shroud GPU comparisons while retaining primary backends by default.
-        // wgpu requires the display at instance creation for Wayland EGL:
+        // Options' DirectX 12 box asks for DirectX 12 alone: where a driver
+        // offers both, wgpu takes Vulkan, the first API it lists. wgpu's own
+        // override (`WGPU_BACKEND`) wins over either, for reproducible shroud
+        // GPU comparisons. wgpu requires the display at instance creation for
+        // Wayland EGL:
         // https://docs.rs/wgpu-types/30.0.1/wgpu_types/struct.InstanceDescriptor.html
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY.with_env(),
+            backends: if directx12 {
+                wgpu::Backends::DX12
+            } else {
+                wgpu::Backends::PRIMARY
+            }
+            .with_env(),
             ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
         });
+        // The browser has no DirectX 12, and its build never asks for it.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let _ = directx12;
         // Browsers without a usable WebGPU adapter fall back to WebGL2. A
         // surface-less probe with the adapter options used below decides
         // first: a canvas given a WebGPU context can no longer create WebGL2.
@@ -302,9 +324,11 @@ impl GpuContext {
 
         let adapter_info = adapter.get_info();
         log::info!(
-            "Using GPU adapter: {} ({:?})",
+            "Using GPU adapter: {} ({:?}, driver {} {})",
             adapter_info.name,
-            adapter_info.backend
+            adapter_info.backend,
+            adapter_info.driver,
+            adapter_info.driver_info
         );
 
         // Atlas sizing is bounded by whatever limits we *request*, not by the hardware.
@@ -352,6 +376,8 @@ impl GpuContext {
             })
             .await
             .context("Failed to create wgpu device")?;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let lost = watch_device_loss(&device);
 
         // Pick the best texture format for the surface.
         // This is usually Bgra8UnormSrgb on Windows, Bgra8Unorm on some other platforms.
@@ -470,6 +496,8 @@ impl GpuContext {
             config,
             surface_format,
             adapter_info,
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            lost,
             capture_target,
             timer,
             color_vision: super::color_vision::ColorVisionFilter::new(),
@@ -533,6 +561,22 @@ impl GpuContext {
     pub(crate) fn software_renderer(&self) -> Option<&str> {
         (self.adapter_info.device_type == wgpu::DeviceType::Cpu)
             .then_some(self.adapter_info.name.as_str())
+    }
+
+    /// What the driver said once it has lost the graphics device: it crashed,
+    /// Windows reset it after it stopped responding (TDR), or the card ran out
+    /// of memory. Nothing reaches the screen after that, while the game would
+    /// run on behind a black window. `None` while the device works.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn device_lost(&self) -> Option<&str> {
+        self.lost.get().map(String::as_str)
+    }
+
+    /// Whether the game draws with DirectX 12 (`[VERA] DirectX12=` or
+    /// `WGPU_BACKEND`).
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn draws_with_directx12(&self) -> bool {
+        self.adapter_info.backend == wgpu::Backend::Dx12
     }
 
     /// Whether the window currently owns a render surface.
@@ -725,6 +769,35 @@ impl GpuContext {
     }
 }
 
+/// Watch `device` for its loss. wgpu reports a loss once, on whichever thread
+/// met the driver's error (this one, the frame hand-off thread or a loading
+/// thread); its message is kept for [`GpuContext::device_lost`] and logged.
+/// Every resource is invalid after a loss, so the work recorded until the
+/// frame loop sees it fails validation: those errors are logged, not fatal.
+/// Before a loss an error still ends the game, as wgpu's default handler
+/// (`default_error_handler`) does.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn watch_device_loss(device: &wgpu::Device) -> Arc<std::sync::OnceLock<String>> {
+    let lost = Arc::new(std::sync::OnceLock::new());
+    let kept = Arc::clone(&lost);
+    device.set_device_lost_callback(move |reason, message| {
+        log::error!("Graphics device lost ({reason:?}): {message}");
+        let _ = kept.set(message);
+    });
+    let after_loss = Arc::clone(&lost);
+    let logged = std::sync::atomic::AtomicBool::new(false);
+    device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
+        if after_loss.get().is_none() {
+            log::error!("Handling wgpu errors as fatal by default");
+            panic!("wgpu error: {error}\n");
+        }
+        if !logged.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::warn!("Ignoring wgpu errors on the lost device, the first: {error}");
+        }
+    }));
+    lost
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SurfaceRecovery {
     Reconfigure,
@@ -833,6 +906,7 @@ mod tests {
 
     use super::{
         CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, present_settings,
+        watch_device_loss,
     };
 
     /// With VSync a picture over one refresh must not wait a whole refresh
@@ -841,6 +915,33 @@ mod tests {
     fn vsync_keeps_two_pictures_queued() {
         assert_eq!(present_settings(true), (wgpu::PresentMode::Fifo, 2));
         assert_eq!(present_settings(false), (wgpu::PresentMode::AutoNoVsync, 1));
+    }
+
+    /// A lost device reaches the frame loop, and a working one does not. The
+    /// frame recorded meanwhile, as in a player's DirectX 12 log, writes its
+    /// uploads into staging chunks made on the lost device and unmaps them:
+    /// neither may end the game first. A driver's loss can't be staged;
+    /// `destroy` loses the device through the same callback, at the next poll.
+    #[test]
+    fn a_lost_device_reaches_the_frame_loop_without_a_panic() {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
+            .expect("this test requires a wgpu adapter");
+        let (device, _queue) =
+            block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+        let lost = watch_device_loss(&device);
+        let poll = || device.poll(wgpu::PollType::wait_indefinitely());
+        poll().unwrap();
+        assert_eq!(lost.get(), None);
+        device.destroy();
+        let _ = poll();
+        assert!(lost.get().is_some());
+
+        let mut encoder = device.create_command_encoder(&Default::default());
+        let mut pool = crate::render::batch::InstanceBufferPool::new();
+        pool.record_uploads(&device, &mut encoder)
+            .upload("units", &[crate::render::batch::SpriteInstance::default()]);
+        drop(encoder.finish());
     }
 
     /// Run one acquisition over `results`, the acquire answers in call order;

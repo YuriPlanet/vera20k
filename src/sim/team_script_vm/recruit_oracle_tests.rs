@@ -111,7 +111,7 @@ fn recalc_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
     metadata.reinforce = flag(&row["reinforce"]);
     metadata.guard_slower = flag(&row["guard_slower"]);
     let team_id = vm
-        .construct_team(team_type, owner, true, 0, false, None)
+        .construct_team(team_type, owner, TeamLimitScope::PerHouse, 0, false, None)
         .unwrap();
     let team = vm.teams.get_mut(&team_id).unwrap();
     team.members = (1..=index(&row["total"]))

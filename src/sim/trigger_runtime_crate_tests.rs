@@ -316,7 +316,6 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             // this compares Overlay lifetime, not whole-frame parity.
             sim.process_pending_delete_with(
                 &rules,
-                Some(&registry),
                 FrameEffects::default(),
                 1,
                 sim.session.started(),
@@ -629,6 +628,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
             None,
             0,
             crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            None,
         )
         .unwrap();
     sim.session.game_options_mut_for_test().crates = false;

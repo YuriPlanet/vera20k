@@ -184,8 +184,7 @@ impl Simulation {
         // Ares 3.0 FlyLocomotionClass_ILocomotion_Process_HunterSeeker
         // (1004D7A0, hook 0x4CCB84) runs first; a reacquired hunter stops
         // landing.
-        let in_phase = if rules.ares()
-            && self.ares_hunter_seeker_process(id, rules, registry, frame_effects)
+        let in_phase = if rules.ares() && self.ares_hunter_seeker_process(id, rules, frame_effects)
         {
             self.substrate
                 .entities
@@ -235,7 +234,7 @@ impl Simulation {
         {
             self.complete_fly_phase(id, rules, registry, frame_effects);
         }
-        self.fly_playfield_latch(id, rules, registry, frame_effects);
+        self.fly_playfield_latch(id, rules, frame_effects);
         stats
     }
 
@@ -281,7 +280,7 @@ impl Simulation {
         {
             state.prepare_process(mission);
         }
-        if self.fly_crash_fall(id, rules, registry, frame_effects) {
+        if self.fly_crash_fall(id, rules, frame_effects) {
             return true;
         }
         // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_UpdateTarget
@@ -405,7 +404,7 @@ impl Simulation {
                 .approach(distance, object.slowdown_distance, object.pitch_angle);
         }
         if self.fly_landing_trigger(id) {
-            self.begin_fly_landing(id, rules, registry, frame_effects);
+            self.begin_fly_landing(id, rules, frame_effects);
         }
         if let Some(entity) = self.substrate.entities.get_mut(id)
             && entity.health.current() > 0
@@ -787,7 +786,7 @@ impl Simulation {
             state.slow_for_arrival(distance);
         }
         if land {
-            self.begin_fly_landing(id, rules, registry, frame_effects);
+            self.begin_fly_landing(id, rules, frame_effects);
         }
         // 0x004CF55D..0x004CF5EC: the owner test is 0x0050B6F0.
         self.deselect_over_player_shroud(id, Self::house_is_human_player);
@@ -811,13 +810,7 @@ impl Simulation {
     /// UnInits it, which announces the same expiry but removes the object at
     /// the frame's end. Trigger: the same retreat with passengers. Effect:
     /// none observed, as nothing reads a cargo passenger in between.
-    fn fly_playfield_latch(
-        &mut self,
-        id: u64,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
+    fn fly_playfield_latch(&mut self, id: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
         let Some(bounds) = self.playfield_bounds else {
             return;
         };
@@ -843,12 +836,12 @@ impl Simulation {
         if !retreat {
             return;
         }
-        let context = super::UninitContext::new(rules, registry).with_effects(frame_effects);
+        let context = super::UninitContext::new(rules).with_effects(frame_effects);
         while let Some((passenger, _)) = self
             .substrate
             .entities
             .get_mut(id)
-            .and_then(|owner| owner.cargo_mut())
+            .and_then(|owner| owner.passenger_role_mut().cargo_mut())
             .and_then(|cargo| cargo.unload_first())
         {
             if self.is_evacuation_civilian(passenger, rules) {
@@ -861,7 +854,7 @@ impl Simulation {
             // RemoveFirstPassenger leaves the passenger's own hold for its
             // teardown.
             if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
-                passenger.clear_carrier_relation();
+                passenger.passenger_role_mut().clear_carrier_relation();
             }
             self.uninit_with_context(passenger, context);
         }

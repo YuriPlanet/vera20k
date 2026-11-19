@@ -51,7 +51,7 @@ fn in_game_speed_command(
     // ApplyFromInGameDialog4E1E28..4E1E59 queues GAMESPEED in active
     // modes 1..4; campaign/skirmish store it locally.
     Some(
-        if sim.session().game_mode().command_queue_route()
+        if sim.session().execution_topology().command_queue_route()
             == crate::sim::world::CommandQueueRoute::Multiplayer
         {
             crate::sim::command::Command::LiveGameSpeed { speed }
@@ -78,17 +78,11 @@ pub(crate) fn apply_presentation_option_gates(
 }
 
 /// The GameSpeed part of `OptionsClass__ApplyFromInGameDialog @ 0x004E1DE0`:
-/// the accepted `in_game_options.game_speed` reaches the frame pacer and,
-/// in a match, the local house's speed event. The in-game menu's Game
-/// Controls page applies its slider through this too.
+/// in a match, the accepted `in_game_options.game_speed` becomes the local
+/// house's speed event, and the frame pacer reads the simulation's speed once
+/// that executes. The in-game menu's Game Controls page applies its slider
+/// through this too.
 pub(crate) fn apply_in_game_speed(state: &mut AppState) {
-    state.match_state.sim_speed_tps = crate::app::types::tps_for_game_speed(
-        state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .game_speed,
-    );
     if state.match_state.sim_runtime.is_installed() {
         let owner = crate::app::input::commands::preferred_local_owner_name(state);
         let speed = u8::try_from(

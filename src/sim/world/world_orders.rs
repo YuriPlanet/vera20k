@@ -210,14 +210,14 @@ impl Simulation {
                 if outcome.consumed {
                     self.uninit_with_context(
                         actor_id,
-                        super::UninitContext::new(rules, registry).with_effects(effects),
+                        super::UninitContext::new(rules).with_effects(effects),
                     );
                 }
                 return Ok(outcome);
             } else {
                 //5203F7..52046D: each callback finishes before the next live
                 // read. Radio+274 addresses slot zero, not the broadcast walk.
-                let context = super::UninitContext::new(rules, registry).with_effects(effects);
+                let context = super::UninitContext::new(rules).with_effects(effects);
                 self.dispatch_object_tag_event(target_id, 1, Some(actor_id), None, context);
                 crate::sim::radio::transmit_to_contact(
                     self,
@@ -281,7 +281,7 @@ impl Simulation {
             cell(destination) != cell(approach)
         };
         if reissue {
-            self.assign_destination_represented(actor_id, Some(nav), rules, registry, effects)
+            self.assign_destination_represented(actor_id, Some(nav), rules, effects)
                 .map_err(|error| format!("Thief {actor_id} destination: {error}"))?;
         }
         Ok(VehicleCaptureOutcome::default())
@@ -1051,26 +1051,31 @@ impl Simulation {
     ) -> bool {
         //50B716 loads A83D4C, the persisted native current-house input.
         //Presentation viewer binding cannot change this receiver's result.
-        Self::is_human_player_on(session, houses, owner, session.current_house())
+        Self::is_human_player_on(
+            session.native_player_identity(),
+            houses,
+            owner,
+            session.current_house(),
+        )
     }
 
     /// [`Self::is_human_player`] asked on the client whose `PlayerPtr`
     /// (`[0x00A83D4C]`, read at `0x0050B716`) is `player`: a represented
-    /// network client's own house, or the current house.
-    pub(crate) fn is_human_player_on(
-        session: &crate::sim::scenario_session::ScenarioSession,
+    /// network client's own house, or the current house. The client's radar
+    /// asks with the Houses and identity rule of the world it draws.
+    pub fn is_human_player_on(
+        identity: crate::sim::scenario_session::NativePlayerIdentity,
         houses: &crate::sim::houses::Houses,
         owner: InternedId,
         player: Option<InternedId>,
     ) -> bool {
-        // House50B6F0: nonzero session mode compares exactly to PlayerPtr;
-        // mode zero uses the two native human/control flags.
-        if session.game_mode_nonzero() {
-            player == Some(owner)
-        } else {
-            houses
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        match identity {
+            NativePlayerIdentity::PlayerPointer => player == Some(owner),
+            NativePlayerIdentity::HouseFlags => houses
                 .get(&owner)
-                .is_some_and(|h| h.is_controlled_by_human(false))
+                .is_some_and(|house| house.is_human() || house.player_control()),
         }
     }
 
@@ -1082,12 +1087,14 @@ impl Simulation {
     /// identity). Keep this distinct from `house_is_human_player`: its
     /// mode-zero branch also admits the separate `IsHuman` flag.
     pub fn house_controls_selection(&self, owner: InternedId) -> bool {
-        if self.session.game_mode_nonzero() {
-            self.house_is_human_player(owner)
-        } else {
-            self.houses
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        match self.session.native_player_identity() {
+            NativePlayerIdentity::PlayerPointer => self.house_is_human_player(owner),
+            NativePlayerIdentity::HouseFlags => self
+                .houses
                 .get(&owner)
-                .is_some_and(|house| house.player_control())
+                .is_some_and(|house| house.player_control()),
         }
     }
 
@@ -1130,7 +1137,7 @@ impl Simulation {
             .collect();
         // VERA network adaptation: the key's store is local to one client, so
         // a network game keeps it in the local player's slot, off +214.
-        let local = self.session.game_mode().is_network();
+        let local = self.session.execution_topology().is_lockstep();
         for (id, group) in changes {
             let entity = self.substrate.entities.get_mut(id).unwrap();
             if local {
@@ -1172,7 +1179,10 @@ impl Simulation {
             }
             if object.construction_yard
                 && !(self.owner_is_human(actor.owner())
-                    && self.session.game_mode_nonzero()
+                    && self
+                        .session
+                        .rule_policy()
+                        .allows_construction_yard_redeploy()
                     && self.session.game_options().mcv_redeploy
                     && actor.mind_control.controller().is_none())
             {
@@ -1821,7 +1831,7 @@ impl Simulation {
         //519B3E..519B53 raises the BUILDING attachment with this Infantry
         //as actor, before the Engineer type gate. Synchronous actions may
         //change either object; reload the Infantry after returning.
-        let context = super::UninitContext::new(rules, registry).with_effects(frame_effects);
+        let context = super::UninitContext::new(rules).with_effects(frame_effects);
         self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context);
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
@@ -1922,7 +1932,7 @@ impl Simulation {
                 self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
                 self.uninit_with_context(
                     engineer_id,
-                    super::UninitContext::new(rules, registry).with_effects(frame_effects),
+                    super::UninitContext::new(rules).with_effects(frame_effects),
                 );
                 return Ok(BuildingEntryResult {
                     bridge_state_changed: receipt.bridge_state_changed,
@@ -2029,7 +2039,7 @@ impl Simulation {
             self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
             self.uninit_with_context(
                 engineer_id,
-                super::UninitContext::new(rules, registry).with_effects(frame_effects),
+                super::UninitContext::new(rules).with_effects(frame_effects),
             );
             return Ok(BuildingEntryResult {
                 bridge_state_changed: changed,
@@ -2048,7 +2058,6 @@ impl Simulation {
         let mut changed = crate::sim::world::bridge_orchestrator::repair_from_engineer(
             self,
             rules,
-            registry,
             engineer_id,
             frame_effects,
         )
@@ -2062,13 +2071,13 @@ impl Simulation {
         })?;
         //519D17..519D36 descends Infantry's registry with +28(hut,false).
         //Clearing NavCom does not stop a retained Walk head/destination.
-        self.expire_infantry_bridge_hut_targets(building_id, rules, registry, frame_effects);
+        self.expire_infantry_bridge_hut_targets(building_id, rules, frame_effects);
         changed |= self.scatter_building_infantry(building_id, rules, registry, frame_effects)?;
         //51A025 consumption raises own Tag48 before virtual UnInit.
         self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
         self.uninit_with_context(
             engineer_id,
-            super::UninitContext::new(rules, registry).with_effects(frame_effects),
+            super::UninitContext::new(rules).with_effects(frame_effects),
         );
         Ok(BuildingEntryResult {
             bridge_state_changed: changed,
@@ -2125,13 +2134,7 @@ impl Simulation {
             true
         } else {
             action == Some(InfiltrateAction::Sabotage)
-                && self.infantry_per_cell_sabotage(
-                    infantry_id,
-                    building_id,
-                    rules,
-                    registry,
-                    frame_effects,
-                )
+                && self.infantry_per_cell_sabotage(infantry_id, building_id, rules, frame_effects)
         };
         if consumed {
             self.dispatch_object_tag_event(
@@ -2139,11 +2142,11 @@ impl Simulation {
                 48,
                 Some(infantry_id),
                 None,
-                super::UninitContext::new(rules, registry).with_effects(frame_effects),
+                super::UninitContext::new(rules).with_effects(frame_effects),
             );
             self.uninit_with_context(
                 infantry_id,
-                super::UninitContext::new(rules, registry).with_effects(frame_effects),
+                super::UninitContext::new(rules).with_effects(frame_effects),
             );
             return Ok(entered);
         }
@@ -2252,7 +2255,6 @@ impl Simulation {
                 self,
                 rules,
                 cell,
-                overlay_registry,
                 frame_effects,
             );
             if let Some(hut) = self.substrate.entities.get_mut(building_id) {

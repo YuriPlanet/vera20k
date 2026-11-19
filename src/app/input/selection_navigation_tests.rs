@@ -263,13 +263,11 @@ fn veterancy_navigation_keeps_shared_snapshot_without_pointer_expiry() {
         .type_select
         .finish_category_navigation(CategoryNavigationKind::Health, true);
     input.type_select.across_map = true;
-    sim.entities_mut_for_test()
-        .get_mut(20)
+    sim.entity_mut_for_test(20)
         .unwrap()
         .lifecycle
         .set_object_alive_for_test(false);
-    sim.entities_mut_for_test()
-        .get_mut(40)
+    sim.entity_mut_for_test(40)
         .unwrap()
         .selection
         .set_selected_for_test(false);
@@ -798,8 +796,7 @@ fn replay_category_history(
                 .category_navigation
                 .pointer_expired(step["id"].as_u64().unwrap()),
             "supply_veterancy_raw_bits" => {
-                sim.entities_mut_for_test()
-                    .get_mut(step["id"].as_u64().unwrap())
+                sim.entity_mut_for_test(step["id"].as_u64().unwrap())
                     .unwrap()
                     .veterancy
                     .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
@@ -808,8 +805,7 @@ fn replay_category_history(
             }
             "supply_actor_state" => {
                 let entity = sim
-                    .entities_mut_for_test()
-                    .get_mut(step["id"].as_u64().unwrap())
+                    .entity_mut_for_test(step["id"].as_u64().unwrap())
                     .unwrap();
                 for (field, value) in step["fields"].as_object().unwrap() {
                     match field.as_str() {
@@ -842,8 +838,7 @@ fn replay_category_history(
                 assert_eq!(step["entry"], "0x6b0b6d", "{label}: original writer");
                 assert_eq!(step["stop"], "0x6b0b98", "{label}: writer boundary");
                 let entity = sim
-                    .entities_mut_for_test()
-                    .get_mut(step["id"].as_u64().unwrap())
+                    .entity_mut_for_test(step["id"].as_u64().unwrap())
                     .unwrap();
                 entity.slave = crate::sim::slave_manager::SlaveLink::for_test(
                     None,
@@ -869,7 +864,7 @@ fn replay_category_history(
                     step,
                     &label,
                 );
-                let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+                let entity = sim.entity_mut_for_test(id).unwrap();
                 entity.lifecycle.set_object_alive_for_test(
                     step["actor_state"][id.to_string()]["alive"]
                         .as_bool()
@@ -897,8 +892,7 @@ fn replay_category_history(
                 input.follow_target = serde_json::from_value(step["follow"].clone()).unwrap();
                 input.type_select = boundary_mode(step);
                 for actor in &history.inputs.actors {
-                    sim.entities_mut_for_test()
-                        .get_mut(actor.id)
+                    sim.entity_mut_for_test(actor.id)
                         .unwrap()
                         .selection
                         .set_selected_for_test(
@@ -1076,7 +1070,7 @@ fn veterancy_navigation_samples_original_raw_rank_without_cached_rank_writes() {
     for row in &corpus.veterancy_rank_cases {
         let (mut sim, rules) = fixture(&history.inputs, &[]);
         let id = history.inputs.actors[0].id;
-        let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+        let entity = sim.entity_mut_for_test(id).unwrap();
         entity
             .veterancy
             .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
@@ -1135,7 +1129,7 @@ fn combatant_native_cleanup_boundaries_reconcile_without_resetting_map_scope() {
                     continue;
                 }
                 let boundary = &cleanup["actor_state"][actor.id.to_string()];
-                let entity = sim.entities_mut_for_test().get_mut(actor.id).unwrap();
+                let entity = sim.entity_mut_for_test(actor.id).unwrap();
                 entity
                     .lifecycle
                     .set_object_alive_for_test(boundary["alive"].as_bool().unwrap());
@@ -1253,7 +1247,7 @@ fn combatant_pending_transport_uses_selection_queue_and_keeps_native_cleanup_sco
         input.type_select = boundary_mode(&history.steps[0]["before"]);
         input.selection_order = history.selected.clone();
         input.selection_order_pending = true;
-        let actor = sim.entities_mut_for_test().get_mut(20).unwrap();
+        let actor = sim.entity_mut_for_test(20).unwrap();
         actor.lifecycle.set_in_limbo_for_test(true);
         let owner = sim.session().current_house().unwrap();
         let command = if queued_selection {

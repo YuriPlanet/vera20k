@@ -24,25 +24,33 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
-/// Mirror the authoritative speed whenever a complete Simulation replaces the
-/// app's live match, including both fresh-map handoff and in-scenario load.
+/// Mirror the authoritative speed into BBB's copy: when a complete Simulation
+/// replaces the app's live match (fresh-map handoff and in-scenario load),
+/// after a local change, and before BBB's init or the LAN host's options read
+/// it, since another player's speed event changes only the world.
 pub(crate) fn sync_in_game_options_speed_from_sim(state: &mut AppState) {
-    let Some(game_speed) = state
+    let world = state
         .match_state
         .sim_runtime
         .runtime()
-        .map(|rt| &rt.simulation)
-        .and_then(crate::sim::world::Simulation::projected_in_game_options_speed)
-        .map(u32::from)
-    else {
-        return;
-    };
-    state
-        .match_state
-        .match_presentation
-        .in_game_options
-        .game_speed = game_speed;
-    state.match_state.sim_speed_tps = crate::app::types::tps_for_game_speed(game_speed);
+        .map(|rt| &rt.simulation);
+    mirror_world_speed(
+        &mut state.match_state.match_presentation.in_game_options,
+        world,
+    );
+}
+
+/// [`sync_in_game_options_speed_from_sim`] on `options`: `world`'s speed after
+/// its next frame's speed events, when it has a selectable one.
+pub(crate) fn mirror_world_speed(
+    options: &mut crate::ui::shell::in_game_options_state::InGameOptionsState,
+    world: Option<&crate::sim::world::Simulation>,
+) {
+    if let Some(game_speed) =
+        world.and_then(crate::sim::world::Simulation::projected_in_game_options_speed)
+    {
+        options.game_speed = u32::from(game_speed);
+    }
 }
 
 pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
@@ -221,6 +229,13 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.palette_set = assets.palette_set;
     state.match_state.match_presentation.surface_palette = Default::default();
     state.match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
+    // The skip table decoded its frames from the atlas just replaced.
+    state
+        .match_state
+        .match_presentation
+        .zshape_skips
+        .get_mut()
+        .forget_frames();
     state.match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
     state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
     state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
@@ -286,14 +301,12 @@ pub(crate) fn install_world_presentation(
     if let Some(ref fnt) = assets.fnt_file
         && !state.renderer.bit_font.is_built_from(fnt)
     {
-        let mut font = crate::render::bit_font::BitFont::from_fnt(
+        state.renderer.bit_font = crate::render::bit_font::BitFont::from_fnt(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             fnt,
         );
-        font.inherit_settings(&state.renderer.bit_font);
-        state.renderer.bit_font = font;
     }
 
     // The final sidebar projection resolves incoming side/radar authority.

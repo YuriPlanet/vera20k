@@ -48,7 +48,6 @@
 //! (`ai_base_building_tests.rs` checks the retail rules).
 
 use crate::rules::object_type::ObjectType;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_base_defense::CoverageGrid;
 use crate::sim::base_plan::unpack_base_plan_cell;
@@ -146,8 +145,8 @@ pub(crate) struct SiteSearch<'a> {
     pub height: i32,
     /// `ProtectWithWall=` (`+0x1765`) or `WantsExtraSpace=` (`+0x1578`).
     pub extra_border: bool,
-    /// `GameMode` (`0x00A8B238`) is not a campaign.
-    pub game_mode_nonzero: bool,
+    /// Require a nearby reservation owned by the house placing the building.
+    pub requires_reservation_proximity: bool,
     pub key: SiteKey<'a>,
 }
 
@@ -159,7 +158,6 @@ pub(crate) fn find_base_building_site(
     owner: InternedId,
     ty: &ObjectType,
     key: SiteKey,
-    registry: Option<&OverlayTypeRegistry>,
 ) -> (i16, i16) {
     if ty.naval {
         return crate::sim::naval_base_placement::find_naval_base_placement(sim, rules, owner)
@@ -168,7 +166,7 @@ pub(crate) fn find_base_building_site(
     let Some(house) = sim.houses.get(&owner) else {
         return (0, 0);
     };
-    let mut world = SimSiteWorld::new(sim, rules, owner, ty, registry);
+    let mut world = SimSiteWorld::new(sim, rules, owner, ty);
     let perimeter: Vec<(i16, i16)> = house
         .base_reservation()
         .perimeter_cells()
@@ -204,15 +202,15 @@ pub(crate) fn find_base_building_site(
             width,
             height,
             extra_border: ty.protect_with_wall || ty.wants_extra_space,
-            game_mode_nonzero: sim.session.game_mode_nonzero(),
+            requires_reservation_proximity: sim.session.rule_policy().uses_managed_ai_base(),
             key,
         },
     )
 }
 
-/// `HouseClass @ 0x0050B760`: in a campaign always; otherwise whether a base
-/// reservation of house `owner` lies within `AIBaseSpacing=` of the foundation
-/// of `ty` at `cell`.
+/// `HouseClass @ 0x0050B760`: when the admitted rules require it, check for an
+/// `owner` reservation within `AIBaseSpacing=` of the foundation of `ty` at
+/// `cell`. Stock campaign rules accept the site without a reservation.
 pub(crate) fn reserved_near(
     sim: &Simulation,
     rules: &RuleSet,
@@ -220,10 +218,10 @@ pub(crate) fn reserved_near(
     ty: &ObjectType,
     cell: (i16, i16),
 ) -> bool {
-    if !sim.session.game_mode_nonzero() {
+    if !sim.session.rule_policy().uses_managed_ai_base() {
         return true;
     }
-    let mut world = SimSiteWorld::new(sim, rules, owner, ty, None);
+    let mut world = SimSiteWorld::new(sim, rules, owner, ty);
     let (width, height) = foundation_size(ty);
     reserved_near_in(&mut world, rules.ai_base_spacing, width, height, cell, true)
 }
@@ -310,9 +308,9 @@ pub(crate) fn reserved_near_in(
     width: i32,
     height: i32,
     cell: (i16, i16),
-    game_mode_nonzero: bool,
+    requires_reservation_proximity: bool,
 ) -> bool {
-    if !game_mode_nonzero {
+    if !requires_reservation_proximity {
         return true;
     }
     let (x, y) = (i32::from(cell.0), i32::from(cell.1));
@@ -388,7 +386,7 @@ fn site_admits(
             search.width,
             search.height,
             site,
-            search.game_mode_nonzero,
+            search.requires_reservation_proximity,
         )
 }
 
@@ -401,24 +399,16 @@ struct SimSiteWorld<'a> {
     owner: InternedId,
     house_index: Option<i32>,
     ty: &'a ObjectType,
-    registry: Option<&'a OverlayTypeRegistry>,
 }
 
 impl<'a> SimSiteWorld<'a> {
-    fn new(
-        sim: &'a Simulation,
-        rules: &'a RuleSet,
-        owner: InternedId,
-        ty: &'a ObjectType,
-        registry: Option<&'a OverlayTypeRegistry>,
-    ) -> Self {
+    fn new(sim: &'a Simulation, rules: &'a RuleSet, owner: InternedId, ty: &'a ObjectType) -> Self {
         Self {
             sim,
             rules,
             owner,
             house_index: sim.base_reservation_house_index(owner),
             ty,
-            registry,
         }
     }
 }
@@ -468,7 +458,7 @@ impl SiteWorld for SimSiteWorld<'_> {
         crate::sim::build_site::can_place_building_at(
             self.sim,
             self.rules,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             self.ty,
             site,
             Some(self.owner),

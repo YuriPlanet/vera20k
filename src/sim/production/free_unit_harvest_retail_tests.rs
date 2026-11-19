@@ -247,7 +247,6 @@ fn nonharvester_free_unit_commits_harvest_through_paid_refinery_completion() {
     let actor = sim.entities().get(tank).unwrap();
     let start = (actor.position.rx(), actor.position.ry());
     let rules = &scene.runtime.resources.rules;
-    let registry = Some(scene.runtime.resources.rules.overlay_registry());
     let destination = [(-1, 0), (0, -1), (1, 0), (0, 1)]
         .into_iter()
         .map(|(dx, dy)| {
@@ -266,14 +265,13 @@ fn nonharvester_free_unit_commits_harvest_through_paid_refinery_completion() {
                     shift: false,
                 },
                 rules,
-                registry,
             )
             .unwrap()
                 == MoveAction::Move
         })
         .expect("the real revealed map has an admitted neighbouring Move");
     let (target_rx, target_ry) = sim
-        .cell_click_destination(owner, tank, destination, false, rules, registry)
+        .cell_click_destination(owner, tank, destination, false, rules)
         .unwrap()
         .unwrap();
     assert_ne!((target_rx, target_ry), start);

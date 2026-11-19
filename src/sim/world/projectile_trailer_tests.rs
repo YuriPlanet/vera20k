@@ -241,7 +241,6 @@ fn scalable_unit_scene(shots: usize) -> Option<(Simulation, RuleSet, u64, u64)> 
         tank,
         Some(crate::sim::combat::TargetKind::Entity(target)),
         &rules,
-        None,
         super::FrameEffects::default(),
     )
     .unwrap();
@@ -325,7 +324,7 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
         );
         assert!(sim.substrate.logic.as_slice().contains(&bubble));
 
-        assert!(sim.retire_non_entity_object(bullet, super::UninitContext::with_rules(&rules)));
+        assert!(sim.retire_non_entity_object(bullet, super::UninitContext::new(&rules)));
         assert_eq!(counts(&sim), row["after_bullet_uninit"]["counts"]);
         assert_eq!(
             anim_state(&sim, sim.anim(bubble).unwrap()),
@@ -333,7 +332,6 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
         );
         sim.process_pending_delete_with(
             &rules,
-            None,
             crate::sim::world::FrameEffects::default(),
             1,
             false,
@@ -367,7 +365,6 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
             );
             sim.process_pending_delete_with(
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
                 1,
                 false,
@@ -442,7 +439,7 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
     // Persist both live, then a Bullet already UnInit but not yet drained.
     for pending in [false, true] {
         if pending {
-            assert!(sim.retire_non_entity_object(bullet, super::UninitContext::with_rules(&rules)));
+            assert!(sim.retire_non_entity_object(bullet, super::UninitContext::new(&rules)));
         }
         let mut first = restored(&sim);
         let mut second = restored(&sim);
@@ -468,14 +465,10 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
         // native-pinned independent animation history through its final drain.
         for loaded in [&mut first, &mut second] {
             if !pending {
-                assert!(
-                    loaded
-                        .retire_non_entity_object(bullet, super::UninitContext::with_rules(&rules))
-                );
+                assert!(loaded.retire_non_entity_object(bullet, super::UninitContext::new(&rules)));
             }
             loaded.process_pending_delete_with(
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
                 1,
                 false,
@@ -500,7 +493,6 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
                 );
                 loaded.process_pending_delete_with(
                     &rules,
-                    None,
                     crate::sim::world::FrameEffects::default(),
                     1,
                     false,
@@ -536,7 +528,7 @@ fn scalable_unit_target_and_direct_share_enrollment_but_failed_launch_does_not()
     assert_eq!(sim.projectiles.scalable_members(), ids);
     //70BCB0's null TarCom aim is zero, independently of Direct's target;
     // this exact supplied history previously demonstrated failed arc launch.
-    sim.assign_target_represented(tank, None, &rules, None, super::FrameEffects::default())
+    sim.assign_target_represented(tank, None, &rules, super::FrameEffects::default())
         .unwrap();
     sim.commit_fire_visit(
         crate::sim::combat::world_fire::FireVisit::Direct {
@@ -579,7 +571,7 @@ fn scalable_uninit_self_callback_removes_before_drain_and_keeps_type_override() 
             .as_i64()
             .unwrap() as i32
     );
-    assert!(sim.retire_non_entity_object(id, super::UninitContext::with_rules(&rules)));
+    assert!(sim.retire_non_entity_object(id, super::UninitContext::new(&rules)));
     assert!(
         sim.projectiles.get(id).is_some(),
         "native UnInit keeps the expiring object represented"
@@ -590,7 +582,7 @@ fn scalable_uninit_self_callback_removes_before_drain_and_keeps_type_override() 
     );
     assert_eq!(sim.projectiles.scaled_spawn_delay(type_id), 3);
     assert!(sim.substrate.pending_delete.contains_object(&id));
-    sim.process_pending_delete_with(&rules, None, super::FrameEffects::default(), 1, false);
+    sim.process_pending_delete_with(&rules, super::FrameEffects::default(), 1, false);
     assert!(sim.projectiles.get(id).is_none());
     assert_eq!(
         sim.projectiles.scalable_members().len() as u64,
@@ -630,7 +622,7 @@ fn scalable_snapshot_mechanical_state_and_native_load_have_distinct_membership()
     assert_eq!(loaded.state_hash(), control.state_hash());
     let members: Vec<_> = sim.projectiles.scalable_members().to_vec();
     for id in members {
-        assert!(sim.retire_non_entity_object(id, super::UninitContext::with_rules(&rules)));
+        assert!(sim.retire_non_entity_object(id, super::UninitContext::new(&rules)));
     }
     let mut no_members = restored(&sim);
     assert!(no_members.projectiles.scalable_members().is_empty());

@@ -400,7 +400,7 @@ impl Simulation {
                 Ok(false)
             }
             (EntityCategory::Unit, Some(source)) => {
-                self.unit_scatter_from(id, source, flags, rules, registry, frame_effects)?;
+                self.unit_scatter_from(id, source, flags, rules, frame_effects)?;
                 Ok(false)
             }
             (EntityCategory::Infantry, None) => {
@@ -419,13 +419,7 @@ impl Simulation {
             }
             (EntityCategory::Aircraft, _) => {
                 if mission_permits_scatter(entity, rules) {
-                    crate::sim::aircraft::enter_idle_mode_for(
-                        self,
-                        id,
-                        rules,
-                        registry,
-                        frame_effects,
-                    );
+                    crate::sim::aircraft::enter_idle_mode_for(self, id, rules, frame_effects);
                 }
                 Ok(false)
             }
@@ -489,7 +483,6 @@ impl Simulation {
         source: DriveCoord,
         flags: ScatterFlags,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(unit) = self.substrate.entities.get(id) else {
@@ -519,7 +512,7 @@ impl Simulation {
             OctantJitter::Unit,
             &mut self.scenario_rng,
         );
-        let Some(cell) = self.foot_scatter_neighbor(id, start, rules, registry)? else {
+        let Some(cell) = self.foot_scatter_neighbor(id, start, rules)? else {
             return Ok(());
         };
         if let Some(unit) = self.substrate.entities.get_mut(id) {

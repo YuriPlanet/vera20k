@@ -30,13 +30,6 @@ VERA20K делают игроки для игроков, и последнее �
 
 Что-то не получается? Загляни на [страницу помощи](https://vera20k.org/ru/help).
 
-Идёт активная разработка: схватки доступны на Windows, macOS и Linux, кампании работают частично, а
-мультиплеер по сети (экспериментальный) уже доступен. Прежние версии и список изменений в каждой из
-них — на [странице выпусков](https://github.com/YuriPlanet/vera20k/releases).
-
-Чтобы запускать одиночные схватки или кампании YR через клиент CnCNet, см.
-[настройку офлайн-клиента](integrations/cncnet/README.md).
-
 ## Цели проекта
 
 1. Сохранить игровой процесс, графику и атмосферу оригинальной Red Alert 2: Yuri's Revenge.
@@ -132,6 +125,7 @@ Command & Conquer и Red Alert — товарные знаки Electronic Arts I
 VERA20K не связан с Electronic Arts и не одобрен компанией.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Прочитай [юридическое уведомление](LEGAL.md), прежде чем распространять, продавать или форкать VERA20K.**

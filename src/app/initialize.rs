@@ -382,6 +382,9 @@ impl App {
         let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
             crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+            crate::render::locomotor_visual::set_high_terrain_building_lift(
+                config.graphics.high_terrain_building_lift,
+            );
         }
         let startup_files = StartupFiles {
             config_file: GameConfig::path(),
@@ -551,6 +554,21 @@ impl App {
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
+        // Options' DirectX 12 box, on Windows and for a player's own window.
+        // A start on it that never finished turns the box off instead
+        // (`persistence::directx12_start`).
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let mut options_profile = options_profile;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let directx12 = crate::render::gpu::HAS_DIRECTX12
+            && !capture
+            && !hidden_spawn_window
+            && game_config.as_ref().is_some_and(|config| {
+                crate::app::persistence::directx12_start::begin(
+                    config.paths.settings_dir(),
+                    &mut options_profile.directx12,
+                )
+            });
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
@@ -558,6 +576,7 @@ impl App {
             window.clone(),
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
+            directx12,
         )?;
         // On the processor, building the renderers and reaching the first
         // picture can take minutes, and the window stays blank until then: a
@@ -700,11 +719,10 @@ impl App {
                     .ok()
             })
         });
-        let mut bit_font = match startup_fnt.as_ref() {
+        let bit_font = match startup_fnt.as_ref() {
             Some(fnt) => BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt),
             None => BitFont::without_fnt(&gpu.device, &gpu.queue, &batch_renderer),
         };
-        bit_font.set_locale(&crate::i18n::selected_language());
         let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
             crate::app::presentation::outcome_banner::OutcomeBannerArt::build(
                 &gpu,
@@ -1066,6 +1084,7 @@ impl App {
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
                     sinking_waterlines: Default::default(),
                     voxel_images: Default::default(),
+                    zshape_skips: Default::default(),
                     building_zshape: None,
                     power_bar_anim: crate::ui::sidebar::PowerBarAnimState::new(),
                     sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState::new(
@@ -1214,14 +1233,6 @@ impl App {
                 configured_input_delay_ticks: input_delay_ticks,
                 sandbox_full_visibility: false,
                 debug_pause: false,
-                // KD-3: unify the two game-speed sources. `in_game_options.game_speed`
-                // (in the presentation owner) is the single source of truth; seed it
-                // from the skirmish-setup speed (internal 1) and derive
-                // `sim_speed_tps` from the same value, so the Options slider
-                // reflects the current pace (GS1 -> 63 tps).
-                sim_speed_tps: crate::app::types::tps_for_game_speed(
-                    crate::app::types::DEFAULT_YR_SKIRMISH_GAME_SPEED,
-                ),
             },
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,
@@ -1234,6 +1245,8 @@ impl App {
                 match_winners: None,
                 external_progress: Default::default(),
                 network_goodbye_deadline: None,
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                graphics_lost: None,
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 browser_exit_pending: false,
                 screen: GameScreen::default(),
@@ -1303,12 +1316,13 @@ impl App {
                 wol_account: Default::default(),
                 wol_test_credentials: Vec::new(),
                 native_shell_ui: false,
+                wol_capture_provider: None,
                 lan: None,
                 multiplayer_setup: None,
                 room_limits: Default::default(),
                 wol_room_name: None,
                 wol_room_unranked: false,
-                wol_room_watching: crate::ui::wol_lobby::RoomWatching::Delayed,
+                wol_room_watching: Default::default(),
                 lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
@@ -1356,6 +1370,7 @@ impl App {
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
                 terrain_picture: Default::default(),
+                native_z_seed: Default::default(),
             },
             process_assets,
             audio: startup_audio_runtime,

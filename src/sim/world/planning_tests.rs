@@ -237,7 +237,7 @@ fn stop_repair_sale_or_uninit_detaches_only_its_actor_from_shared_nodes() {
                 sim.planning_has_remaining_nodes(1),
                 "UnInit retains +514 until destruction"
             );
-            sim.process_pending_delete_with(&rules, None, Default::default(), 1, false);
+            sim.process_pending_delete_with(&rules, Default::default(), 1, false);
         } else if action == "repair_dead" || action == "sale_dead" {
             sim.substrate
                 .entities
@@ -585,7 +585,6 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
         &due,
         &rules,
         sim.session.tick() + 1,
-        None,
         crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
@@ -627,7 +626,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     let batch = [edit, commit]
         .map(|record| CommandEnvelope::new(owner, 1, Command::PlanningRecord { record }));
-    sim.apply_due_commands(&batch, &rules, 1, None, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 1, FrameEffects::default());
     sim.publish_planning_commands();
     assert_eq!(
         sim.planning.paths[&1].pending, 0,
@@ -642,7 +641,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
         Command::PlanningRecord { record: commit },
     )];
     sim.session.set_tick_for_test(1);
-    sim.apply_due_commands(&batch, &rules, 2, None, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 2, FrameEffects::default());
     sim.publish_planning_commands();
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
@@ -2033,7 +2032,7 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
         assert!(
             sim.techno_select(
                 1,
-                crate::sim::world::UninitContext::new(&rules, None).with_effects(
+                crate::sim::world::UninitContext::new(&rules).with_effects(
                     crate::sim::world::FrameEffects::default()
                         .with_local_planning(&PlanningMode)
                         .without_selection_voice()
