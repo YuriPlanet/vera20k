@@ -301,7 +301,11 @@ impl Simulation {
     /// The frame plain idle building `id` may sleep until and its owner
     /// note, or `None` to stay awake.
     fn building_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
-        if self.extension_steps_unsorted(rules) || !self.session.game_mode_nonzero() {
+        // Techno70D997 may update campaign discovery on an otherwise idle turn.
+        if self.extension_steps_unsorted(rules)
+            || self.session.uses_local_player_shroud()
+            || !self.session.rule_policy().allows_idle_object_sleep()
+        {
             return None;
         }
         let entity = self.substrate.entities.get(id)?;
@@ -437,7 +441,10 @@ impl Simulation {
     /// checked at each visit ([`Self::infantry_disturbed`]).
     fn infantry_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
         use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY};
-        if self.extension_steps_unsorted(rules) || !self.session.game_mode_nonzero() {
+        if self.extension_steps_unsorted(rules)
+            || self.session.uses_local_player_shroud()
+            || !self.session.rule_policy().allows_idle_object_sleep()
+        {
             return None;
         }
         let entity = self.substrate.entities.get(id)?;

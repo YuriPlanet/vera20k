@@ -106,7 +106,6 @@ const SKIRMISH: DiplomacyRules<'static> = DiplomacyRules {
     allies_allowed: true,
     quick_coop: false,
     local_inactive: false,
-    game_mode_nonzero: true,
     listeners: &[true; 8],
 };
 

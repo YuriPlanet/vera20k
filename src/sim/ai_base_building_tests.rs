@@ -105,6 +105,57 @@ fn computer_house(game_mode_nonzero: bool) -> (Simulation, InternedId) {
     (sim, owner)
 }
 
+#[test]
+fn base_reservation_and_ai_production_modes_are_independent() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign_rules = campaign.stock_rule_policy(None);
+    let rules = rules("");
+    let building = rules.object("PLAIN").unwrap();
+    for (mode, policy, site_admitted, production_mode) in [
+        (campaign, campaign_rules, true, 0),
+        (skirmish, skirmish.stock_rule_policy(None), false, 2),
+        (
+            campaign,
+            campaign_rules.with_requires_ai_base_reservation_proximity(true),
+            false,
+            0,
+        ),
+        (
+            campaign,
+            campaign_rules.with_uses_ai_production_modes(true),
+            true,
+            2,
+        ),
+    ] {
+        let (mut sim, owner) = computer_house(false);
+        sim.install_session_admission(mode, None, policy);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .economy_mut()
+            .set_credits_for_test(0);
+
+        assert_eq!(
+            reserved_near(&sim, &rules, owner, building, (20, 20)),
+            site_admitted,
+        );
+        economy_state_machine(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.houses,
+            &sim.power_states,
+            &rules,
+            owner,
+            true,
+        );
+        assert_eq!(sim.houses[&owner].ai_production().mode(), production_mode);
+    }
+}
+
 /// Checks the native draws (stream `Scenario+0x218`, the range) and returns
 /// the stream the port must leave: `sim`'s, advanced by those draws.
 fn expect_draws(sim: &mut Simulation, draws: &[&Value], low: i32, high: i32) -> SimRng {

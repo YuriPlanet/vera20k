@@ -1877,11 +1877,11 @@ impl Simulation {
         let Some(entity) = substrate.entities.get(stable_id) else {
             return;
         };
-        let game_mode_nonzero = session.game_mode_nonzero();
+        let policy = session.rule_policy();
         if entity.category() == EntityCategory::Structure
-            && game_mode_nonzero
+            && policy.ai_buildings_repairable_on_unlimbo()
             && houses.get(&entity.owner()).is_some_and(|house| {
-                !house.is_controlled_by_human(game_mode_nonzero) && !house.multiplay_passive()
+                !house.is_controlled_by_human(policy) && !house.multiplay_passive()
             })
             && let Some(entity) = substrate.entities.get_mut(stable_id)
         {
@@ -1907,7 +1907,7 @@ impl Simulation {
             return;
         };
         let (rx, ry) = (entity.position.rx(), entity.position.ry());
-        let lit = !self.session.game_mode_nonzero()
+        let lit = self.session.uses_local_player_shroud()
             && (entity.discovery.discovered_by_current_house()
                 || !self
                     .session
@@ -1941,7 +1941,7 @@ impl Simulation {
         if self
             .houses
             .get(&owner)
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.rule_policy()))
         {
             self.discover_techno(id, owner, context);
         }
@@ -1952,7 +1952,7 @@ impl Simulation {
     /// for its compact discovery history. Human identity is fixed before map
     /// objects are constructed; ownership changes never reclassify this order.
     fn network_discovery_view_bit(&self, viewer: InternedId) -> Option<u32> {
-        if !self.session.game_mode().is_network()
+        if !self.session.execution_topology().is_lockstep()
             || !self
                 .houses
                 .get(&viewer)
@@ -2054,7 +2054,8 @@ impl Simulation {
     /// cloaker (no retail type) finishes cloaking at once and never finishes
     /// uncloaking.
     pub(crate) fn shared_owned_by_current_house(&self, entity: &GameEntity) -> bool {
-        !self.session.game_mode().is_network() && entity.discovery.owned_by_current_house()
+        !self.session.execution_topology().is_lockstep()
+            && entity.discovery.owned_by_current_house()
     }
 
     /// Retained discovery for a specified logical map, rather than this
@@ -2063,7 +2064,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             self.network_discovery_view_bit(viewer)
                 .map_or(entity.discovery.network_other_discovery, |bit| {
                     entity.discovery.network_human_discovery & bit != 0
@@ -2082,7 +2083,7 @@ impl Simulation {
     /// only the history byte: no Tag, House dirty write, RNG, timer or detach.
     /// A mapless/current-player-less component fixture has no Map receiver.
     pub(crate) fn update_techno_discovery_from_shroud(&mut self, id: u64) {
-        if self.session.game_mode_nonzero() {
+        if !self.session.uses_local_player_shroud() {
             return;
         }
         let (Some(player), Some(terrain)) =
@@ -2131,7 +2132,7 @@ impl Simulation {
         //there is no null-Player guard. A headless owner callback therefore
         //takes the ordinary other-house arm when no local player is bound.
         let actual_current = Some(viewer) == self.session.current_house();
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         let network_view = self.network_discovery_view_bit(viewer);
         let current = if network {
             network_view.is_some()
@@ -2160,7 +2161,7 @@ impl Simulation {
         let Some(house) = self.houses.get(&viewer) else {
             return false;
         };
-        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero());
+        let controlled = house.is_controlled_by_human(self.session.rule_policy());
         let owner = entity.owner();
         // Native41A is actual-client presentation identity. The shared callback
         // sees ownership from its explicit represented map instead.
@@ -2317,7 +2318,7 @@ impl Simulation {
         let controlled = self
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         //44D632/44D664 query OWNER; shared6F4960 queries VIEWER.
         // A foreign viewer therefore does not open an AI building.
         // ScenarioInit affects the House notification writes,
@@ -2358,7 +2359,7 @@ impl Simulation {
         cell_put: Option<(u16, u16)>,
         context: UninitContext<'_>,
     ) {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             let Some(owner) = self.substrate.entities.get(id).map(|entity| entity.owner()) else {
                 return;
             };
@@ -2391,7 +2392,7 @@ impl Simulation {
             return;
         };
         if let Some(cell) = cell_put
-            && !self.session.game_mode_nonzero()
+            && self.session.uses_local_player_shroud()
         {
             let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
                 return;
@@ -2425,11 +2426,11 @@ impl Simulation {
         else {
             return;
         };
-        let game_mode_nonzero = self.session.game_mode_nonzero();
+        let policy = self.session.rule_policy();
         let Some(house) = self.houses.get_mut(&owner) else {
             return;
         };
-        if house.is_controlled_by_human(game_mode_nonzero) {
+        if house.is_controlled_by_human(policy) {
             return;
         }
         let _filled = house
@@ -3694,7 +3695,7 @@ impl Simulation {
             .is_some_and(|terrain_type| {
                 terrain.joins_logic_on_unlimbo(
                     terrain_type,
-                    self.session.game_mode(),
+                    self.session.rule_policy(),
                     rules.ares_form(),
                 )
             });
@@ -4165,7 +4166,7 @@ impl Simulation {
             .entities
             .get(stable_id)
             .and_then(|entity| houses.get(&entity.owner()))
-            .map(|house| house.is_controlled_by_human(session.game_mode_nonzero()));
+            .map(|house| house.is_controlled_by_human(session.rule_policy()));
         if human == Some(false)
             && let Some(entity) = substrate.entities.get_mut(stable_id)
         {
@@ -4412,7 +4413,7 @@ impl Simulation {
             // (headless) there is no PlayerPtr to release for, and the
             // ordinary release keeps its place before the gap removal.
             let rules = context.rules();
-            let reveal_to_all = (self.session.game_mode().is_network()
+            let reveal_to_all = (self.session.execution_topology().is_lockstep()
                 || self.session.current_house().is_some())
                 && self
                     .substrate

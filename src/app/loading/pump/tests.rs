@@ -122,7 +122,7 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
     use crate::skirmish_modes::MpModeClass;
 
     let session = test_launch_session(LaunchCountry::America);
-    let skirmish_rules = RulePolicy::stock_multiplayer().with_ares_psychic_reveal_exclusions(true);
+    let skirmish_rules = RulePolicy::stock_multiplayer();
     let install = |raw_mode| {
         let game_mode = ScenarioGameMode::from_game_mode(raw_mode);
         let startup = LoadingStartup::Replay {
@@ -155,10 +155,7 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
         );
         sim.session().rule_policy()
     };
-    assert_eq!(
-        install(0),
-        RulePolicy::stock_campaign().with_ares_psychic_reveal_exclusions(true)
-    );
+    assert_eq!(install(0), RulePolicy::stock_campaign());
     assert_eq!(install(5), skirmish_rules);
 }
 
@@ -2404,7 +2401,7 @@ fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
         Some(accepted.max_ahead_frames())
     );
     assert_eq!(
-        sim.session().game_mode().command_queue_route(),
+        sim.session().execution_topology().command_queue_route(),
         crate::sim::world::CommandQueueRoute::Multiplayer
     );
 }

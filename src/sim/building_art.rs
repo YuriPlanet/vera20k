@@ -492,7 +492,8 @@ impl Simulation {
         // renderer rebuilds from the vision owner.
         if object.reveal_to_all {
             if !captured
-                && (self.session.game_mode().is_network() || !self.house_is_human_player(owner))
+                && (self.session.execution_topology().is_lockstep()
+                    || !self.house_is_human_player(owner))
             {
                 self.reveal_sight_to_current_house(
                     id,

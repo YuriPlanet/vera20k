@@ -4,7 +4,7 @@
 use super::{FrameEffects, Simulation, TickLane, UninitContext};
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -103,7 +103,7 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
     let teams = TeamAiIniRegistry::from_sources(
         &IniFile::empty(),
         &map.ini,
-        BootstrapRuleProfile::Multiplayer,
+        RulePolicy::stock_multiplayer(),
     );
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(rules)), 3);

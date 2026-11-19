@@ -567,9 +567,10 @@ impl LoadingStartup {
     /// recorded session mode is different. Execution still follows the record.
     pub(crate) fn match_spec_for_construction(&self, profile: BootstrapRuleProfile) -> MatchSpec {
         let class = self.launch_session().map(|launch| launch.mode.class);
+        let mode = self.session_mode();
         MatchSpec {
-            topology: self.session_mode().execution_topology(),
-            rules: ScenarioGameMode::stock_rule_policy_for_bootstrap(profile, class),
+            topology: mode.execution_topology(),
+            rules: mode.stock_rule_policy_for_bootstrap(profile, class),
         }
     }
 
@@ -1052,10 +1053,7 @@ mod tests {
         assert!(crate::app::mod_additions::reach(&offline_startup));
         let offline = offline_startup.match_spec();
         assert_eq!(offline.topology(), ExecutionTopology::LocalOffline);
-        assert_eq!(
-            offline.rules(),
-            RulePolicy::stock_multiplayer().with_ares_psychic_reveal_exclusions(true)
-        );
+        assert_eq!(offline.rules(), RulePolicy::stock_multiplayer());
 
         let mut session = explicit_session();
         let replay = |game_mode| LoadingStartup::Replay {
@@ -1073,12 +1071,15 @@ mod tests {
             wol_replay.match_spec().topology(),
             ExecutionTopology::LockstepNetwork
         );
-        assert_eq!(wol_replay.match_spec().rules(), offline.rules());
+        assert_eq!(
+            wol_replay.match_spec().rules(),
+            offline.rules().with_allows_ownerless_terrain_logic(false)
+        );
 
         let mode_zero_replay = replay(SessionMode::Campaign);
         assert_eq!(
             mode_zero_replay.match_spec().rules(),
-            RulePolicy::stock_campaign().with_ares_psychic_reveal_exclusions(true)
+            RulePolicy::stock_campaign()
         );
         assert_eq!(
             mode_zero_replay.match_spec_for_construction(BootstrapRuleProfile::Multiplayer),
@@ -1100,6 +1101,10 @@ mod tests {
         assert_eq!(co_op.rules().bootstrap(), BootstrapRuleProfile::Multiplayer);
         assert!(co_op.rules().shared_allied_victory());
         assert!(co_op.rules().skips_network_score_dialog());
+        assert_eq!(
+            co_op.rules(),
+            co_op.rules().with_ares_psychic_reveal_exclusions(false)
+        );
         assert!(!crate::app::mod_additions::reach(&network));
 
         let spec = serde_json::to_value(co_op).unwrap();

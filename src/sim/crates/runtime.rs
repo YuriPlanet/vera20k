@@ -25,6 +25,7 @@
 
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::AuthoredCratePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::overlay_mark_host::RuntimeOverlayError;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -103,32 +104,36 @@ fn clear_crate_overlay_fields(sim: &mut Simulation, cell_ref: CrateMarkCellRef) 
 /// replacement generation and the selected effect. Native comparisons:
 /// `tools/spatial_oracle/crate_pickup.json` (removal-reaching rows).
 ///
-/// Multiplayer clears only the first occupied slot with this coordinate. A
+/// Stock multiplayer clears only the first occupied slot with this coordinate. A
 /// missing slot leaves even a visible crate untouched. Solo instead looks up
 /// the cell directly, without the In_Bounds diamond test, and accepts any
 /// OverlayType whose Crate flag is set; it never modifies runtime slots.
+/// A scenario that also keeps authored crates can clear an unregistered one.
 pub(super) fn remove_pickup_crate(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: &OverlayTypeRegistry,
     cell: (i16, i16),
 ) -> bool {
-    if sim.session.game_mode_nonzero() {
-        let Some(index) = sim
+    let policy = sim.session.rule_policy();
+    if policy.crates_use_runtime_slots() {
+        if let Some(index) = sim
             .crate_authority()
             .slots()
             .iter()
             .position(|slot| !slot.is_empty() && (slot.cell_x, slot.cell_y) == cell)
-        else {
+        {
+            return clear_crate_slot(
+                sim,
+                rules,
+                registry,
+                index,
+                sim.session.binary_frame() as i32,
+            );
+        }
+        if policy.crates() == AuthoredCratePolicy::Skip {
             return false;
-        };
-        return clear_crate_slot(
-            sim,
-            rules,
-            registry,
-            index,
-            sim.session.binary_frame() as i32,
-        );
+        }
     }
     let cell_ref = resolve_crate_mark_cell(sim, cell);
     let overlay_id = match &cell_ref {
@@ -203,7 +208,7 @@ pub(crate) fn tick_crate_regeneration(
     effects: FrameEffects<'_>,
 ) -> Result<CrateRegeneration, RuntimeOverlayError> {
     let mut result = CrateRegeneration::default();
-    if !sim.session.game_mode_nonzero() || !sim.session.game_options().crates {
+    if !sim.session.rule_policy().crates_use_runtime_slots() || !sim.session.game_options().crates {
         return Ok(result);
     }
     let current_frame = sim.session.binary_frame() as i32;

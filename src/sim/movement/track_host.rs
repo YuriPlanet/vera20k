@@ -1811,7 +1811,7 @@ fn harvester_idle_selection(
         && sim
             .houses
             .get(&entity.owner())
-            .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+            .is_none_or(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     let weeder = sim
         .entity_object_type(entity, rules)
         .is_some_and(|obj| !obj.harvester && obj.weeder);

@@ -600,21 +600,29 @@ pub struct AresUnitLostLine {
     pub radar_event: bool,
 }
 
-
 /// The native playback destination for a map-authored sound reference.
 #[derive(Debug, Clone)]
 pub enum TriggerSoundTarget {
     Centered,
     Eva,
-    Coordinate { coordinate: DriveCoord, flags: u32 },
-    Object { owner: u64, world: crate::sim::anim_class::AnimWorldCoord },
+    Coordinate {
+        coordinate: DriveCoord,
+        flags: u32,
+    },
+    Object {
+        owner: u64,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    },
 }
 
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
 pub enum SimSoundEvent {
-    TriggerAudio { reference: crate::rules::sound_ini::SoundReference, target: TriggerSoundTarget },
+    TriggerAudio {
+        reference: crate::rules::sound_ini::SoundReference,
+        target: TriggerSoundTarget,
+    },
     /// PlanMgr638593 accepted an editing order; audio gates the local issuer.
     PlanningNodeAdded { owner: InternedId },
     /// TAction21 Execute6DD8B0 calls VoxQueueVoice752480 with its literal
@@ -3920,7 +3928,7 @@ impl Simulation {
         class: Option<crate::skirmish_modes::MpModeClass>,
         rule_policy: crate::rules::rule_policy::RulePolicy,
     ) {
-        if mode.is_network() && !self.session.game_mode().is_network() {
+        if mode.is_network() && !self.session.execution_topology().is_lockstep() {
             // VERA network adaptation: Init_Random_Number_System52FC20 seeds
             // Scenario/Main, leaving process MapGen alone. MapGen598030 also
             // supplies bridge repair's overlay variants, so a shared match
@@ -4102,11 +4110,7 @@ impl Simulation {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn submit_object_display_for_test(
-        &mut self,
-        id: u64,
-        layer: display_layers::DisplayLayer,
-    ) {
+    pub fn submit_object_display_for_test(&mut self, id: u64, layer: display_layers::DisplayLayer) {
         Self::submit_object_display(&mut self.substrate, id, layer);
     }
 
@@ -5604,7 +5608,7 @@ impl Simulation {
         // (0x0050B716), so See writes only that map, as Display See's
         // projection does (`refresh_techno_shroud`); other modes keep one
         // shared reveal. It commits before this action returns.
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         for (stable_id, _, clients) in membership_updates {
             if network {
                 for client in clients {
@@ -6272,7 +6276,7 @@ impl Simulation {
     pub fn owner_is_human(&self, owner: InternedId) -> bool {
         self.houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()))
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()))
     }
 
     /// `BuildingClass::OnConstructionComplete`'s self-heal grant
@@ -6485,8 +6489,8 @@ impl Simulation {
         if !self.houses.contains_key(&owner) {
             return;
         }
-        let require_discovery = self.houses[&owner]
-            .building_services_require_discovery(self.session.game_mode_nonzero());
+        let require_discovery =
+            self.houses[&owner].building_services_require_discovery(self.session.rule_policy());
         #[cfg(feature = "debug-tools")]
         let debug_full_power = self.debug_flags_for(owner).infinite_power;
         let state = self.power_states.house_mut(owner);
@@ -6526,7 +6530,7 @@ impl Simulation {
         // that House's own defeat keeps its projection on, independently of
         // which human is this process's input player. Offline keeps native's
         // process-local gate. Source: original gamemd.exe4F84F1..4F8511.
-        let viewer_defeated = if self.session.game_mode().is_network() {
+        let viewer_defeated = if self.session.execution_topology().is_lockstep() {
             self.houses
                 .get(&owner)
                 .is_some_and(|house| house.is_defeated())
@@ -8036,7 +8040,7 @@ impl Simulation {
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling);
         let house = &self.houses[&owner];
         let require_discovery =
-            house.building_services_require_discovery(self.session.game_mode_nonzero());
+            house.building_services_require_discovery(self.session.rule_policy());
         for &stable_id in house.base_projection().buildings() {
             let Some(entity) = self.substrate.entities.get(stable_id) else {
                 continue;
@@ -8119,7 +8123,7 @@ impl Simulation {
     /// AI-activation block `0x004F8564..0x004F85B7`.
     fn update_house_anger_and_activation(&mut self, owner: InternedId, rules: &RuleSet) {
         let current_frame = self.session.binary_frame() as i32;
-        let game_mode_nonzero = self.session.game_mode_nonzero();
+        let policy = self.session.rule_policy();
         let iq_production = Some(rules.general.iq_production);
         let represented = self.houses.contains_key(&owner);
         if let Some((house, house_order)) = self.houses.get_mut_with_order(&owner) {
@@ -8134,7 +8138,7 @@ impl Simulation {
                 self.houses
                     .get_mut(&owner)
                     .expect("represented House remains registered during its update")
-                    .update_ai_activation(game_mode_nonzero, iq_production);
+                    .update_ai_activation(policy, iq_production);
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_house_ai_activation_order(
                     HouseAiActivationOrderTestEvent::HouseActivation(owner),

@@ -133,13 +133,10 @@ impl OreGrowthConfig {
     /// Resolve the native gates for this session.
     ///
     /// `[Basic] TiberiumGrowthEnabled` is read in every game mode. The
-    /// `TiberiumGrows`/`TiberiumSpreads` flag bits are the session's in every
-    /// game mode: the startup session forces them on when GameMode != 0
-    /// (`Full_Init @ 0x00687C23` overwrites the scenario dword with the
-    /// session dword every skirmish/multiplayer start forces to `| 0xC0`) and
-    /// takes the map `[SpecialFlags]` only in GameMode 0 (`0x006B8CA0`,
-    /// default = the pre-existing bit, which the loader fills first:
-    /// [`crate::map::basic::SpecialFlagsSection::resolve_campaign_defaults`]).
+    /// The session owns the two admitted scenario flags. Stock skirmish and
+    /// multiplayer force both on in PregameSetup (0x005E74CD), and Full_Init
+    /// copies the staged word at 0x00687C23. The campaign reader (0x006B8CA0)
+    /// takes the map overrides, with the retained bits as defaults.
     /// `[General] TiberiumGrows/TiberiumSpreads` have no gamemd reader (the
     /// only readers of those key strings are `[SpecialFlags]` I/O at
     /// `0x006B8B30`/`0x006B8CA0` and `[MultiplayerDialogSettings]` at

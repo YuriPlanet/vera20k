@@ -3147,7 +3147,7 @@ impl Simulation {
         }
         // Selection has already changed when the synchronous Tag actions run.
         // They may change ownership, remove the Tag, or retire the object.
-        if !self.session.game_mode().is_network() {
+        if !self.session.execution_topology().is_lockstep() {
             self.dispatch_object_tag_event(stable_id, 33, Some(stable_id), None, context);
         }
         true
@@ -3237,7 +3237,7 @@ impl Simulation {
         cmd: &Command,
         ares: bool,
     ) -> bool {
-        if !self.session.game_mode().is_network() {
+        if !self.session.execution_topology().is_lockstep() {
             return false;
         }
         let foreign = |id: u64| self.network_actor_foreign(command_owner, id);
@@ -3298,7 +3298,7 @@ impl Simulation {
     /// WOL game, `id` names an object that a House other than `command_owner`
     /// owns, so that sender's order for it is refused.
     pub(super) fn network_actor_foreign(&self, command_owner: &str, id: u64) -> bool {
-        self.session.game_mode().is_network()
+        self.session.execution_topology().is_lockstep()
             && self.substrate.entities.get(id).is_some()
             && !self.entity_owned_by_id(command_owner, id)
     }

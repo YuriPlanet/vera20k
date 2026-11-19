@@ -343,7 +343,7 @@ impl Simulation {
     /// loss with none of those re-adds in between (an owner toggling the
     /// charge already re-adds); case 2 needs a same-frame coincidence.
     fn gap_supercharge_deciding_client(&self) -> Option<InternedId> {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             return None;
         }
         self.session.current_house()

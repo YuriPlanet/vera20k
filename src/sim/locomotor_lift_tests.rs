@@ -6,7 +6,7 @@
 
 use super::LocomotorShotTarget;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::game_entity::GameEntity;
@@ -68,7 +68,7 @@ fn magnetron_ground_release_change_house_at_touchdown() {
         let teams = TeamAiIniRegistry::from_sources(
             &IniFile::empty(),
             &map.ini,
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         sim.initialize_trigger_definitions(&map, &teams, None, None, None);
         sim.install_authored_cell_trigger_tags(&map);
@@ -1682,7 +1682,6 @@ fn warhead_jumpjet_overrides_apply_to_the_installed_locomotor() {
     assert_eq!(inherited.height(), 500);
     assert_eq!(inherited.deviation(), 40);
     assert!(!inherited.no_wobbles());
-
 }
 
 /// The production attack path hands the fired warhead's Phobos `Jumpjet*`

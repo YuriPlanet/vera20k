@@ -189,7 +189,7 @@ impl Simulation {
     /// outgoing timeline restarts empty.
     pub(crate) fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
         self.lighting_sources = LightingSources::default();
-        let campaign = !self.session.game_mode_nonzero();
+        let uses_local_shroud = self.session.uses_local_player_shroud();
         let ids: Vec<_> = self
             .entities()
             .values()
@@ -199,7 +199,7 @@ impl Simulation {
                     && entity.lifecycle.cell_marked()
                     && !entity.death.is_dying()
                     && entity.health.current() > 0
-                    && (campaign || entity.building_art.actually_placed())
+                    && (uses_local_shroud || entity.building_art.actually_placed())
             })
             .map(|entity| entity.stable_id())
             .collect();

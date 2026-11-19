@@ -629,6 +629,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
             None,
             0,
             crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            None,
         )
         .unwrap();
     sim.session.game_options_mut_for_test().crates = false;

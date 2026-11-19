@@ -1538,9 +1538,10 @@ impl Simulation {
             target,
             // `HouseClass::IsControlledByHuman @ 0x0050B730`, the predicate
             // the mission list reads.
-            owner_human: self.houses.get(&entity.owner()).is_some_and(|house| {
-                house.is_controlled_by_human(self.session.game_mode_nonzero())
-            }),
+            owner_human: self
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy())),
         }
     }
 
@@ -1666,15 +1667,14 @@ impl Simulation {
         if entity.phobos_attach_effects().is_empty() {
             return;
         }
-        let game_mode_nonzero = self.session.game_mode_nonzero();
         let old_human = self
             .houses
             .get(&old_owner)
-            .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         let new_human = self
             .houses
             .get(&new_owner)
-            .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         let human_and_computer = old_human != new_human;
         let has_transporter = entity.passenger_role().inside_transport_id().is_some();
         let effects = rules.attach_effect_types().types();

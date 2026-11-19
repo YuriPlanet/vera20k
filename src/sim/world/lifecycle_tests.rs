@@ -8,7 +8,7 @@ use crate::map::bridge_facts::{
 use crate::map::entities::{EntityCategory, MapEntity};
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::terrain_rules::SpeedCostProfile;
 use crate::sim::anim_class::{AnimObject, AnimRuntime, AnimWorldCoord};
 use crate::sim::combat::{Health, TargetKind};
@@ -163,7 +163,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
         let registry = TeamAiIniRegistry::from_sources(
             &definitions,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         sim.install_team_ai_registry(&registry, &rules);
         let team_type = sim.interner.get("TT").unwrap();

@@ -146,8 +146,8 @@ pub(crate) struct SiteSearch<'a> {
     pub height: i32,
     /// `ProtectWithWall=` (`+0x1765`) or `WantsExtraSpace=` (`+0x1578`).
     pub extra_border: bool,
-    /// `GameMode` (`0x00A8B238`) is not a campaign.
-    pub game_mode_nonzero: bool,
+    /// Require a nearby reservation owned by the house placing the building.
+    pub requires_reservation_proximity: bool,
     pub key: SiteKey<'a>,
 }
 
@@ -204,15 +204,18 @@ pub(crate) fn find_base_building_site(
             width,
             height,
             extra_border: ty.protect_with_wall || ty.wants_extra_space,
-            game_mode_nonzero: sim.session.game_mode_nonzero(),
+            requires_reservation_proximity: sim
+                .session
+                .rule_policy()
+                .requires_ai_base_reservation_proximity(),
             key,
         },
     )
 }
 
-/// `HouseClass @ 0x0050B760`: in a campaign always; otherwise whether a base
-/// reservation of house `owner` lies within `AIBaseSpacing=` of the foundation
-/// of `ty` at `cell`.
+/// `HouseClass @ 0x0050B760`: when the admitted rules require it, check for an
+/// `owner` reservation within `AIBaseSpacing=` of the foundation of `ty` at
+/// `cell`. Stock campaign rules accept the site without a reservation.
 pub(crate) fn reserved_near(
     sim: &Simulation,
     rules: &RuleSet,
@@ -220,7 +223,11 @@ pub(crate) fn reserved_near(
     ty: &ObjectType,
     cell: (i16, i16),
 ) -> bool {
-    if !sim.session.game_mode_nonzero() {
+    if !sim
+        .session
+        .rule_policy()
+        .requires_ai_base_reservation_proximity()
+    {
         return true;
     }
     let mut world = SimSiteWorld::new(sim, rules, owner, ty, None);
@@ -310,9 +317,9 @@ pub(crate) fn reserved_near_in(
     width: i32,
     height: i32,
     cell: (i16, i16),
-    game_mode_nonzero: bool,
+    requires_reservation_proximity: bool,
 ) -> bool {
-    if !game_mode_nonzero {
+    if !requires_reservation_proximity {
         return true;
     }
     let (x, y) = (i32::from(cell.0), i32::from(cell.1));
@@ -388,7 +395,7 @@ fn site_admits(
             search.width,
             search.height,
             site,
-            search.game_mode_nonzero,
+            search.requires_reservation_proximity,
         )
 }
 

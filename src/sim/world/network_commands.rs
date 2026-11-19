@@ -125,7 +125,7 @@ impl Simulation {
     /// this allowance neither reserves mirrors nor changes either command queue.
     pub fn network_mirror_allowance(&self) -> usize {
         let synchronized = self.synchronized_network_command_count();
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             let source_house = self.local_command_source().unwrap_or(0);
             NETWORK_COMMAND_CAPACITY.saturating_sub(synchronized).min(
                 NETWORK_SOURCE_DOLIST_CAPACITY

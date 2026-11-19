@@ -194,8 +194,16 @@ fn foot_scan_for_tiberium(
     if cell_is_tiberium_land(sim, overlay_registry, own) {
         return Ok(Some(own));
     }
+    let checks_player_shroud = sim.session.uses_local_player_shroud();
     best_in_rings(sim, own, range, |sim, candidate| {
-        let Some(cell) = is_cell_harvestable(sim, rules, overlay_registry, id, candidate) else {
+        let Some(cell) = is_cell_harvestable(
+            sim,
+            rules,
+            overlay_registry,
+            id,
+            candidate,
+            checks_player_shroud,
+        ) else {
             return Ok(None);
         };
         Ok(Some((
@@ -386,6 +394,7 @@ fn is_cell_harvestable(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     candidate: (i32, i32),
+    checks_player_shroud: bool,
 ) -> Option<(u16, u16)> {
     let terrain = sim.resolved_terrain.as_ref();
     if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
@@ -399,7 +408,7 @@ fn is_cell_harvestable(
     // owner byte query the current client's shroud. The caller constructs
     // its packed candidate's centre, samples Map578080's floor (no bridge
     // rise), then calls Map586360 before even asking for the source zone.
-    if !sim.session.game_mode_nonzero()
+    if checks_player_shroud
         && sim
             .substrate
             .entities

@@ -5,7 +5,7 @@ use super::*;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::object_type::ObjectType;
 use crate::rules::retail_ini_fixture;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::components::NavigationState;
@@ -104,7 +104,7 @@ fn original_team_avoid_threats_defaults_survive_production_fixed_map_reads() {
         // both keep the current field; the production parser owns omission.
         let map = IniFile::from_str(&map_text);
         let registry =
-            TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Multiplayer);
+            TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_multiplayer());
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
         assert!(diagnostics.is_empty(), "{row}: {diagnostics:?}");
@@ -172,7 +172,7 @@ fn retail_hills_battle_mtnk_and_all_stock_team_overrides_match_original_readers(
     let registry = TeamAiIniRegistry::from_sources(
         &aimd,
         &IniFile::from_str(""),
-        BootstrapRuleProfile::Multiplayer,
+        RulePolicy::stock_multiplayer(),
     );
     let mut interner = StringInterner::new();
     let (vm, diagnostics) =

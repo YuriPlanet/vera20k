@@ -84,6 +84,43 @@ fn use_storage_refinery_fills_its_house_storage_in_order() {
     assert_eq!(stored(&sim, cash), 0);
 }
 
+#[test]
+fn ai_refinery_payment_uses_the_admitted_storage_policy() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules();
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish_policy = skirmish.stock_rule_policy(None);
+    for (mode, policy, expected) in [
+        (campaign, campaign.stock_rule_policy(None), (4, false)),
+        (skirmish, skirmish_policy, (0, true)),
+        // The multiplayer purifier bonus remains a separate cash payment.
+        (
+            skirmish,
+            skirmish_policy.with_ares_ai_stores_tiberium(true),
+            (4, true),
+        ),
+    ] {
+        let (mut sim, owner, refinery, _) = scene(&rules, 0);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_human_for_test(false);
+        sim.install_session_admission(mode, None, policy);
+
+        deposit(&mut sim, &rules, refinery, 4);
+        assert_eq!(
+            (
+                stored(&sim, refinery),
+                sim.houses[&owner].economy().credits() > 0,
+            ),
+            expected
+        );
+    }
+}
+
 /// Spending past the balance drains stored units one at a time, 25 each,
 /// from the first building; the last unit's excess becomes the balance.
 #[test]

@@ -265,7 +265,7 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
         || sim
             .houses
             .get(&entity.owner())
-            .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()))
+            .is_none_or(|house| house.is_controlled_by_human(sim.session.rule_policy()))
         || (frame as i32).wrapping_sub(entity.mission.mission_start_frame() as i32) <= 300
         || crate::sim::movement::motion_query::is_moving(entity) != Some(false)
     {
@@ -338,7 +338,7 @@ pub(super) fn process_miner(
             .is_some_and(|object| {
                 object.dock.is_empty()
                     && !sim.houses.get(&snap.owner).is_some_and(|house| {
-                        house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                        house.is_controlled_by_human(sim.session.rule_policy())
                     })
             })
     } else {
@@ -1379,11 +1379,9 @@ pub(crate) fn counts_as_purifier(
 /// houses. Both terms are sourced from the refinery's owner — credit
 /// destination is a separate concern.
 ///
-/// Native (`0x0073E3D5..0x0073E408`) adds the virtual term only when the
-/// owner's `House+0x1EC` (is-human) is clear AND `[0x00A8B238]` (Session
-/// GameMode, the global `HouseClass::IsControlledByHuman @ 0x0050B730` also
-/// reads) is nonzero: never in the campaign
-/// (tools/spatial_oracle/refinery_dock.json `unload_gate_ai_*` rows).
+/// Native (`0x0073E3D5..0x0073E408`) reads the refinery owner's raw
+/// `House+0x1EC` human byte. The stock campaign disables the virtual bonus
+/// and skirmish enables it.
 pub(crate) fn effective_purifier_count(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1396,7 +1394,7 @@ pub(crate) fn effective_purifier_count(
     else {
         return real;
     };
-    if house.is_human() || !sim.session.game_mode_nonzero() {
+    if house.is_human() || !sim.session.rule_policy().allows_ai_virtual_purifiers() {
         return real;
     }
     let table = rules.general.ai_virtual_purifiers;

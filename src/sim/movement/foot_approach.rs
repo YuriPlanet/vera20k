@@ -563,7 +563,7 @@ impl Simulation {
         let human = self
             .houses
             .get(&actor.owner())
-            .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()));
+            .is_none_or(|h| h.is_controlled_by_human(self.session.rule_policy()));
         // Ares 3.0 FootClass_ApproachTarget_Passive (1005C9F0, hook
         // 0x4D5782): a passively acquired Target (`+0x50C`) is not chased
         // either.

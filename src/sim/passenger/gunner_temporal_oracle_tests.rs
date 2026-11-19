@@ -344,7 +344,8 @@ fn prepare_case(rules: &RuleSet, row: &Value) -> (Simulation, Actors) {
             HouseDifficulty::from_native(signed(&house["difficulty"])).unwrap(),
             &rules.general,
             rules.country_difficulty_biases(country),
-            signed(&house["mode"]) != 0,
+            crate::sim::scenario_session::ScenarioGameMode::from_game_mode(signed(&house["mode"]))
+                .stock_rule_policy(None),
             index as i32,
             frame,
         );

@@ -757,8 +757,11 @@ impl Simulation {
             // player, as HasOccurred53 does. No retail map gives a human one.
             let owner = Self::scenario_house_named(&self.houses, &map_ent.owner)?;
             if map_ent.category == EntityCategory::Structure
-                && self.session.game_mode_nonzero()
-                && !self.session.game_mode().is_network()
+                && self
+                    .session
+                    .rule_policy()
+                    .skips_local_player_authored_buildings()
+                && !self.session.execution_topology().is_lockstep()
                 && self.session.current_house() == Some(owner)
             {
                 return None;
@@ -1161,7 +1164,7 @@ impl Simulation {
                     entity.category() == EntityCategory::Structure
                         && !entity.building_up()
                         && sim.houses.get(&entity.owner()).is_some_and(|house| {
-                            house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                            house.is_controlled_by_human(sim.session.rule_policy())
                         })
                 }) {
                     sim.grand_opening(
@@ -2391,14 +2394,7 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
     ) {
-        let Some((
-            category,
-            veterancy,
-            in_playfield,
-            type_ref,
-            stealth_ability,
-            attached_cloak,
-        )) =
+        let Some((category, veterancy, in_playfield, type_ref, stealth_ability, attached_cloak)) =
             substrate.entities.get(stable_id).map(|entity| {
                 (
                     entity.category(),
@@ -2733,10 +2729,11 @@ impl Simulation {
         // calls `FUN_00505180 @ 0x00505180` only for a non-controlled
         // ConstructionYard in a nonzero game mode. VERA preflights only the
         // directly indexed Recalc vectors before the destructive MCV removal.
+        let policy = self.session.rule_policy();
         let recalc_context = self.houses.get(&owner_id).and_then(|house| {
             (is_construction_yard
-                && self.session.game_mode_nonzero()
-                && !house.is_controlled_by_human(true))
+                && policy.recalculates_ai_base_after_mcv_deploy()
+                && !house.is_controlled_by_human(policy))
             .then(|| {
                 let country_name = house
                     .country()
@@ -2914,10 +2911,10 @@ impl Simulation {
         if let Some(building) = self.substrate.entities.get_mut(new_sid) {
             building.veterancy.inherit(&veterancy);
         }
-        // 0x007397E4..0x007397F4: a building deployed for a house other than
-        // the local player's (`IsHumanPlayer`, here whether a human controls
-        // it) is AI-repairable (`+0x6CB`; its AI-rebuildable `+0x6CA` has no
-        // building reader).
+        // UnitClass::Deploy 0x007397E4..0x007397F4 calls House50B6F0 before
+        // granting the repairable byte (+0x6CB). VERA uses the shared human
+        // classification so the retained byte is the same on every peer.
+        // The accompanying rebuildable byte (+0x6CA) has no building reader.
         if !self.owner_is_human(owner_id)
             && let Some(building) = self.substrate.entities.get_mut(new_sid)
         {

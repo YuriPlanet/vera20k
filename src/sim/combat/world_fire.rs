@@ -1235,6 +1235,13 @@ fn reveal_on_fire(
     let context = crate::sim::world::UninitContext::new(rules, None);
     let config = world.sight_reveal_config(rules);
     let heights = world.sight_height_grid(&config);
+    // FireAt6FDE73..6FDF5A / 6FF66C..6FF73D may read PlayerPtr's
+    // discovery byte. It cannot supply shared input to lockstep.
+    let uses_local_discovery = !world.session.execution_topology().is_lockstep()
+        && world
+            .session
+            .rule_policy()
+            .fire_disclosure_uses_local_discovery();
     for &house in viewers {
         let Some(firer) = world.substrate.entities.get(firer_id) else {
             return;
@@ -1246,7 +1253,7 @@ fn reveal_on_fire(
             world.resolved_terrain.as_ref(),
         );
         let owned = firer.owner() == house;
-        let discovered = world.session.game_mode_nonzero()
+        let discovered = !uses_local_discovery
             || (world.session.current_house() == Some(house)
                 && firer.discovery.discovered_by_current_house());
         if owned || discovered {
@@ -3243,8 +3250,10 @@ mod house_firepower_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod reveal_on_fire_tests {
     use super::*;
+    use crate::rules::rule_policy::RulePolicy;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
+    use crate::sim::scenario_session::ScenarioGameMode;
 
     /// A computer Soviet tank at (10, 10) shooting a human American tank at
     /// (12, 10), in a multiplayer game.
@@ -3426,7 +3435,7 @@ mod reveal_on_fire_tests {
     }
 
     #[test]
-    fn no_reveal_for_a_computer_victim_or_a_mapped_firer_cell() {
+    fn no_reveal_for_a_computer_victim_or_cell_target() {
         let (mut sim, rules) = world();
         reveal_on_fire(
             &mut sim,
@@ -3439,23 +3448,6 @@ mod reveal_on_fire_tests {
         assert!(!revealed(&sim, "Soviet", 12, 10), "a computer victim");
 
         let (mut sim, rules) = world();
-        let americans = sim.interner.get("Americans").unwrap();
-        crate::sim::vision::reveal_radius(&mut sim.fog, americans, 10, 10, 1);
-        assert!(!revealed(&sim, "Americans", 10, 12));
-        reveal_on_fire(
-            &mut sim,
-            &rules,
-            1,
-            TargetKind::Entity(2),
-            true,
-            FireDisclosurePath::Shot,
-        );
-        assert!(
-            !revealed(&sim, "Americans", 10, 12),
-            "the firer's own cell is already mapped: IsShrouded is false"
-        );
-
-        let (mut sim, rules) = world();
         reveal_on_fire(
             &mut sim,
             &rules,
@@ -3465,6 +3457,42 @@ mod reveal_on_fire_tests {
             FireDisclosurePath::Shot,
         );
         assert!(!revealed(&sim, "Americans", 10, 10), "a cell target");
+    }
+
+    #[test]
+    fn a_mapped_but_undiscovered_firer_reveals_its_surroundings_under_local_discovery_policy() {
+        let local_discovery =
+            RulePolicy::stock_multiplayer().with_fire_disclosure_uses_local_discovery(true);
+        for (mode, policy, reveals) in [
+            (
+                ScenarioGameMode::Campaign,
+                RulePolicy::stock_campaign(),
+                true,
+            ),
+            (
+                ScenarioGameMode::Skirmish,
+                RulePolicy::stock_multiplayer(),
+                false,
+            ),
+            (ScenarioGameMode::Skirmish, local_discovery, true),
+            (ScenarioGameMode::Lan, local_discovery, false),
+        ] {
+            let (mut sim, rules) = world();
+            let viewer = sim.interner.get("Americans").unwrap();
+            sim.session.install_admission(mode, None, policy);
+            sim.session.set_current_house_for_test(Some(viewer));
+            crate::sim::vision::reveal_radius(&mut sim.fog, viewer, 10, 10, 1);
+            assert!(!revealed(&sim, "Americans", 10, 12));
+            reveal_on_fire(
+                &mut sim,
+                &rules,
+                1,
+                TargetKind::Entity(2),
+                true,
+                FireDisclosurePath::Shot,
+            );
+            assert_eq!(revealed(&sim, "Americans", 10, 12), reveals, "{mode:?}");
+        }
     }
 
     #[test]

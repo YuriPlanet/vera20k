@@ -1,7 +1,7 @@
 use super::super::*;
 use super::*;
 use crate::rules::retail_ini_fixture::{retail_battle_rules_for_map, retail_ini};
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::components::NavTargetRef;
 use crate::sim::mission::{MissionId, MissionType};
@@ -36,7 +36,7 @@ fn retail_guard_retreat(ramp: bool) {
     let registry = TeamAiIniRegistry::from_sources(
         &aimd,
         &crate::rules::ini_parser::IniFile::from_str(""),
-        BootstrapRuleProfile::Multiplayer,
+        RulePolicy::stock_multiplayer(),
     );
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1302);
     let owner = sim.interner.intern("Americans");

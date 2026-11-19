@@ -282,11 +282,11 @@ impl Simulation {
             Some(cursor) => (cursor.index, cursor.generated, Some(cursor.kind)),
             None => (0, Vec::new(), None),
         };
-        // 0x004F8E86..0x004F8EB7: not a campaign, past frame zero.
-        let defeat_gate = defeat_pass
-            && self.session.game_mode_nonzero()
-            && (self.session.binary_frame() as i32) > 0;
         let outcome_policy = self.session.rule_policy();
+        // HouseClass::Update 0x004F8E86..0x004F8EB7 gates defeat past frame zero.
+        let defeat_gate = defeat_pass
+            && outcome_policy.automatic_house_defeat()
+            && (self.session.binary_frame() as i32) > 0;
         // Logic55B68D reloads the live House count after each complete body.
         // A House's power/radar and activation must precede its own teams,
         // EVA, defeat and production; no global half-body sweeps intervene.
@@ -402,8 +402,8 @@ impl Simulation {
             return;
         }
         let house = &self.houses[&owner];
-        let local = if !self.session.game_mode_nonzero() {
-            house.is_controlled_by_human(false)
+        let local = if self.outcomes_follow_player_control() {
+            house.is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
         } else {
             self.session.current_house() == Some(owner)
         };
@@ -418,11 +418,19 @@ impl Simulation {
         self.session.admit_outcome(routed);
     }
 
+    /// The PlayerControl route and its input lock at 0x00684240 apply
+    /// to local outcomes. Lockstep announcements follow the current viewpoint.
+    fn outcomes_follow_player_control(&self) -> bool {
+        self.session.rule_policy().outcomes_follow_player_control()
+            && !self.session.execution_topology().is_lockstep()
+    }
+
     /// Native House4F8685/4F87A5 compares PlayerPtr before choosing this
     /// process's result. Canonical remote network results never choose its
     /// app route or restart its local Vox timer. Offline routing is unchanged.
     fn handles_house_outcome_locally(&self, owner: InternedId) -> bool {
-        !self.session.game_mode().is_network() || self.session.current_house() == Some(owner)
+        !self.session.execution_topology().is_lockstep()
+            || self.session.current_house() == Some(owner)
     }
 
     /// MPlayer_Defeated4FC680/4FC6AC and TAction6DDD77/6DEA37 target
@@ -430,12 +438,12 @@ impl Simulation {
     /// viewpoints in one lockstep world, through the same House flags and
     /// shared +298 timer; nonhuman House behavior is not broadened.
     fn outcome_viewpoints(&self) -> Vec<InternedId> {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             self.houses
                 .order()
                 .iter()
                 .copied()
-                .filter(|owner| self.houses[owner].is_controlled_by_human(true))
+                .filter(|owner| self.houses[owner].is_human())
                 .collect()
         } else {
             self.session
@@ -553,7 +561,7 @@ impl Simulation {
         // the defeated human's own plane/radar on all network peers while
         // local planning/input above remains tied to the actual client.
         // Source: original gamemd.exe4FC1B0..4FC328.
-        let represented_view = if self.session.game_mode().is_network() {
+        let represented_view = if self.session.execution_topology().is_lockstep() {
             self.houses
                 .get(&owner)
                 .is_some_and(|house| house.is_human())
@@ -607,7 +615,7 @@ impl Simulation {
     /// (MPlayer_Defeated4FC3DE..6B7) flags to win, for the online lobby's
     /// ladder; `None` while the match runs.
     pub fn network_match_winners(&self) -> Option<Vec<InternedId>> {
-        if !self.session.game_mode().is_network() {
+        if !self.session.execution_topology().is_lockstep() {
             return None;
         }
         let decision = self.multiplayer_decision()?;
@@ -623,7 +631,7 @@ impl Simulation {
     /// starts while two or more AI play: no House is a human's but an
     /// observer's. gamemd's rooms never start one.
     pub(crate) fn network_ai_alone(&self) -> bool {
-        self.session.game_mode().is_network()
+        self.session.execution_topology().is_lockstep()
             && !self.houses.order().iter().any(|owner| {
                 !self.session.is_observer_house(*owner)
                     && self.houses.get(owner).is_some_and(|house| house.is_human())
@@ -647,9 +655,7 @@ impl Simulation {
             .collect();
         let living_humans = alive
             .iter()
-            .filter(|owner| {
-                self.houses[owner].is_controlled_by_human(self.session.game_mode_nonzero())
-            })
+            .filter(|owner| self.houses[owner].is_controlled_by_human(self.session.rule_policy()))
             .count();
         let all_allied = alive.iter().all(|left| {
             alive.iter().all(|right| {
@@ -677,7 +683,7 @@ impl Simulation {
             && self
                 .houses
                 .values()
-                .any(|house| !house.is_defeated() && house.is_controlled_by_human(true));
+                .any(|house| !house.is_defeated() && house.is_human());
         Some(
             self.outcome_viewpoints()
                 .into_iter()
@@ -697,7 +703,7 @@ impl Simulation {
             crate::rules::ruleset::native_minutes_to_frames(rules.general.savour_delay_minutes);
         // Native applies this for any GameMode other than 0 or 5 (4FCA5C..6C).
         // Only LAN/WOL admit a MaxAhead; the other raw modes are unreachable.
-        if !self.session.game_mode().is_network() {
+        if !self.session.execution_topology().is_lockstep() {
             return duration;
         }
         let frame = self.session.binary_frame() as i32;
@@ -779,18 +785,19 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let campaign = !self.session.game_mode_nonzero();
-        let announce = if campaign {
-            self.houses
-                .get(&owner)
-                .is_some_and(|house| house.is_controlled_by_human(false))
+        let follow_player_control = self.outcomes_follow_player_control();
+        let announce = if follow_player_control {
+            self.houses.get(&owner).is_some_and(|house| {
+                house
+                    .is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+            })
         } else {
             self.session.current_house() == Some(owner)
         };
         if !announce {
             return;
         }
-        if campaign {
+        if follow_player_control {
             let was_locked = self.session.lock_input();
             self.publish_trigger_effects(vec![
                 crate::sim::trigger_runtime::TriggerEffect::InputLockChanged {
@@ -995,7 +1002,11 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        if !self.session.game_mode_nonzero() {
+        if !self
+            .session
+            .rule_policy()
+            .ares_returns_defeated_structures()
+        {
             return false;
         }
         let Some(entity) = self.substrate.entities.get(id) else {

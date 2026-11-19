@@ -263,6 +263,39 @@ fn captured_building_sale_matches_original_joined_owner_transitions() {
 }
 
 #[test]
+fn ai_capture_sale_uses_admitted_rules_on_the_owner_transition() {
+    let row = corpus()["joined_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "ai_capture")
+        .unwrap();
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign_rules = campaign.stock_rule_policy(None);
+    let campaign_with_sale = campaign_rules.with_allows_ai_sale_after_capture(true);
+    for (mode, policy, player_control, expect_sale) in [
+        (campaign, campaign_rules, false, false),
+        (skirmish, skirmish.stock_rule_policy(None), true, true),
+        (campaign, campaign_with_sale, false, true),
+        (campaign, campaign_with_sale, true, false),
+    ] {
+        let (mut sim, rules, new_owner) = scene(row);
+        sim.install_session_admission(mode, None, policy);
+        sim.houses
+            .get_mut(&new_owner)
+            .unwrap()
+            .set_player_control_for_test(player_control);
+        sim.change_owner_with_rules(BUILDING, new_owner, &rules, None, FrameEffects::default());
+        let building = sim.entities().get(BUILDING).unwrap();
+        assert_eq!(
+            building.mission.current().known() == Some(MissionType::Selling),
+            expect_sale,
+        );
+    }
+}
+
+#[test]
 fn captured_building_sale_matches_original_tail_gates_and_upgrade_refunds() {
     let rows = corpus()["tail_cases"].as_array().unwrap();
     assert!(!rows.is_empty());

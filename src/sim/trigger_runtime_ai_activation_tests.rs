@@ -1,6 +1,6 @@
 //! Trigger controls through the shared House activation and ordinary team owners.
 use super::*;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::house_state::HouseAiActivationLatches;
 use crate::util::save_codec;
 
@@ -31,7 +31,7 @@ fn team_lookup_fixed_ai_uses_final_map_names_and_dependencies() {
     ))
     .unwrap();
     let registry =
-        TeamAiIniRegistry::from_sources(&fixed, &map.ini, BootstrapRuleProfile::Multiplayer);
+        TeamAiIniRegistry::from_sources(&fixed, &map.ini, RulePolicy::stock_multiplayer());
     for prepared in [false, true] {
         let mut sim = Simulation::new();
         sim.intern_rule_type_ids(&rules);
@@ -624,8 +624,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
     let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams =
-        TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, BootstrapRuleProfile::Campaign);
+    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, RulePolicy::stock_campaign());
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(31);
@@ -1113,10 +1112,10 @@ fn house_trigger_retail_base_plan_gate_and_anchor_survive_production_snapshot_re
     );
     // The existing early House update consumes the latch even at low IQ;
     // TAction30 itself does not co-enable its three sibling activation bytes.
-    sim.houses
-        .get_mut(&owner)
-        .unwrap()
-        .update_ai_activation(false, i32::MAX);
+    sim.houses.get_mut(&owner).unwrap().update_ai_activation(
+        crate::rules::rule_policy::RulePolicy::stock_campaign(),
+        i32::MAX,
+    );
     assert!(sim.houses[&owner].ai_activation().production);
     assert!(sim.houses[&owner].ai_activation().autocreate_allowed);
     assert!(!sim.houses[&owner].ai_activation().ai_triggers_active);

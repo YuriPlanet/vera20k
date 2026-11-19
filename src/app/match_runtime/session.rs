@@ -5635,7 +5635,11 @@ mod tests {
             (SessionMode::Wol, CommandQueueRoute::Multiplayer),
             (SessionMode::Other, CommandQueueRoute::SinglePlayer),
         ] {
-            assert_eq!(mode.command_queue_route(), route, "{mode:?}");
+            assert_eq!(
+                mode.execution_topology().command_queue_route(),
+                route,
+                "{mode:?}"
+            );
         }
     }
 

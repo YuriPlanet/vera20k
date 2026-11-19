@@ -47,8 +47,10 @@ use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
+use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::production::find_factory;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::superweapon::{super_nearly_ready, super_types_with_type};
 use crate::sim::team_script_vm::{
     TeamAiTriggerDefinition, TeamAiTriggerOwner, TeamMemberTypeIdentity, TeamTypeDefinition,
@@ -133,18 +135,18 @@ pub(crate) fn update_team_creation(
     frame_effects: FrameEffects<'_>,
 ) {
     let frame = sim.session.binary_frame() as i32;
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
     if !house.team_creation().timer.expired(frame)
-        || house.is_controlled_by_human(game_mode_nonzero)
+        || house.is_controlled_by_human(sim.session.rule_policy())
         || house.multiplay_passive()
         || house.command_driven()
     {
         return;
     }
-    let team_types = select_team_types(sim, rules, owner, frame_effects);
+    let admission = AiTriggerAdmission::resolve(&sim.session, house);
+    let team_types = select_team_types(sim, rules, owner, admission, frame_effects);
     for team_type in team_types {
         sim.create_team(team_type, Some(owner), rules);
     }
@@ -190,6 +192,7 @@ fn select_team_types(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
+    admission: AiTriggerAdmission,
     frame_effects: FrameEffects<'_>,
 ) -> Vec<InternedId> {
     select_team_types_with(
@@ -197,7 +200,7 @@ fn select_team_types(
         rules,
         owner,
         |sim, trigger, enemy, defense_full| {
-            is_eligible(sim, rules, trigger, owner, enemy, defense_full)
+            is_eligible(sim, rules, trigger, owner, enemy, defense_full, admission)
         },
         |sim, low, high| sim.scenario_rng.next_range_i32_inclusive(low, high),
         frame_effects,
@@ -404,6 +407,33 @@ fn side_admits(trigger_side: i32, house_side: i32, ares: bool) -> bool {
     }
 }
 
+#[derive(Clone, Copy)]
+struct AiTriggerAdmission {
+    require_multiplayer_flag: bool,
+    difficulty: usize,
+    allow_recruits_without_factory: bool,
+}
+
+impl AiTriggerAdmission {
+    fn resolve(session: &ScenarioSession, house: &HouseState) -> Self {
+        let policy = session.rule_policy();
+        // AITriggerTypeClass::Is_Eligible @ 0x0041E7D7..0x0041E84A
+        // selects House+184 (hardest first) or Scenario+60C (easiest first).
+        let difficulty = if policy.ai_trigger_uses_house_difficulty() {
+            2 - house.difficulty().table_index()
+        } else {
+            session
+                .campaign_house_difficulties()
+                .map_or(1, |(player, _)| player.table_index())
+        };
+        Self {
+            require_multiplayer_flag: policy.ai_triggers_require_multiplayer_flag(),
+            difficulty,
+            allow_recruits_without_factory: policy.team_admits_recruits_without_factory(),
+        }
+    }
+}
+
 fn is_eligible(
     sim: &Simulation,
     rules: &RuleSet,
@@ -411,6 +441,7 @@ fn is_eligible(
     owner: InternedId,
     enemy: Option<InternedId>,
     defense_full: bool,
+    admission: AiTriggerAdmission,
 ) -> bool {
     let vm = &sim.team_script_vm;
     let Some(house) = sim.houses.get(&owner) else {
@@ -442,20 +473,10 @@ fn is_eligible(
     if !trigger.enabled {
         return false;
     }
-    // gamemd.exe, AITriggerTypeClass::Is_Eligible @ 0x0041E720:
-    // 41E7D7..41E84A selects House+184 (hardest first) in multiplayer,
-    // Scenario+60C (easiest first) in a campaign, before the owner gate.
-    let difficulty = if sim.session.game_mode_nonzero() {
-        if !trigger.multiplayer {
-            return false;
-        }
-        2 - house.difficulty().table_index()
-    } else {
-        sim.session
-            .campaign_house_difficulties()
-            .map_or(1, |(player, _)| player.table_index())
-    };
-    if !trigger.difficulty_enabled[difficulty] {
+    // AITriggerTypeClass::Is_Eligible @ 0x0041E7D7..0x0041E84A.
+    if (admission.require_multiplayer_flag && !trigger.multiplayer)
+        || !trigger.difficulty_enabled[admission.difficulty]
+    {
         return false;
     }
     match trigger.owner {
@@ -482,9 +503,15 @@ fn is_eligible(
     team_types
         .clone()
         .all(|tt| zones_admit(sim, tt, owner, enemy))
-        && team_types
-            .clone()
-            .all(|tt| factories_admit(sim, rules, tt, owner))
+        && team_types.clone().all(|tt| {
+            factories_admit(
+                sim,
+                rules,
+                tt,
+                owner,
+                admission.allow_recruits_without_factory,
+            )
+        })
         && team_types
             .clone()
             .all(|tt| !vm.at_max_teams(tt.id, owner, TeamLimitScope::PerHouse))
@@ -679,6 +706,7 @@ fn factories_admit(
     rules: &RuleSet,
     team_type: &TeamTypeDefinition,
     owner: InternedId,
+    allow_recruits_without_factory: bool,
 ) -> bool {
     let Some(task_force) = sim.team_script_vm.task_force_of(team_type.id) else {
         return false;
@@ -711,7 +739,7 @@ fn factories_admit(
         if factory {
             return true;
         }
-        if sim.session.game_mode_nonzero() {
+        if !allow_recruits_without_factory {
             return false;
         }
         (0..sim.substrate.entities.foot_registry_len())

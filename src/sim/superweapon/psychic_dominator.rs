@@ -403,11 +403,10 @@ fn mind_control_area(
         }
     }
 
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let human = sim
         .houses
         .get(&owner)
-        .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+        .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     if !human {
         let frame = sim.session.binary_frame();
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
@@ -812,11 +811,10 @@ fn ares_fire(
             minions.push(id);
         }
     }
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let human = sim
         .houses
         .get(&owner)
-        .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+        .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     if !human {
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
         for id in minions {

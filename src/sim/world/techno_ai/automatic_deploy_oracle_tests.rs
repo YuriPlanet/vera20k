@@ -241,7 +241,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
             HouseDifficulty::Normal,
             &rules.general,
             Default::default(),
-            true,
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
             0,
             0,
         );

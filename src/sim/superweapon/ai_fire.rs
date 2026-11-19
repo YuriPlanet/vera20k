@@ -174,7 +174,7 @@ pub(crate) fn try_fire(
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let human = house.is_controlled_by_human(sim.session.rule_policy());
     if !ares && human {
         return;
     }

@@ -46,6 +46,7 @@ use crate::rules::powerups::{
     POWERUP_ARMOR, POWERUP_COUNT, POWERUP_FIREPOWER, POWERUP_HEAL_BASE, POWERUP_MONEY,
     POWERUP_REVEAL, POWERUP_SPEED, POWERUP_SQUAD, POWERUP_UNIT, POWERUP_VETERAN,
 };
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::components::{DriveCoord, Position};
@@ -100,7 +101,7 @@ pub(super) fn select_pickup_outcome(
     registry: &OverlayTypeRegistry,
     overlay_id: Option<u8>,
     stored_selection: u8,
-    multiplayer: bool,
+    policy: RulePolicy,
 ) -> PickupSelection {
     let mut powerup = usize::from(stored_selection);
     if powerup >= POWERUP_COUNT {
@@ -123,7 +124,7 @@ pub(super) fn select_pickup_outcome(
             .unwrap_or(POWERUP_COUNT);
     }
     let mut solo_money = 0;
-    if !multiplayer && stored_selection == 0 {
+    if policy.crates_use_authored_default_payload() && stored_selection == 0 {
         let crate_rules = &rules.crate_rules;
         solo_money = crate_rules.solo_crate_money;
         for (image, selection) in [
@@ -391,8 +392,8 @@ pub(crate) fn pickup_crate(
     if !flags.crate_type {
         return true;
     }
-    let multiplayer = sim.session.game_mode_nonzero();
-    if multiplayer
+    let policy = sim.session.rule_policy();
+    if !policy.crates_allow_passive_collectors()
         && sim
             .houses
             .get(&owner)
@@ -440,11 +441,11 @@ pub(crate) fn pickup_crate(
         registry,
         overlay_id,
         stored_selection,
-        multiplayer,
+        policy,
     );
     let mut powerup = selection.powerup;
     let mut preempted = false;
-    if multiplayer {
+    if policy.crates_validate_pickup_payload() {
         if mcv_preempt(sim, rules, owner) {
             powerup = POWERUP_UNIT;
             preempted = true;
@@ -456,7 +457,7 @@ pub(crate) fn pickup_crate(
     }
     // `0x00481D86`: removal, then the replacement crate.
     let _ = remove_pickup_crate(sim, rules, registry, cell);
-    if multiplayer && sim.session.game_options().crates {
+    if policy.crates_use_runtime_slots() && sim.session.game_options().crates {
         if let Err(error) = place_one_random_crate(
             sim,
             rules,
@@ -545,13 +546,15 @@ pub(crate) fn pickup_crate(
                 // PickupCrate4824A7..4824D4: every Money dispatch pays
                 // PlayerPtr in mode0 when IsHumanPlayer50B6F0 admits the
                 // collector, including the random and Unit-fallback routes.
-                // Mode 0 is the campaign alone, so no network peer asks.
-                let recipient =
-                    if !sim.session.game_mode_nonzero() && sim.house_is_human_player(owner) {
-                        sim.session.current_house()
-                    } else {
-                        Some(owner)
-                    };
+                // Lockstep never reads the process-local PlayerPtr for payment.
+                let recipient = if policy.crates_pay_local_player()
+                    && !sim.session.execution_topology().is_lockstep()
+                    && sim.house_is_human_player(owner)
+                {
+                    sim.session.current_house()
+                } else {
+                    Some(owner)
+                };
                 if let Some(recipient) = recipient {
                     crate::sim::credit_income::add_credits(&mut sim.houses, recipient, amount);
                 }
@@ -857,7 +860,11 @@ mod tests {
                 registry,
                 registry.id_for_name("WOOD"),
                 input["selection"].as_u64().unwrap_or(10) as u8,
-                input["mode"].as_i64() != Some(0),
+                if input["mode"].as_i64() == Some(0) {
+                    RulePolicy::stock_campaign()
+                } else {
+                    RulePolicy::stock_multiplayer()
+                },
             );
             assert_eq!(
                 serde_json::json!([[selection.powerup, selection.solo_money]]),

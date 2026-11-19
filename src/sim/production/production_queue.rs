@@ -1100,9 +1100,10 @@ impl ExitProducer {
         let object = sim.entity_object_type(producer, rules);
         Some(Self {
             house,
-            computer: sim.houses.get(&house).is_some_and(|house| {
-                !house.is_controlled_by_human(sim.session.game_mode_nonzero())
-            }),
+            computer: sim
+                .houses
+                .get(&house)
+                .is_some_and(|house| !house.is_controlled_by_human(sim.session.rule_policy())),
             // Ares 3.0 BuildingClass_KickOutUnit_ArmoryExitBug 10014100
             // (hook 0x00444D26) tests `Hospital= || Armory=` here, so an
             // Armory's trainee also takes the post.

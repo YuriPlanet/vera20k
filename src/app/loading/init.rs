@@ -1596,7 +1596,6 @@ fn prepare_scenario_rules(
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
     rule_policy: RulePolicy,
 ) -> Result<PreparedScenarioRules> {
-    let bootstrap_rule_profile = rule_policy.bootstrap();
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
         let (loaded, (ai, rules_at_read)) = owner
             .load_scenario_with_post_map(prefix, map_ini, tmcj4f, |rules_at_read| {
@@ -1604,7 +1603,7 @@ fn prepare_scenario_rules(
                     crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
                         assets,
                         map_ini,
-                        bootstrap_rule_profile,
+                        rule_policy,
                     ),
                     rules_at_read,
                 )
@@ -1615,12 +1614,9 @@ fn prepare_scenario_rules(
         let loaded = owner
             .load_scenario(prefix, map_ini)
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
-        let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
-            assets,
-            map_ini,
-            bootstrap_rule_profile,
-        )
-        .map_err(anyhow::Error::msg)?;
+        let ai =
+            crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(assets, map_ini, rule_policy)
+                .map_err(anyhow::Error::msg)?;
         (loaded, ai, None)
     };
     Ok(PreparedScenarioRules {
@@ -2207,6 +2203,7 @@ impl MapLoadInitial {
                 .expect("map Size produces a fresh cell array");
         let scenario_cell_extent = native_start_bounds.min_rx + native_start_bounds.width;
         let lighting_profiles = lighting::parse_lighting_profiles(&map_data.ini);
+        let rule_policy = RulePolicy::stock_multiplayer();
         let scenario_descriptor = crate::sim::scenario_session::ScenarioDescriptor {
             seed: match_seed,
             map_name: match_launch_descriptor
@@ -2216,7 +2213,7 @@ impl MapLoadInitial {
                 .or_else(|| map_data.basic.name.clone())
                 .unwrap_or_default(),
             theater: map_data.header.theater.clone(),
-            rule_policy: RulePolicy::stock_multiplayer(),
+            rule_policy,
             no_damage: false,
             // Same nonzero-mode replacement as the match load: the launch
             // session's Harvester Truce byte, not the map's key.
@@ -2232,8 +2229,8 @@ impl MapLoadInitial {
             vein_growth_enabled: map_data.basic.vein_growth_enabled,
             // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
             // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-            tiberium_grows_flag: true,
-            tiberium_spreads_flag: true,
+            tiberium_grows_flag: rule_policy.force_tiberium_flags(),
+            tiberium_spreads_flag: rule_policy.force_tiberium_flags(),
             // Native Resize constructs a square cell-array extent of SizeW+SizeH.
             map_width: scenario_cell_extent,
             map_height: scenario_cell_extent,
@@ -2415,6 +2412,7 @@ impl MapLoadInitial {
             &map_data,
             &rules,
             &house_roster,
+            rule_policy,
             Some(&match_launch_descriptor),
         )
         .expect("generated scenario post-map initialization");
@@ -3327,7 +3325,7 @@ fn load_map_first_step(
                         rule_policy,
                         // Campaign/editor reads `[SpecialFlags] Inert=`. Nonzero game modes
                         // replace active SpecialFlags from session staging.
-                        no_damage: bootstrap_rule_profile == BootstrapRuleProfile::Campaign
+                        no_damage: rule_policy.honors_authored_inert()
                             && map_data.special_flags.inert.unwrap_or(false),
                         // Scenario bit 0x800: campaign reads the map's `[SpecialFlags]
                         // HarvesterImmune=`; a nonzero game mode replaces the map's flags
@@ -3336,7 +3334,7 @@ fn load_map_first_step(
                         // (`0x00A8B31D`) in the bit (`0x005E7495..0x005E74D4`). The skirmish
                         // lobby never sets the truce (`0x006AD89D` clears it), so every
                         // skirmish leaves the bit off.
-                        harvester_immune: if bootstrap_rule_profile.uses_multiplayer_rules() {
+                        harvester_immune: if rule_policy.uses_session_harvester_truce() {
                             skirmish_launch_session
                                 .is_some_and(|launch| launch.options.harvester_truce)
                         } else {
@@ -3356,9 +3354,9 @@ fn load_map_first_step(
                         vein_growth_enabled: map_data.basic.vein_growth_enabled,
                         // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
                         // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-                        tiberium_grows_flag: bootstrap_rule_profile.uses_multiplayer_rules()
+                        tiberium_grows_flag: rule_policy.force_tiberium_flags()
                             || map_data.special_flags.tiberium_grows.unwrap_or(false),
-                        tiberium_spreads_flag: bootstrap_rule_profile.uses_multiplayer_rules()
+                        tiberium_spreads_flag: rule_policy.force_tiberium_flags()
                             || map_data.special_flags.tiberium_spreads.unwrap_or(true),
                         // Native Resize constructs a square cell-array extent of SizeW+SizeH.
                         map_width: scenario_cell_extent,
@@ -3995,6 +3993,7 @@ fn load_map_first_step(
             &map_data,
             rules_for_post_map,
             &house_roster,
+            rule_policy,
             match_launch_descriptor.as_ref(),
         )?;
                                                                             if !output.navigation_published {

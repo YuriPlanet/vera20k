@@ -17,7 +17,7 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::retail_ini_fixture::retail_rules_and_art;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
@@ -38,7 +38,7 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
          [ScriptTypes]\n0=S\n[S]\n0=5,0\n[TaskForces]\n0=F\n",
     );
     let registry =
-        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, BootstrapRuleProfile::Campaign);
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, RulePolicy::stock_campaign());
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("LastPlayer");
     sim.session
@@ -113,7 +113,7 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(&map),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
         let mut interner = crate::sim::intern::StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -170,11 +170,8 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
     let map = IniFile::from_bytes(&map_bytes).unwrap();
     // The selected retail Carrier Team is a map addition. An empty fixed pass
     // isolates its native B3 field without requiring unrelated AI definitions.
-    let registry = TeamAiIniRegistry::from_sources(
-        &IniFile::from_str(""),
-        &map,
-        BootstrapRuleProfile::Campaign,
-    );
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map, RulePolicy::stock_campaign());
     let Some((retail, art)) = retail_rules_and_art() else {
         return;
     };
@@ -609,7 +606,7 @@ pub(crate) fn reinforcement_world(
     let registry = TeamAiIniRegistry::from_sources(
         &IniFile::from_str(&definitions),
         &IniFile::from_str(""),
-        BootstrapRuleProfile::Multiplayer,
+        RulePolicy::stock_multiplayer(),
     );
     sim.install_team_ai_registry(&registry, rules);
     let mut waypoints = HashMap::from([(
@@ -1447,7 +1444,7 @@ fn transport_origin_fields_match_original_retained_reads_and_survive_save_hash()
         let registry = TeamAiIniRegistry::from_sources(
             &IniFile::from_str(&fixed),
             &IniFile::from_str(&map),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
         let mut interner = crate::sim::intern::StringInterner::new();
         let (mut vm, diagnostics) =
@@ -1520,7 +1517,7 @@ fn all01_full_transport_inputs_fit_the_selected_retail_cargo_chain() {
     let aimd = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .expect("retail fixed team definitions");
     let registry =
-        TeamAiIniRegistry::from_sources(&aimd.ini, &map.ini, BootstrapRuleProfile::Campaign);
+        TeamAiIniRegistry::from_sources(&aimd.ini, &map.ini, RulePolicy::stock_campaign());
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -2333,8 +2330,7 @@ fn place_full_team(
         [Tags]\nARRIVAL_TAG=0,Full arrival,ARRIVAL\n").as_bytes()).unwrap();
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
     let teams =
-        TeamAiIniRegistry::load_retail(&assets, &map.ini, BootstrapRuleProfile::Multiplayer)
-            .unwrap();
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.install_team_ai_registry(&teams, rules);
     sim.session.install_waypoints(&map.waypoints);

@@ -447,6 +447,7 @@ pub(crate) fn respond_to_base_attack(
     let budget = live_threat_posed(attacker, Some(attacker_object), entities, rules, interner)
         .wrapping_mul(rules.general.computer_base_defense_response);
     let current_frame = world.session.binary_frame() as i32;
+    let policy = world.session.rule_policy();
 
     if world
         .house_alliances
@@ -459,7 +460,8 @@ pub(crate) fn respond_to_base_attack(
         // `0x00708114`: `[g_GameMode 0x00A8B238] == 0 && this->Is_Armed
         // (vt+0x2AC)` — an armed victim in that game mode defends itself
         // instead of calling for help.
-        || (!world.session.game_mode_nonzero() && is_armed(victim, victim_object, entities, rules, interner))
+        || (policy.armed_victims_defend_without_base_response()
+            && is_armed(victim, victim_object, entities, rules, interner))
         || !matches!(
             attacker.category(),
             EntityCategory::Unit | EntityCategory::Infantry
@@ -507,6 +509,7 @@ pub(crate) fn respond_to_base_attack(
     let attacker_coord = ground_pose::object_get_coords(attacker, sim.resolved_terrain.as_ref());
     let attacker_coord = [attacker_coord.x, attacker_coord.y, attacker_coord.z];
     let victim_is_self_anchor = victim.archive_target() == Some(TargetKind::Entity(victim_id));
+    let requires_recruitable_mission = policy.base_defense_requires_recruitable_mission();
     for class in [ResponderClass::Infantry, ResponderClass::Unit] {
         let expected_category = match class {
             ResponderClass::Infantry => EntityCategory::Infantry,
@@ -527,7 +530,15 @@ pub(crate) fn respond_to_base_attack(
             else {
                 continue;
             };
-            if !candidate_admitted(sim, rules, candidate, candidate_object, victim, attacker_id) {
+            if !candidate_admitted(
+                sim,
+                rules,
+                candidate,
+                candidate_object,
+                victim,
+                attacker_id,
+                requires_recruitable_mission,
+            ) {
                 continue;
             }
 

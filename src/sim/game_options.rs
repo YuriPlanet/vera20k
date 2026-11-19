@@ -186,6 +186,23 @@ impl RoomBans {
 }
 
 impl GameOptions {
+    /// Full_Init686BA2 clears FogOfWar before Read_SpecialFlags6B8E69..6B8E89
+    /// reads the map key. A multiplayer launch installs its option instead
+    /// (0x00686BE3..0x00686C0E).
+    pub(super) fn install_campaign_startup(
+        &mut self,
+        launch_options: Option<&Self>,
+        authored_fog_of_war: Option<bool>,
+    ) {
+        if let Some(launch_options) = launch_options {
+            *self = launch_options.clone();
+        } else {
+            // Main_Tick55D767..55D796 uses two 16-ms buckets for a campaign.
+            self.game_speed = 2;
+        }
+        self.fog_of_war = authored_fog_of_war.unwrap_or(false);
+    }
+
     /// Apply one offline in-game Options speed transition.
     ///
     /// `OptionsClass::ApplyFromInGameDialog @ 0x004E1DE0` maps the 0..=6

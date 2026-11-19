@@ -205,20 +205,30 @@ fn mobile_readers_admit_current_house_and_resolve_first_computer() {
 /// structure in skirmish. PlayerPtr differs per network peer, so a LAN game
 /// keeps it on every peer.
 #[test]
-fn a_network_game_keeps_the_current_houses_map_structure() {
+fn authored_buildings_follow_the_owner_exclusion_policy_and_topology() {
     use crate::sim::scenario_session::ScenarioGameMode;
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
         return;
     };
-    for (mode, spawned) in [
-        (ScenarioGameMode::from_legacy_nonzero(true), 0),
-        (ScenarioGameMode::Lan, 1),
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let lan = ScenarioGameMode::Lan;
+    let skirmish_rules = skirmish.stock_rule_policy(None);
+    for (mode, policy, spawned) in [
+        (campaign, campaign.stock_rule_policy(None), 1),
+        (skirmish, skirmish_rules, 0),
+        (lan, lan.stock_rule_policy(None), 1),
+        (
+            skirmish,
+            skirmish_rules.with_skips_local_player_authored_buildings(false),
+            1,
+        ),
     ] {
         let mut sim = generated_houses(&retail.rules, &corpus());
         let human = sim.houses.order()[0];
         sim.session.set_current_house_for_test(Some(human));
-        sim.session.set_game_mode(mode);
+        sim.install_session_admission(mode, None, policy);
         sim.intern_rule_type_ids(&retail.rules);
         sim.resolve_type_handles(&retail.rules);
         crate::sim::arena_fixture::flat_ground(&mut sim, &retail.rules);

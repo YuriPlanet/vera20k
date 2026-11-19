@@ -419,7 +419,7 @@ impl Simulation {
             .entities
             .get(entity_id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.rule_policy()))
         {
             self.trigger_runtime
                 .clear_team_member_trigger_tag(team_id, entity_id);

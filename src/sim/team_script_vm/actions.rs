@@ -317,7 +317,7 @@ impl Simulation {
             // Its script argument is unused. Shared movement owns timers
             // and detach/EOF cleanup; only the search can request RNG.
             22 => {
-                if !self.session.game_mode().is_single_player() {
+                if !self.session.supports_local_team_shroud_search() {
                     self.refuse_team_script_action(team_id, action.action_id);
                     return;
                 }

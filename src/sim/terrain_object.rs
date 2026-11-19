@@ -367,7 +367,7 @@ impl TerrainObjectState {
     pub(crate) fn joins_logic_on_unlimbo(
         &self,
         terrain_type: &TerrainObjectType,
-        game_mode: crate::sim::scenario_session::ScenarioGameMode,
+        policy: crate::rules::rule_policy::RulePolicy,
         ares: bool,
     ) -> bool {
         // Ares 3.0 ObjectClass_Put_IsFlammable (1004F470, hook 0x5F4FF9):
@@ -379,7 +379,7 @@ impl TerrainObjectState {
         };
         terrain_type.is_logic()
             && needs_update
-            && (game_mode.is_single_player() || self.native_unique_id != Some(-2))
+            && (policy.allows_ownerless_terrain_logic() || self.native_unique_id != Some(-2))
     }
 
     /// `TerrainClass::Class_Of @ 0x0071D150` (vtable slot +0x88) returns

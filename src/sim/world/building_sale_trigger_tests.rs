@@ -10,7 +10,7 @@ use super::{DefinitionReference, TagAttachment};
 use crate::headless_scenario::HeadlessScenario;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, SharedCellDummy};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::mission::MissionType;
 use crate::sim::scenario_bootstrap::{
@@ -58,7 +58,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &map.ini,
-        BootstrapRuleProfile::Campaign,
+        RulePolicy::stock_campaign(),
     )
     .expect("campaign AI definitions");
     let theater =
@@ -187,9 +187,15 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&teams, &rules);
-    let post =
-        crate::sim::runtime::finalize_constructed_scenario(&mut sim, &map, &rules, &roster, None)
-            .unwrap();
+    let post = crate::sim::runtime::finalize_constructed_scenario(
+        &mut sim,
+        &map,
+        &rules,
+        &roster,
+        crate::rules::rule_policy::RulePolicy::stock_campaign(),
+        None,
+    )
+    .unwrap();
     assert!(post.navigation_published && sim.path_grid().is_some());
     if remove_home {
         assert_eq!((map.header.width, map.header.height), (65, 120));
@@ -253,7 +259,10 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
     let player = sim.session.current_house().expect("campaign Player");
     assert_eq!(sim.interner.resolve(player), "Americans");
     assert!(!sim.session.game_mode_nonzero());
-    assert!(sim.houses[&player].is_controlled_by_human(false));
+    assert!(
+        sim.houses[&player]
+            .is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+    );
     assert_eq!(
         sim.session.waypoint_cell(496),
         Some((WAYPOINT.0 as i16, WAYPOINT.1 as i16))

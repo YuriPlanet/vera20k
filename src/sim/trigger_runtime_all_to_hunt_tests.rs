@@ -3,7 +3,7 @@
 //! existing Rust owners, not a complete native ALL06 mission.
 use super::*;
 use crate::map::entities::EntityCategory;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::{combat::Health, game_entity::GameEntity, house_state::HouseState};
 use serde_json::Value;
@@ -267,7 +267,7 @@ fn all06_elapsed_enable_chain(with_enemy: bool) {
     let ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&ai, &map.ini, BootstrapRuleProfile::Campaign);
+    let teams = TeamAiIniRegistry::from_sources(&ai, &map.ini, RulePolicy::stock_campaign());
     for country in native["country_registration"]
         .as_array()
         .unwrap()

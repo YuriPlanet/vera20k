@@ -1403,7 +1403,7 @@ impl Simulation {
         };
         let owner = entity.owner();
         let disguised = entity.disguise.as_ref().is_some_and(|d| d.is_disguised());
-        if disguised && self.session.game_mode().is_network() {
+        if disguised && self.session.execution_topology().is_lockstep() {
             self.substrate
                 .set_anim_viewer_hidden(ring, vec![(owner, false)], true);
             return;

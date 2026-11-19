@@ -515,6 +515,42 @@ fn multiplayer_pickup_places_one_replacement_crate() {
     );
 }
 
+#[test]
+fn authored_crates_are_consumed_even_with_runtime_slots_enabled() {
+    use crate::rules::rule_policy::AuthoredCratePolicy;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let mode = ScenarioGameMode::from_game_mode(5);
+    for (authored_crates, remaining) in [
+        (AuthoredCratePolicy::Skip, true),
+        (AuthoredCratePolicy::Keep, false),
+    ] {
+        let (mut sim, rules, registry, _owner, actor) = multiplayer_fixture(POWERUP_SPEED as u8);
+        sim.install_session_admission(
+            mode,
+            None,
+            mode.stock_rule_policy(None).with_crates(authored_crates),
+        );
+        // The map overlay has no slot because the scenario did not place it
+        // through the random crate owner.
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot::default();
+        let before = sim.scenario_rng.native_state_hex();
+
+        assert!(pickup_crate(
+            &mut sim,
+            &rules,
+            &registry,
+            CELL,
+            actor,
+            FrameEffects::default(),
+        ));
+
+        assert_eq!(overlay_at(&sim, CELL).is_some(), remaining);
+        assert!(sim.crate_authority().slots()[0].is_empty());
+        assert_eq!(sim.scenario_rng.native_state_hex(), before);
+    }
+}
+
 fn effect_rules(extra: &str) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nBaseUnit=AMCV\n[InfantryTypes]\n0=E1\n1=CIV\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
@@ -752,13 +788,8 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
         actor,
         crate::sim::world::FrameEffects::default()
     ));
-    let armor = |sim: &Simulation, id: u64| {
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .armor_multiplier()
-    };
+    let armor =
+        |sim: &Simulation, id: u64| sim.substrate.entities.get(id).unwrap().armor_multiplier();
     assert_eq!(armor(&sim, actor).bits(), 1.5_f64.to_bits());
     assert_eq!(armor(&sim, distant), NativeF64Bits::ONE);
     assert_eq!(eva_events(&sim), vec![(owner, "EVA_UnitArmorUpgraded")]);

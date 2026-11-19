@@ -7,7 +7,7 @@ use super::{FrameEffects, SimSoundEvent, Simulation};
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -72,7 +72,7 @@ fn scene(recruitable: bool, tagged: bool) -> Option<Scene> {
         .as_bytes(),
     )
     .unwrap();
-    let teams = TeamAiIniRegistry::from_sources(&aimd, &map.ini, BootstrapRuleProfile::Multiplayer);
+    let teams = TeamAiIniRegistry::from_sources(&aimd, &map.ini, RulePolicy::stock_multiplayer());
     assert!(teams.fixed_source_is_complete());
     // Only terrain, ore, initial Houses and finished refinery placement are
     // arena priors. No slave, node, mission, Tag or callback is installed.

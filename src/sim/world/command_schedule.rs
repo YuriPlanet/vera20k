@@ -79,7 +79,7 @@ impl Simulation {
         if self.replaying_recorded_commands {
             return false;
         }
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         let mut prepared = Vec::new();
         let mut valid = true;
         for command in commands {
@@ -141,8 +141,10 @@ impl Simulation {
         command: CommandEnvelope,
         prepared: &mut Vec<(QueuedCommand, bool)>,
     ) -> bool {
-        if Self::command_uses_frame_ingress(&command.payload, self.session.game_mode().is_network())
-        {
+        if Self::command_uses_frame_ingress(
+            &command.payload,
+            self.session.execution_topology().is_lockstep(),
+        ) {
             prepared.push((QueuedCommand::from_envelope(command), true));
             return true;
         }
@@ -211,7 +213,7 @@ impl Simulation {
     }
 
     fn local_command_slots(&self, include_control_reserve: bool) -> usize {
-        if !self.session.game_mode().is_network() {
+        if !self.session.execution_topology().is_lockstep() {
             return crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY
                 .saturating_sub(self.local_commands.native_len())
                 .saturating_sub(self.pending_commands.native_len())
@@ -283,14 +285,14 @@ impl Simulation {
         let accepted = self.pending_commands.admit_bounded(
             command,
             self.dispatch_reserved_slots,
-            if self.session.game_mode().is_network() {
+            if self.session.execution_topology().is_lockstep() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
             } else {
                 // Room stays for the queued input, so its transfer is never refused.
                 crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY
                     .saturating_sub(self.local_commands.native_len())
             },
-            if self.session.game_mode().is_network() {
+            if self.session.execution_topology().is_lockstep() {
                 crate::sim::command_queue::NETWORK_SOURCE_DOLIST_CAPACITY
             } else {
                 usize::MAX
@@ -357,7 +359,7 @@ impl Simulation {
         }
         let record = !Self::command_uses_frame_ingress(
             &command.payload,
-            self.session.game_mode().is_network(),
+            self.session.execution_topology().is_lockstep(),
         );
         self.admit_queued_command(
             QueuedCommand::from_envelope(command),
@@ -582,7 +584,7 @@ impl Simulation {
     /// and semantic tail events stay in place until the canonical DoList scan.
     pub fn take_due_commands(&mut self) -> Vec<CommandEnvelope> {
         let execute_tick = self.session.tick().saturating_add(1);
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         self.pending_commands
             .take_where(|entry| {
                 entry.semantic().is_some_and(|command| {
@@ -633,7 +635,7 @@ impl Simulation {
         for command in commands {
             if Self::command_uses_frame_ingress(
                 &command.payload,
-                self.session.game_mode().is_network(),
+                self.session.execution_topology().is_lockstep(),
             ) {
                 self.frame_command_admissions.push(command.clone());
             } else {
@@ -1194,7 +1196,7 @@ impl Simulation {
         for command in commands.into_iter().filter(|command| {
             Self::command_uses_frame_ingress(
                 &command.payload,
-                self.session.game_mode().is_network(),
+                self.session.execution_topology().is_lockstep(),
             ) && command.execute_tick <= execute_tick
         }) {
             if !house_order.contains(&command.owner) {
@@ -1220,7 +1222,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> usize {
         let mut executed_commands = 0usize;
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         for owner in self.due_command_house_order(commands.iter(), execute_tick) {
             for command in commands.iter().filter(|command| {
                 command.execute_tick <= execute_tick
@@ -1275,7 +1277,9 @@ impl Simulation {
 
     /// How Execute_DoList scans this session's DoList.
     pub(super) fn command_dispatch_mode(&self) -> CommandDispatchMode {
-        if self.session.game_mode().command_queue_route() == super::CommandQueueRoute::Multiplayer {
+        if self.session.execution_topology().command_queue_route()
+            == super::CommandQueueRoute::Multiplayer
+        {
             CommandDispatchMode::Network
         } else {
             CommandDispatchMode::SinglePlayer
@@ -1290,7 +1294,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
-        let is_network = self.session.game_mode().is_network();
+        let is_network = self.session.execution_topology().is_lockstep();
         for command in commands
             .iter()
             .filter(|command| !Self::command_uses_frame_ingress(&command.payload, is_network))

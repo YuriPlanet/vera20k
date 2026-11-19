@@ -399,7 +399,7 @@ impl crate::sim::world::Simulation {
                         .houses
                         .get(&actor.owner())
                         .ok_or("Infantry fear requires its native House")?
-                        .is_controlled_by_human(self.session.game_mode_nonzero());
+                        .is_controlled_by_human(self.session.rule_policy());
                     //52018E..1BA: only a human owner tests these separate
                     // inputs. A movement order is not IsMoving+10.
                     let under_way = human
@@ -759,9 +759,9 @@ pub(crate) fn tick_idle_actions(
         let Some(obj) = rules.object(type_name) else {
             continue;
         };
-        let controlled_by_human = houses
-            .get(&entity.owner())
-            .is_some_and(|house| house.is_controlled_by_human(false));
+        let controlled_by_human = houses.get(&entity.owner()).is_some_and(|house| {
+            house.is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+        });
         if let IdleTurn::Fidget(action) = select_idle_action(
             entity,
             obj,

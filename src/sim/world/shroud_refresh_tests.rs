@@ -1819,6 +1819,8 @@ fn initial_house_sight_matches_original_update_tail() {
                         map_height: 64,
                         fill_silos: false,
                         rules: &rules,
+                        construction_rules:
+                            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
                         overlay_registry: &overlays,
                         house_roster: &roster,
                         skirmish_session: None,
