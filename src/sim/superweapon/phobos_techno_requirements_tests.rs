@@ -54,8 +54,8 @@ fn allowed(sim: &Simulation, rules: &RuleSet) -> bool {
 }
 
 fn recheck(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
-    sim.recheck_house_tech_tree(owner, rules);
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, Default::default());
+    sim.recheck_house_tech_tree(owner, rules, Default::default());
     assert!(!sim.houses[&owner].tech_recheck_pending());
 }
 
@@ -322,7 +322,7 @@ fn phobos_techno_gates_count_installed_upgrade_on_its_host() {
     ));
     assert!(allowed(&sim, &rules), "the host owns the installed upgrade");
     assert!(!super_weapon_available(&sim, &rules, owner, "BlockSpecial"));
-    sim.power_down_building_upgrade(host, &rules);
+    sim.power_down_building_upgrade(host, &rules, Default::default());
     assert!(!allowed(&sim, &rules));
     assert!(super_weapon_available(&sim, &rules, owner, "BlockSpecial"));
 }

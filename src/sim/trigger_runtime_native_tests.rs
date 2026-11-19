@@ -307,7 +307,7 @@ fn naval_land_events_match_original_signed_tracking_and_country_selection() {
             sim.houses
                 .get_mut(owner)
                 .unwrap()
-                .tracking_mut()
+                .tracking_mut_for_test()
                 .set_naval_land_for_test(
                     integer(&counts[0]),
                     integer(&counts[1]),
@@ -916,7 +916,7 @@ fn building_loss_event_matches_original_tracked_count_and_country_order() {
             sim.houses
                 .get_mut(owner)
                 .unwrap()
-                .tracking_mut()
+                .tracking_mut_for_test()
                 .set_buildings_for_test(integer(&case["tracked_buildings"][index]));
         }
         let actor = case["actor_owner"].as_u64().map(|index| {
@@ -1045,7 +1045,7 @@ fn building_loss_event_retail_all04_sets_the_rescue_route_local() {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .tracking_mut()
+            .tracking_mut_for_test()
             .set_buildings_for_test(buildings);
         sim.dispatch_live_tag_event(
             tag,
@@ -1766,15 +1766,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         .0;
     let identity = sim.super_weapons[&owner][&dominator].native_unique_id();
     for _ in 0..15 {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
     }
     assert_eq!(sim.session.binary_frame(), 15);
     assert_eq!(sim.entities().get(reactor).unwrap().health.current(), 769);
@@ -1787,15 +1780,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     );
     assert!(!sim.super_weapons[&owner][&dominator].is_suspended());
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(
-        &[],
-        &rules,
-        None,
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
     assert_eq!(sim.trigger_runtime.action_trace, vec![(129, 7), (63, 364)]);
     let reactor = sim.entities().get(reactor).unwrap();
     assert_eq!(
@@ -1854,15 +1840,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     assert!(!before_pause.is_empty());
     assert!(before_pause.iter().all(|(_, _, paused)| !paused));
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(
-        &[],
-        &rules,
-        None,
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
     let paused = super_slots(&sim);
     assert!(!paused.is_empty());
     assert!(paused.iter().all(|(_, _, paused)| *paused));

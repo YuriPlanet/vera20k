@@ -940,6 +940,9 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
     if modal.advanced && modal.extras_page.is_none() {
         for field in crate::ui::skirmish_shell::AdvancedField::ALL {
+            if field.page() != modal.advanced_page {
+                continue;
+            }
             let (key, fallback) = field.label();
             let color = if modal.is_enabled(RandomMapSetupControl::Advanced(field)) {
                 SHELL_LABEL_TEXT_RGB
@@ -950,13 +953,14 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 out,
                 state,
                 &localized_label(state, key, fallback),
-                rect_to_text_rect(layout.advanced_label_rects[field.row()]),
+                rect_to_text_rect(layout.advanced_label_rects[field.page_row()]),
                 color,
                 ShellAlign::V_CENTER,
                 SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
                 scale.factor(),
             );
-            let value_rect = value_text_rect(layout.advanced_control_rects[field.row()], scale);
+            let value_rect =
+                value_text_rect(layout.advanced_control_rects[field.page_row()], scale);
             push_text_draw(
                 out,
                 state,

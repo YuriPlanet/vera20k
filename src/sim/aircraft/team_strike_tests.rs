@@ -351,7 +351,7 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             loaded
                 .restore_map_authority_after_snapshot_load(
                     rules,
-                    &runtime.resources.overlay_registry,
+                    runtime.resources.rules.overlay_registry(),
                     None,
                 )
                 .unwrap();

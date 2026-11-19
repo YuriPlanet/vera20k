@@ -394,7 +394,6 @@ mod tests {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),

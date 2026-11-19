@@ -69,14 +69,7 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
 
 fn frame(sim: &mut Simulation, rules: &RuleSet) {
     let output = sim
-        .advance_app_frame(
-            &[],
-            rules,
-            Some(rules.overlay_registry()),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
+        .advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
         .unwrap();
     assert!(output.tick.frame_committed);
 }

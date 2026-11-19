@@ -46,7 +46,7 @@ impl GameEntity {
     pub(crate) fn update_passenger_turret(&mut self, object: &ObjectType) {
         if object.techno_combat().movement().passenger_turret() {
             let passengers =
-                i32::try_from(self.passenger_role.passenger_count()).unwrap_or(i32::MAX);
+                i32::try_from(self.passenger_role().passenger_count()).unwrap_or(i32::MAX);
             self.turret_selection.current_turret_index =
                 passengers.min(17).min(object.turret_count.wrapping_sub(1));
         }

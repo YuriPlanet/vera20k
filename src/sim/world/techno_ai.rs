@@ -2161,7 +2161,7 @@ fn target_reach_step(
     {
         return;
     }
-    let rider = entity.passenger_role.in_open_transport();
+    let rider = entity.passenger_role().in_open_transport();
     // A rider asks too (`0x006FAB48`), though only `+0x82` decides for it.
     // The query needs the map's cells, zones, bounds and size and a Foot's
     // locomotor, which a loaded scenario always has; a fixture without them
@@ -2278,7 +2278,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
                 target,
                 obj,
                 target_obj,
-                target.passenger_role.occupants(),
+                target.passenger_role().occupants(),
                 rules,
                 sim,
             )
@@ -3632,7 +3632,6 @@ mod tests {
         sim.advance_app_frame(
             &[],
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
             67,
             super::super::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default(),
@@ -4121,7 +4120,7 @@ mod tests {
         }
         assert!(
             sim.substrate.entities.get(1).is_some_and(|house| house
-                .passenger_role
+                .passenger_role()
                 .occupants()
                 .ids()
                 == [2]),

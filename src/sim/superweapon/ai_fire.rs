@@ -837,7 +837,7 @@ fn rally_value(
                 .deploys_into
                 .as_deref()
                 .and_then(|name| rules.object(name))
-                .is_some_and(|building| building.build_const_eligible) =>
+                .is_some_and(|building| building.build_const_eligible()) =>
         {
             value(&values.mcv)
         }

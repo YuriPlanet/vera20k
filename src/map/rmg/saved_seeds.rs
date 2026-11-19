@@ -364,12 +364,18 @@ mod tests {
             seed: 42,
             description: "Prior map".into(),
             urban_areas: true,
+            tech_building_amount: 0,
+            derelict_amount: 0,
+            damage_amount: 0,
+            civilian_amount: 0,
+            animal_amount: 0,
+            wild_amount: 0,
         };
         let loaded = load_saved_seed(&path, &current, "Localized random map", true).unwrap();
         let expected = RmgOptions {
             seed: 4660,
             water_amount: 73,
-            num_players: 30,
+            num_players: 99,
             description: "Localized random map".into(),
             ..current.clone()
         };

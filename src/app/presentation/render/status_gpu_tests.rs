@@ -309,7 +309,7 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
-    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let entity = sim.entity_mut_for_test(id).unwrap();
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.discovery.set_owned_by_current_house_for_test(true);
     entity.selection.set_selected_for_test(true);
@@ -454,7 +454,7 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
-        let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+        let entity = sim.entity_mut_for_test(id).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.discovery.set_owned_by_current_house_for_test(true);
         entity.selection.set_selected_for_test(true);
@@ -1622,10 +1622,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         // Retain the same supplied drawing order in its
                         // canonical store; transport rows still own Cargo.
                         entity
-                            .passenger_role
+                            .passenger_role_mut_for_test()
                             .set_occupants_for_test(cargo.passengers().to_vec(), 0);
                     } else {
-                        entity.passenger_role = PassengerRole::transport(cargo);
+                        entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
                     }
                 }
                 if let Some(count) = actor["capture_count"].as_u64() {

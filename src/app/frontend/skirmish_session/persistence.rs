@@ -2,8 +2,8 @@
 //!
 //! The app owns when a profile is loaded and saved. Native Slot01..07 triples
 //! retain their key order, defaults and preservation-safe batched byte update.
-//! Extended network rows remain in this same snapshot for the process lifetime;
-//! they introduce no disk keys. This module has no UI or `AppState` dependency.
+//! Extended rows remain in their mode’s snapshot for the process lifetime.
+//! VERA.INI keeps its original seven computer keys. This module has no UI or `AppState` dependency.
 
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::{IniFile, IniSection};
@@ -27,7 +27,6 @@ impl SetupProfile {
 }
 
 pub const SKIRMISH_PERSISTED_SLOT_COUNT: usize = 7;
-const RETAINED_SETUP_SLOT_COUNT: usize = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT - 1;
 
 const RANDOM_COMBO_ITEM_DATA: i32 = -2;
 const SLOT01_DEFAULT_TYPE: i32 = 6;
@@ -95,12 +94,18 @@ pub struct MultiplayerSetupSnapshot {
     pub room: Option<crate::skirmish_launch::RoomOptions>,
     /// FUN_005ED400/005ED5A0 snapshot/restore rows1..7 (loop bounds at
     /// 005ED542/005EDC99; source: original gamemd.exe). VERA extends that
-    /// same process profile through row29; only the native prefix reaches INI.
-    pub slots: [SkirmishPersistedSlot; RETAINED_SETUP_SLOT_COUNT],
+    /// process profile to the rows its mode can seat; only the native prefix reaches INI.
+    pub slots: Box<[SkirmishPersistedSlot]>,
 }
 
 impl MultiplayerSetupSnapshot {
     pub fn from_global_defaults(defaults: SkirmishGlobalDefaults, profile: SetupProfile) -> Self {
+        let seats = match profile {
+            SetupProfile::Skirmish => crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT,
+            SetupProfile::Lan | SetupProfile::Wol => {
+                crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT
+            }
+        };
         Self {
             profile,
             game_mode: defaults.game_mode,
@@ -114,14 +119,16 @@ impl MultiplayerSetupSnapshot {
             mcv_repacks: defaults.mcv_repacks,
             crates_appear: defaults.crates_appear,
             room: None,
-            slots: std::array::from_fn(|index| {
-                let mut slot = SkirmishPersistedSlot::native_default(index);
-                // 00698456/0069846F: LAN and WOL read with defaults 2/2.
-                if profile != SetupProfile::Skirmish {
-                    slot.row_type = 2;
-                }
-                slot
-            }),
+            slots: (0..seats - 1)
+                .map(|index| {
+                    let mut slot = SkirmishPersistedSlot::native_default(index);
+                    // 00698456/0069846F: LAN and WOL read with defaults 2/2.
+                    if profile != SetupProfile::Skirmish {
+                        slot.row_type = 2;
+                    }
+                    slot
+                })
+                .collect(),
         }
     }
 

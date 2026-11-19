@@ -31,14 +31,12 @@ mod wall_placement;
 // Re-export everything so external code can still use `production::X`.
 pub use self::factory::{
     CancelOutcome, Factory, FactoryHolder, FactoryRegistry, FactoryView, PRODUCTION_STEPS,
-    PendingObject, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
+    PendingObject, ProductionState, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
     category_for_object, time_to_build, type_base_build_time, type_build_time,
 };
 pub(crate) use self::factory_lifecycle::enqueue_selected;
-pub(crate) use self::factory_lifecycle::suspend_production;
-pub use self::factory_lifecycle::{
-    FactoryRestoreError, ready_building_entity_for_owner, validate_restored_factory_state,
-};
+pub(crate) use self::factory_lifecycle::{suspend_production, validate_restored_factory_state};
+pub use self::factory_lifecycle::{FactoryRestoreError, ready_building_entity_for_owner};
 pub use self::factory_lifecycle::{
     ProductionCancellation, cancel_production_for_owner, enqueue_by_type,
 };

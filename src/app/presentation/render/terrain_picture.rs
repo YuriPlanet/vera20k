@@ -1,19 +1,20 @@
 //! The finished terrain layer, kept between frames.
 //!
-//! VERA scheduling only; no native counterpart. Terrain tiles, smudges and
-//! cell bodies are the frame's widest draws, and their pixels are a pure
-//! function of [`TerrainInputs`]. While those hold still, the layer's colour
+//! VERA scheduling only; no native counterpart. Terrain tiles, smudges,
+//! remembered buildings and cell bodies are the frame's widest draws, and
+//! their pixels are a pure function of [`TerrainInputs`]. While those hold still, the layer's colour
 //! and depth come back by copy instead of being drawn again. The copy out
 //! waits for the second equal frame.
 //!
 //! A moved camera reuses a kept copy of the ground, the tiles and smudges
 //! under the cell bodies. The move is whole pixels, so the ground moves with
 //! it unchanged: the frame draws only the strips it exposed, and the depth
-//! moves through [`DepthShift`]. Cell bodies stay out of that copy and draw
-//! every frame, since their Z seeds round to thirds of the camera's row
-//! (`native_row_z`) and so do not move with it. What the kept ground was
-//! drawn from is compared with this frame's, over the pixels it still shows;
-//! anything else in the frame that changed draws the ground in full.
+//! moves through [`DepthShift`] by as many rows as the Z seed's origin row
+//! moved (none while the seed pans with the view, `native_z::ZSeed`).
+//! Remembered buildings and cell bodies stay out of that copy and draw every
+//! frame. What the kept ground
+//! was drawn from is compared with this frame's, over the pixels it still
+//! shows; anything else in the frame that changed draws the ground in full.
 
 use crate::app::presentation::instances::CellBodyDraw;
 use crate::render::batch::{CameraUniform, SpriteInstance};
@@ -21,7 +22,7 @@ use crate::render::depth_shift::DepthShift;
 use crate::render::shroud_buffer::{KeptPlane, ShroudBuffer};
 
 /// Every instance stream the terrain layer draws.
-pub(super) const TERRAIN_STREAMS: [&str; 3] = ["terrain", "smudge", "cell_body"];
+pub(super) const TERRAIN_STREAMS: [&str; 4] = ["terrain", "smudge", "cell_body", "fogged_objects"];
 
 const COPIES: wgpu::TextureUsages =
     wgpu::TextureUsages::COPY_SRC.union(wgpu::TextureUsages::COPY_DST);
@@ -34,7 +35,7 @@ const GROUND_KEEP_INTERVAL: u32 = 4;
 #[derive(PartialEq)]
 pub(super) struct TerrainInputs {
     /// The generation of each of [`TERRAIN_STREAMS`].
-    pub(super) streams: [u64; 3],
+    pub(super) streams: [u64; 4],
     pub(super) cell_bodies: Vec<CellBodyDraw>,
     pub(super) camera: CameraUniform,
     /// Group 0 of the world pipelines, and the generation of the A plane it
@@ -42,6 +43,10 @@ pub(super) struct TerrainInputs {
     pub(super) camera_group: wgpu::BindGroup,
     pub(super) a_plane: u64,
     pub(super) tactical: [u32; 4],
+    /// The remembered buildings' runs, and the z-shape and atlas pages they
+    /// draw through.
+    pub(super) fogged_runs: Vec<super::draw_plan_lowering::ObjectDrawRun>,
+    pub(super) fogged_sources: Vec<wgpu::BindGroup>,
     pub(super) atlases: [Option<wgpu::BindGroup>; 4],
     /// The colour and depth targets it is drawn into.
     pub(super) targets: [wgpu::Texture; 2],
@@ -87,6 +92,9 @@ pub(super) struct GroundShift {
     /// The target pixel `p` shows the kept pixel `p + offset`: the camera's
     /// move in whole pixels.
     offset: [i32; 2],
+    /// What the kept depth gains: the rows the Z seed's origin row moved
+    /// (`CameraUniform::native_z_origin_row`).
+    rows: i32,
     /// The rest of the tactical rect, which the kept ground lacks; either
     /// may be empty.
     strips: [[u32; 4]; 2],
@@ -95,7 +103,7 @@ pub(super) struct GroundShift {
 impl GroundShift {
     /// The shift for a camera moved by `[dx, dy]` over the tactical rect, if
     /// the kept ground still shows at least three quarters of it.
-    fn between([x, y, width, height]: [u32; 4], [dx, dy]: [i32; 2]) -> Option<Self> {
+    fn between([x, y, width, height]: [u32; 4], [dx, dy]: [i32; 2], rows: i32) -> Option<Self> {
         let (width, height) = (width as i32, height as i32);
         let (left, right) = ((-dx).max(0), width - dx.max(0));
         let (top, bottom) = ((-dy).max(0), height - dy.max(0));
@@ -113,6 +121,7 @@ impl GroundShift {
         Some(Self {
             overlap: rect(left, top, right, bottom),
             offset: [dx, dy],
+            rows,
             strips: [
                 if dx > 0 {
                     rect(right, 0, width, height)
@@ -227,6 +236,7 @@ impl KeptGround {
     fn shift_for(&self, inputs: &TerrainInputs, ground: GroundFrame<'_>) -> Option<GroundShift> {
         let unmoved = |camera: &CameraUniform| CameraUniform {
             camera_pos: [0.0; 2],
+            native_z_pan: 0.0,
             ..*camera
         };
         if inputs.camera.zoom != 1.0
@@ -246,6 +256,10 @@ impl KeptGround {
                 (camera[0] - self.camera.camera_pos[0]) as i32,
                 (camera[1] - self.camera.camera_pos[1]) as i32,
             ],
+            inputs
+                .camera
+                .native_z_origin_row()
+                .wrapping_sub(self.camera.native_z_origin_row()),
         )?;
         let area = shift.world_area(camera);
         // A plane rounded apart from the camera addresses one pixel over at
@@ -426,7 +440,7 @@ impl TerrainPicture {
                 &kept.depth_binding,
                 shift.overlap,
                 shift.offset,
-                shift.offset[1],
+                shift.rows,
             );
     }
 
@@ -500,24 +514,24 @@ mod tests {
     #[test]
     fn a_camera_move_shows_the_kept_ground_and_exposes_strips() {
         let tactical = [10, 20, 100, 100];
-        let shift = GroundShift::between(tactical, [10, -5]).unwrap();
+        let shift = GroundShift::between(tactical, [10, -5], 0).unwrap();
         assert_eq!(shift.overlap, [10, 25, 90, 95]);
         assert_eq!(shift.offset, [10, -5]);
         assert_eq!(shift.strips, [[100, 20, 10, 100], [10, 20, 90, 5]]);
         assert_eq!(shift.world_area([1000.0, 500.0]), [1010, 525, 1100, 620]);
 
-        let shift = GroundShift::between(tactical, [-3, 7]).unwrap();
+        let shift = GroundShift::between(tactical, [-3, 7], 0).unwrap();
         assert_eq!(shift.overlap, [13, 20, 97, 93]);
         assert_eq!(shift.strips, [[10, 20, 3, 100], [13, 113, 97, 7]]);
 
-        let unmoved = GroundShift::between(tactical, [0, 0]).unwrap();
+        let unmoved = GroundShift::between(tactical, [0, 0], 0).unwrap();
         assert_eq!(unmoved.overlap, tactical);
         assert_eq!(unmoved.strips.map(|strip| strip[2] * strip[3]), [0, 0]);
 
         // Exactly a quarter exposed still reuses it; more draws it in full.
-        assert!(GroundShift::between(tactical, [25, 0]).is_some());
-        assert!(GroundShift::between(tactical, [26, 0]).is_none());
-        assert!(GroundShift::between(tactical, [0, -100]).is_none());
+        assert!(GroundShift::between(tactical, [25, 0], 0).is_some());
+        assert!(GroundShift::between(tactical, [26, 0], 0).is_none());
+        assert!(GroundShift::between(tactical, [0, -100], 0).is_none());
     }
 
     #[test]
@@ -580,17 +594,20 @@ mod tests {
             layout: &layout,
             entries: &[],
         });
-        let inputs = |camera_pos| TerrainInputs {
-            streams: [0; 3],
+        let inputs = |camera_pos, native_z_pan| TerrainInputs {
+            streams: [0; 4],
             cell_bodies: Vec::new(),
             camera: CameraUniform {
                 camera_pos,
                 zoom: 1.0,
+                native_z_pan,
                 ..CameraUniform::zeroed()
             },
             camera_group: group.clone(),
             a_plane: 0,
             tactical: [0, 0, SIDE, SIDE],
+            fogged_runs: Vec::new(),
+            fogged_sources: Vec::new(),
             atlases: [None, None, None, None],
             targets: [color.clone(), depth.clone()],
         };
@@ -631,8 +648,8 @@ mod tests {
         // the right.
         let stored = |z: i32| z as f32 / 65535.0;
         let mut picture = TerrainPicture::default();
-        assert!(picture.step(&device, inputs([100.0, 200.0]), NO_GROUND) == DRAW);
-        assert!(picture.step(&device, inputs([100.0, 200.0]), NO_GROUND) == DRAW_AND_KEEP);
+        assert!(picture.step(&device, inputs([100.0, 200.0], 0.0), NO_GROUND) == DRAW);
+        assert!(picture.step(&device, inputs([100.0, 200.0], 0.0), NO_GROUND) == DRAW_AND_KEEP);
         let mut encoder = device.create_command_encoder(&Default::default());
         clear_depth(&mut encoder, stored(32773));
         picture.keep_ground(&device, &mut encoder, NO_GROUND);
@@ -644,13 +661,16 @@ mod tests {
             GroundShift {
                 overlap: [0, 0, SIDE / 2, SIDE],
                 offset: [0, 0],
+                rows: 0,
                 strips: [[0; 4]; 2],
             },
         );
         picture.keep_ground(&device, &mut encoder, NO_GROUND);
         queue.submit([encoder.finish()]);
 
-        let step = picture.step(&device, inputs([102.0, 201.0]), NO_GROUND);
+        // The Z seed panned with the row the view moved down, so the kept
+        // depth stays (`native_z::ZSeed`).
+        let step = picture.step(&device, inputs([102.0, 201.0], 1.0), NO_GROUND);
         let TerrainStep::Shift(shift) = step else {
             panic!("a small move of an unchanged ground reuses it");
         };
@@ -733,9 +753,9 @@ mod tests {
                 (f32::from_ne_bytes(word) * 65535.0).round() as i32,
             )
         };
-        // Target (5, 0) shows kept (7, 1), the left half's last column: one
-        // row more of camera is one more Z.
-        assert_eq!(at(5, 0), (vec![7, 1, 0, 255], 32774));
+        // Target (5, 0) shows kept (7, 1), the left half's last column, at
+        // the Z it had.
+        assert_eq!(at(5, 0), (vec![7, 1, 0, 255], 32773));
         // Target (6, 0) shows kept (8, 1): nothing wrote its depth.
         assert_eq!(at(6, 0), (vec![8, 1, 0, 255], 65535));
         // The strips stay as the clear left them.
@@ -777,12 +797,14 @@ mod tests {
             entries: &[],
         });
         let inputs = |stream| TerrainInputs {
-            streams: [stream, 0, 0],
+            streams: [stream, 0, 0, 0],
             cell_bodies: Vec::new(),
             camera: CameraUniform::zeroed(),
             camera_group: group.clone(),
             a_plane: 0,
             tactical: [0, 0, 4, 4],
+            fogged_runs: Vec::new(),
+            fogged_sources: Vec::new(),
             atlases: [None, None, None, None],
             targets: [color.clone(), depth.clone()],
         };

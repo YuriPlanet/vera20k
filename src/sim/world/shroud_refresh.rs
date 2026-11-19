@@ -933,13 +933,7 @@ impl Simulation {
             }
         });
         for &viewer in viewers {
-            let notify_view = if network {
-                self.houses
-                    .get(&viewer)
-                    .is_some_and(|house| house.is_human())
-            } else {
-                notification_viewer == Some(viewer)
-            };
+            let notify_view = self.reveal_notifies_viewer(viewer, notification_viewer);
             if projection == vision::MapRevealProjection::Source
                 && !self.session.game_options().fog_of_war
                 && !notify_view
@@ -954,65 +948,100 @@ impl Simulation {
                 continue;
             }
             for &cell in &cells {
-                {
-                    let native_cells = context
-                        .terrain()
-                        .or(self.resolved_terrain.as_ref())
-                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                    self.fog
-                        .clear_pending_fog(viewer, cell, native_cells.as_ref());
-                }
-                if projection == vision::MapRevealProjection::FogProtect {
-                    let admitted = {
-                        let native_cells = context
-                            .terrain()
-                            .or(self.resolved_terrain.as_ref())
-                            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                        self.fog
-                            .admits_fog_reveal(viewer, cell, native_cells.as_ref())
-                    };
-                    if admitted {
-                        self.reveal_fog_map_cell(viewer, cell, notify_view, context);
-                    }
-                    continue;
-                }
-                let notify = {
-                    let native_cells = context
-                        .terrain()
-                        .or(self.resolved_terrain.as_ref())
-                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                    if matches!(
-                        projection,
-                        vision::MapRevealProjection::UncachedConditional
-                            | vision::MapRevealProjection::Fire
-                    ) && self
-                        .fog
-                        .map_cell_fully_known(viewer, cell, native_cells.as_ref())
-                    {
-                        continue;
-                    }
-                    self.fog.reveal_map_cell(
-                        viewer,
-                        cell,
-                        final_pass,
-                        native_cells.as_ref(),
-                        projection,
-                    )
-                };
-                if let Some(notify) = notify {
-                    if notify_view {
-                        self.notify_cell_change(notify.cell, viewer, notify.fresh, context);
-                    }
-                    if notify.clean_fog {
-                        self.clean_fog(viewer, notify.cell, context);
-                    }
-                }
+                self.apply_reveal_map_cell(
+                    viewer,
+                    cell,
+                    final_pass,
+                    projection,
+                    notify_view,
+                    context,
+                );
             }
         }
         //5673A0's native House rejection567570..5D0 skips its border too.
         //Keep the admitted local XYZ captured before any synchronous callback;
         //a logical other-viewer projection is not another admitted native call.
         local_origin.filter(|_| (network && !viewers.is_empty()) || notification_viewer.is_some())
+    }
+
+    /// Whether a reveal's MapCell4A9CA0 discovery notification reaches
+    /// `viewer`'s plane: in a network game every human plane, since each
+    /// peer is its own player's native client; otherwise only the admitted
+    /// local player's.
+    pub(crate) fn reveal_notifies_viewer(
+        &self,
+        viewer: InternedId,
+        notification_viewer: Option<InternedId>,
+    ) -> bool {
+        if self.session.game_mode().is_network() {
+            self.houses
+                .get(&viewer)
+                .is_some_and(|house| house.is_human())
+        } else {
+            notification_viewer == Some(viewer)
+        }
+    }
+
+    /// MapCell4A9CA0 after the range/House gates, including its synchronous
+    /// discovery notification. Ares PsychicReveal calls this same leaf
+    /// (100694D0) once for each admitted cell in each pass.
+    pub(crate) fn apply_reveal_map_cell(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        final_pass: bool,
+        projection: vision::MapRevealProjection,
+        notify_view: bool,
+        context: UninitContext<'_>,
+    ) {
+        {
+            let native_cells = context
+                .terrain()
+                .or(self.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            self.fog
+                .clear_pending_fog(viewer, cell, native_cells.as_ref());
+        }
+        if projection == vision::MapRevealProjection::FogProtect {
+            let admitted = {
+                let native_cells = context
+                    .terrain()
+                    .or(self.resolved_terrain.as_ref())
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                self.fog
+                    .admits_fog_reveal(viewer, cell, native_cells.as_ref())
+            };
+            if admitted {
+                self.reveal_fog_map_cell(viewer, cell, notify_view, context);
+            }
+            return;
+        }
+        let notify = {
+            let native_cells = context
+                .terrain()
+                .or(self.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            if matches!(
+                projection,
+                vision::MapRevealProjection::UncachedConditional
+                    | vision::MapRevealProjection::Fire
+            ) && self
+                .fog
+                .map_cell_fully_known(viewer, cell, native_cells.as_ref())
+            {
+                return;
+            }
+            self.fog
+                .reveal_map_cell(viewer, cell, final_pass, native_cells.as_ref(), projection)
+        };
+        if let Some(notify) = notify {
+            if notify_view {
+                self.notify_cell_change(notify.cell, viewer, notify.fresh, context);
+            }
+            if notify.clean_fog {
+                self.clean_fog(viewer, notify.cell, context);
+            }
+        }
     }
 
     /// Original CellChangeNotify5865F0..5866BA: seven height-admitted
@@ -1187,7 +1216,7 @@ impl Simulation {
         });
     }
 
-    fn for_each_allocated_map_cell(
+    pub(crate) fn for_each_allocated_map_cell(
         &mut self,
         context: UninitContext<'_>,
         mut receive: impl FnMut(&mut Self, (u16, u16)),

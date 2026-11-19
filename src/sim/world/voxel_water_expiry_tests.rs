@@ -38,9 +38,8 @@ fn shoreline_runtime(loaded: &crate::headless_scenario::HeadlessScenario) -> Sim
     SimRuntime {
         simulation: sim,
         resources: std::sync::Arc::new(SimResources {
-            overlay_registry: loaded.runtime.resources.overlay_registry.clone(),
-            terrain_template: Some(terrain.clone()),
             rules: rules.clone(),
+            terrain_template: Some(terrain.clone()),
         }),
     }
 }
@@ -120,7 +119,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
         safe.1,
         0,
         rules,
-        &resources.overlay_registry,
+        resources.rules.overlay_registry(),
     )
     .expect("ordinary MCV Unlimbo");
     let miner = sim
@@ -131,7 +130,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
             SOURCE_CELL.1,
             0,
             rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .expect("ordinary HARV Unlimbo on the physical shore");
     let owner = sim.entities().get(miner).unwrap().owner();
@@ -143,7 +142,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
     sim.receive_own_health_c4(
         miner,
         rules,
-        Some(&resources.overlay_registry),
+        Some(resources.rules.overlay_registry()),
         FrameEffects::default(),
     );
     let pieces = sim.voxel_anims().ids();
@@ -318,7 +317,7 @@ fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
         safe.1,
         0,
         rules,
-        &resources.overlay_registry,
+        resources.rules.overlay_registry(),
     )
     .expect("ordinary House survivor");
     sim.scenario_rng = SimRng::new(2);
@@ -378,7 +377,7 @@ fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
                 cell.1,
                 0,
                 rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )
         })
         .expect("ordinary receiver on the natural dry landing cell");

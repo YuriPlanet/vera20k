@@ -546,7 +546,7 @@ fn native_base_response_live_threat_matches_representable_original_rows() {
         }
         if count > 0 {
             for id in (0..count as u64).rev() {
-                owner.passenger_role.occupants_mut().add(id + 10);
+                owner.garrison_mut_for_test().add_for_test(id + 10);
             }
         }
         let mut entities = EntityStore::new();

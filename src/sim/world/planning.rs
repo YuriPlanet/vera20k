@@ -25,7 +25,12 @@
 use super::Simulation;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::{
-    Command, CommandEnvelope, CommandRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
+    CELL_TARGET_KIND, Command, CommandEnvelope, CommandRecord, MEGAMISSION_ACTION_OFFSET,
+    MEGAMISSION_AUXILIARY_VALUE_OFFSET, MEGAMISSION_DESTINATION_VALUE_OFFSET, MEGAMISSION_OPCODE,
+    MEGAMISSION_PLANNING_OFFSET, MEGAMISSION_SECONDARY_KIND_OFFSET,
+    MEGAMISSION_SECONDARY_VALUE_OFFSET, MEGAMISSION_SOURCE_KIND_OFFSET,
+    MEGAMISSION_SOURCE_VALUE_OFFSET, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
+    NULL_TARGET_KIND,
 };
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
@@ -285,9 +290,9 @@ impl PlanningState {
     /// graph references before restored plans can reach connect/consume.
     fn restore_index(&mut self) -> Result<(), &'static str> {
         for record in &self.pending_publication {
-            let mut ordinary = record.clone();
-            ordinary.payload_mut()[22] = 0;
-            if !planning_dispatch_record(record) || MegaMissionRecord::decode(&ordinary).is_none() {
+            if !planning_dispatch_record(record)
+                || MegaMissionRecord::decode_planned(record).is_none()
+            {
                 return Err("invalid pending planning order");
             }
         }
@@ -555,12 +560,8 @@ impl Simulation {
 
     pub(crate) fn validate_planning_references(&self) -> Result<(), &'static str> {
         let validate_house = |record: &CommandRecord| {
-            let issuer = self
-                .command_sender_owner(record.house_id())
-                .ok_or("missing planning order house")?;
-            self.houses
-                .contains_key(&issuer)
-                .then_some(())
+            self.command_sender_owner(record.house_id())
+                .map(|_| ())
                 .ok_or("missing planning order house")
         };
         for actor in &self.planning.token_order {
@@ -645,7 +646,7 @@ impl Simulation {
             mission.auxiliary = MegaMissionTarget::Cell { x, y };
             mission.write_into(&mut record).ok()?;
         }
-        record.payload_mut()[22] = 1;
+        record.payload_mut()[MEGAMISSION_PLANNING_OFFSET] = 1;
         Some(record)
     }
 
@@ -1238,7 +1239,6 @@ impl Simulation {
     pub(super) fn planning_select_tail_node(
         &mut self,
         actor: u64,
-        voice_latch: bool,
         context: super::UninitContext<'_>,
     ) {
         if self.planning.select_expanding {
@@ -1253,7 +1253,7 @@ impl Simulation {
                 .get(member)
                 .is_some_and(|entity| entity.selection.is_selected());
             if !selected {
-                self.techno_select(member, voice_latch, context);
+                self.techno_select(member, context);
             }
         }
         self.planning.select_expanding = false;
@@ -1448,11 +1448,17 @@ impl Simulation {
                     .get(&node)
                     .and_then(|node| node.order(actor));
                 let token = record
-                    .filter(|record| record.opcode() == 4)
+                    .filter(|record| record.opcode() == MEGAMISSION_OPCODE)
                     .and_then(|record| {
                         // event+E/+12 is primary; destination+13/+17 is chosen
                         // only when the primary KIND is zero, never on failure.
-                        let offset = if record.payload()[11] != 0 { 7 } else { 12 };
+                        let offset = if record.payload()[MEGAMISSION_SECONDARY_KIND_OFFSET]
+                            != NULL_TARGET_KIND
+                        {
+                            MEGAMISSION_SECONDARY_VALUE_OFFSET
+                        } else {
+                            MEGAMISSION_DESTINATION_VALUE_OFFSET
+                        };
                         read_target(record, offset)
                     });
                 let target = match token {
@@ -1559,7 +1565,7 @@ impl Simulation {
                 );
                 true
             }
-            4 if record.payload()[22] == 1 => {
+            MEGAMISSION_OPCODE if record.payload()[MEGAMISSION_PLANNING_OFFSET] == 1 => {
                 // 0x00638593..0x006385AE plays AddPlanningModeCommandSound only
                 // for a new node; an actor joining one jumps past it to
                 // 0x006385B3 (0x00638210).
@@ -1578,9 +1584,7 @@ impl Simulation {
     }
 
     fn planning_append(&mut self, owner: InternedId, record: &CommandRecord) -> PlanningAppend {
-        let mut ordinary = record.clone();
-        ordinary.payload_mut()[22] = 0;
-        let Some(order) = MegaMissionRecord::decode(&ordinary) else {
+        let Some((order, _)) = MegaMissionRecord::decode_planned(record) else {
             return PlanningAppend::Refused;
         };
         let Ok(actor) = u64::try_from(order.source_id) else {
@@ -1648,7 +1652,10 @@ impl Simulation {
             .and_then(|id| self.planning.nodes.get(id))
             .and_then(|node| node.order(actor));
         if let Some(tail) = tail {
-            let (mission, kind) = (tail.payload()[5], tail.payload()[11]);
+            let (mission, kind) = (
+                tail.payload()[MEGAMISSION_ACTION_OFFSET],
+                tail.payload()[MEGAMISSION_SECONDARY_KIND_OFFSET],
+            );
             if matches!(mission, 7..=9) {
                 return refuse(self, PlanningAppendMessage::PostTerminatingCommand);
             }
@@ -1665,7 +1672,10 @@ impl Simulation {
         // continual event leaves AC4C90 0 for PlanMgr637270's frame pass, and
         // the fifteenth node leaves 2. Both are set before the loop and
         // count refusals below.
-        let (mission, kind) = (record.payload()[5], record.payload()[11]);
+        let (mission, kind) = (
+            record.payload()[MEGAMISSION_ACTION_OFFSET],
+            record.payload()[MEGAMISSION_SECONDARY_KIND_OFFSET],
+        );
         let pending = if matches!(mission, 7..=9) || planning_continual(mission, kind) {
             Some(PlanningAppendMessage::PostTerminatingCommand)
         } else {
@@ -1725,7 +1735,9 @@ impl Simulation {
                 continue;
             };
             let mut member_record = record.clone();
-            member_record.payload_mut()[0..4].copy_from_slice(&source.to_le_bytes());
+            member_record.payload_mut()
+                [MEGAMISSION_SOURCE_VALUE_OFFSET..MEGAMISSION_SOURCE_KIND_OFFSET]
+                .copy_from_slice(&source.to_le_bytes());
             self.planning
                 .nodes
                 .get_mut(&id)
@@ -1814,7 +1826,8 @@ impl Simulation {
             let Ok(id) = i32::try_from(actor) else {
                 return false;
             };
-            order.payload_mut()[0..4].copy_from_slice(&id.to_le_bytes());
+            order.payload_mut()[MEGAMISSION_SOURCE_VALUE_OFFSET..MEGAMISSION_SOURCE_KIND_OFFSET]
+                .copy_from_slice(&id.to_le_bytes());
             node.insert_order(actor, order);
             self.planning.index_node(*node_id);
         }
@@ -1876,8 +1889,8 @@ impl Simulation {
             let node = self.planning.nodes.get_mut(id).unwrap();
             for orders in node.orders.values_mut() {
                 for order in orders {
-                    if order.record.payload()[5] == 2 {
-                        order.record.payload_mut()[5] = 29;
+                    if order.record.payload()[MEGAMISSION_ACTION_OFFSET] == 2 {
+                        order.record.payload_mut()[MEGAMISSION_ACTION_OFFSET] = 29;
                     }
                 }
             }
@@ -1963,7 +1976,7 @@ impl Simulation {
             self.session.binary_frame(),
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
-        record.payload_mut()[22] = 2;
+        record.payload_mut()[MEGAMISSION_PLANNING_OFFSET] = 2;
         let path = self.planning.paths.get_mut(&actor).unwrap();
         let keep_member = path.loop_start == Some(0);
         path.consume();
@@ -2017,21 +2030,17 @@ impl Simulation {
 /// starting an actor's path (`0x006385C0`) stages and PlanMgr (`0x00637550`)
 /// adds straight to the client's own DoList. No client sends one.
 pub(super) fn planning_dispatch_record(record: &CommandRecord) -> bool {
-    record.opcode() == crate::sim::command::MEGAMISSION_OPCODE && record.payload()[22] == 2
+    MegaMissionRecord::planning_flag(record) == Some(2)
 }
 
 fn valid_planning_record(record: &CommandRecord, actor: u64, flag: u8) -> bool {
-    if record.opcode() != 4 || record.payload()[22] != flag {
-        return false;
-    }
-    let mut ordinary = record.clone();
-    ordinary.payload_mut()[22] = 0;
-    MegaMissionRecord::decode(&ordinary)
-        .is_some_and(|order| u64::try_from(order.source_id) == Ok(actor))
+    MegaMissionRecord::decode_planned(record).is_some_and(|(order, planned)| {
+        planned == flag && u64::try_from(order.source_id) == Ok(actor)
+    })
 }
 
 fn planning_badge(record: &CommandRecord) -> Option<PlanningBadgeKind> {
-    match record.payload()[5] {
+    match record.payload()[MEGAMISSION_ACTION_OFFSET] {
         11 => Some(PlanningBadgeKind::AreaGuard),
         29 => Some(PlanningBadgeKind::AttackMove),
         _ => None,
@@ -2041,7 +2050,13 @@ fn planning_badge(record: &CommandRecord) -> Option<PlanningBadgeKind> {
 /// Event63B050 chooses secondary, auxiliary, then destination, independent
 /// of mission. Null tokens do not acquire the auxiliary value's identity.
 fn planning_record_target(record: &CommandRecord) -> Option<MegaMissionTarget> {
-    [7, 17, 12].into_iter().find_map(|offset| {
+    [
+        MEGAMISSION_SECONDARY_VALUE_OFFSET,
+        MEGAMISSION_AUXILIARY_VALUE_OFFSET,
+        MEGAMISSION_DESTINATION_VALUE_OFFSET,
+    ]
+    .into_iter()
+    .find_map(|offset| {
         read_target(record, offset).filter(|target| *target != MegaMissionTarget::Null)
     })
 }
@@ -2050,7 +2065,8 @@ fn planning_record_target(record: &CommandRecord) -> Option<MegaMissionTarget> {
 /// (event+0x12) is a Cell, or an AreaGuard with none. Arguments are the
 /// event's mission byte (+0xC) and that kind.
 fn planning_continual(mission: u8, kind: u8) -> bool {
-    matches!(mission, 1 | 11) && (kind == 0x0b || (mission == 11 && kind == 0))
+    matches!(mission, 1 | 11)
+        && (kind == CELL_TARGET_KIND || (mission == 11 && kind == NULL_TARGET_KIND))
 }
 
 fn coord_cell(coord: DriveCoord) -> Option<(u16, u16)> {
@@ -2069,11 +2085,10 @@ pub(super) fn planning_record_actor(record: &CommandRecord) -> Option<u64> {
             MegaMissionTarget::Object { id } => u64::try_from(id).ok(),
             _ => None,
         },
-        4 if record.payload()[22] == 1 => {
-            let mut ordinary = record.clone();
-            ordinary.payload_mut()[22] = 0;
-            u64::try_from(MegaMissionRecord::decode(&ordinary)?.source_id).ok()
-        }
+        MEGAMISSION_OPCODE => match MegaMissionRecord::decode_planned(record)? {
+            (order, 1) => u64::try_from(order.source_id).ok(),
+            _ => None,
+        },
         _ => None,
     }
 }

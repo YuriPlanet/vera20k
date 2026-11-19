@@ -3,8 +3,9 @@
 Each `<name>.py` runs original shell dialog, saved-game, keyboard, sound-theme or
 LAN code under Unicorn and checks or writes its `<name>.json` with a
 `<name>.meta.json` sidecar. See the [shared native runner](../native_oracle.md)
-for setup, `--check`/`--write` and evidence limits. [`lan_native`](lan_native/README.md)
-holds the separate Windows LAN probe.
+for setup, `--check`/`--write` and evidence limits.
+`lan_shell_controls.json` holds six packets captured once from an original LAN
+host; no harness here rebuilds them.
 
 ## Shared fixture owners
 

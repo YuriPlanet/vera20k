@@ -44,20 +44,13 @@ pub const OVERHEAD: usize = HEADER_LEN + HOP_TAG_LEN;
 /// 699 bytes). PACKs keep their own smaller limit, `PACK_LIMIT`.
 pub const MAX_PAYLOAD: usize = 720;
 
-/// The packing limit of a PACK payload: 681 bytes (§5.3 rule 5, §5.4),
-/// unchanged so the packing makes the same number of packs.
+/// The packing limit of PACK and UPLINK payloads: 681 bytes (§5.3 rule 5,
+/// §5.4).
 pub const PACK_LIMIT: usize = 681;
 
 /// The largest envelope v3 datagram: `OVERHEAD + MAX_PAYLOAD`. A receive
 /// buffer of this size holds any valid datagram.
 pub const MAX_DATAGRAM: usize = OVERHEAD + MAX_PAYLOAD;
-
-/// The hop sequence at which a client starts a renewal: 2³² − 2¹⁶
-/// (§11 case 7). It keeps sending until `u32::MAX`; past that it refuses
-/// with `RelayError::CounterExhausted` (§6.1). The relay cannot renew: if
-/// its sequence on a hop ever runs out, it stops sending on that hop and
-/// the client renews by its disconnect path (§6.1).
-pub const RENEWAL_SEQUENCE: u32 = u32::MAX - 0xFFFF;
 
 /// Client to relay kinds (§6.1).
 pub const HELLO: u8 = 0;

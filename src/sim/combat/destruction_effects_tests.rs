@@ -1259,7 +1259,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                     cell_y,
                     0,
                     rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
             })
             .unwrap_or_else(|| {
@@ -1402,7 +1402,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             );
             sim.commit_noncombat_aoe_hits(
                 rules,
-                Some(&resources.overlay_registry),
+                Some(resources.rules.overlay_registry()),
                 &[hit],
                 crate::sim::world::FrameEffects::default(),
             );

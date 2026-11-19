@@ -104,7 +104,7 @@ impl ParticleDrawContext {
                     as i32,
                 adjust_for_z_multiplier: crate::util::native_x87::STANDARD_ADJUST_FOR_Z_MULTIPLIER,
                 z_origin_term: logical(y) as i16,
-                z_bottom_term: crate::render::native_z::DEFAULT_Z as i16,
+                z_bottom_term: input.z_seed as i16,
             },
         }
     }
@@ -369,7 +369,8 @@ fn particle_shp_piece(
             palette_light: PaletteLight::plain(53, 1000),
             // 62D01D: this is the depth argument, not a screen-Y lift.
             z_adjust: -15. - lift,
-            z_gradient: ZGradient::Vertical as u32,
+            z_gradient: ZGradient::Vertical as u32
+                | crate::render::native_z::shp_frame_flag(entry.extended),
             ..Default::default()
         },
     };
@@ -607,6 +608,7 @@ mod tests {
                     tactical: [100, 0, 800, 600],
                     zoom: 1.0,
                     axis: crate::render::batch::DepthAxis::NONE,
+                    z_seed: crate::render::native_z::DEFAULT_Z,
                     atlas: None,
                     detail: &detail,
                     detail_level: 2,

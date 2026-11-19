@@ -518,8 +518,8 @@ mod tests {
     }
 
     #[test]
-    fn header_start_count_accepts_network_capacity_and_rejects_excess() {
-        let capacity = 30;
+    fn header_start_count_accepts_offline_skirmish_capacity_and_rejects_excess() {
+        let capacity = crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT;
         let header = |count| {
             IniFile::from_str(&format!(
                 "[Header]\nStartX=0\nStartY=0\nWidth=100\nHeight=80\nNumberStartingPoints={count}\n",

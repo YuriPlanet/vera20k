@@ -1,20 +1,23 @@
 //! An in-process, single-threaded network simulation of one relay room under
-//! a virtual clock (services/relay/adaptive-transport/e2e-plan.md). The
-//! production `RelayServer` and `ClientSession` run unchanged; this module
-//! supplies only the network, the clock, the content and the observation.
-//! Built only for tests and the `test-support` feature.
+//! a virtual clock, for the integration tests of the adaptive transport
+//! (services/relay/adaptive-transport/spec.md §13.2) and the `relay_netsim`
+//! example's measurements. The production `RelayServer` and `ClientSession` run
+//! unchanged; this module supplies the network, the clock, the observation
+//! and a client (`adaptive_client`) that drives `ClientSession` as the game
+//! does. Built only for tests and the `test-support` feature.
 //!
 //! The relay journals to a fresh temporary directory, removed afterwards,
 //! because the deployed relay always runs with its journal (main.rs): it
 //! serves old history from disk and reserves journal space for batches.
 //!
 //! Clock: virtual µs. The relay passes (`advance_clock`, then
-//! `drain_ordering_push`) every millisecond and after every datagram it
-//! accepts, as `services/relay/src/main.rs` does. Each client's game loop
+//! `drain_ordering_push`; one relay has no federation link) once every
+//! millisecond, and no datagram adds a pass, as services/relay/src/main.rs
+//! does. That is a relay busy enough to pass every millisecond; an idle
+//! deployed one waits up to its 6 ms read timeout. Each client's game loop
 //! runs every 16 ms with its own phase and passes the 16 ms wall bucket.
 
 pub mod adaptive_client;
-pub mod client;
 pub mod inspect;
 pub mod network;
 pub mod reader;
@@ -30,8 +33,7 @@ use crate::{
     ClientLinkStats, ClientSession, ForwardDatagram, OrderingCertificate, ReaderLinkStats,
     RelayServer, SecretKey, Ticket, derive_packet_key, turn_frames,
 };
-use adaptive_client::AdaptiveClient;
-use client::{HeadlessClient, Outgoing};
+use adaptive_client::{AdaptiveClient, Outgoing};
 use inspect::Detail;
 use network::{Link, Loss, Rng};
 use reader::Record;
@@ -106,17 +108,15 @@ impl Ord for Queued {
 struct Observed {
     up: Traffic,
     down: Traffic,
-    lost_up: u64,
-    lost_down: u64,
-    /// SUBMIT datagrams per batch, keyed by batch id, with its first send.
-    submits: HashMap<u64, (u64, u64)>,
+    /// Each batch's first send in an UPLINK, keyed by batch id.
+    first_sent: HashMap<u64, u64>,
     malformed: u64,
 }
 
 struct Client {
     label: String,
     endpoint: SocketAddrV4,
-    driver: Box<dyn HeadlessClient>,
+    driver: AdaptiveClient,
     ticket: Ticket,
     /// Each hop's v3 session once its READY was seen (compaction spec §6.2),
     /// which names v3 datagrams' hop.
@@ -222,14 +222,14 @@ impl Simulation {
                 .desync
                 .filter(|desync| desync.client == source)
                 .map(|desync| desync.frame);
-            let driver: Box<dyn HeadlessClient> = Box::new(AdaptiveClient::new(
+            let driver = AdaptiveClient::new(
                 session,
                 certificate.clone(),
                 PAYLOAD_KEY,
                 scenario.tick_hz,
                 scenario.command_bytes,
                 fault,
-            ));
+            );
             clients.push(Client {
                 label,
                 endpoint,
@@ -352,7 +352,8 @@ impl Simulation {
     }
 
     /// The client's clock: the 16 ms wall bucket in ms for the game loop
-    /// (src/net/live_commands.rs line 472), whole ms in event mode.
+    /// (spec §6.7 item 9, the transport's manual clock), whole ms in event
+    /// mode.
     fn client_ms(&self, at_us: u64) -> u64 {
         match self.scenario.service {
             ServiceMode::Periodic => at_us / 1000 / SERVICE_MS * SERVICE_MS,
@@ -405,12 +406,11 @@ impl Simulation {
             Ok(datagram) => {
                 if let Detail::Uplink(uplink) = &datagram.detail {
                     for batch_id in uplink.batch_ids() {
-                        let entry = self.clients[index]
+                        self.clients[index]
                             .observed
-                            .submits
+                            .first_sent
                             .entry(batch_id)
-                            .or_insert((at_us, 0));
-                        entry.1 += 1;
+                            .or_insert(at_us);
                     }
                 }
                 datagram.kind
@@ -455,9 +455,6 @@ impl Simulation {
             parsed,
             relay_result: None,
         });
-        if lost.is_err() && measured {
-            self.clients[index].observed.lost_up += 1;
-        }
         for arrival in arrivals {
             self.schedule(arrival, Event::ToRelay(index, bytes.clone(), wire));
         }
@@ -528,9 +525,6 @@ impl Simulation {
             parsed,
             relay_result: None,
         });
-        if lost.is_err() && measured {
-            self.clients[index].observed.lost_down += 1;
-        }
         for arrival in arrivals {
             self.schedule(arrival, Event::ToClient(index, bytes.clone()));
         }
@@ -700,10 +694,8 @@ impl Simulation {
         client.driver.tick(now_ms, at_us);
         let output = client.driver.take_output();
         if let Some(trace) = self.trace.as_mut() {
-            trace.services.push((at_us, index));
-            if let Some(stats) = self.clients[index].driver.link_stats()
-                && Some(stats) != self.clients[index].last_stats
-            {
+            let stats = self.clients[index].driver.link_stats();
+            if Some(stats) != self.clients[index].last_stats {
                 self.clients[index].last_stats = Some(stats);
                 trace.client_stats.push((at_us, index, stats));
             }
@@ -727,7 +719,6 @@ impl Simulation {
     }
 
     fn renew(&mut self, index: usize, at_us: u64) {
-        let now_ms = self.client_ms(at_us);
         let client = &mut self.clients[index];
         let mut ticket = client.ticket;
         ticket.nonce[15] = ticket.nonce[15].wrapping_add(100);
@@ -738,10 +729,7 @@ impl Simulation {
         client.sessions.push(None);
         let hop_key = *derive_packet_key(&self.key, &signed).expose_for_https();
         client.hop_keys.push(hop_key);
-        client.driver.renew(&signed, hop_key, now_ms);
-        for outgoing in self.clients[index].driver.take_output() {
-            self.send_up(index, outgoing, at_us);
-        }
+        client.driver.renew(&signed, hop_key);
     }
 
     /// Runs the scenario to its end and reports the measurement window.
@@ -801,10 +789,7 @@ impl Simulation {
                         self.relay.preset_reader_measured_good(ROOM, index as u8);
                     }
                     match result {
-                        Ok(output) => {
-                            self.route(output, at_us, Origin::Reply);
-                            self.relay_pass(at_us);
-                        }
+                        Ok(output) => self.route(output, at_us, Origin::Reply),
                         Err(error) => {
                             let kind = inspect::client_datagram(&bytes)
                                 .map_or("MALFORMED", |datagram| datagram.kind);
@@ -818,7 +803,7 @@ impl Simulation {
                 Event::ToClient(index, bytes) => {
                     let now_ms = self.client_ms(at_us);
                     let client = &mut self.clients[index];
-                    client.driver.deliver(&bytes, now_ms, at_us);
+                    client.driver.deliver(&bytes, now_ms);
                     for outgoing in client.driver.take_output() {
                         self.send_up(index, outgoing, at_us);
                     }
@@ -851,13 +836,6 @@ impl Simulation {
         }
     }
 
-    /// The relay's canonical history, every committed record in sequence
-    /// order (compaction spec §12.2), by the test-support
-    /// `RelayServer::ordering_history`.
-    fn relay_history(&mut self) -> Option<Vec<Vec<u8>>> {
-        Some(self.relay.ordering_history(ROOM))
-    }
-
     fn run_inner(mut self, traced: bool) -> (Report, Option<Trace>) {
         if traced {
             self.trace = Some(Trace {
@@ -869,11 +847,9 @@ impl Simulation {
         let (_, end) = self.window();
         self.step_until(end);
         let report = self.report();
-        let history = self.relay_history();
-        let mac_counts = self.relay.take_mac_failure_counts();
         if let Some(trace) = self.trace.as_mut() {
-            trace.relay_history = history;
-            trace.mac_counts = Some(mac_counts);
+            trace.relay_history = self.relay.ordering_history(ROOM);
+            trace.session_alerts = self.relay.take_session_alerts();
             trace.client_mac_failures = self
                 .clients
                 .iter()
@@ -902,7 +878,7 @@ impl Simulation {
         for (index, client) in self.clients.iter().enumerate() {
             let observed = &client.observed;
             let log = client.driver.log();
-            let direction = |traffic: &Traffic, lost: u64| report::Direction {
+            let direction = |traffic: &Traffic| report::Direction {
                 packets_per_s: traffic.packets as f64 / seconds,
                 bytes_per_s: traffic.bytes as f64 / seconds,
                 kinds: traffic
@@ -910,7 +886,6 @@ impl Simulation {
                     .iter()
                     .map(|(kind, (packets, _))| (kind.to_string(), *packets as f64 / seconds))
                     .collect(),
-                net_lost_per_s: lost as f64 / seconds,
             };
             let latencies: Vec<f64> = log
                 .commands
@@ -924,12 +899,11 @@ impl Simulation {
                 .filter(|pair| in_window(pair[0]) && in_window(pair[1]))
                 .map(|pair| (pair[1] - pair[0]) as f64 / 1000.0)
                 .collect();
-            let batches: Vec<u64> = observed
-                .submits
+            let batches = observed
+                .first_sent
                 .values()
-                .filter(|(first, _)| in_window(*first))
-                .map(|(_, copies)| *copies)
-                .collect();
+                .filter(|first| in_window(**first))
+                .count();
             let pulls = observed
                 .up
                 .kinds
@@ -940,43 +914,28 @@ impl Simulation {
                     .map(|(key, value)| (key.clone(), *value as f64))
                     .collect()
             };
-            let link = client.driver.link_stats().map(report::LinkSummary::of);
+            let link = report::LinkSummary::of(client.driver.link_stats());
             let row = ClientReport {
                 label: client.label.clone(),
                 clients: 1,
-                up: direction(&observed.up, observed.lost_up),
-                down: direction(&observed.down, observed.lost_down),
+                up: direction(&observed.up),
+                down: direction(&observed.down),
                 command_latency_ms: Distribution::of(latencies.clone()),
-                turn_interval_ms: Distribution::of(turns.clone()),
                 hitches: turns.iter().filter(|gap| **gap > 2.0 * turn_ms).count() as f64,
-                gaps: link.as_ref().map_or(0.0, |link| link.gaps as f64),
+                gaps: link.gaps as f64,
                 pulls: pulls as f64,
                 repair_pulls: count(&log.repair_pulls),
-                resends: link.as_ref().map_or(0.0, |link| link.rto_timeouts as f64),
-                submits_per_batch: if batches.is_empty() {
-                    0.0
-                } else {
-                    batches.iter().sum::<u64>() as f64 / batches.len() as f64
-                },
-                batches: batches.len() as f64,
-                executed_frames: client
-                    .driver
-                    .reader()
-                    .read()
-                    .iter()
-                    .filter(|record| matches!(record, Record::FrameEnd { .. }))
-                    .count() as f64,
+                resends: link.rto_timeouts as f64,
+                batches: batches as f64,
                 errors: to_f64(&log.errors),
                 refused: to_f64(&log.refused),
-                gap_uplink_triggers: count(&log.gap_triggers.times),
-                gap_uplink_resends: count(&log.gap_triggers.second_times),
-                link,
+                link: Some(link),
                 reader: self
                     .relay
                     .reader_link_stats(ROOM, index as u8)
                     .map(report::ReaderSummary::of),
             };
-            rows.push((row, latencies, turns));
+            rows.push((row, latencies));
         }
         let mut labels: Vec<&str> = Vec::new();
         for client in &self.clients {
@@ -989,17 +948,14 @@ impl Simulation {
             .map(|label| {
                 let members: Vec<_> = rows
                     .iter()
-                    .filter(|(row, ..)| row.label == *label)
-                    .map(|(row, l, t)| (row, l.clone(), t.clone()))
+                    .filter(|(row, _)| row.label == *label)
+                    .map(|(row, l)| (row, l.clone()))
                     .collect();
                 report::mean(label, &members)
             })
             .collect();
         if labels.len() > 1 {
-            let all: Vec<_> = rows
-                .iter()
-                .map(|(row, l, t)| (row, l.clone(), t.clone()))
-                .collect();
+            let all: Vec<_> = rows.iter().map(|(row, l)| (row, l.clone())).collect();
             groups.push(report::mean("all", &all));
         }
         let streams: Vec<&[Record]> = self
@@ -1046,14 +1002,9 @@ impl Simulation {
             relay_rejects: self.relay_rejects.clone(),
             relay: report::RelayTraffic::of(&self.relay_sent, &self.relay_received, seconds),
             groups,
-            clients: rows.into_iter().map(|(row, ..)| row).collect(),
+            clients: rows.into_iter().map(|(row, _)| row).collect(),
         }
     }
-}
-
-/// Runs one scenario file's text.
-pub fn run_json(text: &str) -> Result<Report, String> {
-    Ok(Simulation::new(Scenario::from_json(text)?).run())
 }
 
 #[cfg(test)]

@@ -157,7 +157,7 @@ fn cargo(sim: &Simulation, plane: u64) -> Vec<u64> {
         .entities
         .get(plane)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .cargo()
         .map_or_else(Vec::new, |cargo| cargo.passengers().to_vec())
 }
@@ -651,7 +651,10 @@ fn send_paradrop_planes_matches_native() {
         for &passenger in &infantry {
             let passenger = sim.substrate.entities.get(passenger).unwrap();
             assert!(passenger.lifecycle.in_limbo());
-            assert_eq!(passenger.passenger_role.inside_transport_id(), Some(plane));
+            assert_eq!(
+                passenger.passenger_role().inside_transport_id(),
+                Some(plane)
+            );
         }
         replayed += 1;
     }

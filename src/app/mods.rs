@@ -139,6 +139,11 @@ impl Mods {
         self.active.as_ref().map(|active| active.dir.as_path())
     }
 
+    /// The mod in use's title, as the player is shown it.
+    pub(crate) fn title(&self) -> Option<&str> {
+        self.active.as_ref().map(|active| active.title.as_str())
+    }
+
     /// The switch that gives a run this program starts the same mod, or none:
     /// such a run must not choose for itself from config.toml.
     pub(crate) fn child_args(&self) -> Vec<OsString> {

@@ -275,6 +275,7 @@ pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
 pub use substrate::DeferredDeleteQueue;
 pub(crate) use substrate::{DeferredDeleteTicket, ObjectKind, ObjectSubstrate};
 pub use substrate::{EnterOrderCounter, StableIdCursor};
+pub(in crate::sim) use world_spawn::TypeProjectionWrite;
 pub(crate) use world_spawn::{CrushableFacts, MoverFacts, TypeFacts};
 pub use world_spawn::{GeneratedTechnoInitError, GeneratedTechnoInitTable};
 
@@ -287,7 +288,7 @@ use crate::map::houses::HouseAllianceMap;
 use crate::map::overlay::OverlayEntry;
 use crate::map::playfield::PlayfieldBounds;
 use crate::map::resolved_terrain::{
-    RealCellBridgeFlags0x1180, ResolvedTerrainGrid, SharedCellDummy,
+    RealCellBridgeFlags0x1180, ResolvedTerrainGrid, SavedCellLandValues, SharedCellDummy,
 };
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::object_type::ObjectType;
@@ -302,6 +303,7 @@ use crate::sim::dirty_cells::DirtyCells;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
+use crate::sim::house_tracking::HouseTracking;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
@@ -1538,7 +1540,7 @@ pub struct Simulation {
     /// enter-order counters. The single owner the lifecycle contract
     /// (reveal/conceal/unlimbo/uninit) mutates; entity storage and the
     /// occupancy grid migrate here in later stages.
-    pub(crate) substrate: ObjectSubstrate,
+    pub(in crate::sim) substrate: ObjectSubstrate,
     /// Ordered release-visible handoffs produced by lifecycle transactions.
     /// The app drains these without feeding them back into simulation.
     #[serde(skip)]
@@ -1736,7 +1738,7 @@ pub struct Simulation {
     pub(crate) overlay_grid: Option<crate::sim::overlay_grid::OverlayGrid>,
     /// Persistent MapClass scenario-crate slots, including accepted ghosts and
     /// their native timer words. This is authoritative save/hash state.
-    pub(crate) crate_authority: crate::sim::crates::CrateAuthority,
+    crate_authority: crate::sim::crates::CrateAuthority,
     /// Per-cell smudge state (craters, scorches). Seeded from map [Smudge]
     /// entries at init, mutated by combat death-handling at runtime.
     pub(crate) smudge_grid: Option<crate::sim::smudge_grid::SmudgeGrid>,
@@ -2770,9 +2772,6 @@ impl Simulation {
         // (0x00469C93 -> 0x00422702/0x00424D5A) accesses the live smudge map
         // before returning. Keep that authority resident through recursion.
         // Evidence: active gamemd.exe bodies and caller instructions.
-        let house_alliances = self.house_alliances.clone();
-        let current_tick = u64::from(self.session.binary_frame());
-        let scenario_no_damage = self.session.no_damage();
         let mut effects = crate::sim::combat::DeathEffects::default();
         let mut under_attack_events = Vec::new();
 
@@ -2782,7 +2781,12 @@ impl Simulation {
                 // GetWeapon(0) is re-entered exactly once per cell, with the
                 // owner's current rank. A null owner aborts DamageArea before
                 // any receiver, wall, cliff, or RNG work.
-                let Some(firer) = self.substrate.entities.get(request.firer_id) else {
+                let Some(firer) = self
+                    .waves
+                    .get(request.wave_id)
+                    .and_then(|wave| wave.owner_id())
+                    .and_then(|id| self.substrate.entities.get(id))
+                else {
                     break;
                 };
                 let Some(object_type) = self.interner.object_type(firer.type_ref(), rules) else {
@@ -2805,7 +2809,6 @@ impl Simulation {
                     break;
                 };
                 let warhead_ref = self.interner.intern(warhead_name);
-                let source_house = Some(firer.owner());
                 let mut shared_damage = raw_ambient_damage;
 
                 // The shared dummy is still a native CellClass entry, so the
@@ -2837,107 +2840,81 @@ impl Simulation {
                 .first()
                 .copied();
                 while let Some(receiver_object) = current {
+                    // Wave75F3E9 reads its current owner again for the comparison
+                    // and arg4. A prior callback can have cleared it; arg7 is always null.
+                    let firer = self
+                        .waves
+                        .get(request.wave_id)
+                        .and_then(|wave| wave.owner_id());
                     let receiver = match receiver_object {
-                        CellObject::Entity(target_id) => {
-                            let eligible = target_id != request.firer_id
+                        CellObject::Entity(id)
+                            if Some(id) != firer
                                 && self
                                     .substrate
                                     .entities
-                                    .get(target_id)
-                                    .is_some_and(|entity| entity.reachable_in_cell_list());
-                            if !eligible {
-                                let order = current_order(
-                                    &self.substrate.occupancy,
-                                    &self.terrain_objects,
-                                    rx,
-                                    ry,
-                                    layer,
-                                );
-                                current = order
-                                    .iter()
-                                    .position(|&item| item == receiver_object)
-                                    .and_then(|index| order.get(index + 1).copied());
-                                continue;
-                            }
+                                    .get(id)
+                                    .is_some_and(|actor| actor.is_live_on_map()) =>
+                        {
                             let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
-                                target_id,
+                                id,
                                 shared_damage,
                                 0,
-                                request.firer_id,
-                                source_house,
+                                firer.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),
+                                None,
                                 warhead_ref,
                                 crate::sim::combat::ReceiverCallFlags {
                                     ignore_defenses: false,
                                     arg6: false,
                                 },
                             );
-                            // A unit inside its war factory returns at the
-                            // head of `UnitClass::ReceiveDamage`
-                            // (`0x00737CB6..0x00737D2E`) before it touches
-                            // the shared damage.
-                            let post_object_damage =
-                                if self.unit_in_contact_war_factory(target_id, rules) {
-                                    None
-                                } else {
-                                    crate::sim::combat::wave_post_object_damage(
-                                        &event,
-                                        &self.substrate.entities,
-                                        rules,
-                                        &self.interner,
-                                        &self.houses,
-                                        &house_alliances,
-                                        scenario_no_damage,
-                                        current_tick,
-                                        self.resolved_terrain.as_ref(),
-                                        #[cfg(feature = "phobos")]
-                                        Some(&*self),
-                                    )
-                                };
-                            if let Some(value) = post_object_damage {
-                                shared_damage = value;
-                            }
-                            #[cfg(any(test, feature = "test-support"))]
-                            self.trace_lifecycle_for_test(
-                                LifecycleTestEvent::WaveDamageReceiverSelected {
-                                    wave_id: request.wave_id,
-                                    target_id,
-                                    scenario_rng_state: self.scenario_rng.state(),
-                                },
-                            );
-                            crate::sim::combat::combat_aoe::AreaDamageReceiver::Entity(event)
+                            Some(crate::sim::combat::combat_aoe::AreaDamageReceiver::Entity(
+                                event,
+                            ))
                         }
-                        CellObject::Terrain(stable_id) => {
-                            #[cfg(any(test, feature = "test-support"))]
-                            self.trace_lifecycle_for_test(
-                                LifecycleTestEvent::WaveDamageReceiverSelected {
-                                    wave_id: request.wave_id,
-                                    target_id: stable_id,
-                                    scenario_rng_state: self.scenario_rng.state(),
-                                },
-                            );
-                            crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
+                        CellObject::Terrain(id)
+                            if self
+                                .terrain_objects
+                                .get(id)
+                                .is_some_and(|tree| tree.is_live() && tree.health() > 0) =>
+                        {
+                            Some(crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
                                 crate::sim::combat::TerrainDamageEvent {
-                                    damage_writeback: None,
-                                    stable_id,
+                                    stable_id: id,
                                     rx,
                                     ry,
                                     damage: shared_damage,
                                     distance_leptons: 0,
                                     warhead_ref,
                                     near_center_ic_isolation_eligible: false,
+                                    damage_writeback: None,
                                 },
-                            )
+                            ))
                         }
+                        _ => None,
                     };
-                    let (nested, mut pings) = crate::sim::combat::world_receiver::commit_area(
-                        self,
-                        &mut run,
-                        std::slice::from_ref(&receiver),
-                        rules,
-                        overlay_registry,
-                    );
-                    effects.append(nested);
-                    under_attack_events.append(&mut pings);
+                    if let Some(receiver) = receiver {
+                        #[cfg(any(test, feature = "test-support"))]
+                        self.trace_lifecycle_for_test(
+                            LifecycleTestEvent::WaveDamageReceiverSelected {
+                                wave_id: request.wave_id,
+                                target_id: match receiver_object {
+                                    CellObject::Entity(id) | CellObject::Terrain(id) => id,
+                                },
+                                scenario_rng_state: self.scenario_rng.state(),
+                            },
+                        );
+                        let (nested, mut pings, damage) =
+                            crate::sim::combat::world_receiver::commit_receiver(
+                                self,
+                                &mut run,
+                                receiver,
+                                rules,
+                                overlay_registry,
+                            );
+                        shared_damage = damage;
+                        effects.append(nested);
+                        under_attack_events.append(&mut pings);
+                    }
 
                     // Native loads current->NextObject only after its callback.
                     // If UnInit removed the current object, its represented
@@ -3248,7 +3225,7 @@ impl Simulation {
     ) -> damage_consequences::DamageCommitReceipt {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
-        let (effects, under_attack_events) = crate::sim::combat::world_receiver::commit_terrain(
+        let (effects, under_attack_events, _) = crate::sim::combat::world_receiver::commit_terrain(
             self,
             &mut run,
             event,
@@ -3539,7 +3516,7 @@ impl Simulation {
     /// (`install_fresh_process_main`). In-scenario loading keeps the live
     /// seed and MapGen; the cold shell starts MapGen from the CRT Seed(0)
     /// object (native fixture in world/rng_routing_tests.rs).
-    pub fn retain_process_state_for_load(&mut self, process: SnapshotProcessState<'_>) {
+    pub(crate) fn retain_process_state_for_load(&mut self, process: SnapshotProcessState<'_>) {
         match process {
             SnapshotProcessState::Live(live) => {
                 self.session.record_random_seed(live.session.seed());
@@ -3623,9 +3600,9 @@ impl Simulation {
     /// `MouseClass::Load` dispatch at `0x005BE150` routes restored dimensions through
     /// `MapClass::Resize @ 0x00565C10`, whose unconditional call to
     /// `CellClass::Constructor @ 0x0047BBF0` reconstructs the fixed dummy in
-    /// place. The app resets a detached candidate before fallible restoration,
+    /// place. Player loads reset a detached candidate before fallible restoration,
     /// so a rejected transactional load cannot mutate the running world.
-    pub fn reconstruct_cellclass_dummy_for_map_resize(&mut self) {
+    pub(crate) fn reconstruct_cellclass_dummy_for_map_resize(&mut self) {
         self.effective_shared_cell_dummy()
             .reconstruct_for_map_resize();
         self.trigger_runtime.reconstruct_dummy_for_map_resize();
@@ -3635,6 +3612,16 @@ impl Simulation {
         self.substrate
             .raw_cell_occupation
             .reconstruct_dummy_for_map_resize();
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn retain_player_load_process_for_test(&mut self, process: SnapshotProcessState<'_>) {
+        self.retain_process_state_for_load(process);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn reconstruct_map_dummy_for_test(&mut self) {
+        self.reconstruct_cellclass_dummy_for_map_resize();
     }
 
     /// Adopt the process-global CellClass identity already bound to a load's
@@ -3752,6 +3739,24 @@ impl Simulation {
 
     pub fn crate_authority(&self) -> &crate::sim::crates::CrateAuthority {
         &self.crate_authority
+    }
+
+    pub(crate) fn crate_slot_updates(&mut self) -> crate::sim::crates::CrateSlotUpdates<'_> {
+        crate::sim::crates::CrateSlotUpdates::new(&mut self.crate_authority, &mut self.scenario_rng)
+    }
+
+    pub(super) fn reset_crates_after_user_load(
+        &mut self,
+        saved_land: &SavedCellLandValues,
+    ) -> Result<(), crate::sim::snapshot::SnapshotRestoreError> {
+        let overlays = self.overlay_grid.as_mut().ok_or(
+            crate::sim::snapshot::SnapshotRestoreError::MissingMapAuthorityComponent {
+                component: "OverlayGrid",
+            },
+        )?;
+        self.crate_authority.reset_coordinates_after_user_load();
+        overlays.reset_crate_fields_after_user_load(saved_land.allocated_cells());
+        Ok(())
     }
 
     pub fn smudge_grid(&self) -> Option<&crate::sim::smudge_grid::SmudgeGrid> {
@@ -3984,16 +3989,6 @@ impl Simulation {
         };
         state.make_multiplay_passive();
         true
-    }
-
-    /// The generated-map loader runs the final ore pass on the populated grid
-    /// outside the simulation and installs the result before play.
-    pub fn take_overlay_grid_for_load(&mut self) -> Option<crate::sim::overlay_grid::OverlayGrid> {
-        self.overlay_grid.take()
-    }
-
-    pub fn install_overlay_grid_for_load(&mut self, grid: crate::sim::overlay_grid::OverlayGrid) {
-        self.overlay_grid = Some(grid);
     }
 
     /// The authored loader runs the final InitCellAttributes sweep on the live
@@ -4909,7 +4904,8 @@ impl Simulation {
     ///   the presentation frame holds their draw records), and none of the
     ///   state only gameplay reads (the zone and path grids, the team script
     ///   VM, the movement pass's kept products, the reveal pass's answers,
-    ///   the Houses' spatial threat grids);
+    ///   the Houses' spatial threat grids, the AI's base reservations and the
+    ///   structures' navigation cells);
     /// - its fog is only what `viewer`, the local player, sees
     ///   ([`FogState::presentation_copy`]);
     /// - its terrain, overlays, smudges, terrain objects, interner and
@@ -4930,6 +4926,11 @@ impl Simulation {
         let team_script_vm = std::mem::take(&mut self.team_script_vm);
         let movement_pass_cache = std::mem::take(&mut self.movement_pass_cache);
         let reveal_viewers = std::mem::take(&mut self.reveal_viewers);
+        // CellClass +0xDC, one word per reserved cell: a city map's thousands
+        // of buildings reserve tens of thousands, which cloned took most of
+        // the copy. Only the AI's base planning reads them.
+        let base_reservations = std::mem::take(&mut self.substrate.base_reservations);
+        let structure_navigation_cells = std::mem::take(&mut self.structure_navigation_cells);
         // Each House's spatial threat grid (a large map's is 66,564 dwords,
         // thirty Houses about 8 MB) is AI state only gameplay reads.
         let spatial_threats: Vec<_> = self
@@ -4985,6 +4986,8 @@ impl Simulation {
         self.team_script_vm = team_script_vm;
         self.movement_pass_cache = movement_pass_cache;
         self.reveal_viewers = reveal_viewers;
+        self.substrate.base_reservations = base_reservations;
+        self.structure_navigation_cells = structure_navigation_cells;
         #[cfg(any(test, feature = "test-support"))]
         {
             (
@@ -5026,9 +5029,23 @@ impl Simulation {
         &mut self.substrate.entities
     }
 
+    #[cfg(test)]
+    pub(crate) fn ground_occupation_bits_for_test(&self, rx: u16, ry: u16) -> u8 {
+        self.substrate.raw_cell_occupation.ground_bits(rx, ry)
+    }
+
+    /// Borrow one fixture actor, recording the same touch as a simulation writer.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn entity_mut_for_test(
+        &mut self,
+        stable_id: u64,
+    ) -> Option<&mut crate::sim::game_entity::GameEntity> {
+        self.substrate.entities.get_mut(stable_id)
+    }
+
     /// Disjoint access to the entity store (mutable) and the interner (shared)
     /// for callers that need both at once.
-    pub(crate) fn entities_mut_and_interner(
+    pub(in crate::sim) fn entities_mut_and_interner(
         &mut self,
     ) -> (&mut EntityStore, &crate::sim::intern::StringInterner) {
         (&mut self.substrate.entities, &self.interner)
@@ -5991,7 +6008,7 @@ impl Simulation {
                 );
             }
             if !entity.lifecycle.cell_marked()
-                || entity.passenger_role.is_inside_transport()
+                || entity.passenger_role().is_inside_transport()
                 // A Jumpjet's hold and cruise (states 2 and 3) move it with
                 // no Mark pair (0x0054D0FF..0x0054D134), so one flown onto a
                 // cliff answers Ground with no list entry, in gamemd too.
@@ -6247,32 +6264,6 @@ impl Simulation {
             .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()))
     }
 
-    /// Apply `house_tracking`'s Add_Tracking or Remove_Tracking for an object
-    /// on its owner's house.
-    pub(crate) fn update_house_tracking(
-        substrate: &mut ObjectSubstrate,
-        houses: &mut Houses,
-        stable_id: u64,
-        update: fn(
-            &mut crate::sim::house_tracking::HouseTracking,
-            &mut crate::sim::game_entity::GameEntity,
-        ),
-    ) {
-        let Some(owner) = substrate
-            .entities
-            .get(stable_id)
-            .map(crate::sim::game_entity::GameEntity::owner)
-        else {
-            return;
-        };
-        if let (Some(entity), Some(house)) = (
-            substrate.entities.get_mut(stable_id),
-            houses.get_mut(&owner),
-        ) {
-            update(house.tracking_mut(), entity);
-        }
-    }
-
     /// `BuildingClass::OnConstructionComplete`'s self-heal grant
     /// (`0x00446382..0x004463B4`): a structure joins its owner's house with the
     /// type's `InfantryGainSelfHeal` (`+0x1564` → house `+0x164`) and
@@ -6377,8 +6368,7 @@ impl Simulation {
             return;
         };
         if let Some(house) = self.houses.get_mut(&entity.owner()) {
-            let factors = house.cost_factors();
-            house.tracking_mut().added_to_game(entity, &factors);
+            house.add_to_game_tracking(entity);
             if entity.category() == EntityCategory::Structure {
                 let drain = power_system::building_power_drain(entity, rules, &self.interner);
                 self.power_states
@@ -6413,7 +6403,7 @@ impl Simulation {
         let owner = entity.owner();
         let structure = entity.category() == EntityCategory::Structure;
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.tracking_mut().removed_from_game_prefix(entity);
+            house.remove_from_game_tracking_prefix(entity);
         }
         self.powered_center_removed(stable_id, rules, effects);
         //50277B resumes after the callback prelude. Pin the original House
@@ -6421,8 +6411,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            let factors = house.cost_factors();
-            house.tracking_mut().removed_from_game(entity, &factors);
+            house.remove_from_game_tracking(entity);
         }
         // With Ares: the building's store leaves the House's
         // (`0x00502801..0x00502821`, `sim::ares_tiberium_storage`).
@@ -6510,7 +6499,7 @@ impl Simulation {
             #[cfg(feature = "debug-tools")]
             let power_changed = power_changed || debug_power_changed;
             if power_changed {
-                crate::sim::superweapon::update_owned_supers(self, rules, owner);
+                crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
             }
         }
         // House4F84F1..4F850C admits radar THEN SpySat using the same prior
@@ -7003,19 +6992,13 @@ impl Simulation {
         }
         #[cfg(feature = "phobos")]
         self.phobos_tracking_change_owner(stable_id, new_owner);
-        Self::update_house_tracking(
+        // 7015E6 adds the object to its new House before the actor's owner store.
+        HouseTracking::transfer_registration(
             &mut self.substrate,
             &mut self.houses,
             stable_id,
-            crate::sim::house_tracking::HouseTracking::remove_tracking,
+            new_owner,
         );
-        //7015E6 receives the NEW House before the object owner changes.
-        //Call the one native Add_Tracking owner with that explicit receiver.
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            && let Some(house) = self.houses.get_mut(&new_owner)
-        {
-            house.tracking_mut().add_tracking(entity);
-        }
         // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
         // calls and precedes both the capture stats and owner pointer store.
         // Buildings retain their own existing44936E/449379 recheck tail.
@@ -7041,7 +7024,7 @@ impl Simulation {
         {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
-            if !entity.tracking_facts.dont_score() {
+            if !entity.tracking_facts().dont_score() {
                 house.stats_mut().record_kill(category, old_house);
             }
         }
@@ -7119,12 +7102,7 @@ impl Simulation {
         // and joins the new one's (IncrementFactoryCount, `0x00448CDD`),
         // whether it is in limbo or not.
         if let Some(entity) = self.substrate.entities.get(stable_id) {
-            if let Some(house) = self.houses.get_mut(&old_owner) {
-                house.tracking_mut().recount(entity);
-            }
-            if let Some(house) = self.houses.get_mut(&new_owner) {
-                house.tracking_mut().increment_factory_count(entity);
-            }
+            HouseTracking::transfer_factory(&mut self.houses, entity, old_owner, new_owner);
         }
         // A Helipad's docks leave the old house's AirportDocks
         // (`0x00448B4C..0x00448B6A`) and join the new one's
@@ -7140,7 +7118,7 @@ impl Simulation {
         {
             for (owner, delta) in [(old_owner, docks.wrapping_neg()), (new_owner, docks)] {
                 if let Some(house) = self.houses.get_mut(&owner) {
-                    house.tracking_mut().add_airport_docks(delta);
+                    house.add_airport_docks(delta);
                 }
             }
         }
@@ -7556,7 +7534,7 @@ impl Simulation {
     /// `restore_map_authority_after_snapshot_load` once rules and the overlay
     /// registry are bound. Rule animation lists are re-interned from names:
     /// an outgoing simulation's numeric IDs do not belong to this saved world.
-    pub fn rebuild_caches_after_load(
+    pub(crate) fn rebuild_caches_after_load(
         &mut self,
         mut resolved_terrain: ResolvedTerrainGrid,
         terrain_speed_config: terrain_speed::TerrainSpeedConfig,
@@ -8461,16 +8439,6 @@ impl Simulation {
         }
         self.sound_events
             .emit(SimSoundEvent::UnitVoiceMoved { from, to });
-    }
-}
-
-impl crate::sim::houses::Houses {
-    /// Inline native House+1FC writers request the existing House tail;
-    /// power/radar dirty bytes remain with their distinct PowerState owner.
-    pub(crate) fn request_house_tech_tree_recheck(&mut self, owner: InternedId) {
-        if let Some(house) = self.get_mut(&owner) {
-            house.request_tech_recheck();
-        }
     }
 }
 

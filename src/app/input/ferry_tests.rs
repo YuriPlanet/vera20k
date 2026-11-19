@@ -15,6 +15,11 @@ const DROP: (u16, u16) = (13, 5);
 
 #[test]
 fn a_previous_worlds_ferry_cannot_board_units_in_a_fresh_world() {
+    // Without retail data (RA2_DIR) the fixture prints SKIPPED; each scene
+    // then loads its own copy.
+    if crate::rules::retail_ini_fixture::retail_battle_rules().is_none() {
+        return;
+    }
     let scene = || {
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules()
             .expect("retail rules are required for the ferry isolation regression");
@@ -261,7 +266,7 @@ fn a_ferry_carries_a_unit_across_the_river_and_comes_back() {
         let result = sim.advance_tick(&due, Some(&rules), None, None, 67);
         assert!(result.frame_committed, "{result:?}");
         set_down |= sim.entities().get(gi).is_some_and(|rider| {
-            !rider.passenger_role.is_inside_transport() && rider.position.rx() > 10
+            !rider.passenger_role().is_inside_transport() && rider.position.rx() > 10
         });
         let carrier = sim
             .entities()
@@ -356,7 +361,7 @@ fn a_flak_track_and_a_nighthawk_ferry_too() {
             let result = sim.advance_tick(&due, Some(rules), None, None, 67);
             assert!(result.frame_committed, "{result:?}");
             set_down |= sim.entities().get(gi).is_some_and(|rider| {
-                !rider.passenger_role.is_inside_transport() && rider.position.rx() > 18
+                !rider.passenger_role().is_inside_transport() && rider.position.rx() > 18
             });
             let entity = sim.entities().get(transport).expect("the transport lives");
             back = set_down

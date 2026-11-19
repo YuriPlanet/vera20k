@@ -626,14 +626,13 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
     start_header.read_ini(&map_data.ini);
     // A shared House is one participant.
     let launch_participant_count = (session
-        .humans
-        .iter()
-        .enumerate()
-        .filter(|(index, human)| !human.is_observer() && session.house_leader(*index) == *index)
+        .humans_with_house_leaders()
+        .filter(|(index, human, leader)| index == leader && !human.is_observer())
         .count() as i32)
         .wrapping_add(session.ai_player_count)
         .max(0) as usize;
-    let roster_start_count = session.required_start_count();
+    let roster = session.pre_fill_house_roster();
+    let roster_start_count = roster.required_start_count(session.ai_player_count);
     if roster_start_count != launch_participant_count {
         return Err(PreFillScenarioPrefixPlanError::RosterParticipantMismatch {
             roster_start_count,
@@ -645,8 +644,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
     let scenario_rng_before = scenario_rng.logical_state();
     let scenario_rng_before_fingerprint = scenario_rng.state();
 
-    let first_house_timers =
-        advance_pre_fill_house_constructor_pass(&session.pre_fill_house_roster, &mut scenario_rng);
+    let first_house_timers = advance_pre_fill_house_constructor_pass(&roster, &mut scenario_rng);
     #[cfg(any(test, feature = "test-support"))]
     let after_first_house_pass = scenario_rng.logical_state();
     let first_gathered_starts = native_gather_pre_fill_start_positions(
@@ -694,7 +692,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
                     &final_gathered_starts,
                     &preassignment,
                     human_start_spots,
-                    session.pre_fill_house_roster.nonobserver_human_count(),
+                    roster.nonobserver_human_count(),
                     &mut scenario_rng,
                 )
             }
@@ -708,8 +706,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
     // pass begins at the chooser's exact cursor.
     #[cfg(any(test, feature = "test-support"))]
     let after_zero_draw_reset = scenario_rng.logical_state();
-    let second_house_timers =
-        advance_pre_fill_house_constructor_pass(&session.pre_fill_house_roster, &mut scenario_rng);
+    let second_house_timers = advance_pre_fill_house_constructor_pass(&roster, &mut scenario_rng);
     let scenario_rng_after = scenario_rng.logical_state();
     #[cfg(any(test, feature = "test-support"))]
     let after_second_house_pass = scenario_rng_after.clone();
@@ -1474,7 +1471,6 @@ pub fn apply_explicit_skirmish_launch_session(
 /// Apply the retained stock-offline House/start projection without repeating
 /// any prefix draw. Existing starting-force and later initialization draws
 /// remain after this projection.
-#[cfg(any(test, feature = "test-support"))]
 pub fn apply_pre_fill_scenario_prefix_launch_session(
     sim: &mut Simulation,
     map_data: &MapFile,
@@ -1491,29 +1487,7 @@ pub fn apply_pre_fill_scenario_prefix_launch_session(
         rules,
         resolved_terrain,
         descriptor,
-        None,
-        LaunchStartResolution::Prefix(plan),
-    )
-}
-
-pub fn apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
-    sim: &mut Simulation,
-    map_data: &MapFile,
-    house_roster: &HouseRoster,
-    rules: &RuleSet,
-    resolved_terrain: &ResolvedTerrainGrid,
-    descriptor: &MatchLaunchDescriptor,
-    overlay_registry: &OverlayTypeRegistry,
-    plan: &StockOfflinePrefixProjection,
-) -> SkirmishLaunchApplyResult {
-    apply_resolved_skirmish_launch_session(
-        sim,
-        map_data,
-        house_roster,
-        rules,
-        resolved_terrain,
-        descriptor,
-        Some(overlay_registry),
+        Some(rules.overlay_registry()),
         LaunchStartResolution::Prefix(plan),
     )
 }
@@ -1865,20 +1839,21 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
         (1..=session.opponents.len())
             .map(|index| normalize_house_name(&format!("Computer{index}"))),
     );
-    let mut humans: Vec<_> = session.humans.iter().enumerate().collect();
-    humans.sort_by_key(|(index, human)| (human.slot.color_index, human.house_source_order(*index)));
+    let mut humans: Vec<_> = session.humans_with_house_leaders().collect();
+    humans.sort_by_key(|(index, human, _)| {
+        (human.slot.color_index, human.house_source_order(*index))
+    });
     let mut slots: Vec<NormalizedSkirmishSlot> =
         Vec::with_capacity(humans.len() + session.opponents.len());
     // VERA shared control: a player who shares a start joins its leader's
     // House instead of building one. Every human keeps the source its place
     // in this order gives it.
     let mut members = Vec::new();
-    for (source, (index, human)) in humans.into_iter().enumerate() {
+    for (source, (index, human, leader)) in humans.into_iter().enumerate() {
         let controller = LaunchController {
             human_index: index,
-            source: i8::try_from(source).expect("at most 30 human nodes"),
+            source: i8::try_from(source).expect("at most 96 human nodes"),
         };
-        let leader = session.house_leader(index);
         if leader != index {
             members.push((leader, controller));
             continue;
@@ -2439,7 +2414,7 @@ fn ares_place_starting_construction_yard(
     }
     let Some(yard) = crate::sim::ai_buildable::first_buildable_from_array(
         rules,
-        &rules.build_const_types,
+        rules.build_const_types(),
         &country_name,
         house.side_index(),
         sim.session.game_options().super_weapons,
@@ -4342,7 +4317,7 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: crate::skirmish_launch::AiDifficulty::Normal,
             });
-        session.rebuild_house_roster();
+
         let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
         for (setting, expected) in [
             ("", HouseDifficulty::Hard),
@@ -4392,7 +4367,7 @@ mod tests {
                     human
                 })
                 .collect();
-            session.rebuild_house_roster();
+
             let starts: Vec<_> = case["starts"]
                 .as_array()
                 .unwrap()
@@ -4468,7 +4443,7 @@ mod tests {
             })
             .collect();
         session.ai_player_count = 2;
-        session.rebuild_house_roster();
+
         let starts = [(20, 20), (60, 60)].map(|(rx, ry)| Waypoint { index: 0, rx, ry });
         let result = native_assign_launch_starts(&session, &starts, &mut SimRng::new(7));
         let slots = normalized_launch_slots(&session);
@@ -4535,7 +4510,7 @@ mod tests {
         session.options.short_game = false;
         session.options.bases = false;
         session.options.unit_count = 0;
-        session.rebuild_house_roster();
+
         let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let mut sim = Simulation::with_seed(73);
         sim.session.set_game_mode(ScenarioGameMode::Wol);
@@ -4561,13 +4536,12 @@ mod tests {
                 .unwrap();
             }
         }
-        let overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: 32,
             map_height: 32,
             fill_silos: false,
             rules: &rules,
-            overlay_registry: &overlays,
+            overlay_registry: rules.overlay_registry(),
             house_roster: &HouseRoster::default(),
             skirmish_session: Some(&launch),
             campaign_map: None,
@@ -4577,11 +4551,7 @@ mod tests {
         (
             SimRuntime {
                 simulation: sim,
-                resources: std::sync::Arc::new(SimResources {
-                    rules,
-                    overlay_registry: overlays,
-                    terrain_template: None,
-                }),
+                resources: std::sync::Arc::new(SimResources::new(rules)),
             },
             actors,
         )
@@ -5207,13 +5177,13 @@ mod tests {
                 human
             })
             .collect();
-        host.rebuild_house_roster();
+
         let mut guest = host.clone();
         guest.humans.rotate_left(8);
-        guest.rebuild_house_roster();
+
         assert_eq!(host.local_player().name, "Player00");
         assert_eq!(guest.local_player().name, "Player08");
-        assert_eq!(host.pre_fill_house_roster, guest.pre_fill_house_roster);
+        assert_eq!(host.pre_fill_house_roster(), guest.pre_fill_house_roster());
         let host_order: Vec<_> = normalized_launch_slots(&host)
             .into_iter()
             .map(|slot| slot.owner_name)
@@ -5273,10 +5243,10 @@ mod tests {
         observer.slot.start_position = LaunchStartPosition::Auto;
         session.humans.push(observer);
         session.local_player_index = 1;
-        session.rebuild_house_roster();
+
         assert!(session.house_roster_is_consistent());
         assert_eq!(session.required_start_count(), 2);
-        assert_eq!(session.pre_fill_house_roster.created_house_count(), 5);
+        assert_eq!(session.pre_fill_house_roster().created_house_count(), 5);
         let descriptor = MatchLaunchDescriptor::from_resolved(session.clone()).unwrap();
         let rules = techno_constructor_start_rules();
         let mut sim = Simulation::new();
@@ -5344,11 +5314,18 @@ mod tests {
             })
             .collect();
         session.local_player_index = 1;
-        session.rebuild_house_roster();
+
         assert_eq!(session.required_start_count(), 2);
         let mut cooperative = session.clone();
         cooperative.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
-        assert_eq!(cooperative.house_leader(1), 1, "Cooperative shares nothing");
+        assert_eq!(
+            cooperative
+                .humans_with_house_leaders()
+                .map(|(_, _, leader)| leader)
+                .collect::<Vec<_>>(),
+            [0, 1, 2],
+            "Cooperative shares nothing"
+        );
 
         let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let mut sim = Simulation::new();
@@ -5396,7 +5373,7 @@ mod tests {
             observer.slot.start_position = LaunchStartPosition::Auto;
             session.humans.push(observer);
         }
-        session.rebuild_house_roster();
+
         let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let mut sim = Simulation::new();
         initialize_skirmish_launch_houses(
@@ -5505,7 +5482,7 @@ mod tests {
         session.humans[0].slot.color_index = 0;
         session.humans.push(second);
         session.local_player_index = 1;
-        session.rebuild_house_roster();
+
         let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let rules = techno_constructor_start_rules();
         let mut sim = Simulation::new();
@@ -5563,42 +5540,10 @@ mod tests {
     }
 
     fn one_player_battle_launch(selected_map_file: &str) -> MatchLaunchDescriptor {
-        use crate::skirmish_launch::{
-            PreFillHouseRoster, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
-        };
-
-        MatchLaunchDescriptor::from_resolved(SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
-                class: crate::skirmish_modes::MpModeClass::Battle,
-                id: 1,
-                ui_name_key: "GUI:Battle".to_string(),
-                tooltip_key: "STT:ModeBattle".to_string(),
-                override_file: "MPBattleMD.ini".to_string(),
-                map_filter: "standard".to_string(),
-                random_maps_allowed: true,
-                allies_allowed: true,
-                must_ally: false,
-            },
-            selected_map_file: Some(selected_map_file.to_string()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
-                raw_slot_index: Some(0),
-                name: "Player".to_string(),
-                slot: SkirmishLocalSlot {
-                    country: LaunchCountry::America,
-                    country_random: false,
-                    color_index: 0,
-                    color_random: false,
-                    start_position: LaunchStartPosition::Auto,
-                    team: LaunchTeam::None,
-                },
-                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
-            }],
-            local_player_index: 0,
-            ai_player_count: 0,
-            opponents: Vec::new(),
-            pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(0),
-            options: SkirmishLaunchOptions::default(),
-        })
+        MatchLaunchDescriptor::from_resolved(crate::headless_scenario::battle_session(
+            selected_map_file,
+            &[],
+        ))
         .expect("one-player Battle fixture is fully resolved")
     }
 
@@ -5765,7 +5710,7 @@ mod tests {
                         difficulty: crate::skirmish_launch::AiDifficulty::Easy,
                     });
                 launch.session.ai_player_count = 1;
-                launch.session.rebuild_house_roster();
+
                 map.waypoints.insert(
                     1,
                     Waypoint {
@@ -5816,14 +5761,14 @@ mod tests {
                 let native_before_map = sim.native_unique_ids.as_ref().unwrap().current_raw();
                 let mut terrain = techno_constructor_flat_start_terrain(96);
                 let overlay_grid = crate::sim::overlay_grid::OverlayGrid::new(96, 96);
-                crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+                crate::sim::runtime::populate_staged_fixture(
                     &mut sim,
                     &map,
                     &terrain,
                     "TEMPERATE",
                     &rules,
                     Some(&overlays),
-                    Some(&overlay_grid),
+                    Some(overlay_grid),
                     crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
                         bridge_destruction: true,
                     },
@@ -5860,14 +5805,13 @@ mod tests {
                     terrain = ResolvedTerrainGrid::from_cells(96, 96, cells);
                     sim.install_resolved_terrain_for_new_map(terrain.clone());
                 }
-                let result = apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+                let result = apply_pre_fill_scenario_prefix_launch_session(
                     &mut sim,
                     &map,
                     &roster,
                     &rules,
                     &terrain,
                     &launch,
-                    &overlays,
                     &projection,
                 );
                 assert_eq!(
@@ -6328,6 +6272,35 @@ mod tests {
     }
 
     #[test]
+    fn headless_battle_runs_both_house_passes_for_the_eighth_ai() {
+        use crate::skirmish_launch::AiDifficulty;
+
+        let opponents = [(LaunchCountry::America, AiDifficulty::Normal); 8];
+        let session = crate::headless_scenario::battle_session("nine-starts.map", &opponents);
+        let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        let starts: Vec<_> = (0..9u16)
+            .map(|row| Waypoint {
+                index: u32::from(row),
+                rx: 32 + 8 * (row % 3),
+                ry: 42 + 8 * (row / 3),
+            })
+            .collect();
+        let map = prefix_map_with_starts(&starts);
+        let plan =
+            prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, 42).unwrap();
+
+        assert_eq!(plan.final_gathered_starts().len(), 9);
+        assert_eq!(
+            (
+                plan.first_house_timers().len(),
+                plan.second_house_timers().len()
+            ),
+            (11, 11),
+            "each pass constructs the human, all eight computers, Neutral and Special"
+        );
+    }
+
+    #[test]
     fn scenario_prefix_runs_two_identical_house_passes_before_fill() {
         use crate::skirmish_launch::{
             AiDifficulty, PreFillAiHouseSlot, PreFillHouseRoster, PreFillHumanHouse, SkirmishAiSlot,
@@ -6401,7 +6374,7 @@ mod tests {
             })
             .collect();
         session.ai_player_count = session.opponents.len() as i32;
-        session.pre_fill_house_roster = roster;
+        session.set_recorded_house_roster_for_test(roster);
         let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let starts = [
             Waypoint {
@@ -6557,7 +6530,7 @@ mod tests {
         guest.slot.color_index = 1;
         guest.slot.start_position = LaunchStartPosition::Position(29);
         session.humans.push(guest);
-        session.rebuild_house_roster();
+
         let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let plan =
             prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, 17).unwrap();
@@ -6814,7 +6787,7 @@ mod tests {
         twin.slot.color_index = 2;
         session.humans.push(peer);
         session.humans.push(twin);
-        session.rebuild_house_roster();
+
         let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let mut sim = Simulation::new();
         initialize_skirmish_launch_houses(
@@ -7177,9 +7150,6 @@ mod tests {
     fn gsi_04_12_generated_trace_continues_into_starting_techno_and_post_map_crate() {
         use crate::map::construction_trace::{RmgConstructionPhase, RmgConstructionTrace};
         use crate::sim::scenario_post_map::ScenarioPostMapInput;
-        use crate::skirmish_launch::{
-            SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
-        };
 
         const SIZE: u16 = 80;
         let seed = 0x51C0_100B;
@@ -7232,44 +7202,11 @@ mod tests {
               [IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n",
         )
         .expect("minimal generated-map-shaped input");
-        let session = SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
-                class: crate::skirmish_modes::MpModeClass::Battle,
-                id: 1,
-                ui_name_key: "GUI:Battle".to_string(),
-                tooltip_key: "STT:ModeBattle".to_string(),
-                override_file: "MPBattleMD.ini".to_string(),
-                map_filter: "standard".to_string(),
-                random_maps_allowed: true,
-                allies_allowed: true,
-                must_ally: false,
-            },
-            selected_map_file: Some("RandMap.SED".to_string()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
-                raw_slot_index: Some(0),
-                name: "Player".to_string(),
-                slot: SkirmishLocalSlot {
-                    country: LaunchCountry::America,
-                    country_random: false,
-                    color_index: 0,
-                    color_random: false,
-                    start_position: LaunchStartPosition::Position(1),
-                    team: LaunchTeam::None,
-                },
-                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
-            }],
-            local_player_index: 0,
-            ai_player_count: 0,
-            opponents: Vec::new(),
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-            options: SkirmishLaunchOptions {
-                unit_count: 0,
-                bases: true,
-                crates: true,
-                ..SkirmishLaunchOptions::default()
-            },
-        };
+        let mut session = crate::headless_scenario::battle_session("RandMap.SED", &[]);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(1);
+        session.options.unit_count = 0;
+        session.options.crates = true;
+        session.options.bases = true;
         let launch = MatchLaunchDescriptor::from_resolved(session)
             .expect("fixture contains no unresolved shell choices");
 
@@ -7376,14 +7313,13 @@ mod tests {
 
         let starting_techno_word = (reference.next_u32() & 0xFFFF) as u16;
         let _starting_force_tail = reference.next_range_u32_inclusive(0, 0xFFFF);
-        let launch_result = apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+        let launch_result = apply_pre_fill_scenario_prefix_launch_session(
             &mut sim,
             &map,
             &house_roster,
             &rules,
             &terrain,
             &launch,
-            &overlays,
             &projection,
         );
         assert_eq!(launch_result.spawned_mcvs, 1);
@@ -7416,14 +7352,12 @@ mod tests {
         let _crate_timer = reference.next_range_u32_inclusive(0, 0x7FFF_FFFE);
         // The queues are built where the load builds them, before the post-map
         // tail, which leaves them alone.
-        let overlay_grid_for_queues = sim.overlay_grid.clone();
         let _ = crate::sim::runtime::initialize_native_tiberium_queues(
             &mut sim,
             &map.basic,
             &map.special_flags,
             &rules,
             &overlays,
-            overlay_grid_for_queues.as_ref(),
             (SIZE, SIZE),
         );
         let output = sim
@@ -7521,7 +7455,7 @@ mod tests {
             .collect();
         session.ai_player_count = 2;
         use crate::skirmish_launch::{PreFillAiHouseSlot, PreFillHouseRoster, PreFillHumanHouse};
-        session.pre_fill_house_roster = PreFillHouseRoster::new(
+        session.set_recorded_house_roster_for_test(PreFillHouseRoster::new(
             (0..2)
                 .map(|order| PreFillHumanHouse {
                     priority: i32::from(order),
@@ -7535,7 +7469,7 @@ mod tests {
                     valid: matches!(slot_index, 2 | 3),
                 })
                 .collect(),
-        );
+        ));
         session
     }
 

@@ -70,6 +70,52 @@ pub struct UrbanCatalog {
     /// Countryside and Landmark Extras (`embellish`). Empty for Ares' lists.
     pub farms: Vec<UrbanStructure>,
     pub landmarks: Vec<UrbanStructure>,
+    /// VERA extension: the combat buildings the Derelicts slider stands
+    /// neutral and unpowered (`Derelicts=` in `RMGMD.INI [Extras]`).
+    pub derelicts: Vec<UrbanStructure>,
+    /// VERA extension: foot units for the extra-Civilians, Animals and Neutral
+    /// Defenders sliders. Infantry and vehicles are kept apart so each emitted
+    /// object gets the right `EntityCategory` (a foot's category is not in its
+    /// type name). Names only; every one is a type the Rules define.
+    pub civilians: SpawnFoots,
+    pub animals: SpawnFoots,
+    pub wild: SpawnFoots,
+}
+
+/// The two foot registries a spawn slider draws from, kept apart because the
+/// map entity needs the category the Rules registry already decided.
+///
+/// The `water_` lists hold the units that can stand only on water
+/// (`SpeedType=Float`/`FloatBeach` or `MovementZone=Water`): the Bront and
+/// the navy. They go on the map's water, never on its ground, so a slider
+/// fills the sea as well as the land.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpawnFoots {
+    pub infantry: Vec<String>,
+    pub vehicles: Vec<String>,
+    pub water_infantry: Vec<String>,
+    pub water_vehicles: Vec<String>,
+}
+
+impl SpawnFoots {
+    pub fn is_empty(&self) -> bool {
+        self.infantry.is_empty()
+            && self.vehicles.is_empty()
+            && self.water_infantry.is_empty()
+            && self.water_vehicles.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.infantry.len()
+            + self.vehicles.len()
+            + self.water_infantry.len()
+            + self.water_vehicles.len()
+    }
+
+    /// How many of the lists stand on water.
+    pub fn water_len(&self) -> usize {
+        self.water_infantry.len() + self.water_vehicles.len()
+    }
 }
 
 /// What the app supplies for an urban run.
@@ -88,6 +134,9 @@ pub struct UrbanObject {
     pub cell: (i16, i16),
     /// The `Put` facing: zero for buildings, `0..=7 << 5` for foots.
     pub facing: u8,
+    /// VERA extension: a derelict combat building placed unpowered. The
+    /// build post-pass reads it to clear `structure_online` and lower health.
+    pub derelict: bool,
 }
 
 /// Scalars the urban pass reads.
@@ -966,6 +1015,7 @@ fn record(
         category,
         cell: (cell.0 as i16, cell.1 as i16),
         facing,
+        derelict: false,
     });
 }
 

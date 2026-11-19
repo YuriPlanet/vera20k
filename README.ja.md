@@ -27,18 +27,12 @@ VERA20K はゲーマーによる、ゲーマーのためのプロジェクトで
 
 うまくいかないときは[ヘルプページ](https://vera20k.org/help)（英語）をご覧ください。
 
-現在も活発に開発中です。スカーミッシュは Windows、macOS、Linux でプレイでき、キャンペーンは一部が動作し、オンラインマルチプレイ（試験的）も利用できるようになりました。過去のバージョンとそれぞれの変更点は[リリースページ](https://github.com/YuriPlanet/vera20k/releases)にあります。
-
-CnCNet クライアントから YR のシングルプレイ用スカーミッシュやキャンペーンを起動するには、[オフラインクライアントのセットアップ](integrations/cncnet/README.md)を参照してください。
-
 ## プロジェクトの目標
 
 1. オリジナルの Red Alert 2: Yuri's Revenge のゲームプレイ、ビジュアル、雰囲気を守る。
 2. より大規模な戦闘に対応する：500×500 のマップで最大 **30 人のプレイヤー**と **20,000 ユニット**。
 3. RTS でおなじみの機能に加え、これまでにない機能も取り入れる。
 4. マルチプレイクライアントの内蔵
-
-現在の優先事項と今後の計画は[ロードマップ](https://github.com/orgs/YuriPlanet/projects/1)をご覧ください。
 
 ## 開発への参加
 
@@ -53,7 +47,7 @@ CnCNet クライアントから YR のシングルプレイ用スカーミッシ
 エンジンは主に 3 つの部分で構成されています。
 
 - **シミュレーション**：ゲームプレイの状態とロジックを管理します。
-- **レンダリング**：オリジナルのゲームアセットを使い、オリジナルの見た目を保つために作られた、まったく新しい GPU レンダリングパイプラインです。
+- **レンダリング**：オリジナルのグラフィック素材を使い、地形やユニット、建物を GPU で描画します。
 - **アプリケーション**：入力、メニュー、オーディオ、プラットフォーム統合を担当し、各システムをつなぎます。
 
 この分離が、決定論的なゲームプレイを支えています。
@@ -83,15 +77,11 @@ cargo run --release --bin vera20k
 
 ## カスタマイズ
 
-VERA20K は、既定ではオリジナルのゲームと同じようにプレイできます。Ares などの MOD に由来する拡張を含め、新しい機能はすべて、次のいずれかで有効にされるまでオフのままでなければなりません。
+VERA20K は標準で Yuri's Revenge オリジナル版のルールを使います。**Options** ではサウンド、グラフィック、操作の設定を変えたり、VERA 独自の機能を有効にしたりできます。設定は `VERA.INI` に保存され、VERA 独自の項目は `[VERA]` セクションにまとまっています。
 
-- **VERA のプレイヤーオプション**：**Options** にあり、`VERA.INI` の `[VERA]` に保存されます。
-- **ビルドオプション**：対応する [Phobos 拡張](docs/phobos.md)を有効にする `--features phobos` など。
-- **INI キー**：MOD またはマップが設定します。
+対戦ルールはロビーの設定、MOD、マップで変更できます。MOD やマップの INI ファイルでは、VERA20K が対応する [Ares](docs/ares.md) や [Phobos](docs/phobos.md) の機能を有効にできます。MOD に `ares.mix` を同梱しても Ares が有効になります。Phobos の一部の機能には、引き続き `--features phobos` を指定したビルドが必要です。
 
-サウンド、グラフィック、操作の設定は `VERA.INI` に保存されます。ゲームプレイのルールは、ロビーの設定、MOD、マップによって決まります。
-
-自分で MOD を作る方法は [MOD 制作ガイド](docs/modding.md)で説明しています。
+自分の MOD を作るには、[MOD 制作ガイド](docs/modding.md)をご覧ください。
 
 ## プロジェクトの支援
 
@@ -110,6 +100,7 @@ OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開し
 本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。このリポジトリにゲームファイルは含まれていません。Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **VERA20K を共有、販売、またはフォークする前に、[法的通知](LEGAL.md)をお読みください。**

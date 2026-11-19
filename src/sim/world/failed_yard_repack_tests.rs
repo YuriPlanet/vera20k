@@ -62,13 +62,12 @@ fn scene() -> Option<(SimRuntime, u64)> {
         })
         .collect();
     let rules = retail.rules;
-    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let terrain = ResolvedTerrainGrid::build(
         &map,
         Some(&theater),
         Some(&assets),
         Some(&rules.terrain_rules),
-        Some(&registry),
+        Some(rules.overlay_registry()),
         false,
         0,
     );
@@ -95,13 +94,13 @@ fn scene() -> Option<(SimRuntime, u64)> {
     sim.resolve_type_handles(&rules);
     // Supplied ordinary human roster; authored entities still go through the
     // same Scenario population/placement-scope owner used by app loading.
-    crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+    crate::sim::runtime::populate_staged_fixture(
         &mut sim,
         &map,
         &terrain,
         "TEMPERATE",
         &rules,
-        Some(&registry),
+        Some(rules.overlay_registry()),
         None,
         crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
         &crate::sim::scenario_session::ScenarioDescriptor::default(),
@@ -131,7 +130,6 @@ fn scene() -> Option<(SimRuntime, u64)> {
             simulation: sim,
             resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template: Some(terrain),
             }),
         },
@@ -267,7 +265,7 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
                 yard,
                 (clicked.0 as i16, clicked.1 as i16),
                 &runtime.resources.rules,
-                Some(&runtime.resources.overlay_registry),
+                Some(runtime.resources.rules.overlay_registry()),
             )
             .unwrap(),
         0,
@@ -285,7 +283,7 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
                     shift: false
                 },
                 &runtime.resources.rules,
-                Some(&runtime.resources.overlay_registry)
+                Some(runtime.resources.rules.overlay_registry())
             )
             .unwrap(),
         MoveAction::Move

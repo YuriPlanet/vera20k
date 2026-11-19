@@ -305,9 +305,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
                 unreachable!()
             };
             assert_eq!(record.payload()[22], flag);
-            let mut ordinary_record = record.clone();
-            ordinary_record.payload_mut()[22] = 0;
-            let decoded = MegaMissionRecord::decode(&ordinary_record).unwrap();
+            let (decoded, _) = MegaMissionRecord::decode_planned(record).unwrap();
             let Command::Move {
                 target_rx,
                 target_ry,

@@ -407,8 +407,7 @@ mod tests {
             json!({
             "stable_id": 28, "type_id": "MTNK", "owner": "Computer1", "cell": [12, 13]})
         );
-        sim.entities_mut_for_test()
-            .get_mut(28)
+        sim.entity_mut_for_test(28)
             .unwrap()
             .position
             .set_rx_for_test(14);
@@ -416,28 +415,21 @@ mod tests {
             narrowed.resolve(&sim, &rules).is_err(),
             "cell is current, not initial"
         );
-        sim.entities_mut_for_test()
-            .get_mut(28)
-            .unwrap()
-            .health
-            .set_for_test(0);
+        sim.entity_mut_for_test(28).unwrap().health.set_for_test(0);
         assert_eq!(
             command.resolve(&sim, &rules).unwrap().0,
             Command::Stop { entity_id: 17 }
         );
-        sim.entities_mut_for_test()
-            .get_mut(17)
+        sim.entity_mut_for_test(17)
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(true);
         assert!(command.resolve(&sim, &rules).is_err());
-        sim.entities_mut_for_test()
-            .get_mut(17)
+        sim.entity_mut_for_test(17)
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(false);
-        sim.entities_mut_for_test()
-            .get_mut(17)
+        sim.entity_mut_for_test(17)
             .unwrap()
             .death
             .set_dying_for_test(true);

@@ -199,7 +199,12 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
             match stage {
                 "grant" => superweapon::grant_provided_supers(&mut sim, &rules, owner),
                 "before_elapsed_ai" | "elapsed_ai" => {
-                    superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner)
+                    superweapon::tick_house_superweapon_instances(
+                        &mut sim,
+                        &rules,
+                        owner,
+                        Default::default(),
+                    )
                 }
                 "npc_ai_fire" => {
                     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));

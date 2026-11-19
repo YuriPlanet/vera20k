@@ -344,8 +344,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         .spawn_object("E2", "Russians", 14, 12, 0, &rules)
         .unwrap();
     // A wounded Conscript lets the first ordinary stock shot be lethal.
-    sim.entities_mut_for_test()
-        .get_mut(target)
+    sim.entity_mut_for_test(target)
         .unwrap()
         .health
         .set_for_test(5);
@@ -374,7 +373,6 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 FrameEffects::for_sound(&boundary),

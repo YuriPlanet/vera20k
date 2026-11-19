@@ -336,7 +336,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     assert_eq!(provider.type_facts.foundation().name(), "4x4");
 
     // This placement oracle starts after the yard's construction lifecycle.
-    let provider = sim.entities_mut_for_test().get_mut(provider_id).unwrap();
+    let provider = sim.entity_mut_for_test(provider_id).unwrap();
     provider.finish_building_construction_for_test();
     provider.building_art.set_actually_placed_for_test(true);
     sim.append_house_base_building_for_test(provider_id);

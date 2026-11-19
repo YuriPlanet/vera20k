@@ -186,7 +186,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
         let occupants = sim
             .entities()
             .get(castle)
-            .map(|b| b.passenger_role.occupants().count());
+            .map(|b| b.passenger_role().occupants().count());
         if occupants == Some(gis.len() as i32) {
             boarded_frame = Some(frame);
             break;
@@ -209,7 +209,10 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
     );
     for &gi in &gis {
         let occupant = sim.entities().get(gi).unwrap();
-        assert_eq!(occupant.passenger_role.inside_transport_id(), Some(castle));
+        assert_eq!(
+            occupant.passenger_role().inside_transport_id(),
+            Some(castle)
+        );
         assert!(occupant.lifecycle.in_limbo());
         assert!(!occupant.lifecycle.cell_marked());
         assert!(!occupant.in_logic_vector.is_member());
@@ -256,7 +259,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
             actor.mission.effective().known(),
             Some(crate::sim::mission::MissionType::Capture)
         );
-        assert!(actor.passenger_role.is_none());
+        assert!(actor.passenger_role().is_none());
         assert_eq!(
             actor.navigation.nav_com(),
             Some(crate::sim::components::NavTargetRef::Object { id: castle })
@@ -266,8 +269,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
             "red_health" => {
                 runtime
                     .simulation
-                    .entities_mut_for_test()
-                    .get_mut(castle)
+                    .entity_mut_for_test(castle)
                     .unwrap()
                     .health
                     .set_for_test(1);
@@ -322,7 +324,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
                 !actor.lifecycle.in_limbo(),
                 "{control}: refused GI stays visible"
             );
-            assert!(actor.passenger_role.is_none(), "{control}");
+            assert!(actor.passenger_role().is_none(), "{control}");
             let outside = !(82..86).contains(&actor.position.rx())
                 || !(112..116).contains(&actor.position.ry());
             if actor.mission.effective().known() != Some(crate::sim::mission::MissionType::Capture)
@@ -352,7 +354,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
         );
         let building = runtime.simulation.entities().get(castle).unwrap();
         assert_eq!(
-            building.passenger_role.occupants().count(),
+            building.passenger_role().occupants().count(),
             expected_occupants as i32,
             "{control}"
         );

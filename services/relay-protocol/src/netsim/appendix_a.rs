@@ -1,4 +1,4 @@
-//! Spec appendix A replayed packet by packet (e2e-plan §2.3): two clients
+//! Spec appendix A replayed packet by packet: two clients
 //! at 30 Hz, 20 ms each way without jitter, A starting at t = 0 and B 30 ms
 //! later, commands at 480 (A) and 950 (B), A leaving at 1480 and B at 2000;
 //! lost are B's second UPLINK and the relay's turn 3 pack to B. Clients
@@ -320,7 +320,7 @@ fn appendix_a_timeline_and_fields() {
     arrives(turn, 616.7);
     let (base, records) = pack(turn);
     assert_eq!((base, records.len()), (1, 9));
-    // No gap was ever reported and nothing pulled (§7.4, §14).
+    // No gap was ever reported and nothing pulled (§7.4).
     assert!(!trace.of(B, Up).any(|r| r.kind() == "PULL"));
 
     // Packet 24: B's acknowledgement shows relay seq 10 missing.

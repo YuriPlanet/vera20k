@@ -247,6 +247,8 @@ pub(crate) struct DisplayEffectInputs<'a> {
     pub tactical: [u32; 4],
     pub zoom: f32,
     pub axis: crate::render::batch::DepthAxis,
+    /// This frame's Z-buffer row seed (`native_z::ZSeed`).
+    pub z_seed: i32,
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
     pub detail: &'a std::cell::RefCell<crate::app::presentation::detail::DetailState>,
     pub detail_level: u32,
@@ -1028,12 +1030,6 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             None
         };
 
-        let track_y_offset: f32 = if overlay_flags.map(|f| f.track).unwrap_or(false) {
-            TRACK_OVERLAY_Y_OFFSET
-        } else {
-            0.0
-        };
-
         let z: u8 = input
             .terrain
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
@@ -1044,7 +1040,6 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
             .map_or(0, |cell| cell.bridge_facts.raw_flags);
         let screen_y: f32 = screen_y
-            + track_y_offset
             + super::bridges::cell_overlay_y_offset(live_overlay_id, live_flags, live_overlay_data);
 
         // No LocalSize gate: gamemd draws overlays on border filler cells like
@@ -1129,7 +1124,8 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             palette_light,
             alpha: 1.0,
             z_adjust: body_z.z_adjust,
-            z_gradient: pack_z_gradient(body_z.gradient, false),
+            z_gradient: pack_z_gradient(body_z.gradient, false)
+                | native_z::shp_frame_flag(spr.extended),
             ..Default::default()
         };
         if body_z.shape.is_some_and(|shape| {
@@ -1150,13 +1146,10 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
     }
 }
 
-/// FA2 IsoView.cpp:5955-5956: track overlays render +CellHeight (15px) lower.
-const TRACK_OVERLAY_Y_OFFSET: f32 = 15.0;
-
 /// The cells whose overlay body [`build_cell_overlay_bodies`] can admit for
 /// `camera`/`viewport` when every sprite lies in `art`. Its `in_view` box and
-/// margin grow to a rubble sprite's size; the track offset moves the anchor
-/// down and [`super::bridges::cell_overlay_y_offset`] up by at most 31 px.
+/// margin grow to a rubble sprite's size; [`super::bridges::cell_overlay_y_offset`]
+/// moves the anchor up by at most 31 px.
 fn overlay_body_window(
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     art: crate::render::cell_window::ArtExtent,
@@ -1167,7 +1160,7 @@ fn overlay_body_window(
     crate::render::cell_window::CellWindow::covering(
         crate::render::cell_window::AnchorBounds {
             left: camera[0] - 2.0 * margin,
-            top: camera[1] - 2.0 * margin - TRACK_OVERLAY_Y_OFFSET,
+            top: camera[1] - 2.0 * margin,
             right: camera[0] + viewport[0] + margin,
             bottom: camera[1] + viewport[1] + margin
                 - super::bridges::BRIDGE_BODY_Y_OFFSET_STATE_9_TO_17,
@@ -1367,6 +1360,7 @@ pub(crate) fn build_overlay_instances(
         }
         // Ordinary native Ground6D97D0 -> Terrain71CC50/71C1B0 admits live
         // static art independently of anchor exploration; ABuffer clips pixels.
+        // An animated type draws in its Display slot instead (6D8DB0).
 
         // Terrain Render71CD30 reads the retained Location through GetCoords
         // 5F65A0; DrawIt71C1B0 applies AdjustForZ to that retained height.
@@ -1478,7 +1472,9 @@ pub(crate) fn build_overlay_instances(
                 })
             })
             .collect();
-        ground_objects.push(PlannedObjectInstance::object(parent, pieces));
+        let mut planned = PlannedObjectInstance::object(parent, pieces);
+        planned.static_tree = !is_animated;
+        ground_objects.push(planned);
     }
 }
 
@@ -1521,7 +1517,7 @@ fn native_terrain_instance(
         tint,
         palette_light,
         alpha: 1.0,
-        z_gradient: gradient,
+        z_gradient: gradient | native_z::shp_frame_flag(sprite.extended),
         z_adjust: super::helpers::lifted_z_adjust(lift_px, class_z),
         ..Default::default()
     }

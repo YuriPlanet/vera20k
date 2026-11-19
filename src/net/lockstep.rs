@@ -148,10 +148,12 @@ fn speed_frame_budget(game_speed: i32) -> (i32, i32) {
 /// The launch speed whose PreCalcFrameRate row is `frames_per_second`: the
 /// inverse of [`speed_frame_budget`] over selectable speeds. The VERA
 /// lobby signs this rate into relay ordering certificates
-/// (docs/lobby-protocol.md, retail rows plus VERA's 90-tick preset).
+/// (docs/lobby-protocol.md, retail rows plus VERA's 90-tick preset), and the
+/// relay admits only `vera20k_relay_protocol::FRAME_RATES`.
 pub fn game_speed_for_frame_rate(frames_per_second: u16) -> Option<i32> {
-    (0..=i32::from(crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED))
-        .chain([i32::from(GAME_SPEED_90_TPS)])
+    (0..=u8::MAX)
+        .filter(|&speed| crate::sim::game_options::is_selectable_game_speed(speed))
+        .map(i32::from)
         .find(|&speed| speed_frame_budget(speed).1 == i32::from(frames_per_second))
 }
 
@@ -241,6 +243,7 @@ mod tests {
         FRAMEINFO_EVENT_OPCODE, FrameInfo, FrameInfoCompareGate, MultiplayerChecksumHistory,
         SemanticEventHeader,
     };
+    use crate::sim::game_options::is_selectable_game_speed;
     use crate::sim::intern::InternedId;
 
     #[test]
@@ -264,16 +267,14 @@ mod tests {
             assert_eq!(
                 result,
                 case["max_ahead"].as_u64().unwrap() as i32,
-                "{} {}",
-                case["name"],
-                case["role"]
+                "{}",
+                case["name"]
             );
             assert_eq!(
-                reads,
-                case["calls"].as_array().unwrap().len(),
-                "{} {}",
-                case["name"],
-                case["role"]
+                reads as u64,
+                case["reads"].as_u64().unwrap(),
+                "{}",
+                case["name"]
             );
         }
     }
@@ -316,25 +317,35 @@ mod tests {
         assert_eq!(timing.precalc_frame_rate, 90);
         assert_eq!(timing.frame_send_rate, 10);
         assert_eq!((timing.max_ahead, timing.precalc_max_ahead), (60, 60));
-        assert_eq!(super::game_speed_for_frame_rate(90), Some(speed));
-        assert_eq!(super::game_speed_for_frame_rate(60), Some(0));
-        assert_eq!(super::game_speed_for_frame_rate(45), Some(1));
         assert_eq!(super::speed_frame_budget(7), (10, 10));
+    }
+
+    /// The lobby signs the host speed's rate into the ordering certificate,
+    /// and the relay admits only `FRAME_RATES`: each selectable speed has its
+    /// own admitted rate, and each admitted rate names a speed.
+    #[test]
+    fn selectable_speeds_run_at_exactly_the_rates_the_relay_certifies() {
+        let mut rates = Vec::new();
+        for speed in (0..=u8::MAX).filter(|&speed| is_selectable_game_speed(speed)) {
+            let rate = u16::try_from(super::speed_frame_budget(i32::from(speed)).1).unwrap();
+            assert_eq!(
+                super::game_speed_for_frame_rate(rate),
+                Some(i32::from(speed))
+            );
+            rates.push(rate);
+        }
+        rates.sort_unstable_by(|a, b| b.cmp(a));
+        assert_eq!(rates, vera20k_relay_protocol::FRAME_RATES);
     }
 
     #[test]
     fn wol_start_timing_matches_original_start_game_now_block() {
         let corpus = crate::test_fixture::json("tools/storage_oracle/wol_shell.json");
         let cases = corpus["timing"].as_array().unwrap();
+        assert!(!cases.is_empty());
         let int = |value: &serde_json::Value| i32::try_from(value.as_i64().unwrap()).unwrap();
-        let mut checked = 0;
         for case in cases {
             let name = case["name"].as_str().unwrap();
-            // The command-line debug byte 0xA8E2C8 is dormant; its controls
-            // only document the native +20/x2 branch.
-            if case["debug"].as_bool().unwrap() {
-                continue;
-            }
             let pings: Vec<i32> = case["pings"].as_array().unwrap().iter().map(int).collect();
             let result = super::wol_start_timing(
                 int(&case["game_speed"]),
@@ -359,9 +370,7 @@ mod tests {
                 set_timing,
             };
             assert_eq!(result, expected, "{name}");
-            checked += 1;
         }
-        assert_eq!(checked, cases.len() - 3, "three dormant debug controls");
     }
 
     #[test]

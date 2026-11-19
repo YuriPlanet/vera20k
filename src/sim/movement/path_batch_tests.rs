@@ -1944,5 +1944,11 @@ fn a_mover_allowed_to_leave_the_map_searches_across_zones() {
         .mission_only
         .mark();
     // The plain A* does not read the zones, and this ridge is only theirs.
-    assert_eq!(search(&sim).expect("plain A*").last(), Some(&(7, 4)));
+    let mut cell = (1, 4);
+    for direction in search(&sim).expect("plain A*") {
+        let (dx, dy) =
+            crate::util::direction::direction_delta(direction as u8).expect("compass step");
+        cell = (cell.0 + dx, cell.1 + dy);
+    }
+    assert_eq!(cell, (7, 4));
 }

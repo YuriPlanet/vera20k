@@ -1009,7 +1009,7 @@ pub(crate) fn unit_visitor<'a>(
                         let (composite_rect, split) = bounds
                             .depth_rect(super::foot_depth::unit_bridge_split(state, entity, true));
                         let body_draw_state =
-                            unit_body_draw_state(state, entity, draw_state, split, bounds);
+                            unit_body_draw_state(state, entity, draw_state, bounds);
                         let sprite = SpriteInstance {
                             position: [
                                 body_center[0] + entry.offset_x,
@@ -1704,7 +1704,7 @@ fn emit_pose_sprite(
             tint,
             palette_light,
             alpha: 1.0,
-            draw_state: unit_body_draw_state(state, entity, draw_state, split, bounds),
+            draw_state: unit_body_draw_state(state, entity, draw_state, bounds),
             z_adjust: voxel_adjust,
             z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, split),
             zshape_origin: composite_rect,
@@ -2481,9 +2481,11 @@ fn unit_draw_anchor(
 }
 
 /// One parent raster has separate atlas storage and native drawing bounds.
-/// Unit73BEA4's waterline and 73B140's split both consume the native union;
-/// atlas padding must not move either boundary. Unsplit depth retains its
-/// existing storage rectangle until that wider depth path is audited.
+/// Unit73BEA4's waterline, 73B140's split and every body's depth seed consume
+/// the native union (Bit_Blit of 0xB1CFC0 from 0x0073B140 and, through
+/// 0x004AF2A0, TechnoClass::Render 0x00706ED0); atlas padding must not move
+/// any of them. Only parts without native bounds fall back to the storage
+/// rectangle.
 #[derive(Clone, Copy)]
 struct CompositeDrawBounds {
     padded: [f32; 2],
@@ -2507,10 +2509,10 @@ impl CompositeDrawBounds {
     }
 
     fn depth_rect(self, wants_split: bool) -> ([f32; 2], bool) {
-        if wants_split && let Some([_, y, _, height]) = self.native {
-            return ([y as f32, height as f32], true);
+        match self.native {
+            Some([_, y, _, height]) => ([y as f32, height as f32], wants_split),
+            None => (self.padded, false),
         }
-        (self.padded, false)
     }
 }
 
@@ -2547,10 +2549,9 @@ fn unit_body_draw_state(
     state: &AppState,
     entity: &crate::app::presentation::frame::ObjectRecord,
     draw_state: DrawState,
-    split: bool,
     bounds: CompositeDrawBounds,
 ) -> DrawState {
-    let mut draw_state = composite_draw_state(state, draw_state, split);
+    let mut draw_state = composite_draw_state(state, draw_state);
     // The final parent rectangle is known only after all selected voxel parts
     // have been admitted. Never capture from an intermediate/offscreen part.
     if entity.category() == EntityCategory::Unit {
@@ -2566,14 +2567,11 @@ fn unit_body_draw_state(
     draw_state
 }
 
-fn composite_draw_state(state: &AppState, mut draw_state: DrawState, split: bool) -> DrawState {
-    if split {
-        // Only voxel body draws use this otherwise unused parameter. Shadows
-        // keep their own unsplit state and depth. The shader needs the actual
-        // tactical scissor to seed each clipped native blit independently.
-        let (_, _, _, height) = crate::app::input::camera::tactical_viewport_px(state);
-        draw_state.fx_params[3] = height as f32 / state.match_state.input.zoom_level;
-    }
+fn composite_draw_state(state: &AppState, mut draw_state: DrawState) -> DrawState {
+    // Only voxel body draws use this otherwise unused parameter. Shadows keep
+    // their own state and depth. The shader needs the actual tactical scissor
+    // to seed each native Bit_Blit from its clipped rectangle, split or not.
+    draw_state.fx_params[3] = crate::app::input::camera::tactical_view_height(state);
     draw_state
 }
 
@@ -2777,7 +2775,7 @@ fn emit_turret_unit_sprites(
     );
     let (composite_rect, split) =
         bounds.depth_rect(super::foot_depth::unit_bridge_split(state, entity, true));
-    let body_draw_state = unit_body_draw_state(state, entity, draw_state, split, bounds);
+    let body_draw_state = unit_body_draw_state(state, entity, draw_state, bounds);
     if let Some((entry, texture_source)) = body_entry_opt {
         let sprite = SpriteInstance {
             position: [center_x + entry.offset_x, center_y + entry.offset_y],
@@ -3041,13 +3039,21 @@ fn emit_harvest_overlay(
             palette_light: crate::render::palette_light::PaletteLight::plain(53, brightness),
             alpha: 1.0,
             draw_state,
-            // An SHP draw of the harvester (`TechnoClass_DrawSHP`, a7 - 2).
-            z_adjust: super::foot_depth::unit_z_adjust(state, entity, false, None)
-                .wrapping_add(SHP_DRAW_Z_ADJUST_PX) as f32,
-            z_gradient: pack_z_gradient(ZGradient::Vertical, false),
-            ..Default::default()
+            ..harvest_overlay_depth(super::foot_depth::unit_z_adjust(state, entity, false, None))
         },
     ))
+}
+
+/// OREGATH's Z terms. UnitClass::DrawIt passes its own CC_Draw_Shape call
+/// (`0x0073D283`, flags 0x2A00) GetZAdjustment - 2 (`0x0073D236..0x0073D24E`)
+/// and gradient 0 (`XOR ECX,ECX` at `0x0073D223`, pushed at `0x0073D233`):
+/// the ground gradient, not the body's bottom-seeded one.
+fn harvest_overlay_depth(unit_z_adjust: i32) -> SpriteInstance {
+    SpriteInstance {
+        z_adjust: unit_z_adjust.wrapping_add(SHP_DRAW_Z_ADJUST_PX) as f32,
+        z_gradient: pack_z_gradient(ZGradient::Flat, false),
+        ..Default::default()
+    }
 }
 
 /// Native VXL blits walk entry 2 with the Foot adjustment supplied by the
@@ -3079,6 +3085,21 @@ mod tests {
     use crate::sim::spawn_manager::{SpawnManagerState, SpawnSlot, SpawnSlotState};
     use crate::sim::timer::CdTimer;
     use crate::sim::world::Simulation;
+
+    /// OREGATH walks the ground gradient (`0x0073D233`): each row one unit
+    /// nearer than the row above, from GetZAdjustment - 2 at its top row.
+    #[test]
+    fn oregath_steps_one_z_per_row_from_its_top() {
+        let depth = harvest_overlay_depth(-15);
+        assert_eq!(depth.z_adjust, -17.0);
+        let gradient = ZGradient::from_index(depth.z_gradient);
+        for row in [0, 1, 2, 23] {
+            assert_eq!(
+                crate::render::native_z::sprite_row_z(gradient, 100, 24, -17, row),
+                crate::render::native_z::DEFAULT_Z - 100 - 17 - row,
+            );
+        }
+    }
 
     /// OREGATH's row rounds the body facing to eight directions, `0x1000` on
     /// either side of each (`0x0073D1E7..0x0073D1FD`); the frame within the
@@ -3714,7 +3735,7 @@ mod tests {
         let bytes = GameSnapshot::save(&sim, 1, 2, "slope display selector", 3);
         let restored = GameSnapshot::load(&bytes)
             .expect("current slope snapshot")
-            .sim;
+            .into_simulation_for_test();
         let display_binary_frame =
             display_binary_frame_for_committed_session(restored.session().binary_frame());
         assert_eq!(display_binary_frame, 50);

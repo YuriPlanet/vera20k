@@ -602,7 +602,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(building_id)
-            .and_then(|building| building.passenger_role.cargo_mut())
+            .and_then(|building| building.cargo_mut())
             .and_then(|cargo| cargo.unload_first())
         {
             let cell = cells.get(cursor).copied();
@@ -690,7 +690,7 @@ impl Simulation {
             // The dying building's expiry broadcast already cleared the
             // passenger's carrier relation; the cargo list still held it.
             if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
-                entity.passenger_role.clear_carrier_relation();
+                entity.clear_carrier_relation();
                 entity.on_bridge.store(on_bridge);
                 match spot_offset {
                     Some((sub_x, sub_y)) => entity.sub_cell.hold_offset(sub_x, sub_y),
@@ -856,11 +856,9 @@ impl Simulation {
         };
         self.substrate.queue_crew_mission(id, mission);
         if selected_by_player {
-            // `0x0073835E`: Select (vt+0x14C) with the voice latch set, as
-            // every Logic pass leaves it.
+            // `0x0073835E`: Select (vt+0x14C) inherits the current voice latch.
             self.techno_select(
                 id,
-                true,
                 UninitContext::new(rules, registry).with_effects(effects),
             );
         }
@@ -955,8 +953,8 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(passenger) else {
             return;
         };
-        if entity.passenger_role.inside_transport_id() == Some(unit_id) {
-            entity.passenger_role.clear_carrier_relation();
+        if entity.passenger_role().inside_transport_id() == Some(unit_id) {
+            entity.clear_carrier_relation();
         }
         let infantry = entity.category() == EntityCategory::Infantry;
         let passenger_owner = entity.owner();
@@ -1071,7 +1069,7 @@ impl Simulation {
             }
             // `0x007380FA`: Transporter (`+0x11C`) = NULL.
             if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
-                entity.passenger_role.clear_transporter();
+                entity.clear_transporter();
             }
 
             // `0x00738104..0x0073812A`: Assign_Target(NULL).
@@ -1094,12 +1092,10 @@ impl Simulation {
                         .queue_crew_mission(passenger, MissionType::Hunt),
                 }
             }
-            // `0x00738174..0x00738180`: Select (vtable `+0x14C`), voice latch
-            // set.
+            // `0x00738174..0x00738180`: Select (vtable `+0x14C`) inherits the voice latch.
             if dying.selected_by_player {
                 sim.techno_select(
                     passenger,
-                    true,
                     UninitContext::new(rules, registry).with_effects(effects),
                 );
             }

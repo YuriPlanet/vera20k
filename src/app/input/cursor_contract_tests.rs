@@ -48,8 +48,7 @@ fn retail_berserk_infantry_ctrl_ground_shows_no_move() {
     let gi = sim
         .spawn_object("E1", "Americans", 12, 10, 0, rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(gi)
+    sim.entity_mut_for_test(gi)
         .unwrap()
         .berserk
         .set_active_for_test(true);
@@ -403,8 +402,7 @@ fn retail_ctrl_alt_over_shroud_is_a_move_for_a_foot() {
     assert!(guards(&sim, (10, 10)));
     assert!(!guards(&sim, (10, 30)));
     // A berserk tank answers 0 before the rung (`0x00700609`): the arrow.
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .berserk
         .set_active_for_test(true);
@@ -563,10 +561,11 @@ fn infantry_deploy_and_loaded_transport_self_cursors_share_click_admission() {
                 .unwrap();
             let mut cargo = crate::sim::passenger::PassengerCargo::new(1, 0.0);
             cargo.board_forced_chain(&[(passenger, 1.0)]);
-            sim.entities_mut_for_test()
-                .get_mut(actor)
+            sim.entity_mut_for_test(actor)
                 .unwrap()
-                .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+                .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(
+                    cargo,
+                ));
         }
         for modifier in [
             OrderModifier::Normal,
@@ -637,8 +636,7 @@ fn native_infantry_weapon_suffix_controls_match_shared_action_owner() {
             )
             .unwrap();
         if spec["bunkered"] == true {
-            sim.entities_mut_for_test()
-                .get_mut(target)
+            sim.entity_mut_for_test(target)
                 .unwrap()
                 .bunker
                 .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(
@@ -706,8 +704,7 @@ fn retail_infantry_self_click_admission_uses_undeploy_delay() {
             (31, true),
             (32, false),
         ] {
-            sim.entities_mut_for_test()
-                .get_mut(actor)
+            sim.entity_mut_for_test(actor)
                 .unwrap()
                 .mission_leaf
                 .set_infantry_doing_verified(doing)

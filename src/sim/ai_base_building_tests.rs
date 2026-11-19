@@ -146,7 +146,9 @@ fn the_production_mode_steps_as_native() {
         house
             .ai_production_mut()
             .set_for_test(int(&row["mode"]) as i32, -1, true);
-        house.tracking_mut().set_for_test(0, &[], (0, 0, 0), &owned);
+        house
+            .tracking_mut_for_test()
+            .set_for_test(0, &[], (0, 0, 0), &owned);
         let mut power_state = PowerState::default();
         power_state.set_total_output_for_test(int(&row["output"]) as i32);
         power_state.set_total_drain_for_test(int(&row["drain"]) as i32);

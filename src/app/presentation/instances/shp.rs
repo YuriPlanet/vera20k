@@ -70,7 +70,8 @@ pub(crate) struct ShpInputs<'a> {
     pub ignore_visibility: bool,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
-    pub building_zshape: bool,
+    /// The loaded BUILDNGZ frame's offset in its canvas.
+    pub building_zshape: Option<(i32, i32)>,
 }
 
 /// `extra_light` is the class's
@@ -109,12 +110,7 @@ pub(crate) fn shp_inputs<'a>(
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let building_viewport = crate::app::presentation::render::tactical_world_viewport(
-        camera,
-        [x, y, width, height],
-        state.renderer.world_zoom_pass.as_ref(),
-    );
+    let building_viewport = crate::app::presentation::render::tactical_world_view(state);
     Some(ShpInputs {
         runtime,
         frame: state.match_state.sim_runtime.frame()?,
@@ -132,7 +128,10 @@ pub(crate) fn shp_inputs<'a>(
         ignore_visibility: state.match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        building_zshape: presentation.building_zshape.is_some(),
+        building_zshape: presentation
+            .building_zshape
+            .as_ref()
+            .map(|zshape| zshape.frame_offset),
     })
 }
 
@@ -682,13 +681,15 @@ pub(crate) fn shp_visitor<'a>(
                 // The gate branch's DrawSHP (`0x0043D683`) passes a null z-shape
                 // (a12, pushed at `0x0043D633`); the ordinary body passes
                 // BUILDNGZ (`0x0043D806`).
-                let zshape = input.building_zshape
+                let zshape = input.building_zshape.is_some()
                     && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
                     && gate_open_frame.is_none();
                 let origin = native_z::zshape_origin(
+                    native_z::ZSHAPE_ANCHOR,
                     (sx.round() as i32, sy.round() as i32),
                     foundation,
                     point_move,
+                    input.building_zshape.unwrap_or_default(),
                 );
                 (
                     lifted_z_adjust(lift_px, normal_z_adjust + SHP_DRAW_Z_ADJUST_PX),
@@ -734,7 +735,7 @@ pub(crate) fn shp_visitor<'a>(
             parent.policy
         };
         let body = entry.map(|entry| {
-            let instance = SpriteInstance {
+            let mut instance = SpriteInstance {
                 position: [sx + entry.offset_x, sy + entry.offset_y],
                 size: entry.pixel_size,
                 uv_origin: entry.uv_origin,
@@ -752,9 +753,15 @@ pub(crate) fn shp_visitor<'a>(
                 alpha: 1.0,
                 draw_state,
                 z_adjust,
-                z_gradient,
+                z_gradient: z_gradient | native_z::shp_frame_flag(entry.extended),
                 zshape_origin,
             };
+            if z_gradient & native_z::Z_GRADIENT_ZSHAPE_FLAG != 0 {
+                instance.draw_state.fx_params[3] = native_z::zshape_lead_skip(
+                    input.building_viewport.camera[0],
+                    instance.position[0],
+                );
+            }
             (ObjectTexture::ShpPage(entry.page as usize), instance)
         });
 
@@ -881,7 +888,8 @@ pub(crate) fn shp_visitor<'a>(
                             alpha: 1.0,
                             draw_state,
                             z_adjust,
-                            z_gradient,
+                            z_gradient: z_gradient
+                                | native_z::shp_frame_flag(turret_entry.extended),
                             zshape_origin,
                         },
                     });
@@ -1991,7 +1999,7 @@ fn emit_building_anims(
         // DrawIt422CA0 -> 4AED70 retains the Anim's Convert selector. Reducing
         // it to alpha loses the indexed palette/A lookup and packed RGB565
         // blend (spatial_oracle/building_anim_translucency). The inherited
-        // cloak/offset/effect composition is a separate, unresolved owner.
+        // cloak/effect composition is a separate, unresolved owner.
         // The shared pass builder replaces this material for the shadow.
         let (alpha, draw_state) = if flags & 6 != 0
             && anim_entry.is_some_and(|entry| entry.source_palette != 0)
@@ -2210,7 +2218,8 @@ fn emit_unit_terrain_body(
                 alpha: 1.0,
                 draw_state: material,
                 z_adjust,
-                z_gradient: pack_z_gradient(gradient, false),
+                z_gradient: pack_z_gradient(gradient, false)
+                    | native_z::shp_frame_flag(sprite.extended),
                 ..Default::default()
             },
         });

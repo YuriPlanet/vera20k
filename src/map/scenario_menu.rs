@@ -62,7 +62,7 @@ pub fn preview_source_bounds_from_verified_source(ini: &IniFile) -> Option<Previ
     if width <= 0
         || height <= 0
         || count <= 0
-        || count > crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32
+        || count > crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as i32
     {
         return None;
     }

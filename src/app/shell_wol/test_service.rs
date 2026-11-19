@@ -1,8 +1,7 @@
-//! VERA's offline WOL test service: a developer stand-in behind the same
-//! request/event boundary a real service will use, chosen by
-//! `[VERA] WolTestService=`. It is not gamemd behavior: it lets
-//! the Internet screens (login `0x10F`, lobby `0x113`, setup C2/C9) be
-//! opened and clicked without a server.
+//! VERA's offline WOL test service: a stand-in behind the live service's
+//! request/event boundary, which only shell captures select. It is not
+//! gamemd behavior: it lets the Internet screens (login `0x10F`, lobby
+//! `0x113`, setup C2/C9) be opened and clicked without a server.
 //!
 //! It answers the visit's and the WOL setup's requests once no shell
 //! transition runs: like a real service, a reply arrives after the page that
@@ -27,7 +26,9 @@
 
 use super::lobby::WolJoined;
 use super::service::{WolHighScoreRecord, WolLadderRecord};
-use super::{WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent};
+use super::{
+    SERVER_STATUS_READY, WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent,
+};
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
 use crate::app::match_runtime::session::SessionMode;
@@ -38,9 +39,6 @@ use crate::ui::wol_lobby::{
 };
 use crate::ui::wol_login::WolCredential;
 use crate::util::time::Instant;
-
-/// Event 9's status that completes the server-list wait.
-const SERVER_STATUS_READY: u32 = 0x0004_012F;
 
 /// Replies per poll; each may queue further requests (a list reply asks to
 /// join, a join asks for both lists).
@@ -341,7 +339,6 @@ fn host_options(
         }
     }
     launch.selected_map_file = Some(file.clone());
-    launch.rebuild_house_roster();
     let map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
     crate::app::shell_network_setup::service_event(
         state,
@@ -583,6 +580,7 @@ fn lobby_greeting(state: &mut AppState) {
     let line = |from, text: &str| WolServiceEvent::Message {
         from,
         text: text.encode_utf16().collect(),
+        localized: false,
         private: false,
         action: false,
         ansi: false,
@@ -793,6 +791,7 @@ fn match_requested(state: &mut AppState) {
     let line = |text: String, private: bool, options| WolServiceEvent::Message {
         from: member(MATCHBOT, MEMBER_OPERATOR),
         text: text.encode_utf16().collect(),
+        localized: false,
         private,
         action: false,
         ansi: true,

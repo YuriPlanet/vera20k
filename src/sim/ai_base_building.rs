@@ -838,7 +838,7 @@ fn power_plant_to_splice(
         .wrapping_sub(power.power_surplus(rules));
     let short = power.total_drain().wrapping_add(drain) > output;
     if !short
-        || ty.build_const_eligible
+        || ty.build_const_eligible()
         || drain <= 0
         || power.blackout_remaining(sim.session.binary_frame()) > 0
         || power.has_drained_power_source()

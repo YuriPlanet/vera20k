@@ -310,7 +310,7 @@ impl PerformanceOverlay {
         let now = Instant::now();
         // Keep measuring while hidden, so the first shown frame has a rate.
         frame.timer.sample(now);
-        gpu.timer.set_active(self.visible);
+        gpu.timer.set_active(self.visible || cfg!(feature = "perf"));
         if !self.visible {
             frame.stats = PanelStats::default();
             frame.message_top = 0;
@@ -397,7 +397,7 @@ impl PerformanceOverlay {
             world_height: 1.0,
             _pad: 0.0,
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            native_z_pan: 0.0,
         };
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));

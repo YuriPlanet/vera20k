@@ -401,7 +401,10 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
     admission(&sim, CanBuild::No);
     sim.change_owner_with_rules(host, owner, &rules, None, FrameEffects::default());
     admission(&sim, CanBuild::Yes);
-    assert_eq!(sim.power_down_building_upgrade(host, &rules), Some(upgrade));
+    assert_eq!(
+        sim.power_down_building_upgrade(host, &rules, Default::default()),
+        Some(upgrade)
+    );
     admission(&sim, CanBuild::No);
 }
 

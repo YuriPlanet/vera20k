@@ -176,7 +176,7 @@ pub struct PipelineOutput {
 /// Run the whole deterministic pipeline in place over `grid`/`scratch`, drawing
 /// from `rng`/`gauss`. Returns the waypoints, terrain objects and structures the
 /// emitter projects into the `MapFile`.
-pub fn run_pipeline(
+pub(super) fn run_pipeline(
     grid: &mut RmgGrid,
     scratch: &mut RmgScratch,
     rng: &mut RmgRng,
@@ -185,15 +185,10 @@ pub fn run_pipeline(
     inputs: &PipelineInputs<'_>,
     observe: StageObserver<'_>,
 ) -> PipelineOutput {
-    let MapGeometry {
-        gen_w,
-        gen_h,
-        map_w,
-        map_h,
-        stride,
-        ..
-    } = *geometry;
-    let local_rect = [2, 5, gen_w, gen_h];
+    let (map_w, map_h) = geometry.map_size();
+    let local_rect = geometry.local_size();
+    let [_, _, gen_w, gen_h] = local_rect;
+    let stride = geometry.stride();
     // Emit-form start positions, filled in once `Starts` has produced them so
     // every later boundary can hand them to the observer.
     let mut waypoints: Vec<(u8, u16, u16)> = Vec::new();
@@ -660,20 +655,20 @@ pub fn run_pipeline(
         .iter()
         .map(|&(_, x, y)| (i32::from(x), i32::from(y)))
         .collect();
+    let mut ctx = super::fairness::FairCtx {
+        grid,
+        scratch,
+        ids: inputs.ids,
+        map_w,
+        local_rect,
+    };
+    let mut out = super::embellish::EmbellishOutput {
+        objects: &mut urban_area_objects,
+        trace: &mut construction_trace,
+        entity_base: structures.len() + tech_placements.len(),
+        terrain: &mut terrain,
+    };
     if inputs.embellish.any() {
-        let mut ctx = super::fairness::FairCtx {
-            grid: &mut *grid,
-            scratch: &*scratch,
-            ids: inputs.ids,
-            map_w,
-            local_rect,
-        };
-        let mut out = super::embellish::EmbellishOutput {
-            objects: &mut urban_area_objects,
-            trace: &mut construction_trace,
-            entity_base: structures.len() + tech_placements.len(),
-            terrain: &mut terrain,
-        };
         let paved = super::embellish::run(
             &mut ctx,
             &inputs.embellish,
@@ -682,30 +677,31 @@ pub fn run_pipeline(
             inputs.tech_types,
             &mut out,
         );
-        // The recalc every stage that paves is followed by (`0x0047CA80`).
         if paved {
-            lat_fixup::run(grid, inputs.ids);
+            lat_fixup::run(ctx.grid, inputs.ids);
         }
     }
-    let fairness = {
-        let mut ctx = super::fairness::FairCtx {
-            grid: &mut *grid,
-            scratch: &*scratch,
-            ids: inputs.ids,
-            map_w,
-            local_rect,
-        };
-        if inputs.fair_starts {
-            super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
-        }
-        Some(super::fairness::measure(
-            &ctx,
-            &starts,
-            inputs.num_players,
-            unfilled_start_slots,
-            (inputs.sea_access, inputs.embellish.base_room != 0),
-        ))
-    };
+    if inputs.fair_starts {
+        super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
+    }
+    let fairness = Some(super::fairness::measure(
+        &ctx,
+        &starts,
+        inputs.num_players,
+        unfilled_start_slots,
+        (inputs.sea_access, inputs.embellish.base_room != 0),
+    ));
+    // The sliders fill unoccupied sites after native generation, the Extras
+    // and Fair Starts. Their buildings cannot displace ore or pick another seed.
+    super::embellish::place_slider_objects(
+        &mut ctx,
+        &inputs.embellish,
+        &starts,
+        inputs.vera_catalog,
+        inputs.tech_types,
+        tech_placements.len(),
+        &mut out,
+    );
 
     // ---- Collect outputs for the emitter ----------------------------------
     structures.extend(

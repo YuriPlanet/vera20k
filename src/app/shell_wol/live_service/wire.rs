@@ -95,82 +95,12 @@ impl Member {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub(super) struct MapMetadata {
-    pub display_name: String,
-    pub player_capacity: i32,
-    pub official: bool,
-    pub byte_length: i32,
-    pub digest: String,
-    pub source_sha256: String,
-    pub effective_digest: String,
-}
-
-impl From<MapMetadata> for NetworkMapMetadata {
-    fn from(value: MapMetadata) -> Self {
-        Self {
-            display_name: value.display_name,
-            player_capacity: value.player_capacity,
-            official: value.official,
-            byte_length: value.byte_length,
-            digest: value.digest,
-            source_sha256: value.source_sha256,
-            effective_digest: value.effective_digest,
-        }
-    }
-}
-
-impl From<NetworkMapMetadata> for MapMetadata {
-    fn from(value: NetworkMapMetadata) -> Self {
-        Self {
-            display_name: value.display_name,
-            player_capacity: value.player_capacity,
-            official: value.official,
-            byte_length: value.byte_length,
-            digest: value.digest,
-            source_sha256: value.source_sha256,
-            effective_digest: value.effective_digest,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum Vacancy {
-    Open,
-    Closed,
-    Observer,
-    Waiting,
-}
-
-impl From<NetworkVacancy> for Vacancy {
-    fn from(value: NetworkVacancy) -> Self {
-        match value {
-            NetworkVacancy::Open => Self::Open,
-            NetworkVacancy::Closed => Self::Closed,
-            NetworkVacancy::OpenObserver => Self::Observer,
-            NetworkVacancy::Waiting => Self::Waiting,
-        }
-    }
-}
-
-impl From<Vacancy> for NetworkVacancy {
-    fn from(value: Vacancy) -> Self {
-        match value {
-            Vacancy::Open => Self::Open,
-            Vacancy::Closed => Self::Closed,
-            Vacancy::Observer => Self::OpenObserver,
-            Vacancy::Waiting => Self::Waiting,
-        }
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Options {
     pub launch: crate::skirmish_launch::SkirmishLaunchSession,
-    pub map_metadata: MapMetadata,
+    pub map_metadata: NetworkMapMetadata,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub random_map: Option<crate::app::shell_network_setup::maps::GeneratedMapManifest>,
-    pub vacancies: [Vacancy; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
+    pub vacancies: [NetworkVacancy; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
     pub observer_row: Option<u8>,
     pub cooperative_difficulty: i32,
     /// Cooperative's campaign record, the `C0` text LAN sends as its own
@@ -195,11 +125,10 @@ impl Options {
             .iter()
             .position(|human| human.name.eq_ignore_ascii_case(local))
             .ok_or_else(|| anyhow::anyhow!("server roster omits the signed-in player"))?;
-        self.launch.rebuild_house_roster();
         Ok(HostOptions {
             launch: self.launch,
-            map_metadata: self.map_metadata.into(),
-            vacancies: self.vacancies.map(Into::into),
+            map_metadata: self.map_metadata,
+            vacancies: self.vacancies,
             observer_row: self.observer_row,
             cooperative_difficulty: self.cooperative_difficulty,
             seed: self.seed,
@@ -240,7 +169,7 @@ pub(super) struct Session {
     pub player_id: String,
     pub nickname: String,
     pub token: String,
-    // The operator's welcome, when one is set; the game's own otherwise.
+    // The operator's welcome, when one is set; the game has none of its own.
     #[serde(default)]
     pub motd: Option<String>,
     /// An account's password sign-in with `remember`: this computer's
@@ -467,8 +396,8 @@ mod tests {
     use crate::map::source::TransferResource;
     use crate::skirmish_launch::{
         AiDifficulty, HostRules, LaunchCountry, LaunchHumanRole, LaunchStartPosition, LaunchTeam,
-        PreFillHouseRoster, ROOM_TEAMS, SkirmishAiSlot, SkirmishHumanSlot, SkirmishLaunchMode,
-        SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
+        ROOM_TEAMS, SkirmishAiSlot, SkirmishHumanSlot, SkirmishLaunchMode, SkirmishLaunchOptions,
+        SkirmishLaunchSession, SkirmishLocalSlot,
     };
 
     fn human(row: u8, team: LaunchTeam) -> SkirmishHumanSlot {
@@ -488,8 +417,8 @@ mod tests {
         }
     }
 
-    fn map(file: &str, player_capacity: i32, official: bool, digest: String) -> MapMetadata {
-        MapMetadata {
+    fn map(file: &str, player_capacity: i32, official: bool, digest: String) -> NetworkMapMetadata {
+        NetworkMapMetadata {
             display_name: file.into(),
             player_capacity,
             official,
@@ -504,27 +433,24 @@ mod tests {
     /// and the game's own House roster for its people and AI.
     fn room(
         mode: i32,
-        map: MapMetadata,
+        map: NetworkMapMetadata,
         humans: Vec<SkirmishHumanSlot>,
         opponents: Vec<SkirmishAiSlot>,
         options: SkirmishLaunchOptions,
     ) -> Options {
-        let mut launch = SkirmishLaunchSession {
-            mode: SkirmishLaunchMode::stock(mode).unwrap(),
-            selected_map_file: Some(map.display_name.clone()),
+        let launch = SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode::stock(mode).unwrap(),
+            Some(map.display_name.clone()),
             humans,
-            local_player_index: 0,
-            ai_player_count: opponents.len() as i32,
+            0,
             opponents,
-            pre_fill_house_roster: PreFillHouseRoster::new(Vec::new(), Vec::new()),
             options,
-        };
-        launch.rebuild_house_roster();
+        );
         Options {
             launch,
             map_metadata: map,
             random_map: None,
-            vacancies: [Vacancy::Closed; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
+            vacancies: [NetworkVacancy::Closed; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
             observer_row: None,
             cooperative_difficulty: 1,
             cooperative_campaign: None,
@@ -622,9 +548,9 @@ mod tests {
                 byte_length: TransferResource::Preview.limit(),
             },
         });
-        generated.vacancies[2] = Vacancy::Waiting;
-        generated.vacancies[3..28].fill(Vacancy::Open);
-        generated.vacancies[29] = Vacancy::Observer;
+        generated.vacancies[2] = NetworkVacancy::Waiting;
+        generated.vacancies[3..28].fill(NetworkVacancy::Open);
+        generated.vacancies[29] = NetworkVacancy::OpenObserver;
         generated.observer_row = Some(29);
 
         // Cooperative: two players and the host's campaign record.

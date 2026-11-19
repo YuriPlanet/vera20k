@@ -20,8 +20,7 @@
 pub(crate) mod buddies;
 pub(crate) mod buddy;
 mod live_service;
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) use live_service::lobby_base_url;
+pub(crate) use live_service::lobby_get;
 pub(crate) mod lobby;
 mod lobby_phrases;
 mod login;
@@ -45,14 +44,12 @@ pub(crate) use live_service::retire_visit_for_exit;
 pub(crate) use live_service::{
     DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant, end_spawned_match,
 };
-pub(crate) use live_service::{
-    local_choices_agreed, online_cleanup_pending, online_exit_ready, online_match_id,
-};
+pub(crate) use live_service::{local_choices_agreed, online_cleanup_pending, online_match_id};
 pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
-    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted, WolMatch,
-    WolProvider, WolServer, WolServerList, WolServiceEvent, WolServiceRequest, request,
-    service_event,
+    NET_STATUS_LOST, SERVER_STATUS_READY, WolApiStatus, WolHighScoreRecord, WolLadderRecord,
+    WolLoginAccepted, WolMatch, WolProvider, WolServer, WolServerList, WolServiceEvent,
+    WolServiceRequest, service_event,
 };
 pub(crate) use test_service::{
     WolTestGuest, default_buddies as test_service_buddies,
@@ -337,11 +334,6 @@ impl WolVisit {
         }
     }
 
-    /// Diagnostics and tests can select a backend without changing presentation.
-    pub(crate) fn set_provider(&mut self, provider: WolProvider) {
-        self.provider = provider;
-    }
-
     pub(crate) fn modern_ui(&self) -> bool {
         !self.legacy_ui
     }
@@ -562,7 +554,7 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
         .is_some_and(|lobby| lobby.runner == lobby::Runner::Buddy);
     match (buddy_mode, postmatch, buddy_runner) {
         (true, false, true) => buddy::stopped(state),
-        (true, _, _) => buddy::open(state),
+        (true, _, _) => lobby::open_runner(state, lobby::Runner::Buddy),
         (false, _, _) => lobby::open(state, postmatch),
     }
 }
@@ -614,19 +606,6 @@ pub(crate) fn reenter_after_match(state: &mut AppState) {
     open_lobby(state, true);
 }
 
-fn provider_for_visit(
-    test_service: bool,
-    capture_size: Option<winit::dpi::PhysicalSize<u32>>,
-) -> WolProvider {
-    // Stand-in games and players are diagnostic fixtures. A saved test
-    // preference must never replace the real service in ordinary play.
-    if capture_size.is_some() && test_service {
-        WolProvider::TestService
-    } else {
-        WolProvider::Online
-    }
-}
-
 impl App {
     /// State 2 (`0x0052DD57`) then `WOL_Main`: the lobby music takes over
     /// (`0x0077B2D7..0x0077B31D`) and `0x10E` is created after the empty
@@ -642,10 +621,10 @@ impl App {
         let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
         let saved_shuffle = state.audio.enter_wol_lobby_music(lobby_music, now_ms);
         let mut visit = WolVisit::open(saved_shuffle);
-        visit.provider = provider_for_visit(
-            state.persistence.options_profile.wol_test_service,
-            state.platform.capture_client_size,
-        );
+        visit.provider = state
+            .frontend
+            .wol_capture_provider
+            .unwrap_or(WolProvider::Online);
         visit.set_legacy_ui(state.frontend.native_shell_ui);
         state.frontend.wol = Some(visit);
         // Persona I/O is selected by the new visit's provider, never a
@@ -1069,7 +1048,7 @@ impl App {
     /// The login flow returned 0 (Back, or a failed connect after its box):
     /// mode 0 (`0x0077B3F6`), and the loop runs a fresh `0x10E` with its
     /// entry slide, or the online sign-in again.
-    pub(crate) fn reopen_wol_welcome(state: &mut AppState) {
+    pub(super) fn reopen_wol_welcome(state: &mut AppState) {
         let Some(visit) = state.frontend.wol.as_mut() else {
             return;
         };

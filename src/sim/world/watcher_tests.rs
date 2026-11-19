@@ -142,7 +142,6 @@ fn a_watcher_follows_while_its_frame_waits_on_the_stream() {
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::empty().with_network_commands(&NothingYet),
@@ -181,7 +180,6 @@ fn the_followed_players_own_records_are_another_games() {
         .advance_app_frame(
             &records,
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::default(),

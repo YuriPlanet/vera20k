@@ -458,22 +458,66 @@ fn unacknowledged_relay_leave_releases_the_route_after_bounded_attempts() {
     let (socket, _server, mut wire, ticket, packet_key) = ordered_relay();
     let mut bytes = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
     wire.retire_relay();
-    let attempts = u32::from(RELAY_LEAVE_ATTEMPTS);
+    let attempts = u32::from(LEAVE_ATTEMPTS);
     for attempt in 0..attempts {
         assert!(wire.relay_retirement_pending());
-        wire.service(attempt * 16);
+        wire.service(attempt * RELAY_LEAVE_TICKS);
         socket.recv_from(&mut bytes).unwrap();
     }
-    wire.service(attempts * 16 - 1);
+    wire.service(attempts * RELAY_LEAVE_TICKS - 1);
     assert!(
         wire.relay_retirement_pending(),
         "the last attempt keeps its full retry interval"
     );
-    wire.service(attempts * 16);
+    wire.service(attempts * RELAY_LEAVE_TICKS);
     assert!(!wire.relay_retirement_pending());
     assert_eq!(wire.relay_source(), None);
     let address = ipv4_addr(&socket).unwrap();
     wire.enable_relay(address, &ticket, packet_key, [17; 32])
+        .unwrap();
+}
+
+/// The relay drops a lapsed ticket unanswered and retires a silent player after
+/// ABSENT_MS, so nothing tells a game that its place is gone. A route that has
+/// heard nothing for that long and 15 seconds more is released and stops
+/// knocking, whatever holds the transport: a one-human match and the score
+/// screen have no ordered session to end.
+#[test]
+fn a_relay_route_silent_past_the_relays_own_limit_is_released() {
+    use vera20k_relay_protocol::{SecretKey, Ticket, derive_packet_key};
+
+    let sink = raw_peer();
+    let address = ipv4_addr(&sink).unwrap();
+    let key = SecretKey::new([31; 32]);
+    let ticket = Ticket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
+    let mut wire = transport();
+    wire.enable_relay(address, &ticket, packet_key, [29; 32])
+        .unwrap();
+    let limit = ((ABSENT_MS + 15_000) / 16) as u32;
+    wire.service(100);
+    assert!(relay_datagrams(&sink) > 0);
+    // A sample older than the last one is not 49 days of silence.
+    wire.service(99);
+    wire.service(100 + limit);
+    assert!(!wire.relay_absent() && wire.relay_expires().is_some());
+    assert!(relay_datagrams(&sink) > 0);
+    wire.service(100 + limit + 1);
+    assert!(wire.relay_absent() && wire.relay_expires().is_none());
+    relay_datagrams(&sink);
+    wire.service(100 + limit + 1_000);
+    assert_eq!(relay_datagrams(&sink), 0);
+    // The lobby's reply to a renewal asked before the release is not an error.
+    wire.renew_relay(address, &ticket, packet_key, [29; 32])
         .unwrap();
 }
 

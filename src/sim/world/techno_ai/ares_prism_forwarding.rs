@@ -832,7 +832,7 @@ fn start_charge_anim(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         object.strength,
         rules.general.condition_yellow,
     );
-    let garrisoned = !entity.passenger_role.occupants().is_empty();
+    let garrisoned = !entity.passenger_role().occupants().is_empty();
     let _ = sim.set_building_anim_slot(id, SPECIAL_ANIM_SLOT, damaged, garrisoned, 0, rules);
 }
 

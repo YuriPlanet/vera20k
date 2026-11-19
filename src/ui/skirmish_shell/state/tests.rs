@@ -983,6 +983,22 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
     assert_eq!(session.options.mcv_redeploy, shell.mcv_redeploy);
 }
 
+/// A map declaring one hundred twenty starts fills every offline Skirmish row: one
+/// human plus the one hundred nineteen computer rows, then Neutral and Special.
+#[test]
+fn a_one_hundred_twenty_start_map_packs_every_offline_row() {
+    let mut shell = SkirmishShellState::default();
+    shell.player_name_edit.text = "Commander".to_string();
+    for opponent in &mut shell.opponents {
+        opponent.row_type = SkirmishAiRowType::Easy;
+    }
+    let maps = [test_map_entry_with_starts("wide.map", 120)];
+    let modes = stock_skirmish_modes();
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
+    assert_eq!(session.opponents.len(), 119);
+    assert_eq!(session.pre_fill_house_roster().created_house_count(), 122);
+}
+
 /// SkirmishDialog's packing forces Fog of War off, Bridge Destruction on,
 /// Harvester Truce off and MultiEngineer off (`0x006AD88F..0x006AD8A4`),
 /// whatever `[MultiplayerDialogSettings]` set.
@@ -1225,7 +1241,7 @@ fn raw_pack_retains_sparse_ai_house_slots_before_compaction() {
     );
     assert_eq!(
         packed
-            .pre_fill_house_roster
+            .pre_fill_house_roster()
             .ai_slots()
             .iter()
             .map(|slot| (slot.slot_index, slot.valid))
@@ -1242,7 +1258,7 @@ fn raw_pack_retains_sparse_ai_house_slots_before_compaction() {
         ]
     );
     assert_eq!(packed.required_start_count(), 3);
-    assert_eq!(packed.pre_fill_house_roster.created_house_count(), 5);
+    assert_eq!(packed.pre_fill_house_roster().created_house_count(), 5);
 }
 
 #[test]
@@ -1299,6 +1315,55 @@ fn ffa_combo_keeps_explicit_teams_despite_allies_disabled() {
             SkirmishComboItem::Team(3),
         ]
     );
+}
+
+#[test]
+fn shrinking_selected_random_map_removes_slot_eight_from_launch() {
+    let modes = stock_skirmish_modes();
+    let layout = compute_choose_map_modal_layout(800, 600);
+    let mut records = vec![SkirmishScenarioRecord::random_map_sentinel(
+        0,
+        "Random Map",
+        8,
+    )];
+    let mut shell = SkirmishShellState::default();
+    let maps = [records[0].to_map_menu_entry()];
+    assert!(accept_selected_map(&mut shell, &maps, 0));
+    // Slot 2 already has an AI. Enable slot 8 so both would fit by count alone.
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::AiType(6),
+        SkirmishComboItem::AiType(SkirmishAiRowType::Hard),
+    );
+
+    let mut chooser = ChooseMapModalState::open(
+        ChooseMapContext::Skirmish,
+        1,
+        Some(shell.selected_map_idx),
+        &modes,
+        &records,
+        &layout,
+    );
+    let chosen = chooser
+        .create_random_map(&mut records, &modes, "Random Map", 3, &layout)
+        .unwrap();
+    let maps: Vec<_> = records
+        .iter()
+        .map(SkirmishScenarioRecord::to_map_menu_entry)
+        .collect();
+    assert!(ai_rows_beyond_limit_occupied(
+        &shell.opponents,
+        maps[chosen].player_capacity
+    ));
+    assert!(accept_selected_map(&mut shell, &maps, chosen));
+
+    let launch = launch_session(&shell, &maps, &modes, false).unwrap();
+    let ai_slots: Vec<_> = launch
+        .opponents
+        .iter()
+        .map(|ai| ai.raw_slot_index + 1)
+        .collect();
+    assert_eq!(ai_slots, [2]);
 }
 
 #[test]

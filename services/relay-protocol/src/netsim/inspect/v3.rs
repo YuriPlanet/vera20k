@@ -19,13 +19,10 @@ pub const HEADER: usize = 9;
 pub const MAX_PAYLOAD: usize = 720;
 /// §5.3 rule 5, §5.4: the packing cap stays 681 B.
 pub const PACK_CAP: usize = 681;
-/// Fixed bytes of every v3 datagram, either way (§6.1, §13: 41 B with the
-/// 28 B IPv4/UDP header).
+/// Fixed bytes of every v3 datagram, either way (§6.1).
 pub const OVERHEAD: usize = HEADER + HOP_TAG_LEN;
-/// §6.3: only `CLIENT_DOMAIN` / `SERVER_DOMAIN` ("VERA20k relay client
-/// v2\0", services/relay-protocol/src/lib.rs) change their version to v3;
-/// the hop key stays `derive_packet_key`. The spec spells no bytes; this
-/// literal reading is reported.
+/// §6.3: only `CLIENT_DOMAIN` / `SERVER_DOMAIN` change their version to
+/// v3, with these exact bytes; the hop key stays `derive_packet_key`.
 pub const CLIENT_DOMAIN: &[u8] = b"VERA20k relay client v3\0";
 pub const SERVER_DOMAIN: &[u8] = b"VERA20k relay server v3\0";
 /// §3.1: `1 <= |P| <= 512` (`ORDERING_BATCH_CAPACITY`).
@@ -217,9 +214,7 @@ pub fn client_datagram(bytes: &[u8]) -> Result<Datagram, String> {
     Ok(datagram(name, session, seq, length, detail))
 }
 
-/// UPLINK (§7.1) with the transport spec's §3.2 decoding rules 1-3, 5 and
-/// 6, and §3.1's batch bounds `1 <= len <= 512` in place of rule 4's
-/// opaque bounds (the §7.1 wording keeps rule 4; reported).
+/// UPLINK (§7.1) with the transport spec's §3.2 decoding rules 1-6.
 fn uplink(payload: &[u8]) -> Result<Uplink, String> {
     let fail = |rule: &str| Err(format!("UPLINK v3 {rule}"));
     let mut reader = Reader::new(payload, 1);
@@ -297,9 +292,8 @@ fn uplink(payload: &[u8]) -> Result<Uplink, String> {
     })
 }
 
-/// `[up_high varint][up_bits u64][echo_delay varint]` (§7.2, §7.3). The
-/// transport spec caps `echo_delay` at the u16 maximum (§3.3); §7 restates
-/// no cap, so the u16 range is assumed (reported).
+/// `[up_high varint][up_bits u64][echo_delay varint]` (§7.2, §7.3), with
+/// `echo_delay` within u16 (§7.1).
 fn feedback(reader: &mut Reader) -> Result<Feedback, String> {
     Ok(Feedback {
         high: reader.varint("up_high")?,

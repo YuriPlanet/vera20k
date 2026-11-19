@@ -192,39 +192,39 @@ fn capacity_and_future_type_input_survive_snapshot_and_affect_hash() {
         .houses
         .get_mut(&owner)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .storage_capacity = -16;
     assert_ne!(restored.state_hash(), hash);
     restored
         .houses
         .get_mut(&owner)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .storage_capacity = -17;
-    let facts = restored
+    let facts = *restored
         .substrate
         .entities
         .get(future)
         .unwrap()
-        .tracking_facts;
+        .tracking_facts();
     restored
         .substrate
         .entities
         .get_mut(future)
         .unwrap()
-        .tracking_facts
+        .tracking_facts_mut_for_test()
         .storage_capacity = 0;
     assert_ne!(
         restored.state_hash(),
         hash,
         "a limbo object's future input matters"
     );
-    restored
+    *restored
         .substrate
         .entities
         .get_mut(future)
         .unwrap()
-        .tracking_facts = facts;
+        .tracking_facts_mut_for_test() = facts;
     assert_eq!(restored.state_hash(), hash);
     for candidate in [&mut sim, &mut restored] {
         assert!(matches!(

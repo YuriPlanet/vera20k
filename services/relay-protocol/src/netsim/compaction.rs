@@ -9,20 +9,14 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::inspect::v3;
 use super::inspect::{Datagram, Detail};
-use super::judgments::{Check, check_batch_segments, check_bitmaps, check_consistency, check_wire};
+use super::judgments::{
+    Check, check_batch_segments, check_bitmaps, check_consistency, check_wire, ensure, run,
+};
 use super::reader::Record;
 use super::report::Report;
 use super::scenario::Direction;
 use super::trace::{Trace, WireRecord};
 use super::*;
-
-fn run(json: &str) -> (Report, Trace) {
-    Simulation::new(Scenario::from_json(json).expect("scenario")).run_traced()
-}
-
-fn ensure(condition: bool, message: impl FnOnce() -> String) -> Check {
-    if condition { Ok(()) } else { Err(message()) }
-}
 
 fn parsed(record: &WireRecord) -> &Datagram {
     record.parsed.as_ref().expect("parsed")
@@ -220,7 +214,7 @@ fn record_of(canonical: &[u8]) -> Record {
 /// relay's canonical history; every BATCH's plaintext is the one its
 /// source sealed (§3.1: `opaque` holds `P`).
 fn check_streams_match_history(trace: &Trace, wire: &BTreeMap<u64, Vec<u8>>) -> Check {
-    let history = trace.relay_history.as_ref().ok_or("no relay history")?;
+    let history = &trace.relay_history;
     // `ordering_history` starts at the oldest record the relay keeps, 1
     // with the journal the simulation always runs.
     ensure(
@@ -275,7 +269,7 @@ const BUSY: &str = r#"{ "name": "compaction", "players": 3, "keep_wire_bytes": t
     "restoring": [ { "client": 2, "from_ms": 8000, "to_ms": 10000 } ] }"#;
 
 #[test]
-fn bc01_every_datagram_has_the_v3_layout() {
+fn bc01_the_v3_wire_carries_canonical_packs_of_the_relays_history() {
     let (report, trace) = run(BUSY);
     assert_eq!(report.malformed, 0);
     // The transport spec's own judgments over the new layout (§12.2 "原有
@@ -283,23 +277,14 @@ fn bc01_every_datagram_has_the_v3_layout() {
     check_wire(&trace).unwrap();
     check_batch_segments(&trace).unwrap();
     check_envelopes(&trace).unwrap();
-}
-
-#[test]
-fn bc02_every_pack_decodes_alone_and_is_the_one_encoding() {
-    let (_, trace) = run(BUSY);
-    check_packs_alone(&trace).unwrap();
+    // Every PACK decodes alone and is the one encoding of its records.
+    let wire = check_packs_alone(&trace).unwrap();
     check_packs_canonical(&trace).unwrap();
     // The §11 row 1 routes were all exercised.
     assert!(trace.wire.iter().any(|r| r.kind() == "PULL"));
     assert!(trace.wire.iter().any(|r| r.hop == 1 && r.pack().is_some()));
-}
-
-#[test]
-fn bc03_every_client_reads_the_relays_canonical_history() {
-    let (report, trace) = run(BUSY);
+    // Every client reads the relay's canonical history.
     check_consistency(&report, &trace, 15_000_000).unwrap();
-    let wire = check_packs_alone(&trace).unwrap();
     check_streams_match_history(&trace, &wire).unwrap();
 }
 
@@ -335,10 +320,17 @@ fn refused(trace: &Trace, client: usize, from_us: u64, to_us: u64) -> Vec<u64> {
 }
 
 /// §6.4 item 2: "合法包永远照常校验、照常接受" — no limit ever drops a
-/// datagram with a valid tag, so not one of any client is refused; and the
-/// forged ones change nothing (item 5): exact feedback windows, one stream.
+/// datagram with a valid tag, so not one of any client is refused; each
+/// forged one fails its tag on a known session and changes nothing (item
+/// 5): exact feedback windows, one stream.
 fn check_forged_flood(report: &Report, trace: &Trace, clients: usize, end_us: u64) {
     check_forgeries_inert(trace).unwrap();
+    assert!(
+        trace
+            .forged
+            .iter()
+            .all(|forged| forged.result == Err("Authentication".into()))
+    );
     for client in 0..clients {
         assert_eq!(
             refused(trace, client, 0, u64::MAX),
@@ -357,17 +349,9 @@ fn bc04_forgeries_from_another_address_change_nothing() {
         "warmup_ms": 0, "duration_ms": 12000, "apm": 120,
         "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 8000, "per_second": 300 } ] }"#);
     check_forged_flood(&report, &trace, 2, 12_000_000);
-    // §6.4 item 2: each one a failure on a known session; 1500 stay under
-    // the 4096-a-window alert. Neither client saw a bad tag (item 6).
-    let counts = trace.mac_counts.unwrap();
-    assert_eq!(
-        (
-            counts.failures,
-            counts.unknown_sessions,
-            counts.session_alerts
-        ),
-        (trace.forged.len() as u64, 0, 0)
-    );
+    // §6.4 item 2: 1500 failures stay under the 4096-a-window alert.
+    // Neither client saw a bad tag (item 6).
+    assert_eq!(trace.session_alerts, 0);
     assert_eq!(trace.client_mac_failures, [0, 0]);
 }
 
@@ -375,8 +359,7 @@ fn bc04_forgeries_from_another_address_change_nothing() {
 fn bc06_forgeries_from_many_ips_drop_none_of_the_sessions_datagrams() {
     // §6.4 item 2: eight IPs, 2000 forged a second on A's one session,
     // 6000 in 3 s, past the 4096-a-minute alert; each fails alone and A's
-    // own datagrams all pass. (The failure and alert counts are asserted
-    // through `MacFailureCounts` once that interface is merged.)
+    // own datagrams all pass.
     let (report, trace) = run(r#"{ "name": "bc06", "players": 2, "keep_wire_bytes": true,
         "warmup_ms": 0, "duration_ms": 10000, "apm": 300,
         "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 6000, "per_second": 2000,
@@ -385,15 +368,7 @@ fn bc06_forgeries_from_many_ips_drop_none_of_the_sessions_datagrams() {
     check_forged_flood(&report, &trace, 2, 10_000_000);
     // §6.4 item 2: 3-6 s lies in one fixed 60 s window (unix seconds; the
     // run starts at 1_000_000, a boundary at 20 s): one alert.
-    let counts = trace.mac_counts.unwrap();
-    assert_eq!(
-        (
-            counts.failures,
-            counts.unknown_sessions,
-            counts.session_alerts
-        ),
-        (trace.forged.len() as u64, 0, 1)
-    );
+    assert_eq!(trace.session_alerts, 1);
 }
 
 #[test]
@@ -426,12 +401,18 @@ fn bc07_sessions_are_allocated_per_hop_and_released_after_leave() {
     );
     // §6.2 "释放": in the leaving state each LEAVE, the resent one too,
     // gets a LEAVE_ACK echoing its sequence, and the relay sends nothing
-    // else on A's session.
+    // else on A's session. The resend comes one LEAVE interval after the
+    // first, long after its LEAVE_ACK would have arrived, and its own
+    // LEAVE_ACK ends the leaving.
     let leaves: Vec<&WireRecord> = trace
         .of(0, Direction::Up)
         .filter(|r| r.kind() == "LEAVE")
         .collect();
-    assert!(leaves.len() >= 2, "the lost LEAVE_ACK brought no resend");
+    assert_eq!(leaves.len(), 2, "one resend for the lost LEAVE_ACK");
+    assert_eq!(
+        leaves[1].sent_us - leaves[0].sent_us,
+        crate::LEAVE_INTERVAL_MS * 1000
+    );
     let acks: Vec<&WireRecord> = trace
         .of(0, Direction::Down)
         .filter(|r| r.kind() == "LEAVE_ACK")
@@ -545,14 +526,11 @@ fn bc09_decoders_survive_random_input() {
         .into_iter()
         .enumerate()
     {
-        let _ = inspect::client_datagram(&raw);
-        let _ = inspect::server_datagram(&raw);
         let _ = sim.relay.process_at(attacker, &raw, unix(now_ms), now_ms);
-        sim.clients[0].driver.deliver(&raw, now_ms, now_ms * 1000);
+        sim.clients[0].driver.deliver(&raw, now_ms);
         // Sequences far above the hop's, so the replay window lets them in.
         let seq = 1_000_000 + index as u32;
         let uplink = fuzz_payloads(&mut random, 8, 1).remove(0);
-        let _ = v3::client_datagram(&v3::seal(&key, true, v3::CONTROL, session, seq, &uplink));
         let _ = sim.relay.process_at(
             endpoint,
             &v3::seal(&key, true, v3::CONTROL, session, seq, &uplink),
@@ -560,11 +538,9 @@ fn bc09_decoders_survive_random_input() {
             now_ms,
         );
         let pack = fuzz_payloads(&mut random, v3::PACK, 1).remove(0);
-        let _ = v3::decode_pack(&pack);
         sim.clients[0].driver.deliver(
             &v3::seal(&key, false, v3::CONTROL, session, seq, &pack),
             now_ms,
-            now_ms * 1000,
         );
         sim.clients[0].driver.take_output();
     }

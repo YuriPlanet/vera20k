@@ -3,7 +3,7 @@
 //! compaction (its §7.1-§7.3, §8). Fixed-width integers are little-endian.
 
 use super::{HopFeedback, RecvWindow};
-use crate::{ORDERING_BATCH_CAPACITY, RelayError, varint};
+use crate::{ORDERING_BATCH_CAPACITY, OrderPace, RelayError, varint};
 
 pub(crate) const UPLINK_REQUEST: u8 = 8;
 pub(crate) const FLAG_PUSH: u8 = 1;
@@ -21,7 +21,7 @@ pub(crate) const MAX_UPLINK_BATCHES: usize = 4;
 /// varint]`, `tick_micros` 0 for none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PaceSegment {
-    pub pace: u8,
+    pub pace: OrderPace,
     pub frames_per_second: u16,
     pub tick_micros: u32,
 }
@@ -78,7 +78,7 @@ impl Uplink<'_> {
             out.extend_from_slice(&checksum.to_le_bytes());
         }
         if let Some(pace) = self.pace {
-            out.push(pace.pace);
+            out.push(pace.pace as u8);
             varint::write(pace.frames_per_second.into(), out);
             varint::write(pace.tick_micros.into(), out);
         }
@@ -107,7 +107,7 @@ impl Uplink<'_> {
 /// 4 batches, reserved bits 0 (flags 4..7, link 4..7), `first_batch_id ≥
 /// 1`, `1 ≤ len ≤ 512`, `recv_next ≥ 1`, bit0 of `down_bits` set when
 /// `down_high > 0`, shortest varints within their fields' former widths.
-/// The pace byte must also name an [`crate::OrderPace`].
+/// The pace byte must also name an [`OrderPace`].
 pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
     let mut reader = Reader(payload);
     if reader.u8()? != UPLINK_REQUEST {
@@ -137,15 +137,11 @@ pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
         checksums.push((reader.varint_u32()?, reader.u32()?));
     }
     let pace = if flags & FLAG_PACE != 0 {
-        let pace = PaceSegment {
-            pace: reader.u8()?,
+        Some(PaceSegment {
+            pace: OrderPace::parse(reader.u8()?)?,
             frames_per_second: reader.varint_u16()?,
             tick_micros: reader.varint_u32()?,
-        };
-        if pace.pace > 2 {
-            return Err(RelayError::Malformed);
-        }
-        Some(pace)
+        })
     } else {
         None
     };
@@ -303,11 +299,11 @@ mod tests {
         let mut uplink = quiet_uplink(1, 0, 0);
         uplink.first_batch_id = 1;
         uplink.batches = vec![&opaque, &opaque, &opaque];
-        uplink.fit(crate::MAX_WIRE_PAYLOAD);
+        uplink.fit(crate::envelope::PACK_LIMIT);
         assert_eq!(uplink.batches.len(), 2);
         let mut bytes = Vec::new();
         uplink.encode(&mut bytes);
-        assert!(bytes.len() <= crate::MAX_WIRE_PAYLOAD);
+        assert!(bytes.len() <= crate::envelope::PACK_LIMIT);
         uplink.fit(bytes.len() - 1);
         assert_eq!(uplink.batches.len(), 1);
     }
@@ -359,6 +355,17 @@ mod tests {
             malformed,
             "srtt past u16"
         );
+        // The pace byte, after the checksum count, names an OrderPace.
+        uplink.pace = Some(PaceSegment {
+            pace: OrderPace::CatchingUp,
+            frames_per_second: 45,
+            tick_micros: 0,
+        });
+        let mut paced = Vec::new();
+        uplink.encode(&mut paced);
+        assert!(decode_uplink(&paced).is_ok());
+        paced[17] = 3;
+        assert_eq!(decode_uplink(&paced).map(|_| ()), malformed);
     }
 
     #[test]

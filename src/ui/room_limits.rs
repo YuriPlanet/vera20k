@@ -33,7 +33,7 @@ pub(crate) const PLAYERS: TrackbarRange =
 pub struct RoomLimitsLayout {
     /// The Players caption, right aligned.
     pub players_label: RectPx,
-    /// A plaque trackbar of the Skirmish Credits window's 129x22.
+    /// The Max players trackbar, including its value plaque.
     pub players: RectPx,
     /// The Allow spectators checkbox.
     pub spectators: RectPx,

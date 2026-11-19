@@ -113,13 +113,14 @@ pub(crate) fn generate(
         mode_rules.as_ref(),
     )
     .context("the random map's theater or rules are unavailable")?;
-    let generated = crate::map::rmg::build::generate_map(
+    let run = crate::map::rmg::build::generate_map(
         options,
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
         &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
     );
+    let generated = run.map();
     ensure!(
         generated.unfilled_start_slots == 0,
         "the map has no room for {} of its {} players; try another seed or a larger size",

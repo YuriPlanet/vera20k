@@ -25,8 +25,9 @@ pub(crate) const WATCH_SOURCE: u8 = MAX_PEERS;
 /// A watcher silent this long loses its place.
 const WATCH_SILENCE_S: u64 = 30;
 /// A room notes its stream's end this often, and keeps enough of these
-/// marks for the longest delay.
-const WATCH_MARK_MS: u64 = 1000;
+/// marks for the longest delay: a delayed watcher's stream grows by this
+/// much at a time.
+pub const WATCH_MARK_MS: u64 = 1000;
 const WATCH_MARKS: usize = MAX_WATCH_DELAY_SECONDS as usize + 2;
 /// Checksums every player reported alike, kept one per this many frames
 /// for watchers' sync check, and how many are kept.
@@ -127,10 +128,9 @@ impl WatchTicket {
 pub(crate) struct Watcher {
     pub(crate) ticket: Ticket,
     delay_ms: u64,
-    key: SecretKey,
+    pub(crate) key: SecretKey,
     pub(crate) session: u32,
     pub(crate) endpoint: SocketAddrV4,
-    received: ReplayWindow,
     pub(crate) sent: u64,
     last_seen: u64,
     // For the feedback tail of its STATUS (spec §3.4).
@@ -157,7 +157,6 @@ impl Watcher {
             key: message.key.clone(),
             session,
             endpoint,
-            received: ReplayWindow::default(),
             sent: 0,
             last_seen: now,
             link: crate::link::ReaderLink::new(now_ms),
@@ -175,10 +174,9 @@ impl Watcher {
         endpoint: SocketAddrV4,
         now_ms: u64,
     ) -> Result<(), RelayError> {
-        self.received.accept(sequence)?;
+        self.link.heard(sequence, now_ms)?;
         // NAT rebinding moves the hop, as a player's (spec §6.2 "换地址").
         self.endpoint = endpoint;
-        self.link.heard(sequence, now_ms);
         Ok(())
     }
 
@@ -413,7 +411,8 @@ impl RelayServer {
         match existing {
             Some(index) if same_lease => {
                 let watcher = &room.watchers[index];
-                if message.sequence <= watcher.received.maximum && watcher.endpoint != source {
+                if message.sequence <= watcher.link.highest_received() && watcher.endpoint != source
+                {
                     return Err(RelayError::Replay);
                 }
             }
@@ -483,44 +482,23 @@ impl RelayServer {
         Ok(vec![reply])
     }
 
-    /// A datagram on a watcher's session: PING, or one of Ready, Pull and
-    /// Leave. Anything else, DATA and UPLINK included, is refused.
+    /// A datagram `session_incoming` authenticated on a watcher's session:
+    /// PING, or one of Ready, Pull and Leave. Anything else, DATA and UPLINK
+    /// included, is refused.
     pub(crate) fn watch_datagram(
         &mut self,
         source: SocketAddrV4,
-        header: envelope::Header,
-        bytes: &[u8],
-        room_id: [u8; 16],
+        message: &Incoming<'_>,
         now: u64,
         now_ms: u64,
     ) -> Result<Vec<ForwardDatagram>, RelayError> {
-        let key = self
-            .rooms
-            .get(&room_id)
-            .and_then(|room| {
-                room.watchers
-                    .iter()
-                    .find(|watcher| watcher.session == header.session)
-            })
-            .map(|watcher| watcher.key.clone())
-            .ok_or(RelayError::Unregistered)?;
-        let payload = match envelope::open(envelope::Direction::Up, &key, bytes) {
-            Ok((_, payload)) => payload,
-            Err(RelayError::Authentication) => {
-                self.count_session_failure(header.session, now);
-                return Err(RelayError::Authentication);
-            }
-            Err(error) => return Err(error),
-        };
-        let request = match (header.kind, payload.first()) {
-            (PING, None) => None,
-            (CONTROL, Some(&request)) => Some(request),
+        let (room_id, sequence, payload) = (message.ticket.room, message.sequence, message.payload);
+        // `session_payload` framed it: PING empty, CONTROL not.
+        let request = match message.kind {
+            PING => None,
+            CONTROL => payload.first().copied(),
             _ => return Err(RelayError::Malformed),
         };
-        if header.sequence == 0 {
-            return Err(RelayError::Replay);
-        }
-        let sequence = u64::from(header.sequence);
         if request.is_some() {
             self.advance_ordering_room(room_id, now_ms);
         }
@@ -532,7 +510,7 @@ impl RelayServer {
             .ok_or(RelayError::Unregistered)?;
         let index = watchers
             .iter()
-            .position(|watcher| watcher.session == header.session)
+            .position(|watcher| watcher.session == message.session)
             .ok_or(RelayError::Unregistered)?;
         let watcher = &mut watchers[index];
         watcher.heard(sequence, source, now_ms)?;
@@ -630,7 +608,7 @@ impl RelayServer {
                         Ok(records) => {
                             let mut replies = vec![ordering.watch_status(view, feedback, now_ms)];
                             replies.extend(
-                                pack::encode_pack_v2(&records, WATCH_PULL_PACKS)
+                                pack::encode_pack(&records, WATCH_PULL_PACKS)
                                     .into_iter()
                                     .map(|(pack, _)| pack),
                             );
@@ -707,16 +685,11 @@ impl ClientSession {
             }
             Some(_) => {}
             None => {
-                self.ordering = Some(ClientOrdering {
-                    certificate: certificate.to_vec(),
+                self.ordering = Some(ClientOrdering::new(
+                    certificate.to_vec(),
                     agreement,
-                    sealed: VecDeque::new(),
-                    next_batch: 1,
-                    accepted_through: 0,
-                    restoring: false,
-                    leave: None,
-                    link: crate::link::ClientLink::new(parsed.tick_hz),
-                });
+                    parsed.tick_hz,
+                ));
             }
         }
         let mut payload = vec![READY_REQUEST];
@@ -939,5 +912,24 @@ mod tests {
                 .all(|entry| entry.source != WATCH_SOURCE)
         );
         assert_eq!(before, (ordering(&server), server.ordering_history(ROOM)));
+    }
+
+    #[test]
+    fn a_watchers_wrong_tag_counts_on_its_session_as_a_players_does() {
+        // Compaction spec §6.4 item 2: a wrong tag drops only its datagram
+        // and counts toward its session's alert.
+        let directory = TestDirectory::new();
+        let (mut server, _first, _second) = running_match(&directory, 3000);
+        let mut watching = watcher(&server, ROOM, 41, 0);
+        connect(&mut server, &mut watching, 3000);
+        let (from, session) = (endpoint(&watching), watching.session().unwrap());
+        let mut bytes = Vec::new();
+        watching.encode(PING, &[], &mut bytes).unwrap();
+        *bytes.last_mut().unwrap() ^= 1;
+        assert_eq!(
+            server.process_at(from, &bytes, unix(3000), 3000).err(),
+            Some(RelayError::Authentication)
+        );
+        assert_eq!(server.sessions[&session].failures, 1);
     }
 }

@@ -357,13 +357,7 @@ impl FootPathQueue {
         self.reference_cell = Some(reference_cell);
     }
 
-    /// The queue `FootClass::Find_Path @ 0x004D3920` installs from a found
-    /// route (`0x004D393A..0x004D4003`): the directions from `reference`
-    /// through `path` from `first_destination` on, unconsumed. The ordinary
-    /// zero-prefix copy at `0x004D3E82..0x004D3EA1` takes at most
-    /// [`FIND_PATH_WINDOW_WORDS`] words of the whole AStar route; tube jumps
-    /// count as one word. The Vec's end represents a short route's
-    /// terminator without retaining unused native backing words.
+    /// Build a fixture's queue and reference from a coordinate path.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install(
         &mut self,
@@ -371,29 +365,32 @@ impl FootPathQueue {
         path: &[(u16, u16)],
         first_destination: usize,
     ) {
-        self.install_directions(reference, path, first_destination);
+        let mut from = (reference.0 as i16, reference.1 as i16);
+        let words: Vec<_> = path
+            .iter()
+            .skip(first_destination)
+            .map(|&to| {
+                let direction = direction_from_step(from, to);
+                from = (to.0 as i16, to.1 as i16);
+                i32::from(direction)
+            })
+            .collect();
+        self.install_directions(&words);
         self.rebase((reference.0 as i16, reference.1 as i16));
     }
 
     /// Find_Path's direction copy (`0x004D3E82..0x004D3EA1`) precedes
     /// follower callbacks; its separate reference write is at `0x004D4003`.
-    /// Keep the previous reference until that continuation publishes it.
-    pub(crate) fn install_directions(
-        &mut self,
-        reference: (u16, u16),
-        path: &[(u16, u16)],
-        first_destination: usize,
-    ) {
-        let mut from = (reference.0 as i16, reference.1 as i16);
+    /// Copy at most 24 finished words. The Vec's end represents the native
+    /// terminator. Keep the previous reference until that continuation publishes it.
+    pub(crate) fn install_directions(&mut self, directions: &[i32]) {
         self.directions.clear();
-        for &destination in path
-            .iter()
-            .skip(first_destination)
-            .take(FIND_PATH_WINDOW_WORDS)
-        {
-            self.directions.push(direction_from_step(from, destination));
-            from = (destination.0 as i16, destination.1 as i16);
-        }
+        self.directions.extend(
+            directions
+                .iter()
+                .take(FIND_PATH_WINDOW_WORDS)
+                .map(|&dir| dir as u8),
+        );
         self.cursor = 0;
     }
 

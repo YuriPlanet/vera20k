@@ -3585,8 +3585,10 @@ mod tests {
             let ids = hit_ids(&aoe.hits);
             let captured_houses = aoe.hits.iter().map(|event| event.source_house).collect();
 
-            // Prove alliance resolution reads the detonation ABI snapshot, not
-            // a later live-source owner value.
+            // The event keeps the detonation's House, but stock AffectsAllies
+            // (TechnoClass::ReceiveDamage 0x701CAC) asks the live attacker's
+            // current House: after the source changes owner, EnemyHouse
+            // answers, so the ally is hit and EnemyHouse's own units are not.
             entities.change_owner(1, enemy_house);
             let mut commit = ReceiverCommit::new();
             commit
@@ -3619,15 +3621,17 @@ mod tests {
         let (ordinary_ids, ordinary_houses, ordinary_hp) = run(false, "OrdinaryWH");
         assert_eq!(ordinary_ids, vec![2, 3]);
         assert_eq!(ordinary_houses, vec![Some(source_house); 2]);
-        assert_eq!(ordinary_hp, [100, 100, 60]);
+        assert_eq!(ordinary_hp, [100, 60, 100]);
 
+        // The collected source is its own attacker, so its now-EnemyHouse
+        // owner counts it an ally too.
         let (damage_self_ids, _, damage_self_hp) = run(true, "OrdinaryWH");
         assert_eq!(damage_self_ids, vec![1, 2, 3]);
-        assert_eq!(damage_self_hp, [60, 100, 60]);
+        assert_eq!(damage_self_hp, [100, 60, 100]);
 
         let (crush_ids, _, crush_hp) = run(false, "CrushWH");
         assert_eq!(crush_ids, vec![1, 2, 3]);
-        assert_eq!(crush_hp, [60, 100, 60]);
+        assert_eq!(crush_hp, [100, 60, 100]);
 
         // Phobos `Explosion_Damage_DamageSelf @ 0x004896EC` skips the source
         // exclusion, so a DamageSelf=no source still collects its own hit.
@@ -3635,7 +3639,7 @@ mod tests {
         {
             let (allow_ids, _, allow_hp) = run(false, "SelfWH");
             assert_eq!(allow_ids, vec![1, 2, 3]);
-            assert_eq!(allow_hp, [60, 100, 60]);
+            assert_eq!(allow_hp, [100, 60, 100]);
         }
     }
 
@@ -4367,8 +4371,9 @@ mod tests {
                     )));
                 }
                 if case["open_transport"] == true {
-                    victim.passenger_role =
-                        crate::sim::passenger::PassengerRole::inside_for_test(1, true);
+                    victim.set_passenger_role_for_test(
+                        crate::sim::passenger::PassengerRole::inside_for_test(1, true),
+                    );
                 }
             }
             entities.insert(victim);

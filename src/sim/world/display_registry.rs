@@ -172,12 +172,77 @@ impl Simulation {
     /// (Layer551A30) keep the Ground vector close to. The simulation keeps
     /// Ground unordered (`DisplayLayers::submit`), so the picture and entity
     /// picking sort it here, off the simulation's frame. A member no store
-    /// holds sorts first. Equal keys keep the Ground vector's order, which is
-    /// submission order until a removal swaps the last member into a hole.
-    /// Sim-scale deviation: a member that moved is placed at once rather than
-    /// one neighbour per frame. Without `rules` a
+    /// holds sorts first. Equal keys keep submission order
+    /// (`DisplayLayers::submission_order`), the local anims (a LAN or online
+    /// MoveFlash) among them. Sim-scale deviation: a member that moved is
+    /// placed at once rather than one neighbour per frame. Without `rules` a
     /// Building's key leaves out its type terms (`entity_sort_key`).
     pub fn ground_draw_order(&self, rules: Option<&RuleSet>) -> Vec<u64> {
+        self.layer_draw_order(DisplayLayer::GROUND, rules, &[])
+    }
+
+    /// Every Display member in draw order: the five layers in index order,
+    /// Ground as [`Self::ground_draw_order`] sorts it, the other layers as
+    /// they hold their members. What the native walks of the retained
+    /// vectors (Tactical6D8F19, TacticalPick6DA380) read.
+    pub fn display_draw_order(&self, rules: Option<&RuleSet>) -> Vec<(DisplayLayer, u64)> {
+        self.draw_order(rules, false)
+    }
+
+    /// [`Self::display_draw_order`] with each revealed presentation anim
+    /// (`Simulation::presentation_anims`) where gamemd's Display would hold
+    /// it as an ordinary anim: at the place in submission order it took when
+    /// it was placed (`AnimObject::presentation_order`), Ground by its
+    /// GetYSort key first (Anim422BC0). What the picture draws.
+    pub fn picture_draw_order(&self, rules: Option<&RuleSet>) -> Vec<(DisplayLayer, u64)> {
+        self.draw_order(rules, true)
+    }
+
+    fn draw_order(&self, rules: Option<&RuleSet>, presentation: bool) -> Vec<(DisplayLayer, u64)> {
+        let display = &self.substrate.display;
+        let mut unshared: [Vec<(u64, u64)>; 5] = Default::default();
+        if presentation {
+            for (&id, anim) in self.substrate.anims.presentation_iter() {
+                if let Some(layer) = anim.presentation_layer()
+                    && !self.substrate.anims.local_delete_queued(id)
+                {
+                    unshared[usize::from(layer.index())].push((anim.presentation_order(), id));
+                }
+            }
+        }
+        let mut order = Vec::with_capacity(
+            display.ordered_ids().size_hint().0 + unshared.iter().map(Vec::len).sum::<usize>(),
+        );
+        for index in 0..5 {
+            let layer = DisplayLayer::from_index(index).expect("native Display layer index");
+            order.extend(
+                self.layer_draw_order(layer, rules, &unshared[usize::from(index)])
+                    .into_iter()
+                    .map(|id| (layer, id)),
+            );
+        }
+        order
+    }
+
+    /// `layer`'s members and `unshared` draws (`(place, id)`) in draw order:
+    /// by submission order, Ground by GetYSort key first.
+    fn layer_draw_order(
+        &self,
+        layer: DisplayLayer,
+        rules: Option<&RuleSet>,
+        unshared: &[(u64, u64)],
+    ) -> Vec<u64> {
+        let display = &self.substrate.display;
+        let members = display.members(layer);
+        let local: &[u64] = if layer == DisplayLayer::GROUND {
+            display.local_ground()
+        } else {
+            &[]
+        };
+        // The other layers already hold their members in submission order.
+        if layer != DisplayLayer::GROUND && unshared.is_empty() {
+            return members.to_vec();
+        }
         let view = GroundSortView {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
@@ -186,41 +251,23 @@ impl Simulation {
             interner: &self.interner,
             rules,
         };
-        let display = &self.substrate.display;
-        let mut keyed: Vec<(i32, u64)> = display
-            .members(DisplayLayer::GROUND)
-            .iter()
-            .map(|&id| (view.key(id).unwrap_or(i32::MIN), id))
-            .collect();
-        // Stable: equal keys keep the Ground vector's order.
-        keyed.sort_by_key(|&(key, _)| key);
-        keyed
-            .into_iter()
-            .map(|(_, id)| id)
-            .chain(display.local_ground().iter().copied())
-            .collect()
-    }
-
-    /// Every Display member in draw order: the five layers in index order,
-    /// Ground as [`Self::ground_draw_order`] sorts it, the other layers as
-    /// they hold their members. What the native walks of the retained
-    /// vectors (Tactical6D8F19, TacticalPick6DA380) read.
-    pub fn display_draw_order(&self, rules: Option<&RuleSet>) -> Vec<(DisplayLayer, u64)> {
-        let display = &self.substrate.display;
-        let mut order = Vec::with_capacity(display.ordered_ids().size_hint().0);
-        for index in 0..5 {
-            let layer = DisplayLayer::from_index(index).expect("native Display layer index");
+        let key = |id: u64| {
             if layer == DisplayLayer::GROUND {
-                order.extend(
-                    self.ground_draw_order(rules)
-                        .into_iter()
-                        .map(|id| (layer, id)),
-                );
+                view.key(id).unwrap_or(i32::MIN)
             } else {
-                order.extend(display.members(layer).iter().map(|&id| (layer, id)));
+                0
             }
-        }
-        order
+        };
+        let mut keyed: Vec<(i32, u64, u64)> = members
+            .iter()
+            .chain(local)
+            .map(|&id| (id, display.submission_order(id).unwrap_or(0)))
+            .chain(unshared.iter().map(|&(place, id)| (id, place)))
+            .map(|(id, place)| (key(id), place, id))
+            .collect();
+        // Each id appears once, so the order is total.
+        keyed.sort_unstable();
+        keyed.into_iter().map(|(_, _, id)| id).collect()
     }
 
     pub(super) fn submit_entity_display(
@@ -345,6 +392,21 @@ mod tests {
             Simulation::submit_object_display(&mut sim.substrate, id, DisplayLayer::GROUND);
         }
         assert_eq!(sim.ground_draw_order(Some(&rules)), [3, 1, 4, 2]);
+    }
+
+    /// Ground551A90 inserts after equal keys and Display4A9770 removes in
+    /// order, so equal keys draw in submission order; VERA's swap-removal
+    /// must not hand the last submit an earlier member's place.
+    #[test]
+    fn equal_ground_keys_keep_submission_order_after_a_swap_removal() {
+        let mut sim = Simulation::new();
+        for id in [1, 2, 3] {
+            Simulation::submit_object_display(&mut sim.substrate, id, DisplayLayer::GROUND);
+        }
+        sim.substrate.display.remove(1);
+        assert_eq!(sim.substrate.display.members(DisplayLayer::GROUND), [3, 2]);
+        // No store holds them, so every key is equal (i32::MIN).
+        assert_eq!(sim.ground_draw_order(None), [2, 3]);
     }
 
     #[test]

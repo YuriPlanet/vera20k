@@ -748,7 +748,6 @@ mod tests {
             sim.advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
                 FrameEffects::empty(),
@@ -773,8 +772,7 @@ mod tests {
             input.type_select.across_map = true;
             input.selection_order = vec![20];
             // Deselect and its normal app reconciliation have no expiry fact.
-            sim.entities_mut_for_test()
-                .get_mut(20)
+            sim.entity_mut_for_test(20)
                 .unwrap()
                 .selection
                 .set_selected_for_test(false);
@@ -791,7 +789,6 @@ mod tests {
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
                     FrameEffects::empty(),
@@ -856,7 +853,6 @@ mod tests {
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
                     FrameEffects::empty(),

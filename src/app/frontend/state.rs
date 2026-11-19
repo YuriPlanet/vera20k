@@ -151,6 +151,9 @@ pub(crate) struct FrontendState {
     /// `0x10E` and full controls instead of opening at the online sign-in,
     /// and a LAN guest's BD keeps Accept (`SetupDialog::modern`).
     pub(crate) native_shell_ui: bool,
+    /// A shell capture's WOL provider, which its Internet visit opens with.
+    /// Outside captures it is `None` and every visit opens online.
+    pub(crate) wol_capture_provider: Option<crate::app::shell_wol::WolProvider>,
     /// LAN lobby interaction/discovery; admitted participants belong to MatchSession.
     pub(crate) lan: Option<crate::app::shell_lan::LanShellRuntime>,
     pub(crate) network_setup_protocol:
@@ -223,8 +226,7 @@ pub(crate) struct FrontendState {
     /// Number of matches finished this session — the score screen's `Game: n`.
     /// gamemd increments the same counter as it tears the scenario down.
     pub(crate) finished_game_count: u32,
-    /// Which shell surface owns the MainMenu screen (F11): structural
-    /// exclusivity replaces the old boolean triple.
+    /// Which shell surface owns the MainMenu screen.
     pub(crate) shell_route: crate::app::shell_route::ShellRoute,
     /// Which screen is currently active (MainMenu, Loading, InGame).
     pub(crate) screen: GameScreen,
@@ -258,9 +260,6 @@ pub(crate) struct FrontendState {
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
     /// VERA's enlarged map preview, while it shows.
     pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
-    /// Minimap renderer — created at map load time.
-    pub(crate) loading_screen_atlas:
-        Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,
     pub(crate) loading_progress: crate::app::loading::pump::LoadingProgressState,
     /// Game data from rules.ini — needed by combat system for weapon/warhead lookups.
     /// Startup-shell rules loaded at boot for menu presentation; match paths
@@ -270,7 +269,7 @@ pub(crate) struct FrontendState {
     /// last-loaded match registry across scenario exit, matching the pre-F07
     /// persistence of the old app field. Match paths read the runtime-bound
     /// copy via `overlay_registry()`.
-    pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
+    pub(crate) shell_preview_overlay_registry: Option<std::sync::Arc<OverlayTypeRegistry>>,
     /// The online map library's catalog and Choose Map's map download.
     pub(crate) map_library: crate::app::map_library::MapLibrary,
     /// The online login page's lobby counts.

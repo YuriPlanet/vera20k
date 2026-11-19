@@ -183,6 +183,7 @@ fn production_ripple_matches_original_draw_all() {
                 [0.0, 0.0],
                 VIEW.map(|v| v as f32),
                 int(&row["detail"]) as u32,
+                crate::render::native_z::DEFAULT_Z,
             );
             terrain.prepare_ion_blasts(&gpu.device, &gpu.queue, &draws, 1.0);
             let mut encoder = gpu.device.create_command_encoder(&Default::default());

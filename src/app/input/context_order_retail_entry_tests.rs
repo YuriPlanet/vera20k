@@ -464,8 +464,7 @@ fn a_damaged_tank_sent_to_the_depot_is_repaired() {
     let rules = &retail.rules;
     let (mut sim, depot, tank, _) = scene_with(rules, "GADEPT", "Americans");
     let strength = rules.object("MTNK").unwrap().strength;
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .health
         .set_for_test(strength / 2);
@@ -733,7 +732,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, passenger: u64, carrier: u64, fr
         if sim
             .entities()
             .get(passenger)
-            .is_some_and(|entity| entity.passenger_role.is_inside_transport())
+            .is_some_and(|entity| entity.passenger_role().is_inside_transport())
         {
             break;
         }
@@ -743,7 +742,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, passenger: u64, carrier: u64, fr
         sim.entities()
             .get(carrier)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .passenger_count(),
         1
     );
@@ -940,8 +939,7 @@ fn a_gi_selected_with_the_ifv_boards_it_when_the_ifv_is_clicked() {
     let rules = &retail.rules;
     let (mut sim, ifv, _, gi) = carrier_scene(rules, "FV");
     for id in [gi, ifv] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .selection
             .set_selected_for_test(true);
@@ -1195,10 +1193,9 @@ fn a_loaded_carryall_offers_unload() {
     assert_eq!(unload(&sim), None, "empty");
     let mut cargo = crate::sim::passenger::PassengerCargo::new(0, 0.0);
     cargo.board_forced_chain(&[(999, 2.0)]);
-    sim.entities_mut_for_test()
-        .get_mut(carryall)
+    sim.entity_mut_for_test(carryall)
         .unwrap()
-        .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
     assert_eq!(
         unload(&sim),
         Some(Command::UnloadPassengers {

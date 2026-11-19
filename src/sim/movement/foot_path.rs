@@ -733,13 +733,16 @@ impl Simulation {
             }
         };
         //4D3E82..3E9F copies a successful route before Mark1's callbacks.
-        if let Ok(path) = &searched {
+        if let Ok(directions) = &searched {
             let actor = self
                 .substrate
                 .entities
                 .get_mut(id)
                 .ok_or("retired Find_Path direction receiver")?;
-            request.install_route(actor, path);
+            actor
+                .navigation
+                .path_replay_mut()
+                .install_directions(directions);
         }
         //4D3EAC restores Mark1 before the timer and follower continuation.
         self.foot_mark_put(id, rules, registry, frame_effects);
@@ -759,23 +762,19 @@ impl Simulation {
         use super::movement_path::MovePathFailure;
         use crate::sim::pathfinding::zone_search::PathSearchFailure as Search;
         match searched {
-            Ok(path) => {
-                debug_assert!(path.len() >= 2, "AStar routes leave the start cell");
-                //4D3EF7..3F22 retains the full core tail, even when the
-                //Foot+5E0 copy above is limited to24 words.
-                let last_step = &path[path.len() - 2..];
-                let last_direction = crate::sim::components::direction_from_step(
-                    (last_step[0].0 as i16, last_step[0].1 as i16),
-                    last_step[1],
-                );
-                self.continue_unit_follower_paths(
-                    request,
-                    goal,
-                    last_direction,
-                    rules,
-                    registry,
-                    frame_effects,
-                )?;
+            Ok(directions) => {
+                // FootClass::Find_Path (0x004D3EF7..0x004D3F22) reads the
+                // full route's last direction even when only 24 words fit.
+                if let Some(&last) = directions.last() {
+                    self.continue_unit_follower_paths(
+                        request,
+                        goal,
+                        last as u8,
+                        rules,
+                        registry,
+                        frame_effects,
+                    )?;
+                }
                 //4D3FF0..4003 queries the live initiator's current Cell
                 //only after every follower destination/search callback.
                 let actor = self
@@ -958,7 +957,7 @@ impl Simulation {
         facts: Option<&crate::sim::world::EntryFacts>,
         keep_searching: Option<&dyn Fn(u32) -> bool>,
     ) -> (
-        Result<Vec<(u16, u16)>, super::movement_path::MovePathFailure>,
+        Result<Vec<i32>, super::movement_path::MovePathFailure>,
         bool,
     ) {
         let id = request.entity_id;

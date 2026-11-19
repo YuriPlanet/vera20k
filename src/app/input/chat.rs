@@ -503,6 +503,7 @@ pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text:
     crate::app::shell_wol::translation::received(
         state,
         &units,
+        false,
         crate::app::shell_wol::translation::TranslatedLine::Match {
             name: name.to_owned(),
             color,

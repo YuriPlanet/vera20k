@@ -341,7 +341,7 @@ fn assert_retail_wall_fire_profile(
     let tank = scene.sim().entities().get(attacker_id).unwrap();
     assert_eq!(scene.sim().resolve(tank.type_ref()), "MTNK");
     assert_eq!(tank.owner(), owner);
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let wall = registry.id_for_name(wall_name).unwrap();
     let flags = registry.flags(wall).unwrap();
     let native_type = native["cases"][0]["input"]["wall_types"]
@@ -667,7 +667,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
     )
     .unwrap();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let sim = &mut scene.runtime.simulation;
     let id = 1376;
     let at = (43, 82);
@@ -887,7 +887,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         )
         .unwrap();
         let rules = &scene.runtime.resources.rules;
-        let registry = &scene.runtime.resources.overlay_registry;
+        let registry = scene.runtime.resources.rules.overlay_registry();
         if let Some(gdi) = case["input"].get("gdi_type_inputs") {
             let final_types = &gdi["layers"]
                 .as_array()

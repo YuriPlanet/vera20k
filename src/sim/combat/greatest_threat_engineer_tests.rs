@@ -35,7 +35,7 @@ fn scene_with(
     let (mut sim, _, registry) = crate::sim::world::entry_test_fixture::fixture();
     let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
     let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
-    let roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &registry, &[]);
+    let roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
     rules.bind_scheduler_anim_assets(&roots, &assets, theater.extension, "TEMPERATE");
     let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
     rules.bind_anim_class_assets(&roots, &assets, theater.extension, "TEMPERATE");

@@ -72,14 +72,10 @@ fn production_dependency_edges_match_frozen_ledger_inventory() {
     );
 }
 
-/// F09: `Simulation::advance_master_frame` and `advance_app_frame` accept
-/// swappable rules/map/path resources, so their production call sites are
-/// pinned — the master frame is reached only inside
-/// `sim/world/master_frame.rs`, the app frame only there and in
-/// `SimRuntime::advance_frame`. Every other
-/// caller must be `#[cfg(test)]` (the `advance_tick` fixture adapter and the
-/// replay `run_fixture*` runners are compile-time gated already); production
-/// and tooling advance exclusively through the bound-resource runtime.
+/// Production and tooling advance through `SimRuntime`, which supplies the
+/// match rules to the app frame. The rules supply its overlay types. Only
+/// fixture adapters drive a frame with explicitly substituted inputs. Pin the
+/// production call sites so new callers go through the bound runtime.
 #[test]
 fn master_frame_adapters_have_pinned_production_callers() {
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -421,7 +417,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // labels, and which lines an enemy's building may show; only
                 // the label capture (HudFacts) asks, which feeds drawing.
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/superweapon/psychic_reveal.rs", 1),
+                // The stock and Ares launches name the local player as the
+                // reveal's notification viewer; `reveal_notifies_viewer`
+                // reads it only outside a network game.
+                ("sim/superweapon/psychic_reveal.rs", 2),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
                 ("sim/trigger_runtime.rs", 1),

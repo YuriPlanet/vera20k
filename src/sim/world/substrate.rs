@@ -478,7 +478,7 @@ pub struct ObjectSubstrate {
     pub(crate) base_reservations: CellReservationGrid,
     /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
-    pub(crate) entities: EntityStore,
+    pub(in crate::sim) entities: EntityStore,
     /// Synchronous Phobos limbo hook controls; stable saves restore enabled/idle.
     #[cfg(feature = "phobos")]
     #[serde(skip)]
@@ -689,14 +689,25 @@ impl ObjectSubstrate {
 
     pub(crate) fn fold_base_reservations(&self, hasher: &mut impl std::hash::Hasher) {
         b"building-base-reservation-v1".hash(hasher);
-        let entry_count = self.base_reservations.entries().count();
+        let entry_count = self.base_reservations.entries().len();
         entry_count.hash(hasher);
         for (rx, ry, mask) in self.base_reservations.entries() {
             rx.hash(hasher);
             ry.hash(hasher);
-            mask.hash(hasher);
+            (mask as u32).hash(hasher);
+            if mask > u128::from(u32::MAX) {
+                // An impossible cell coordinate distinguishes the upper words
+                // from the next real cell. Legacy cells keep their four bytes.
+                u16::MAX.hash(hasher);
+                (mask >> u32::BITS).hash(hasher);
+            }
         }
-        self.base_reservations.dummy_mask().hash(hasher);
+        let dummy = self.base_reservations.dummy_mask();
+        (dummy as u32).hash(hasher);
+        if dummy > u128::from(u32::MAX) {
+            b"extended-reservation-dummy".hash(hasher);
+            (dummy >> u32::BITS).hash(hasher);
+        }
     }
 }
 

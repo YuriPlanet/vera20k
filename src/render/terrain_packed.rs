@@ -2,9 +2,9 @@
 //! TerrainDrawRenderer. Original 73B140, 495590 and 4986D0; executed evidence:
 //! tools/procedural_drawing_oracle/translucent_blitter_a.{json,md}.
 //!
-//! Negative offsets read earlier stores in the same raster span. Each residue
-//! modulo abs(offset_words) is independent; its compute invocation walks in
-//! native framebuffer word order. No immutable-piece shortcut is used there.
+//! A warp leaf (selector bit 8) blends with the destination word 0..3 to its
+//! right, which its span has not stored yet, so every resolve reads only the
+//! transaction's snapshot ([`warp_param`]).
 
 use super::batching::{TerrainBatches, TerrainCommand};
 use super::{LiveTail, PackedSurface, Tail, TerrainBatchStats, TerrainDrawRenderer, piece_scissor};
@@ -43,17 +43,17 @@ pub(crate) struct PackedComposite<'a> {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Params {
     rect: [u32; 4],
-    surface_width: u32,
     selector: u32,
-    offset_words: i32,
+    /// [`warp_param`].
+    warp: u32,
     reads_depth: u32,
+    /// WGSL rounds the uniform struct up to 32 bytes.
+    _pad: u32,
 }
 
 pub(super) struct Stencil {
     words: wgpu::TextureView,
     candidates: wgpu::TextureView,
-    /// WebGL2 ordered words target and its resolve binding (`fs_feedback`).
-    results: Option<(wgpu::TextureView, wgpu::BindGroup)>,
 }
 
 /// Native signed candidate and projection have one source shared with the
@@ -63,29 +63,9 @@ pub(super) fn raster_source(body: &str, fragment: &str) -> String {
     crate::render::tactical_shader::world_source(&format!("{prefix}\n{fragment}"))
 }
 
-/// Packed shader source. The WebGL2 fallback drops the compute entry point
-/// and storage results for `terrain_packed_webgl.wgsl`.
-pub(super) fn packed_source(webgl: bool) -> String {
-    let source = include_str!("terrain_packed.wgsl");
-    if !webgl {
-        return crate::render::tactical_shader::source(source);
-    }
-    use crate::render::webgl::patch;
-    let shared = &source[..source.find("fn resolve_pixel(").expect("packed resolve")];
-    let shared = patch(
-        shared,
-        "@group(0) @binding(4) var<storage, read_write> results: array<u32>;\n",
-        "",
-    );
-    let tail = patch(
-        &source[source.find("@vertex").expect("packed full-screen passes")..],
-        "word = results[local_index(p)];",
-        "word = textureLoad(fallback_results, vec2i(p), 0).r;",
-    );
-    crate::render::tactical_shader::source(&format!(
-        "{shared}\n{}\n{tail}",
-        include_str!("terrain_packed_webgl.wgsl")
-    ))
+/// Packed resolve shader source, the same on every backend.
+pub(super) fn packed_source() -> String {
+    crate::render::tactical_shader::source(include_str!("terrain_packed.wgsl"))
 }
 
 pub(super) struct PackedSpriteGpu {
@@ -96,15 +76,10 @@ pub(super) struct PackedSpriteGpu {
     ui: wgpu::RenderPipeline,
     voxel: wgpu::RenderPipeline,
     clear: wgpu::RenderPipeline,
-    /// Ordinary devices order feedback in compute; WebGL2 in `feedback`.
-    compute: Option<wgpu::ComputePipeline>,
-    feedback: Option<wgpu::RenderPipeline>,
-    results_layout: Option<wgpu::BindGroupLayout>,
     resolve_read: wgpu::RenderPipeline,
     resolve_write: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     stencil: Option<Stencil>,
-    results: Option<wgpu::Buffer>,
     uniform_chunks: Vec<wgpu::Buffer>,
     uniform_slot: usize,
     uniform_stride: u64,
@@ -191,14 +166,9 @@ impl PackedSpriteGpu {
                 cache: None,
             })
         };
-        let visibility = if webgl {
-            wgpu::ShaderStages::FRAGMENT
-        } else {
-            wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT
-        };
         let texture = |binding, sample_type| wgpu::BindGroupLayoutEntry {
             binding,
-            visibility,
+            visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Texture {
                 sample_type,
                 view_dimension: wgpu::TextureViewDimension::D2,
@@ -206,19 +176,9 @@ impl PackedSpriteGpu {
             },
             count: None,
         };
-        let results = wgpu::BindGroupLayoutEntry {
-            binding: 4,
-            visibility,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        };
         let params = wgpu::BindGroupLayoutEntry {
-            binding: 5,
-            visibility,
+            binding: 4,
+            visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: true,
@@ -226,42 +186,22 @@ impl PackedSpriteGpu {
             },
             count: None,
         };
-        let sources = [
-            texture(0, wgpu::TextureSampleType::Uint),
-            texture(1, wgpu::TextureSampleType::Float { filterable: false }),
-            texture(2, wgpu::TextureSampleType::Uint),
-            texture(3, wgpu::TextureSampleType::Float { filterable: false }),
-        ];
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Packed destination transaction"),
-            entries: &if webgl {
-                [sources.as_slice(), &[params]].concat()
-            } else {
-                [sources.as_slice(), &[results, params]].concat()
-            },
-        });
-        // WebGL2 resolve reads the ordered words its feedback pass rendered.
-        let results_layout = webgl.then(|| {
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("WebGL2 packed ordered words"),
-                entries: &[texture(0, wgpu::TextureSampleType::Uint)],
-            })
+            entries: &[
+                texture(0, wgpu::TextureSampleType::Uint),
+                texture(1, wgpu::TextureSampleType::Float { filterable: false }),
+                texture(2, wgpu::TextureSampleType::Uint),
+                texture(3, wgpu::TextureSampleType::Float { filterable: false }),
+                params,
+            ],
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Native packed residue feedback"),
-            source: wgpu::ShaderSource::Wgsl(packed_source(webgl).into()),
+            label: Some("Packed whole composite resolve"),
+            source: wgpu::ShaderSource::Wgsl(packed_source().into()),
         });
-        let resolve_groups: Vec<_> = std::iter::once(&layout)
-            .chain(results_layout.as_ref())
-            .map(Some)
-            .collect();
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Packed resolve layout"),
-            bind_group_layouts: &resolve_groups,
-            immediate_size: 0,
-        });
-        let feedback_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Packed feedback layout"),
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
@@ -345,25 +285,6 @@ impl PackedSpriteGpu {
                 &batch.voxel_palette_bind_group_layout,
             ),
             clear: full_screen("fs_clear", &clear_layout, source_targets, None),
-            compute: (!webgl).then(|| {
-                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: Some("Packed native ordered words"),
-                    layout: Some(&feedback_layout),
-                    module: &shader,
-                    entry_point: Some("cs_main"),
-                    compilation_options: Default::default(),
-                    cache: None,
-                })
-            }),
-            feedback: webgl.then(|| {
-                full_screen(
-                    "fs_feedback",
-                    &feedback_layout,
-                    &[target(wgpu::TextureFormat::R32Uint)],
-                    None,
-                )
-            }),
-            results_layout,
             resolve_read: full_screen(
                 "fs_resolve",
                 &pipeline_layout,
@@ -378,7 +299,6 @@ impl PackedSpriteGpu {
             ),
             layout,
             stencil: None,
-            results: None,
             uniform_chunks: Vec::new(),
             uniform_slot: 0,
             uniform_stride: u64::from(device.limits().min_uniform_buffer_offset_alignment).max(32),
@@ -388,7 +308,6 @@ impl PackedSpriteGpu {
 
     pub(super) fn prepare(&mut self, size: wgpu::Extent3d) {
         self.stencil = Some(self.create_stencil(size));
-        self.results = None;
     }
 
     pub(super) fn create_stencil(&self, size: wgpu::Extent3d) -> Stencil {
@@ -410,18 +329,6 @@ impl PackedSpriteGpu {
         Stencil {
             words: create(wgpu::TextureFormat::R32Uint),
             candidates: create(wgpu::TextureFormat::R32Float),
-            results: self.results_layout.as_ref().map(|layout| {
-                let results = create(wgpu::TextureFormat::R32Uint);
-                let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("WebGL2 packed ordered words"),
-                    layout,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&results),
-                    }],
-                });
-                (results, group)
-            }),
         }
     }
 
@@ -456,25 +363,6 @@ impl PackedSpriteGpu {
         );
         self.uniform_slot += 1;
         (chunk, offset as u32)
-    }
-
-    /// The reusable ordered-word results, at least `bytes` long, where
-    /// compute orders them; WebGL2 renders them instead.
-    fn results(&mut self, bytes: u64) -> Option<wgpu::Buffer> {
-        self.compute.as_ref()?;
-        if self
-            .results
-            .as_ref()
-            .is_none_or(|buffer| buffer.size() < bytes)
-        {
-            self.results = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Packed reusable rectangle results"),
-                size: bytes,
-                usage: wgpu::BufferUsages::STORAGE,
-                mapped_at_creation: false,
-            }));
-        }
-        self.results.clone()
     }
 }
 
@@ -523,15 +411,14 @@ impl TerrainDrawRenderer {
     }
 
     /// Every pixel one composite reads or writes, colour and Z: its clipped
-    /// rect plus the displaced read halo. `None` when it draws nothing.
+    /// rect plus a warp's read halo. `None` when it draws nothing.
     pub(crate) fn packed_footprint(
         &self,
         composite: &PackedComposite<'_>,
         tactical: [u32; 4],
     ) -> Option<[u32; 4]> {
         let rect = composite_rect(&composite.pieces, self.camera, tactical)?;
-        let offset = effective_offset(composite.pieces.first()?.instance, composite.render_z);
-        if offset == 0 {
+        if !warps(composite.pieces.first()?.instance, composite.render_z) {
             return Some(rect);
         }
         let size = self
@@ -540,13 +427,13 @@ impl TerrainDrawRenderer {
             .expect("packed footprint after prepare")
             .source_color
             .size();
-        Some(read_halo(rect, offset, size.width, size.height))
+        Some(read_halo(rect, size.width))
     }
 
     /// Pixel-local composites commute only when their complete conservative
     /// rectangles are disjoint, whatever their selectors and Z policies: each
     /// resolves its own pixels with its own parameters. Reuse the
-    /// destination-edit tile scheduler; displaced neighbor reads remain strict
+    /// destination-edit tile scheduler; a warp's neighbour reads remain strict
     /// sequential fences. The last transaction's resolve is left as the tail.
     pub(crate) fn draw_packed_span(
         &mut self,
@@ -726,7 +613,7 @@ impl TerrainDrawRenderer {
     }
 
     /// Record `members`, pairwise-disjoint composites (a lone one when it
-    /// reads displaced neighbours), as one transaction: its scratch passes
+    /// warps), as one transaction: its scratch passes
     /// here, its resolve left in `tail`. A previous resolve in `tail` lands
     /// first: this snapshot reads its pixels and reuses its scratch. Every
     /// piece is scissored inside its own composite's rectangle, so outside
@@ -787,21 +674,19 @@ impl TerrainDrawRenderer {
                 continue;
             };
             pieces += member.pieces.len();
-            // A displaced blit's offset is in native pixels; a fractional
-            // scale cannot express it. The sidebar's packed layers (mask and
-            // gclock selectors) never displace, so they are the only ones
-            // drawn at one.
+            // A warp's parities are in native pixels. Only world draws warp,
+            // at scale 1: the sidebar's packed layers (mask and gclock
+            // selectors, `draw_packed_surface`) never do.
             debug_assert!(
-                scale.fract() == 0.0 || effective_offset(first.instance, member.render_z) == 0,
-                "a displaced packed blit needs a whole surface scale"
+                scale == 1.0 || !warps(first.instance, member.render_z),
+                "a packed warp blit needs native pixels"
             );
             let params = Params {
                 rect,
-                surface_width: size.width,
                 selector: first.instance.draw_state.native_selector_bits(),
-                // Original write-Z selector ignores bit8 (native 495D60/499860).
-                offset_words: effective_offset(first.instance, member.render_z),
+                warp: warp_param(first.instance, member.render_z, rect, tactical),
                 reads_depth: u32::from(member.render_z != RenderZPolicy::None),
+                _pad: 0,
             };
             // Selector0 is the original opaque copy (494B60), also used when
             // a signed candidate cannot be compared as a wrapped hardware depth.
@@ -811,34 +696,13 @@ impl TerrainDrawRenderer {
             );
             transactions.push((member.pieces, params, writes));
         }
-        let Some(&(_, first, _)) = transactions.first() else {
+        if transactions.is_empty() {
             return TerrainBatchStats::default();
-        };
+        }
         let mut passes = 0;
         if let Some(previous) = tail.take() {
             passes += self.resolve_packed(encoder, color, depth, &previous);
         }
-        // Only a negative offset reads earlier stores of this transaction, so
-        // only it orders its words through `results` (compute or WebGL2
-        // feedback). Any other resolve blends its snapshot word directly.
-        let ordered = first.offset_words < 0;
-        // An ordered resolve reads neighbours' admission anywhere in its
-        // rectangle, the union of its pieces.
-        assert!(
-            !ordered || transactions.len() == 1,
-            "an ordered composite replays alone"
-        );
-        let bytes = if ordered {
-            u64::from(first.rect[2]) * u64::from(first.rect[3]) * 4
-        } else {
-            4
-        };
-        assert!(
-            self.packed.compute.is_none()
-                || bytes <= self.packed.device.limits().max_storage_buffer_binding_size,
-            "packed source rectangle fits storage binding"
-        );
-        let results = self.packed.results(bytes);
         let slots: Vec<_> = transactions
             .iter()
             .map(|&(_, params, _)| self.packed.uniform_slot(params))
@@ -865,47 +729,26 @@ impl TerrainDrawRenderer {
                 continue;
             }
             let params = wgpu::BindGroupEntry {
-                binding: 5,
+                binding: 4,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &packed.uniform_chunks[chunk],
                     offset: 0,
                     size: wgpu::BufferSize::new(32),
                 }),
             };
-            let sources = [
-                view(0, &targets.words),
-                view(1, &targets.depth),
-                view(2, &stencil.words),
-                view(3, &stencil.candidates),
-            ];
-            let entries = match &results {
-                Some(results) => [
-                    sources.as_slice(),
-                    &[
-                        wgpu::BindGroupEntry {
-                            binding: 4,
-                            resource: results.as_entire_binding(),
-                        },
-                        params,
-                    ],
-                ]
-                .concat(),
-                None => [sources.as_slice(), &[params]].concat(),
-            };
             let transaction = packed.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Packed transaction"),
                 layout: &packed.layout,
-                entries: &entries,
+                entries: &[
+                    view(0, &targets.words),
+                    view(1, &targets.depth),
+                    view(2, &stencil.words),
+                    view(3, &stencil.candidates),
+                    params,
+                ],
             });
             bindings.push((chunk, transaction));
         }
-        let binding = |chunk: usize| {
-            &bindings
-                .iter()
-                .find(|&&(bound, _)| bound == chunk)
-                .expect("every slot's chunk is bound")
-                .1
-        };
         let attachment = |view| {
             Some(wgpu::RenderPassColorAttachment {
                 view,
@@ -923,8 +766,11 @@ impl TerrainDrawRenderer {
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &targets.source, &[]);
             for &(_, params, _) in &transactions {
-                let [x, y, width, height] =
-                    read_halo(params.rect, params.offset_words, size.width, size.height);
+                let [x, y, width, height] = if params.warp == 0 {
+                    params.rect
+                } else {
+                    read_halo(params.rect, size.width)
+                };
                 pass.set_scissor_rect(x, y, width, height);
                 pass.draw(0..3, 0..1);
             }
@@ -988,35 +834,6 @@ impl TerrainDrawRenderer {
                 source(&mut scratch_pass(encoder, label, &scratch[..2]));
             }
         }
-        let (chunk, uniform_offset) = slots[0];
-        if let (true, Some(feedback), Some((results, _))) =
-            (ordered, &packed.feedback, &stencil.results)
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("WebGL2 packed ordered feedback"),
-                color_attachments: &[attachment(results)],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(feedback);
-            pass.set_bind_group(0, binding(chunk), &[uniform_offset]);
-            let [x, y, width, height] = first.rect;
-            pass.set_scissor_rect(x, y, width, height);
-            pass.draw(0..3, 0..1);
-        }
-        if let (true, Some(compute)) = (ordered, &packed.compute) {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Native packed ordered feedback"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(compute);
-            pass.set_bind_group(0, binding(chunk), &[uniform_offset]);
-            let groups = first.offset_words.unsigned_abs().div_ceil(64);
-            let x = groups.min(packed.device.limits().max_compute_workgroups_per_dimension);
-            pass.dispatch_workgroups(x, groups.div_ceil(x), 1);
-        }
         *tail = Some(PackedResolve {
             members: transactions
                 .iter()
@@ -1025,11 +842,9 @@ impl TerrainDrawRenderer {
                     (params.rect, chunk, offset, writes)
                 })
                 .collect(),
-            results: stencil.results.as_ref().map(|(_, group)| group.clone()),
             bindings,
         });
-        let scratch =
-            1 + usize::from(ordered) + usize::from(self.packed_snapshot_pipeline.is_none());
+        let scratch = 1 + usize::from(self.packed_snapshot_pipeline.is_none());
         self.submission.note_closed_passes(encoder, scratch);
         TerrainBatchStats {
             pieces,
@@ -1068,9 +883,6 @@ impl TerrainDrawRenderer {
                 } else {
                     &packed.resolve_read
                 });
-                if let (None, Some(results)) = (bound, &resolve.results) {
-                    pass.set_bind_group(1, results, &[]);
-                }
                 bound = Some(writes);
             }
             let (_, binding) = resolve
@@ -1095,8 +907,6 @@ pub(super) struct PackedResolve {
     members: Vec<([u32; 4], usize, u32, bool)>,
     /// One transaction binding per uniform chunk the members' slots lie in.
     bindings: Vec<(usize, wgpu::BindGroup)>,
-    /// WebGL2's ordered words, beside the transaction binding.
-    results: Option<wgpu::BindGroup>,
 }
 
 /// One composite of a packed transaction: its pieces and Z policy.
@@ -1108,25 +918,53 @@ struct Member<'p, 'a> {
 
 /// Whether a non-empty composite may share a wave with others in
 /// [`TerrainDrawRenderer::draw_packed_span`], whatever its native selector
-/// and Z policy: displaced reads replay alone.
+/// and Z policy: a warp reads its neighbours' words, so it replays alone.
 pub(crate) fn packed_joins_waves(composite: &PackedComposite<'_>) -> bool {
     composite
         .pieces
         .first()
-        .is_some_and(|piece| effective_offset(piece.instance, composite.render_z) == 0)
+        .is_some_and(|piece| !warps(piece.instance, composite.render_z))
 }
 
-fn effective_offset(instance: &SpriteInstance, render_z: RenderZPolicy) -> i32 {
-    if instance.draw_state.native_selector_bits() & 8 != 0
+/// Whether this draw's leaf reads the word `warp` to its right. Selector bit 8
+/// picks a Z-read warp blitter (`BlitTransLucent75AlphaZReadWarp` 0x004953F0
+/// and its 50/25 siblings); the Z-writing selector ignores it (0x00495D60,
+/// 0x00499860). A colour word sends Bit_Blit 0x004373B0 to the tinted slot
+/// (TEST CX,CX at 0x00437894), whose warp thunk (0x00495530) calls the plain
+/// leaf with warp 0. Unit 0x0073B140, the voxel body these draws come from,
+/// passes DrawVoxelBody's colour word there.
+fn warps(instance: &SpriteInstance, render_z: RenderZPolicy) -> bool {
+    instance.draw_state.native_selector_bits() & 8 != 0
         && !matches!(
             render_z,
             RenderZPolicy::ReadWrite | RenderZPolicy::AlphaReadWrite
         )
-    {
-        instance.draw_state.native_offset_words
-    } else {
-        0
+        && instance.palette_light.colour_word() == 0
+}
+
+/// The resolve's `warp` uniform: 0 without a warp, else 4 plus the parities
+/// the shader's `warp_words` seeds from. Bit_Blit 0x004373B0 measures its
+/// first row from the A-buffer's top, whose rect is the tactical view
+/// (Set_View_Dimensions 0x004A8960, 0x004A8AB6..0x004A8AD7), and takes the
+/// clipped left x on the screen; Build_Tactical_View_Rect 0x0072AD20 puts
+/// the stock tactical view at x 0, so VERA measures it from its tactical
+/// left. `rect` is the composite's clipped rect, in native pixels.
+///
+/// RESIDUAL: RLE_Blit 0x00437A10, which VXL_CacheBlit 0x0070750E uses for
+/// cached voxels, also XORs the warp by 3 for every source row its clip
+/// skips (0x00437D5B), and its tinted slot keeps the warp (0x00498C90).
+/// Unit bodies take Bit_Blit, so only a cached voxel clipped an odd number
+/// of rows at the tactical top, or a tinted one, ripples in the other phase.
+fn warp_param(
+    instance: &SpriteInstance,
+    render_z: RenderZPolicy,
+    rect: [u32; 4],
+    tactical: [u32; 4],
+) -> u32 {
+    if !warps(instance, render_z) {
+        return 0;
     }
+    4 | ((tactical[1] & 1) << 1) | ((rect[0] ^ tactical[0]) & 1)
 }
 
 fn composite_rect(
@@ -1168,26 +1006,13 @@ fn scratch_pass<'e>(
     })
 }
 
-/// A signed word offset can wrap rows. Snapshot every in-surface endpoint and
-/// retain the whole intervening rectangle; this is conservative read coverage.
-fn read_halo(rect: [u32; 4], offset: i32, width: u32, height: u32) -> [u32; 4] {
-    let mut result = rect;
-    for y in rect[1]..rect[1] + rect[3] {
-        let begin = i64::from(y) * i64::from(width) + i64::from(rect[0]) + i64::from(offset);
-        let end = begin + i64::from(rect[2]) - 1;
-        let begin = begin.max(0);
-        let end = end.min(i64::from(width) * i64::from(height) - 1);
-        if begin > end {
-            continue;
-        }
-        let start_y = begin as u32 / width;
-        let end_y = end as u32 / width;
-        let read = if start_y == end_y {
-            [begin as u32 % width, start_y, (end - begin + 1) as u32, 1]
-        } else {
-            [0, start_y, width, end_y - start_y + 1]
-        };
-        result = union(result, read);
-    }
-    result
+/// A warp's stores plus the up to three words right of them it reads, within
+/// a surface `width` wide.
+fn read_halo(rect: [u32; 4], width: u32) -> [u32; 4] {
+    [
+        rect[0],
+        rect[1],
+        (rect[2] + 3).min(width - rect[0]),
+        rect[3],
+    ]
 }

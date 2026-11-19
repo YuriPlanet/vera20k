@@ -20,6 +20,13 @@ export const LIMITS = Object.freeze({
   controlFramesPerSecond: 64, totalControlFramesPerSecond: 1024,
 });
 
+// The request headers a browser may send: its bearer and body type, and what a
+// game says about itself at sign-in (sign_in_headers in the game's
+// src/app/shell_wol/live_service/http.rs). The lobby's trust headers, such as
+// vera-gateway-key and vera-client-address, come only from this gateway.
+const FORWARDED_HEADERS = Object.freeze(['authorization', 'content-type', 'vera-version',
+  'vera-build', 'vera-quick-match', 'vera-host-handover', 'vera-watch-ai', 'vera-language']);
+
 function originUrl(value, allowLocalHttp = false) {
   const url = new URL(value);
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
@@ -109,12 +116,12 @@ export function createGateway({
         .split(',').map(header => header.trim().toLowerCase()).filter(Boolean);
       if (req.headers.origin !== allowed
         || !['GET', 'POST'].includes(req.headers['access-control-request-method'])
-        || headers.some(header => !['authorization', 'content-type'].includes(header))) {
+        || headers.some(header => !FORWARDED_HEADERS.includes(header))) {
         res.writeHead(403).end(); return;
       }
       res.writeHead(204, {
         'Access-Control-Allow-Methods': 'GET, POST',
-        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        'Access-Control-Allow-Headers': FORWARDED_HEADERS.join(', '),
         'Access-Control-Max-Age': '600',
         'Vary': 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers',
       }).end();
@@ -162,7 +169,7 @@ export function createGateway({
     req.on('end', () => {
       if (ended) return;
       const headers = { 'accept': 'application/json', 'user-agent': 'VERA20k-wasm-gateway' };
-      for (const name of ['authorization', 'content-type']) {
+      for (const name of FORWARDED_HEADERS) {
         if (req.headers[name]) headers[name] = req.headers[name];
       }
       // The lobby keys its limits on this player's address

@@ -196,7 +196,7 @@ fn assert_shp_light(
             ignore_visibility: true,
             lighting: light,
             house_colors: &colors,
-            building_zshape: false,
+            building_zshape: None,
         },
         &mut draws,
         &NativeDisplayOrder::from_world(&sim, None),
@@ -329,15 +329,7 @@ fn retail_gi_body_light_on_the_physical_hills_bridge_side() {
     let rt = &mut scene.runtime;
     let id = rt
         .simulation
-        .spawn_object_with_overlay_registry(
-            "E1",
-            &owner_name,
-            78,
-            76,
-            0,
-            &rt.resources.rules,
-            &rt.resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("E1", &owner_name, 78, 76, 0, &rt.resources.rules)
         .unwrap();
     let sim = scene.sim();
     let terrain = sim.resolved_terrain().unwrap();

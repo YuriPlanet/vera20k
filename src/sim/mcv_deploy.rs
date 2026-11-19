@@ -109,7 +109,7 @@ pub(crate) fn deploys_into<'r>(
 /// `DeploysInto` is one of `[AI] BuildConst=` (Rules `+0x8AC`, compared by
 /// pointer): a Construction Yard maker.
 fn deploys_into_build_const(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
-    deploys_into(sim, entity, rules).is_some_and(|yard| yard.build_const_eligible)
+    deploys_into(sim, entity, rules).is_some_and(|yard| yard.build_const_eligible())
 }
 
 /// The owner's AutoBaseBuilding latch (House+0x1F3) and that no human
@@ -154,7 +154,7 @@ pub(crate) fn hunt_deploys(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
         return false;
     };
     deploys_into(sim, entity, rules).is_some_and(|yard| {
-        yard.build_const_eligible
+        yard.build_const_eligible()
             || entity.attack_target.target().is_some()
             || sim.owner_is_human(entity.owner())
     })

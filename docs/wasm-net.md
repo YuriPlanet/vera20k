@@ -68,7 +68,7 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 每个 WS 连接独占一个 connected UDP socket，存活期间源端口稳定，不同玩家和通道不共用端口。只有路径中的 relay 在管理员配置的 `VERA_RELAYS` 列表（大厅下发的全部 relay）中时，网关才把该连接转发过去，其他路径一律拒绝；浏览器不能指定任意转发目标。部署方法和限制见 [网关说明](../tools/wasm/gateway/README.zh-CN.md)。
 
-`/v1/*` 代理保持现有方法、路径、Authorization、请求体、状态码和响应体，不解析或改写游戏 JSON，也不替客户端重试。跨源 CORS 由网关处理，原大厅不需要增加 OPTIONS。网关的 HTTP 部分会经手 bearer 和包含票据与 packet key 的响应，属于大厅凭据的信任边界；它转发的游戏数据报按每一跳认证，但不加密；它不需要 relay 签名密钥，不记录凭据，也不读取零售资源。
+`/v1/*` 代理保持现有方法、路径、Authorization、游戏登录时发送的请求头（`Vera-Version`、`Vera-Build`、`Vera-Quick-Match`、`Vera-Host-Handover`、`Vera-Watch-AI` 和 `Vera-Language`；见[大厅协议](lobby-protocol.md#sign-in-headers)）、请求体、状态码和响应体，不解析或改写游戏 JSON，也不替客户端重试。跨源 CORS 由网关处理，原大厅不需要增加 OPTIONS。网关的 HTTP 部分会经手 bearer 和包含票据与 packet key 的响应，属于大厅凭据的信任边界；它转发的游戏数据报按每一跳认证，但不加密；它不需要 relay 签名密钥，不记录凭据，也不读取零售资源。
 
 ## 客户端边界
 
@@ -115,6 +115,6 @@ Rust 验证通过 `python3 -m tools.cargo_run -- test -p <crate> --lib <filter>`
 
 实际双客户端完整比赛、浏览器与未修改桌面端的相同已提交帧摘要、临时断线后的追赶、明确退局及再开局仍是必要的运行验收。只有通过这些流程，才能声称联网可玩；构建成功或 UDP echo 不足以证明它们。验证结果随交付说明报告，不在此文档保留运行日志。
 
-互联测试两端必须有相同源码和 feature 集合：既有 build identity 包含全部 Cargo feature。本方案不放宽该校验；对应浏览器联网包的桌面测试端应使用 `--no-default-features --features wasm-net` 构建，仍选择原生网络实现。不能直接假定现成的旧桌面安装包能加入新构建。
+互联测试两端必须有相同源码和 feature 集合：既有 build identity 包含测试分组和线程池（`wasm-threads`，见[构建校验](Networking.md#build-check)）以外的全部 Cargo feature。本方案不放宽该校验；对应浏览器联网包的桌面测试端应使用 `--no-default-features --features wasm-net` 构建，仍选择原生网络实现。不能直接假定现成的旧桌面安装包能加入新构建。
 
 本轮接入现有在线对战和可选的浏览器间局域网（见上文），不提供与桌面互通的网页局域网、任意 IP 直连、CnCNet、新协议、随机地图生成或刷新页面后恢复模拟。浏览器后台节流、长时间同步资源操作和 WS 队头阻塞仍需实机观察；原 relay 的进程重启恢复边界保持不变。30 个协议 source 不代表浏览器已达到 30 人和 20,000 单位性能目标。

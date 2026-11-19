@@ -48,7 +48,7 @@ pub(in crate::app) fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Sim
             .entities()
             .get(engineer)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_inside_transport()
         {
             break;
@@ -59,13 +59,12 @@ pub(in crate::app) fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Sim
         sim.entities()
             .get(engineer)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id()
             == Some(ifv)
     );
     let tank = sim.spawn_object("MTNK", OWNER, 17, 16, 64, rules).unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .health
         .set_for_test(100);
@@ -314,8 +313,7 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
         let rules = &retail.rules;
         let (mut sim, ifv, tank) = repair_ifv(rules);
         let already_sent = repair_click(&sim, rules, ifv, tank);
-        sim.entities_mut_for_test()
-            .get_mut(ifv)
+        sim.entity_mut_for_test(ifv)
             .unwrap()
             .berserk
             .set_active_for_test(true);
@@ -402,8 +400,7 @@ fn retail_warped_engineer_ifv_repair_click_is_accepted_then_dropped() {
         };
         let rules = &retail.rules;
         let (mut sim, ifv, tank) = repair_ifv(rules);
-        sim.entities_mut_for_test()
-            .get_mut(ifv)
+        sim.entity_mut_for_test(ifv)
             .unwrap()
             .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
         assert!(sim.entities().get(ifv).unwrap().is_warped_out());
@@ -610,8 +607,7 @@ fn retail_far_repair_click_drives_into_range_and_heals_without_ctrl() {
     let rules = &retail.rules;
     let (mut sim, ifv, _) = repair_ifv(rules);
     let far = sim.spawn_object("MTNK", OWNER, 25, 16, 64, rules).unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(far)
+    sim.entity_mut_for_test(far)
         .unwrap()
         .health
         .set_for_test(100);
@@ -732,8 +728,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             ),
             None
         );
-        sim.entities_mut_for_test()
-            .get_mut(tank)
+        sim.entity_mut_for_test(tank)
             .unwrap()
             .health
             .set_for_test(rules.object("MTNK").unwrap().strength);
@@ -752,16 +747,14 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             .commands
             .is_empty()
         );
-        sim.entities_mut_for_test()
-            .get_mut(tank)
+        sim.entity_mut_for_test(tank)
             .unwrap()
             .health
             .set_for_test(100);
         let enemy = sim
             .spawn_object("MTNK", "Russians", 23, 16, 64, rules)
             .unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(enemy)
+        sim.entity_mut_for_test(enemy)
             .unwrap()
             .health
             .set_for_test(100);
@@ -843,8 +836,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
     let rules = &retail.rules;
     let (mut sim, ifv, tank) = repair_ifv(rules);
     let command = repair_click(&sim, rules, ifv, tank);
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .health
         .set_for_test(rules.object("MTNK").unwrap().strength);
@@ -934,8 +926,7 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
             let target = sim
                 .spawn_object(kind, OWNER, cell.0, cell.1, 64, &rules)
                 .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(target)
+            sim.entity_mut_for_test(target)
                 .unwrap()
                 .health
                 .set_for_test(50);
@@ -1049,8 +1040,7 @@ fn ares_repair_ifv_selects_a_sound_ally_and_under_alt() {
     };
     assert_eq!(action(&sim, guard), None);
     let strength = rules.object("MTNK").unwrap().strength;
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .health
         .set_for_test(strength);
@@ -1085,8 +1075,7 @@ fn ares_healer_infantry_heal_what_their_warhead_reaches() {
     let medic = sim.spawn_object("CIV1", OWNER, 18, 18, 64, rules).unwrap();
     let mechanic = sim.spawn_object("CIV2", OWNER, 19, 18, 64, rules).unwrap();
     let hurt = sim.spawn_object("E1", OWNER, 20, 18, 64, rules).unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(hurt)
+    sim.entity_mut_for_test(hurt)
         .unwrap()
         .health
         .set_for_test(50);
