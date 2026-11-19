@@ -321,15 +321,26 @@ VMCE 沿用联网结算节奏，胜利不等待 `AllowWin`。小队脚本动作 
 |---|---|---|---|
 | `Player1Control..PlayerNControl` | 布尔 | `no` | 向相应角色授予附属 House 的共享控制权。目标须在本关 `[Houses]` 中并位于主角色列表之外，角色编号须在 `PlayerCount` 内。 |
 
-### 地图新增键值
+### 地图 INI 字段
+
+这些原版单人战役地图字段也用于 VMCE。
 
 | 地图位置 | 键或字段 | 说明 |
 |---|---|---|
 | `[Basic]` | `Name` | 关卡显示名。 |
-| `[Basic]` | 人数、观察者、外交、难度、难度锁定和 `AutoEnemySelection` | 提供房规基值，可由清单覆盖。分支编号和续关目标在清单中设置。 |
 | `[Basic]` | `TimerInherit`、`CarryOverMoney`、`CarryOverCap` | 控制本关接收倒计时和资金。资金沿清单中本次转场的主 House 对应表传递。 |
-| `[Houses]` | `N=<House 名称>` | 登记地图中的主 House 与附属 House。 |
-| `[<House 名称>]` | `Country`、`Allies`、`Credits` | 配置该 House 的国家、开局同盟和资金。 |
+| `[Houses]` | `N=<HouseName>` | 按数字索引 `N` 登记主 House 与附属 House，例如 `0=HouseAlpha`。 |
+| `[<HouseName>]` | `Country`、`Allies`、`Credits` | 配置该 House 的国家、开局同盟和资金。 |
+
+地图的 `[Basic]` 也可提供以下房规初值，由 `campaign.ini` 中的系列和关卡设置覆盖。分支编号和续关目标在 `campaign.ini` 中设置。
+
+| 键 | 说明 |
+|---|---|
+| `MinPlayers`、`MaxPlayers` | 最少与最多参战人数。 |
+| `AllowObservers` | 是否开放观察席。 |
+| `AllowAlliesChange` | 是否允许仍在参战的真人玩家在战中改盟。 |
+| `Difficulty`、`LockDifficulty` | 关卡初始难度，以及房主能否调整。 |
+| `AutoEnemySelection` | 电脑 House 缺少当前敌人时是否自动选敌。 |
 
 ### 触发器格式
 
