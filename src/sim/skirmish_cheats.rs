@@ -93,10 +93,9 @@ impl Simulation {
             return Err("VERA:CheatUsage");
         }
         let object = rules
-            .object(type_id)
+            .object_in_category(ObjectCategory::Vehicle, type_id)
             .filter(|ty| {
-                ty.category == ObjectCategory::Vehicle
-                    && !ty.naval
+                !ty.naval
                     && matches!(
                         ty.locomotor,
                         LocomotorKind::Drive
@@ -173,7 +172,17 @@ impl Simulation {
                 continue;
             }
             if self
-                .spawn_object_with_map_overlays(&object.id, &owner_name, rx, ry, 0, rules)
+                .spawn_resolved_object_at_height(
+                    object,
+                    &object.id,
+                    &owner_name,
+                    rx,
+                    ry,
+                    0,
+                    cell.level,
+                    rules,
+                    Some(rules.overlay_registry()),
+                )
                 .and_then(|id| self.entities().get(id))
                 .is_some_and(|e| e.is_live_on_map())
             {
@@ -229,6 +238,33 @@ mod tests {
             sim.apply_skirmish_cheat(&SkirmishCheat::Money(10000), rules),
             Err("VERA:CheatUnavailable")
         );
+    }
+
+    #[test]
+    fn spawn_keeps_the_vehicle_when_a_building_shares_its_rules_id() {
+        let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut scene = crate::headless_scenario::load(&retail, "Hills.mmx", 17).unwrap();
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=DUAL\n[BuildingTypes]\n0=DUAL\n[DUAL]\nStrength=100\nSpeedType=Track\n",
+        )).unwrap();
+        let sim = &mut scene.runtime.simulation;
+        let command = SkirmishCheat::Spawn {
+            type_id: "dual".into(),
+            count: 1,
+        };
+        assert_eq!(
+            sim.apply_skirmish_cheat(&command, &rules),
+            Ok(CheatEffect::Spawned {
+                placed: 1,
+                requested: 1,
+                type_id: "DUAL".into()
+            })
+        );
+        assert!(sim.entities().values().any(|e| e.is_live_on_map()
+            && sim.resolve(e.type_ref()) == "DUAL"
+            && e.category() == crate::map::entities::EntityCategory::Unit));
     }
 
     #[test]

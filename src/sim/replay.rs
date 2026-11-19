@@ -1590,6 +1590,11 @@ mod tests {
         .unwrap();
         let cold_prefix = cold.sim().native_identity_prefix_checkpoint().unwrap();
         drop(cold);
+        // Network matches now reset their Rules registry on every load. Supply
+        // the accepted network prefix so reconstruction still has to replay a
+        // different identity history from the cold loader's default.
+        let accepted_prefix = 0;
+        assert_ne!(cold_prefix, accepted_prefix);
         let mut scene = crate::headless_scenario::load_with_launch_and_ini(
             &root,
             "XMP03T4.MAP",
@@ -1598,14 +1603,13 @@ mod tests {
                 .unwrap(),
             &Default::default(),
             crate::sim::scenario_session::ScenarioGameMode::Wol,
-            None,
+            Some(accepted_prefix),
             Some(&mut process_rules),
         )
         .unwrap();
-        assert_ne!(
+        assert_eq!(
             scene.sim().native_identity_prefix_checkpoint(),
-            Some(cold_prefix),
-            "real first-load/rematch Rules history must exercise different native-ID prefixes"
+            Some(accepted_prefix)
         );
         let allocated_cursor = scene.sim().native_identity_cursor();
         assert!(
