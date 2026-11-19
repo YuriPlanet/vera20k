@@ -112,6 +112,7 @@ impl Patriot {
     fn turret_drawn(&self) -> bool {
         let lighting = CellLightGrid::new();
         let voxel_images = RefCell::new(VoxelImageCache::default());
+        let zshape_skips = std::cell::RefCell::default();
         let colors = HouseColorMap::default();
         let frame = crate::app::presentation::frame::PresentationFrame::capture(
             &self.runtime,
@@ -124,6 +125,7 @@ impl Patriot {
             overlay_atlas: None,
             unit_atlas: Some(&self.voxel),
             voxel_images: &voxel_images,
+            zshape_skips: &zshape_skips,
             depth_tested_images: None,
             camera: [-1000.0; 2],
             render_size: [5000; 2],

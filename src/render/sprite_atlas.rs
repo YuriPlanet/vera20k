@@ -654,6 +654,10 @@ pub struct SpriteAtlas {
     pub pages: Vec<SpriteAtlasPage>,
     /// Lookup: (type_id, facing, frame, house_color) → UV rectangle + offset + page.
     entries: HashMap<ShpSpriteKey, ShpSpriteEntry>,
+    /// The SHP file and frame each entry's indices decoded from, for a reader
+    /// that needs them on the CPU ([`Self::frame_indices`]): a handle on the
+    /// archive's bytes, not a copy. Kept and dropped with `entries`.
+    frame_sources: HashMap<ShpSpriteKey, (SharedBytes, usize)>,
     /// Derived allocation index for these pages, not another asset/pixel cache.
     /// Source contents plus selected decoded frame identify immutable indices;
     /// logical entries retain their own palette, canvas and draw offsets.
@@ -753,6 +757,7 @@ impl SpriteAtlas {
         Self {
             pages,
             entries,
+            frame_sources: HashMap::new(),
             physical_frames: HashMap::new(),
             make_frame_counts: HashMap::new(),
             active_anim_frame_counts: HashMap::new(),
@@ -774,6 +779,14 @@ impl SpriteAtlas {
     /// Look up the atlas entry for a given sprite key.
     /// The returned entry includes a `page` field identifying which atlas page
     /// holds this sprite's texture data.
+    /// The palette indices of `key`'s frame as its page holds them (the
+    /// stored frame rectangle, `pixel_size` wide), decoded again from its
+    /// file; None for a key this atlas did not render.
+    pub(crate) fn frame_indices(&self, key: &ShpSpriteKey) -> Option<Vec<u8>> {
+        let (shp, frame) = self.frame_sources.get(key)?;
+        ShpFile::decode_frame(shp, *frame).ok()
+    }
+
     pub fn get(&self, key: &ShpSpriteKey) -> Option<&ShpSpriteEntry> {
         self.entries.get(key)
     }
@@ -884,6 +897,8 @@ impl SpriteAtlas {
             Some(entry) => {
                 self.physical_frames
                     .insert(sprite.physical_frame(), placement);
+                self.frame_sources
+                    .insert(sprite.key.clone(), (sprite.shp.clone(), sprite.frame));
                 self.entries.insert(sprite.key.clone(), entry);
             }
             None => {
