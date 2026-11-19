@@ -2,10 +2,11 @@
 //! minimal rules INI so they need no gitignored retail game data.
 
 use super::{
-    detect_mode, nearby_infantry_absorb, plan_mode, spread, spread_all, Actor, SmartMode, Target,
-    NEAR_RANGE_CELLS,
+    detect_mode, nearby_infantry_absorb, plan_mode, spread, spread_all, spread_by_capacity, Actor,
+    ReactorTarget, SmartMode, Target, NEAR_RANGE_CELLS,
 };
 use crate::sim::command::Command;
+use crate::sim::passenger::{PassengerCargo, PassengerRole};
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
@@ -21,7 +22,7 @@ fn scene() -> (Simulation, RuleSet) {
     let ini = IniFile::from_str(
         "[General]\n\
          [InfantryTypes]\n\
-         0=ENG\n1=C4T\n2=SPY\n3=IVN\n4=TSL\n5=OCC\n\
+         0=ENG\n1=C4T\n2=SPY\n3=IVN\n4=TSL\n5=OCC\n6=PLN\n\
          [BuildingTypes]\n\
          0=BUNK\n1=REACT\n\
          [ENG]\nEngineer=yes\nStrength=100\n\
@@ -30,8 +31,9 @@ fn scene() -> (Simulation, RuleSet) {
          [IVN]\nIvan=yes\nStrength=100\n\
          [TSL]\nSecondary=ZAP\nStrength=100\n\
          [OCC]\nOccupier=yes\nStrength=100\n\
+         [PLN]\nStrength=100\n\
          [BUNK]\nCanBeOccupied=yes\nMaxNumberOccupants=5\nStrength=1000\n\
-         [REACT]\nInfantryAbsorb=yes\nStrength=1000\n\
+         [REACT]\nInfantryAbsorb=yes\nPassengers=5\nStrength=1000\n\
          [ZAP]\nDamage=1\nWarhead=ELEC\n\
          [ELEC]\nElectricAssault=yes\n",
     );
@@ -85,6 +87,19 @@ fn add_entity(
         .type_facts
         .set_foundation_for_test(object.foundation.clone());
     sim.entities_mut_for_test().insert(entity);
+}
+
+/// Load `count` soldiers into a reactor's cargo hold, mirroring the app-side
+/// reactor fixture in `context_order.rs`. The cargo capacity comes from the
+/// reactor type's `Passengers=`.
+fn fill_reactor(sim: &mut Simulation, id: u64, count: usize) {
+    let mut cargo = PassengerCargo::new(5, 0.0);
+    let ids: Vec<(u64, f64)> = (0..count).map(|i| (900 + i as u64, 1.0)).collect();
+    cargo.board_forced_chain(&ids);
+    sim.entities_mut_for_test()
+        .get_mut(id)
+        .unwrap()
+        .passenger_role = PassengerRole::transport(cargo);
 }
 
 /// An actor whose `pos` matches `actors()`'s fixed `[1024, 2560]`, i.e. the
@@ -220,6 +235,104 @@ fn nearby_reactor_overrides_occupier_garrison() {
     assert_eq!(
         detect_mode(&sim, &rules, &selected),
         Some(SmartMode::Reactor)
+    );
+}
+
+#[test]
+fn full_reactor_is_never_a_target() {
+    // Reported bug: Ctrl+D kept sending soldiers to a reactor already at its
+    // Passengers=5 capacity, producing an endless stream of refused Enter
+    // orders. A full reactor must not even flip garrison troops to Reactor.
+    let (mut sim, rules) = scene();
+    add_infantry(&mut sim, &rules, 1, "OCC");
+    add_entity(
+        &mut sim,
+        &rules,
+        10,
+        "REACT",
+        EntityCategory::Structure,
+        4,
+        10,
+    );
+    fill_reactor(&mut sim, 10, 5);
+
+    let selected = [actor_at_spawn(1)];
+    assert!(!nearby_infantry_absorb(&sim, &rules, &selected));
+    assert_eq!(
+        detect_mode(&sim, &rules, &selected),
+        Some(SmartMode::Garrison),
+        "a full reactor must not hijack the garrison order"
+    );
+    let orders = plan_mode(&sim, &rules, &selected, SmartMode::Reactor);
+    assert!(orders.is_empty(), "no Enter orders to a full reactor");
+}
+
+#[test]
+fn reactor_orders_are_capped_by_remaining_capacity() {
+    // A reactor with room for two takes exactly two soldiers from a squad of
+    // five; the other three stay put rather than queueing up for a full hold.
+    let (mut sim, rules) = scene();
+    let ids = [1, 2, 3, 4, 5];
+    for &id in &ids {
+        add_infantry(&mut sim, &rules, id, "PLN");
+    }
+    add_entity(
+        &mut sim,
+        &rules,
+        10,
+        "REACT",
+        EntityCategory::Structure,
+        4,
+        10,
+    );
+    fill_reactor(&mut sim, 10, 3);
+
+    let reactors = super::nearby_reactors(&sim, &rules, &actors(&ids));
+    assert_eq!(reactors.len(), 1);
+    assert_eq!(reactors[0].free, 2);
+    let orders = plan_mode(&sim, &rules, &actors(&ids), SmartMode::Reactor);
+    assert_eq!(orders.len(), 2, "only the two free slots get an order");
+    for order in orders {
+        match order {
+            Command::MegaMission {
+                destination: Some(crate::sim::combat::TargetKind::Entity(10)),
+                ..
+            } => {}
+            other => panic!("unexpected reactor order: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn spread_by_capacity_respects_each_reactor() {
+    // Two reactors, one with a single slot and one with three: five soldiers
+    // produce four orders, never five into the single-slot one.
+    let a = actors(&[1, 2, 3, 4, 5]);
+    let targets = vec![
+        ReactorTarget {
+            target: Target {
+                id: 10,
+                pos: [1024, 2304],
+            },
+            free: 1,
+        },
+        ReactorTarget {
+            target: Target {
+                id: 11,
+                pos: [1280, 2560],
+            },
+            free: 3,
+        },
+    ];
+    let orders = spread_by_capacity(&a, &targets);
+    assert_eq!(orders.len(), 4);
+    assert_eq!(
+        orders.iter().filter(|&&(_, target)| target == 10).count(),
+        1
+    );
+    assert_eq!(
+        orders.iter().filter(|&&(_, target)| target == 11).count(),
+        3
     );
 }
 

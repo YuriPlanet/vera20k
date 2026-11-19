@@ -178,25 +178,62 @@ fn detect_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor]) -> Option<Sm
     Some(first)
 }
 
-/// Whether any actor stands within the (tight) reactor range of a living
-/// bio reactor. Reuses the same admission as the Reactor plan so detection
-/// and ordering can never disagree about what counts as a reactor.
+/// A bio reactor with its remaining `Passengers=` slots. Carrying the free
+/// capacity on the target lets both detection and planning agree on which
+/// reactors can still take a soldier, so a full reactor is never fed.
+#[derive(Debug, Clone, Copy)]
+struct ReactorTarget {
+    target: Target,
+    free: u32,
+}
+
+/// Living, non-grinding bio reactors within the (tight) reactor range of any
+/// actor, paired with their remaining cargo slots. This mirrors the engine's
+/// own `can_load` absorbs gate (`radio/receive.rs`): `cargo.count() <
+/// Passengers`. The result is shared by [`nearby_infantry_absorb`] and the
+/// Reactor plan so detection and ordering can never disagree about what can
+/// be fed.
+fn nearby_reactors(
+    sim: &Simulation,
+    rules: &RuleSet,
+    actors: &[Actor],
+) -> Vec<ReactorTarget> {
+    let mut out = Vec::new();
+    for entity in sim.entities().values_of_category(EntityCategory::Structure) {
+        if !entity.is_alive() || entity.death.is_dying() {
+            continue;
+        }
+        let Some(object) = object_of(sim, entity, rules) else {
+            continue;
+        };
+        if !object.infantry_absorb || object.grinding {
+            continue;
+        }
+        let capacity = object.passengers.max(0) as u32;
+        let aboard = entity.passenger_role.cargo().map_or(0, |cargo| cargo.count());
+        let free = capacity.saturating_sub(aboard);
+        if free == 0 {
+            continue;
+        }
+        let pos = object_center_xy(entity);
+        if actors.iter().any(|actor| in_range(actor.pos, pos, REACTOR_RANGE_CELLS)) {
+            out.push(ReactorTarget {
+                target: Target {
+                    id: entity.stable_id(),
+                    pos,
+                },
+                free,
+            });
+        }
+    }
+    out
+}
+
+/// Whether any actor stands next to a bio reactor that still has room. A
+/// full reactor must not flip a garrison selection into Reactor mode — there
+/// is nothing to feed and the soldiers should keep their garrison order.
 fn nearby_infantry_absorb(sim: &Simulation, rules: &RuleSet, actors: &[Actor]) -> bool {
-    sim.entities()
-        .values_of_category(EntityCategory::Structure)
-        .any(|entity| {
-            if !entity.is_alive() || entity.death.is_dying() {
-                return false;
-            }
-            let Some(object) = object_of(sim, entity, rules) else {
-                return false;
-            };
-            if !object.infantry_absorb || object.grinding {
-                return false;
-            }
-            let pos = object_center_xy(entity);
-            actors.iter().any(|actor| in_range(actor.pos, pos, REACTOR_RANGE_CELLS))
-        })
+    !nearby_reactors(sim, rules, actors).is_empty()
 }
 
 /// The single most specific convenience role of one unit. `infiltrate` is
@@ -313,6 +350,44 @@ fn spread(actors: &[Actor], targets: &[Target], slots: u32) -> Vec<(u64, u64)> {
 /// still rejects the overflow when a building is actually full.
 fn spread_all(actors: &[Actor], targets: &[Target]) -> Vec<(u64, u64)> {
     spread(actors, targets, actors.len() as u32)
+}
+
+/// Like [`spread`], but each target carries its own free-slot count. Used by
+/// the reactor plan so a reactor with one vacancy gets one soldier, never a
+/// whole squad, and a full reactor gets none. The `cap` is a soft ceiling —
+/// ordering more than the engine admits is harmless (it refuses the excess),
+/// but ordering less would silently leave free slots unused.
+fn spread_by_capacity(actors: &[Actor], targets: &[ReactorTarget]) -> Vec<(u64, u64)> {
+    let plain: Vec<Target> = targets.iter().map(|entry| entry.target).collect();
+    let caps: Vec<u32> = targets.iter().map(|entry| entry.free).collect();
+    if actors.is_empty() || targets.is_empty() {
+        return Vec::new();
+    }
+    let mut assigned = vec![0_u32; targets.len()];
+    let mut orders = Vec::new();
+    for actor in actors {
+        let mut best: Option<usize> = None;
+        for (index, target) in plain.iter().enumerate() {
+            if assigned[index] >= caps[index] {
+                continue;
+            }
+            let candidate = (assigned[index], dist_sq(actor.pos, target.pos));
+            let replace = best
+                .map(|cur| candidate < (assigned[cur], dist_sq(actor.pos, plain[cur].pos)))
+                .unwrap_or(true);
+            if replace {
+                best = Some(index);
+            }
+        }
+        if let Some(index) = best {
+            assigned[index] += 1;
+            orders.push((actor.id, plain[index].id));
+        }
+        if orders.len() >= MAX_ORDERS {
+            break;
+        }
+    }
+    orders
 }
 
 fn ally_of(sim: &Simulation, actor: u64, target: u64) -> bool {
@@ -514,14 +589,12 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                 .collect()
         }
         SmartMode::Reactor => {
-            let targets = nearby_targets(
-                sim,
-                rules,
-                actors,
-                REACTOR_RANGE_CELLS,
-                |_entity, object| object.infantry_absorb && !object.grinding,
-            );
-            spread_all(actors, &targets)
+            // Only reactors with a free `Passengers=` slot are targets, and
+            // each gets at most its own vacancy. A far bigger squad than the
+            // total number of slots simply leaves the excess soldiers where
+            // they stand instead of sending a fresh wave on every press.
+            let reactors = nearby_reactors(sim, rules, actors);
+            spread_by_capacity(actors, &reactors)
                 .into_iter()
                 .map(|(actor, target)| Command::MegaMission {
                     entity_id: actor,
