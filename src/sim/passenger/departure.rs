@@ -65,7 +65,10 @@ pub fn depart_cargo_head(
         .entities
         .get_mut(transport_id)
         .ok_or(DepartureFailure::NoCargo)?;
-    let cargo = transport.cargo_mut().ok_or(DepartureFailure::NoCargo)?;
+    let cargo = transport
+        .passenger_role_mut()
+        .cargo_mut()
+        .ok_or(DepartureFailure::NoCargo)?;
     let removed = cargo.unload_first();
     // FUN_004DE710's empty-hold weapon reset occurs before placement for these
     // callers. Paradrop does not call RemoveGunner.
@@ -82,7 +85,7 @@ pub fn depart_cargo_head(
     if route == DepartureRoute::Hospital
         && let Some(passenger) = sim.substrate.entities.get_mut(passenger_id)
     {
-        passenger.clear_carrier_relation();
+        passenger.passenger_role_mut().clear_carrier_relation();
     }
     // A failed Unlimbo re-attaches the passenger with `+0x82` untouched
     // (CargoClass::AddPassenger 0x004733A0 does not write it); only a
@@ -152,7 +155,7 @@ fn restore_departure(
                     if matches!(failure, DepartureFailure::ParachuteReveal(_)) {
                         passenger.finish_fall();
                     }
-                    passenger.set_carrier_link(link);
+                    passenger.passenger_role_mut().set_carrier_link(link);
                 }
             }
             DepartureFailure::NoCargo | DepartureFailure::GroundReveal(_) => {
@@ -176,7 +179,7 @@ fn restore_departure(
                 "invalid ground departure phase"
             );
             if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
-                passenger.set_carrier_link(link);
+                passenger.passenger_role_mut().set_carrier_link(link);
             }
         }
     }
@@ -262,7 +265,7 @@ pub fn reveal_unloaded_passenger(
             passenger.passenger_role().inside_transport_id(),
             Some(transport_id)
         );
-        passenger.clear_carrier_relation();
+        passenger.passenger_role_mut().clear_carrier_relation();
     }
     let outcome = sim.try_reveal_entity_with_context(
         passenger_id,

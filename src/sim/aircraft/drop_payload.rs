@@ -472,7 +472,7 @@ fn paradrop(
             } else {
                 rider.sub_cell.release();
             }
-            rider.clear_carrier_relation();
+            rider.passenger_role_mut().clear_carrier_relation();
             rider.on_bridge()
         });
     if !begin_parachute_descent(&mut sim.substrate.entities, passenger, landing.z) {
@@ -516,7 +516,7 @@ fn land_tail(
     if rules.ares_form()
         && let Some(entity) = sim.substrate.entities.get_mut(passenger)
     {
-        entity.clear_transporter();
+        entity.passenger_role_mut().clear_transporter();
         entity.on_carryall.set(false);
     }
     let Some(plane_entity) = sim.substrate.entities.get(plane) else {

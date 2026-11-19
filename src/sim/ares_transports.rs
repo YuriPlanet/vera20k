@@ -192,14 +192,9 @@ impl Simulation {
                             effects,
                         );
                     }
-                    let _ = self.add_cargo_passenger_chain(
-                        id,
-                        &[(payload, payload_type.size)],
-                        context,
-                    );
+                    // A building's cargo shares VERA's carrier relation.
+                    let _ = self.add_cargo_members(id, &[(payload, payload_type.size)], context);
                     if let Some(passenger) = self.substrate.entities.get_mut(payload) {
-                        // A building's cargo shares VERA's carrier relation.
-                        passenger.set_inside_transport(id, false);
                         // AbortMotion (`0x004DF0D0`).
                         passenger.navigation.stop_moving();
                     }

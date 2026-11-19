@@ -521,7 +521,7 @@ fn eject_head_passenger(
             // queues the passenger's Move directly, before class
             // destination73DC06; it does not execute a player event.
             if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
-                passenger.clear_transporter();
+                passenger.passenger_role_mut().clear_transporter();
             }
             sim.queue_order_mission(pax_id, MissionType::Move, rules);
             // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
@@ -1317,7 +1317,7 @@ pub(crate) fn mission_unload(
                     // refusal arm re-adds the passenger and enters idle mode,
                     // as VERA's escape below does in every game.
                     if rules.ares_form() {
-                        pax.clear_transporter();
+                        pax.passenger_role_mut().clear_transporter();
                     }
                 }
                 // `0x0041556A..0x00415587`: a passenger that kept a team joins

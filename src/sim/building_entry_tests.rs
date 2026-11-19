@@ -1895,7 +1895,8 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
             .entities
             .get_mut(near)
             .unwrap()
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .add_for_test(id);
     }
     sim.substrate
@@ -2023,7 +2024,8 @@ fn two_occupiers_garrison_in_arrival_order_and_fire_in_that_order() {
     for (index, expected) in [(0, near), (1, far)] {
         let building = sim.substrate.entities.get_mut(bunker).unwrap();
         building
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .set_fire_index_for_test(index);
         assert_eq!(
             crate::sim::combat::combat_weapon::firing_occupant_id(entity(&sim, bunker), object),
@@ -2053,7 +2055,8 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
             .entities
             .get_mut(bunker)
             .unwrap()
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .add_for_test(id);
     }
 

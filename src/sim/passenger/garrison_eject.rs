@@ -116,7 +116,7 @@ pub(crate) fn uninit_garrison_passenger_without_exit(
     context: UninitContext<'_>,
 ) {
     if let Some(pax) = sim.substrate.entities.get_mut(passenger_id) {
-        pax.clear_carrier_relation();
+        pax.passenger_role_mut().clear_carrier_relation();
     }
     sim.uninit_with_context(passenger_id, context);
 }
@@ -182,7 +182,7 @@ fn place_garrison_passenger_at_cell(
         return false;
     };
     if let Some(pax) = sim.substrate.entities.get_mut(passenger_id) {
-        pax.clear_carrier_relation();
+        pax.passenger_role_mut().clear_carrier_relation();
     }
     // SellBuilding4580xx's virtual FootUnlimbo reaches the full Techno6F6CA0
     // publication and Foot4D72F4 coefficient copy. Keep the enclosing borrowed
@@ -385,7 +385,7 @@ pub(crate) fn kill_building_occupants(
     let Some(building) = sim.substrate.entities.get_mut(building_id) else {
         return;
     };
-    let occupants = &mut building.passenger_state_mut().occupants;
+    let occupants = &mut building.passenger_role_mut().occupants;
     occupants.reset_fire_index();
     let initial_count = occupants.ids().len();
     for index in (0..initial_count).rev() {
@@ -437,7 +437,7 @@ pub(crate) fn kill_building_occupants(
         uninit_garrison_passenger_without_exit(sim, id, context);
     }
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
-        building.passenger_state_mut().occupants.clear();
+        building.passenger_role_mut().occupants.clear();
     }
     // Ares 3.0 100136C0 (hook 0x458729): an emptied raided building goes back.
     if ares {
@@ -479,7 +479,7 @@ pub(crate) fn sell_building_occupants(
     // SellBuilding457DEB clears CurrentFireIdx before testing Occupants.Count,
     // including CheckAutoSellOrCivilian's red-health call on an empty building.
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
-        building.passenger_state_mut().occupants.reset_fire_index();
+        building.passenger_role_mut().occupants.reset_fire_index();
         if building.passenger_role().occupants().is_empty() {
             return 0;
         }
@@ -499,7 +499,7 @@ pub(crate) fn sell_building_occupants(
     };
 
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
-        building.passenger_state_mut().occupants.clear();
+        building.passenger_role_mut().occupants.clear();
     }
     // Ares 3.0 100136C0 (hook 0x4581CD): an emptied raided building goes back.
     if rules.ares_form() {
@@ -622,7 +622,10 @@ pub(crate) mod tests {
                 .ids()
                 .contains(&stable_id)
         {
-            building.garrison_mut_for_test().add_for_test(stable_id);
+            building
+                .passenger_role_mut_for_test()
+                .occupants_mut()
+                .add_for_test(stable_id);
         }
         stable_id
     }
@@ -706,7 +709,10 @@ pub(crate) mod tests {
             .set_foundation_for_test("2x2".to_string().into());
         building.set_owner_for_test(americans);
         building.set_type_ref_for_test(sim.interner.intern(type_id));
-        building.garrison_mut_for_test().add_for_test(passenger_id);
+        building
+            .passenger_role_mut_for_test()
+            .occupants_mut()
+            .add_for_test(passenger_id);
         sim.substrate.entities.insert(building);
         assert!(matches!(
             sim.reveal_entity_with_rules(building_id, rules),
@@ -921,7 +927,8 @@ pub(crate) mod tests {
                     .entities
                     .get_mut(20)
                     .unwrap()
-                    .garrison_mut_for_test();
+                    .passenger_role_mut_for_test()
+                    .occupants_mut();
                 // Preserve the fixture's supplied preexisting vector order.
                 cargo.set_ids_for_test(vec![22, 21]);
                 cargo.set_fire_index_for_test(4);
@@ -1047,7 +1054,8 @@ pub(crate) mod tests {
             .entities
             .get_mut(20)
             .unwrap()
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .set_ids_for_test(vec![22, 21]);
         // A supplied rejection of Rust's Reveal dependency, corresponding to
         // the original procedure's failed-last-Unlimbo control. This does not
@@ -1448,7 +1456,8 @@ pub(crate) mod tests {
             .entities
             .get_mut(building_id)
             .unwrap()
-            .garrison_mut_for_test()
+            .passenger_role_mut_for_test()
+            .occupants_mut()
             .set_fire_index_for_test(4);
         let rng_before = sim.scenario_rng.state();
 
