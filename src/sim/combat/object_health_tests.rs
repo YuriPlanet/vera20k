@@ -211,6 +211,10 @@ fn receiver_commit_keeps_negative_heal_on_exact_zero_techno_tail_and_wide_hits()
         };
         let receipt = super::super::receiver_health::commit_receiver_health(
             &event,
+            &mut crate::sim::combat::receiver_call::ReceiverDamage::new(
+                event.damage,
+                event.damage_writeback,
+            ),
             &mut world,
             &rules,
             None,

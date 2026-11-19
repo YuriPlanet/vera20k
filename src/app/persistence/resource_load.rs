@@ -145,7 +145,6 @@ impl PreparedSavedGame {
         let mut rules = view
             .rules_owner
             .project_saved_scenario_rules(saved.processed_rules())?;
-        let overlay_registry = rules.overlay_registry().clone();
         init_helpers::bind_rules_art_metadata(
             &mut rules,
             view.rules_owner.fixed_art(),
@@ -155,7 +154,6 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            &overlay_registry,
             saved.scheduler_anim_roots(),
             &[],
             assets,
@@ -185,7 +183,6 @@ impl PreparedSavedGame {
         // OverlayLoad5FEB45 and MouseLoad5BE668 can replace the restored
         // shape policy. Refresh this immutable projection from the same
         // incoming record, rather than retaining its pre-load registry.
-        let overlay_registry = rules.overlay_registry().clone();
         init_helpers::bind_rules_art_metadata(
             &mut rules,
             view.rules_owner.fixed_art(),
@@ -195,7 +192,6 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            &overlay_registry,
             saved.scheduler_anim_roots(),
             &[],
             assets,
@@ -208,9 +204,9 @@ impl PreparedSavedGame {
         // Baseline-only headless payloads remain on their separate adapter.
         let saved_land = saved.terrain().user_load_land_values()?;
         let (mut resources, processed_rules, map) =
-            saved.into_restored_parts(rules, overlay_registry, SharedCellDummy::fresh())?;
+            saved.into_restored_parts(rules, SharedCellDummy::fresh())?;
         let rules = &resources.rules;
-        let overlay_types = &resources.overlay_registry;
+        let overlay_types = rules.overlay_registry();
         let terrain_speed =
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
                 rules.general.tracked_uphill,
@@ -250,7 +246,6 @@ impl PreparedSavedGame {
                 .expect("saved terrain restored")
                 .clone(),
             terrain_speed,
-            overlay_types,
             crate::sim::snapshot::PlayerSaveCells::Saved {
                 land: saved_land,
                 prepare_assets: &mut bind_loaded_cells,
@@ -343,7 +338,6 @@ impl PreparedSavedGame {
             theater.extension,
             theater_name,
             Some(rules),
-            &resources.overlay_registry,
             map.house_colors(),
             Some(&theater.unit_palette),
             Some(&theater.iso_palette),
@@ -357,7 +351,6 @@ impl PreparedSavedGame {
             theater.extension,
             theater_name,
             rules,
-            &resources.overlay_registry,
             Some(&theater.iso_palette),
             Some(&theater.unit_palette),
             Some(&theater.tiberium_palette),

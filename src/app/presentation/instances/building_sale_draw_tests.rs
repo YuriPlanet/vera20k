@@ -101,8 +101,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
     let gate = sim
         .spawn_object("GAGATE_A", "Americans", 10, 10, 0, &rules)
         .expect("retail gate placement");
-    sim.entities_mut_for_test()
-        .get_mut(gate)
+    sim.entity_mut_for_test(gate)
         .unwrap()
         .install_building_up(BuildingUp::completing_in_ticks(control[1], 0), 0);
 
@@ -154,8 +153,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
 
     runtime
         .simulation
-        .entities_mut_for_test()
-        .get_mut(gate)
+        .entity_mut_for_test(gate)
         .unwrap()
         .finish_building_construction_for_test();
     let owner = runtime.simulation.entities().get(gate).unwrap().owner();
@@ -224,7 +222,7 @@ fn gate_piece(
         ignore_visibility: true,
         lighting: &lighting,
         house_colors: colors,
-        building_zshape: true,
+        building_zshape: Some((0, 0)),
     };
     let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
     let mut planned = Vec::new();

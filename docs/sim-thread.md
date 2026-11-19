@@ -176,8 +176,9 @@ late at most. An atlas refresh asked beside a tick (a growth published
 then) waits for the tick's tail.
 
 The live world, its presentation copy and the captured frame share
-`SimResources` (rules, terrain template and overlay registry) while the match
-runs. After an offline Skirmish, the setup dialog writes the current countries
+`SimResources` while the match runs. It holds the rules and the terrain
+template. The rules own the overlay types used by simulation and drawing.
+After an offline Skirmish, the setup dialog writes the current countries
 into the retained world's rules. The host releases both presentation references
 before it returns that world for a write.
 

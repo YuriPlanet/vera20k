@@ -230,9 +230,14 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     );
     sim.session.set_binary_frame_for_test(100);
     crate::sim::superweapon::grant_provided_supers(&mut sim, &rules, owner);
-    crate::sim::superweapon::update_owned_supers(&mut sim, &rules, owner);
+    crate::sim::superweapon::update_owned_supers(&mut sim, &rules, owner, FrameEffects::default());
     sim.session.set_binary_frame_for_test(1000);
-    crate::sim::superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+    crate::sim::superweapon::tick_house_superweapon_instances(
+        &mut sim,
+        &rules,
+        owner,
+        FrameEffects::default(),
+    );
     let fire = |sim: &mut Simulation| {
         sim.apply_command_with_overlays(
             "House0",
@@ -250,6 +255,90 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     assert_eq!(locals(&sim, 5), [true, false, true, false, false]);
     fire(&mut sim);
     assert_eq!(locals(&sim, 5), [true, false, true, false, true]);
+}
+
+/// Drain expiry (Progress_Charged 10035730), a click-off and a low-power hold
+/// (SetOnHold 10035750 deactivates at 100357E3) all raise 76 with the
+/// caller's overlay table, so the Tag's action 108 places its crate.
+#[test]
+fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
+    use crate::sim::{command::Command, superweapon, world::TickLane};
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for case in ["click", "expire", "hold"] {
+        let expire = case == "expire";
+        let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules(
+            "[SuperWeaponTypes]\n0=Cell\n[Cell]\nType=Battery\nRechargeTime=0.02\n\
+             IsPowered=yes\nSW.AlwaysGranted=yes\nSW.InitialReady=yes\nSW.ChargeToDrainRatio=1\n\
+             [OverlayTypes]\n0=BOX\n[BOX]\nCrate=yes\n[CrateRules]\nWoodCrateImg=BOX\nCrateImg=BOX\n",
+        );
+        let owner = houses[0];
+        let cell = sim.interner.get("Cell").unwrap();
+        let crate_id = overlays.id_for_name("BOX").unwrap();
+        let map = install_event_ingress_map(
+            &mut sim,
+            &rules,
+            "[Waypoints]\n0=15015\n[Triggers]\nEND=Country0,<none>,Battery ended,0,1,1,1,0\n\
+             [Tags]\nENDTAG=0,Battery ended,END\n[Events]\nEND=1,76,0,0\n\
+             [Actions]\nEND=3,132,11,0,0,0,0,0,123,56,0,0,0,0,0,0,A,108,0,0,0,0,0,0,A\n",
+        );
+        sim.session.install_waypoints(&map.waypoints);
+        for house in houses {
+            superweapon::construct_house_supers(&mut sim, &rules, house, false);
+        }
+        superweapon::grant_provided_supers(&mut sim, &rules, owner);
+        let command = Command::LaunchSuperWeapon {
+            sw_type_id: cell,
+            target_rx: 15,
+            target_ry: 15,
+        };
+        let registry = Some(&overlays);
+        let effects = FrameEffects::default();
+        let click = |sim: &mut Simulation| {
+            sim.apply_command_with_overlays("House0", &command, &rules, registry, effects)
+        };
+        assert!(click(&mut sim));
+        assert!(sim.power_states[&owner].has_battery());
+        if expire {
+            let duration = sim.super_weapons[&owner][&cell].charge_duration();
+            assert!(duration > 0);
+            for _ in 0..=duration {
+                sim.advance_app_frame(&[], &rules, 66, TickLane::Ordinary, effects)
+                    .unwrap();
+            }
+        } else if case == "hold" {
+            let power = sim.power_states.get_mut(&owner).unwrap();
+            power.set_is_low_power_for_test(true);
+            superweapon::update_owned_supers(
+                &mut sim,
+                &rules,
+                owner,
+                effects.with_overlay_registry(registry),
+            );
+            let instance = &sim.super_weapons[&owner][&cell];
+            assert!(instance.is_suspended());
+            assert_eq!(instance.charge_drain_state(), -1);
+        } else {
+            click(&mut sim);
+        }
+        assert!(!sim.power_states[&owner].has_battery());
+        assert!(
+            sim.trigger_runtime.local_variable_is_set(0),
+            "event 76 marked the local variable"
+        );
+        assert_eq!(
+            sim.overlay_grid().unwrap().cell(15, 15).overlay_id,
+            Some(crate_id),
+            "place crate on deactivation ({case})"
+        );
+        if case == "hold" {
+            continue;
+        }
+        // Expiry restarts after the Tag's action 132. An immediate click-off at
+        // a 1:1 ratio already converted the full drain back to zero recharge.
+        let expected = if expire { 123 } else { 0 };
+        assert_eq!(sim.super_weapons[&owner][&cell].charge_duration(), expected);
+    }
 }
 
 /// The abduction raises 72 (by the abductor's House) and 71 on the abductee,

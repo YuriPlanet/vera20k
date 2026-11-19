@@ -571,7 +571,7 @@ impl Simulation {
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()
-            && !(actor.passenger_role.in_open_transport() || passive_target);
+            && !(actor.passenger_role().in_open_transport() || passive_target);
         //4D5716..4D57E4: the drop arms ahead of the search. A Sticky mission,
         // or a mover that may not approach off Attack, a human's Area Guard or
         // a computer's Hunt, clears the Target and the destination.

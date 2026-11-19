@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
 use crate::sim::runtime::{SimResources, SimRuntime};
@@ -28,8 +27,6 @@ impl Scene {
         retail
             .rules
             .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
-        let registry =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xa220);
         // The supplied clear map still owns its empty overlay cells and saved
@@ -60,7 +57,6 @@ impl Scene {
             simulation: sim,
             resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template,
             }),
         });
@@ -81,7 +77,7 @@ impl Scene {
                 cell.1,
                 0,
                 &self.0.resources.rules,
-                &self.0.resources.overlay_registry,
+                self.0.resources.rules.overlay_registry(),
             )
             .expect("retail constructor and ordinary Unlimbo")
     }
@@ -170,7 +166,7 @@ impl Scene {
         restored
             .restore_map_authority_after_snapshot_load(
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
                 None,
             )
             .unwrap();
@@ -270,7 +266,7 @@ fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
     );
     scene.0.simulation.commit_direct_damage_receiver(
         &scene.0.resources.rules,
-        Some(&scene.0.resources.overlay_registry),
+        Some(scene.0.resources.rules.overlay_registry()),
         hit,
         FrameEffects::default(),
     );
@@ -618,7 +614,7 @@ fn damage_reduces_readiness_before_object_immunity_and_restarts_reload() {
         );
         scene.0.simulation.commit_direct_damage_receiver(
             &scene.0.resources.rules,
-            Some(&scene.0.resources.overlay_registry),
+            Some(scene.0.resources.rules.overlay_registry()),
             event,
             FrameEffects::default(),
         );

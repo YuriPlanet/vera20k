@@ -306,7 +306,7 @@ fn follow_clicked_goal(
     let admitted = super::commands::ordinary_cell_move_goal(
         scenario.sim(),
         &scenario.runtime.resources.rules,
-        Some(&scenario.runtime.resources.overlay_registry),
+        Some(scenario.runtime.resources.rules.overlay_registry()),
         owner,
         entity_id,
         goal,

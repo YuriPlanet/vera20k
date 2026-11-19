@@ -6109,9 +6109,7 @@ mod tests {
         assert!(!sim.substrate.entities.get(100).unwrap().is_parachuted());
         sim.substrate
             .entities
-            .write_held_anim(101, |owner, authority| {
-                owner.hold_parachute_animation(first, authority)
-            })
+            .hold_parachute_animation(101, first)
             .unwrap();
         assert!(sim.anim_pointer_expired(first, 101, &rules));
         assert_eq!(sim.anim(first).unwrap().owner_entity, None);

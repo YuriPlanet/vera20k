@@ -10,7 +10,7 @@ use super::{DefinitionReference, TagAttachment};
 use crate::headless_scenario::HeadlessScenario;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, SharedCellDummy};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
-use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::mission::MissionType;
 use crate::sim::scenario_bootstrap::{
@@ -48,19 +48,22 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
                 .expect("optional campaign basename INI")
                 .ini
         });
-    let (mut rules, rules_ini, art_ini, native_rules_receipt) = native_rules
+    let (mut rules, _, art_ini, native_rules_receipt) = native_rules
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(named.as_ref()),
             &map.ini,
         )
         .expect("campaign Rules process prefix")
         .into_parts();
-    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-        .expect("campaign AI definitions");
+    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        BootstrapRuleProfile::Campaign,
+    )
+    .expect("campaign AI definitions");
     let theater =
         crate::map::theater::load_theater(&mut assets, &map.header.theater).expect("ALL01 theater");
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let overlays = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art_ini));
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let lighting = crate::map::lighting::parse_lighting_profiles(&map.ini);
@@ -70,7 +73,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         seed: 0x44A1_EF,
         map_name: map_name.into(),
         theater: map.header.theater.clone(),
-        game_mode_nonzero: false,
+        rule_policy: crate::rules::rule_policy::RulePolicy::stock_campaign(),
         free_radar: map.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
         train_crate: map.basic.train_crate.unwrap_or(false),
@@ -127,7 +130,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
             Some(&theater),
             Some(&assets),
             Some(&rules.terrain_rules),
-            Some(&overlays),
+            Some(rules.overlay_registry()),
             true,
             rules.general.cliff_back_impassability,
             &mut fill_draw,
@@ -135,7 +138,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
             dummy,
         );
     drop(variant_draw);
-    let mut roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlays, &[]);
+    let mut roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
     roots.extend(crate::map::actions::trigger_anim_class_roots(
         &rules,
         &map.actions,
@@ -153,7 +156,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
     let overlay_shps = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        &overlays,
+        rules.overlay_registry(),
         &assets,
         theater.extension,
         &map.header.theater,
@@ -170,7 +173,6 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         &assets,
         &mut rules,
         &mut native_rules,
-        &overlays,
         &overlay_shps,
         format,
         true,
@@ -185,10 +187,9 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&teams, &rules);
-    let post = crate::sim::runtime::finalize_constructed_scenario(
-        &mut sim, &map, &rules, &overlays, &roster, None,
-    )
-    .unwrap();
+    let post =
+        crate::sim::runtime::finalize_constructed_scenario(&mut sim, &map, &rules, &roster, None)
+            .unwrap();
     assert!(post.navigation_published && sim.path_grid().is_some());
     if remove_home {
         assert_eq!((map.header.width, map.header.height), (65, 120));
@@ -202,11 +203,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         },
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
-                overlay_registry: overlays,
-                terrain_template: None,
-                rules,
-            }),
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules)),
         },
         map,
     }
@@ -350,7 +347,7 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
         .expect("allocated cell outside friendly sight and waypoint reveal");
     sim.reveal_entire_map(
         Some(player),
-        UninitContext::new(rules, Some(&runtime.resources.overlay_registry)),
+        UninitContext::new(rules, Some(runtime.resources.rules.overlay_registry())),
     );
     assert!(sim.fog.is_ground_unshrouded(player, far.0, far.1));
     assert!(sim.fog.is_ground_unshrouded(player, WAYPOINT.0, WAYPOINT.1));
@@ -493,7 +490,7 @@ fn stock_all02_hidden_player_flak_waits_for_discovery() {
         Some(player),
         UninitContext::new(
             &runtime.resources.rules,
-            Some(&runtime.resources.overlay_registry),
+            Some(runtime.resources.rules.overlay_registry()),
         ),
     );
     let entity = runtime.simulation.entities().get(flak).unwrap();

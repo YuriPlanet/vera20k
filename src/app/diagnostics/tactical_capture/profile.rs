@@ -554,10 +554,10 @@ impl TacticalCaptureProfile {
     }
 
     pub(crate) fn launch_session(&self) -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: self.launch.mode.clone(),
-            selected_map_file: Some(self.fixture.logical_map_name.clone()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            self.launch.mode.clone(),
+            Some(self.fixture.logical_map_name.clone()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: self.launch.player_name.clone(),
                 slot: SkirmishLocalSlot {
@@ -570,10 +570,8 @@ impl TacticalCaptureProfile {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: self.launch.opponents.len() as i32,
-            opponents: self
-                .launch
+            0,
+            self.launch
                 .opponents
                 .iter()
                 .enumerate()
@@ -588,12 +586,8 @@ impl TacticalCaptureProfile {
                     difficulty: AiDifficulty::Easy,
                 })
                 .collect(),
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(
-                    self.launch.opponents.len(),
-                ),
-            options: self.launch.options.to_launch_options(),
-        }
+            self.launch.options.to_launch_options(),
+        )
     }
 }
 

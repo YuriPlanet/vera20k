@@ -525,7 +525,7 @@ impl Simulation {
             matches!(
                 entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-            ) && !entity.passenger_role.in_open_transport()
+            ) && !entity.passenger_role().in_open_transport()
                 && !self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.ignores_firestorm)

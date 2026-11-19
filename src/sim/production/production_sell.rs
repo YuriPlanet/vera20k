@@ -391,7 +391,11 @@ pub(crate) fn sell_after_owner_change(
         // Unlike Selling stage0, this constructs no temporary upgrade object.
         let refund = type_refund(rules, upgrade, house, &factors, true, true);
         crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
-        let _ = sim.power_down_building_upgrade(id, rules);
+        let _ = sim.power_down_building_upgrade(
+            id,
+            rules,
+            frame_effects.with_overlay_registry(registry),
+        );
         Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
     }
     // Literal1 keeps Sell_Back's existing Selling/C4 and Buildup gates.
@@ -732,7 +736,7 @@ pub fn sell_stage_zero(
         if refund.is_none() {
             return;
         }
-        sim.power_down_building_upgrade(id, rules);
+        sim.power_down_building_upgrade(id, rules, frame_effects);
         //44AB0E/44AB1B: only the upgrade arm sets both dirty bytes here.
         Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
         //44AB22..44AB36: the existing app receiver applies +41A's local-owner
@@ -963,8 +967,9 @@ pub(crate) fn sell_complete(
     // Detach/HouseAbandon and post-Limbo queue callback must observe this
     // phase, before UnInit's earlier PointerExpired/Alive cleanup.
     sim.techno_limbo_with_context(id, context);
-    // When Ares plays: the store payout `0x0044A232..0x0044A285` through
-    // Ares' GiveTiberium (`10024290`, `sim::ares_tiberium_storage`).
+    // When the money takes its Ares form (`RuleSet::ares_form`): the store
+    // payout `0x0044A232..0x0044A285` through Ares' GiveTiberium
+    // (`10024290`, `sim::ares_tiberium_storage`).
     if rules.ares_form() {
         sim.ares_sale_storage_payout(id, rules);
     }

@@ -75,7 +75,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
             .unwrap();
     }
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let sim = &mut scene.runtime.simulation;
     let overlay = registry.id_for_name("GAWALL").unwrap();
     assert!(sim.houses[&owner].is_human());
@@ -205,7 +205,8 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
     let wall = scene
         .runtime
         .resources
-        .overlay_registry
+        .rules
+        .overlay_registry()
         .id_for_name("GAWALL")
         .unwrap();
     let mut orders: Vec<_> = profile["commands"]
@@ -307,7 +308,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
                 "GAWALL",
                 source.0,
                 source.1,
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
             )
             .unwrap();
             assert!(

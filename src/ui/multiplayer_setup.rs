@@ -91,13 +91,12 @@ const ROSTER_BOX_MARGIN: (i32, i32) = (5, 3);
 const ROSTER_INSET: i32 = 5;
 const ROSTER_SPARE_W: i32 = 34;
 /// The roster's entries at their full width, from their left edge: a row's
-/// Player, Side, Colour, Start and Team cells, as left edge and width, after
-/// its ping at the left; a header's caption, the host's Add AI and, at the
-/// row's right end, its Join: text like the rows', no button art. A
-/// narrower column narrows them all ([`RosterColumns`]).
+/// Player, Side, Colour, Start and Team cells, as left edge and width; a
+/// header's caption, the host's Add AI and, at the row's right end, its Join:
+/// text like the rows', no button art. A narrower column narrows them all
+/// ([`RosterColumns`]).
 const ROSTER_W: i32 = 751;
 const ROSTER_CELLS: [(i32, i32); 5] = [(18, 260), (286, 156), (450, 57), (515, 57), (580, 57)];
-const ROSTER_PING_W: i32 = 16;
 const ROSTER_CAPTION_W: i32 = 260;
 const ROSTER_ADD_AI: (i32, i32) = (286, 91);
 const ROSTER_JOIN_W: i32 = 91;
@@ -105,17 +104,10 @@ const ROSTER_JOIN_W: i32 = 91;
 /// with this margin at each side, and as a colour swatch this wide.
 const ROSTER_LIST_MARGIN: i32 = 3;
 const ROSTER_SWATCH_LIST_W: i32 = 40;
-/// VERA's team bar under the roster: groups of controls from left to right,
-/// each starting a new line of the bar where it does not fit beside the one
-/// before. In a room with teams they are the Teams count's label and
-/// trackbar, the host's Room size, Team Starts and Team Colors and, online,
-/// Balance; in one without, only the host's Room size. Each part is from
-/// its group's top-left corner, their art at 78% of the shell's size
-/// ([`MultiplayerSetupLayout::control_scale`]). A trackbar is a
-/// [`TEAM_BAR_TRACKBAR_WINDOW`] window at that size. Both trackbars' labels
-/// take one width, so the trackbars line up when they stack, and the
-/// buttons stand the groups' gap apart.
-const TEAM_BAR_H: i32 = 25;
+/// VERA's team bar gives Teams and Room size one row each, followed
+/// by one row for the available buttons. The controls are authored at
+/// 78% of the shell's size ([`MultiplayerSetupLayout::control_scale`]).
+const TEAM_BAR_ROW_H: i32 = 25;
 const TEAM_BAR_INSET: i32 = 8;
 const TEAM_BAR_GAP: i32 = 12;
 const TEAM_BAR_LABEL: RectPx = RectPx::new(0, 3, 90, 18);
@@ -124,9 +116,7 @@ const TEAM_BAR_TRACKBAR: RectPx = RectPx::new(92, 4, 151, 17);
 /// its plaque the same, so its rail is longer. It has its own frame
 /// (`render::skirmish_shell_chrome::TRACKBAR_FRAMES`).
 const TEAM_BAR_TRACKBAR_WINDOW: (i32, i32) = (194, 21);
-const TEAM_BAR_STARTS: RectPx = RectPx::new(0, 3, 97, 19);
-const TEAM_BAR_COLORS: RectPx = RectPx::new(97 + TEAM_BAR_GAP, 3, 97, 19);
-const TEAM_BAR_BALANCE: RectPx = RectPx::new(0, 3, 97, 19);
+const TEAM_BAR_BUTTON: RectPx = RectPx::new(0, 3, 97, 19);
 /// The chat's log ends here, its edit line under it.
 const CHAT_LOG_BOTTOM: i32 = 529;
 
@@ -332,15 +322,11 @@ pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
 pub(crate) const COUNTRIES: [u16; 8] = [0x6A1, 0x510, 0x513, 0x51E, 0x514, 0x51F, 0x520, 0x521];
 pub(crate) const COLORS: [u16; 8] = [0x6A2, 0x522, 0x523, 0x524, 0x525, 0x526, 0x527, 0x528];
 pub(crate) const STARTS: [u16; 8] = [0x6A3, 0x6A4, 0x6A5, 0x6A6, 0x6A7, 0x6A8, 0x6AA, 0x6AB];
-/// WOL-only C2/C9 controls: Page (modal 0xCF), the emote button and the
-/// per-row ping statics 0x754+row (helper 004E34A0).
+/// WOL-only C2/C9 controls: Page (modal 0xCF) and the emote button.
 pub(crate) const PAGE: u16 = 0x5C2;
 pub(crate) const EMOTE: u16 = 0x3ED;
-pub(crate) const PING_ICONS: u16 = 0x754;
 /// The map thumbnail.
 pub(crate) const MAP_PREVIEW: u16 = 0x468;
-/// C9's "Preview unavailable" static over the map thumbnail `0x468`.
-pub(crate) const NO_PREVIEW: u16 = 0x71F;
 
 /// The service whose setup dialog this is. Every shared helper keeps one
 /// code path and branches on GameMode 3/4 like the native helpers do.
@@ -397,20 +383,6 @@ impl SetupDialog {
         } else {
             VISIBLE_SETUP_ROWS
         }
-    }
-}
-
-/// WOL__SetPlayerPing 007A0EA0: icon -1/0/1/2 at thresholds 0/300/500, art
-/// pingg/pingy/pingr.pcx through 004E34A0. Negative pings show no image.
-pub(crate) const fn ping_icon(ping: i32) -> Option<u8> {
-    if ping < 0 {
-        None
-    } else if ping < 300 {
-        Some(0)
-    } else if ping < 500 {
-        Some(1)
-    } else {
-        Some(2)
     }
 }
 
@@ -836,8 +808,6 @@ pub(crate) struct SetupView {
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// VERA's header rows, by the row on the page.
     pub(crate) headers: [Option<SetupHeader>; MODERN_SETUP_ROWS],
-    /// C2/C9 ping statics; always empty on BC/BD.
-    pub(crate) ping_icons: [Option<u8>; MODERN_SETUP_ROWS],
     /// The box open over VERA's room.
     pub(crate) open_box: Option<RoomBox>,
     /// Team Starts: Teams is set and the map has starts to give.
@@ -855,9 +825,6 @@ pub(crate) struct SetupView {
     pub(crate) mode_label: String,
     pub(crate) map_label: String,
     pub(crate) selected_map_index: Option<usize>,
-    /// C9's `0x71F` shows, and `0x468` is hidden (WOL `Z3`).
-    pub(crate) no_preview: bool,
-    pub(crate) preview_hidden: bool,
     pub(crate) cooperative: bool,
     pub(crate) cooperative_description: Option<String>,
 }
@@ -1353,8 +1320,7 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) roster_bottom: i32,
     pub(crate) flags: [RectPx; MODERN_SETUP_ROWS],
     pub(crate) acceptance: [RectPx; MODERN_SETUP_ROWS],
-    /// C2/C9 ping statics and emote button; `None` on BC/BD.
-    pub(crate) ping_icons: Option<[RectPx; MODERN_SETUP_ROWS]>,
+    /// C2/C9 emote button; `None` on BC/BD.
     pub(crate) emote: Option<RectPx>,
     pub(crate) chat: RectPx,
     pub(crate) chat_log: RectPx,
@@ -1380,10 +1346,6 @@ pub(crate) struct MultiplayerSetupLayout {
     /// VERA's missing-map offer, a screen-centred two-button box.
     pub(crate) map_offer: crate::ui::shell::modal::QuitConfirmLayout,
     pub(crate) map_preview: RectPx,
-    /// C9's hidden `0x71F` static ("Preview unavailable"): placed by
-    /// `0x0060B950` alone, so it keeps its template place while `0x468`
-    /// is right-anchored. `None` on BC/BD/C2.
-    pub(crate) no_preview: Option<RectPx>,
     pub(crate) cooperative_description: RectPx,
     pub(crate) mode_label: RectPx,
     pub(crate) map_label: RectPx,
@@ -1525,9 +1487,6 @@ impl MultiplayerSetupLayout {
                     rect(42, icon_y(row), 28, 21)
                 }
             }),
-            ping_icons: dialog
-                .wol()
-                .then(|| std::array::from_fn(|row| rect(27, icon_y(row), 16, 21))),
             emote: dialog.wol().then(|| rect(596, 533, 27, 24)),
             // The NewEdit paints inside its one-pixel resource frame.
             chat: rect(12, chat_y + 1, chat_w - 2, 19),
@@ -1564,7 +1523,6 @@ impl MultiplayerSetupLayout {
             game_options: None,
             map_offer: crate::ui::shell::modal::quit_confirm_layout(width, height),
             cooperative_description: rect(60, 98, 540, 143),
-            no_preview: (dialog.wol() && !host).then(|| rect(650, 37, 145, 113)),
             map_preview: scale.scale_rect(anchor_rect(
                 crate::ui::shell::descriptor::AnchorRule::RightAnchor,
                 RectPx::new(preview_x, 23, 96, 69),
@@ -1689,95 +1647,62 @@ impl MultiplayerSetupLayout {
             RectPx::new(window.x + line.x, line.y, line.w - window.x, line.h)
         });
     }
-    /// VERA's team bar at the roster's foot, as wide as the groups' boxes
-    /// and as many lines high as its groups take; the roster's area ends
-    /// over it. Without teams only the host's Room size is left, and with
-    /// nothing in it the roster reaches the column's foot.
+    /// The frame follows the roster's width. Only visible rows reserve
+    /// height at its foot; widening the window keeps the controls in place.
     fn arrange_team_bar(&mut self, teams: bool, online: bool, host: bool, room_size: bool) {
         let scale = self.page.scale;
         let (mx, my) = ROSTER_BOX_MARGIN;
-        let columns = self.roster_columns;
-        let bar_w = columns.w + 2 * mx;
-        let groups: [Option<&[RectPx]>; 4] = [
-            teams.then_some(&[TEAM_BAR_LABEL, TEAM_BAR_TRACKBAR]),
-            room_size.then_some(&[TEAM_BAR_LABEL, TEAM_BAR_TRACKBAR]),
-            (teams && host).then_some(&[TEAM_BAR_STARTS, TEAM_BAR_COLORS]),
-            (teams && online).then_some(&[TEAM_BAR_BALANCE]),
-        ];
-        let zero = RectPx::new(0, 0, 0, 0);
-        self.team_bar = None;
-        (self.teams_label, self.room_size_label) = (zero, zero);
-        (self.team_starts, self.team_colors, self.balance) = (None, None, None);
-        for (id, bar) in &mut self.trackbars {
-            if matches!(*id, TEAM_COUNT | ROOM_SIZE) {
-                *bar = zero;
-            }
-        }
-        self.roster_bottom = ROSTER_BOTTOM;
-        if groups.iter().all(Option::is_none) {
-            self.roster_area = scale.derive_rect(self.roster_area, |area| {
-                RectPx::new(area.x, area.y, area.w, ROSTER_BOTTOM - ROSTER_TOP + 2 * my)
-            });
-            return;
-        }
-        let inner = bar_w - 2 * TEAM_BAR_INSET;
-        let (mut x, mut line) = (0, 0);
-        let groups = groups.map(|group| {
-            group.map(|parts| {
-                let w = parts.iter().map(|part| part.x + part.w).max().unwrap_or(0);
-                if x > 0 && x + w > inner {
-                    (x, line) = (0, line + 1);
-                }
-                let (dx, dy) = (TEAM_BAR_INSET + x, line * TEAM_BAR_H);
-                x += w + TEAM_BAR_GAP;
-                // A group wider than the bar ends at its edge.
-                parts
-                    .iter()
-                    .map(|part| {
-                        let part = part.translate(dx, dy);
-                        RectPx::new(
-                            part.x,
-                            part.y,
-                            part.w.min(bar_w - TEAM_BAR_INSET - part.x),
-                            part.h,
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            })
-        });
-        let bar_h = (line + 1) * TEAM_BAR_H;
-        let bar = RectPx::new(columns.x - mx, ROSTER_BOTTOM + my - bar_h, bar_w, bar_h);
-        self.roster_bottom = bar.y - ROSTER_GROUP_GAP - my;
-        let bottom = self.roster_bottom;
+        let slider_rows = i32::from(teams) + i32::from(room_size);
+        let rows = slider_rows + i32::from(teams && (host || online));
+        let bar_h = rows * TEAM_BAR_ROW_H;
+        let bar = RectPx::new(
+            self.roster_columns.x - mx,
+            ROSTER_BOTTOM + my - bar_h,
+            self.roster_columns.w + 2 * mx,
+            bar_h,
+        );
+        self.team_bar = (rows > 0).then(|| scale.scale_rect(bar));
+        self.roster_bottom = if rows == 0 {
+            ROSTER_BOTTOM
+        } else {
+            bar.y - ROSTER_GROUP_GAP - my
+        };
         self.roster_area = scale.derive_rect(self.roster_area, |area| {
-            RectPx::new(area.x, area.y, area.w, bottom - ROSTER_TOP + 2 * my)
+            RectPx::new(
+                area.x,
+                area.y,
+                area.w,
+                self.roster_bottom - ROSTER_TOP + 2 * my,
+            )
         });
-        let at = |part: RectPx| scale.scale_rect(part.translate(bar.x, bar.y));
-        self.team_bar = Some(scale.scale_rect(bar));
+
+        let at = |part: RectPx, row| {
+            scale.scale_rect(part.translate(bar.x + TEAM_BAR_INSET, bar.y + row * TEAM_BAR_ROW_H))
+        };
         let small = self.control_scale(TEAM_COUNT);
-        let [count, room, starts, balance] = groups;
-        for (group, id) in [(count, TEAM_COUNT), (room, ROOM_SIZE)] {
-            let Some(&[label, trackbar]) = group.as_deref() else {
-                continue;
+        let zero = RectPx::new(0, 0, 0, 0);
+        for (id, window) in &mut self.trackbars {
+            let (visible, row, label) = match *id {
+                TEAM_COUNT => (teams, 0, &mut self.teams_label),
+                ROOM_SIZE => (room_size, i32::from(teams), &mut self.room_size_label),
+                _ => continue,
             };
-            if id == TEAM_COUNT {
-                self.teams_label = at(label);
-            } else {
-                self.room_size_label = at(label);
-            }
-            if let Some((_, bar)) = self.trackbars.iter_mut().find(|(bar, _)| *bar == id) {
-                let corner = small.base_rect(at(trackbar));
+            if visible {
+                *label = at(TEAM_BAR_LABEL, row);
+                let corner = small.base_rect(at(TEAM_BAR_TRACKBAR, row));
                 let (w, h) = TEAM_BAR_TRACKBAR_WINDOW;
-                *bar = small.scale_rect(RectPx::new(corner.x, corner.y, w, h));
+                *window = small.scale_rect(RectPx::new(corner.x, corner.y, w, h));
+            } else {
+                (*label, *window) = (zero, zero);
             }
         }
-        if let Some(&[starts, colors]) = starts.as_deref() {
-            self.team_starts = Some(at(starts));
-            self.team_colors = Some(at(colors));
-        }
-        if let Some(&[balance]) = balance.as_deref() {
-            self.balance = Some(at(balance));
-        }
+        let button = |column| {
+            let part = TEAM_BAR_BUTTON.translate(column * (TEAM_BAR_BUTTON.w + TEAM_BAR_GAP), 0);
+            at(part, slider_rows)
+        };
+        self.team_starts = (teams && host).then(|| button(0));
+        self.team_colors = (teams && host).then(|| button(1));
+        self.balance = (teams && online).then(|| button(if host { 2 } else { 0 }));
     }
     /// VERA's team bar for the room: with or without teams, and with or
     /// without the host's Room size ([`Self::arrange_team_bar`]).
@@ -1787,8 +1712,8 @@ impl MultiplayerSetupLayout {
         }
     }
     /// VERA's roster: each entry showing where [`roster_page`] puts it, a
-    /// header's caption, Add AI and Join along its band, and a row's ping
-    /// and cells along its line.
+    /// header's caption, Add AI and Join along its band, and a row's cells
+    /// along its line.
     pub(crate) fn arrange_roster(&mut self, places: &[RosterPlace]) {
         let scale = self.page.scale;
         let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
@@ -1814,9 +1739,6 @@ impl MultiplayerSetupLayout {
                     .cells
                     .map(|(dx, w)| rect(x + dx, y, w, ROSTER_ROW_H));
                 self.roster_rows[position] = rect(x, y, columns.w, ROSTER_ROW_H);
-            }
-            if let Some(icons) = &mut self.ping_icons {
-                icons[position] = rect(x, y, ROSTER_PING_W, ROSTER_ROW_H);
             }
         }
         // Each header's group: it and the rows under it.
@@ -1863,9 +1785,6 @@ impl MultiplayerSetupLayout {
             self.header_controls[row] = (move_up(join), move_up(add_ai));
             self.flags[row] = move_up(self.flags[row]);
             self.acceptance[row] = move_up(self.acceptance[row]);
-            if let Some(icons) = &mut self.ping_icons {
-                icons[row] = move_up(icons[row]);
-            }
         }
     }
     pub(crate) fn control_rect(&self, id: u16) -> Option<RectPx> {
@@ -1895,18 +1814,12 @@ impl MultiplayerSetupLayout {
         {
             return Some(*rect);
         }
-        if let Some(icons) = &self.ping_icons
-            && (PING_ICONS..PING_ICONS + 8).contains(&id)
-        {
-            return Some(icons[usize::from(id - PING_ICONS)]);
-        }
         match id {
             PREVIOUS_ROWS => Some(self.roster_navigation[0]),
             NEXT_ROWS => Some(self.roster_navigation[1]),
             CHAT => Some(self.chat),
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
-            NO_PREVIEW => self.no_preview,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
             TEAM_STARTS => self.team_starts,
             TEAM_COLORS => self.team_colors,
@@ -2168,7 +2081,6 @@ mod tests {
             room_checks: [false; 7],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
-            ping_icons: [None; MODERN_SETUP_ROWS],
             open_box: None,
             team_starts_enabled: true,
             team_colors_enabled: true,
@@ -2179,8 +2091,6 @@ mod tests {
             mode_label: String::new(),
             map_label: String::new(),
             selected_map_index: None,
-            no_preview: false,
-            preview_hidden: false,
             cooperative: false,
             cooperative_description: None,
         }
@@ -2194,6 +2104,26 @@ mod tests {
         assert!(!view.enabled(LOBBY));
         view.lobby_enabled = true;
         assert!(view.enabled(LOBBY));
+    }
+
+    #[test]
+    fn team_bar_keeps_its_rows_when_the_window_widens() {
+        let host = dialog(true, SetupFlavor::Wol, true);
+        let regular = MultiplayerSetupLayout::new(host, 800, 600, true);
+        let wide = MultiplayerSetupLayout::new(host, 1600, 600, true);
+        let controls = |layout: &MultiplayerSetupLayout| {
+            let bar = layout.team_bar.unwrap();
+            [TEAM_COUNT, ROOM_SIZE, TEAM_STARTS, TEAM_COLORS, BALANCE]
+                .map(|id| layout.control_rect(id).unwrap().translate(-bar.x, -bar.y))
+        };
+        let [teams, size, starts, colors, balance] = controls(&regular);
+        assert!(teams.y + teams.h <= size.y && size.y + size.h <= starts.y);
+        assert!(starts.y == colors.y && colors.y == balance.y);
+        assert_eq!(controls(&wide), controls(&regular));
+        let (bar, wide_bar) = (regular.team_bar.unwrap(), wide.team_bar.unwrap());
+        assert!(wide_bar.w > bar.w);
+        assert_eq!(wide_bar.h, bar.h);
+        assert_eq!(wide.roster_bottom, regular.roster_bottom);
     }
 
     /// VERA's roster stacks its teams in one column, over the team bar. A

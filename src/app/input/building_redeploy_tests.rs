@@ -9,7 +9,6 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &commands,
         rules,
-        None,
         33,
         crate::sim::world::TickLane::Ordinary,
         Default::default(),
@@ -76,14 +75,12 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         if contact {
             // Supplied existing radio state. The sale owner must retire both
             // sides, rather than requiring an empty link at input time.
-            sim.entities_mut_for_test()
-                .get_mut(yard)
+            sim.entity_mut_for_test(yard)
                 .unwrap()
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(peer)
+            sim.entity_mut_for_test(peer)
                 .unwrap()
                 .radio_contacts
                 .insert(yard)
@@ -198,8 +195,7 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
             .spawn_object("GAPOWR", "Americans", 5, 5, 0, &rules)
             .unwrap();
         if contact {
-            sim.entities_mut_for_test()
-                .get_mut(yard)
+            sim.entity_mut_for_test(yard)
                 .unwrap()
                 .radio_contacts
                 .insert(peer)
@@ -511,8 +507,7 @@ fn a_yard_click_whose_rally_search_misses_archives_its_own_cell() {
     let yard = sim
         .spawn_object("GACNST", "Americans", 6, 6, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(yard)
+    sim.entity_mut_for_test(yard)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(12, 12)));
     let own = sim.object_coords_cell(yard).unwrap();
@@ -840,8 +835,7 @@ fn an_object_archive_whose_target_is_gone_clears_the_archive() {
     let yard = sim
         .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(yard)
+    sim.entity_mut_for_test(yard)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(20, 12)));
     assert!(sim.apply_command(

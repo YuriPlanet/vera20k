@@ -164,7 +164,7 @@ impl MatchSession {
         for ai in &mut launch.opponents {
             ai.start_position = LaunchStartPosition::Auto;
         }
-        launch.rebuild_house_roster();
+        launch.use_live_house_rows();
         // 0x0046EF06: empty slots ready, every bound human slot not.
         let mut ready = [true; ROWS];
         for (index, human) in launch.humans.iter().enumerate() {
@@ -206,7 +206,6 @@ impl MatchSession {
         for human in &mut launch.humans {
             admit(&mut human.slot);
         }
-        launch.rebuild_house_roster();
         Ok(())
     }
 
@@ -595,7 +594,6 @@ fn apply_round_options(
     candidate.ai_player_count = options.ai_player_count;
     super::validate_network_rows(&candidate)?;
     candidate.opponents.sort_by_key(|ai| ai.raw_slot_index);
-    candidate.rebuild_house_roster();
     *launch = candidate;
     Ok(changed)
 }

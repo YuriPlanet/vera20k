@@ -508,6 +508,19 @@ const STATUS_LINE_DLU: RectPx = RectPx::new(10, 357, 303, 12);
 /// `10 - (600 - 480) / 2` when the screen is at least 800 wide.
 const TEXT_UPPER_SHIFT: i32 = 50;
 
+/// The SCRBK rectangle in the unscaled shell. The background overlay
+/// (`0x0072E730`) uses the dialog origin, and `0x0072D460` selects the
+/// small score art at width 640.
+pub(crate) fn campaign_score_background_rect(screen_w: i32, screen_h: i32) -> RectPx {
+    let (x, y) = geom::dialog_origin(screen_w, screen_h);
+    let (w, h) = if screen_w == 640 {
+        (472, 448)
+    } else {
+        (632, 568)
+    };
+    RectPx::new(x, y, w, h)
+}
+
 impl CampaignScoreLayout {
     /// Retail window placement for the allied side (side 0).
     pub fn compute_layout(screen_w: u32, screen_h: u32) -> Self {
@@ -536,17 +549,10 @@ impl CampaignScoreLayout {
             .control(STATUS_HELP_STATIC)
             .map_or(STATUS_LINE_DLU, |spec| spec.template_dlu);
         let status_help = status_line_rect(status_dlu, screen_w, screen_h);
-        let (origin_x, origin_y) = geom::dialog_origin(screen_w, screen_h);
-        let small = screen_w == 640;
-        let background = RectPx::new(
-            origin_x,
-            origin_y,
-            if small { 472 } else { 632 },
-            if small { 448 } else { 568 },
-        );
+        let background = campaign_score_background_rect(screen_w, screen_h);
         let panel = RectPx::new(
-            origin_x + if screen_w >= 800 { 80 } else { 0 },
-            origin_y,
+            background.x + if screen_w >= 800 { 80 } else { 0 },
+            background.y,
             472,
             448,
         );

@@ -650,7 +650,7 @@ impl GameSnapshot {
         description: &str,
         save_timestamp: u64,
         presentation: SavedPresentationRef<'_>,
-    ) -> Vec<u8> {
+    ) -> Result<Vec<u8>, save_codec::Error> {
         // Retail provenance: Save_Game_To_File @ 0x0067CEF0 supplies a distinct
         // outer file identity; Write_Savegame_Metadata_To_Storage @ 0x006812E0
         // writes public Version=1, exact internal version, and Scenario
@@ -687,7 +687,7 @@ impl GameSnapshot {
             local_view,
             scenario_resources,
         };
-        save_codec::serialize(&snapshot).expect("snapshot serialization should not fail")
+        save_codec::serialize(&snapshot)
     }
 
     /// Serialize a headless save with metadata owned by the active session.
@@ -717,10 +717,12 @@ impl GameSnapshot {
             None,
             None,
         )
+        .expect("serialize stock snapshot fixture")
     }
 
     /// Save the app's retained presentation alongside the simulation. A headless
     /// caller uses `save_validated`, whose presentation supplement is empty.
+    /// Fails if the session's rules cannot be represented in this save layout.
     pub fn save_validated_with_presentation(
         sim: &Simulation,
         map_hash: u64,
@@ -733,7 +735,7 @@ impl GameSnapshot {
         tactical_view: Option<&SavedTacticalView>,
         local_view: Option<&SavedLocalView>,
         scenario_resources: Option<&SavedScenarioResourcesRef<'_>>,
-    ) -> Vec<u8> {
+    ) -> Result<Vec<u8>, save_codec::Error> {
         Self::serialize(
             sim,
             map_hash,
@@ -805,9 +807,9 @@ impl GameSnapshot {
         rules: &crate::rules::ruleset::RuleSet,
         terrain_template: crate::map::resolved_terrain::ResolvedTerrainGrid,
         terrain_speed_config: crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig,
-        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
         cells: PlayerSaveCells<'_, '_>,
     ) -> Result<(Simulation, SnapshotMapRestoreOutput), SnapshotRestoreError> {
+        let overlay_registry = rules.overlay_registry();
         let mut simulation = self.sim;
         simulation.retain_process_state_for_load(process);
         // Native MouseLoad->Resize reconstructs the dummy before subsequent
@@ -886,6 +888,7 @@ impl GameSnapshot {
             save_timestamp,
             (&[], &[], None, None, None, None),
         )
+        .expect("serialize stock snapshot fixture")
     }
 
     /// Deserialize an internal current-layout checkpoint without content validation.
@@ -1230,7 +1233,7 @@ fn require_object_reference(
 
 fn validate_passenger_size_tables(sim: &Simulation) -> Result<(), SnapshotRestoreError> {
     for (carrier_id, entity) in sim.substrate.entities.iter_sorted() {
-        let Some(cargo) = entity.passenger_role.cargo() else {
+        let Some(cargo) = entity.passenger_role().cargo() else {
             continue;
         };
         if cargo.passengers().len() != cargo.passenger_sizes().len() {
@@ -1419,7 +1422,7 @@ fn restore_object_references(
             )?;
         }
 
-        if let Some(cargo) = entity.passenger_role.cargo() {
+        if let Some(cargo) = entity.passenger_role().cargo() {
             for &passenger_id in cargo.passengers() {
                 require_resolved_reference(
                     entity_ids.contains(&passenger_id),
@@ -1434,7 +1437,7 @@ fn restore_object_references(
 
         // BuildingClass's saved vector+684 contains independent Infantry
         // references; Cargo+114 is validated above, never reclassified by flags.
-        for &occupant_id in entity.passenger_role.occupants().ids() {
+        for &occupant_id in entity.passenger_role().occupants().ids() {
             require_resolved_reference(
                 entity_ids.contains(&occupant_id),
                 "EntityStore",
@@ -1667,7 +1670,7 @@ fn restore_object_references(
             }
         }
 
-        if let Some(target_id) = entity.passenger_role.inside_transport_id() {
+        if let Some(target_id) = entity.passenger_role().inside_transport_id() {
             require_resolved_reference(
                 entity_ids.contains(&target_id),
                 "EntityStore",
@@ -2431,11 +2434,7 @@ impl Simulation {
             if !zones.is_native_load_pending() {
                 return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
             }
-            self.crate_authority.reset_coordinates_after_user_load();
-            self.overlay_grid
-                .as_mut()
-                .expect("validated overlay cache")
-                .reset_crate_fields_after_user_load(saved_land.allocated_cells());
+            self.reset_crates_after_user_load(saved_land)?;
         }
 
         // Reproject runtime isometric replacements onto the pristine
@@ -2748,7 +2747,7 @@ mod tests {
 
     mod gsi_17_04_tests {
         use super::flat_terrain;
-        use crate::map::basic::{BasicSection, SpecialFlagsSection};
+        use crate::map::basic::BasicSection;
         use crate::map::entities::EntityCategory;
         use crate::map::map_file::MapHeader;
         use crate::rules::ini_parser::IniFile;
@@ -3158,10 +3157,11 @@ mod tests {
                 "the tree is not an ore spawner"
             );
 
+            sim.session.set_tiberium_grows_flag_for_test(true);
+            sim.session.set_tiberium_spreads_flag_for_test(true);
             let stats = crate::sim::runtime::initialize_native_tiberium_queues(
                 &mut sim,
                 &BasicSection::default(),
-                &SpecialFlagsSection::default(),
                 &rules,
                 &registry,
                 (8, 8),
@@ -3944,14 +3944,14 @@ mod tests {
         let mut carrier = GameEntity::test_default(carrier_id, "TRAN", "Americans", 0, 0);
         carrier.set_owner_for_test(owner);
         carrier.set_type_ref_for_test(sim.intern("TRAN"));
-        carrier.passenger_role = PassengerRole::transport(cargo);
+        carrier.set_passenger_role_for_test(PassengerRole::transport(cargo));
         sim.substrate.entities.insert(carrier);
         for id in passenger_ids {
             let mut passenger = GameEntity::test_default(id, "E1", "Americans", 0, 0);
             passenger.set_owner_for_test(owner);
             passenger.set_type_ref_for_test(sim.intern("E1"));
             passenger
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .set_inside_transport(carrier_id, false);
             sim.substrate.entities.insert(passenger);
         }
@@ -3970,7 +3970,7 @@ mod tests {
             .entities
             .get(carrier_id)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         assert_eq!(cargo.passengers(), passenger_ids.as_slice());
@@ -3992,7 +3992,7 @@ mod tests {
             .entities
             .get_mut(carrier_id)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap();
         assert!(cargo.disembark(passenger_ids[1]));
@@ -4005,19 +4005,96 @@ mod tests {
             .entities
             .get_mut(passenger_ids[1])
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .clear_carrier_relation();
         assert_ne!(restored.state_hash(), before);
     }
 
     #[test]
+    fn stock_offline_modes_restore_their_distinct_rules_and_reject_unsaved_overrides() {
+        use crate::rules::rule_policy::{AllowWinTagsPolicy, RulePolicy};
+        use crate::sim::scenario_session::{
+            ExecutionTopology, ScenarioDescriptor, ScenarioGameMode,
+        };
+
+        let save = |sim: &Simulation| {
+            GameSnapshot::save_validated_with_presentation(
+                sim,
+                0,
+                0,
+                "offline rules",
+                0,
+                &[],
+                &[],
+                None,
+                None,
+                None,
+                None,
+            )
+        };
+        for (raw_mode, rule_policy) in [
+            (0, RulePolicy::stock_campaign()),
+            (5, RulePolicy::stock_multiplayer()),
+        ] {
+            let sim = Simulation::synthetic(
+                0,
+                &ScenarioDescriptor {
+                    rule_policy,
+                    ..Default::default()
+                },
+            );
+            let bytes = save(&sim).unwrap();
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            restored.restore_after_snapshot_load().unwrap();
+            assert_eq!(
+                restored.session.game_mode(),
+                ScenarioGameMode::from_game_mode(raw_mode),
+            );
+            assert_eq!(
+                restored.session.execution_topology(),
+                ExecutionTopology::LocalOffline
+            );
+            assert_eq!(restored.session.rule_policy(), rule_policy);
+            assert_eq!(restored.state_hash(), sim.state_hash());
+        }
+
+        let custom =
+            RulePolicy::stock_multiplayer().with_allow_win_tags(AllowWinTagsPolicy::RequireClear);
+        let mut sim = Simulation::synthetic(
+            0,
+            &ScenarioDescriptor {
+                rule_policy: custom,
+                ..Default::default()
+            },
+        );
+        assert_eq!(sim.session.rule_policy(), custom);
+        let mode = ScenarioGameMode::from_game_mode(5);
+        let class = crate::skirmish_modes::MpModeClass::Battle;
+        let mut stock = sim.clone();
+        stock.install_session_mode(mode);
+        stock
+            .session
+            .install_multiplayer_house_identity(class, vec![]);
+        sim.install_session_admission(mode, Some(class), custom);
+        sim.session
+            .install_multiplayer_house_identity(class, vec![]);
+        assert_eq!(sim.session.rule_policy(), custom);
+        assert_ne!(sim.state_hash(), stock.state_hash());
+        assert!(save(&sim).unwrap_err().to_string().contains("rule policy"));
+    }
+
+    #[test]
     fn exact_network_mode_timing_and_observer_identity_survive_snapshot() {
         use crate::sim::scenario_session::ScenarioGameMode;
-        for mode in [ScenarioGameMode::Lan, ScenarioGameMode::Wol] {
+        use crate::skirmish_modes::MpModeClass;
+        for (mode, class, cooperative) in [
+            (ScenarioGameMode::Lan, MpModeClass::Battle, false),
+            (ScenarioGameMode::Wol, MpModeClass::Cooperative, true),
+        ] {
             // Native Scenario load reseeds the RNG to zero. Isolate the
             // persisted session fields from that intentional load-time change.
             let mut sim = Simulation::with_seed(0);
-            let owner = sim.intern("Observer");
+            let owner = sim.intern(if cooperative { "Player" } else { "Observer" });
             sim.houses
                 .register(crate::sim::house_state::HouseState::new(
                     owner, 0, None, true, 0, 1,
@@ -4025,10 +4102,9 @@ mod tests {
             sim.session.set_current_house_for_test(Some(owner));
             sim.session.set_game_mode(mode);
             sim.session.install_network_timing(73);
-            sim.session.install_multiplayer_house_identity(
-                crate::skirmish_modes::MpModeClass::Battle,
-                vec![owner],
-            );
+            let observers = if cooperative { vec![] } else { vec![owner] };
+            sim.session
+                .install_multiplayer_house_identity(class, observers.clone());
             let mut header = crate::map::preview::ScenarioStartHeader::default();
             header.read_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[Header]\nNumCoopHumanStartSpots=2\n",
@@ -4038,15 +4114,59 @@ mod tests {
             let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
             restored.restore_after_snapshot_load().unwrap();
             assert_eq!(restored.session.game_mode(), mode);
+            assert!(restored.session.execution_topology().is_lockstep());
             assert_eq!(restored.session.start_header().coop_human_start_spots(), 2);
             assert_eq!(restored.session.network_max_ahead_frames(), Some(73));
-            assert_eq!(restored.session.observer_houses(), [owner]);
+            assert_eq!(restored.session.observer_houses(), observers.as_slice());
+            assert_eq!(restored.session.multiplayer_mode_class(), Some(class));
             assert_eq!(
-                restored.session.multiplayer_mode_class(),
-                Some(crate::skirmish_modes::MpModeClass::Battle)
+                restored.session.rule_policy().shared_allied_victory(),
+                cooperative,
+            );
+            assert_eq!(
+                restored.session.rule_policy().skips_network_score_dialog(),
+                cooperative,
             );
             assert_eq!(restored.state_hash(), sim.state_hash());
         }
+    }
+
+    #[test]
+    fn network_local_view_identity_round_trips_outside_shared_hash() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let mut sim = Simulation::with_seed(0);
+        let owner = sim.intern("SharedPlayer");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 1,
+            ));
+        sim.session.install_current_house(Some(owner));
+        sim.session.set_game_mode(ScenarioGameMode::Lan);
+        sim.session.install_network_timing(73);
+        sim.session
+            .install_network_command_timing(0, std::num::NonZeroU8::MIN, [0, 1]);
+        sim.session
+            .install_multiplayer_house_identity(crate::skirmish_modes::MpModeClass::Battle, vec![]);
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(0));
+        let shared_hash = sim.state_hash();
+
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(1));
+        sim.install_watcher();
+        assert!(sim.observe());
+        assert_eq!(sim.state_hash(), shared_hash);
+
+        let bytes = GameSnapshot::save(&sim, 0, 0, "network-local-view", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        let view = restored.session.local_view_identity();
+        assert_eq!(view.current_house, Some(owner));
+        assert_eq!(view.shared_house_source, Some(1));
+        assert!(view.watching);
+        assert!(view.observer_sidebar);
+        assert_eq!(restored.state_hash(), shared_hash);
     }
 
     #[test]
@@ -4207,25 +4327,25 @@ mod tests {
     #[test]
     fn phase14_crate_authority_roundtrips_visible_and_ghost_slots() {
         let mut sim = Simulation::with_seed(0);
-        *sim.crate_authority.slot_mut_for_test(0) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = crate::sim::crates::CrateSlot {
             start_frame: 17,
             aux: 0x40b5_1800,
             duration: 3375,
             cell_x: 6,
             cell_y: 9,
         };
-        *sim.crate_authority.slot_mut_for_test(1) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(1) = crate::sim::crates::CrateSlot {
             start_frame: -2,
             aux: u32::MAX,
             duration: i32::MIN,
             cell_x: -4,
             cell_y: 12,
         };
-        let expected = sim.crate_authority.clone();
+        let expected = sim.crate_authority().clone();
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
         let loaded = GameSnapshot::load(&bytes).expect("v114 crate authority snapshot");
-        assert_eq!(loaded.sim.crate_authority, expected);
+        assert_eq!(loaded.sim.crate_authority(), &expected);
     }
 
     #[test]
@@ -5865,9 +5985,10 @@ mod tests {
             45
         );
 
-        assert_eq!(restored_house.pending_outcome(189, true), None);
+        let outcome_policy = restored.session().rule_policy();
+        assert_eq!(restored_house.pending_outcome(189, outcome_policy), None);
         assert_eq!(
-            restored_house.pending_outcome(190, true),
+            restored_house.pending_outcome(190, outcome_policy),
             Some(HouseOutcomeKind::Victory)
         );
     }

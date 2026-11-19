@@ -38,7 +38,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         building.health.current(),
         rules.object("CANEWY06").unwrap().strength
     );
-    assert!(building.passenger_role.occupants().is_empty());
+    assert!(building.passenger_role().occupants().is_empty());
     let pose = crate::app::presentation::render_pose::RenderPose::read(
         building,
         sim.session().binary_frame(),
@@ -106,8 +106,11 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         .load_file_from_mix(crate::render::building_zshape::BUILDNGZ_FILE)
         .expect("native Building z-shape source");
     let zshape = crate::assets::shp_file::ShpFile::from_bytes(&zfile.bytes).unwrap();
-    let (width, height, texels) =
-        crate::render::building_zshape::decode_zshape_canvas(&zshape).unwrap();
+    let crate::render::building_zshape::ZShapeFrame {
+        size: [width, height],
+        texels,
+        ..
+    } = crate::render::building_zshape::decode_zshape_frame(&zfile.bytes, &zshape).unwrap();
     let zview = crate::render::batch::create_unorm_texture_view_on_device(
         &gpu.device,
         &gpu.queue,
@@ -148,7 +151,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             ignore_visibility: true,
             lighting: &lighting,
             house_colors: &colors,
-            building_zshape: true,
+            building_zshape: Some((0, 0)),
         },
         &mut parents,
         &order,

@@ -135,14 +135,7 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
     ));
     sim.session.lighting_mut().set_target_ambient_for_test(80);
     let frame = sim
-        .advance_app_frame(
-            &[],
-            &rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
+        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
         .unwrap();
     assert!(frame.tick.frame_committed);
     let palette: Vec<_> = frame

@@ -170,8 +170,9 @@ InfantryElectrocuted=         ; Find only; unset: ELECTRO, else AnimTypes[1]
 - `CanMakeStuffUp` (`100677B0`, hook `0x687C16`; `100680F0`, hook `0x55AFB3`): Ares'
   randomized VeteranRatio/BuildSpeed/BuildupTime write the immutable Rules,
   and its 90-frame infantry panic is not ported.
-- `Message.SilosNeeded` (`10024AE0`, hook `0x4F8C23`): the silo nag is
-  unreachable while VERA has no Ares tiberium storage (hook `0x4F9610`).
+- `Message.SilosNeeded` (`10024AE0`, hook `0x4F8C23`) is read but not
+  printed: the silo nag's EVA line plays (`sim/house_eva.rs`), its message
+  line needs a client message event ([ares-tiberium.md](ares-tiberium.md)).
 - `UnitsUnsellable`: the unit sale on a depot
   ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 - The `HunterSeeker*` defaults: [ares-hunter-seeker.md](ares-hunter-seeker.md).

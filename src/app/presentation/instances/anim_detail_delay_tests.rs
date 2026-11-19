@@ -36,6 +36,7 @@ fn render(
             tactical: [0, 0, 160, 120],
             zoom: 1.,
             axis: crate::render::batch::DepthAxis::NONE,
+            z_seed: crate::render::native_z::DEFAULT_Z,
             atlas: Some(atlas),
             detail,
             detail_level: 2,

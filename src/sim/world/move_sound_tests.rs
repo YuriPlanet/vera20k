@@ -482,7 +482,6 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
         .advance_app_frame(
             &[],
             &rules,
-            None,
             33,
             TickLane::Ordinary,
             super::FrameEffects::for_sound(&phase),
@@ -516,7 +515,6 @@ fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit(
         .advance_app_frame(
             &[],
             &rules,
-            None,
             33,
             TickLane::Ordinary,
             super::FrameEffects::for_sound(&phase),
@@ -570,7 +568,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
                 ry,
                 0,
                 &runtime.resources.rules,
-                &runtime.resources.overlay_registry,
+                runtime.resources.rules.overlay_registry(),
             )
         })
         .expect("ordinary SQD placement on physical retail water");

@@ -16,6 +16,7 @@
 //! commits, so the draw stream depends solely on the pass/count draw, the
 //! per-building type draw, and the anchor draws.
 
+use crate::map::playfield::PlayfieldBounds;
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
@@ -25,7 +26,7 @@ use crate::map::rmg::{RmgConstructionPhase, RmgConstructionTrace};
 
 use super::regions::Regions;
 use super::shore::TileBlocks;
-use super::zones::{LAND_ROCK, diamond_frame_contains, recalc_land};
+use super::zones::{LAND_ROCK, recalc_land};
 
 /// Placement attempts per building.
 const MAX_ATTEMPTS: i32 = 100;
@@ -45,9 +46,9 @@ pub struct TechType {
 #[derive(Debug, Clone, Copy)]
 pub struct TechArgs {
     pub map_type: i32,
-    pub map_w: i32,
-    /// Playfield local rect `{x, y, w, h}` — generated maps use `(2, 5, w, h)`.
-    pub local_rect: [i32; 4],
+    /// The playfield: the padded `Size` width and the LocalSize, which
+    /// generated maps set to `(2, 5, w, h)`.
+    pub playfield: PlayfieldBounds,
     /// Scratch/grid stride: the whole-map anchor draw is `uniform(0, S²−1)`.
     pub stride: i32,
     /// Low byte of `[General] CliffBackImpassability=`.
@@ -319,14 +320,10 @@ fn foundation_cell_ok(
     {
         return false;
     }
-    if !diamond_frame_contains(
-        args.map_w,
-        args.local_rect,
-        x,
-        y,
-        cell.level,
-        cell.slope != 0,
-    ) {
+    if !args
+        .playfield
+        .contains_height_aware_packed(x, y, cell.level as i8, cell.slope)
+    {
         return false;
     }
     // Protected start-clearing flag (scratch +0x45).
@@ -411,8 +408,7 @@ mod tests {
             scratch,
             args: TechArgs {
                 map_type,
-                map_w,
-                local_rect: [2, 5, gen_w, gen_h],
+                playfield: PlayfieldBounds::from_normalized_local_size(map_w, 2, 5, gen_w, gen_h),
                 stride,
                 cliff_back_impassability: 2,
             },
@@ -551,8 +547,13 @@ mod tests {
         }
         let args = TechArgs {
             map_type: int(&input["map_type"]),
-            map_w: 16,
-            local_rect: [2, 5, int(&input["gen"][0]), int(&input["gen"][1])],
+            playfield: PlayfieldBounds::from_normalized_local_size(
+                16,
+                2,
+                5,
+                int(&input["gen"][0]),
+                int(&input["gen"][1]),
+            ),
             stride: 33,
             cliff_back_impassability: 2,
         };

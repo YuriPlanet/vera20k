@@ -151,8 +151,12 @@ fn defeat_local_viewer(
     sim.session.set_binary_frame_for_test(1);
     for (owner, buildings, units) in [(defeated, 0, 0), (alive, 0, 1), (gap_owner, 2, 1)] {
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.tracking_mut().set_buildings_for_test(buildings);
-        house.tracking_mut().set_active_units_for_test(units);
+        house
+            .tracking_mut_for_test()
+            .set_buildings_for_test(buildings);
+        house
+            .tracking_mut_for_test()
+            .set_active_units_for_test(units);
     }
     sim.check_defeat(Some(rules), None);
     assert!(sim.houses[&defeated].is_defeated());

@@ -1,5 +1,6 @@
 //! Trigger controls through the shared House activation and ordinary team owners.
 use super::*;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::house_state::HouseAiActivationLatches;
 use crate::util::save_codec;
 
@@ -29,7 +30,8 @@ fn team_lookup_fixed_ai_uses_final_map_names_and_dependencies() {
          [Actions]\nT=1,7,1,LATE,0,0,0,0,A\n",
     ))
     .unwrap();
-    let registry = TeamAiIniRegistry::from_sources(&fixed, &map.ini, true);
+    let registry =
+        TeamAiIniRegistry::from_sources(&fixed, &map.ini, BootstrapRuleProfile::Multiplayer);
     for prepared in [false, true] {
         let mut sim = Simulation::new();
         sim.intern_rule_type_ids(&rules);
@@ -622,7 +624,8 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
     let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, false);
+    let teams =
+        TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, BootstrapRuleProfile::Campaign);
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(31);

@@ -1096,11 +1096,10 @@ pub enum DeliveryOwner {
 }
 
 /// UnitDelivery settings. No setting changes stock superweapon behavior.
+/// Its delay is the common `SW.Deferment` read (`AresSuperWeaponLaunch`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct UnitDeliveryRules {
     pub types: Vec<DeliveryType>,
-    /// Effective frame delay; the Ares negative sentinel is normalized to 20.
-    pub deferment: i32,
     pub owner: DeliveryOwner,
     pub base_normal: bool,
     pub activation_sound: Option<String>,
@@ -1110,7 +1109,6 @@ impl Default for UnitDeliveryRules {
     fn default() -> Self {
         Self {
             types: Vec::new(),
-            deferment: 20,
             owner: DeliveryOwner::Invoker,
             base_normal: true,
             activation_sound: None,
@@ -1266,7 +1264,9 @@ pub(crate) struct AresSuperWeaponLaunch {
     #[serde(default)]
     mutate: AresMutateRules,
     /// `SW.Deferment` (Nullable<int> +0x254), read by every type; the
-    /// Dominator's state machine waits it out (Activate 100707C0).
+    /// Dominator's state machine waits it out (Activate 100707C0), and
+    /// UnitDelivery's (Activate 10075920) waits 20 frames when it is unset
+    /// or negative.
     #[serde(default)]
     deferment: Option<i32>,
     /// SW_PsychicDominator's fields (Initialize 10070990, LoadFromINI 10070A40).

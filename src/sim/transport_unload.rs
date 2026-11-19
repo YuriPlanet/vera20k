@@ -521,7 +521,7 @@ fn eject_head_passenger(
             // queues the passenger's Move directly, before class
             // destination73DC06; it does not execute a player event.
             if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
-                passenger.passenger_role.clear_transporter();
+                passenger.passenger_role_mut().clear_transporter();
             }
             sim.queue_order_mission(pax_id, MissionType::Move, rules);
             // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
@@ -1086,7 +1086,7 @@ pub(crate) fn unit_mission_unload(
                 }
                 return WAIT_MOVING_FRAMES;
             }
-            let cargo = entity.passenger_role.passenger_count();
+            let cargo = entity.passenger_role().passenger_count();
             let pick = pick_exit_octant(sim, entity);
             if let (true, Some((_exit_cell, face_octant))) = (cargo != 0, pick) {
                 // `FUN_0070DC60` → `Type+0x808 TurretCount > 0` (`0x00717880`):
@@ -1146,7 +1146,8 @@ pub(crate) fn unit_mission_unload(
             unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         STATE_EJECT => {
-            if entity.passenger_role.passenger_count() > entity.transport_unload_keep_count.count()
+            if entity.passenger_role().passenger_count()
+                > entity.transport_unload_keep_count.count()
             {
                 let _ = eject_head_passenger(sim, rules, id, overlay_registry, effects);
             } else if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -1291,7 +1292,7 @@ pub(crate) fn mission_unload(
             unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         AIR_STATE_EJECT => {
-            if entity.passenger_role.passenger_count() == 0 {
+            if entity.passenger_role().passenger_count() == 0 {
                 crate::sim::aircraft::enter_idle_mode_for(
                     sim,
                     id,
@@ -1316,7 +1317,7 @@ pub(crate) fn mission_unload(
                     // refusal arm re-adds the passenger and enters idle mode,
                     // as VERA's escape below does in every game.
                     if rules.ares_form() {
-                        pax.passenger_role.clear_transporter();
+                        pax.passenger_role_mut().clear_transporter();
                     }
                 }
                 // `0x0041556A..0x00415587`: a passenger that kept a team joins
@@ -1338,7 +1339,7 @@ pub(crate) fn mission_unload(
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|entity| entity.passenger_role.passenger_count() == 0);
+                    .is_some_and(|entity| entity.passenger_role().passenger_count() == 0);
                 // `ejected` empty: VERA's bounded escape from a refused
                 // ejection (native loses the passenger and keeps ejecting the
                 // rest; see [`eject_from_aircraft`]). The hold keeps the

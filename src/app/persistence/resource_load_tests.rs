@@ -203,7 +203,7 @@ fn bound_saved_world(
         theater.extension,
         &map.header.theater,
     );
-    let overlay_registry = rules.overlay_registry().clone();
+    let overlay_registry = rules.overlay_registry();
     let mut simulation = super::super::tests::load_fixture_simulation(false);
     let terrain = {
         let main_rng = simulation.main_rng().draws();
@@ -219,7 +219,7 @@ fn bound_saved_world(
             Some(&theater),
             Some(assets),
             Some(&rules.terrain_rules),
-            Some(&overlay_registry),
+            Some(overlay_registry),
             Some(&rules.terrain_object_types),
             true,
             rules.general.cliff_back_impassability,
@@ -227,14 +227,10 @@ fn bound_saved_world(
             &mut selector,
         )
     };
-    let roots = crate::map::resolved_terrain::scheduler_anim_roots(
-        &rules,
-        &overlay_registry,
-        terrain.tile_animations(),
-    );
+    let roots =
+        crate::map::resolved_terrain::scheduler_anim_roots(&rules, terrain.tile_animations());
     init_helpers::bind_rules_asset_closure(
         &mut rules,
-        &overlay_registry,
         &roots,
         &[],
         assets,
@@ -321,7 +317,6 @@ fn bound_saved_world(
             resources: SimResources {
                 rules,
                 terrain_template: Some(terrain),
-                overlay_registry,
             }
             .into(),
         },
@@ -439,6 +434,7 @@ fn snapshot_bytes_with_lighting(
         Some(&view),
         Some(&resources),
     )
+    .unwrap()
 }
 
 fn lookup(assets: &AssetManager, name: &str) -> Option<(String, i32, Vec<u8>)> {
@@ -710,11 +706,19 @@ fn incoming_save(theater: &str, extra_rules: &str) -> Option<IncomingSave> {
         .simulation
         .install_resolved_terrain_for_new_map(template.clone());
     assert_eq!(
-        incoming.resources.overlay_registry.id_for_name("CRATE"),
+        incoming
+            .resources
+            .rules
+            .overlay_registry()
+            .id_for_name("CRATE"),
         Some(179)
     );
     assert_eq!(
-        incoming.resources.overlay_registry.id_for_name("WCRATE"),
+        incoming
+            .resources
+            .rules
+            .overlay_registry()
+            .id_for_name("WCRATE"),
         Some(242)
     );
     let overlays = incoming
@@ -739,7 +743,7 @@ fn incoming_save(theater: &str, extra_rules: &str) -> Option<IncomingSave> {
     crate::sim::overlay_grid::recalc_overlay_passability(
         overlays,
         &mut terrain,
-        &incoming.resources.overlay_registry,
+        incoming.resources.rules.overlay_registry(),
         8,
         8,
     );
@@ -1382,7 +1386,7 @@ fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() 
             &[],
             Some(&resources.rules),
             None,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
             33,
         );
     }
@@ -1408,7 +1412,7 @@ fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner()
     // headless retail regression covers the complete fresh Scenario prefix.
     *save.incoming.simulation.native_unique_ids_mut_for_test() =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
-    let overlays = save.incoming.resources.overlay_registry.clone();
+    let overlays = save.incoming.resources.rules.retain_overlay_registry();
     let rng = save.incoming.simulation.rng_state();
     construct_terrain_objects_with_rules(
         &mut save.incoming.simulation,
@@ -1598,13 +1602,15 @@ fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
     let wall = save
         .incoming
         .resources
-        .overlay_registry
+        .rules
+        .overlay_registry()
         .id_for_name("GAWALL")
         .unwrap();
     assert_eq!(
         save.incoming
             .resources
-            .overlay_registry
+            .rules
+            .overlay_registry()
             .flags(wall)
             .unwrap()
             .damage_levels,
@@ -1669,7 +1675,8 @@ fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
     assert_eq!(
         prepared
             .resources
-            .overlay_registry
+            .rules
+            .overlay_registry()
             .flags(wall)
             .unwrap()
             .damage_levels,
@@ -1677,7 +1684,7 @@ fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
     );
     let (filename, _) = crate::rules::effect_asset_catalog::load_overlay_shape(
         &save.assets,
-        &prepared.resources.overlay_registry,
+        prepared.resources.rules.overlay_registry(),
         "GAWALL",
         "SNO",
         "SNOW",
@@ -1735,7 +1742,7 @@ fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
     );
     let (filename, _) = crate::rules::effect_asset_catalog::load_overlay_shape(
         &save.assets,
-        &again.resources.overlay_registry,
+        again.resources.rules.overlay_registry(),
         "GAWALL",
         "SNO",
         "SNOW",

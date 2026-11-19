@@ -169,7 +169,7 @@ pub(super) struct Session {
     pub player_id: String,
     pub nickname: String,
     pub token: String,
-    // The operator's welcome, when one is set; the game's own otherwise.
+    // The operator's welcome, when one is set; the game has none of its own.
     #[serde(default)]
     pub motd: Option<String>,
     /// An account's password sign-in with `remember`: this computer's
@@ -396,8 +396,8 @@ mod tests {
     use crate::map::source::TransferResource;
     use crate::skirmish_launch::{
         AiDifficulty, HostRules, LaunchCountry, LaunchHumanRole, LaunchStartPosition, LaunchTeam,
-        PreFillHouseRoster, ROOM_TEAMS, SkirmishAiSlot, SkirmishHumanSlot, SkirmishLaunchMode,
-        SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
+        ROOM_TEAMS, SkirmishAiSlot, SkirmishHumanSlot, SkirmishLaunchMode, SkirmishLaunchOptions,
+        SkirmishLaunchSession, SkirmishLocalSlot,
     };
 
     fn human(row: u8, team: LaunchTeam) -> SkirmishHumanSlot {
@@ -438,17 +438,14 @@ mod tests {
         opponents: Vec<SkirmishAiSlot>,
         options: SkirmishLaunchOptions,
     ) -> Options {
-        let mut launch = SkirmishLaunchSession {
-            mode: SkirmishLaunchMode::stock(mode).unwrap(),
-            selected_map_file: Some(map.display_name.clone()),
+        let launch = SkirmishLaunchSession::from_rows(
+            SkirmishLaunchMode::stock(mode).unwrap(),
+            Some(map.display_name.clone()),
             humans,
-            local_player_index: 0,
-            ai_player_count: opponents.len() as i32,
+            0,
             opponents,
-            pre_fill_house_roster: PreFillHouseRoster::new(Vec::new(), Vec::new()),
             options,
-        };
-        launch.rebuild_house_roster();
+        );
         Options {
             launch,
             map_metadata: map,

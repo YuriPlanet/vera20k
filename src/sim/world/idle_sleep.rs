@@ -26,8 +26,8 @@
 //! ends with (the sound prefix, pending overlay Recalcs) still runs at its
 //! slot. The state hash and the save form read a sleeper as settled.
 //!
-//! It marks plain buildings (no weapon, factory, super weapon, occupants or
-//! sound of their own, at full health, on Guard) and standing infantry (on
+//! It marks plain buildings (no weapon, factory, super weapon or sound of
+//! their own, empty, at full health, on Guard) and standing infantry (on
 //! Guard or Area Guard, at full health, standing ready with no target,
 //! order or fear). Everything else stays awake. A game where an extension
 //! plays marks nothing ([`Simulation::extension_steps_unsorted`]): its
@@ -314,7 +314,9 @@ impl Simulation {
             && object.super_weapon2.is_none()
             && !object.is_gattling
             && !object.has_turret
-            && !object.can_be_occupied
+            // A garrisonable building may sleep while it stands empty (the
+            // state test below): an occupant's admission and ejection write
+            // it, which wakes it. City maps are mostly such houses.
             && object.ambient_sound.is_none()
             && object.working_sound.is_none()
             && object.not_working_sound.is_none()
@@ -377,7 +379,7 @@ impl Simulation {
             && entity.slave_manager.is_none()
             && entity.cloak.is_none()
             && entity.rocking.is_none()
-            && entity.passenger_role.occupants().is_empty()
+            && entity.passenger_role().occupants().is_empty()
             && !entity.berserk.is_active()
             && !entity.deactivated.is_offline()
             && entity.building.tesla_charge.chargers().is_empty()

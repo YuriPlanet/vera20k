@@ -12,6 +12,7 @@ oracle families index their own fixtures and producers.
 | Give a new worktree its ignored `ini/` and `config.toml`, or a clone its `config.toml`; report what the game, retail tests and oracles still need | `python -m tools.prepare_checkout` |
 | Run all Python tool and source-skill tests | `python -m tools.run_tests` (below) |
 | Play a client built on the relay protocol crate of every build the lobby admits against a relay change (CI only) | `.github/workflows/relay-compat.yml`, `tools/relay_compat.py` |
+| Play a launcher's (`-SPAWN`) match on loopback: direct, through a local relay with a stand-in lobby, or with browser players | [spawn runs](spawn/README.md), `tools/spawn/run.sh` |
 | Inspect process audio definitions, sample sources and retention evidence | [Process audio catalog owner](audio_catalog_owner.md), `asset sound` |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
 | Avoid shell traps that make a failed run look clean | [shell pitfalls](#shell-pitfalls) |

@@ -31,13 +31,11 @@ fn scene(rules: &RuleSet, selected_target: bool) -> (Simulation, u64, u64) {
     let enemy = sim
         .spawn_object("MTNK", "Russians", 20, 10, 0, rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(miner)
+    sim.entity_mut_for_test(miner)
         .unwrap()
         .selection
         .set_selected_for_test(true);
-    sim.entities_mut_for_test()
-        .get_mut(enemy)
+    sim.entity_mut_for_test(enemy)
         .unwrap()
         .selection
         .set_selected_for_test(selected_target);

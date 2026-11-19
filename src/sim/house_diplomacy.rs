@@ -45,6 +45,9 @@
 //! - The radar redraw (`0x004F42F0`) is presentation; the app re-reads the
 //!   graph and fog each frame.
 //! - IsParanoid (`+0x24A`, `0x005016D5`) has no reader and is not stored.
+//! - Native player takeover on network EXIT also calls Computer_Paranoid
+//!   (`0x0064CA0D`, `0x0050A7B4`). The current EXIT route has no such call.
+//!   On a takeover, the remaining computer alliances can therefore differ.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, OnceLock};
@@ -85,8 +88,7 @@ pub(crate) enum HouseAllianceAdmission<'a> {
 /// against the graph when it is built and at each answer it gives. Never
 /// saved, hashed or compared.
 ///
-/// A clone shares the graph and the matrix until a write copies the one it
-/// changes, so the wave damage pass's snapshot copies neither.
+/// Clones share both the graph and its matrix until a write changes one.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct HouseAlliances {
@@ -426,11 +428,9 @@ impl Simulation {
         // 0x00501640..0x00501662: the mode's vt+4, else Rules AlliesAllowed.
         // Only Cooperative's vt+4 (0x005C4EE0) answers true, so its
         // computers turn paranoid although MPCoopMD sets AlliesAllowed=no.
-        let mode_permits = self
-            .session
-            .multiplayer_mode_class()
-            .is_some_and(|class| class.policy().permits_all_allied);
-        if !mode_permits && !rules.general.allies_allowed {
+        if !self.session.rule_policy().paranoid_ignores_allies_allowed()
+            && !rules.general.allies_allowed
+        {
             return;
         }
         // VERA `[General] AINearestEnemy=` (off by default): the computers
@@ -631,13 +631,12 @@ impl Simulation {
             }
             // 0x004F9C37..0x004F9C7A: a human house allying with a house type
             // that is not MultiplayPassive turns the computers paranoid.
-            let game_mode_nonzero = self.session.game_mode_nonzero();
-            if game_mode_nonzero
+            if self.session.rule_policy().permits_paranoid_reactions()
                 && rules.general.paranoid
                 && self
                     .houses
                     .get(&owner)
-                    .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero))
+                    .is_some_and(|house| house.is_human())
                 && self
                     .houses
                     .get(&other)

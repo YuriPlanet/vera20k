@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
@@ -70,7 +71,8 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     let member = sim
         .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
         .unwrap();
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, BootstrapRuleProfile::Campaign);
     sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Russians").unwrap();
     let ty = sim.interner.get("TREE-TEAM").unwrap();
@@ -109,7 +111,7 @@ fn script1_tree_identity_survives_reload_then_expiry_advances_the_script() {
     };
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Object(tree))
@@ -170,7 +172,7 @@ fn coordinate_attack_resolves_a_cell_focus_to_its_terrain_object() {
     };
     let sim = &mut runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     sim.team_assign_mission_target(
         team,
         Some(TeamTarget::Cell { x: 25, y: 20 }),
@@ -723,8 +725,12 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
         i64::from(rules.general.patrol_scan_frames()),
         row["ticks"].as_i64().unwrap()
     );
-    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-        .unwrap();
+    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        BootstrapRuleProfile::Campaign,
+    )
+    .unwrap();
     assert_eq!(
         teams
             .scripts
@@ -900,9 +906,12 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
         )
         .unwrap()
         .into_parts();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        BootstrapRuleProfile::Campaign,
+    )
+    .unwrap();
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1357,9 +1366,12 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
         )
         .unwrap()
         .into_parts();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        BootstrapRuleProfile::Campaign,
+    )
+    .unwrap();
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1503,7 +1515,11 @@ fn the_retail_scatter_script_runs_ported_actions() {
         return;
     };
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        BootstrapRuleProfile::Multiplayer,
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1820,7 +1836,11 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
         assert_eq!(rules.object(name).unwrap().base_plan_type_index, index);
     }
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        BootstrapRuleProfile::Multiplayer,
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);

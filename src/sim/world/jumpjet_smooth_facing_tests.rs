@@ -93,7 +93,7 @@ fn largest_turn_in_a_frame(patch: &str) -> Option<i32> {
         &|sim| {
             sim.entities()
                 .get(gi)
-                .is_some_and(|gi| gi.passenger_role.is_inside_transport())
+                .is_some_and(|gi| gi.passenger_role().is_inside_transport())
         },
     );
     run(&mut sim, move_to(8, 18), &landed);
@@ -102,7 +102,7 @@ fn largest_turn_in_a_frame(patch: &str) -> Option<i32> {
         Command::UnloadPassengers { transport_id: hawk },
         &|sim| {
             let entity = sim.entities().get(hawk).unwrap();
-            entity.passenger_role.passenger_count() == 0
+            entity.passenger_role().passenger_count() == 0
                 && entity.mission.current().known() == Some(MissionType::Guard)
         },
     );

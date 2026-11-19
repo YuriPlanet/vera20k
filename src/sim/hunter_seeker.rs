@@ -476,6 +476,7 @@ impl crate::sim::world::Simulation {
                 flags: 0,
             });
         if let Some(warhead_type) = self.interner.warhead_type(warhead, rules) {
+            // 1004DDB2..1004DDBD: DamageArea(coord, damage, hunter, warhead, 1, NULL).
             let _ = crate::sim::combat::world_receiver::apply_area_damage(
                 self,
                 rules,

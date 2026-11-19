@@ -131,7 +131,7 @@ pub(crate) fn ai_queue_hunt(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     };
     let hunts = deploys_into_build_const(sim, entity, rules)
         && owner_builds_its_own_base(sim, entity)
-        && sim.session.game_mode_nonzero()
+        && sim.session.rule_policy().allows_ai_mcv_deploy_hunt()
         && sim
             .houses
             .get(&entity.owner())
@@ -444,7 +444,7 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64, rules: &Rule
         } else {
             let hunt = sim.houses.get(&e.owner()).is_some_and(|house| {
                 !house.is_controlled_by_human(sim.session.game_mode_nonzero())
-            }) && sim.session.game_mode_nonzero();
+            }) && sim.session.rule_policy().allows_ai_mcv_deploy_hunt();
             queue(
                 sim,
                 id,

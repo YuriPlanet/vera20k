@@ -406,6 +406,12 @@ impl App {
             }
             Ok(super::initialize::InitializationStep::Ready(state, events)) => {
                 let mut state = *state;
+                // Startup has built every renderer and its shaders: a start
+                // on DirectX 12 works here (`persistence::directx12_start`).
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                if let Some(config) = &state.platform.game_config {
+                    crate::app::persistence::directx12_start::finish(config.paths.settings_dir());
+                }
                 // Resizes may have arrived while startup owned the renderer.
                 Self::follow_window_size(&mut state);
                 if let Some(request) = self.replay_request.take() {
@@ -1183,6 +1189,7 @@ impl ApplicationHandler for App {
                 // `WM_SETCURSOR` with it), so VERA stops drawing mouse.shp rather
                 // than fighting it for the same pixel.
                 state.platform.pointer_in_client = false;
+                crate::app::input::tooltips::on_button_event(state);
                 state.platform.window.request_redraw();
             }
             WindowEvent::ModifiersChanged(_) => {

@@ -235,6 +235,8 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
     }
     // Native mode+64 follows the resolved options/name publication, before
     // preview disposal and GO. Only Cooperative consumes Scenario RNG here.
+    // RESIDUAL: its C1 (0x005C2710) is not sent; nothing reads the later
+    // rounds, so guests keep their own.
     // C2 then calls mode+0x24 (0x790B62), a no-op except MPCooperative's
     // 5C1CB0 flag for its later 5C2680 save step: not ported.
     let launch = state
@@ -251,17 +253,6 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .iter()
         .map(|human| human.name.clone())
         .collect();
-    if launch.mode.class.uses_cooperative_setup() {
-        let rounds = state
-            .frontend
-            .multiplayer_shell_runtime
-            .cooperative_round_assignments()
-            .to_vec();
-        queue(
-            state,
-            NetworkSetupRequest::PublishCooperativeAssignments(rounds),
-        );
-    }
     let Some(max_ahead_frames) = max_ahead_frames else {
         if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
             protocol.submit_start(users);
@@ -280,9 +271,6 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         queue_lan_go(protocol, launch, agreed_seed, max_ahead_frames);
-        // Native's offer blocks the dialog until it ends, so Start cannot
-        // follow a pending one; GO drops it.
-        protocol.drop_preview_offer();
     }
     state.frontend.skirmish_preview_texture = None;
     Ok(())
@@ -362,8 +350,9 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
 /// and players sharing a House count once. VERA's own room (`watch_ai`)
 /// also starts with everyone watching while two or more AI play.
 fn has_minimum_players(launch: &SkirmishLaunchSession, watch_ai: bool) -> bool {
-    let houses = (0..launch.humans.len())
-        .filter(|&index| !launch.humans[index].is_observer() && launch.house_leader(index) == index)
+    let houses = launch
+        .humans_with_house_leaders()
+        .filter(|(index, human, leader)| index == leader && !human.is_observer())
         .count();
     (houses >= 1 || watch_ai) && houses + launch.opponents.len() >= 2
 }

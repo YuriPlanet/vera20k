@@ -6,19 +6,13 @@ use super::*;
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::snapshot::GameSnapshot;
 
-fn frame(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRegistry) {
-    sim.advance_app_frame(
-        &[],
-        rules,
-        Some(overlays),
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+fn frame(sim: &mut Simulation, rules: &RuleSet) {
+    sim.advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
 }
 
 fn reload(sim: &Simulation, rules: &RuleSet, overlays: &OverlayTypeRegistry) -> Simulation {
@@ -70,7 +64,9 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
     )
     .unwrap();
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
-    let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let teams =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, BootstrapRuleProfile::Multiplayer)
+            .unwrap();
     for survivor in [false, true] {
         let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4CD510);
         sim.intern_rule_type_ids(rules);
@@ -94,7 +90,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
         sim.classify_map_triggers(rules);
         sim.session.publish_started();
         for _ in 0..32 {
-            frame(&mut sim, rules, &overlays);
+            frame(&mut sim, rules);
             if sim
                 .entities()
                 .values()
@@ -119,7 +115,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
             .entities()
             .get(plane)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers()
@@ -150,7 +146,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
         let loaded = reload(&sim, rules, &overlays);
         for mut world in [sim, loaded] {
             for _ in 0..600 {
-                frame(&mut world, rules, &overlays);
+                frame(&mut world, rules);
                 if !world.entities().contains(plane) {
                     break;
                 }
@@ -172,7 +168,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
                 "E1 and the aircraft do not qualify"
             );
             for _ in 0..9 {
-                frame(&mut world, rules, &overlays);
+                frame(&mut world, rules);
             }
             assert_eq!(
                 world.global_variables()[7],

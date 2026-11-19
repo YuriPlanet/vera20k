@@ -457,37 +457,6 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
     })
 }
 
-///642C20 transfer callers load only PROGBARM; their shell backdrop is
-/// composed by the shell owner. Reuse this atlas/decoder/palette owner without
-/// requiring an unrelated country's loading background to exist.
-pub fn build_transfer_progress_atlas(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    assets: &AssetManager,
-    progress_ramp: &[Color; 16],
-) -> Option<LoadingScreenAtlas> {
-    let base = load_named_ui_palette(assets, "TEMPERAT.PAL")?;
-    let palette = progress_palette_with_player_ramp(&base, progress_ramp);
-    let entries = [
-        mandatory_shp(assets, "PROGBARM.SHP", &palette, 0, "TEMPERAT.PAL")?,
-        solid_texel_entry(),
-    ];
-    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Loading", &entries)?;
-    Some(LoadingScreenAtlas {
-        texture,
-        background: None,
-        progress_frame0: packed[0],
-        participants: Vec::new(),
-        title_bar: None,
-        progress_background: None,
-        preview: None,
-        mmpb_markers: BTreeMap::new(),
-        side_icon: None,
-        insignia_measure_size: None,
-        solid_texel: packed[1],
-    })
-}
-
 /// Pack the native campaign art and frame-0 progress source in the existing
 /// loading atlas. Register the LOADMD/LOAD archives through AssetManager first.
 ///

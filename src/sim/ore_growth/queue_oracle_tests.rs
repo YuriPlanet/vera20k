@@ -960,7 +960,7 @@ fn compare_authored_natural_phases(
     let sim = scene.sim();
     let hash = sim.state_hash();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let mut actual = Simulation::with_seed(0);
     actual.ore_growth_state = sim.ore_growth_state.clone();
     actual.overlay_grid = sim.overlay_grid.clone();
@@ -1251,7 +1251,8 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         let variants = scene
             .runtime
             .resources
-            .overlay_registry
+            .rules
+            .overlay_registry()
             .flat_tiberium_variant_ids(ty)
             .unwrap();
         assert_eq!(json!(variants[0]), expected["base_overlay"]);
@@ -1259,7 +1260,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     }
     for expected in native["inputs"]["flat_overlay_types"].as_array().unwrap() {
         let id = expected["index"].as_u64().unwrap() as u8;
-        let registry = &scene.runtime.resources.overlay_registry;
+        let registry = scene.runtime.resources.rules.overlay_registry();
         assert_eq!(json!(registry.name(id).unwrap()), expected["name"]);
         assert_eq!(
             json!(registry.flags(id).unwrap().cell_anim.is_none()),
@@ -1348,7 +1349,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         );
         let value = crate::sim::tiberium::tiberium_cell_view(
             scene.sim().overlay_grid.as_ref().unwrap(),
-            &scene.runtime.resources.overlay_registry,
+            scene.runtime.resources.rules.overlay_registry(),
             &rules.tiberium_types,
             (rx, ry),
         )
@@ -1415,7 +1416,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     assert!(!draws.is_empty());
 
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let grid = scene.sim().overlay_grid.as_ref().unwrap();
     let terrain = scene.sim().resolved_terrain.as_ref().unwrap();
     // The native initialization packet's first source is the first growth

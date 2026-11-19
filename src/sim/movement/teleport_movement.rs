@@ -1510,8 +1510,9 @@ mod tests {
                 .lifecycle
                 .set_in_limbo_for_test(input["in_limbo"].as_bool().unwrap());
             if input["in_open_transport"].as_bool().unwrap() {
-                actor.passenger_role =
-                    crate::sim::passenger::PassengerRole::inside_for_test(3, true);
+                actor.set_passenger_role_for_test(
+                    crate::sim::passenger::PassengerRole::inside_for_test(3, true),
+                );
             }
             // Like the native control, a non-null TarCom avoids the separate
             // scan/idle callback path. Production boarding tests cover it.

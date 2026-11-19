@@ -209,7 +209,7 @@ impl Simulation {
                 rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                 registry,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                crate::sim::world::FrameEffects::default().with_overlay_registry(registry),
                 None,
             )
             .expect("headless House wait completes immediately");
@@ -224,6 +224,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
     ) -> Vec<crate::sim::command::CommandEnvelope> {
         let mut generated = Vec::new();
         // House4F927C/4F92ED clears1FC before either pass; a status
@@ -250,7 +251,7 @@ impl Simulation {
                     self, rules, owner,
                 ));
             }
-            crate::sim::superweapon::update_owned_supers(self, rules, owner);
+            crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
             crate::sim::superweapon::grant_provided_supers(self, rules, owner);
         }
         generated
@@ -285,6 +286,7 @@ impl Simulation {
         let defeat_gate = defeat_pass
             && self.session.game_mode_nonzero()
             && (self.session.binary_frame() as i32) > 0;
+        let outcome_policy = self.session.rule_policy();
         // Logic55B68D reloads the live House count after each complete body.
         // A House's power/radar and activation must precede its own teams,
         // EVA, defeat and production; no global half-body sweeps intervene.
@@ -301,10 +303,7 @@ impl Simulation {
                 self.assess_house_derived_state(owner, rules, frame_effects);
                 self.update_house_anger_and_activation(owner, rules);
                 self.houses.get(&owner).and_then(|house| {
-                    house.pending_outcome(
-                        self.session.binary_frame() as i32,
-                        self.session.game_mode_nonzero(),
-                    )
+                    house.pending_outcome(self.session.binary_frame() as i32, outcome_policy)
                 })
             };
             if let Some(kind) = kind {
@@ -350,7 +349,12 @@ impl Simulation {
                 self.ares_degrade_buildings(owner, rules, registry, frame_effects);
             }
             crate::sim::house_eva::update_house_eva(self, rules, owner);
-            crate::sim::superweapon::tick_house_superweapon_instances(self, rules, owner);
+            crate::sim::superweapon::tick_house_superweapon_instances(
+                self,
+                rules,
+                owner,
+                frame_effects,
+            );
             if defeat_gate && self.house_holds_nothing(owner, rules) {
                 self.house_blowup(
                     owner,
@@ -373,7 +377,7 @@ impl Simulation {
                 frame_effects,
             );
             crate::sim::ai_base_building::update_production_choices(self, rules, owner, registry);
-            generated.extend(self.recheck_house_tech_tree(owner, rules));
+            generated.extend(self.recheck_house_tech_tree(owner, rules, frame_effects));
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.release_repair_latch(self.session.binary_frame());
             }
@@ -512,13 +516,11 @@ impl Simulation {
         // 0x004FC0BC..0x004FC10D: a computer house at the skirmish IQ, defeated
         // under `[AI] Paranoid` in a nonzero game mode, turns the computers
         // left paranoid.
-        let game_mode_nonzero = self.session.game_mode_nonzero();
         let rules = context.rules();
-        if game_mode_nonzero
+        if self.session.rule_policy().permits_paranoid_reactions()
             && rules.general.paranoid
             && self.houses.get(&owner).is_some_and(|house| {
-                house.current_iq() == rules.general.max_iq_levels
-                    && !house.is_controlled_by_human(game_mode_nonzero)
+                house.current_iq() == rules.general.max_iq_levels && !house.is_human()
             })
         {
             self.computer_paranoid(rules, context.registry(), context.effects());
@@ -668,12 +670,9 @@ impl Simulation {
         // 0x004FC5DD/5EC: both class virtuals return true only for Cooperative
         // (0x005C4EE0/0x005C4EF0); ordinary 0x005C0E40 returns false. 0x004FC62C's
         // final human scan intentionally does not filter passive Houses. VERA
-        // gates shared allied victory via ModePolicy::shared_allied_victory.
-        let cooperative_shared_win = self.session.game_mode().is_network()
-            && self
-                .session
-                .multiplayer_mode_class()
-                .is_some_and(|class| class.policy().shared_allied_victory)
+        // projects the factory's shared victory rule through the session.
+        let cooperative_shared_win = self.session.execution_topology().is_lockstep()
+            && self.session.rule_policy().shared_allied_victory()
             && (all_allied || alive.len() == 1)
             && self
                 .houses
@@ -1016,7 +1015,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return false;
         };
-        let occupants = entity.passenger_role.occupants().count();
+        let occupants = entity.passenger_role().occupants().count();
         let needs_engineer = object.needs_engineer;
         if !(first_owner != house || occupants > 0)
             || !object

@@ -179,10 +179,8 @@ impl Simulation {
         // game (GameMode 3 or 4) mode vt+8 draws the empty backdrop instead
         // of the score dialog, so such a mode makes none of its draws there.
         // A skirmish in the mode gets the dialog.
-        if session.game_mode().is_network()
-            && session
-                .multiplayer_mode_class()
-                .is_some_and(|class| class.policy().skips_network_score_dialog)
+        if session.execution_topology().is_lockstep()
+            && session.rule_policy().skips_network_score_dialog()
         {
             return false;
         }

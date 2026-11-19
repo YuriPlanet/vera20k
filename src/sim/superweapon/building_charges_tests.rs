@@ -49,7 +49,7 @@ fn build(sim: &mut Simulation, rules: &RuleSet, name: &str, x: u16) -> u64 {
         .spawn_object_at_height(name, OWNER, x, 10, 0, 0, rules)
         .unwrap();
     let owner = sim.interner.get(OWNER).unwrap();
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, Default::default());
     id
 }
 
@@ -77,7 +77,7 @@ fn recharge(rules: &RuleSet) -> i32 {
 fn remove(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     sim.techno_limbo_with_rules(id, rules, None);
     let owner = sim.interner.get(OWNER).unwrap();
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, Default::default());
 }
 
 /// [`rules`] with the charge animations a silo plays, and a `ChargedAnimTime`
@@ -122,7 +122,7 @@ fn fire(sim: &mut Simulation, rules: &RuleSet, name: &str, cell: (u16, u16)) -> 
 fn tick(sim: &mut Simulation, rules: &RuleSet, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
     let owner = sim.interner.get(OWNER).unwrap();
-    tick_house_superweapon_instances(sim, rules, owner);
+    tick_house_superweapon_instances(sim, rules, owner, Default::default());
 }
 
 #[test]
@@ -462,13 +462,13 @@ fn an_enemy_draws_only_the_lines_its_timer_list_draws() {
     let enemy_silo = sim
         .spawn_object_at_height("SILO", "SOVIETS", 14, 10, 0, 0, &rules)
         .unwrap();
-    sim.recheck_house_tech_tree(enemy, &rules);
+    sim.recheck_house_tech_tree(enemy, &rules, Default::default());
     assert!(lines(&sim, enemy_silo).is_empty());
 
     let enemy_nukes = sim
         .spawn_object_at_height("NUKES", "SOVIETS", 16, 10, 0, 0, &rules)
         .unwrap();
-    sim.recheck_house_tech_tree(enemy, &rules);
+    sim.recheck_house_tech_tree(enemy, &rules, Default::default());
     let nuke_lines = lines(&sim, enemy_nukes);
     assert_eq!(nuke_lines.len(), 1, "{nuke_lines:?}");
     assert_eq!(nuke_lines[0].super_id, nuke);
@@ -490,6 +490,6 @@ fn an_enemy_draws_only_the_lines_its_timer_list_draws() {
     let friend_silo = sim
         .spawn_object_at_height("SILO", "ALLIES", 18, 10, 0, 0, &rules)
         .unwrap();
-    sim.recheck_house_tech_tree(friend, &rules);
+    sim.recheck_house_tech_tree(friend, &rules, Default::default());
     assert_eq!(lines(&sim, friend_silo).len(), 1);
 }

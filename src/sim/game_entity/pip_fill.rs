@@ -68,7 +68,7 @@ impl GameEntity {
         let (amount, denominator) = match object.pip_scale {
             PipScale::Ammo => (self.ammo().map_or(0, |ammo| ammo.current()), maximum),
             PipScale::Passengers => (
-                self.passenger_role
+                self.passenger_role()
                     .cargo()
                     .map_or(0, |cargo| cargo.count() as i32),
                 maximum,

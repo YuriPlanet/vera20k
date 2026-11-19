@@ -1545,57 +1545,39 @@ fn shield_bar_instances(
     }
 }
 
-/// Phobos `TechnoExt::DrawInsignia`: the custom/stock rank shape, frame,
-/// screen position and custom SHP name for one Techno, or `None` when the
-/// draw is refused. The
-/// hook replaces the native rank block whenever the Phobos capability is
-/// compiled in, so the stock negative-rank frame19 arm is not reached.
+/// Phobos `TechnoExt::DrawInsignia`'s visibility half
+/// (<https://github.com/Phobos-developers/Phobos/blob/b90ab4bcba3f4b0b8ce74d2119ac0d561eaccc8f/src/Ext/Techno/Body.Visuals.cpp#L128-L154>):
+/// the type whose insignia the player (`observer_id`) sees, the worn one
+/// while a disguise fools the player, or `None` when the draw is refused.
+/// `isObserver` is `HouseClass::IsCurrentPlayerObserver()`, the player being
+/// an observer house, and `pOwner->IsAlliedWith(HouseClass::CurrentPlayer)`
+/// asks the owner's ally mask for the player, as the Ares insignia gate does.
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
-fn phobos_insignia_draw<'a>(
+fn phobos_insignia_type<'r>(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
-    rules: &RuleSet,
-    overlay: &'a crate::render::selection_overlay::SelectionOverlay,
+    rules: &'r RuleSet,
     observer_id: Option<crate::sim::intern::InternedId>,
-    observer_present: bool,
     disguised: bool,
-    hovered_id: Option<u64>,
-    sx: f32,
-    sy: f32,
-) -> Option<(
-    &'a crate::render::selection_overlay::CenteredShapeStrip,
-    usize,
-    (f32, f32),
-    Option<String>,
-)> {
+) -> Option<&'r crate::rules::object_type::ObjectType> {
     let globals = rules.phobos_draw_globals();
-    if globals.only_on_selected
-        && !entity.selection.is_selected()
-        && hovered_id != Some(entity.stable_id())
-    {
-        return None;
-    }
-    let viewer_allied = |house: crate::sim::intern::InternedId| {
-        observer_id.is_some_and(|viewer| {
-            crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(sim.house_alliances()),
-                sim.interner(),
-                viewer,
-                house,
-            )
+    let is_observer = observer_id.is_some_and(|player| sim.session().is_observer_house(player));
+    let allied_with_player = |owner: crate::sim::intern::InternedId| {
+        observer_id.is_some_and(|player| {
+            sim.house_alliances()
+                .is_allied(sim.interner(), owner, player)
         })
     };
     let mut object = sim.interner().object_type(entity.type_ref(), rules)?;
     let mut house = Some(entity.owner());
-    // Phobos `DrawInsignia` enters the worn-type branch only while neither an
+    // L135-L136: the worn-type branch is entered only while neither the
     // observer nor the `DisguiseBlinkingVisibility` audience sees through the
-    // blink. The predicate is asked with the viewer as source.
-    let blinking_visible = observer_present
-        || observer_id.is_some_and(|viewer| {
+    // blink, asked with the player as source.
+    let blinking_visible = is_observer
+        || observer_id.is_some_and(|player| {
             crate::sim::combat::can_target_house(
                 globals.disguise_blinking_visibility,
-                viewer,
+                player,
                 entity.owner(),
                 sim.houses(),
                 sim.house_alliances(),
@@ -1615,17 +1597,51 @@ fn phobos_insignia_draw<'a>(
                 worn_object = true;
             }
         }
-        if !worn_object && !(observer_present || viewer_allied(entity.owner())) {
+        // L144: a terrain disguise hides the rank from all but the observer
+        // and the players the real owner counts as allies.
+        if !worn_object && !(is_observer || allied_with_player(entity.owner())) {
             return None;
         }
     }
+    // L150-L151: `Insignia.ShowEnemy` falls back to `[General] EnemyInsignia`.
     let show_enemy = object
         .phobos_insignia
         .show_enemy
         .unwrap_or(globals.enemy_insignia);
-    if !(house.is_some_and(viewer_allied) || observer_present || show_enemy) {
+    (house.is_some_and(allied_with_player) || is_observer || show_enemy).then_some(object)
+}
+
+/// Phobos `TechnoExt::DrawInsignia`: the custom/stock rank shape, frame,
+/// screen position and custom SHP name for one Techno, or `None` when the
+/// draw is refused ([`phobos_insignia_type`]). The
+/// hook replaces the native rank block whenever the Phobos capability is
+/// compiled in, so the stock negative-rank frame19 arm is not reached.
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn phobos_insignia_draw<'a>(
+    sim: &crate::sim::world::Simulation,
+    entity: &ObjectRecord,
+    rules: &RuleSet,
+    overlay: &'a crate::render::selection_overlay::SelectionOverlay,
+    observer_id: Option<crate::sim::intern::InternedId>,
+    disguised: bool,
+    hovered_id: Option<u64>,
+    sx: f32,
+    sy: f32,
+) -> Option<(
+    &'a crate::render::selection_overlay::CenteredShapeStrip,
+    usize,
+    (f32, f32),
+    Option<String>,
+)> {
+    let globals = rules.phobos_draw_globals();
+    if globals.only_on_selected
+        && !entity.selection.is_selected()
+        && hovered_id != Some(entity.stable_id())
+    {
         return None;
     }
+    let object = phobos_insignia_type(sim, entity, rules, observer_id, disguised)?;
     use crate::sim::combat::veterancy::{raw_is_elite, raw_is_veteran};
     let raw = entity.veterancy.raw();
     let rank = if raw_is_elite(raw) {
@@ -1993,11 +2009,9 @@ pub(crate) fn techno_extras_for_parent(
             strip.power_off = prefix(shape, frame, if repairing { 18.0 } else { 0.0 });
         }
     }
-    let Some(observer) = admitted_techno_observer(sim, entity, local_owner_id) else {
+    if admitted_techno_observer(sim, entity, local_owner_id).is_none() {
         return strip;
-    };
-    #[cfg(not(feature = "phobos"))]
-    let _ = observer;
+    }
     // Tactical6D9676 dispatches Object5F65A0/Building447AC0 GetCoords;
     //6D9691..9726 projects integer XYZ before subtracting the camera.
     let coord = entity.hud.get_coords;
@@ -2063,7 +2077,6 @@ pub(crate) fn techno_extras_for_parent(
             rules,
             overlay,
             observer_id,
-            observer.observer_present,
             disguised,
             hovered_id,
             sx,
@@ -2416,7 +2429,7 @@ fn ares_passenger_pip_frames(
     let mut frames = vec![0; max];
     let mut next = 0;
     let passengers = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .map_or(&[][..], |cargo| cargo.passengers());
     for &id in passengers.iter().rev() {
@@ -2509,7 +2522,7 @@ fn scale_pip_rows(
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
     if building && object.show_occupant_pips && object.max_number_occupants > 0 {
-        let occupants = entity.passenger_role.occupants().ids();
+        let occupants = entity.passenger_role().occupants().ids();
         pips.extend((0..object.max_number_occupants as usize).map(|slot| {
             let frame = occupants
                 .get(slot)
@@ -2548,7 +2561,7 @@ fn scale_pip_rows(
             let gunner_step = if object.gunner && slot > 0 { 2 } else { 0 };
             pip(slot + gunner_step, 0, row_y)
         }));
-        let Some(cargo) = entity.passenger_role.cargo() else {
+        let Some(cargo) = entity.passenger_role().cargo() else {
             return pips;
         };
         //4598A0/709DD4..9E43: absorbers walk the head forward, consuming
@@ -2889,6 +2902,45 @@ mod tests {
         assert!(visible(&sim, red, Some(blue), false));
     }
 
+    /// Phobos `TechnoExt::DrawInsignia` (Body.Visuals.cpp L150-L151): under
+    /// `EnemyInsignia=no` an enemy's rank shows only to a player its owner
+    /// counts as an ally, or to an observer house.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_enemy_insignia_checks_the_owners_allies_and_the_observer_house() {
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[General]\nEnemyInsignia=no\n[BuildingTypes]\n0=POWR\n[POWR]\nStrength=750\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let id = sim
+            .spawn_object("POWR", "Russians", 8, 8, 0, &rules)
+            .unwrap();
+        let player = sim.interner().get("Americans");
+        let shown = |sim: &crate::sim::world::Simulation, player| {
+            let record =
+                crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, &rules, id);
+            super::phobos_insignia_type(sim, &record, &rules, player, false).is_some()
+        };
+        assert!(!shown(&sim, player));
+        sim.house_alliances_mut_for_test()
+            .entry("AMERICANS".into())
+            .or_default()
+            .insert("RUSSIANS".into());
+        assert!(!shown(&sim, player));
+        sim.house_alliances_mut_for_test()
+            .entry("RUSSIANS".into())
+            .or_default()
+            .insert("AMERICANS".into());
+        assert!(shown(&sim, player));
+
+        let observer = sim.intern("Observer");
+        sim.session_mut_for_test()
+            .install_observer_houses_for_test(vec![observer]);
+        assert!(shown(&sim, Some(observer)));
+    }
+
     /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
     /// owner sees its repairing building's wrench, an enemy only with
     /// `EnemyWrench=yes` (the default).
@@ -2906,7 +2958,7 @@ mod tests {
                 .spawn_object("POWR", "Americans", 8, 8, 0, &rules)
                 .unwrap();
             crate::sim::arena_fixture::install_status_repair(
-                sim.entities_mut_for_test().get_mut(id).unwrap(),
+                sim.entity_mut_for_test(id).unwrap(),
                 true,
             );
             let record =
@@ -3112,8 +3164,7 @@ mod tests {
             admitted(&sim, None),
             "owner's one-way alliance admits shared pip tail"
         );
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .selection
             .set_selected_for_test(false);
@@ -3122,8 +3173,7 @@ mod tests {
             admitted(&sim, Some(1)),
             "ordinary hover also admits count/self-heal/group tail"
         );
-        sim.entities_mut_for_test()
-            .get_mut(1)
+        sim.entity_mut_for_test(1)
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(true);
@@ -3217,8 +3267,7 @@ mod tests {
                 if expected {
                     // Being hovered cannot resurrect a limbo member, even
                     // while a retained Display registration still exists.
-                    sim.entities_mut_for_test()
-                        .get_mut(1)
+                    sim.entity_mut_for_test(1)
                         .unwrap()
                         .lifecycle
                         .set_in_limbo_for_test(true);

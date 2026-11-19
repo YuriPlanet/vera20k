@@ -297,8 +297,9 @@ pub(crate) struct MatchPresentationState {
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
     /// What BBB's init (4E1FE0) reads when the menu opens: the [Options]
     /// values, the speed context and whether the Game Speed row shows.
-    /// `game_speed` mirrors the launched sim; a moved Game Speed on the menu's
-    /// Game Controls page queues an authoritative transition on close.
+    /// `game_speed` mirrors the world's speed, which BBB's init reads again
+    /// (`app::input::in_game_options`); a moved Game Speed on the menu's Game
+    /// Controls page queues an authoritative transition on close.
     pub(crate) in_game_options: crate::ui::shell::in_game_options_state::InGameOptionsState,
 }
 

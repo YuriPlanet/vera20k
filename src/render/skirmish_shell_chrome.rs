@@ -119,15 +119,9 @@ const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
 /// Owner-draw preload 61F7FD..61F857 -> PCX cache 6B9D00 (embedded palette).
 /// BB 5EE200 selects observer art; 5DAFE0 selects host/accepted glyphs.
 const LAN_PCX_NAMES: [&str; 4] = ["wolnob.pcx", "wolob.pcx", "wolhost.pcx", "wolacpt.pcx"];
-/// WOL setup C2/C9 art: ping statics 004E34A0 and the 0x3ED emote images
-/// (0x49C wodact, 0x4AA wouact, C2 `0x791231`).
-const WOL_SETUP_PCX_NAMES: [&str; 5] = [
-    "pingg.pcx",
-    "pingy.pcx",
-    "pingr.pcx",
-    "wodact.pcx",
-    "wouact.pcx",
-];
+/// WOL setup C2/C9 art: the 0x3ED emote images (0x49C wodact, 0x4AA
+/// wouact, C2 `0x791231`).
+const WOL_SETUP_PCX_NAMES: [&str; 2] = ["wodact.pcx", "wouact.pcx"];
 /// YR `0x72CF40/0x72D030` setup pair, shared by offline Skirmish `0x102` and
 /// the BC/BD/C2/C9 setup family: the large art and the palette that decodes
 /// both sizes. Only the offline Skirmish screen selects it, under
@@ -175,7 +169,7 @@ pub struct SkirmishShellChromeAtlas {
     /// and palette, RA2 style the shared MNSCRN pair through SHELL.PAL.
     pub setup_backgrounds: [Option<SkirmishShellChromeEntry>; 2],
     lan_icons: [Option<SkirmishShellChromeEntry>; 4],
-    wol_setup_icons: [Option<SkirmishShellChromeEntry>; 5],
+    wol_setup_icons: [Option<SkirmishShellChromeEntry>; 2],
     /// VERA's online room: the lobby's badge PCX images by file name.
     wol_badges: Vec<(&'static str, SkirmishShellChromeEntry)>,
     pub lower_side_640_lwscrns: Option<SkirmishShellChromeEntry>,
@@ -311,14 +305,6 @@ impl SkirmishShellChromeAtlas {
             .map(|(_, entry)| *entry)
     }
 
-    /// 004E34A0 ping image 0/1/2: pingg, pingy, pingr.
-    pub fn wol_ping_icon(&self, icon: u8) -> Option<SkirmishShellChromeEntry> {
-        self.wol_setup_icons
-            .get(usize::from(icon))
-            .copied()
-            .flatten()
-    }
-
     /// C2/C9 0x3ED images: element+0x14 (`wodact`, message 0x49C) and
     /// element+0x18 (`wouact`, message 0x4AA).
     pub fn wol_emote_images(
@@ -327,7 +313,7 @@ impl SkirmishShellChromeAtlas {
         Option<SkirmishShellChromeEntry>,
         Option<SkirmishShellChromeEntry>,
     ) {
-        (self.wol_setup_icons[3], self.wol_setup_icons[4])
+        (self.wol_setup_icons[0], self.wol_setup_icons[1])
     }
 
     /// VERA's online room: a player's badge ([`crate::ui::wol_lobby::badge`]).

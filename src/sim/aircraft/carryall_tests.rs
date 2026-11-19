@@ -90,7 +90,7 @@ fn carried(sim: &Simulation, carryall: u64, unit: u64) -> bool {
     sim.substrate
         .entities
         .get(carryall)
-        .and_then(|entity| entity.passenger_role.cargo())
+        .and_then(|entity| entity.passenger_role().cargo())
         .is_some_and(|hold| hold.passengers() == [unit])
 }
 
@@ -152,7 +152,7 @@ fn carryall_totes_an_allied_tank_and_sets_it_down() {
             .entities
             .get(carryall)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .passenger_count(),
         0
     );

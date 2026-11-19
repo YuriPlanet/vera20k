@@ -105,8 +105,8 @@ pub struct Trace {
     /// The relay's canonical records in sequence order (compaction spec
     /// §12.2), by the test-support `RelayServer::ordering_history`.
     pub relay_history: Vec<Vec<u8>>,
-    /// The relay's tag failures over the run (compaction spec §6.4).
-    pub mac_counts: crate::MacFailureCounts,
+    /// The relay's session alerts over the run (compaction spec §6.4 item 2).
+    pub session_alerts: u64,
     /// Per client: tags that failed at the client (§6.4 item 6).
     pub client_mac_failures: Vec<u64>,
 }

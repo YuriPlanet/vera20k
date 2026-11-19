@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::map::playfield::local_to_packed_cell;
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::economy::Economy;
 use crate::sim::houses::Houses;
@@ -1318,7 +1319,10 @@ impl HouseState {
 
     // ---- Sub-owners: their own operations carry the rules ----------------
 
-    pub(crate) fn tracking_mut(&mut self) -> &mut crate::sim::house_tracking::HouseTracking {
+    pub(super) fn tracking_mut(
+        &mut self,
+        _: crate::sim::house_tracking::TrackingWrite,
+    ) -> &mut crate::sim::house_tracking::HouseTracking {
         &mut self.tracking
     }
 
@@ -1717,6 +1721,16 @@ impl HouseState {
 
     pub const fn economy(&self) -> &Economy {
         &self.economy
+    }
+
+    /// `HouseClass::Available_Storage @ 0x004F69D0`: the storage capacity
+    /// (`+0x310`) minus the House store's total (`+0x2FC`,
+    /// `StorageClass::GetTotalAmount`), which only Ares fills
+    /// (`sim::ares_tiberium_storage`).
+    pub(crate) fn available_storage(&self) -> i32 {
+        self.tracking
+            .storage_capacity()
+            .wrapping_sub(self.economy.ares_storage().house_store().total_amount())
     }
 
     pub const fn strategy_emergency(&self) -> &HouseStrategyEmergencyState {
@@ -2956,15 +2970,18 @@ impl HouseState {
     }
 
     /// HouseClass::Update4F85BE/4F86FE admits the whole-Vox wait on
-    /// exact zero of+298. Campaign victory also requires AllowWin+27C<=0.
+    /// exact zero of+298. The victory arm at 4F85FF/4F8605 compares
+    /// the AllowWin count at +27C signed when the policy requires it.
     pub(crate) fn pending_outcome(
         &self,
         frame: i32,
-        game_mode_nonzero: bool,
+        policy: RulePolicy,
     ) -> Option<HouseOutcomeKind> {
         let kind = self.outcome()?.kind;
         (self.allow_win_timer.expired(frame)
-            && (kind == HouseOutcomeKind::Defeat || game_mode_nonzero || self.allow_win_tags <= 0))
+            && (kind == HouseOutcomeKind::Defeat
+                || !policy.victory_requires_cleared_allow_win_tags()
+                || self.allow_win_tags <= 0))
             .then_some(kind)
     }
 
@@ -3545,6 +3562,8 @@ mod ai_activation_latch_tests {
 #[cfg(all(test, tests_sim_h_o))]
 mod outcome_tests {
     use super::{HouseOutcomeKind, HouseState};
+    use crate::rules::rule_policy::AllowWinTagsPolicy;
+    use crate::sim::scenario_session::ScenarioGameMode;
 
     #[test]
     fn flag_to_die_producer_and_update_gate_match_original_execution() {
@@ -3620,9 +3639,10 @@ mod outcome_tests {
     #[test]
     fn gsi_01_04_savour_gates_exact_frame_and_defeat_restarts_pending_victory() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        let policy = ScenarioGameMode::Skirmish.stock_rule_policy(None);
         assert!(house.accept_win_result(100, 90, false));
-        assert!(!house.pending_outcome(189, true).is_some());
-        assert!(house.pending_outcome(190, true).is_some());
+        assert!(house.pending_outcome(189, policy).is_none());
+        assert!(house.pending_outcome(190, policy).is_some());
 
         let mut replaced = HouseState::new(Default::default(), 0, None, true, 0, 10);
         assert!(replaced.accept_win_result(100, 90, false));
@@ -3648,26 +3668,32 @@ mod outcome_tests {
     #[test]
     fn announce_preserves_the_shared_timer_and_campaign_allow_win_gate() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        let policy = ScenarioGameMode::Campaign.stock_rule_policy(None);
         let paused = crate::sim::timer::CdTimer::from_raw(-1, 60);
         house.supply_allow_win_tag_state(1, paused);
         assert!(house.accept_win_result(100, 90, true));
         assert_eq!(house.outcome_timer(), paused, "67 must not write a timer");
-        assert!(!house.pending_outcome(1000, false).is_some());
+        assert!(house.pending_outcome(1000, policy).is_none());
         house.resume_result_timer(1000);
         assert_eq!(house.outcome_timer().duration(), 60);
         assert!(
-            !house.pending_outcome(1060, false).is_some(),
+            house.pending_outcome(1060, policy).is_none(),
             "AllowWin count blocks Win"
         );
+        let ungated = policy.with_allow_win_tags(AllowWinTagsPolicy::Ignore);
+        assert_eq!(
+            house.pending_outcome(1060, ungated),
+            Some(HouseOutcomeKind::Victory)
+        );
         house.removed_allow_win_tag(1060);
-        assert!(!house.pending_outcome(1119, false).is_some());
-        assert!(house.pending_outcome(1120, false).is_some());
+        assert!(house.pending_outcome(1119, policy).is_none());
+        assert!(house.pending_outcome(1120, policy).is_some());
 
         let mut loss = HouseState::new(Default::default(), 0, None, true, 0, 10);
         loss.supply_allow_win_tag_state(5, crate::sim::timer::CdTimer::default());
         assert!(loss.accept_lose_result(0, 90, true));
         assert!(
-            loss.pending_outcome(0, false).is_some(),
+            loss.pending_outcome(0, policy).is_some(),
             "68 preserves expired ctor timer; no AllowWin gate"
         );
     }

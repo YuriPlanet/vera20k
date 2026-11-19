@@ -578,13 +578,10 @@ fn board_passengers(
         ) else {
             continue;
         };
-        if let Some(rider) = sim.substrate.entities.get_mut(passenger) {
-            rider.passenger_role.set_inside_transport(plane, false);
-        }
         if !sim.substrate.entities.contains(plane) {
             return;
         }
-        let _ = sim.add_cargo_passenger_chain(
+        let _ = sim.add_cargo_members(
             plane,
             &[(passenger, object.size)],
             crate::sim::world::UninitContext::with_rules(rules).with_effects(frame_effects),

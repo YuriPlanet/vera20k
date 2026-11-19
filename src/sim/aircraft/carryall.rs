@@ -278,7 +278,7 @@ impl Simulation {
         if !self.is_carryall(aircraft, rules)
             || !self.house_is_human_player(carrier.owner())
             || !self.mutually_allied(carrier.owner(), unit.owner())
-            || carrier.passenger_role.passenger_count() != 0
+            || carrier.passenger_role().passenger_count() != 0
             || unit.category() != crate::map::entities::EntityCategory::Unit
         {
             return None;
@@ -371,7 +371,7 @@ impl Simulation {
             .substrate
             .entities
             .get(aircraft)?
-            .passenger_role
+            .passenger_role()
             .cargo()?;
         hold.passengers().first().copied()
     }
@@ -384,7 +384,7 @@ impl Simulation {
         };
         let target = crate::sim::radio::as_techno(self, id)?;
         let unit = self.substrate.entities.get(target)?;
-        if carrier.passenger_role.passenger_count() != 0
+        if carrier.passenger_role().passenger_count() != 0
             || !self.mutually_allied(carrier.owner(), unit.owner())
             || unit.category() != crate::map::entities::EntityCategory::Unit
         {
@@ -417,7 +417,6 @@ impl Simulation {
         let Some(type_ref) = self.substrate.entities.get_mut(unit).map(|cargo| {
             cargo.on_bridge.store(false);
             cargo.on_carryall.set(true);
-            cargo.passenger_role.set_inside_transport(aircraft, false);
             cargo.type_ref()
         }) else {
             return;
@@ -425,7 +424,7 @@ impl Simulation {
         let size = self
             .object_type(type_ref, rules)
             .map_or(1.0, |object| object.size);
-        let _ = self.add_cargo_passenger_chain(aircraft, &[(unit, size)], context);
+        let _ = self.add_cargo_members(aircraft, &[(unit, size)], context);
     }
 
     /// `AircraftClass::AI`'s Carryall block (`0x00415136..0x00415184`), after
@@ -459,7 +458,7 @@ impl Simulation {
             return;
         };
         let Some(&cargo) = carrier
-            .passenger_role
+            .passenger_role()
             .cargo()
             .and_then(|hold| hold.passengers().first())
         else {
@@ -665,7 +664,7 @@ impl Simulation {
         // to start (vt+0x1E8(5, 1)) and its team takes it again.
         if ares {
             if let Some(entity) = self.substrate.entities.get_mut(cargo) {
-                entity.passenger_role.clear_transporter();
+                entity.passenger_role_mut().clear_transporter();
             }
             let _ = self.mission_queue_exact(
                 cargo,

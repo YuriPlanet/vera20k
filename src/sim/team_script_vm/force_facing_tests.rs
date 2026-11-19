@@ -4,6 +4,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::components::DriveCoord;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -236,9 +237,12 @@ fn retail_all01_facing_scripts_reach_the_shared_turn_owner() {
     };
     let map =
         crate::map::map_file::MapFile::from_bytes(assets.get_ref("ALL01UMD.MAP").unwrap()).unwrap();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        BootstrapRuleProfile::Campaign,
+    )
+    .unwrap();
     let scripts: Vec<_> = registry
         .scripts
         .iter()

@@ -82,7 +82,6 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
     crate::sim::runtime::initialize_native_tiberium_queues(
         &mut sim,
         &map.basic,
-        &map.special_flags,
         &rules,
         &overlays,
         (32, 32),
@@ -102,17 +101,9 @@ fn elapsed_trigger_anim_removes_ore_before_action41_sets_no_effects() {
     let Some((mut sim, rules)) = scene("TIB01", "") else {
         return;
     };
-    let overlays = rules.overlay_registry();
     assert_eq!(rules.combat_damage.tiberium_explosion_damage, 0);
-    sim.advance_app_frame(
-        &[],
-        &rules,
-        Some(overlays),
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
 
     let parent = sim
         .anims()
@@ -197,15 +188,8 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
     let target = sim.terrain_objects().id_at((16, 16)).unwrap();
     let health = sim.terrain_objects().get(target).unwrap().health();
     let (output, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(overlays),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap()
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap()
     });
     assert_eq!(visits.len(), 1);
     assert_eq!(visits[0]["damage"], 40);
@@ -260,15 +244,8 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
     let child = *child;
     let mut landed = false;
     for _ in 0..160 {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(overlays),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
         landed |= sim
             .anims()
             .any(|(_, anim)| sim.interner.resolve(anim.type_id()) == "TWLT026");
@@ -297,17 +274,9 @@ fn ares_mineral_start_uses_debris_chance_and_explosion_keys() {
     ) else {
         return;
     };
-    let overlays = rules.overlay_registry();
     let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(overlays),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap()
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap()
     });
     assert_eq!(visits.len(), 1);
     assert_eq!(visits[0]["damage"], 25);

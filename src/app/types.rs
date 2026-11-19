@@ -26,23 +26,6 @@ pub(crate) const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 pub(crate) const SIM_TICK_HZ: u32 = crate::util::fixed_math::SIM_TICK_HZ;
 /// Integer tick duration used by deterministic step execution.
 pub(crate) const SIM_TICK_MS: u32 = 1000 / SIM_TICK_HZ;
-/// Verified retail/YR skirmish fallback from rulesmd.ini
-/// `[MultiplayerDialogSettings] GameSpeed=1`.
-pub(crate) const DEFAULT_YR_SKIRMISH_GAME_SPEED: u32 = 1;
-const GAME_SPEED_BUCKET_MS: u32 = 16;
-
-/// Convert the stored speed byte to a UI/debug rate readout. Gameplay frame
-/// admission uses the native 16 ms bucket comparison directly.
-pub(crate) fn tps_for_game_speed(stored_speed: u32) -> u32 {
-    if stored_speed == u32::from(crate::sim::game_options::GAME_SPEED_90_TPS) {
-        return 90;
-    }
-    if stored_speed == 0 {
-        return 60;
-    }
-    let bucket_ms = stored_speed.saturating_mul(GAME_SPEED_BUCKET_MS).max(1);
-    ((1000 + bucket_ms / 2) / bucket_ms).max(1)
-}
 
 /// Next right-click order mode selected via hotkey.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

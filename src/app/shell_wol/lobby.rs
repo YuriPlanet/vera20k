@@ -51,8 +51,10 @@ const PUBLIC_LOBBY_TITLE: &str = "VERA20K Online";
 const PUBLIC_LOBBY_BASE: usize = 2;
 /// `0x00788800`/`0x00789B60`: at most 150 x 100 ms for the leave.
 const LEAVE_WAIT: Duration = Duration::from_millis(15_000);
-/// `SetTimer(0, 30000)`: the game list; `SetTimer(1, 53000)`: the lobbies.
-const GAMES_PERIOD: Duration = Duration::from_millis(30_000);
+/// The game list. VERA asks every 5 s, so a game someone creates shows up
+/// soon; native `SetTimer(0, 30000)` asked every 30.
+const GAMES_PERIOD: Duration = Duration::from_millis(5_000);
+/// `SetTimer(1, 53000)`: the lobbies.
 const LOBBIES_PERIOD: Duration = Duration::from_millis(53_000);
 /// Refresh `0x55D` disables itself for `SetTimer(0x55D, 3000)`.
 const REFRESH_HOLD: Duration = Duration::from_millis(3000);
@@ -78,9 +80,6 @@ pub(crate) struct WolLobbyGlobals {
     pub(crate) page_last_control: u16,
     /// `[0xB76478..0xB76480]`: the in-match page's reply prefill window.
     pub(crate) page_reply_window: crate::ui::wol_page::PageReplyWindow,
-    /// `[0xB78608]`: the options sink's preview-request stamp in 16 ms
-    /// buckets, first set by its one-time init (`0x007A7EA0..0x007A7ED3`).
-    pub(crate) preview_stamp: Option<u32>,
     /// The ladder table `0xB77D80` (`[0xB77E0C]` outside mode 3; `0x00780110`
     /// clears only the clan and mode-3 tables) and the high-score table
     /// `0xB76640`, keyed by the ASCII-lowered name the lookups use
@@ -1399,6 +1398,25 @@ pub(crate) fn visiting(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.visit.is_some())
 }
 
+/// VERA online: where the lobby can deliver a page to `name`: the name as
+/// the public lobby this player visits lists it (case-insensitive, `true`),
+/// else as the current channel does. A roommate in both visits too and sees
+/// the lobby page. `None` when neither lists it, and in a match.
+pub(super) fn page_target<'a>(visit: &'a super::WolVisit, name: &str) -> Option<(&'a str, bool)> {
+    let lobby = visit.lobby().filter(|_| !visit.in_game)?;
+    let find = |members: &'a [WolMember]| {
+        members
+            .iter()
+            .find(|member| member.name.eq_ignore_ascii_case(name))
+            .map(|member| member.name.as_str())
+    };
+    let visited = lobby.visit.as_ref().and_then(|other| find(&other.members));
+    visited.map(|name| (name, true)).or_else(|| {
+        lobby.current.as_ref()?;
+        find(&lobby.members).map(|name| (name, false))
+    })
+}
+
 /// The lobby let this player into the public lobby as a visitor: its page
 /// shows over the hidden room, with Back to Room. A repeat answer lists the
 /// lobby again; one this game no longer waits for ends the visit.
@@ -1613,10 +1631,12 @@ fn new_runner(
     })
 }
 
-/// The Buddy List runner's entry (`0x0079F140`, steps 1-2): a runner with
-/// no `0x113` and the chat-lobby list behind `TXT_REQ_CHANLIST`
-/// (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`).
-pub(super) fn open_buddy_runner(state: &mut AppState) {
+/// A runner with no `0x113` and the chat-lobby list behind
+/// `TXT_REQ_CHANLIST` (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`): the
+/// Buddy List runner's entry (`0x0079F140`, steps 1-2) and the Quick Match
+/// runner's lobby list (`0x0079FCF0..0x0079FD35`), whose entry cleared the
+/// observer preference (`0x0079FC40..0x0079FC5D`).
+pub(super) fn open_runner(state: &mut AppState, runner: Runner) {
     let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
@@ -1624,37 +1644,8 @@ pub(super) fn open_buddy_runner(state: &mut AppState) {
     visit.in_game = false;
     visit.page = WolPage::Lobby;
     visit.lobby = Some(new_runner(
-        Runner::Buddy,
+        runner,
         observer,
-        false,
-        Instant::now(),
-        !visit.legacy_ui,
-    ));
-    if state.match_state.session.network_return_context().is_none() {
-        state
-            .match_state
-            .session
-            .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
-    }
-    state.frontend.wol_login_art = None;
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(state);
-    show_wait(state, "TXT_REQ_CHANLIST");
-    request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
-    state.platform.window.request_redraw();
-}
-
-/// The Quick Match runner's lobby list (`0x0079FCF0..0x0079FD35`): a
-/// runner with no `0x113` and the chat-lobby list behind
-/// `TXT_REQ_CHANLIST` (`0x0077EF90(0, 0)`, the 30 s wait `0x0077F120`).
-pub(super) fn open_quick_match_runner(state: &mut AppState) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
-        return;
-    };
-    visit.page = WolPage::Lobby;
-    visit.lobby = Some(new_runner(
-        Runner::QuickMatch,
-        false,
         false,
         Instant::now(),
         !visit.legacy_ui,
@@ -1880,8 +1871,15 @@ fn refill_games(state: &mut AppState) {
     if lobby.ui.is_modern() {
         rows.extend(watch_rows(&lobby.matches, &crate::i18n::tr(WATCH_LIST_TAG)));
     }
+    let layout = layout(state);
+    let (x, y) = state.match_state.input.cursor_px();
     if let Some(lobby) = lobby_mut(state) {
         lobby.ui.replace_games(rows);
+        // VERA: the list is refilled every few seconds, and a pointer resting
+        // on a row keeps that row's status help.
+        if lobby.ui.popup.is_none() {
+            lobby.ui.hover_games(&layout, x, y);
+        }
     }
 }
 
@@ -3793,20 +3791,6 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 log::warn!("WOL readiness from {from}: {error:#}");
             }
         }
-        WolServiceEvent::PreviewRequested { from } => {
-            // 0x7A82F8..0x7A833C: only from a user of this channel.
-            let member = lobby_mut(state)
-                .expect("checked")
-                .members
-                .iter()
-                .any(|member| member.name.eq_ignore_ascii_case(&from));
-            if member
-                && in_setup_channel(state)
-                && let Err(error) = setup::preview_request(state)
-            {
-                log::warn!("WOL preview request from {from}: {error:#}");
-            }
-        }
         WolServiceEvent::MapStatus { from, status } => {
             if in_setup_channel(state)
                 && let Err(error) = setup::map_status(state, &from, status)
@@ -5139,7 +5123,6 @@ mod tests {
         guest.raw_slot_index = Some(1);
         launch.humans.push(guest);
         launch.local_player_index = 1;
-        launch.rebuild_house_roster();
         let mut vacancies =
             [NetworkVacancy::Closed; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
         vacancies[2] = NetworkVacancy::Open;
@@ -5188,25 +5171,9 @@ mod tests {
     }
 
     #[test]
-    fn saved_test_preference_cannot_load_demo_games_in_ordinary_play() {
-        let saved_test_service = true;
-        assert_eq!(
-            super::super::provider_for_visit(saved_test_service, None),
-            service::WolProvider::Online
-        );
-        assert_eq!(
-            super::super::provider_for_visit(
-                saved_test_service,
-                Some(winit::dpi::PhysicalSize::new(800, 600)),
-            ),
-            service::WolProvider::TestService
-        );
-    }
-
-    #[test]
     fn normal_test_service_keeps_the_simplified_ui_and_only_vera20k_online() {
         let mut visit = crate::app::shell_wol::WolVisit::open(false);
-        visit.set_provider(service::WolProvider::TestService);
+        visit.provider = service::WolProvider::TestService;
         assert!(visit.modern_ui());
         let channels: Vec<_> = ["Lob_41_0", "Lob_41_1", "Lob_41_2"]
             .into_iter()
@@ -5299,12 +5266,42 @@ mod tests {
         lobby.members.iter().map(|m| m.name.as_str()).collect()
     }
 
+    /// VERA lists the games again five seconds on, so a new game shows up
+    /// soon; the lobbies keep native `SetTimer(1, 53000)`.
+    #[test]
+    fn a_runner_lists_the_games_again_after_five_seconds() {
+        let now = Instant::now();
+        let lobby = new_runner(Runner::Lobby, false, false, now, true);
+        assert_eq!(lobby.games_at - now, Duration::from_secs(5));
+        assert_eq!(lobby.lobbies_at - now, Duration::from_secs(53));
+    }
+
     /// The user-list sink sorts a chat lobby's users but keeps a game
     /// channel's in the listed order, whatever the sort mode.
     #[test]
     fn game_channel_users_keep_the_listed_order() {
         assert_eq!(names(&listed_runner(0)), ["Host", "Zed", "Mike"]);
         assert_eq!(names(&listed_runner(GAME_CHANNEL)), ["Host", "Mike", "Zed"]);
+    }
+
+    /// VERA online: a page goes to the player the visited lobby, else the
+    /// channel, lists, under the listed name, and nowhere in a match.
+    #[test]
+    fn a_page_targets_only_a_listed_player_outside_a_match() {
+        let mut visit = crate::app::shell_wol::WolVisit::open(false);
+        let mut lobby = listed_runner(GAME_CHANNEL);
+        lobby.visit = Some(LobbyVisit {
+            channel: WolChannel::default(),
+            members: vec![user("Bob", 0), user("Zed", 0)],
+        });
+        visit.lobby = Some(lobby);
+        assert_eq!(page_target(&visit, "mike"), Some(("Mike", false)));
+        assert_eq!(page_target(&visit, "BOB"), Some(("Bob", true)));
+        // A roommate who visits too reads the lobby page.
+        assert_eq!(page_target(&visit, "zed"), Some(("Zed", true)));
+        assert_eq!(page_target(&visit, "Ann"), None);
+        visit.in_game = true;
+        assert_eq!(page_target(&visit, "Mike"), None);
     }
 
     /// A game channel's joiner goes before the first user who weighs less

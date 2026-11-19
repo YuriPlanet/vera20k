@@ -165,15 +165,7 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     let id = {
         let rt = &mut scene.runtime;
         rt.simulation
-            .spawn_object_with_overlay_registry(
-                "MTNK",
-                &owner_name,
-                75,
-                75,
-                0,
-                &rt.resources.rules,
-                &rt.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("MTNK", &owner_name, 75, 75, 0, &rt.resources.rules)
             .unwrap()
     };
     sample(&scene, id, &cases[0]);
@@ -204,15 +196,7 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     let side = {
         let rt = &mut scene.runtime;
         rt.simulation
-            .spawn_object_with_overlay_registry(
-                "MTNK",
-                &owner_name,
-                78,
-                76,
-                0,
-                &rt.resources.rules,
-                &rt.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("MTNK", &owner_name, 78, 76, 0, &rt.resources.rules)
             .unwrap()
     };
     sample(&scene, side, &cases[2]);
@@ -257,16 +241,14 @@ fn ares_deactivate_dims_replace_the_stock_unit_halving() {
     };
     assert_eq!(level(&sim, 1), 1000);
     for id in [1, 2] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
             .deactivated
             .set_for_test(true);
     }
     assert_eq!(level(&sim, 1), 250, "DeactivateDimPowered, not 500");
     assert_eq!(level(&sim, 2), 650, "an empty Operator hull uses 0.65");
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .set_emp_remaining_for_test(3);
     assert_eq!(level(&sim, 1), 800, "EMP's 0.8 takes precedence");

@@ -335,11 +335,10 @@ fn compare_shape_corpus(
             );
             let mut view = camera(size);
             view.camera_pos = camera_pos;
-            // The original fixture explicitly supplies baseline1024; production
-            // uses32768. A test-only origin rebase matches that supplied buffer
-            // without changing producer Z terms. Canonical rows need no rebase.
-            view.native_z_origin_y =
-                input["depth_baseline"].as_i64().unwrap_or(1024) as f32 - 32768.;
+            // The original fixture supplies baseline 1024, a seed panned from
+            // production's 32768 (`native_z::ZSeed`), without changing
+            // producer Z terms. Canonical rows need no pan.
+            view.native_z_pan = (32768 - input["depth_baseline"].as_i64().unwrap_or(1024)) as f32;
             batch.write_camera(&gpu.queue, view);
             renderer.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
             pool.upload_on_device(

@@ -418,7 +418,7 @@ impl Simulation {
             object.strength,
             rules.general.condition_yellow,
         );
-        let garrisoned = !entity.passenger_role.occupants().is_empty();
+        let garrisoned = !entity.passenger_role().occupants().is_empty();
         // Ares BuildingClass_Place_Academy (hook 0x00446366 -> 10023750),
         // inside the first-opening block: an academy joins its owner's list.
         if ares && first_opening {
@@ -458,9 +458,7 @@ impl Simulation {
             && object.helipad
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            house
-                .tracking_mut()
-                .add_airport_docks(object.number_of_docks);
+            house.add_airport_docks(object.number_of_docks);
         }
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);
@@ -667,7 +665,7 @@ impl Simulation {
                 object.strength,
                 rules.general.condition_yellow,
             );
-            let garrisoned = !entity.passenger_role.occupants().is_empty();
+            let garrisoned = !entity.passenger_role().occupants().is_empty();
             self.set_building_anim_slot(id, slot as u8, damaged, garrisoned, 0, rules);
         }
     }
@@ -1027,7 +1025,7 @@ impl Simulation {
                 == crate::sim::mission::MissionId::from_known(
                     crate::sim::mission::MissionType::Repair,
                 );
-        let garrisoned = !entity.passenger_role.occupants().is_empty();
+        let garrisoned = !entity.passenger_role().occupants().is_empty();
         let delayed_fire = self.building_anim_delayed_fire(owner, rules);
         self.substrate.clear_building_anim_reference(expired);
         let next = match slot {
@@ -1304,7 +1302,7 @@ pub fn current_body_frame(
                 .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
             occupants: object
                 .can_be_occupied
-                .then_some(entity.passenger_role.occupants().count()),
+                .then_some(entity.passenger_role().occupants().count()),
             tech_level,
             selling: entity.building_down(),
             buildup: [control[0], control[1]],
@@ -1349,7 +1347,7 @@ pub(crate) fn receiver_body_frame(
                 .then_some(art.map_or(9, |art| art.building_gate_stages)),
             occupants: object
                 .can_be_occupied
-                .then_some(entity.passenger_role.occupants().count()),
+                .then_some(entity.passenger_role().occupants().count()),
             tech_level,
             selling: false,
             buildup: [0, 1],

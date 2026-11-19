@@ -189,12 +189,26 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
 /// FreeForAll's (`0x005C0E30`) answers false, like every other mode's.
 #[test]
 fn cooperative_computers_turn_paranoid_without_allies_allowed() {
+    use crate::sim::scenario_session::ScenarioGameMode;
     use crate::skirmish_modes::MpModeClass;
-    let mut rules = rules();
-    rules.general.allies_allowed = false;
-    for (mode, paranoid_runs) in [
-        (MpModeClass::Cooperative, true),
-        (MpModeClass::FreeForAll, false),
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_mode_rules_for_map(2, "Hills.mmx")
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    assert!(!rules.general.allies_allowed);
+    let mode = ScenarioGameMode::Skirmish;
+    let cooperative = MpModeClass::Cooperative;
+    let free_for_all = MpModeClass::FreeForAll;
+    let free_for_all_rules = mode.stock_rule_policy(Some(free_for_all));
+    for (class, policy, paranoid_runs) in [
+        (cooperative, mode.stock_rule_policy(Some(cooperative)), true),
+        (free_for_all, free_for_all_rules, false),
+        (
+            free_for_all,
+            free_for_all_rules.with_paranoid_ignores_allies_allowed(true),
+            true,
+        ),
     ] {
         let (mut sim, ids) = sim_with(
             &rules,
@@ -204,17 +218,61 @@ fn cooperative_computers_turn_paranoid_without_allies_allowed() {
                 ("Computer2", "Russians", false),
             ],
         );
-        sim.session
-            .install_multiplayer_house_identity(mode, Vec::new());
+        sim.install_session_admission(mode, Some(class), policy);
         paranoid(&mut sim, &rules);
         assert_eq!(
             allies(&sim, "Computer1") == set(&["Computer2"]),
             paranoid_runs,
-            "{mode:?}"
+            "{class:?} {policy:?}"
         );
         assert_eq!(
             !sim.houses[&ids[1]].grudge_scores().is_empty(),
             paranoid_runs,
+            "{class:?} {policy:?}"
+        );
+    }
+}
+
+/// `Make_Ally` checks `[AI] Paranoid` at 0x004F9C5F. Trigger 30's
+/// BuildConst path calls at 0x0050C2F0 with only the AI and mode gates.
+#[test]
+fn disabling_paranoid_suppresses_human_ally_but_not_skirmish_base_activation() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let patch = IniFile::from_str("[AI]\nParanoid=no\n");
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    assert!(!rules.general.paranoid);
+    assert!(rules.general.allies_allowed);
+    let houses = [
+        ("Player1", "Americans", true),
+        ("Player2", "Americans", true),
+        ("Computer1", "Russians", false),
+        ("Computer2", "Russians", false),
+    ];
+    for (mode, expects_paranoid) in [
+        (ScenarioGameMode::Skirmish, true),
+        (ScenarioGameMode::Campaign, false),
+    ] {
+        let (mut sim, ids) = sim_with(&rules, &houses);
+        sim.session.set_game_mode(mode);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.make_ally(ids[0], ids[1], &rules, None, FrameEffects::default(), false);
+        assert_eq!(allies(&sim, "Player1"), set(&["Player2"]));
+        assert!(allies(&sim, "Computer1").is_empty());
+
+        sim.spawn_object("NACNST", "Computer1", 12, 12, 0, &rules)
+            .expect("spawn the computer construction yard");
+        assert!(sim.trigger_auto_base_building(ids[2], 1, &rules, None, FrameEffects::default()));
+        assert_eq!(sim.houses[&ids[2]].base_center(), Some((12, 12)));
+        assert_eq!(
+            allies(&sim, "Computer1").contains("COMPUTER2"),
+            expects_paranoid,
             "{mode:?}"
         );
     }

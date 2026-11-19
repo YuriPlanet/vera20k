@@ -727,9 +727,10 @@ impl Simulation {
         // 10. Ares 3.0 BuildingClass_Destroy_Refinery (10023DA0, hook
         // 0x441B30) replaces the stock spill to 0x441C0C: the store leaves
         // the building and House, spilling with TiberiumSpill
-        // (`sim::ares_tiberium_storage`). The stock spill has no store to
-        // read without Ares.
-        if rules.ares() {
+        // (`sim::ares_tiberium_storage`), when the money takes its Ares form
+        // (`RuleSet::ares_form`), as everything that fills the store. The
+        // stock spill has no store to read without it.
+        if rules.ares_form() {
             self.ares_destroy_refinery_storage(building_id, rules, effects);
         }
 

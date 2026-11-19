@@ -1009,6 +1009,55 @@ fn a_computer_house_without_a_yard_hunts_and_deploys_its_mcv() {
     );
 }
 
+/// UnitClass::AI (0x007363DE..0x0073645B) and the initial Unload result
+/// (0x0073DDCB..0x0073DE1E) keep their HouseClass::IsControlledByHuman gate.
+#[test]
+fn mcv_deploy_hunt_follows_admitted_rules_and_house_control() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign_rules = campaign.stock_rule_policy(None);
+    let campaign_hunt = campaign_rules.with_ai_mcv_deploy_hunt(true);
+    for (mode, policy, player_control, hunts) in [
+        (campaign, campaign_rules, false, false),
+        // Mode 5 treats the House's PlayerControl byte differently from mode 0.
+        (skirmish, skirmish.stock_rule_policy(None), true, true),
+        (campaign, campaign_hunt, false, true),
+        (campaign, campaign_hunt, true, false),
+    ] {
+        let (mut sim, rules, id) = house_fixture(false, BUILDABLE);
+        sim.install_session_admission(mode, None, policy);
+        let owner = sim.interner.get("Americans").unwrap();
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_player_control_for_test(player_control);
+        let rng = sim.scenario_rng.logical_state();
+        sim.substrate
+            .mission_assign_exact(id, MissionId::from_known(MissionType::Guard), 0)
+            .unwrap();
+        ai_queue_hunt(&mut sim, id, &rules);
+        let queued = |sim: &Simulation| sim.substrate.entities.get(id).unwrap().mission.queued();
+        let hunt = MissionId::from_known(MissionType::Hunt);
+        let guard = MissionId::from_known(MissionType::Guard);
+        assert_eq!(queued(&sim), if hunts { hunt } else { MissionId::NONE });
+
+        sim.substrate
+            .mission_assign_exact(id, MissionId::from_known(MissionType::Unload), 0)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .mission
+            .set_handler_state(1);
+        finish_initial_attempt(&mut sim, id, &rules);
+        assert_eq!(queued(&sim), if hunts { hunt } else { guard });
+        assert!(sim.scenario_rng.logical_state() == rng);
+    }
+}
+
 /// [`house_fixture`] with a tank and an infantryman for `Americans` and a
 /// tank for a human `Russians` house, each holding an archive target.
 fn ground_force_fixture(human: bool) -> (Simulation, RuleSet, u64, [u64; 3]) {
@@ -1487,7 +1536,7 @@ fn retail_dustbowl_a_hard_computer_walls_its_yard() {
         let overlay = rules
             .object("NAWALL")
             .and_then(|ty| ty.to_overlay.as_deref())
-            .and_then(|name| resources.overlay_registry.id_for_name(name))
+            .and_then(|name| resources.rules.overlay_registry().id_for_name(name))
             .expect("retail NAWALL's overlay");
         (
             rules.building_type_index("NACNST").expect("retail NACNST"),

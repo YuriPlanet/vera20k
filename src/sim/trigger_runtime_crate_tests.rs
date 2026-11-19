@@ -2,6 +2,7 @@
 use super::*;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::crates::CrateSlot;
 use crate::sim::intern::InternedId;
 use crate::sim::rng::SimRng;
 use serde_json::{Value, json};
@@ -68,7 +69,7 @@ fn assert_rng(sim: &Simulation, state: &Value, name: &str) {
     );
 }
 
-fn slot_words(slot: &crate::sim::crates::CrateSlot) -> Value {
+fn slot_words(slot: &CrateSlot) -> Value {
     json!([
         slot.start_frame,
         slot.aux,
@@ -82,7 +83,7 @@ fn zero_slot_priors(sim: &mut Simulation) {
     // The native fixture deliberately clears all256 physical slot records.
     // This prior differs from CrateAuthority's ordinary constructor timer -1.
     for index in 0..256 {
-        *sim.crate_authority.slot_mut_for_test(index) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = CrateSlot {
             start_frame: 0,
             aux: 0,
             duration: 0,
@@ -126,7 +127,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
         zero_slot_priors(&mut sim);
         if input["slots_full"] == true {
             for index in 0..256 {
-                *sim.crate_authority.slot_mut_for_test(index) = crate::sim::crates::CrateSlot {
+                *sim.crate_authority_mut_for_test().slot_mut_for_test(index) = CrateSlot {
                     start_frame: 50,
                     aux: 777,
                     duration: 100,
@@ -236,17 +237,17 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             "{name}: active108 AL"
         );
         assert_eq!(
-            slot_words(&sim.crate_authority.slots()[0]),
+            slot_words(&sim.crate_authority().slots()[0]),
             case["output"]["first_slot"],
             "{name}"
         );
         assert_eq!(
-            slot_words(&sim.crate_authority.slots()[1]),
+            slot_words(&sim.crate_authority().slots()[1]),
             case["output"]["second_slot"],
             "{name}"
         );
         assert_eq!(
-            sim.crate_authority
+            sim.crate_authority()
                 .slots()
                 .iter()
                 .filter(|s| !s.is_empty())
@@ -402,7 +403,7 @@ fn money_pickup_matches_original_reentrant_owner_alive_and_notification_controls
                 .set_object_alive_for_test(false);
         }
         zero_slot_priors(&mut sim);
-        *sim.crate_authority.slot_mut_for_test(0) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
             start_frame: 50,
             aux: 777,
             duration: 100,
@@ -463,7 +464,7 @@ fn money_pickup_matches_original_reentrant_owner_alive_and_notification_controls
             "{name}: data"
         );
         assert_eq!(
-            slot_words(&sim.crate_authority.slots()[0]),
+            slot_words(&sim.crate_authority().slots()[0]),
             case["slot"],
             "{name}: solo retains slot"
         );
@@ -789,7 +790,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     sim.session.set_binary_frame_for_test(deadline - 1);
     poll(&mut sim, &rules, &registry);
     assert_eq!(
-        sim.crate_authority
+        sim.crate_authority()
             .slots()
             .iter()
             .filter(|slot| !slot.is_empty())
@@ -810,7 +811,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     sim.session.set_binary_frame_for_test(deadline);
     poll(&mut sim, &rules, &registry);
     assert_eq!(
-        sim.crate_authority
+        sim.crate_authority()
             .slots()
             .iter()
             .filter(|slot| !slot.is_empty())
@@ -850,7 +851,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     );
     // Save the notification between pickup and Logic, preserving the owner
     // rather than rebuilding a second scenario flag in the test.
-    let authority = sim.crate_authority.clone();
+    let authority = sim.crate_authority().clone();
     let saved = GameSnapshot::save(&sim, 0, 0, "ALL07SMD.MAP", 0);
     let mut sim = GameSnapshot::load(&saved).unwrap().sim;
     sim.restore_after_snapshot_load().unwrap();
@@ -862,13 +863,13 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     sim.restore_map_authority_after_snapshot_load(&rules, &registry, None)
         .unwrap();
     sim.resolve_type_handles(&rules);
-    assert_eq!(sim.crate_authority, authority);
+    assert_eq!(sim.crate_authority(), &authority);
     assert!(sim.trigger_runtime.dirty[3]);
     poll(&mut sim, &rules, &registry);
     assert!(sim.trigger_runtime.globals_set.contains(&7));
     assert!(!sim.trigger_runtime.dirty[3]);
     assert_eq!(
-        sim.crate_authority
+        sim.crate_authority()
             .slots()
             .iter()
             .filter(|slot| !slot.is_empty())

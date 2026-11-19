@@ -374,8 +374,7 @@ fn fractional_retail_land_row_reaches_rhino_entry_and_drive() {
         crate::sim::world::FrameEffects::default()
     ));
     sim.session.set_binary_frame_for_test(101);
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .mission_leaf
         .set_foot_idle_entry_latch(0);
@@ -2103,6 +2102,44 @@ fn gsi_04_02_clear_and_unknown_fill_zero_with_equal_scenario_bounds() {
         assert_eq!(selector.map_fill_scenario_advance_count(), 0);
         assert_eq!(selector.raw_draw_count(), 0);
     }
+}
+
+/// On a Size one cell wide the load's fill walk (0x004ACF81..0x004ACFD6)
+/// ends at (2, 1), where `Next @ 0x00578290` finds no cell: one Scenario draw
+/// fills (1, 1), and the rest of the allocated diagonal keeps the CellClass
+/// constructor's tile 0xFFFF and level 0.
+#[test]
+fn a_one_cell_wide_load_draws_once_and_fills_only_its_first_cell() {
+    let mut map = make_map(Vec::new(), Vec::new(), Vec::new());
+    map.header.width = 1;
+    map.header.height = 3;
+    map.header.level = 2;
+    let mut cache = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
+    let mut forbidden_main = || panic!("Fill must not draw Main");
+    let mut selector = cache.begin_load(&mut forbidden_main);
+    let mut draws = 0;
+    let mut fill = |_low, _high| {
+        draws += 1;
+        7
+    };
+
+    let cells = materialize_map_load_cells(
+        &map,
+        None,
+        &mut selector,
+        &mut fill,
+        &SharedCellDummy::fresh(),
+    );
+
+    let cells: Vec<_> = cells
+        .iter()
+        .map(|cell| ((cell.rx, cell.ry), cell.tile_index, cell.z))
+        .collect();
+    assert_eq!(
+        cells,
+        vec![((1, 1), 7, 2), ((2, 2), 0xFFFF, 0), ((3, 3), 0xFFFF, 0)]
+    );
+    assert_eq!(draws, 1);
 }
 
 #[test]

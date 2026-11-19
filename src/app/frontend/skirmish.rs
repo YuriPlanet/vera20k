@@ -17,7 +17,6 @@ use crate::render::overlay_assets::{render_overlay_names, resolve_overlay_name_f
 use crate::render::overlay_atlas::{self, OverlayAtlas};
 use crate::rules::color_scheme::{ColorSchemeEntry, scheme_entry_by_name};
 use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::skirmish_colors::SkirmishColorMode;
 use crate::sim::scenario_bootstrap::normalized_launch_slots;
@@ -87,7 +86,6 @@ pub(crate) fn build_overlay_presentation(
     theater_ext: &str,
     theater_name: &str,
     rules: &RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
     theater_iso_palette: Option<&Palette>,
     theater_unit_palette: Option<&Palette>,
     theater_tiberium_palette: Option<&Palette>,
@@ -113,6 +111,7 @@ pub(crate) fn build_overlay_presentation(
         );
     }
 
+    let overlay_registry = rules.overlay_registry();
     let art_registry = rules.art();
     let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
 
@@ -272,10 +271,10 @@ mod tests {
     }
 
     fn test_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: test_battle_mode(),
-            selected_map_file: Some("test.mmx".to_string()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            test_battle_mode(),
+            Some("test.mmx".to_string()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".to_string(),
                 slot: SkirmishLocalSlot {
@@ -288,9 +287,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -300,10 +298,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: Default::default(),
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     #[test]
@@ -1481,7 +1477,9 @@ mod tests {
             difficulty: Default::default(),
         });
         let slots = normalized_launch_slots(&session);
-        let alliances = launch_alliance_map(&slots, &session.mode);
+        let policy = crate::sim::scenario_session::ScenarioGameMode::Skirmish
+            .stock_rule_policy(Some(session.mode.class));
+        let alliances = launch_alliance_map(&slots, policy);
 
         assert!(
             alliances
@@ -1516,7 +1514,9 @@ mod tests {
         });
         let slots = normalized_launch_slots(&session);
 
-        let alliances = launch_alliance_map(&slots, &session.mode);
+        let policy = crate::sim::scenario_session::ScenarioGameMode::Lan
+            .stock_rule_policy(Some(session.mode.class));
+        let alliances = launch_alliance_map(&slots, policy);
 
         assert!(
             alliances
@@ -2571,7 +2571,6 @@ mod tests {
             let mut session = test_session();
             session.opponents.clear();
             session.ai_player_count = 0;
-            session.rebuild_house_roster();
             session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
             session.options.bases = true;
             session.options.unit_count = 0;

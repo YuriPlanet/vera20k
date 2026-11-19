@@ -1706,6 +1706,65 @@ impl Command {
         )
     }
 
+    /// Every interned type id the payload names. VERA's JSON replay boundary
+    /// (`ReplayPlayback::advance`) checks them against the interner before
+    /// playback, since `StringInterner::resolve` panics on an unknown id.
+    /// No `_` arm: a new variant that carries an id must be listed here.
+    pub(crate) fn interned_ids(&self) -> impl Iterator<Item = InternedId> {
+        let ids = match self {
+            Self::QueueProduction { type_id }
+            | Self::PlaceReadyBuilding { type_id, .. }
+            | Self::CancelProductionByType { type_id, .. } => [Some(*type_id), None],
+            Self::LaunchSuperWeapon { sw_type_id, .. } => [Some(*sw_type_id), None],
+            Self::CompletePaidSuperWeapon { selection, .. }
+            | Self::CancelPaidSuperWeapon { selection }
+            | Self::BeginPaidSuperWeapon { selection, .. } => {
+                [Some(selection.source), Some(selection.destination)]
+            }
+            Self::PlanningRecord { .. }
+            | Self::Select { .. }
+            | Self::Move { .. }
+            | Self::MoveToObject { .. }
+            | Self::Stop { .. }
+            | Self::Attack { .. }
+            | Self::AttackMove { .. }
+            | Self::Guard { .. }
+            | Self::DeployMcv { .. }
+            | Self::UndeployBuilding { .. }
+            | Self::SetRally { .. }
+            | Self::SuspendProduction { .. }
+            | Self::CycleProducerFocus { .. }
+            | Self::SellBuilding { .. }
+            | Self::ToggleRepair { .. }
+            | Self::EjectBunker { .. }
+            | Self::UnloadPassengers { .. }
+            | Self::CaptureBuilding { .. }
+            | Self::PlantC4 { .. }
+            | Self::ToggleInfantryDeploy { .. }
+            | Self::ForceAttackCell { .. }
+            | Self::SellWallAtCell { .. }
+            | Self::ExitMatch
+            | Self::SetGameSpeed { .. }
+            | Self::PlaceProducedMobile { .. }
+            | Self::Scatter { .. }
+            | Self::TogglePrimaryFactory { .. }
+            | Self::Cheer
+            | Self::MegaMission { .. }
+            | Self::Destruct
+            | Self::RemovePlayer { .. }
+            | Self::MoveFlash { .. }
+            | Self::Ally { .. }
+            | Self::LiveGameSpeed { .. }
+            | Self::SetBuildingOnLine { .. }
+            | Self::ArchiveObject { .. }
+            | Self::OpenOptions
+            | Self::SetLatencyFudge { .. }
+            | Self::SynchronizedRecord { .. }
+            | Self::AssignControlGroup { .. } => [None, None],
+        };
+        ids.into_iter().flatten()
+    }
+
     /// Classify local issue, not already-admitted replay/network input. The
     /// semantic paid source/destination commands consume a slot. The normal
     /// UI serializes all three paid actions, including cancellation, before

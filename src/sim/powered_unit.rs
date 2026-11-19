@@ -321,9 +321,7 @@ impl Simulation {
         let foot = entity.category().is_foot();
         let was_offline = entity.deactivated.is_offline();
         self.reset_orders_to_guard(id, rules, effects);
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.selection.deselect();
-        }
+        self.object_deselect(id);
         if foot {
             Self::locomotor_power_off(
                 &mut self.scenario_rng,
@@ -352,6 +350,35 @@ impl Simulation {
             // Then a Building's factory queues (`10013250`): an offline
             // factory no longer serves its production.
             self.ares_update_factory_queues(id, rules, effects);
+        }
+    }
+
+    /// Both Ares power loss (EnableEMPEffect2 10062980, Select at 10062A92) and the
+    /// first EMP hit (enableEMPEffect 10062B40, Select at 10062C46) save a Building's
+    /// Focus across Deactivate. A previously selected victim receives a full
+    /// TechnoClass::Select with the voice latch off before Focus is restored.
+    pub(crate) fn ares_deactivate_with_reselection(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let selected = entity.selection.is_selected();
+        let focus =
+            (entity.category() == EntityCategory::Structure).then(|| entity.archive_target());
+        self.techno_deactivate(id, rules, effects);
+        if selected {
+            let context = crate::sim::world::UninitContext::new(rules, effects.overlay_registry())
+                .with_effects(effects.without_selection_voice());
+            self.techno_select(id, context);
+        }
+        if let Some(focus) = focus
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+        {
+            entity.set_archive_target(focus);
         }
     }
 

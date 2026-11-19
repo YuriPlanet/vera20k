@@ -351,7 +351,6 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
                 .advance_app_frame(
                     &std::mem::take(&mut commands),
                     &rules,
-                    Some(&registry),
                     67,
                     crate::sim::world::TickLane::Ordinary,
                     FrameEffects::default(),

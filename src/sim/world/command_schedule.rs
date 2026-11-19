@@ -239,11 +239,11 @@ impl Simulation {
     /// This process's command sender: its current House's index, or its own
     /// network source while players share Houses.
     pub(super) fn local_command_source(&self) -> Option<i8> {
-        if let Some(source) = self.session.local_shared_house_source() {
+        let view = self.session.local_view_identity();
+        if let Some(source) = view.shared_house_source {
             return Some(source);
         }
-        self.session
-            .current_house()
+        view.current_house
             .and_then(|owner| {
                 self.houses
                     .order()

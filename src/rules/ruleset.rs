@@ -30,9 +30,7 @@ use crate::rules::native_processing::{
     CountryProjection, CountryVeterancyState, ProcessedRulesLayers, RulesLayerStack,
     SideProjection, house_type_index_of_name,
 };
-use crate::rules::object_type::{
-    BuildCategory, FactoryType, HouseMasks, ObjectCategory, ObjectType,
-};
+use crate::rules::object_type::{BuildCategory, HouseMasks, ObjectCategory, ObjectType};
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
 use crate::rules::particle_type::{ParticleType, ParticleTypeId};
 use crate::rules::phobos_switch::phobos_read;
@@ -4295,9 +4293,10 @@ impl GeneralRules {
             game_forming_sound: None,
             game_closed_sound: None,
             message_delay_minutes,
-            shroud_grow: audio_visual.read_bool("ShroudGrow", defaults.shroud_grow),
-            shroud_rate: audio_visual.read_double_bits("ShroudRate", defaults.shroud_rate),
-            fog_rate: audio_visual.read_double_bits("FogRate", defaults.fog_rate),
+            // Projected from the retained AudioVisual pass after processing.
+            shroud_grow: defaults.shroud_grow,
+            shroud_rate: defaults.shroud_rate,
+            fog_rate: defaults.fog_rate,
             speak_delay_minutes: audio_visual.read_double("SpeakDelay", 0.0),
             gui_combo_open_sound: audio_visual
                 .read_name("GUIComboOpenSound", 0x80)
@@ -4998,11 +4997,6 @@ pub struct RuleSet {
     pub aircraft_ids: Vec<String>,
     /// Building IDs in registry order.
     pub building_ids: Vec<String>,
-    /// Maps structure ID (uppercase) → FactoryType for quick lookup.
-    /// Built once at load time from all ObjectType entries with Factory= set.
-    /// Used by production_tech to determine what a building produces without
-    /// hardcoding building names.
-    pub factory_map: HashMap<String, FactoryType>,
     /// The `[General] Prerequisite*` lists (Rules `+0x358..+0x3E4`), in
     /// [`PrerequisiteGroup::ALL`] order: an on-map building of any of them
     /// meets that group in CanBuild.
@@ -5052,7 +5046,7 @@ pub struct RuleSet {
     /// these are per-decoration-object types parsed from `[TerrainTypes]`.
     pub terrain_object_types: HashMap<String, TerrainObjectType>,
     /// Immutable projection of the process-resident Overlay type reader.
-    overlay_registry: crate::rules::overlay_types::OverlayTypeRegistry,
+    overlay_registry: std::sync::Arc<crate::rules::overlay_types::OverlayTypeRegistry>,
     /// Rules-driven bridge destruction defaults.
     pub bridge_rules: BridgeRules,
     /// Scenario-start crate counts and crate overlay images from `[CrateRules]`.
@@ -5448,6 +5442,14 @@ impl RuleSet {
     /// The immutable Overlay projection from this same processed Rules owner.
     pub fn overlay_registry(&self) -> &crate::rules::overlay_types::OverlayTypeRegistry {
         &self.overlay_registry
+    }
+
+    /// Keep this projection across authored constructors that bind other Rules
+    /// resources, or after the match gives its overlay view back to the shell.
+    pub fn retain_overlay_registry(
+        &self,
+    ) -> std::sync::Arc<crate::rules::overlay_types::OverlayTypeRegistry> {
+        std::sync::Arc::clone(&self.overlay_registry)
     }
 
     /// Build from the active ordered rules sources.
@@ -7178,17 +7180,7 @@ impl RuleSet {
             }
         }
 
-        // Step 5: Build factory lookup map from Factory= keys on all objects.
-        let factory_map: HashMap<String, FactoryType> = object_list
-            .iter()
-            .filter_map(|obj| {
-                obj.factory_type()
-                    .map(|ft| (obj.id.to_ascii_uppercase(), ft))
-            })
-            .collect();
-        log::info!("Factory map: {} entries", factory_map.len());
-
-        // Step 6: Parse superweapon type registry.
+        // Step 5: Parse superweapon type registry.
         let ares_super_weapon_metadata: BTreeMap<_, _> = if crate::rules::ares_switch::ares_way() {
             processed
                 .super_weapon_availability_states()
@@ -7408,7 +7400,6 @@ impl RuleSet {
             vehicle_ids,
             aircraft_ids,
             building_ids,
-            factory_map,
             prerequisite_lists: Default::default(),
             ares_prerequisites: None,
             ares_armors: processed.ares_armors().cloned(),
@@ -7432,8 +7423,9 @@ impl RuleSet {
             terrain_rules,
             tiberium_types,
             terrain_object_types,
-            overlay_registry:
+            overlay_registry: std::sync::Arc::new(
                 crate::rules::overlay_types::OverlayTypeRegistry::from_processed_rules(processed),
+            ),
             bridge_rules,
             crate_rules,
             powerups,
@@ -11343,14 +11335,6 @@ impl RuleSet {
         self.particle_system_types.len()
     }
 
-    /// Look up the factory type for a structure by ID (case-insensitive).
-    /// Returns None if the structure has no Factory= key in rules.ini.
-    pub fn factory_type(&self, structure_id: &str) -> Option<FactoryType> {
-        crate::util::native_string::with_ascii_uppercase(structure_id, |key| {
-            self.factory_map.get(key).copied()
-        })
-    }
-
     /// `group`'s `[General] Prerequisite*` list.
     pub(crate) fn prerequisite_list(&self, group: PrerequisiteGroup) -> &[Prerequisite] {
         &self.prerequisite_lists[group.index()]
@@ -11883,13 +11867,8 @@ impl RuleSet {
 
     /// Load every ObjectType `AlphaImage=` SHP the folded rules name
     /// ([`crate::rules::alpha_image_assets`]).
-    pub fn bind_alpha_images(
-        &mut self,
-        overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
-        assets: &crate::assets::asset_manager::AssetManager,
-    ) {
-        self.alpha_images =
-            crate::rules::alpha_image_assets::AlphaImageCatalog::bind(self, overlays, assets);
+    pub fn bind_alpha_images(&mut self, assets: &crate::assets::asset_manager::AssetManager) {
+        self.alpha_images = crate::rules::alpha_image_assets::AlphaImageCatalog::bind(self, assets);
     }
 
     /// The loaded AlphaImage a type's `AlphaImage=` names: the type's +0xAC
@@ -12045,11 +12024,7 @@ impl RuleSet {
     /// Visit AlphaImage names only for typed families whose native
     /// ObjectTypeClass reader has an allocated Rust owner. AnimType names are
     /// restricted to ART bodies admitted by the Rules processor.
-    pub(crate) fn visit_alpha_image_names(
-        &self,
-        overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
-        mut visit: impl FnMut(&str),
-    ) {
+    pub(crate) fn visit_alpha_image_names(&self, mut visit: impl FnMut(&str)) {
         for object in &self.object_list {
             visit(&object.alpha_image);
         }
@@ -12071,7 +12046,7 @@ impl RuleSet {
         for voxel_anim in &self.voxel_anim_types {
             visit(&voxel_anim.alpha_image);
         }
-        for image_name in overlays.alpha_images() {
+        for image_name in self.overlay_registry().alpha_images() {
             visit(image_name);
         }
         for (name, admitted) in &self.anim_type_art_read_states {
@@ -12689,29 +12664,6 @@ SpawnCount=3
             .cloak_sound,
             None,
             "empty CloakSound preserves the native invalid-index default"
-        );
-    }
-
-    #[test]
-    fn unit_delivery_negative_deferment_keeps_the_twenty_frame_fallback() {
-        let _ares = crate::rules::ares_switch::read_ares_way(true);
-        let mut layers = RulesLayerStack::new(IniFile::from_str(
-            "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\nSW.Deferment=-1",
-        ));
-        layers.push(
-            crate::rules::native_processing::RulesLayerKind::Scenario,
-            IniFile::from_str("[Delivery]\nRechargeTime=2"),
-        );
-        let rules = RuleSet::from_rules_layers(&layers).unwrap();
-        assert_eq!(
-            rules
-                .super_weapon("Delivery")
-                .unwrap()
-                .unit_delivery
-                .as_ref()
-                .unwrap()
-                .deferment,
-            20
         );
     }
 
@@ -16241,24 +16193,23 @@ Projectile=Invisible
         let mut interner = crate::sim::intern::StringInterner::new();
         // Mirror Simulation::intern_rule_type_ids (the production interning
         // pass) so the table sees every registry id.
-        for id in rules
+        let ids: Vec<_> = rules
             .infantry_ids
             .iter()
             .chain(&rules.vehicle_ids)
             .chain(&rules.aircraft_ids)
             .chain(&rules.building_ids)
-        {
-            interner.intern(id);
-        }
-        let table = crate::sim::type_handle_table::TypeHandleTable::build(&rules, &interner);
+            .map(|name| interner.intern(name))
+            .collect();
+        interner.bind_types(&rules);
 
-        // Completeness: every registry id in the fixture (E1, E2, MTNK, GAPOWR)
-        // has a [section], so none is an orphan type_ref.
-        assert_eq!(
-            table.orphan_count(),
-            0,
-            "no interned type id should fail to resolve to an object"
-        );
+        for id in ids {
+            assert!(
+                interner.type_handle(id, &rules).is_some(),
+                "{} has no object type",
+                interner.resolve(id),
+            );
+        }
 
         // Casing: a lowercased reference resolves to the same handle as the stored
         // uppercase id. The interner is case-insensitive, so the interning pass ("MTNK")
@@ -16266,7 +16217,10 @@ Projectile=Invisible
         let mtnk_lower = interner
             .get("mtnk")
             .expect("MTNK interned case-insensitively");
-        assert_eq!(table.handle_for(mtnk_lower), rules.type_handle("MTNK"));
+        assert_eq!(
+            interner.type_handle(mtnk_lower, &rules),
+            rules.type_handle("MTNK")
+        );
         assert!(
             rules.object("mtnk").is_some(),
             "lowercased object() resolves"

@@ -174,6 +174,7 @@ fn save(sim: &Simulation, rules: &RuleSet, order: Option<&SavedSidebarOrder>) ->
         None,
         None,
     )
+    .unwrap()
 }
 
 fn prepare(
@@ -187,7 +188,6 @@ fn prepare(
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(rules),
         Some(&load_fixture_terrain()),
-        Some(&OverlayTypeRegistry::empty()),
     )
 }
 

@@ -71,7 +71,6 @@ fn admitted_victory_survives_a_later_house_tag_replacing_the_pending_result() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::default().with_outcome_wait(&vox),
@@ -84,11 +83,7 @@ fn admitted_victory_survives_a_later_house_tag_replacing_the_pending_result() {
     assert!(sim.ready_outcome_for_owner(player).is_none());
     vox.0.set(true);
     let frame = sim
-        .resume_outcome_wait(
-            &rules,
-            None,
-            FrameEffects::default().with_outcome_wait(&vox),
-        )
+        .resume_outcome_wait(&rules, FrameEffects::default().with_outcome_wait(&vox))
         .unwrap();
     assert!(!frame.outcome_waiting);
     assert_eq!(sim.trigger_runtime.action_trace, vec![(67, 0), (2, 8)]);
@@ -126,4 +121,86 @@ fn admitted_victory_survives_a_later_house_tag_replacing_the_pending_result() {
     );
     assert!(restored.houses[&player].has_lost());
     assert_eq!(restored.houses[&player].outcome_timer().remaining(0), 90);
+}
+
+#[test]
+fn allow_win_gates_live_and_restored_victory_waits() {
+    use crate::sim::snapshot::{GameSnapshot, SnapshotRestoreError};
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Fight.MAP")
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    for (mode, waits_for_vox) in [
+        (ScenarioGameMode::Campaign, false),
+        (ScenarioGameMode::Skirmish, true),
+    ] {
+        let mut sim = Simulation::new();
+        sim.install_session_mode(mode);
+        sim.publish_scenario_started();
+        sim.session.set_map_width_for_test(32);
+        sim.session.set_map_height_for_test(32);
+        sim.install_resolved_terrain_for_new_map(test_grid(32, 32, test_clear_cell));
+        let player = sim.interner.intern("Player");
+        let country = sim.interner.intern("Russians");
+        sim.register_house(HouseState::new(
+            player,
+            rules.country_side_index_raw("Russians").unwrap(),
+            Some(country),
+            true,
+            0,
+            10,
+        ));
+        sim.session.set_current_house_for_test(Some(player));
+        super::tests::install_event_ingress_map(
+            &mut sim,
+            &rules,
+            "[Triggers]\nWIN=Russians,<none>,Win,0,1,1,1,0\n\
+             ALLOW=Russians,<none>,Allow Win,0,1,1,1,0\n\
+             [Events]\nWIN=1,13,0,0\nALLOW=1,13,0,999\n\
+             [Actions]\nWIN=1,67,0,0,0,0,0,0,A\nALLOW=1,15,0,0,0,0,0,0,A\n\
+             [Tags]\nWIN_TAG=0,Win,WIN\nALLOW_TAG=0,Allow Win,ALLOW\n",
+        );
+        assert_eq!(sim.houses[&player].allow_win_tag_state().0, 1);
+
+        let vox = VoxIdle(std::cell::Cell::new(false));
+        let effects = FrameEffects::default().with_outcome_wait(&vox);
+        let frame = sim
+            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, effects)
+            .unwrap();
+        assert!(sim.houses[&player].has_won());
+        assert_eq!(frame.outcome_waiting, waits_for_vox);
+        assert_eq!(frame.tick.frame_committed, !waits_for_vox);
+        if !waits_for_vox {
+            continue;
+        }
+
+        let bytes = GameSnapshot::save_validated(&sim, 0, 0, "AllowWin wait", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(
+            restored.pending_outcome_wait(),
+            Some(HouseOutcomeKind::Victory)
+        );
+
+        let mut incompatible = GameSnapshot::load(&bytes).unwrap().sim;
+        incompatible.install_session_mode(ScenarioGameMode::Campaign);
+        assert_eq!(
+            incompatible.restore_after_snapshot_load(),
+            Err(SnapshotRestoreError::InvalidFrameContinuation {
+                reason: "outcome cursor disagrees with the waiting House result",
+            }),
+        );
+
+        vox.0.set(true);
+        let frame = restored.resume_outcome_wait(&rules, effects).unwrap();
+        assert!(!frame.outcome_waiting);
+        assert_eq!(
+            restored
+                .ready_outcome_for_owner(player)
+                .map(|outcome| outcome.kind),
+            Some(HouseOutcomeKind::Victory),
+        );
+    }
 }

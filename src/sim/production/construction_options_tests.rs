@@ -190,7 +190,6 @@ fn house_pass_carries_stored_building_order_before_recalculation() {
         .advance_app_frame(
             &[],
             &rules,
-            None,
             22,
             crate::sim::world::TickLane::Ordinary,
             Default::default(),

@@ -173,7 +173,7 @@ impl Gpu {
                     _pad: 0.0,
 
                     native_z_origin_y: 0.0,
-                    _native_z_pad: 0.0,
+                    native_z_pan: 0.0,
                 }),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
@@ -230,7 +230,11 @@ impl Gpu {
                     },
                     fragment: Some(wgpu::FragmentState {
                         module: &module,
-                        entry_point: Some("fs_main"),
+                        entry_point: Some(if matches!(layer.shader, Shader::SpriteWrite) {
+                            "fs_write"
+                        } else {
+                            "fs_main"
+                        }),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: FORMAT,
                             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -492,6 +496,18 @@ fn cliff_depth_lanes() -> Layer {
     terrain
 }
 
+/// A 20x24 TMP whose columns repeat ten ground rows, Z 32768 less 5..23.
+fn staggered_depth_lanes() -> Layer {
+    let mut terrain = Layer::solid(Shader::Terrain, RED, -40.0);
+    terrain.source_size = [20, 24];
+    terrain.instance.size = [20.0, 24.0];
+    terrain.rgba = RED.repeat(20 * 24);
+    terrain.z_bytes = (0..20 * 24)
+        .map(|pixel| 40 - [5, 10, 11, 12, 18, 19, 20, 21, 22, 23][pixel % 10])
+        .collect();
+    terrain
+}
+
 #[test]
 #[ignore = "requires a wgpu adapter; run explicitly"]
 fn cliff_contributions_change_shp_and_indexed_voxel_admission_at_exact_boundaries() {
@@ -635,13 +651,7 @@ fn bridge_split_shared_parts_match_two_clipped_indexed_composite_blits() {
 
     let gpu = Gpu::new();
     let size = [20, 24];
-    let mut terrain = Layer::solid(Shader::Terrain, RED, -40.0);
-    terrain.source_size = size;
-    terrain.instance.size = [20.0, 24.0];
-    terrain.rgba = RED.repeat(20 * 24);
-    terrain.z_bytes = (0..20 * 24)
-        .map(|pixel| 40 - [5, 10, 11, 12, 18, 19, 20, 21, 22, 23][pixel % 10])
-        .collect();
+    let terrain = staggered_depth_lanes();
 
     // Native contract: one 20x32 rectangle at y=-4; original split y=12.
     // Tactical clipping leaves upper y=0/h=12 and lower y=12/h=8. These
@@ -848,13 +858,7 @@ fn unsplit_voxel_body_seeds_from_its_view_clipped_bottom() {
     // a 20-row view walks Z as if its bottom row were the view's last.
     let gpu = Gpu::new();
     let size = [20, 24];
-    let mut terrain = Layer::solid(Shader::Terrain, RED, -40.0);
-    terrain.source_size = size;
-    terrain.instance.size = [20.0, 24.0];
-    terrain.rgba = RED.repeat(20 * 24);
-    terrain.z_bytes = (0..20 * 24)
-        .map(|pixel| 40 - [5, 10, 11, 12, 18, 19, 20, 21, 22, 23][pixel % 10])
-        .collect();
+    let terrain = staggered_depth_lanes();
 
     let mut cut = indexed_bridge_test_layer([0.0, 4.0], [20, 16], 33);
     cut.instance.zshape_origin = [4.0, 16.0];
@@ -873,6 +877,49 @@ fn unsplit_voxel_body_seeds_from_its_view_clipped_bottom() {
         gpu.render_sized(&[terrain, body], size),
         actual,
         "fixture missed the clipped seed"
+    );
+}
+
+/// Bit_Blit clips a raw SHP frame to the view before it seeds either
+/// gradient kind (0x00437461, 0x0043751A, 0x0043754A). The RLE walker seeds
+/// a top-seeded entry from the clipped top (0x00437BAB), entry 2 from the
+/// whole rectangle (0x00437C39).
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn shp_frames_seed_from_their_view_clipped_rows() {
+    use super::native_z::Z_GRADIENT_RAW_FRAME_FLAG;
+
+    // A 20-row view over a 24-row target; the frames start 3 rows above it.
+    let gpu = Gpu::new();
+    let visible = 20 * 20;
+    let render = |top: f32, height: u32, z_gradient: u32| {
+        let mut frame = Layer::solid(Shader::SpriteRead, BLUE, 0.0);
+        frame.instance.position = [0.0, top];
+        frame.instance.size = [20.0, height as f32];
+        frame.instance.z_gradient = z_gradient;
+        frame.instance.draw_state.fx_params[3] = 20.0;
+        frame.source_size = [20, height];
+        frame.rgba = BLUE.repeat((20 * height) as usize);
+        frame.z_bytes = vec![0; (20 * height) as usize];
+        frame.indices = vec![33; (20 * height) as usize];
+        let mut pixels = gpu.render_sized(&[staggered_depth_lanes(), frame], [20, 24]);
+        pixels.truncate(visible);
+        pixels
+    };
+
+    let vertical = ZGradient::Vertical as u32;
+    let raw = render(-3.0, 31, vertical | Z_GRADIENT_RAW_FRAME_FLAG);
+    assert_eq!(raw, render(0.0, 20, vertical), "raw frame seeded unclipped");
+    assert_ne!(
+        render(-3.0, 31, vertical),
+        raw,
+        "RLE entry 2 seeded from the clipped rows"
+    );
+    let moderate = ZGradient::Moderate as u32;
+    assert_eq!(
+        render(-3.0, 23, moderate),
+        render(0.0, 20, moderate),
+        "RLE top-seeded frame seeded above the view"
     );
 }
 
@@ -1104,6 +1151,29 @@ fn terrain_and_building_depth_hide_only_behind_pixels_and_preserve_holes() {
     );
 }
 
+/// The Z leaves compare the signed candidate (0x00497FD0, 0x00494B60): one
+/// above 65535 never draws, even over empty Z, and a negative one always
+/// does, whatever its low 16 bits.
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn sprite_candidates_outside_the_stored_word_compare_signed() {
+    let gpu = Gpu::new();
+    // Flat rows at seed 32768: z = 32768 + z_adjust - row.
+    let pixels = gpu.render(&[Layer::solid(Shader::SpriteRead, BLUE, 40_000.0)]);
+    assert!(
+        pixels.iter().all(|pixel| *pixel == [0, 0, 0, 255]),
+        "a candidate above 65535 drew through its low 16 bits"
+    );
+    let pixels = gpu.render(&[
+        Layer::solid(Shader::SpriteWrite, RED, -32_668.0),
+        Layer::solid(Shader::SpriteRead, BLUE, -32_800.0),
+    ]);
+    assert!(
+        pixels.iter().all(|pixel| *pixel == BLUE),
+        "a negative candidate was refused over stored Z near 100"
+    );
+}
+
 #[test]
 #[ignore = "requires a wgpu adapter; run explicitly"]
 fn shaped_sprites_use_original_gradient_seed() {
@@ -1182,6 +1252,57 @@ fn building_zshape_uses_constant_raw_seed_and_signed_shape_bytes() {
             "-1 zshape lane must be farther at every row {y}"
         );
     }
+}
+
+/// The RLE ZReadWrite leaf (0x004990E0) skips the columns left of the view a
+/// token at a time (0x00499141..0x00499154). A skip ending inside a
+/// transparent run moves dest, Z and A on to the run's end
+/// (0x0049915D..0x0049918F) but not the z-shape pointer, which drawn pixels
+/// and later runs advance (0x00499234, 0x004991C7): the rest of the row reads
+/// its shape that many columns back.
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn building_zshape_trails_a_left_edge_skip_that_ends_inside_a_run() {
+    let gpu = Gpu::new();
+    // `width` source columns, `clear` of them transparent from column 0, the
+    // view's left edge `skip` columns in, and the +1 shape lane at `lane`.
+    // A 1-row body's raw seed equals the flat terrain's Z, so only the +1
+    // lane draws.
+    let render = |width: u32, clear: u32, skip: u32, lane: std::ops::Range<u32>| {
+        let mut terrain = Layer::solid(Shader::Terrain, RED, 0.0);
+        terrain.source_size = [width, 1];
+        terrain.instance.size = [width as f32, 1.0];
+        terrain.rgba = RED.repeat(width as usize);
+        terrain.z_bytes = vec![0; width as usize];
+        let mut building = Layer::solid(Shader::SpriteWrite, BLUE, 0.0);
+        building.instance.position = [-(skip as f32), 0.0];
+        building.instance.size = [width as f32, 1.0];
+        building.instance.zshape_origin = building.instance.position;
+        building.instance.z_gradient = ZGradient::Vertical as u32 | Z_GRADIENT_ZSHAPE_FLAG;
+        building.instance.draw_state.fx_params[3] = skip as f32;
+        building.source_size = [width, 1];
+        building.rgba = BLUE.repeat(width as usize);
+        building.indices = vec![33; width as usize];
+        building.z_bytes = vec![128; width as usize];
+        for x in 0..clear {
+            building.hole(x, 0);
+        }
+        for x in lane {
+            building.z_bytes[x as usize] = 129;
+        }
+        let pixels = gpu.render_sized(&[terrain, building], [width, 1]);
+        // The source columns that drew.
+        (0..width)
+            .filter(|&column| pixels[column as usize] == BLUE)
+            .map(|column| column + skip)
+            .collect::<Vec<_>>()
+    };
+
+    // A 4-column run cut 2 in: source columns 4 and 5 take shape 2 and 3.
+    assert_eq!(render(8, 4, 2, 2..4), [4, 5]);
+    // A 300-column run encodes as 255 + 45: the skip ends 245 short of the
+    // first token's end, so source column 300 takes shape column 55.
+    assert_eq!(render(320, 300, 10, 55..57), [300, 301]);
 }
 
 #[test]

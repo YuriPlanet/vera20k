@@ -94,7 +94,7 @@ impl Simulation {
             return false;
         };
         entity.on_bridge.store(on_bridge);
-        let prior_carrier = entity.passenger_role.carrier_link();
+        let prior_carrier = entity.passenger_role().carrier_link();
         let infantry = entity.category() == EntityCategory::Infantry;
         let airborne = point.z.wrapping_sub(floor) > 0xd0;
         let placed = if airborne {
@@ -111,7 +111,7 @@ impl Simulation {
             // before class Unlimbo and restore it on refusal. Native clears+11C
             // immediately after success100447E7, before any callbacks below.
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.passenger_role.clear_carrier_relation();
+                entity.passenger_role_mut().clear_carrier_relation();
             }
             let (sub_x, sub_y) = (
                 SimFixed::from_num(point.x & 255),
@@ -142,13 +142,13 @@ impl Simulation {
             if let Some(link) = prior_carrier
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
-                entity.passenger_role.set_carrier_link(link);
+                entity.passenger_role_mut().set_carrier_link(link);
             }
             return false;
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.passenger_role.clear_carrier_relation();
-            entity.passenger_role.clear_transporter();
+            entity.passenger_role_mut().clear_carrier_relation();
+            entity.passenger_role_mut().clear_transporter();
         }
         Self::foot_neighbors_store_retained_cell(&mut self.substrate, id, retained);
         if airborne {
@@ -196,7 +196,6 @@ impl Simulation {
         if selected {
             self.techno_select(
                 id,
-                true,
                 UninitContext::new(rules, registry).with_effects(effects),
             );
         }
@@ -423,7 +422,7 @@ impl Simulation {
             .substrate
             .entities
             .get(unit_id)
-            .is_some_and(|unit| unit.passenger_role.passenger_count() != 0)
+            .is_some_and(|unit| unit.passenger_role().passenger_count() != 0)
         {
             let result = depart_cargo_head(
                 self,

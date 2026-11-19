@@ -1,6 +1,7 @@
 //! Script22 -> Map580BC0, using the process-current player's shroud.
 
 use super::*;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::runtime::SimRuntime;
 use crate::sim::team_script_vm::packed_cell_tests::{frame, reload, scene};
 use crate::sim::world::UninitContext;
@@ -155,7 +156,8 @@ pub(super) fn campaign_scene(
     // The production loader installs fixed ART and binds its action bank
     // before actors; the sequence binder resolves each type through that ART.
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
+    let teams =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, BootstrapRuleProfile::Campaign).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x580BC0);

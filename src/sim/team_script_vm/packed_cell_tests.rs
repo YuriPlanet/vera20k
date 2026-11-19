@@ -3,6 +3,7 @@
 use super::*;
 use crate::headless_scenario::{HeadlessScenario, battle_session, load_session};
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
@@ -129,7 +130,11 @@ pub(super) fn reload(scene: &mut HeadlessScenario) {
         rules,
     );
     loaded
-        .restore_map_authority_after_snapshot_load(rules, &runtime.resources.overlay_registry, None)
+        .restore_map_authority_after_snapshot_load(
+            rules,
+            runtime.resources.rules.overlay_registry(),
+            None,
+        )
         .unwrap();
     loaded.intern_rule_type_ids(rules);
     loaded.resolve_type_handles(rules);
@@ -269,7 +274,8 @@ fn a_team_only_dummy_target_makes_its_live_coordinate_part_of_the_hash() {
     let map = IniFile::from_str(
         "[TeamTypes]\n0=TEAM\n[TEAM]\nScript=SCRIPT\nTaskForce=FORCE\n[ScriptTypes]\n0=SCRIPT\n[SCRIPT]\n0=2,0\n[TaskForces]\n0=FORCE\n[FORCE]\n0=1,E2\n",
     );
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, BootstrapRuleProfile::Campaign);
     sim.install_team_ai_registry(&registry, &rules);
     let team_type = sim.interner.get("TEAM").unwrap();
     let team = sim.create_team(team_type, Some(owner), &rules).unwrap();

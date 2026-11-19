@@ -267,28 +267,6 @@ pub(crate) fn pre_receive_damage(
     })
 }
 
-/// The same stage without writing the shield state: the surviving damage the
-/// receiver would see. The wave lookahead needs the value before its commit
-/// runs the real stage, which applies the absorption exactly once.
-pub(crate) fn preview_receive_damage(
-    sim: &Simulation,
-    rules: &RuleSet,
-    event: &EntityDamageEvent,
-    receiver_input: i32,
-) -> Option<i32> {
-    let target = sim.substrate.entities.get(event.target_id)?;
-    let target_type = sim.interner.object_type(target.type_ref(), rules)?;
-    let divisors = crate::sim::combat::receiver_divisors(
-        target,
-        Some(target_type),
-        rules,
-        &sim.interner,
-        &sim.houses,
-        target.phobos_armor_multiplier(),
-    );
-    shield_stage(sim, rules, event, receiver_input, &divisors).map(|result| result.remaining)
-}
-
 fn shield_stage(
     sim: &Simulation,
     rules: &RuleSet,

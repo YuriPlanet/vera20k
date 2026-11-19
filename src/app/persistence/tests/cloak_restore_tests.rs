@@ -31,24 +31,15 @@ fn transition_fixture(state: i32) -> Option<(Simulation, RuleSet, ResolvedTerrai
     let id = sim
         .spawn_object("E1", "Americans", 1, 1, 0, &rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(id)
+    sim.entity_mut_for_test(id)
         .unwrap()
         .cloak
         .as_mut()
         .unwrap()
         .set_state_for_test(0);
-    let registry = OverlayTypeRegistry::empty();
     for _ in 0..32 {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(&registry),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
         if cloak(&sim, id).state() == 1 && cloak(&sim, id).depth() == 2 {
             break;
         }
@@ -60,7 +51,7 @@ fn transition_fixture(state: i32) -> Option<(Simulation, RuleSet, ResolvedTerrai
         let mut value = serde_json::to_value(cloak(&sim, id)).unwrap();
         value["state"] = serde_json::json!(3);
         value["step_delta"] = serde_json::json!(-1);
-        sim.entities_mut_for_test().get_mut(id).unwrap().cloak =
+        sim.entity_mut_for_test(id).unwrap().cloak =
             Some(Box::new(serde_json::from_value(value).unwrap()));
     }
     Some((sim, rules, terrain, id))
@@ -73,7 +64,6 @@ fn prepare(saved: &Simulation, rules: &RuleSet, terrain: &ResolvedTerrainGrid) -
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(rules),
         Some(terrain),
-        Some(&OverlayTypeRegistry::empty()),
     )
     .unwrap()
     .simulation
@@ -119,14 +109,7 @@ fn player_load_finishes_mid_uncloak_on_first_update() {
     assert_eq!(cloak(&restored, id).step_delta(), 1);
     let first_frame = restored.session().binary_frame();
     restored
-        .advance_app_frame(
-            &[],
-            &rules,
-            Some(&OverlayTypeRegistry::empty()),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
+        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
         .unwrap();
     // Native6FB9AC..6FBA07 finishes progress0 and starts the shared rule delay.
     let finished = cloak(&restored, id);

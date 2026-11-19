@@ -24,6 +24,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
+use crate::rules::rule_policy::DoubleOwnedPolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::house_tracking::HouseTracking;
@@ -1035,8 +1036,8 @@ fn scan_factories<'a>(
         return FactorySearch::BuildLimitRefused;
     }
     let factory_type = FactoryType::for_category(obj.category);
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
-    let ownable = get_ownable(obj, rules, game_mode_nonzero);
+    let double_owned = sim.session.rule_policy().double_owned();
+    let ownable = get_ownable(obj, rules, double_owned);
     let naval_unit = obj.category == ObjectCategory::Vehicle && obj.naval;
     let mut candidate = FactorySearch::Missing;
     for FactoryCandidate {
@@ -1051,7 +1052,7 @@ fn scan_factories<'a>(
             && (rules.ares_form()
                 || !require_can_build
                 || can_build(sim, rules, building.owner(), obj, true, true) == CanBuild::Yes)
-            && ownable & get_ownable(building_type, rules, game_mode_nonzero) != 0
+            && ownable & get_ownable(building_type, rules, double_owned) != 0
             && if !skip_busy_airfield
                 && obj.category == ObjectCategory::Aircraft
                 && !building.radio_contacts.is_empty()
@@ -1244,8 +1245,8 @@ pub(crate) fn toggle_factory_primary(sim: &mut Simulation, rules: &RuleSet, id: 
 /// `TechnoTypeClass::Get_Ownable @ 0x00711EC0` (vtable `+0x70` of every
 /// TechnoType class): every house for a `DoubleOwned=` type outside a
 /// campaign, else the `Owner=` houses (`+0x6CC`).
-fn get_ownable(obj: &ObjectType, rules: &RuleSet, game_mode_nonzero: bool) -> u32 {
-    if obj.double_owned && game_mode_nonzero {
+fn get_ownable(obj: &ObjectType, rules: &RuleSet, policy: DoubleOwnedPolicy) -> u32 {
+    if obj.double_owned && policy == DoubleOwnedPolicy::AllCountries {
         return 0x7FFF_FFFF;
     }
     obj.owner_mask(rules)

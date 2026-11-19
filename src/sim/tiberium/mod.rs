@@ -1294,6 +1294,14 @@ mod tests {
     fn native_tiberium_fixture_with_riparius_growth(
         riparius_growth: &str,
     ) -> (OverlayTypeRegistry, TiberiumTypeRegistry) {
+        let ini = native_tiberium_ini(riparius_growth);
+        (
+            OverlayTypeRegistry::from_ini(&ini, None),
+            TiberiumTypeRegistry::from_ini(&ini),
+        )
+    }
+
+    fn native_tiberium_ini(riparius_growth: &str) -> IniFile {
         // Retail's [Tiberium] row, the Land every ore overlay here copies. An
         // unauthored one is the zero row, whose Wheel 0 makes ore impassable.
         let mut ini_text = format!(
@@ -1356,11 +1364,7 @@ SpreadPercentage=.06
         for name in tiberium_names {
             ini_text.push_str(&format!("[{name}]\nTiberium=yes\n"));
         }
-        let ini = IniFile::from_str(&ini_text);
-        (
-            OverlayTypeRegistry::from_ini(&ini, None),
-            TiberiumTypeRegistry::from_ini(&ini),
-        )
+        IniFile::from_str(&ini_text)
     }
 
     fn flat_clear_terrain() -> ResolvedTerrainGrid {
@@ -1963,12 +1967,8 @@ SpreadPercentage=.06
         use crate::sim::world::TickLane;
         use std::sync::Arc;
 
-        let (overlay_registry, tiberium_types) = native_tiberium_fixture();
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
-        ))
-        .expect("empty roster rules");
-        rules.tiberium_types = tiberium_types;
+        let rules = RuleSet::from_ini(&native_tiberium_ini(".06")).unwrap();
+        let overlay_registry = rules.overlay_registry();
         let mut sim = Simulation::new();
         sim.hash_state_every(std::num::NonZeroU64::MIN);
         sim.ore_growth_config.set_grows_for_test(false);
@@ -1985,7 +1985,7 @@ SpreadPercentage=.06
         assert!(crate::sim::overlay_grid::recalc_overlay_passability(
             &mut overlay,
             &mut terrain,
-            &overlay_registry,
+            overlay_registry,
             0,
             0,
         ));
@@ -2008,7 +2008,7 @@ SpreadPercentage=.06
             (0, 0),
             4,
             &rules,
-            Some(&overlay_registry),
+            Some(overlay_registry),
         )
         .unwrap();
         assert!(outcome.fully_removed);
@@ -2035,16 +2035,15 @@ SpreadPercentage=.06
         );
         let repeated = sim.overlay_grid.as_mut().unwrap().recalculate_runtime_cell(
             sim.resolved_terrain.as_mut().unwrap(),
-            &overlay_registry,
+            overlay_registry,
             (0, 0),
         );
         assert!(!repeated.navigation_changed);
 
         let deferred = sim
-            .advance_app_frame(
+            .advance_app_frame_without_overlay_types_for_test(
                 &[],
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -2068,7 +2067,6 @@ SpreadPercentage=.06
             .advance_app_frame(
                 &[],
                 &rules,
-                Some(&overlay_registry),
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -2088,7 +2086,6 @@ SpreadPercentage=.06
             .advance_app_frame(
                 &[],
                 &rules,
-                Some(&overlay_registry),
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),

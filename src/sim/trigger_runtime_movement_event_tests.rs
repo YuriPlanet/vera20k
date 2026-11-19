@@ -4,6 +4,8 @@
 use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit};
 use super::*;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
@@ -40,11 +42,10 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         let first_change = control["first_change"].as_bool().unwrap();
         let second_change = control["second_change"].as_bool().unwrap();
         let expected_index = usize::try_from(control["owner"].as_u64().unwrap()).unwrap();
-        let (mut sim, rules, registry, initial_houses) =
-            super::tests::event_ingress_fixture_with_rules(
-                "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=500\nCost=800\n\
+        let (mut sim, rules, _, initial_houses) = super::tests::event_ingress_fixture_with_rules(
+            "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=500\nCost=800\n\
                  Capturable=yes\nRepairable=yes\n",
-            );
+        );
         let country2 = sim.interner.intern("Country2");
         sim.houses
             .get_mut(&initial_houses[2])
@@ -145,14 +146,7 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         for frame in 0..256 {
             let trace_start = sim.trigger_runtime.dispatch_trace.len();
             let output = sim
-                .advance_app_frame(
-                    &[],
-                    &rules,
-                    Some(&registry),
-                    67,
-                    TickLane::Ordinary,
-                    FrameEffects::default(),
-                )
+                .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
                 .unwrap();
             arrivals.extend(
                 sim.trigger_runtime.dispatch_trace[trace_start..]
@@ -653,7 +647,7 @@ fn retail_infantry_map_event(
         &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map.ini,
-            true,
+            BootstrapRuleProfile::Multiplayer,
         ),
         &rules,
     );
@@ -665,7 +659,7 @@ fn add_infantry_map_event_team(sim: &mut Simulation, rules: &RuleSet, actor: u64
     let typ = sim.interner.get("MATCH").unwrap();
     let id = sim
         .team_script_vm
-        .construct_team(typ, owner, true, 0, false, None)
+        .construct_team(typ, owner, TeamLimitScope::PerHouse, 0, false, None)
         .unwrap();
     assert!(sim.team_add_member(id, actor, false, rules, None, FrameEffects::default()));
     id
@@ -955,7 +949,7 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
             .entities
             .get(infantry)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(reactor)
     );
@@ -1046,7 +1040,7 @@ fn an_occupier_garrisoning_a_building_raises_its_entered_by_event() {
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         1
@@ -1172,7 +1166,7 @@ fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
                 .entities
                 .get(infantry)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport_id(),
             (health == 500 || red_entered).then_some(building),
         );
@@ -1204,7 +1198,6 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
         )
         .unwrap()
         .into_parts();
-    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&map.ini, None);
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let needle = map
@@ -1330,7 +1323,6 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),
@@ -1341,7 +1333,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 .entities
                 .get(infantry)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport_id()
                 == Some(building)
             {
@@ -1381,7 +1373,6 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),

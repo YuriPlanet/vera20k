@@ -180,8 +180,8 @@ impl RepairHost for LiveOrdinary<'_, '_> {
                 let Some((w, h)) = sim.map_size_diamond() else {
                     return false;
                 };
-                let (x, y) = (i32::from(p.0), i32::from(p.1));
-                x + y > w && x - y < w && y - x < w && x + y <= w + 2 * h
+                // The 573540/570050 search loop is bounded by In_Bounds 0x00568300.
+                crate::map::playfield::size_diamond_contains(w, h, p)
             }
         }
     }

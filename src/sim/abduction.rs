@@ -281,7 +281,7 @@ impl Simulation {
             return false;
         }
         let (count, total) = carrier
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or((0, 0), |cargo| (cargo.count(), cargo.total_size()));
         if carrier_type.ares_passengers_by_size {

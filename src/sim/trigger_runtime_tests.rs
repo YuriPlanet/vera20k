@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::map::entities::EntityCategory;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::projectile::{
     ProjectileCollisionPolicy, ProjectileCoord, ProjectilePayload, ProjectileSpawn,
@@ -166,7 +167,11 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
                  [Waypoints]\n0=16014\n"
             ),
         );
-        let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
+        let teams = TeamAiIniRegistry::from_sources(
+            &IniFile::from_str(""),
+            &map.ini,
+            BootstrapRuleProfile::Campaign,
+        );
         sim.install_team_ai_registry(&teams, &rules);
         // The shared simple-map fixture initially has no Team registry.
         // Re-enter the real definition reader with the authored Team inputs.
@@ -1355,7 +1360,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
         .entities
         .get_mut(reinforcement)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .set_inside_transport(transport, false);
     let map = install_event_ingress_map(
         &mut sim,
@@ -1523,7 +1528,7 @@ fn retail_sov01_script_context() -> Option<(
         crate::util::sha256::sha256_hex(&raw_map),
         "498b989a4b6f579dee0904a77f1fabf982c14786db21a46c41900fc8344ec72b"
     );
-    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, BootstrapRuleProfile::Campaign);
     // The map's Rules over the retail root depend on those files alone, so
     // they are processed once per test process; each caller gets copies.
     let (rules, water, overlay) = crate::test_fixture::once_per_process("SOV01 rules", || {
@@ -1718,7 +1723,7 @@ fn script20_retail_sov01_transport_tails_set_the_authored_landing_flags() {
         let registry = TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::from_str(""),
             &map.ini,
-            false,
+            BootstrapRuleProfile::Campaign,
         );
         let stock = registry
             .scripts
@@ -2644,7 +2649,7 @@ fn install_map_triggers(sim: &mut Simulation, map: &crate::map::map_file::MapFil
         &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map.ini,
-            true,
+            BootstrapRuleProfile::Multiplayer,
         ),
         None,
         None,
@@ -2811,7 +2816,7 @@ fn destroyed_house_predicates_match_original_independent_signed_counters() {
                 sim.houses
                     .get_mut(&owner)
                     .unwrap()
-                    .tracking_mut()
+                    .tracking_mut_for_test()
                     .set_for_test(
                         totals[0].as_i64().unwrap() as i32,
                         &[],
@@ -3008,7 +3013,6 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
                     crate::sim::world::FrameEffects::default(),
@@ -3146,7 +3150,6 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
             .advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -3999,7 +4002,7 @@ fn retail_hills_forced_trigger_does_not_inherit_the_outer_bridge_cell() {
         },
         &mut Vec::new(),
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         FrameEffects::default(),
     );
     assert!(sim.global_variables()[7], "the forced Trigger ran");
@@ -4074,7 +4077,7 @@ fn mission_announce_then_end_uses_the_player_house_and_shared_timer() {
     );
     assert!(sim.ready_outcome_for_owner(player).is_none());
     let kind = sim.houses[&player]
-        .pending_outcome(15, false)
+        .pending_outcome(15, sim.session.rule_policy())
         .expect("native shared timer admits the current House");
     sim.houses.get_mut(&player).unwrap().complete_outcome(kind);
     sim.session.admit_outcome(kind);

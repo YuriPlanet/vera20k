@@ -153,7 +153,6 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
             .advance_app_frame(
                 &commands,
                 &rules,
-                None,
                 33,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -328,7 +327,6 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                 sim.advance_app_frame(
                     &commands,
                     &rules,
-                    None,
                     33,
                     TickLane::Ordinary,
                     FrameEffects::default(),
@@ -340,7 +338,6 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                         .advance_app_frame(
                             &commands,
                             &rules,
-                            None,
                             33,
                             TickLane::Ordinary,
                             FrameEffects::default(),

@@ -63,11 +63,21 @@ const RESERVED_LITERALS: [&str; 7] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LanServiceRequest {
     Refresh,
-    SelectGame { game_id: Option<u64>, changed: bool },
-    NameChanged(String),
-    Chat { text: Vec<u16> },
-    Join { game_id: u64, observe: bool },
-    CancelJoin { game_id: u64 },
+    SelectGame {
+        game_id: Option<u64>,
+        change: LanSelectionChange,
+    },
+    NameChanged,
+    Chat {
+        text: Vec<u16>,
+    },
+    Join {
+        game_id: u64,
+        observe: bool,
+    },
+    CancelJoin {
+        game_id: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,7 +95,6 @@ pub(crate) enum LanServiceEvent {
         game_id: Option<u64>,
         players: Vec<LanPlayerRow>,
     },
-    Chat(LanChatLine),
     JoinDenied {
         game_id: u64,
         reason: u32,
@@ -605,9 +614,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .local_participant()
                 .name;
             let runtime = state.frontend.lan.as_mut().unwrap();
-            runtime
-                .requests
-                .push(LanServiceRequest::NameChanged(value.clone()));
+            runtime.requests.push(LanServiceRequest::NameChanged);
             // Local discovery row is a projection. It is always first only
             // when looking at the Lobby sentinel, never a selected game's roster.
             // 0x541's handler rebuilds the roster (0x005DAFE0), so a selected
@@ -641,14 +648,14 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .requests
                 .push(LanServiceRequest::Chat { text: message });
         }
-        LanLobbyAction::SelectGame { game_id, changed } => {
+        LanLobbyAction::SelectGame { game_id, change } => {
             let runtime = state.frontend.lan.as_mut().unwrap();
             if game_id.is_none() {
                 runtime.lobby.replace_players(vec![local_lobby_row(&name)]);
             }
             runtime
                 .requests
-                .push(LanServiceRequest::SelectGame { game_id, changed });
+                .push(LanServiceRequest::SelectGame { game_id, change });
         }
     }
     state.platform.window.request_redraw();
@@ -681,7 +688,6 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
                 runtime.lobby.replace_players(players);
             }
         }
-        LanServiceEvent::Chat(line) => append_chat(state, line),
         LanServiceEvent::JoinDenied { game_id, reason } => {
             let Some(pending) = runtime
                 .pending_join

@@ -35,7 +35,7 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim: &mut runtime.simulation,
         rules: &runtime.resources.rules,
-        registry: Some(&runtime.resources.overlay_registry),
+        registry: Some(runtime.resources.rules.overlay_registry()),
         collapsed: false,
     };
     assert!(plain_at_load((66, 102)));

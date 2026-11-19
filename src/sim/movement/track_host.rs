@@ -1591,7 +1591,7 @@ impl Simulation {
             && entity.is_mission_only()
             && unit_type.is_some_and(|object| object.passengers > 0)
             && entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_some_and(|cargo| !cargo.is_empty())
             && self.team_script_vm.team_for_member(id).is_none();

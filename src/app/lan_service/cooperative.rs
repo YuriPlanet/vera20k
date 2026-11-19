@@ -93,7 +93,10 @@ pub(super) fn poll(state: &mut AppState, now: u32) -> bool {
 
 /// The loop's dispatch (`0x0047009F`) for a packet from a round participant.
 fn receive(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> {
-    anyhow::ensure!(incoming.product_id == 0xaa04, "different LAN product");
+    anyhow::ensure!(
+        incoming.product_id == LAN_PRODUCT_ID,
+        "different LAN product"
+    );
     let source = state
         .match_state
         .session

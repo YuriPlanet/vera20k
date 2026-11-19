@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::passenger::PassengerRole;
@@ -40,7 +41,8 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
         )
         .unwrap()
         .into_parts();
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, BootstrapRuleProfile::Campaign).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x6E9ACF);
@@ -94,14 +96,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     let mut cameras = Vec::new();
     for _ in 0..100 {
         let output = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         cameras.extend(output.trigger_effects.into_iter().filter(|effect| {
             matches!(
@@ -145,14 +140,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     for _ in 0..250 {
         let output = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         assert!(
             !output.trigger_effects.iter().any(|effect| matches!(
@@ -183,7 +171,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
             sim.entities()
                 .get(transport)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers()
@@ -267,7 +255,11 @@ impl Fixture {
              [TaskForces]\n0=CARRY_TF\n[CARRY_TF]\n0=1,APC\n1=2,E1\n",
             if returns { "yes" } else { "no" },
         ));
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_team_ai_registry(&registry, &rules);
@@ -315,7 +307,7 @@ impl Fixture {
                 );
                 let entity = self.sim.substrate.entities.get_mut(transport).unwrap();
                 entity
-                    .passenger_role
+                    .passenger_role_mut_for_test()
                     .cargo_mut()
                     .expect("transport cargo")
                     .board_forced_chain(&[(passenger, 1.0)]);
@@ -324,7 +316,7 @@ impl Fixture {
                     .entities
                     .get_mut(passenger)
                     .unwrap()
-                    .passenger_role = PassengerRole::inside_for_test(transport, false);
+                    .set_passenger_role_for_test(PassengerRole::inside_for_test(transport, false));
                 passenger
             })
             .collect()
@@ -372,7 +364,7 @@ impl Fixture {
             .substrate
             .entities
             .get(transport)
-            .and_then(|entity| entity.passenger_role.cargo())
+            .and_then(|entity| entity.passenger_role().cargo())
             .map(|cargo| cargo.passengers().to_vec())
             .unwrap_or_default()
     }
@@ -469,7 +461,11 @@ fn retail_team_ai() -> Option<(RuleSet, Simulation)> {
     use crate::rules::retail_ini_fixture::retail_ini;
     let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        BootstrapRuleProfile::Multiplayer,
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -760,7 +756,11 @@ impl OracleTeam {
              [TaskForces]\n0=ROW_TF\n[ROW_TF]\n{entries}",
             if returns { "yes" } else { "no" },
         ));
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_team_ai_registry(&registry, &rules);
@@ -838,7 +838,7 @@ impl OracleTeam {
                 );
                 cargo.set_passengers_for_test(vec![u64::MAX; count]);
                 cargo.set_passenger_sizes_for_test(vec![1.0; count]);
-                entity.passenger_role = PassengerRole::transport(cargo);
+                entity.set_passenger_role_for_test(PassengerRole::transport(cargo));
             }
             entity
                 .navigation

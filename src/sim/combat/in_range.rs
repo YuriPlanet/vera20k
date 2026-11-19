@@ -235,7 +235,7 @@ fn occupied_range_leptons(
 /// MinimumRange test and the arcing split, so both arms and a cell target
 /// read it.
 fn open_topped_range_bonus_leptons(attacker: &GameEntity, rules: &RuleSet) -> i64 {
-    if attacker.passenger_role.in_open_transport() {
+    if attacker.passenger_role().in_open_transport() {
         i64::from(rules.garrison_rules.open_topped_range_bonus) << 8
     } else {
         0
@@ -1401,11 +1401,14 @@ mod tests {
                 actor.type_facts.set_foundation_for_test(
                     rules.object("ATKR").unwrap().foundation.clone().into(),
                 );
-                actor.passenger_role.occupants_mut().set_ids_for_test(
-                    (2..2 + building["occupants"].as_u64().unwrap_or(1))
-                        .rev()
-                        .collect(),
-                );
+                actor
+                    .passenger_role_mut_for_test()
+                    .occupants_mut()
+                    .set_ids_for_test(
+                        (2..2 + building["occupants"].as_u64().unwrap_or(1))
+                            .rev()
+                            .collect(),
+                    );
                 EntityCategory::Structure
             } else if input["unit"] == true {
                 EntityCategory::Unit
@@ -1438,8 +1441,9 @@ mod tests {
                 );
             }
             if input["open_topped"] == true {
-                actor.passenger_role =
-                    crate::sim::passenger::PassengerRole::inside_for_test(2, true);
+                actor.set_passenger_role_for_test(
+                    crate::sim::passenger::PassengerRole::inside_for_test(2, true),
+                );
             }
             let mut weapon = rules.weapon("GUN").unwrap().clone();
             weapon.range_leptons = input["range"].as_i64().unwrap_or(768) as i32;

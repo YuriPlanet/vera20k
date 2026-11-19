@@ -64,7 +64,6 @@ struct Copies {
 pub(crate) struct Gap {
     pub(crate) kind: OrderingGap,
     pub(crate) since_ms: u64,
-    // An UPLINK went out while this gap was open.
     // When the first UPLINK went while the gap was open.
     pub(crate) uplinked: Option<u64>,
     // An UPLINK went max(16, 4 rttvar) ms after that one (§6.7 item 1).
@@ -606,7 +605,7 @@ impl ClientSession {
     ) {
         if let Some(ordering) = self.ordering.as_mut() {
             ordering.link.schedule.pace = Some(PaceSegment {
-                pace: pace as u8,
+                pace,
                 frames_per_second,
                 tick_micros: tick_micros.unwrap_or(0),
             });

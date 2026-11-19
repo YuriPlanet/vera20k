@@ -6,11 +6,13 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::AiBasePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{CellRect, resolve_reservation_real_cell, scan_cell_rect};
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::house_tracking::HouseTracking;
 use crate::sim::intern::InternedId;
 use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::occupancy::{
@@ -1745,12 +1747,7 @@ impl Simulation {
             self.recalculate_house_base_geometry(owner, context.rules());
         }
         // Building440D13: IncrementFactoryCount right after it.
-        Self::update_house_tracking(
-            &mut self.substrate,
-            &mut self.houses,
-            stable_id,
-            |tracking, entity| tracking.increment_factory_count(entity),
-        );
+        HouseTracking::register_factory(&mut self.substrate, &mut self.houses, stable_id);
         // Building440D1E, after IncrementFactoryCount and before +544.
         if let Some(owner) = self
             .substrate
@@ -2450,7 +2447,7 @@ impl Simulation {
     /// Techno/Object concealment path. VERA has no map-editor runtime; every
     /// call to this lifecycle seam is therefore outside editor mode.
     fn invalidate_base_plan_from_building_limbo(
-        session: &ScenarioSession,
+        policy: AiBasePolicy,
         substrate: &ObjectSubstrate,
         houses: &mut Houses,
         stable_id: u64,
@@ -2481,7 +2478,7 @@ impl Simulation {
                 type_index,
                 packed_cell,
                 is_base_defense,
-                session.game_mode_nonzero(),
+                policy,
             );
         }
     }
@@ -4223,12 +4220,7 @@ impl Simulation {
             {
                 self.clear_building_damage_fire_slots(stable_id, context.rules());
             }
-            Self::update_house_tracking(
-                &mut self.substrate,
-                &mut self.houses,
-                stable_id,
-                |tracking, entity| tracking.recount(entity),
-            );
+            HouseTracking::unregister_factory(&mut self.substrate, &mut self.houses, stable_id);
             // Building445D99 follows Recount and precedes Techno Limbo.
             // The non-factory prerequisite path stops here: its strip
             // cancellation is decided only after this frame's Factory sweep.
@@ -4472,9 +4464,7 @@ impl Simulation {
             {
                 let owner = entity.owner();
                 if let Some(house) = self.houses.get_mut(&owner) {
-                    house
-                        .tracking_mut()
-                        .limbo_airport_docks(object.number_of_docks);
+                    house.limbo_airport_docks(object.number_of_docks);
                 }
             }
         }
@@ -4484,7 +4474,7 @@ impl Simulation {
         // BuildingClass owns this pass before the common TechnoClass Limbo can
         // clear committed type/cell facts or broadcast another expiry callback.
         Self::invalidate_base_plan_from_building_limbo(
-            &self.session,
+            self.session.rule_policy().ai_base(),
             &self.substrate,
             &mut self.houses,
             stable_id,
@@ -5083,11 +5073,11 @@ impl Simulation {
             .iter()
             .copied()
             .for_each(&mut name);
-        if let Some(cargo) = listener.passenger_role.cargo() {
+        if let Some(cargo) = listener.passenger_role().cargo() {
             cargo.passengers().iter().copied().for_each(&mut name);
         }
         listener
-            .passenger_role
+            .passenger_role()
             .occupants()
             .ids()
             .iter()
@@ -5104,8 +5094,8 @@ impl Simulation {
             .for_each(&mut name);
         [
             listener.unit_follower(),
-            listener.passenger_role.inside_transport_id(),
-            listener.passenger_role.transporter(),
+            listener.passenger_role().inside_transport_id(),
+            listener.passenger_role().transporter(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
             listener.fire_particle_system.system(),
@@ -5518,7 +5508,7 @@ impl Simulation {
         // `removed` argument is set, so a cloaking rider stays aboard.
         let drops_passenger = control == PointerExpiryControl::Uninit
             && listener
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .is_some_and(|cargo| cargo.passengers().contains(&expired_id));
         // `0x007077EE..0x007077FD`, after the radio and cargo, whatever the
@@ -5586,7 +5576,7 @@ impl Simulation {
 
             // TechnoClass removes an expiring passenger from its CargoClass before
             // clearing its target/archive/manager reference family.
-            if drops_passenger && let Some(cargo) = listener.passenger_role.cargo_mut() {
+            if drops_passenger && let Some(cargo) = listener.passenger_role_mut().cargo_mut() {
                 let _ = cargo.disembark(expired_id);
             }
             if drops_spawn_owner {
@@ -5704,9 +5694,9 @@ impl Simulation {
         let hull_gone =
             !expired_object_alive || expired_health == 0 || self.object_placement_scope_active();
         let clear_transporter =
-            hull_gone && listener.passenger_role.transporter() == Some(expired_id);
+            hull_gone && listener.passenger_role().transporter() == Some(expired_id);
         let clear_passenger_role =
-            hull_gone && listener.passenger_role.inside_transport_id() == Some(expired_id);
+            hull_gone && listener.passenger_role().inside_transport_id() == Some(expired_id);
         let clear_c4_source = listener
             .building
             .pending_c4_detonation
@@ -5730,7 +5720,7 @@ impl Simulation {
         let clear_occupant = listener.category() == EntityCategory::Structure
             && self.object_placement_scope_active()
             && listener
-                .passenger_role
+                .passenger_role()
                 .occupants()
                 .ids()
                 .contains(&expired_id);
@@ -5816,10 +5806,10 @@ impl Simulation {
             ammo.set_dock(None);
         }
         if clear_transporter {
-            listener.passenger_role.clear_transporter();
+            listener.passenger_role_mut().clear_transporter();
         }
         if clear_passenger_role {
-            listener.passenger_role.clear_carrier_relation();
+            listener.passenger_role_mut().clear_carrier_relation();
         }
         if clear_c4_source {
             listener.building.pending_c4_detonation.forget_source();
@@ -5837,7 +5827,7 @@ impl Simulation {
         }
         if clear_occupant {
             listener
-                .passenger_role
+                .passenger_role_mut()
                 .occupants_mut()
                 .remove_expired(expired_id);
         }
@@ -6164,7 +6154,7 @@ impl Simulation {
             // FactoryClass::PointerExpired4CA580 is a control-insensitive
             // listener in Dispatch7258D0. Its only mutation clears a matching
             // held product; no entity listener consumes that factory pointer.
-            let mut named = self.production.factories_mut().pointer_expired(expired_id);
+            let mut named = self.production.factory_product_expired(expired_id);
             // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
             // (`0x004F5FFB`), forgets House+54E0 whatever the control. Phobos'
             // `AnnounceInvalidPointer` hook at this dispatcher's entry
@@ -7035,7 +7025,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(building_id)
-                .and_then(|entity| entity.passenger_role.cargo_mut())
+                .and_then(|entity| entity.passenger_role_mut().cargo_mut())
                 .and_then(|cargo| cargo.unload_first())
                 .map(|(id, _)| id);
             let Some(passenger) = passenger else {
@@ -7242,7 +7232,7 @@ impl Simulation {
                     })
                     .map(|entity| entity.owner())
             {
-                crate::sim::superweapon::update_owned_supers(self, rules, owner);
+                crate::sim::superweapon::update_owned_supers(self, rules, owner, context.effects());
             }
             // Active-frame Building43BEF5..43BF11 compares Health+6C with
             // the retained AI sample+544 after its slot/fire destructors.
@@ -7266,12 +7256,7 @@ impl Simulation {
         // The admitted entity store contains constructor-complete concrete
         // types; the native null-Type branch is outside that representation.
         if (game_state as u8) != 0 {
-            Self::update_house_tracking(
-                &mut self.substrate,
-                &mut self.houses,
-                stable_id,
-                crate::sim::house_tracking::HouseTracking::remove_tracking,
-            );
+            HouseTracking::unregister_object(&mut self.substrate, &mut self.houses, stable_id);
         }
         // Infantry517E33..517E6C resets movement animation/water/prone/Doing,
         // then calls FootLimbo4DB260 even when already hidden in Cargo. The
@@ -7324,7 +7309,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get_mut(stable_id)
-                    .and_then(|entity| entity.passenger_role.cargo_mut())
+                    .and_then(|entity| entity.passenger_role_mut().cargo_mut())
                     .and_then(|cargo| cargo.unload_first())
                     .map(|(id, _)| id);
                 let Some(passenger) = passenger else {

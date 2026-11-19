@@ -3,9 +3,11 @@
 //! `0x007864C0`, box `0x00786EF0`).
 //!
 //! Requests are semantic intents, events their decoded results; neither is a
-//! packet or a COM call. A controlled service drains [`WolVisit::take_service_requests`]
-//! and answers through [`service_event`]; production answers synchronously
-//! from [`WolProvider::Unavailable`]. No request ever manufactures success.
+//! packet or a COM call. Production's live service ([`WolProvider::Online`])
+//! drains [`WolVisit::take_service_requests`] and answers through
+//! [`service_event`], as the test and controlled services do. The
+//! unavailable provider keeps retail's missing-WOLAPI path for native
+//! diagnostics. No request ever manufactures success.
 
 use crate::util::time::{Duration, Instant};
 
@@ -30,8 +32,8 @@ pub(crate) enum WolProvider {
     Unavailable,
     /// A diagnostics/test service drains requests and injects events.
     Controlled,
-    /// VERA's offline stand-in service ([`super::test_service`]), chosen by
-    /// the Options page's developer box.
+    /// VERA's offline stand-in service ([`super::test_service`]), which only
+    /// shell captures select.
     TestService,
 }
 
@@ -147,7 +149,8 @@ pub(crate) enum WolServiceRequest {
     VisitLobby,
     /// VERA: the visitor leaves the public lobby for their room.
     EndVisit,
-    /// VERA: the lobby page's chat while visiting, to the visited lobby.
+    /// VERA: the lobby page's chat while visiting, to the visited lobby; a
+    /// page goes wherever its player is listed.
     VisitChat { line: WolChatLine, to: Vec<String> },
     /// VERA: the lobby page's action line while visiting, to the visited
     /// lobby.
@@ -368,14 +371,6 @@ pub(crate) enum WolServiceEvent {
         id: i32,
         squad: Result<crate::ui::wol_lobby::WolSquad, u32>,
     },
-    /// The private sink's `P<scenario>` from a guest (`0x007A8BF3`).
-    #[expect(
-        dead_code,
-        reason = "a WOL backend delivers it; the test service's guest always has the map"
-    )]
-    PreviewRequested {
-        from: String,
-    },
     /// The create result and the channel's users.
     Created(Result<Vec<WolMember>, u32>),
     /// The page sinks: `ansi` for `0x007A9200`, otherwise the UTF-16
@@ -456,7 +451,7 @@ pub(crate) enum WolServiceEvent {
 
 /// The server status that completes the list wait with event 1, and that
 /// means a lost connection outside it.
-const SERVER_STATUS_READY: u32 = 0x0004_012F;
+pub(crate) const SERVER_STATUS_READY: u32 = 0x0004_012F;
 pub(crate) const NET_STATUS_LOST: u32 = SERVER_STATUS_READY;
 
 /// What the flow waits for.
@@ -775,8 +770,9 @@ pub(super) fn resolve(state: &AppState, key: &str) -> String {
     App::csf_label(state, key, key)
 }
 
-/// Production's synchronous answers: no request reaches a service, and the
-/// only answer is that WOLAPI is missing.
+/// [`WolProvider::Unavailable`]'s synchronous answer, called where the
+/// WOLAPI object is asked for: no request reaches a service, and the only
+/// answer is that WOLAPI is missing (`0x00786390` -> `0x00785711`).
 fn answer_unavailable(state: &mut AppState) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
@@ -810,12 +806,11 @@ pub(super) fn begin_my_information(state: &mut AppState) {
     answer_unavailable(state);
 }
 
-/// Queue a request from the login page (credential store changes).
+/// Queue a request for the visit's service.
 pub(crate) fn request(state: &mut AppState, request: WolServiceRequest) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.requests.push(request);
     }
-    answer_unavailable(state);
 }
 
 /// `0x007864C0` with `server`: the nickname and password go into the
@@ -970,7 +965,6 @@ pub(super) fn begin_connect(state: &mut AppState) {
         }
     };
     apply(state, step);
-    answer_unavailable(state);
 }
 
 /// Deliver one service event to the visit. Only declared events move the
@@ -1086,7 +1080,6 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 if matches!(visit.awaiting, Awaiting::Locale { .. }) {
                     visit.awaiting = Awaiting::Nothing;
                     apply(state, WolStep::LocaleDecided);
-                    answer_unavailable(state);
                 }
             }
             state.platform.window.request_redraw();
@@ -1102,7 +1095,6 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         }
         WolServiceEvent::Squad { id, squad } => {
             super::lobby::squad(state, id, squad);
-            answer_unavailable(state);
             return;
         }
         event @ (WolServiceEvent::Channels { .. }
@@ -1118,12 +1110,10 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         | WolServiceEvent::PlayerChoices { .. }
         | WolServiceEvent::PlayerReady { .. }
         | WolServiceEvent::MapStatus { .. }
-        | WolServiceEvent::PreviewRequested { .. }
         | WolServiceEvent::Created(_)
         | WolServiceEvent::Matches(_)
         | WolServiceEvent::WatchRefused(_)) => {
             super::lobby::service_event(state, event);
-            answer_unavailable(state);
             return;
         }
         event => event,
@@ -1131,7 +1121,6 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
     let visit = state.frontend.wol.as_mut().expect("checked");
     let step = visit.reduce(event);
     apply(state, step);
-    answer_unavailable(state);
     state.platform.window.request_redraw();
 }
 
@@ -1163,10 +1152,8 @@ pub(super) fn message_box_text(state: &AppState, body: String, yes_no: bool) -> 
     WolMessageBox { body, buttons }
 }
 
-/// A live-service refusal whose reason no CSF label carries: the box its
-/// failure opened shows `body` instead. False when no box is open.
-/// A VERA-specific box over the WOL welcome, which returns to it. False
-/// outside the welcome.
+/// A VERA-specific box over the current WOL page, whose OK returns to the
+/// welcome (the online visit's sign-in). False outside WOL.
 pub(super) fn show_text_box(state: &mut AppState, body: &str) -> bool {
     if state.frontend.shell_route != crate::app::shell_route::ShellRoute::Wol {
         return false;
@@ -1186,6 +1173,8 @@ pub(super) fn show_text_box(state: &mut AppState, body: &str) -> bool {
     true
 }
 
+/// A live-service refusal whose reason no CSF label carries: the box its
+/// failure opened shows `body` instead. False when no box is open.
 pub(super) fn replace_open_box_body(state: &mut AppState, body: &str) -> bool {
     match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
         Some(WolPage::Message { message, .. }) => {
@@ -1486,7 +1475,6 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
     };
     if matches!(visit.page, WolPage::Lobby | WolPage::QuickMatch(_)) {
         super::lobby::box_command(state, control);
-        answer_unavailable(state);
         state.platform.window.request_redraw();
         return;
     }
@@ -1517,7 +1505,6 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
         _ => WolStep::Stay,
     };
     apply(state, step);
-    answer_unavailable(state);
     state.platform.window.request_redraw();
 }
 
@@ -1544,7 +1531,6 @@ fn poll_deadline(state: &mut AppState) -> Option<Instant> {
         _ => WolStep::LocaleDecided,
     };
     apply(state, step);
-    answer_unavailable(state);
     state.platform.window.request_redraw();
     None
 }

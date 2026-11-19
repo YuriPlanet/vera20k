@@ -3,17 +3,20 @@
 //! `InternedId` is a `Copy` newtype around `u32`. Cloning an entity's owner or
 //! type_ref becomes a register copy instead of a heap allocation. The
 //! `StringInterner` maps strings to IDs and back, using uppercase normalization
-//! so case-insensitive owner comparisons become plain `==` on IDs.
+//! so case-insensitive comparisons of owners `intern` adds become plain `==`
+//! on IDs.
 //!
 //! ## Determinism
 //! The interner is part of `Simulation` — all peers intern the same strings
 //! from the same rules.ini + map data in the same order, producing identical IDs.
 
+mod type_handle_table;
+
 use std::fmt;
 
+use self::type_handle_table::TypeHandleTable;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::{RuleSet, TypeHandle};
-use crate::sim::type_handle_table::TypeHandleTable;
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_string::with_ascii_uppercase;
 use crate::util::synced::Synced;
@@ -54,7 +57,9 @@ impl fmt::Display for InternedId {
 /// Bidirectional string interner with uppercase-normalized lookup.
 ///
 /// `intern("Americans")` and `intern("americans")` return the same ID, so two
-/// distinct ids never name strings equal under ASCII case folding.
+/// distinct ids of names `intern` adds never name strings equal under ASCII
+/// case folding. A damaged save can list such a pair; a load keeps both ids,
+/// and lookups find the first.
 /// The display string preserves the casing of the first call that created the entry.
 #[derive(Debug)]
 pub struct StringInterner {
@@ -218,9 +223,17 @@ impl StringInterner {
         if let Some(id) = self.get(s) {
             return id;
         }
+        self.push(s.to_string())
+    }
+
+    /// Give `s` the next id. A name equal under ASCII case folding to one
+    /// already held keeps looking up the earlier id: [`Self::intern`] never
+    /// pushes such a name, and a load whose list holds one anyway (only a
+    /// damaged save can) resolves it as `intern` would.
+    fn push(&mut self, s: String) -> InternedId {
         let id = InternedId(self.to_str.len() as u32);
-        self.to_str.push(s.to_string());
-        self.to_id.insert(s.to_ascii_uppercase(), id);
+        self.to_id.entry(s.to_ascii_uppercase()).or_insert(id);
+        self.to_str.push(s);
         id
     }
 
@@ -292,18 +305,13 @@ impl serde::Serialize for StringInterner {
 }
 
 impl<'de> serde::Deserialize<'de> for StringInterner {
+    /// Each saved name keeps its id, its position in the list.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let strings = Vec::<String>::deserialize(deserializer)?;
-        let mut to_id = LookupMap::default();
-        for (i, s) in strings.iter().enumerate() {
-            to_id.insert(s.to_ascii_uppercase(), InternedId(i as u32));
+        let mut interner = StringInterner::new();
+        for s in Vec::<String>::deserialize(deserializer)? {
+            interner.push(s);
         }
-        Ok(StringInterner {
-            to_id: to_id.into(),
-            to_str: strings.into(),
-            types: Synced::default(),
-            serial: next_interner_serial(),
-        })
+        Ok(interner)
     }
 }
 
@@ -396,5 +404,16 @@ mod tests {
         // Case-insensitive lookup still works after round-trip
         assert_eq!(restored.get("americans"), Some(a));
         assert_eq!(restored.get("htnk"), Some(b));
+    }
+
+    #[test]
+    fn load_keeps_the_first_id_of_a_case_variant_name() {
+        // Only a damaged save lists a name twice; ids stay positions.
+        let mut restored: StringInterner =
+            serde_json::from_str(r#"["Americans","HTNK","AMERICANS"]"#).unwrap();
+
+        assert_eq!(restored.intern("americans"), InternedId(0));
+        assert_eq!(restored.len(), 3);
+        assert_eq!(restored.resolve(InternedId(2)), "AMERICANS");
     }
 }

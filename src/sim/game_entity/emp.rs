@@ -50,8 +50,8 @@ impl GameEntity {
         self.emp.sparkle
     }
     /// UpdateSparkle10062FE0 holds its new sparkle, through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
-    pub(crate) fn hold_emp_sparkle(
+    /// [`EntityStore::hold_emp_sparkle`](crate::sim::entity_store::EntityStore::hold_emp_sparkle).
+    pub(in crate::sim) fn hold_emp_sparkle(
         &mut self,
         anim: u64,
         _: crate::sim::entity_store::AnimHolderAuthority,
@@ -695,33 +695,7 @@ mod receiver {
                 .get(target)
                 .is_some_and(|entity| !entity.deactivated.is_offline() && advisable(entity))
             {
-                //10062C26..57 saves only a Building's Focus across the shared
-                //Deactivate -> ResetOrdersToGuard, which normally clears it.
-                let selected = self
-                    .substrate
-                    .entities
-                    .get(target)
-                    .is_some_and(|entity| entity.selection.is_selected());
-                let focus = building.then(|| {
-                    self.substrate
-                        .entities
-                        .get(target)
-                        .unwrap()
-                        .archive_target()
-                });
-                self.techno_deactivate(target, rules, effects);
-                // A selected victim is selected again with the selection
-                // voice off (g_SelectionVoice_Enable cleared around vt+0x14C).
-                if selected && let Some(entity) = self.substrate.entities.get_mut(target) {
-                    entity.selection.select();
-                }
-                if let Some(focus) = focus {
-                    self.substrate
-                        .entities
-                        .get_mut(target)
-                        .unwrap()
-                        .set_archive_target(focus);
-                }
+                self.ares_deactivate_with_reselection(target, rules, effects);
             }
             // After Deactivate: CaptureManager FreeAll, updateSpawnManager
             //(10063070) with the firer, then the inlined SuspendWork.
@@ -1045,11 +1019,7 @@ mod receiver {
                 if building {
                     self.substrate.set_anim_z_adjust(anim, -1024);
                 }
-                self.substrate
-                    .entities
-                    .write_held_anim(target, |entity, authority| {
-                        entity.hold_emp_sparkle(anim, authority)
-                    });
+                self.substrate.entities.hold_emp_sparkle(target, anim);
             }
         }
         /// Installed BuildingClass_Mi_Selling_EMPDuration10053D60 (hook
@@ -1195,6 +1165,38 @@ mod receiver {
                 .iter()
                 .map(|(_, kind)| *kind)
                 .collect()
+        }
+
+        #[test]
+        fn ares_emp_reselection_raises_selected_twice_offline_only() {
+            use crate::sim::command::Command;
+            use crate::sim::scenario_session::ScenarioGameMode::{Lan, Skirmish};
+
+            let _ares = crate::rules::ares_switch::read_ares_way(true);
+            for (mode, expected) in [(Skirmish, &[33, 33, 63, 62][..]), (Lan, &[63, 62][..])] {
+                let (mut sim, rules, target, source) = tagged_emp_scene(0, 2);
+                sim.session.set_game_mode(mode);
+                sim.session
+                    .set_current_house_for_test(sim.interner.get("Americans"));
+                let select = Command::Select {
+                    entity_ids: vec![target],
+                    additive: false,
+                };
+                assert!(sim.apply_command("Americans", &select, Some(&rules)));
+                assert_eq!(
+                    sim.deliver_ares_emp(
+                        target,
+                        Some(source),
+                        rules.warhead("EMPWH").unwrap(),
+                        &rules,
+                        FrameEffects::empty(),
+                    ),
+                    EmpDelivery::Applied,
+                );
+                let victim = sim.entities().get(target).unwrap();
+                assert!(victim.deactivated.is_offline() && victim.selection.is_selected());
+                assert_eq!(emp_event_kinds(&sim), expected);
+            }
         }
 
         /// Ares3.0 deliver100624C5..10062509 and10062526..10062563 raise
@@ -3085,9 +3087,7 @@ mod receiver {
             );
             sim.substrate
                 .entities
-                .write_held_anim(target, |victim, authority| {
-                    victim.hold_emp_sparkle(held, authority)
-                })
+                .hold_emp_sparkle(target, held)
                 .unwrap();
             let victim = sim.substrate.entities.get_mut(target).unwrap();
             victim.emp_anim_pointer_expired(held + 1);

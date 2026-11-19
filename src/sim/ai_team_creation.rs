@@ -43,6 +43,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::MovementZone;
+use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
@@ -475,6 +476,8 @@ fn is_eligible(
     if !condition_holds(sim, rules, trigger, owner, enemy) {
         return false;
     }
+    // AITriggerTypeClass::Is_Eligible (41EA71/41EAA4) checks the
+    // creating House even in a campaign.
     let team_types = std::iter::once(primary).chain(secondary);
     team_types
         .clone()
@@ -484,7 +487,7 @@ fn is_eligible(
             .all(|tt| factories_admit(sim, rules, tt, owner))
         && team_types
             .clone()
-            .all(|tt| !vm.at_max_teams(tt.id, owner, false))
+            .all(|tt| !vm.at_max_teams(tt.id, owner, TeamLimitScope::PerHouse))
 }
 
 /// The eligibility test's defense gate (`0x0041E740..0x0041E7AD`): with no
