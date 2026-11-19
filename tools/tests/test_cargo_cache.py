@@ -572,6 +572,49 @@ class CacheTests(unittest.TestCase):
             return set()
         self.assert_blocked(self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0), dependencies=recreate), kept)
 
+    def test_idle_caches_leave_whole_least_recently_used_first_while_a_target_is_unmet(self):
+        caches = {}
+        for name, days in (('older', 3), ('newer', 2)):
+            checkout, target = self.worktree(name)
+            files = [self.put(target, relative) for relative in (
+                'debug/deps/libcrate-0123456789abcdef.rlib', 'debug/.fingerprint/crate-0123/lib-crate',
+                'debug/incremental/crate-123/s-final/object.o', 'debug/vera20k', 'CACHEDIR.TAG')]
+            cargo_run.publish_binaries(self.store, target.name, target, {files[3]})
+            self.used('debug', days * cache.IDLE_CACHE_SECONDS, checkout=checkout, target=target)
+            caches[name] = target, files
+        (older, older_files), (newer, newer_files) = caches['older'], caches['newer']
+        under = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 0))
+        self.assertEqual(under['state'], 'under_budget', under)
+        # One byte over the budget takes the least recently used idle cache whole,
+        # its latest build included.
+        size = sum(cache._allocated(path.stat()) for path in older_files)
+        result = self.trim(cache.CachePolicy(2 * size - 1, 1 << 40, 0))
+        self.assertEqual(result['idle_roots'], sorted([str(older), str(newer)]), result)
+        self.assertEqual(set(result['removed_files']), set(map(str, older_files)), result)
+        self.assertEqual(result['removed_idle_roots'], [str(older)], result)
+        self.assertFalse(older.exists() or (self.store / 'latest' / f'{older.name}.json').exists())
+        self.assertNotIn(str(older), json.loads((self.store / 'cache-roots.json').read_text())['roots'])
+        self.assertTrue(all(path.exists() for path in newer_files))
+
+    def test_recent_running_and_saved_build_files_stay_in_idle_caches(self):
+        caches = {}
+        for name, ago in (('recent', cache.IDLE_CACHE_SECONDS - 60), ('running', 2 * cache.IDLE_CACHE_SECONDS),
+                          ('named', 2 * cache.IDLE_CACHE_SECONDS)):
+            checkout, target = self.worktree(name)
+            caches[name] = target, [self.put(target, f'debug/deps/lib{crate}-0123456789abcdef.rlib')
+                                    for crate in ('a', 'b')]
+            self.used('debug', ago, checkout=checkout, target=target)
+        named, (required, rest) = caches['named']
+        binary, _ = self.label()
+        with cargo_run.file_lock(self.store / 'checkouts' / f"{caches['running'][0].name}.lock",
+                                 time.monotonic() + 5):
+            result = self.trim(dependencies=lambda executable: {required} if executable == binary else set())
+        self.assertEqual(result['idle_roots'], [str(named)], result)
+        self.assertEqual(result['removed_files'], [str(rest)], result)
+        self.assertTrue(all(path.exists() for path in [required, *caches['recent'][1], *caches['running'][1]]))
+        # A saved build still names a file in it, so the cache stays registered.
+        self.assertIn(str(named), json.loads((self.store / 'cache-roots.json').read_text())['roots'])
+
     def test_a_pass_removes_receipts_older_than_a_week(self):
         receipts = self.store / 'retention'
         receipts.mkdir(parents=True)
@@ -1184,6 +1227,22 @@ class CacheTests(unittest.TestCase):
         with patch.object(cache.time, 'time', return_value=time.time() + cache.ACTIVE_PROFILE_SECONDS):
             self.assertEqual(automatic(4096), 2)
         self.assertFalse(kept.exists())
+
+    def test_a_cache_going_idle_makes_a_futile_pass_worth_repeating(self):
+        checkout, target = self.worktree('later')
+        library = self.put(target, 'debug/deps/libkept-0123456789abcdef.rlib')
+        self.used('debug', 60, checkout=checkout, target=target)
+        receipts = self.store / 'retention'
+        def automatic():
+            with redirect_stderr(io.StringIO()):
+                cache.automatic_locked(self.root, self.store, cache.CachePolicy(0, 0, 0))
+            return len(list(receipts.glob('*.json')))
+        self.assertEqual(automatic(), 1)
+        self.assertEqual(automatic(), 1)  # A cache in use: its library is no candidate.
+        # The day is longer than the interval, so lower it instead of waiting.
+        with patch.object(cache, 'IDLE_CACHE_SECONDS', 30):
+            self.assertEqual(automatic(), 2)
+        self.assertFalse(library.exists())
 
     def older_executable(self):
         """An older and a newer core test executable; the newer one shares an object."""

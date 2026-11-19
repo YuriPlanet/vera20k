@@ -323,7 +323,7 @@ worktree, so the runner starts one only when it can matter:
 - **Skipped** while the newest applied pass found nothing removable, finished
   within that interval and nothing deciding removability has changed since:
   cache directories, registered roots and profiles, protected executables and
-  which cache profiles are idle. While the reserve is short, only a pass that
+  which cache profiles and caches are idle. While the reserve is short, only a pass that
   found it short counts.
 
 Between passes the cache can exceed its budgets; the free-space reserve is still
@@ -335,8 +335,9 @@ above it is free, so the next build does not need another pass at once. Set
 `VERA20K_FREE_HEADROOM_GIB`, or pass `--cache-gib`, `--incremental-gib`, and
 `--min-free-gib` before `--`; they set the policy the next pass applies. Sizes
 accept finite nonnegative decimal GiB.
-Cache budgets are soft: protected files and the working sets of profiles used
-within the hour (below) can keep the cache above them.
+Cache budgets are soft: protected files, the working sets of profiles used
+within the hour and the caches of checkouts that ran within the day (below) can
+keep the cache above them.
 The minimum free-space target also controls build admission: after cleanup, the
 runner measures the target volume again and blocks Cargo below that target.
 Labelled builds also check the saved-artifact volume. Measurement failure blocks
@@ -368,7 +369,13 @@ profile included, whatever the budgets, apart from files a preserved or latest b
 still names; its latest record goes first, since only its live checkout could resolve
 it. Empty directories go with it, and a cache left empty leaves the registry.
 Unregistered or unverifiable caches stay untouched.
-Only orphaned `deps/*.rcgu.o`, complete finalized incremental sessions and older
+A registered cache of a live checkout is idle once no run has used it for a day
+(`IDLE_CACHE_SECONDS`) and no run holds its checkout's lock. While any target is
+unmet, idle caches leave whole, least recently used first: all of their Cargo output
+goes, apart from files a preserved build still names, since their own executables,
+latest builds included, protect nothing in them. A cache left empty leaves the
+registry with its latest record; the checkout's next run builds it again.
+Elsewhere only orphaned `deps/*.rcgu.o`, complete finalized incremental sessions and older
 Mach-O/ELF executables in `deps` are eligible; paths must belong to exact Cargo
 profile directories. An older executable is a `<name>-<16 hex>` file with a newer
 one of the same name beside it, no other link, and no preserved or latest record
@@ -381,8 +388,8 @@ dependency graph, query cache, work-product index and metadata, and each codegen
 unit's object and, under ThinLTO (the `fast` profile), pre-LTO bitcode and import
 keys. While any target is unmet a pass first takes the disposable files: orphaned
 objects, older executables and every finalized session but a crate's newest,
-which rustc never reads again, oldest first. A crate's newest finalized session
-is its profile's working set. Working sets leave whole, one cache profile
+which rustc never reads again, oldest first, then idle caches. A crate's newest
+finalized session is its profile's working set. Working sets leave whole, one cache profile
 directory (`debug`, `fast`, `release`) at a time and least recently used first,
 so the most recent work keeps all of its own. Recency is the last run the
 registry records for that profile, or its cache's last run where none is

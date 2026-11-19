@@ -2,9 +2,10 @@
 
 Only compiler objects, complete incremental sessions, executables a newer one of
 the same name replaced in a Cargo deps directory, and the Cargo profile output of
-a cache whose checkout is gone are disposable. Preserved labels and all surviving
-references remain protected. Never infer that linking made its
-debug objects disposable: Mach-O executables commonly refer to them by pathname.
+a cache whose checkout is gone, or under pressure of one no run used for a day, are
+disposable. Preserved labels and all surviving references remain protected. Never
+infer that linking made its debug objects disposable: Mach-O executables commonly
+refer to them by pathname.
 """
 from __future__ import annotations
 
@@ -93,6 +94,12 @@ ACTIVE_PROFILE_SECONDS = 60 * 60
 # hours apart, six caches of removed worktrees held 28 GB on 2026-10-20 while
 # free space fell to 16 GiB.
 ABANDONED_SECONDS = 10 * 60
+# A registered cache of a live checkout unused this long leaves whole while any
+# target is unmet; see _idle_roots. Passes took only objects, older executables and
+# sessions from live caches, never the libraries and newest executables that fill
+# them: on 2026-11-19 31 caches held 96 GiB against the 40 GiB budget with 9 GiB
+# free, and a pass selected nothing. Thirteen had not built for 20-94 hours.
+IDLE_CACHE_SECONDS = 24 * 60 * 60
 # Receipts are an audit trail of recent passes: 3,883 held 1.1 GiB on 2026-10-19.
 RECEIPT_SECONDS = 7 * 24 * 60 * 60
 
@@ -358,8 +365,19 @@ def _abandoned_roots(root: Path, store: Path) -> set[Path]:
     return abandoned
 
 
-def _abandoned_output(cache: Path, path: Path) -> bool:
-    """Cargo's own output in an abandoned cache: profile trees and root files.
+def _idle_roots(store: Path, roots, uses: dict) -> set[Path]:
+    """Live checkouts' caches no run has used for IDLE_CACHE_SECONDS.
+
+    Only a cache the registry records a last run for counts, and none whose
+    checkout's lock a run holds. An idle cache leaves whole; see _Eviction.
+    """
+    now = time.time()
+    return {cache for cache in roots if cache in uses and now - uses[cache] >= IDLE_CACHE_SECONDS
+            and not _checkout_running(store, cache.name)}
+
+
+def _cargo_output(cache: Path, path: Path) -> bool:
+    """Cargo's own output in a cache that leaves whole: profile trees and root files.
 
     A `--target` build keeps one tree per profile in <triple>, beside a CACHEDIR.TAG.
     The profile can be one the runner has no name for (tools/wasm/build.py builds
@@ -731,7 +749,7 @@ def _profile_uses(roots, profiles, uses: dict) -> dict:
 
 
 # Kinds of retention group, in the order a pass considers them.
-ABANDONED, DISPOSABLE, WORKING_SET = -1, 0, 1
+ABANDONED, DISPOSABLE, IDLE, WORKING_SET = -1, 0, 1, 2
 
 
 class _Group(NamedTuple):
@@ -741,33 +759,36 @@ class _Group(NamedTuple):
     age: int  # Newest st_mtime_ns of its paths.
     kind: int
     after: frozenset  # Older executables that must go first.
-    profile: Path | None  # The cache profile directory a working set belongs to.
+    profile: Path | None  # What leaves whole: a working set's cache profile directory, or an idle cache.
 
 
 class _Eviction:
-    """Which groups one pass takes, in order; a profile's working set leaves whole.
+    """Which groups one pass takes, in order; a working set or idle cache leaves whole.
 
     An abandoned cache's output always goes; disposable files (superseded sessions,
-    orphaned objects, older executables) while any target is unmet. A working set
-    (each crate's newest finalized session in one cache profile directory) goes for
-    a short reserve, or for an exceeded budget once its profile is idle; see
-    ACTIVE_PROFILE_SECONDS. Taking any of it takes all of that profile's.
+    orphaned objects, older executables) while any target is unmet. So does an idle
+    cache's output, least recently used cache first; see IDLE_CACHE_SECONDS. A
+    working set (each crate's newest finalized session in one cache profile
+    directory) goes for a short reserve, or for an exceeded budget once its profile
+    is idle; see ACTIVE_PROFILE_SECONDS. Taking any of it takes all of that profile's.
     """
 
     def __init__(self, policy: CachePolicy, free_target: int, used: dict, idle_before: float):
         self.policy, self.free_target, self.used, self.idle_before = policy, free_target, used, idle_before
-        self.evicted = []  # Profiles in the order their working sets went.
+        self.evicted = []  # Profiles and idle caches in the order they went.
 
     def wanted(self, group: _Group, total: int, incremental: int, free: int) -> bool:
         if group.kind == ABANDONED or group.profile in self.evicted or free < self.free_target:
             return True
+        if group.kind == IDLE:
+            return total > self.policy.cache_bytes or incremental > self.policy.incremental_bytes
         over = total > self.policy.cache_bytes or (
             group.incremental and incremental > self.policy.incremental_bytes)
         return over and (group.kind == DISPOSABLE or self.used[group.profile] < self.idle_before)
 
     def take(self, group: _Group) -> bool:
-        """Note a group the pass takes; True when it starts its profile's eviction."""
-        if group.kind != WORKING_SET or group.profile in self.evicted:
+        """Note a group the pass takes; True when it starts a profile's or idle cache's eviction."""
+        if group.kind not in (IDLE, WORKING_SET) or group.profile in self.evicted:
             return False
         self.evicted.append(group.profile)
         return True
@@ -801,7 +822,14 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
             store, store / 'artifacts', store / 'latest') if path.exists()}
         profiles, uses, skipped = set(), {}, set()
         roots, binaries, watched = _inputs(root, store, profiles=profiles, notes=receipt['notes'], uses=uses)
-        inventory = {path: info for cache in sorted(roots) for path, info in _files(cache, directory_states, skipped)}
+        idle = _idle_roots(store, roots, uses)
+        receipt['idle_roots'] = sorted(map(str, idle))
+        inventory, idle_files = {}, {}
+        for cache in sorted(roots):
+            files = dict(_files(cache, directory_states, skipped))
+            inventory.update(files)
+            if cache in idle:
+                idle_files.update(dict.fromkeys(files, cache))
         leftovers = {path: (cache, info) for cache in sorted(abandoned)
                      for path, info in _files(cache, directory_states)}
         inventory.update((path, info) for path, (_, info) in leftovers.items())
@@ -834,12 +862,15 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
             directories.update(path for path in (store / 'artifacts', store / 'latest') if path.exists())
             for path in directories:
                 directory_states.setdefault(path, _directory_identity(path))
+            # An abandoned or idle cache leaves whole, so its own executables, a
+            # latest build's included, protect nothing in it.
+            binaries.difference_update(idle_files)
             published = set(binaries)
             # Include unlabelled lib tests, examples and build-script executables.
             # No dependence on Unix executable bits (Windows does not have them).
             for path, info in inventory.items():
-                # An abandoned cache's own executables protect nothing; it goes whole.
-                if path in leftovers or not info.st_size or path.suffix in NOT_EXECUTABLES:
+                if (path in leftovers or path in idle_files or not info.st_size
+                        or path.suffix in NOT_EXECUTABLES):
                     continue
                 magic = _magic(path)
                 if magic in MACH | {b'\x7fELF'} or magic[:2] == b'MZ':
@@ -878,16 +909,23 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
             # Only exact Cargo profile/deps *.rcgu.o; never arbitrary *.o.
             deps = {profile / 'deps' for profile in profiles}
             for path, info in inventory.items():
-                if (path.name.endswith('.rcgu.o') and path.parent in deps
+                if (path.name.endswith('.rcgu.o') and path.parent in deps and path not in idle_files
                         and links.eligible(path) and path not in protected):
                     groups.append(_Group([path], False, info.st_mtime_ns, DISPOSABLE,
                                          frozenset(needed.get(path, ())), None))
             # Cargo output of an abandoned cache goes first, whatever the budgets.
             for path, (cache, info) in leftovers.items():
-                if _abandoned_output(cache, path) and links.eligible(path) and path not in protected:
+                if _cargo_output(cache, path) and links.eligible(path) and path not in protected:
                     groups.append(_Group([path], False, info.st_mtime_ns, ABANDONED, frozenset(), None))
+            # An idle cache's goes whole, sessions included, while a target is unmet.
+            for path, cache in idle_files.items():
+                if _cargo_output(cache, path) and links.eligible(path) and path not in protected:
+                    groups.append(_Group([path], path in increments, inventory[path].st_mtime_ns, IDLE,
+                                         frozenset(), cache))
             sessions, session_profiles = {}, {}
             for path in increments:
+                if path in idle_files:
+                    continue
                 # Cargo incremental/<crate-hash>/s-<session>/<files>.
                 text = str(path)
                 prefix = next(prefix for prefix in incremental_dirs if text.startswith(prefix))
@@ -930,11 +968,12 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                                      kind, frozenset().union(*(needed.get(path, ()) for path in paths)),
                                      session_profiles[session] if kind == WORKING_SET else None))
             used = _profile_uses(roots, profiles, uses)
+            used.update((cache, uses[cache]) for cache in idle)
             # Disposable files go oldest first; an object an older executable names
-            # sorts after it, never alone first. Working sets follow, whole cache
-            # profiles least recently used first.
+            # sorts after it, never alone first. Idle caches follow, then working
+            # sets, each whole and least recently used first.
             groups.sort(key=lambda group: (
-                group.kind, used[group.profile] if group.kind == WORKING_SET else 0.0,
+                group.kind, used[group.profile] if group.kind in (IDLE, WORKING_SET) else 0.0,
                 str(group.profile or ''), max([group.age, *(inventory[path].st_mtime_ns for path in group.after)]),
                 bool(group.after), str(group.paths[0])))
             # A short reserve is restored with headroom; see CachePolicy.
@@ -964,7 +1003,8 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                     projected_incremental -= incremental_released
                     projected_free[device] += released
             receipt['selected_files'] = [str(path) for paths in selected for path in paths]
-            receipt['evicted_profiles'] = list(map(str, plan.evicted))
+            receipt['evicted_profiles'] = [str(unit) for unit in plan.evicted if unit not in idle]
+            receipt['evicted_idle_roots'] = [str(unit) for unit in plan.evicted if unit in idle]
             receipt['projected_removed_allocated_bytes'] = total - projected_total
             receipt['projected_remaining_cache_bytes'] = projected_total
             receipt['projected_remaining_incremental_bytes'] = projected_incremental
@@ -996,7 +1036,7 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 if _directory_identity(path) != identity:
                     raise ValueError(f'Cache/build discovery directory changed: {path}')
             if not dry_run:
-                receipt['selected_files'], receipt['evicted_profiles'] = [], []
+                receipt['selected_files'], receipt['evicted_profiles'], receipt['evicted_idle_roots'] = [], [], []
                 remaining_total, remaining_incremental, checked_at = total, incremental, 0.0
                 removed = set()
                 eviction = _Eviction(policy, free_target, used, idle_before)
@@ -1026,7 +1066,8 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                                 raise ValueError(f'Build publication changed before deletion: {path}')
                         checked_at = time.monotonic()
                     if eviction.take(group):
-                        receipt['evicted_profiles'].append(str(group.profile))
+                        receipt['evicted_idle_roots' if group.kind == IDLE else 'evicted_profiles'].append(
+                            str(group.profile))
                     receipt['selected_files'].extend(str(path) for path in paths)
                     for path in paths:
                         key = links.keys[path]
@@ -1070,23 +1111,31 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                         except OSError:
                             pass
                 projected_total, projected_incremental = remaining_total, remaining_incremental
-                # Empty directories of abandoned caches go too, deepest first (never
-                # rmtree); a cache left empty leaves the registry.
+                # Empty directories of abandoned and evicted idle caches go too,
+                # deepest first (never rmtree); a cache left empty leaves the
+                # registry, and an idle one its latest record, whose outputs are gone.
+                evicted_idle = set(map(Path, receipt['evicted_idle_roots']))
                 emptied = set()
-                for cache in sorted(abandoned):
+                for cache in sorted(abandoned | evicted_idle):
                     for directory, _, _ in os.walk(cache, topdown=False):
                         try:
                             os.rmdir(directory)
                         except OSError:
                             pass
                     if not cache.exists():
-                        emptied.add(str(cache))
+                        emptied.add(cache)
                 if emptied:
                     registry = store / 'cache-roots.json'
                     data = _json(registry)
-                    data['roots'] = {name: entry for name, entry in data['roots'].items() if name not in emptied}
+                    data['roots'] = {name: entry for name, entry in data['roots'].items()
+                                     if Path(name) not in emptied}
                     _write(registry, data)
-                    receipt['removed_abandoned_roots'] = sorted(emptied)
+                    for cache in sorted(emptied & evicted_idle):
+                        if (record := store / 'latest' / f'{cache.name}.json').exists():
+                            _regular(record)
+                            record.unlink()
+                    receipt['removed_abandoned_roots'] = sorted(map(str, emptied - evicted_idle))
+                    receipt['removed_idle_roots'] = sorted(map(str, emptied & evicted_idle))
             receipt['free_after'] = {str(device): shutil.disk_usage(cache).free
                                      for device, cache in devices.items()}
             receipt['unmet_targets'] = {
@@ -1157,9 +1206,9 @@ def _cache_state(root: Path, store: Path) -> str:
     """Digest of every input that decides which files a pass may remove.
 
     Removability depends on the registered roots and profiles, the protected
-    executables, the cache trees and which profiles are idle, never on the budgets
-    or free space. Creating, removing or relinking a cache file changes its
-    directory's identity.
+    executables, the cache trees and which profiles and caches are idle, never on
+    the budgets or free space. Creating, removing or relinking a cache file changes
+    its directory's identity.
     """
     profiles, uses = set(), {}
     roots, binaries, _ = _inputs(root, store, profiles=profiles, uses=uses)
@@ -1167,7 +1216,8 @@ def _cache_state(root: Path, store: Path) -> str:
     state = [sorted(map(str, roots)), sorted(map(str, profiles)),
              sorted((str(path), _identity(path)) for path in binaries),
              sorted(str(profile) for profile, used in _profile_uses(roots, profiles, uses).items()
-                    if used < idle_before)]
+                    if used < idle_before),
+             sorted(map(str, _idle_roots(store, roots, uses)))]
     directories = []
     abandoned = _abandoned_roots(root, store)
     state.append(sorted(map(str, abandoned)))
