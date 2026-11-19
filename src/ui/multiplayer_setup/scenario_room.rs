@@ -7,6 +7,7 @@ pub(crate) const SCENARIO_ROWS_PER_PAGE: usize = 6;
 pub(crate) const SCENARIO_BRIEFING: u16 = 0x7F1C;
 pub(crate) const SCENARIO_DESCRIPTION_PREVIOUS: u16 = 0x7F26;
 pub(crate) const SCENARIO_DESCRIPTION_NEXT: u16 = 0x7F27;
+pub(crate) const SCENARIO_SPEED: u16 = 0x7F28;
 pub(crate) const SCENARIO_DIFFICULTY_TRACK_W: i32 = 362;
 const SCENARIO_DETAILS: u16 = 0x7F20;
 
@@ -22,7 +23,7 @@ pub(crate) fn scenario_details_row(id: u16) -> Option<usize> {
 const BRIEFING_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
     id: SCENARIO_BRIEFING,
     dlu_top: HOST_PAGE.stacked[1].dlu_top,
-    csf_key: "Mission briefing",
+    csf_key: "GUI:Briefing",
     tooltip_key: "",
     result: None,
 };
@@ -58,6 +59,7 @@ pub(crate) struct ScenarioRoomView {
     pub(crate) players_heading: &'static str,
     pub(crate) chat_heading: &'static str,
     pub(crate) rules_heading: &'static str,
+    pub(crate) speed_label: String,
     pub(crate) rules: Vec<String>,
     pub(crate) waiting: Option<String>,
     pub(crate) unavailable_preview: &'static str,
@@ -159,6 +161,12 @@ impl MultiplayerSetupLayout {
         if let Some((_, bar)) = self.trackbars.iter_mut().find(|(id, _)| *id == DIFFICULTY) {
             *bar = rect(body_left + 9, 406, SCENARIO_DIFFICULTY_TRACK_W, 22);
         }
+        if let Some(speed) = self.trackbars.iter_mut().find(|(id, _)| *id == SPEED) {
+            *speed = (
+                SCENARIO_SPEED,
+                rect(body_left + 9, 450, SCENARIO_DIFFICULTY_TRACK_W, 22),
+            );
+        }
         self.emote = None;
         let text_box = crate::ui::shell::modal::menu_box(SHELL_BASE_W, SHELL_BASE_H)
             .translate(window.x / 2, 0);
@@ -167,7 +175,7 @@ impl MultiplayerSetupLayout {
             chat_heading: rect(chat_left + 1, 15, chat_w - 2, 22),
             rules_heading: rect(body_left + 7, 362, left_w - 14, 22),
             waiting: rect(chat_left + 4, 38, chat_w - 8, 28),
-            rules: rect(body_left + 9, 463, left_w - 18, 76),
+            rules: rect(body_left + 9, 481, left_w - 18, 62),
             seats: std::array::from_fn(|row| rect(body_left, row_y(row), left_w, 44)),
             names: std::array::from_fn(|row| rect(body_left + 7, row_y(row) + 1, left_w - 132, 19)),
             statuses: std::array::from_fn(|row| {

@@ -31,6 +31,9 @@ pub struct TerminalScoreRowSnapshot {
     pub built: u32,
     pub raw_score: i32,
     pub score: i32,
+    /// Authored LAN only. Settlement consumes this at the live result edge.
+    #[serde(skip)]
+    pub stage_income: Option<u64>,
 }
 
 /// The one-shot raw score result for a finished match.
@@ -91,6 +94,17 @@ fn score_contenders(houses: &Houses, session: &ScenarioSession) -> Vec<InternedI
 }
 
 impl Simulation {
+    /// Start counting the primary Houses' cash receipts after their authored
+    /// starting funds and the incoming carry-over have been applied.
+    pub fn begin_authored_stage_income(&mut self) {
+        let owners: Vec<_> = self.authored_participants().collect();
+        for owner in owners {
+            if let Some(house) = self.houses.get_mut(&owner) {
+                house.economy_mut().begin_stage_income();
+            }
+        }
+    }
+
     /// `0x0046DA70`/`0x0049B7E0`: one row per House that is not
     /// `MultiplayPassive` and is human (`+0x1EC`, `0x0050B730` in GameMode
     /// != 0), in `Houses[]` order.
@@ -154,6 +168,7 @@ impl Simulation {
                 built: stats.built(),
                 raw_score,
                 score: raw_score.max(0),
+                stage_income: house.economy().stage_income(),
             });
         }
         TerminalScoreSnapshot { rows }
@@ -191,16 +206,15 @@ impl Simulation {
         let contenders = score_contenders(houses, session);
         let mut rows = Vec::with_capacity(contenders.len());
         for owner in contenders {
-            let Some((country, survived, stats, raw_score)) = houses.get(&owner).map(|house| {
-                (
-                    house.country(),
-                    !house.is_defeated(),
-                    house.stats(),
-                    house.economy().score(),
-                )
-            }) else {
+            let Some(house) = houses.get(&owner) else {
                 continue;
             };
+            let (country, survived, stats, raw_score) = (
+                house.country(),
+                !house.is_defeated(),
+                house.stats(),
+                house.economy().score(),
+            );
             // 0x005C99EB..0x005C99F5 adds only a positive score to the zeroed
             // entry; a survivor then gets v + v/2 + Random(v/2, v), which
             // draws nothing when v is 0 (0x0065C7E0 with min == max). The
@@ -222,6 +236,7 @@ impl Simulation {
                 built: stats.built(),
                 raw_score,
                 score,
+                stage_income: house.economy().stage_income(),
             });
         }
 
@@ -714,6 +729,7 @@ mod tests {
             built: 3,
             raw_score: 100,
             score: 225,
+            stage_income: None,
         };
         mutate(&mut row, alternate);
         sim.terminal_score_snapshot
@@ -722,7 +738,7 @@ mod tests {
     }
 
     #[test]
-    fn every_terminal_score_row_field_is_hash_authoritative() {
+    fn terminal_score_row_gameplay_fields_are_hash_authoritative() {
         let absent = Simulation::new().state_hash();
         let mut present_empty = Simulation::new();
         present_empty

@@ -33,6 +33,7 @@ pub(super) struct SeatResult {
     pub(super) house: String,
     pub(super) outcome: Option<HouseOutcomeKind>,
     pub(super) score: ScoreRow,
+    pub(super) income: u64,
 }
 
 /// Admit exactly the starting participants independently of the role table.
@@ -127,14 +128,26 @@ pub(super) fn settle(state: &AppState, outcome: HouseOutcomeKind) -> Result<Vec<
         } else {
             sim.authored_house_outcome(owner)
         };
-        let (kills, losses, built, score) =
+        let (kills, losses, built, score, income) =
             match terminal.rows.iter().find(|row| row.owner == owner) {
-                Some(row) => (row.kills, row.losses, row.built, row.score),
+                Some(row) => (
+                    row.kills,
+                    row.losses,
+                    row.built,
+                    row.score,
+                    row.stage_income,
+                ),
                 // The base score page excludes passive Houses from its scoring
                 // and RNG. An admitted seat still gets its counters at this edge.
                 None if house.multiplay_passive() => {
                     let stats = house.stats();
-                    (stats.kills(), stats.losses(), stats.built(), 0)
+                    (
+                        stats.kills(),
+                        stats.losses(),
+                        stats.built(),
+                        0,
+                        house.economy().stage_income(),
+                    )
                 }
                 None => anyhow::bail!("missing terminal score for {}", role.house),
             };
@@ -142,6 +155,7 @@ pub(super) fn settle(state: &AppState, outcome: HouseOutcomeKind) -> Result<Vec<
             row: role.raw_slot_index,
             house: role.house.clone(),
             outcome,
+            income: income.unwrap_or_default(),
             score: ScoreRow {
                 name: human.name.clone(),
                 rgb: colors.text_rgb(sim, owner),
@@ -232,7 +246,6 @@ pub(super) fn destination(
                     *preselected = Some(authored.selection.key.clone());
                 }
             }
-            Ok(StageContinuation::SameStage) => {}
             Err(error) => log::warn!("Keeping the current VMCE stage on return: {error:#}"),
         }
     }

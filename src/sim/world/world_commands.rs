@@ -178,7 +178,7 @@ impl Simulation {
     /// ScatterSelectedObjects730FE0 admits Techno vt+A0, without Guard's
     /// IsActive test or miner exception. All retained entities are Technos.
     pub fn scatter_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
-        self.techno_player_controllable(id, rules)
+        self.techno_can_take_local_order(id, rules)
             .then_some(Command::Scatter { entity_id: id })
     }
 
@@ -610,19 +610,21 @@ impl Simulation {
     /// that owner. This is an input producer, never an event-execution gate.
     pub fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
         let actor = self.substrate.entities.get(id)?;
+        let controllable = self.techno_can_take_local_order(id, rules);
         // Ares 3.0 GuardCommandClass_Execute (1005CAF0, hook 0x730DB0): only
-        // the player's own controllable actor, the miner arm included.
+        // the player's controllable actor, the miner arm included. An authored
+        // grant supplies the same input authority for attached Foot.
         if rules.ares()
-            && (Some(actor.owner()) != self.session.current_house()
-                || !self.techno_player_controllable(id, rules))
+            && (!controllable
+                || (Some(actor.owner()) != self.session.current_house()
+                    && !self.local_foot_control_granted(actor)))
         {
             return None;
         }
         if actor.category() == EntityCategory::Structure {
             return None;
         }
-        let ordinary =
-            self.techno_player_controllable(id, rules) && self.techno_is_active(id, rules);
+        let ordinary = controllable && self.local_order_actor_is_active(id, rules);
         let miner = actor.category() == EntityCategory::Unit
             && (actor.slave_manager.is_some() || actor.is_harvester());
         if !ordinary && !miner {
@@ -3268,6 +3270,16 @@ impl Simulation {
         grants.binary_search(&(controller, owner)).is_ok()
     }
 
+    pub(crate) fn house_receives_shared_orders(&self, owner: InternedId) -> bool {
+        let grants = self.session.house_control_grants();
+        !grants.is_empty()
+            && self.houses.index_of(owner).is_some_and(|index| {
+                grants
+                    .iter()
+                    .any(|&(_, shared)| usize::from(shared) == index)
+            })
+    }
+
     /// A frozen control grant covers a Foot owned by the listed House.
     pub(super) fn has_foot_control_grant(&self, controller: InternedId, entity_id: u64) -> bool {
         self.substrate
@@ -3327,7 +3339,9 @@ impl Simulation {
             return true;
         }
         let actor = cmd.megamission_actor().or(match cmd {
-            Command::DeployMcv { entity_id } => Some(*entity_id),
+            Command::DeployMcv { entity_id }
+            | Command::Stop { entity_id }
+            | Command::Scatter { entity_id } => Some(*entity_id),
             _ => None,
         });
         let needs_grant = actor.is_some_and(|id| self.has_foot_control_grant(controller, id))
@@ -3365,13 +3379,57 @@ impl Simulation {
                     }))
         };
         let rally = |id| self.has_rally_control_grant(controller, id, rules);
+        let building_entry = |id, target, mission| {
+            foot(id)
+                && self.substrate.entities.get(id).is_some_and(|actor| {
+                    actor.category() == EntityCategory::Infantry
+                        && self
+                            .object_type(actor.type_ref(), rules)
+                            .is_some_and(|object| match mission {
+                                MissionType::Sabotage => {
+                                    object.c4
+                                        || (rules.ares_form()
+                                            && combat::veterancy::holds_c4(
+                                                actor.veterancy.rank_kind(),
+                                                object,
+                                            ))
+                                }
+                                MissionType::Capture => object.engineer,
+                                _ => false,
+                            })
+                })
+                && self
+                    .substrate
+                    .entities
+                    .get(target)
+                    .is_some_and(|building| building.category() == EntityCategory::Structure)
+        };
         match cmd {
             Command::Move { entity_id, .. }
             | Command::MoveToObject { entity_id, .. }
-            | Command::AttackMove { entity_id, .. } => foot(*entity_id),
+            | Command::AttackMove { entity_id, .. }
+            | Command::Stop { entity_id }
+            | Command::Scatter { entity_id }
+            | Command::Guard { entity_id, .. } => foot(*entity_id),
             Command::Attack { attacker_id, .. } | Command::ForceAttackCell { attacker_id, .. } => {
                 foot(*attacker_id)
             }
+            Command::PlantC4 {
+                attacker_id,
+                target_building_id,
+            } => building_entry(*attacker_id, *target_building_id, MissionType::Sabotage),
+            Command::CaptureBuilding {
+                engineer_id,
+                target_building_id,
+            } => building_entry(*engineer_id, *target_building_id, MissionType::Capture),
+            // Event4C747C carries both actions as a MegaMission with a
+            // Building destination. Receipt dispatches the stock mission.
+            Command::MegaMission {
+                entity_id,
+                mission: mission @ (MissionType::Sabotage | MissionType::Capture),
+                target: None,
+                destination: Some(combat::TargetKind::Entity(target_building_id)),
+            } => building_entry(*entity_id, *target_building_id, *mission),
             Command::DeployMcv { entity_id } => deploy(*entity_id),
             Command::MegaMission {
                 entity_id,

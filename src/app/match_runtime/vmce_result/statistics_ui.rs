@@ -76,8 +76,7 @@ impl Statistics {
                 row.score.losses.to_string(),
                 row.score.built.to_string(),
                 row.score.score.to_string(),
-                // Display a dash for the unavailable gross-income counter.
-                "-".to_owned(),
+                row.income.to_string(),
             ];
             for (&(_, x, w), value) in HEADERS[1..].iter().zip(values) {
                 labels.push(label(value, RectPx::new(x, y, w, 24), center, rgb));

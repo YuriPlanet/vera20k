@@ -1441,7 +1441,7 @@ fn push_option_controls(
     }
 }
 
-/// One setup trackbar, with its value plaque unless it is Difficulty.
+/// One setup trackbar and its value plaque or caption.
 fn push_trackbar(
     controls: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,
@@ -1478,13 +1478,13 @@ fn push_trackbar(
         ControlPaint::Trackbar {
             rect,
             thumb_left: bar.thumb_left(rect, scale),
-            plaque: bar.id != DIFFICULTY,
+            plaque: bar.has_value_plaque(),
             // A guest's are disabled windows (`0x005E30EB..0x005E30F4`).
             disabled: !enabled,
         },
         scale,
     );
-    if bar.id != DIFFICULTY {
+    if bar.has_value_plaque() {
         let value = match bar.id {
             SPEED => {
                 let context = crate::ui::shell::game_speed::SpeedContext::Network;
@@ -1513,11 +1513,22 @@ fn push_trackbar(
             text_depth,
             text_factor,
         ));
-    } else if let Some(label) = &view.difficulty_label {
+    } else if let Some(label) = match bar.id {
+        SCENARIO_SPEED => view
+            .scenario_room
+            .as_ref()
+            .map(|room| room.speed_label.as_str()),
+        _ => view.difficulty_label.as_deref(),
+    } {
+        let caption = layout.difficulty_label_rect(rect);
+        let label = state
+            .renderer
+            .bit_font
+            .truncate_to_width(label, (caption.w as f32 / text_factor) as u32);
         texts.push(shell_text::draw_in_rect_scaled(
             &state.renderer.bit_font,
-            label,
-            rect_to_text_rect(layout.difficulty_label_rect(rect)),
+            &label,
+            rect_to_text_rect(caption),
             caption_color,
             ShellAlign::V_CENTER,
             [0.0; 2],

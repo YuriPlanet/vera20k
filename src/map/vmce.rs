@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
 
@@ -29,6 +30,7 @@ pub struct VmceManifest {
     pub stages: Vec<VmceStage>,
     pub entry_index: usize,
     carry_over: BTreeMap<(usize, usize), Vec<(String, String)>>,
+    unknown_keys: Arc<[(String, String)]>,
     ini: IniFile,
 }
 
@@ -126,10 +128,12 @@ impl VmceManifest {
         }
         let entry = map_path(required_name(series, "Entry")?).context("Entry")?;
         let count = read_count(series, "ScenarioCount", series.entry_count())?;
+        let mut unknown_keys = Vec::new();
         check_distinct_keys(
             series,
             &["entry", "name", "scenariocount", "altnextglobal"],
             (1..=count).map(|index| format!("scenario{index}")),
+            &mut unknown_keys,
         )
         .context("[Campaign]")?;
         let series_options =
@@ -168,6 +172,7 @@ impl VmceManifest {
                     "altnextglobal",
                 ],
                 (1..=primary_roles.len()).map(|index| format!("player{index}")),
+                &mut unknown_keys,
             )
             .with_context(|| format!("[{section_name}]"))?;
             let options = StageOverrides::read(section, &series_options)
@@ -216,11 +221,31 @@ impl VmceManifest {
             .position(|stage| stage.path.eq_ignore_ascii_case(&entry))
             .with_context(|| format!("Entry {entry} is absent from the scenario list"))?;
         let carry_over = read_carry_over_sections(&ini, &stages)?;
+        for name in ini.section_names() {
+            if name.eq_ignore_ascii_case("Campaign") {
+                continue;
+            }
+            let (kind, tail) = name.split_once(':').unwrap_or(("", ""));
+            let (path, house) = tail.split_once(':').unwrap_or((tail, ""));
+            let listed_stage = kind.eq_ignore_ascii_case("Scenario")
+                && paths.contains(&path.replace('\\', "/").to_ascii_lowercase());
+            if kind.eq_ignore_ascii_case("CarryOver") || (listed_stage && house.is_empty()) {
+                continue;
+            }
+            for key in ini.section_or_empty(name).physical_keys() {
+                if !listed_stage
+                    || !(key.eq_ignore_ascii_case("CameraWaypoint") || house_control_key(key))
+                {
+                    unknown_keys.push((name.to_owned(), key.to_owned()));
+                }
+            }
+        }
         Ok(Self {
             name_label: series.read_name("Name", usize::MAX).map(str::to_owned),
             stages,
             entry_index,
             carry_over,
+            unknown_keys: unknown_keys.into(),
             ini,
         })
     }
@@ -372,8 +397,7 @@ impl VmceStage {
                 role_camera_waypoints.insert(house.name.clone(), waypoint);
             }
             for key in section.physical_keys() {
-                let lower = key.to_ascii_lowercase();
-                if !lower.starts_with("player") || !lower.ends_with("control") {
+                if !house_control_key(key) {
                     continue;
                 }
                 let role = control_keys
@@ -428,6 +452,7 @@ fn check_distinct_keys(
     section: &IniSection,
     fields: &[&str],
     numbered: impl Iterator<Item = String>,
+    unknown_keys: &mut Vec<(String, String)>,
 ) -> Result<()> {
     const ROOM_OPTIONS: &[&str] = &[
         "minplayers",
@@ -447,10 +472,19 @@ fn check_distinct_keys(
         {
             ensure!(keys.insert(normalized), "duplicate key {key}");
         } else {
-            log::debug!("VMCE ignoring [{}] key {key}", section.name);
+            unknown_keys.push((section.name.clone(), key.to_owned()));
         }
     }
     Ok(())
+}
+
+fn house_control_key(key: &str) -> bool {
+    key.to_ascii_lowercase()
+        .strip_prefix("player")
+        .and_then(|tail| tail.strip_suffix("control"))
+        .is_some_and(|number| {
+            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn read_count(section: &IniSection, key: &str, max: usize) -> Result<usize> {
@@ -580,6 +614,7 @@ pub struct OpenedVmceStage {
     pub primary_houses: Vec<String>,
     pub house_names: Vec<String>,
     pub shared_control_houses: Vec<Vec<String>>,
+    pub unknown_manifest_keys: Arc<[(String, String)]>,
     role_camera_waypoints: BTreeMap<String, u32>,
     briefing_text: Option<String>,
 }
@@ -891,7 +926,6 @@ pub enum VmceContinuation {
         funds: Vec<(String, String)>,
     },
     Credits(Option<String>),
-    SameStage,
 }
 
 /// Resolve a victory from the manifest used at start. The room still
@@ -904,38 +938,28 @@ pub fn stage_continuation(
 ) -> Result<VmceContinuation> {
     let (series, manifest, _) = read_series(maps_root, current, Some(configuration_sha256))?;
     let index = manifest.stage_index(&current.stage)?;
-    Ok(
-        if manifest
-            .stages
-            .get(index)
-            .is_some_and(|stage| stage.end_of_game)
-        {
-            VmceContinuation::Credits(
-                read_series_credits(&series)
-                    .inspect_err(|error| {
-                        log::warn!(
-                            "VMCE {}: {error:#}",
-                            series.join(SERIES_CREDITS_FILE).display()
-                        )
-                    })
-                    .unwrap_or_default(),
-            )
-        } else if let Some(next) = manifest.successor(index, terminal_globals) {
-            VmceContinuation::Next {
-                id: VmceMapId {
-                    series: current.series.clone(),
-                    stage: manifest.stages[next].path.clone(),
-                },
-                funds: manifest
-                    .carry_over
-                    .get(&(index, next))
-                    .cloned()
-                    .unwrap_or_default(),
-            }
-        } else {
-            VmceContinuation::SameStage
-        },
-    )
+    if let Some(next) = manifest.successor(index, terminal_globals) {
+        return Ok(VmceContinuation::Next {
+            id: VmceMapId {
+                series: current.series.clone(),
+                stage: manifest.stages[next].path.clone(),
+            },
+            funds: manifest
+                .carry_over
+                .get(&(index, next))
+                .cloned()
+                .unwrap_or_default(),
+        });
+    }
+    let credits = read_series_credits(&series)
+        .inspect_err(|error| {
+            log::warn!(
+                "VMCE {}: {error:#}",
+                series.join(SERIES_CREDITS_FILE).display()
+            );
+        })
+        .unwrap_or_default();
+    Ok(VmceContinuation::Credits(credits))
 }
 
 fn read_series_credits(series: &Path) -> Result<Option<String>> {
@@ -1112,6 +1136,7 @@ fn read_stage(
         primary_houses,
         house_names: roster.houses.into_iter().map(|house| house.name).collect(),
         shared_control_houses,
+        unknown_manifest_keys: Arc::clone(&manifest.unknown_keys),
         role_camera_waypoints,
         briefing_text,
     })
@@ -1364,6 +1389,29 @@ mod tests {
     }
 
     #[test]
+    fn manifest_reports_unknown_keys_and_preserves_valid_fields() {
+        let manifest = fixture_manifest()
+            .replace(
+                "[Campaign]",
+                "[Campaign]\nAlowObservers=yes\nAllowObservers=yes",
+            )
+            .replace("Player1=HouseAlpha", "Player1=HouseAlpha\nEndOfGam=yes")
+            + "\n[Scenario:minimal_stage01.map:HouseAlpha]\nCameraWaypint=2\n\
+                [Notes]\nUnused=anything\n";
+        let parsed = VmceManifest::parse(manifest.as_bytes()).unwrap();
+        assert_eq!(parsed.stages[0].options.allow_observers, Some(true));
+        let unknown: Vec<_> = parsed
+            .unknown_keys
+            .iter()
+            .map(|(_, key)| key.as_str())
+            .collect();
+        assert_eq!(
+            unknown,
+            ["AlowObservers", "EndOfGam", "CameraWaypint", "Unused"]
+        );
+    }
+
+    #[test]
     fn victory_successor_uses_the_accepted_manifest_without_opening_maps() {
         let root = TestDirectory::new("vmce-next-stage");
         let path = "VMCE/Outcomes/campaign.ini";
@@ -1391,7 +1439,7 @@ mod tests {
         );
         assert_eq!(
             next(&second, &accepted).unwrap(),
-            VmceContinuation::SameStage
+            VmceContinuation::Credits(None)
         );
         let mapped = format!(
             "{original}\n[CarryOver:OUTCOME_STAGE01.MAP:outcome_stage02.map]\nhousealpha=housecharlie\n",
@@ -1438,9 +1486,14 @@ mod tests {
             next(&second, &ended).unwrap(),
             VmceContinuation::Credits(Some(credits.to_owned()))
         );
+        let inferred = write(original);
+        assert_eq!(
+            next(&second, &inferred).unwrap(),
+            VmceContinuation::Credits(Some(credits.to_owned()))
+        );
         root.write("VMCE/Outcomes/CREDITS.TXT", &[0xff]);
         assert_eq!(
-            next(&second, &ended).unwrap(),
+            next(&second, &inferred).unwrap(),
             VmceContinuation::Credits(None)
         );
     }

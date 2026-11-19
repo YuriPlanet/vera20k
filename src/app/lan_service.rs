@@ -4766,12 +4766,28 @@ pub(super) fn receive_authored_result_departure(
             .session
             .network_endpoint_source(incoming.source)
     {
-        state
-            .match_state
-            .session
-            .disconnect_network_participant(source);
+        retire_authored_result_peer(state, source, incoming.source);
     }
     Ok(())
+}
+
+pub(super) fn retire_authored_result_peer(
+    state: &mut AppState,
+    source: usize,
+    endpoint: SocketAddrV4,
+) {
+    state
+        .match_state
+        .session
+        .disconnect_network_participant(source);
+    if let Some(service) = state.match_state.lan_service.as_mut() {
+        service
+            .pending_setup
+            .retain(|(_, destination)| *destination != direct(endpoint));
+        if let Some(transport) = service.transport.as_mut() {
+            transport.global_mut().cancel_sends_to_endpoint(endpoint);
+        }
+    }
 }
 
 pub(crate) fn close(state: &mut AppState) {

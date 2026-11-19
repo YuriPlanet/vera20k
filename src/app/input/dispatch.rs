@@ -4156,7 +4156,7 @@ fn stop_qualifies(
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
 ) -> bool {
-    (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
+    (sim.techno_can_take_local_order(id, rules) || sim.techno_is_active(id, rules))
         && !(rules.ares()
             && sim
                 .entities()

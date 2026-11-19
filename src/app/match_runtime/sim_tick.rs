@@ -4037,6 +4037,7 @@ mod modal_pump_tests {
             built: 0,
             raw_score: 0,
             score: 0,
+            stage_income: None,
         };
         let snapshot = crate::sim::score::TerminalScoreSnapshot {
             rows: vec![row(player, 15), row(computer, 0)],

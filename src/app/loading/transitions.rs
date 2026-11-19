@@ -856,13 +856,15 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     .simulation
                     .restore_campaign_carry_over(record, &runtime.resources.rules);
             } else if let Some(authored) = prepared.authored_scenario()
-                && let Some(record) = authored.carry_over.as_ref()
                 && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
             {
-                runtime.simulation.restore_authored_stage_carry_over(
-                    record,
-                    authored.players.iter().map(|player| player.house.as_str()),
-                );
+                if let Some(record) = authored.carry_over.as_ref() {
+                    runtime.simulation.restore_authored_stage_carry_over(
+                        record,
+                        authored.players.iter().map(|player| player.house.as_str()),
+                    );
+                }
+                runtime.simulation.begin_authored_stage_income();
             }
             let installed = crate::app::lan_service::install_gameplay(state);
             if installed.is_ok() {

@@ -52,6 +52,10 @@ pub struct Economy {
     /// Ares fills; empty unless Ares plays.
     #[serde(default)]
     storage: AresTiberiumStorage,
+    // Authored LAN's live score statistic. Its matches start from a frozen
+    // launch and the counter stays outside the stock save and gameplay hash.
+    #[serde(skip)]
+    stage_income: Option<u64>,
 }
 
 impl Economy {
@@ -66,6 +70,7 @@ impl Economy {
             spent_credits: 0,
             score: 0,
             storage: AresTiberiumStorage::new(),
+            stage_income: None,
         }
     }
 
@@ -89,6 +94,20 @@ impl Economy {
 
     pub const fn score(&self) -> i32 {
         self.score
+    }
+
+    pub(crate) fn begin_stage_income(&mut self) {
+        self.stage_income = Some(0);
+    }
+
+    pub const fn stage_income(&self) -> Option<u64> {
+        self.stage_income
+    }
+
+    fn record_stage_income(&mut self, amount: i32) {
+        if let Some(total) = &mut self.stage_income {
+            *total = total.saturating_add(amount.max(0) as u64);
+        }
     }
 
     /// House ReadScenarioINI500B40: wrapping Credits*100 sets +1DC and the
@@ -163,6 +182,7 @@ impl Economy {
     /// balance. No score/spending, timer, RNG, detach or callback side effect.
     pub fn add_credits(&mut self, amount: i32) {
         self.credits = self.credits.wrapping_add(amount);
+        self.record_stage_income(amount);
     }
 
     /// EvadeClass::Do @0x004C6272..0x004C6285 calls Add_Credits and then
@@ -181,18 +201,19 @@ impl Economy {
     /// (`AresTiberiumStorage::drain_for_spend`): the stored units it sells
     /// join what was taken, and the last unit's excess is the new balance.
     pub(crate) fn spend_money(&mut self, amount: i32) {
-        let taken = if amount <= self.credits {
+        let (taken, cash_received) = if amount <= self.credits {
             self.credits = self.credits.wrapping_sub(amount);
-            amount
+            (amount, amount.wrapping_neg())
         } else {
             let taken = std::mem::take(&mut self.credits);
             // Runs in every game: an empty store, which only Ares' deposits
             // fill, drains nothing and leaves the balance at 0.
             let (drained, change) = self.storage.drain_for_spend(amount.wrapping_sub(taken));
             self.credits = change;
-            taken.wrapping_add(drained)
+            (taken.wrapping_add(drained), change)
         };
         self.spent_credits = self.spent_credits.wrapping_add(taken);
+        self.record_stage_income(cash_received);
     }
 
     /// The score's kill and capture awards: `TechnoClass::RecordKill @
@@ -218,6 +239,7 @@ impl Economy {
             X87::mul(amount, X87::load_i32(5)),
             X87::load_i32(self.score),
         ));
+        let previous = self.credits;
         self.credits = X87::ftol_i32_low_masked(X87::add(
             X87::mul(
                 X87::mul(X87::load_i32(value), X87::load_f32(income)),
@@ -225,6 +247,7 @@ impl Economy {
             ),
             X87::load_i32(self.credits),
         ));
+        self.record_stage_income(self.credits.wrapping_sub(previous));
     }
 
     /// A captured or authored balance for a test.
@@ -250,6 +273,21 @@ impl Economy {
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn stage_income_counts_cash_entries_after_setup() {
+        let mut wallet = Economy::new(1000);
+        wallet.add_campaign_carry_over(200);
+        wallet.add_credits(75);
+        wallet.begin_stage_income();
+        wallet.add_credits(35);
+        wallet.spend_money(20);
+        wallet.add_credits(-5);
+        wallet.add_tiberium_credits(25, NativeF32Bits::ONE, NativeF32Bits::ONE);
+        wallet.add_credits(12);
+        assert_eq!(wallet.stage_income(), Some(72));
+        assert_eq!(wallet.credits(), 1322);
+    }
 
     fn rows(section: &str) -> Vec<Value> {
         let data: Value =

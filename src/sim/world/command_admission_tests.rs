@@ -719,6 +719,158 @@ fn frozen_grants_use_the_existing_passenger_and_deploy_admission() {
 }
 
 #[test]
+fn shared_units_accept_group_keys_and_special_orders_only_from_a_granted_sender() {
+    use crate::sim::components::{DriveCoord, NavTargetRef};
+    use crate::sim::mission::MissionType;
+    use std::cell::RefCell;
+
+    let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[InfantryTypes]\n2=SAPPER\n[SAPPER]\nStrength=100\nSpeed=5\nSpeedType=Foot\nC4=yes\nPrimary=RIFLE\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [RIFLE]\nDamage=10\nROF=20\nRange=3\nProjectile=InvisibleLow\nWarhead=SA\n\
+         [BuildingTypes]\n1=TARGET\n[TARGET]\nStrength=800\nFoundation=1x1\nCanC4=yes\nCapturable=yes\n",
+    );
+    let [controller, peer, attached] =
+        ["Controller", "Peer", "Attached"].map(|name| sim.intern(name));
+    for (index, owner) in [controller, peer, attached].into_iter().enumerate() {
+        sim.houses.register(HouseState::new(
+            owner,
+            index as u8,
+            None,
+            index < 2,
+            10_000,
+            10,
+        ));
+    }
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.set_current_house_for_test(Some(controller));
+    sim.session.install_authored_campaign(vec![0, 1], false);
+    sim.session.install_network_timing(10);
+    sim.session
+        .install_network_command_timing(1, std::num::NonZeroU8::new(5).unwrap(), [0, 1]);
+    sim.session.install_house_control_grants(vec![(0, 2)]);
+    let mut spawn = |kind, owner, x, y| {
+        sim.spawn_object_with_overlay_registry(kind, owner, x, y, 0, &rules, &overlays)
+            .unwrap()
+    };
+    let engineer = spawn("ENGINEER", "Attached", 15, 15);
+    let sapper = spawn("SAPPER", "Attached", 16, 15);
+    let shared_soldier = spawn("SAPPER", "Attached", 15, 16);
+    let target = spawn("TARGET", "Peer", 19, 15);
+    let demolition_target = spawn("TARGET", "Peer", 19, 17);
+    spawn("TARGET", "Controller", 10, 12);
+    sim.substrate
+        .entities
+        .get_mut(shared_soldier)
+        .unwrap()
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
+    let guard = sim.area_guard_key_command(shared_soldier, &rules).unwrap();
+    assert!(sim.scatter_key_command(shared_soldier, &rules).is_some());
+    sim.session.set_current_house_for_test(Some(peer));
+    let demolition = Command::PlantC4 {
+        attacker_id: sapper,
+        target_building_id: demolition_target,
+    };
+    let capture = Command::CaptureBuilding {
+        engineer_id: engineer,
+        target_building_id: target,
+    };
+    let applied = RefCell::new(Vec::new());
+    let observe = |_: &Simulation, record: &crate::sim::command::CommandRecord, ok| {
+        applied
+            .borrow_mut()
+            .push((record.house_id(), record.opcode(), ok));
+    };
+    let native_mission = |sender, command| sim.encode_megamission_record(sender, command).unwrap();
+    let records = [
+        (
+            sim.encode_stop_record(controller, shared_soldier).unwrap(),
+            true,
+        ),
+        (
+            sim.encode_scatter_record(controller, shared_soldier)
+                .unwrap(),
+            true,
+        ),
+        (native_mission(controller, &guard), true),
+        (native_mission(controller, &demolition), true),
+        (native_mission(controller, &capture), true),
+        (native_mission(peer, &demolition), false),
+        (native_mission(peer, &capture), false),
+    ];
+    let mut expected = Vec::new();
+    for (record, accepted) in records {
+        expected.push((record.house_id(), record.opcode(), accepted));
+        assert!(sim.network_command_queues().admit_received(record));
+    }
+    sim.advance_master_frame(
+        &[],
+        &rules,
+        Some(&overlays),
+        33,
+        crate::sim::world::TickLane::Ordinary,
+        false,
+        FrameEffects::default().with_command_applied(&observe),
+    )
+    .unwrap();
+    assert_eq!(applied.into_inner(), expected);
+    let frame = sim.session.binary_frame();
+    for (actor, building, mission) in [
+        (engineer, target, MissionType::Capture),
+        (sapper, demolition_target, MissionType::Sabotage),
+    ] {
+        sim.substrate.mission_commence_exact(actor, frame).unwrap();
+        let entity = sim.entities().get(actor).unwrap();
+        assert_eq!(entity.owner(), attached);
+        assert_eq!(entity.mission.effective().known(), Some(mission));
+        if mission == MissionType::Capture {
+            crate::sim::mission::capture::mission_capture(
+                &mut sim,
+                &rules,
+                Some(&overlays),
+                actor,
+                FrameEffects::default(),
+            );
+        }
+        assert_eq!(
+            sim.entities().get(actor).unwrap().navigation.nav_com(),
+            Some(NavTargetRef::object(building))
+        );
+        let position = &sim.entities().get(building).unwrap().position;
+        let at = DriveCoord {
+            x: i32::from(position.rx()) * 256 + 128,
+            y: i32::from(position.ry()) * 256 + 128,
+            z: 0,
+        };
+        // Put the actor at the ordered building to exercise the actual
+        // PerCell arrival without unrelated AI or combat frames.
+        sim.foot_set_location_marked(actor, at, &rules, Some(&overlays), FrameEffects::default());
+    }
+    assert!(
+        sim.infantry_per_cell_building_entry(
+            engineer,
+            &rules,
+            Some(&overlays),
+            FrameEffects::default()
+        )
+        .unwrap()
+        .return_before_foot
+    );
+    assert_eq!(sim.entities().get(target).unwrap().owner(), attached);
+    sim.infantry_per_cell_c4(sapper, &rules, Some(&overlays), FrameEffects::default())
+        .unwrap();
+    assert!(
+        sim.entities()
+            .get(demolition_target)
+            .unwrap()
+            .building
+            .pending_c4_detonation
+            .pending()
+            .is_some()
+    );
+}
+
+#[test]
 fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
     use crate::sim::command::CommandRecord;
     use crate::sim::components::NavTargetRef;

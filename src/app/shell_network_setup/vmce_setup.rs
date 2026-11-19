@@ -21,15 +21,15 @@ use crate::map::scenario_menu::{
 use crate::map::vmce::{self, DiscoveredVmceMap, OpenedVmceStage, VmceMapId, VmceStageOptions};
 use crate::net::lan_messages::SessionScope;
 use crate::sim::AuthoredStageCarryOver;
-use crate::sim::game_options::GameOptions;
+use crate::sim::game_options::{GameOptions, is_selectable_game_speed};
 use crate::sim::house_state::HouseDifficulty;
 use crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
 use crate::ui::multiplayer_setup::{
-    DIFFICULTY, RoomBox, ScenarioRoleDetails, ScenarioRoomRow, ScenarioRoomView, SetupAction,
-    SetupChoice, SetupColumn, SetupCombo, SetupDialog, SetupRowIcon, SetupTrackbar, SetupView,
-    roster_list_width,
+    DIFFICULTY, RoomBox, SCENARIO_SPEED, ScenarioRoleDetails, ScenarioRoomRow, ScenarioRoomView,
+    SetupAction, SetupChoice, SetupColumn, SetupCombo, SetupDialog, SetupRowIcon, SetupTrackbar,
+    SetupView, roster_list_width,
 };
-use crate::ui::shell::trackbar::TrackbarRange;
+use crate::ui::shell::{game_speed, trackbar::TrackbarRange};
 use crate::ui::skirmish_shell::ChooseMapModalLayout;
 
 use super::NetworkSetupRequest;
@@ -309,12 +309,7 @@ pub(crate) fn chooser_media(
 pub(crate) fn choose(state: &mut AppState, key: &LocalScenarioKey) {
     if let Err(error) = select(state, key) {
         log::warn!("Could not accept VMCE map selection: {error:#}");
-        notice(
-            state,
-            &format!(
-                "VMCE could not open the selected map. Check the series files and choose again. {error:#}"
-            ),
-        );
+        notice(state, &crate::i18n::tr("VERA:VmceOpenFailed"));
     }
 }
 
@@ -348,7 +343,6 @@ pub(crate) enum StageContinuation {
         funds: Vec<(String, String)>,
     },
     Credits(Option<String>),
-    SameStage,
 }
 
 pub(crate) fn stage_continuation(
@@ -366,7 +360,6 @@ pub(crate) fn stage_continuation(
                 funds,
             },
             vmce::VmceContinuation::Credits(text) => StageContinuation::Credits(text),
-            vmce::VmceContinuation::SameStage => StageContinuation::SameStage,
         },
     )
 }
@@ -413,7 +406,7 @@ fn select(state: &mut AppState, key: &LocalScenarioKey) -> Result<()> {
     );
     let root = maps_root(state).context("no configured Maps directory")?;
     let visual_rules = RoomRuleSources::for_room(&state.process_assets);
-    accept_selection(
+    let unknown_keys = accept_selection(
         &mut state.match_state.session,
         &root,
         key,
@@ -429,6 +422,20 @@ fn select(state: &mut AppState, key: &LocalScenarioKey) -> Result<()> {
         protocol.scenario_return_roles = None;
         protocol.republish_setup();
     }
+    if let Some((section, field)) = unknown_keys.first() {
+        for (section, field) in unknown_keys.iter() {
+            log::warn!(
+                "VMCE {} campaign.ini: ignoring [{section}] {field}",
+                key.path
+            );
+        }
+        let example: String = format!("[{section}] {field}").chars().take(100).collect();
+        let text = crate::i18n::tr_fill(
+            "VERA:VmceUnknownManifestKeys",
+            &[("count", &unknown_keys.len()), ("key", &example)],
+        );
+        notice(state, &text);
+    }
     Ok(())
 }
 
@@ -438,7 +445,7 @@ fn accept_selection(
     key: &LocalScenarioKey,
     base: Option<&CsfFile>,
     visual_rules: Option<&RoomRuleSources<'_>>,
-) -> Result<()> {
+) -> Result<Arc<[(String, String)]>> {
     ensure!(
         can_choose_in_room(session),
         "VMCE requires a playing LAN host and no lobby AI"
@@ -451,8 +458,13 @@ fn accept_selection(
     } else {
         stage_selection(&stage, base)
     };
-    let lobby = stage_lobby(&stage.options, stage.primary_houses)?;
-    session.select_local_network_scenario(selection, source, lobby)
+    let game_speed = session.local_scenario_lobby().map_or_else(
+        || GameOptions::default().game_speed,
+        |lobby| lobby.rules.game_speed,
+    );
+    let lobby = stage_lobby(&stage.options, stage.primary_houses, game_speed)?;
+    session.select_local_network_scenario(selection, source, lobby)?;
+    Ok(stage.unknown_manifest_keys)
 }
 
 fn stage_source(stage: &OpenedVmceStage) -> LocalScenarioSource {
@@ -484,7 +496,15 @@ fn room_stage_selection(
     selection
 }
 
-fn stage_lobby(options: &VmceStageOptions, roles: Vec<String>) -> Result<LocalScenarioLobby> {
+fn stage_lobby(
+    options: &VmceStageOptions,
+    roles: Vec<String>,
+    game_speed: i32,
+) -> Result<LocalScenarioLobby> {
+    ensure!(
+        u8::try_from(game_speed).is_ok_and(is_selectable_game_speed),
+        "invalid VMCE game speed"
+    );
     ensure!(
         (1..=NETWORK_PLAYER_SLOT_COUNT).contains(&options.min_players)
             && (1..=roles.len()).contains(&options.max_players)
@@ -505,6 +525,7 @@ fn stage_lobby(options: &VmceStageOptions, roles: Vec<String>) -> Result<LocalSc
         allows_observers: options.allow_observers,
         rules: LocalScenarioRules {
             allow_allies_change: options.allow_allies_change,
+            game_speed,
             ai_difficulty: ai_difficulty(options.lobby_difficulty)?,
             difficulty_locked: options.lock_difficulty,
             alliance_admission:
@@ -564,6 +585,7 @@ pub(crate) struct ScenarioOptions {
     effective_digest: String,
     seed: u32,
     settings: VmceStageOptions,
+    game_speed: i32,
     roles: Vec<String>,
     seats: Vec<ScenarioSeat>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -634,11 +656,10 @@ fn options_from_selection(
     let stage = vmce::open_stage(root, &id)?;
     let source = stage_source(&stage);
     session.verify_local_scenario_source(key, &source)?;
-    let settings = room_settings(
-        session
-            .local_scenario_lobby()
-            .context("no admitted VMCE setup")?,
-    );
+    let lobby = session
+        .local_scenario_lobby()
+        .context("no admitted VMCE setup")?;
+    let settings = room_settings(lobby);
     ensure!(
         permits_room_settings(&stage.options, &settings),
         StageOptionsMismatch
@@ -659,6 +680,7 @@ fn options_from_selection(
             .network_start_seed()
             .context("VMCE options have no admitted LAN seed")?,
         settings,
+        game_speed: lobby.rules.game_speed,
         roles: stage.primary_houses,
         seats: scenario_seats(session)?,
         carry_over: session.local_scenario_carry_over().cloned(),
@@ -716,7 +738,7 @@ impl ScenarioOptions {
             self.settings.min_players <= self.settings.max_players,
             "the VMCE minimum exceeds the available LAN seats"
         );
-        let lobby = stage_lobby(&self.settings, self.roles.clone())?;
+        let lobby = stage_lobby(&self.settings, self.roles.clone(), self.game_speed)?;
         ensure!(
             self.carry_over
                 .as_ref()
@@ -787,7 +809,7 @@ impl ScenarioOptions {
         let key = selection.key.clone();
         session.accept_remote_local_scenario(
             selection,
-            stage_lobby(&self.settings, self.roles.clone())?,
+            stage_lobby(&self.settings, self.roles.clone(), self.game_speed)?,
             &self.picks(),
             self.seed,
         )?;
@@ -831,15 +853,7 @@ impl ScenarioOptions {
                     "VMCE {} local map verification refused: {error:#}",
                     self.stage
                 );
-                let reason = error
-                    .downcast_ref::<vmce::VmceStageFileError>()
-                    .map_or_else(|| error.to_string(), ToString::to_string);
-                notice(
-                    state,
-                    &format!(
-                        "VMCE: {reason}. Check the local series files, then ask the host to reselect this stage."
-                    ),
-                );
+                notice(state, &crate::i18n::tr("VERA:VmceCheckLocalFiles"));
                 if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
                     protocol.finish_return_verification(None);
                     protocol.requests.push(NetworkSetupRequest::MapStatus(0));
@@ -1235,21 +1249,15 @@ pub(crate) fn refuse_lan_start(state: &mut AppState, error: &anyhow::Error) -> R
         .context("no LAN setup")?
         .cancel_lan_go();
     crate::app::lan_service::invalidate_setup_options(state)?;
-    notice(
-        state,
-        &format!(
-            "VMCE could not start. {error:#}. Restore the series files and choose the map again."
-        ),
-    );
+    notice(state, &crate::i18n::tr("VERA:VmceStartFailed"));
     Ok(())
 }
 
 pub(super) fn refuse_lan_handoff(state: &mut AppState, error: &anyhow::Error) {
+    log::warn!("VMCE handoff refused: {error:#}");
     super::service::fail_go_handoff_with_message(
         state,
-        format!(
-            "VMCE rejected the start. {error:#}. Check the local series files before returning to the room."
-        ),
+        crate::i18n::tr("VERA:VmceCheckLocalFiles"),
     );
 }
 
@@ -1630,12 +1638,14 @@ fn room_presentation(
     if lobby.rules.difficulty_locked {
         rules.push(tr("VERA:VmceMapLocksDifficulty"));
     }
+    let speed_rate = crate::app::types::tps_for_game_speed(lobby.rules.game_speed as u32);
     Some(ScenarioRoomView {
         rows,
         caption: "VERA:VmceModeName",
         players_heading: "VERA:VmceRoomPlayers",
         chat_heading: "VERA:VmceRoomChat",
         rules_heading: "VERA:VmceRoomRules",
+        speed_label: crate::i18n::tr_fill("VERA:VmceGameSpeed", &[("rate", &speed_rate)]),
         rules,
         waiting: waiting.then(|| tr("VERA:VmceWaitHostReturn")),
         unavailable_preview: "VERA:VmceNoPreview",
@@ -1747,6 +1757,17 @@ fn project_view(
         enabled: session.host() && !rules.difficulty_locked,
         visible: true,
     });
+    view.trackbars.push(SetupTrackbar {
+        id: SCENARIO_SPEED,
+        value: game_speed::SpeedContext::Network.visual_position(rules.game_speed),
+        range: TrackbarRange {
+            min: 0,
+            max: game_speed::MAX_POSITION,
+            step: 1,
+        },
+        enabled: session.host(),
+        visible: true,
+    });
     let choices: Vec<_> = std::iter::once(SetupChoice {
         value: -1,
         text: random_label.to_owned(),
@@ -1850,6 +1871,16 @@ fn edit_room_rules(session: &mut MatchSession, action: &SetupAction) -> Result<b
             ensure!(!rules.difficulty_locked, "this stage locks its difficulty");
             rules.ai_difficulty = ai_difficulty(value)?;
         }
+        SetupAction::Trackbar {
+            control: SCENARIO_SPEED,
+            value,
+        } => {
+            ensure!(
+                (0..=game_speed::MAX_POSITION).contains(&value),
+                "invalid VMCE game speed position"
+            );
+            rules.game_speed = game_speed::SpeedContext::Network.stored_speed(value);
+        }
         _ => return Ok(false),
     }
     session.set_local_scenario_rules(rules)
@@ -1878,34 +1909,32 @@ pub(super) fn handle_action(state: &mut AppState, action: &SetupAction) -> bool 
         SetupAction::Start => {
             if let Err(error) = request_start(state) {
                 log::warn!("VMCE start refused: {error:#}");
-                notice(
-                    state,
-                    &format!(
-                        "VMCE could not start. {error:#}. Check the series settings and choose the map again."
-                    ),
-                );
+                notice(state, &crate::i18n::tr("VERA:VmceStartFailed"));
             }
             true
         }
         SetupAction::ChooseMap => !can_choose(state),
         SetupAction::Accept => {
             if let Err(error) = guest_ready_action(state) {
-                notice(state, &format!("VMCE preparation refused. {error:#}"));
+                log::warn!("VMCE unable to mark ready: {error:#}");
+                notice(state, &crate::i18n::tr("VERA:VmceReadyFailed"));
             }
             true
         }
         SetupAction::Select { control, value } => {
             if let Err(error) = select_role(state, *control, *value) {
-                notice(state, &format!("VMCE role choice declined. {error:#}"));
+                log::warn!("VMCE role choice declined: {error:#}");
+                notice(state, &crate::i18n::tr("VERA:VmceRoleFailed"));
             }
             true
         }
         SetupAction::Trackbar {
-            control: DIFFICULTY,
+            control: DIFFICULTY | SCENARIO_SPEED,
             ..
         } => {
             if let Err(error) = handle_room_edit(state, action) {
-                notice(state, &format!("VMCE setting declined. {error:#}"));
+                log::warn!("VMCE room setting declined: {error:#}");
+                notice(state, &crate::i18n::tr("VERA:VmceSettingFailed"));
             }
             true
         }
@@ -2040,8 +2069,19 @@ mod tests {
         };
         assert!(edit_room_rules(&mut session, &difficulty).unwrap());
         assert!(!edit_room_rules(&mut session, &difficulty).unwrap());
+        let speed = SetupAction::Trackbar {
+            control: SCENARIO_SPEED,
+            value: 7,
+        };
+        assert!(edit_room_rules(&mut session, &speed).unwrap());
         let (edited, _) = options_from_selection(&session, root.path(), &key, &assets).unwrap();
         assert_eq!(edited.settings.lobby_difficulty, 2);
+        let edited: ScenarioOptions =
+            serde_json::from_slice(&serde_json::to_vec(&edited).unwrap()).unwrap();
+        assert_eq!(edited.game_speed, 8);
+        let mut invalid = edited.clone();
+        invalid.game_speed = 7;
+        assert!(invalid.validate().is_err());
         edited
             .verify_map_from(root.path(), &assets, None, None)
             .unwrap();
@@ -2428,6 +2468,7 @@ mod tests {
         ));
         assert_eq!(session.network_teams(), Some(2));
         let mut stock_options = session.network_setup().unwrap().options.clone();
+        stock_options.game_speed = 3;
         stock_options.crates = true;
         session.set_network_options(stock_options).unwrap();
         session
@@ -2459,9 +2500,15 @@ mod tests {
         assert_eq!(view.row_count, 1);
         assert_eq!(view.map_label, "Fixture / VMCE Minimal Stage 01");
         assert!(!view.team_bar());
-        assert_eq!(view.trackbars.len(), 1);
+        assert_eq!(view.trackbars.len(), 2);
         assert_eq!(view.trackbars[0].id, DIFFICULTY);
         assert_eq!(view.trackbars[0].value, 1);
+        assert_eq!(view.trackbars[1].id, SCENARIO_SPEED);
+        assert!(view.enabled(SCENARIO_SPEED));
+        assert_eq!(
+            session.local_scenario_lobby().unwrap().rules.game_speed,
+            GameOptions::default().game_speed
+        );
         assert!(view.enabled(DIFFICULTY));
         assert!(!view.enabled(SHORT_GAME) && !view.enabled(CRATES));
         assert!(view.enabled(crate::ui::multiplayer_setup::GAME_OPTIONS));
@@ -2493,6 +2540,7 @@ mod tests {
         assert!(session.local_network_scenario().is_none());
         assert!(session.local_scenario_role(0).is_none());
         assert!(session.network_setup().unwrap().options.crates);
+        assert_eq!(session.network_setup().unwrap().options.game_speed, 3);
         assert!(session.network_allows_peers());
         assert_eq!(session.network_free_row(false), Some(1));
         assert_eq!(session.network_teams(), Some(2));
@@ -2586,6 +2634,20 @@ mod tests {
         };
         assert!(!edit_room_rules(&mut session, &toggle).unwrap());
         assert!(edit_room_rules(&mut session, &change).is_err());
+        assert_eq!(
+            session.local_scenario_lobby().unwrap().rules.game_speed,
+            GameOptions::default().game_speed
+        );
+        assert!(
+            edit_room_rules(
+                &mut session,
+                &SetupAction::Trackbar {
+                    control: SCENARIO_SPEED,
+                    value: 0
+                }
+            )
+            .unwrap()
+        );
         let startup = admit_start(&mut session, root.path(), &key, &assets).unwrap();
         let seat = startup.authored_local_player().unwrap();
         assert_eq!(seat.role, "Player1");
@@ -2603,6 +2665,7 @@ mod tests {
         let options = &startup.launch_session().options;
         assert!(!options.short_game && !options.crates && options.ally_change_allowed);
         assert_eq!(options.tech_level, GameOptions::default().tech_level);
+        assert_eq!(options.game_speed, 6);
     }
 
     #[test]

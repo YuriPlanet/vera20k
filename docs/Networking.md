@@ -689,7 +689,10 @@ carries the easiest-first `lobby_difficulty`, its lock flag, observer and
 alliance permissions, and the author's auto-enemy-selection option. An optional
 `scenario.carry_over` contains the host's terminal globals, countdown and
 funds keyed by the receiving stage's primary House. It belongs to the
-preselected successor. A different selection removes it. Local title lookup
+preselected successor. A different selection removes it. `scenario.game_speed`
+carries the host's opening speed using the standard LAN presets. It is a room
+setting, and the host can edit it in the first room and after each stage. The
+live `GAMESPEED` event applies to the current mission. Local title lookup
 uses the series CSF, then the running game's CSF and the configured fallback.
 Translations affect display only.
 
@@ -744,9 +747,11 @@ nonblocking radar movies use ordinary live gameplay timing.
 #### Commands, diplomacy and result rows
 
 An authored grant admits an existing synchronized sender to move or attack
-with a listed House's mobile units, use compatible transport and deploy or
-unload actions, and set a cell rally for a building with a rally line. The
-receiver checks the sender and the object's live ownership. Primary House
+with a listed House's mobile units, stop, scatter, set area guard, deploy, use
+compatible transport actions, plant C4 and use an engineer to capture. Captured
+buildings go to the engineer's House. The grant also admits a cell rally for a
+building with a rally line. The receiver checks the sender and the object's
+live ownership. Primary House
 authority covers repair, sale, factory priority, production, superweapons and
 construction yard repack. The map and its alliances govern vision. The TAB
 Diplomacy controls and the received `ALLY` record use the frozen alliance
@@ -755,8 +760,9 @@ permission for active participating Houses.
 Departure retires a live source and preserves the authored House and its units.
 Trigger outcomes still use the entire starting playing roster. Settlement
 uses the remaining playing seats in lobby order and each primary House's
-statistics. If the original room host departs, the remaining players can
-finish and then return to the LAN list.
+statistics. Income counts positive cash receipts after opening funds and
+carry-over have been installed. If the original room host departs, the
+remaining players can finish and then return to the LAN list.
 [Result projection](../src/app/match_runtime/vmce_result.rs)
 
 #### Results, room return and Retry
@@ -769,18 +775,21 @@ requires the original host name, endpoint and room epoch.
 New Options must verify before Ready and GO. A host victory preselects the
 alternate stage when its configured terminal global is set, or the ordinary
 successor otherwise. Those Options carry the terminal continuation record.
-At the end of a series, the credits play before the current stage is
-preselected in the room. An available role is restored by its primary House
-in the selected stage. A host loss keeps the current stage and its verified
+With `EndOfGame=yes`, or with no applicable successor at the end of the list,
+the host plays the credits before reopening the room on the current stage.
+An available role is restored by its primary House in the selected stage. A
+host loss keeps the current stage and its verified
 room rules. Returning guests click Ready again.
 
-Defeat Retry requires a common defeat and the complete frozen connection roster,
-including any observers. The host collects one Retry intent per playing endpoint.
-Prepare and confirmation recheck each client's local stage and manifest. Observers
-confirm their files and follow the new launch. The reliable start record hands
-the original stage, assignments, options, seed and incoming carry-over to each
-loader. Return to Room before confirmation cancels the agreement. A refusal
-shows its reason and offers Return to Room for a fresh start.
+Defeat Retry requires a common defeat and one Retry intent from every original
+playing endpoint, all of which must still be connected. An observer can leave
+while the room is waiting for votes. At Prepare, the host freezes the retry
+roster as a bit mask of shared lobby rows, omitting known observer departures.
+Every retained client confirms its local stage and manifest. The reliable Start
+record hands the original stage, playing assignments, opening speed and other
+settings, seed and incoming carry-over to each loader. A playing participant can
+cancel the agreement before handoff. A refusal offers Return to Room for a
+fresh start.
 
 Once the host queues the full Start batch, it waits for reliable delivery.
 An interruption at that point uses the failed-start return. The host opens
@@ -788,8 +797,11 @@ the same stage under a fresh room epoch. A confirmed guest that times out
 before Start returns to LAN as well, and a guest already loading uses the
 first-frame failure path. Returning guests verify the new admission.
 
-Retry records carry the completed match scope. The Retry reload advances its
-revision so the next private channels reject former match packets. During the
+The `VRR2` Retry records carry the completed match scope. Setup and Retry require
+matching builds. The build check refuses a mixed room before setup, including
+when returning to a build with the older record or Options format.
+The Retry reload advances its revision so the next private channels reject
+former match packets. During the
 handoff, the global transport can acknowledge an already received retransmission
 from the previous scope to cover a lost start ACK.
 

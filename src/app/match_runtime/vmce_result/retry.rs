@@ -3,6 +3,7 @@
 //! existing reliable global route.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
 
@@ -14,36 +15,51 @@ use crate::app::match_runtime::session::{SessionMode, WallBucketTimer};
 use crate::app::{App, AppState, GameScreen};
 use crate::net::global::{GlobalDestination, GlobalMessage};
 use crate::net::lan_messages::SessionScope;
+use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 
-const MAGIC: &[u8; 4] = b"VRR1";
+const MAGIC: &[u8; 4] = b"VRR2";
 const HANDOFF_BUCKETS: u32 = 600;
 
-#[derive(Clone, Copy)]
-#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Record {
-    Retry = 1,
-    Cancel = 2,
-    Prepare = 3,
-    Confirm = 4,
-    Start = 5,
+    Retry,
+    Cancel,
+    Prepare(u32),
+    Confirm,
+    Start,
+    ObserverLeft,
 }
 
 impl Record {
+    fn encode(self, scope: SessionScope) -> Vec<u8> {
+        let kind = match self {
+            Self::Retry => 1,
+            Self::Cancel => 2,
+            Self::Prepare(_) => 3,
+            Self::Confirm => 4,
+            Self::Start => 5,
+            Self::ObserverLeft => 6,
+        };
+        let mut bytes = [MAGIC.as_slice(), &scope.encode(), &[kind]].concat();
+        if let Self::Prepare(rows) = self {
+            bytes.extend(rows.to_le_bytes());
+        }
+        bytes
+    }
+
     fn decode(bytes: &[u8]) -> Result<(Self, SessionScope)> {
-        let (scope, [kind]) = bytes
+        let (scope, payload) = bytes
             .strip_prefix(MAGIC)
             .and_then(|payload| payload.split_at_checked(SessionScope::LEN))
-            .context("invalid retry record length")?
-        else {
-            anyhow::bail!("invalid retry record length");
-        };
-        let record = match kind {
-            1 => Self::Retry,
-            2 => Self::Cancel,
-            3 => Self::Prepare,
-            4 => Self::Confirm,
-            5 => Self::Start,
-            _ => anyhow::bail!("unknown retry record"),
+            .context("invalid retry record length")?;
+        let record = match payload {
+            [1] => Self::Retry,
+            [2] => Self::Cancel,
+            [3, a, b, c, d] => Self::Prepare(u32::from_le_bytes([*a, *b, *c, *d])),
+            [4] => Self::Confirm,
+            [5] => Self::Start,
+            [6] => Self::ObserverLeft,
+            _ => anyhow::bail!("invalid retry record"),
         };
         Ok((
             record,
@@ -94,6 +110,7 @@ pub(crate) struct RetryRound {
     phase: Phase,
     votes: BTreeSet<usize>,
     confirmed: BTreeSet<usize>,
+    roster: Option<u32>,
 }
 
 impl RetryRound {
@@ -103,15 +120,24 @@ impl RetryRound {
             phase: Phase::Waiting,
             votes: BTreeSet::new(),
             confirmed: BTreeSet::new(),
+            roster: None,
         }
     }
 
-    fn receive_prepare(&mut self, local: usize, observer: bool, visible: bool, now: u32) {
+    fn receive_prepare(
+        &mut self,
+        roster: u32,
+        local: usize,
+        observer: bool,
+        visible: bool,
+        now: u32,
+    ) {
         // The result pump confirms a watching client's queued preparation
         // after its defeat page is active.
         if (observer || (visible && self.votes.contains(&local)))
             && matches!(self.phase, Phase::Waiting)
         {
+            self.roster = Some(roster);
             self.phase = Phase::CheckingFiles(WallBucketTimer::start(now, HANDOFF_BUCKETS));
         }
     }
@@ -154,7 +180,7 @@ impl RetryRound {
                 self.phase.failure_step()
             }
             Phase::Waiting if !healthy && !self.votes.is_empty() => Step::Cancel,
-            Phase::Waiting if host && self.votes.len() == players => Step::Prepare,
+            Phase::Waiting if host && healthy && self.votes.len() == players => Step::Prepare,
             Phase::CheckingFiles(_) => Step::Confirm,
             Phase::Preparing(_) if self.confirmed.len() == participants => Step::SendStart,
             Phase::Starting(_) if drained => Step::Start,
@@ -226,30 +252,90 @@ fn round_mut(state: &mut AppState, scope: SessionScope) -> Result<&mut RetryRoun
     Ok(round)
 }
 
-fn full_roster(state: &AppState) -> Result<&crate::skirmish_launch::SkirmishLaunchSession> {
+fn playing_roster(state: &AppState) -> Result<&SkirmishLaunchSession> {
     let session = &state.match_state.session;
     let start = session
         .frozen_authored_start()
         .context("no accepted authored start")?;
     let launch = start.launch_session();
+    let connected = session.network_connected_source_indices();
     ensure!(
-        session.network_connected_source_indices().len() == launch.humans.len(),
+        launch
+            .humans
+            .iter()
+            .enumerate()
+            .all(|(source, human)| { human.is_observer() || connected.contains(&source) }),
         "an admitted player has left the match"
     );
     Ok(launch)
 }
 
+fn row_bit(human: &SkirmishHumanSlot) -> Result<u32> {
+    human
+        .raw_slot_index
+        .and_then(|row| 1u32.checked_shl(u32::from(row)))
+        .context("retry player has no valid room row")
+}
+
+/// Lobby rows are shared, even when each peer's local launch indices differ.
+fn retry_sources(
+    launch: &SkirmishLaunchSession,
+    connected: &[usize],
+    rows: u32,
+) -> Result<Vec<usize>> {
+    let mut found = 0;
+    let mut retained = Vec::new();
+    for (source, human) in launch.humans.iter().enumerate() {
+        let bit = row_bit(human)?;
+        if rows & bit == 0 {
+            ensure!(human.is_observer(), "retry roster omits a player");
+            continue;
+        }
+        ensure!(
+            found & bit == 0 && connected.contains(&source),
+            "retry row is unavailable"
+        );
+        found |= bit;
+        retained.push(source);
+    }
+    ensure!(
+        found == rows && retained.contains(&launch.local_player_index),
+        "retry roster has unknown rows or omits the local seat"
+    );
+    Ok(retained)
+}
+
 fn send(state: &mut AppState, scope: SessionScope, record: Record) -> Result<()> {
     let session = &state.match_state.session;
-    let local = session
+    let launch = session
         .network_setup()
-        .context("retry has no admitted roster")?
-        .local_player_index;
-    let peers: Vec<_> = session
-        .network_connected_source_indices()
+        .context("retry has no admitted roster")?;
+    let connected = session.network_connected_source_indices();
+    let roster = match record {
+        Record::Prepare(rows) => Some(rows),
+        Record::Confirm | Record::Start => Some(
+            current(state)
+                .and_then(|round| round.roster)
+                .context("retry roster is not frozen")?,
+        ),
+        _ => None,
+    };
+    let retained = roster
+        .map(|rows| retry_sources(launch, connected, rows))
+        .transpose()?;
+    let peers: Vec<_> = retained
+        .as_deref()
+        .unwrap_or(connected)
         .iter()
         .copied()
-        .filter(|&source| source != local)
+        .filter(|&source| source != launch.local_player_index)
+        .filter(|&source| {
+            !matches!(record, Record::Retry)
+                || launch
+                    .humans
+                    .get(source)
+                    .is_some_and(|human| !human.is_observer())
+        })
         .map(|source| {
             session
                 .network_endpoint(source)
@@ -265,7 +351,7 @@ fn send(state: &mut AppState, scope: SessionScope, record: Record) -> Result<()>
     if matches!(record, Record::Confirm) {
         ensure!(peers.len() == 1, "retry has no admitted host");
     }
-    let bytes = [MAGIC.as_slice(), &scope.encode(), &[record as u8]].concat();
+    let bytes = record.encode(scope);
     let service = state
         .match_state
         .lan_service
@@ -288,7 +374,7 @@ pub(super) fn status(state: &AppState) -> Option<String> {
     let round = current(state)?;
     match round.phase {
         Phase::Waiting if !round.votes.is_empty() => {
-            let playing = full_roster(state)
+            let playing = playing_roster(state)
                 .ok()?
                 .humans
                 .iter()
@@ -310,7 +396,7 @@ pub(super) fn status(state: &AppState) -> Option<String> {
 
 pub(super) fn can_vote(state: &AppState) -> bool {
     active(state)
-        && full_roster(state).is_ok()
+        && playing_roster(state).is_ok()
         && current(state).is_none_or(|round| {
             matches!(round.phase, Phase::Waiting)
                 && state
@@ -339,7 +425,7 @@ pub(super) fn retry_pressed(state: &mut AppState) {
     }
     lan_service::hold_match_transport(state);
     let result = (|| -> Result<()> {
-        let local = full_roster(state)?.local_player_index;
+        let local = playing_roster(state)?.local_player_index;
         let round = round_mut(state, scope)?;
         if matches!(round.phase, Phase::Waiting) && round.votes.insert(local) {
             send(state, scope, Record::Retry)?;
@@ -365,6 +451,16 @@ fn exit_result(state: &mut AppState, exit: ResultExit) {
         exit.finish(state);
         return;
     };
+    let departure = if state
+        .match_state
+        .session
+        .network_setup()
+        .is_some_and(|launch| launch.local_player().is_observer())
+    {
+        Record::ObserverLeft
+    } else {
+        Record::Cancel
+    };
     let Ok(round) = round_mut(state, scope) else {
         return;
     };
@@ -377,7 +473,7 @@ fn exit_result(state: &mut AppState, exit: ResultExit) {
         exit,
     );
     lan_service::hold_match_transport(state);
-    if notify && let Err(error) = send(state, scope, Record::Cancel) {
+    if notify && let Err(error) = send(state, scope, departure) {
         log::debug!("VMCE result return could not notify the room: {error:#}");
         exit.finish(state);
     }
@@ -448,7 +544,9 @@ fn receive(state: &mut AppState, message: &GlobalMessage, now: u32) -> Result<()
         session.frozen_authored_start().is_some() && state.frontend.lan_rematch.is_some(),
         "no authored result admission"
     );
-    let launch = full_roster(state)?;
+    let launch = session
+        .network_setup()
+        .context("no authored retry roster")?;
     let local = launch.local_player_index;
     let local_observer = launch.local_player().is_observer();
     let source = session
@@ -458,19 +556,20 @@ fn receive(state: &mut AppState, message: &GlobalMessage, now: u32) -> Result<()
         })
         .context("retry sender is not an admitted remote player")?;
     let host = session.host();
-    let source_plays = launch
-        .humans
-        .get(source)
-        .is_some_and(|human| !human.is_observer());
-    if matches!(record, Record::Prepare | Record::Start) {
+    let human = launch.humans.get(source).context("unknown retry sender")?;
+    let source_plays = !human.is_observer();
+    let source_bit = row_bit(human)?;
+    if matches!(record, Record::Prepare(_) | Record::Start) {
         lan_service::ensure_host_source(state, message.source)?;
+    }
+    if let Record::Prepare(rows) = record {
+        retry_sources(launch, session.network_connected_source_indices(), rows)?;
     }
     let host_cancel = matches!(record, Record::Cancel)
         && lan_service::ensure_host_source(state, message.source).is_ok();
     let round = round_mut(state, scope)?;
     match record {
-        // Everyone can display the confirmed count. Only the host takes
-        // Prepare in step() after all playing sources have voted.
+        // Only the host prepares a retry after all playing sources vote.
         Record::Retry if source_plays && matches!(round.phase, Phase::Waiting) => {
             round.votes.insert(source);
         }
@@ -479,8 +578,15 @@ fn receive(state: &mut AppState, message: &GlobalMessage, now: u32) -> Result<()
             Step::Cancel if host => send(state, scope, Record::Cancel)?,
             _ => {}
         },
-        Record::Prepare => round.receive_prepare(local, local_observer, visible, now),
-        Record::Confirm if host && matches!(round.phase, Phase::Preparing(_)) => {
+        Record::ObserverLeft if !source_plays => {
+            lan_service::retire_authored_result_peer(state, source, message.source);
+        }
+        Record::Prepare(rows) => round.receive_prepare(rows, local, local_observer, visible, now),
+        Record::Confirm
+            if host
+                && matches!(round.phase, Phase::Preparing(_))
+                && round.roster.is_some_and(|rows| rows & source_bit != 0) =>
+        {
             round.confirmed.insert(source);
         }
         Record::Start if visible && matches!(round.phase, Phase::Prepared(_)) => {
@@ -506,13 +612,19 @@ fn verify_source(state: &AppState) -> Result<()> {
 }
 
 fn start(state: &mut AppState, scope: SessionScope) -> Result<()> {
-    full_roster(state)?;
-    let startup = state
-        .match_state
-        .session
+    let session = &state.match_state.session;
+    let startup = session
         .frozen_authored_start()
-        .context("retry lost the admitted start")?
-        .clone();
+        .context("retry lost the admitted start")?;
+    let rows = current(state)
+        .and_then(|round| round.roster)
+        .context("retry roster is not frozen")?;
+    let sources = retry_sources(
+        startup.launch_session(),
+        session.network_connected_source_indices(),
+        rows,
+    )?;
+    let startup = Arc::new(startup.for_authored_retry(&sources)?);
     state
         .match_state
         .lan_service
@@ -520,8 +632,8 @@ fn start(state: &mut AppState, scope: SessionScope) -> Result<()> {
         .context("retry lost the admitted transport")?
         .prepare_match_reload(scope)?;
     App::close_finished_scenario(state);
-    // Keep the frozen start and scope, but retire the finished attempt's queues.
     let session = &mut state.match_state.session;
+    session.install_authored_retry_start(&startup)?;
     drop(session.take_network_loading_progress_reports());
     drop(session.take_network_send_requests());
     crate::app::loading::pump::begin_loading(
@@ -544,7 +656,9 @@ fn poll_step(state: &mut AppState, scope: SessionScope, now: u32, service_ok: bo
     let observation = service
         .transport_observation(service_ok)
         .context("no retained result transport")?;
-    let roster = full_roster(state);
+    let session = &state.match_state.session;
+    let connected = session.network_connected_source_indices();
+    let roster = playing_roster(state);
     let players = roster.as_ref().map_or(usize::MAX, |launch| {
         launch
             .humans
@@ -552,25 +666,39 @@ fn poll_step(state: &mut AppState, scope: SessionScope, now: u32, service_ok: bo
             .filter(|human| !human.is_observer())
             .count()
     });
-    let participants = roster
-        .as_ref()
-        .map_or(usize::MAX, |launch| launch.humans.len());
+    let participants = round.roster.map_or(0, |rows| rows.count_ones() as usize);
+    let roster_healthy = roster.as_ref().is_ok_and(|launch| {
+        round
+            .roster
+            .is_none_or(|rows| retry_sources(launch, connected, rows).is_ok())
+    });
     let step = round.step(
-        state.match_state.session.host(),
+        session.host(),
         players,
         participants,
         now,
-        observation.service_ok && roster.is_ok(),
+        observation.service_ok && roster_healthy,
         observation.queued == 0,
     );
     match step {
         Step::Wait => {}
         Step::Return(exit) => exit.finish(state),
         Step::Prepare => {
-            let local = roster?.local_player_index;
+            let launch = roster?;
+            let local = launch.local_player_index;
+            let mut rows = 0;
+            for &source in connected {
+                rows |= row_bit(
+                    launch
+                        .humans
+                        .get(source)
+                        .context("unknown connected retry player")?,
+                )?;
+            }
             verify_source(state)?;
-            send(state, scope, Record::Prepare)?;
+            send(state, scope, Record::Prepare(rows))?;
             let round = round_mut(state, scope)?;
+            round.roster = Some(rows);
             round.confirmed.insert(local);
             round.phase = Phase::Preparing(WallBucketTimer::start(now, HANDOFF_BUCKETS));
         }
@@ -586,7 +714,11 @@ fn poll_step(state: &mut AppState, scope: SessionScope, now: u32, service_ok: bo
             round_mut(state, scope)?.phase =
                 Phase::Starting(WallBucketTimer::start(now, HANDOFF_BUCKETS));
         }
-        Step::Start => start(state, scope)?,
+        Step::Start => {
+            if let Err(error) = start(state, scope) {
+                recover_start(state, &format!("{error:#}"));
+            }
+        }
         Step::Cancel => anyhow::bail!("the LAN result handoff did not complete"),
         Step::RecoverStart => recover_start(state, "the LAN start handoff did not complete"),
     }
@@ -634,18 +766,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn prepare_omits_departed_observers_across_local_roster_orders() {
+        use crate::skirmish_launch::{
+            LaunchHumanRole, LaunchStartPosition, LaunchTeam, SkirmishLaunchMode, SkirmishLocalSlot,
+        };
+
+        let human = |name: &str, row, observer| SkirmishHumanSlot {
+            raw_slot_index: Some(row),
+            name: name.to_owned(),
+            role: LaunchHumanRole::from_observer(observer),
+            slot: SkirmishLocalSlot {
+                country: Default::default(),
+                country_random: false,
+                color_index: row,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+            },
+        };
+        let host = human("Host", 0, false);
+        let peer = human("Player", 1, false);
+        let observer = human("Observer", 2, true);
+        let launch = |humans| {
+            SkirmishLaunchSession::from_rows(
+                SkirmishLaunchMode::stock(1).unwrap(),
+                None,
+                humans,
+                0,
+                Vec::new(),
+                Default::default(),
+            )
+        };
+        let host_view = launch(vec![host.clone(), observer.clone(), peer.clone()]);
+        let peer_view = launch(vec![peer, host, observer]);
+        let scope = SessionScope {
+            epoch: [1; 16],
+            revision: 6,
+        };
+        let (record, decoded_scope) =
+            Record::decode(&Record::Prepare(0b011).encode(scope)).unwrap();
+        let Record::Prepare(rows) = record else {
+            panic!("not Prepare")
+        };
+        assert_eq!(decoded_scope, scope);
+        assert_eq!(
+            retry_sources(&host_view, &[0, 2], rows).unwrap(),
+            vec![0, 2]
+        );
+        // The player can still see the observer as connected when Prepare arrives.
+        assert_eq!(
+            retry_sources(&peer_view, &[0, 1, 2], rows).unwrap(),
+            vec![0, 1]
+        );
+        assert!(retry_sources(&host_view, &[0, 2], 0b111).is_err());
+        assert!(retry_sources(&host_view, &[0, 2], 0b001).is_err());
+    }
+
+    #[test]
     fn an_observer_retains_prepare_before_the_result_while_a_player_must_vote() {
         let scope = SessionScope {
             epoch: [1; 16],
             revision: 6,
         };
         let mut observer = RetryRound::new(scope);
-        observer.receive_prepare(1, true, false, 10);
+        observer.receive_prepare(0b11, 1, true, false, 10);
         assert_eq!(observer.step(false, 1, 2, 11, true, true), Step::Confirm);
         assert!(!observer.phase.can_leave());
 
         let mut player = RetryRound::new(scope);
-        player.receive_prepare(1, false, true, 10);
+        player.receive_prepare(0b11, 1, false, true, 10);
         assert_eq!(player.step(false, 2, 2, 11, true, true), Step::Wait);
         assert!(player.phase.can_leave());
     }

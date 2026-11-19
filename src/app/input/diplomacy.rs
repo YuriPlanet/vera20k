@@ -198,7 +198,8 @@ pub(crate) fn resolve_rows(
                 return None;
             }
             let human = state.is_controlled_by_human(switches.game_mode_nonzero);
-            let allies = (row > 0 && allies_shown).then(|| {
+            let is_observer = sim.session().is_observer_house(house);
+            let allies = (row > 0 && allies_shown && !(room_scoped && is_observer)).then(|| {
                 allies_header = true;
                 DiplomacyAlliesBox {
                     checked: allied(local, house),
@@ -247,7 +248,6 @@ pub(crate) fn resolve_rows(
                     chat,
                 });
             }
-            let is_observer = sim.session().is_observer_house(house);
             // 0x00658393..0x006583CF: "LightGrey" for the observer, "Grey" once
             // defeated, else the House's own scheme.
             let named = |name| sources.named_scheme_rgb(name).unwrap_or([0xFF; 3]);

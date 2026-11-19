@@ -22,8 +22,8 @@ use crate::ui::skirmish_shell::{SkirmishStatics, SkirmishValidationModalState};
 mod scenario_room;
 pub(crate) use scenario_room::{
     SCENARIO_BRIEFING, SCENARIO_DESCRIPTION_NEXT, SCENARIO_DESCRIPTION_PREVIOUS,
-    SCENARIO_DIFFICULTY_TRACK_W, SCENARIO_ROWS_PER_PAGE, ScenarioRoleDetails, ScenarioRoomLayout,
-    ScenarioRoomRow, ScenarioRoomView, scenario_details, scenario_details_row,
+    SCENARIO_DIFFICULTY_TRACK_W, SCENARIO_ROWS_PER_PAGE, SCENARIO_SPEED, ScenarioRoleDetails,
+    ScenarioRoomLayout, ScenarioRoomRow, ScenarioRoomView, scenario_details, scenario_details_row,
 };
 
 pub(crate) const VISIBLE_SETUP_ROWS: usize = 8;
@@ -659,13 +659,17 @@ pub(crate) struct SetupTrackbar {
     pub(crate) visible: bool,
 }
 impl SetupTrackbar {
+    pub(crate) fn has_value_plaque(&self) -> bool {
+        !matches!(self.id, DIFFICULTY | SCENARIO_SPEED)
+    }
+
     // Co-op5C21D0 sends7324AC(0), so the shared native trackbar runs with no
     // value-plaque reserve; ordinary options retain the49-pixel plaque.
     fn reserve(&self) -> i32 {
-        if self.id == DIFFICULTY {
-            0
-        } else {
+        if self.has_value_plaque() {
             crate::ui::shell::trackbar::PLAQUE_RESERVE
+        } else {
+            0
         }
     }
     pub(crate) fn thumb_left(&self, rect: RectPx, scale: ShellScale) -> i32 {
@@ -2244,6 +2248,16 @@ mod tests {
             crate::render::skirmish_shell_chrome::trackbar_frame_slot(false, track.w, track.h)
                 .is_some()
         );
+        let difficulty = layout.control_rect(DIFFICULTY).unwrap();
+        let speed = layout.control_rect(SCENARIO_SPEED).unwrap();
+        assert_eq!((speed.x, speed.w), (difficulty.x, difficulty.w));
+        let difficulty_label = layout.difficulty_label_rect(difficulty);
+        let speed_label = layout.difficulty_label_rect(speed);
+        assert!(geometry.rules_heading.y + geometry.rules_heading.h <= difficulty_label.y);
+        assert!(difficulty_label.y + difficulty_label.h <= difficulty.y);
+        assert!(difficulty.y + difficulty.h <= speed_label.y);
+        assert!(speed_label.y + speed_label.h <= speed.y);
+        assert!(speed.y + speed.h <= geometry.rules.y);
         assert!(
             geometry.description.body.y + geometry.description.body.h
                 <= geometry.description.page.y

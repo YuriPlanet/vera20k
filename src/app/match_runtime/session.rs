@@ -251,6 +251,7 @@ struct LocalScenarioSetup {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct LocalScenarioRules {
     pub(crate) allow_allies_change: bool,
+    pub(crate) game_speed: i32,
     pub(crate) ai_difficulty: crate::sim::house_state::HouseDifficulty,
     pub(crate) difficulty_locked: bool,
     pub(crate) alliance_admission: crate::sim::house_diplomacy::PlayerAllianceAdmission,
@@ -932,6 +933,21 @@ impl MatchSession {
         startup.authored_scenario().map(|_| startup)
     }
 
+    pub(super) fn install_authored_retry_start(
+        &mut self,
+        retry: &Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
+    ) -> anyhow::Result<()> {
+        let Some(NetworkPhase::Frozen {
+            startup, connected, ..
+        }) = self.network.as_mut().map(|network| &mut network.phase)
+        else {
+            anyhow::bail!("retry lost the admitted match");
+        };
+        *connected = (0..retry.launch_session().humans.len()).collect();
+        *startup = Arc::clone(retry);
+        Ok(())
+    }
+
     pub(crate) fn verify_local_scenario_source(
         &self,
         key: &crate::map::scenario_menu::LocalScenarioKey,
@@ -1046,6 +1062,7 @@ impl MatchSession {
         launch.options = SkirmishLaunchOptions {
             short_game: false,
             crates: false,
+            game_speed: setup.lobby.rules.game_speed,
             ally_change_allowed: setup.lobby.rules.allow_allies_change,
             ..Default::default()
         };

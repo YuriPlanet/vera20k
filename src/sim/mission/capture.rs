@@ -112,6 +112,15 @@ pub(crate) fn mission_capture(
     let hunts = sim.substrate.entities.get(id).is_some_and(|entity| {
         entity.attack_target.target().is_none()
             && !sim.owner_is_human(entity.owner())
+            // A shared engineer's synchronized Capture carries the Building
+            // in NavCom. Its House remains an AI House; this dispatched order
+            // still needs to reach the ordinary PerCell owner change.
+            && !(sim.house_receives_shared_orders(entity.owner())
+                && entity.category() == EntityCategory::Infantry
+                && sim.object_type(entity.type_ref(), rules).is_some_and(|object| object.engineer)
+                && entity.navigation.nav_com().and_then(NavTargetRef::object_id)
+                    .and_then(|building| sim.substrate.entities.get(building))
+                    .is_some_and(|building| building.category() == EntityCategory::Structure))
             && !(entity.category() == EntityCategory::Infantry
                 && sim
                     .object_type(entity.type_ref(), rules)

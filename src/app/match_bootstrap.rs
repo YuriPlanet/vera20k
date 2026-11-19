@@ -162,6 +162,40 @@ impl PreparedNetworkStartup {
         self.authored.as_ref()
     }
 
+    pub(crate) fn for_authored_retry(&self, sources: &[usize]) -> anyhow::Result<Self> {
+        use anyhow::Context as _;
+
+        let mut retry = self.clone();
+        let authored = retry
+            .authored
+            .as_mut()
+            .context("no authored start to retry")?;
+        retry.launch.local_player_index = sources
+            .iter()
+            .position(|&source| source == self.launch.local_player_index)
+            .context("retry roster omits the local player")?;
+        retry.launch.humans = sources
+            .iter()
+            .map(|&source| {
+                self.launch
+                    .humans
+                    .get(source)
+                    .cloned()
+                    .context("unknown retry player")
+            })
+            .collect::<anyhow::Result<_>>()?;
+        authored.observers.retain(|observer| {
+            retry.launch.humans.iter().any(|human| {
+                human.is_observer() && human.raw_slot_index == Some(observer.raw_slot_index)
+            })
+        });
+        retry.native_id_prefix = crate::sim::native_identity::network_native_id_prefix(
+            retry.mode,
+            retry.launch.humans.len(),
+        );
+        Ok(retry)
+    }
+
     pub(crate) fn authored_local_player(
         &self,
     ) -> Option<&crate::app::match_runtime::session::LocalScenarioPlayer> {

@@ -21,6 +21,7 @@ pub(crate) struct RoomReturn {
     local_house: String,
     guests: ReturningGuestRoles,
     settings: Option<(LocalScenarioSource, LocalScenarioRules)>,
+    game_speed: i32,
 }
 
 impl RoomReturn {
@@ -45,13 +46,9 @@ impl RoomReturn {
                 })
             })
             .collect();
-        let settings = if keep_room_rules && &session.local_network_scenario()?.key == destination {
-            session
-                .frozen_local_scenario_settings()
-                .map(|(source, settings)| (source, settings.clone()))
-        } else {
-            None
-        };
+        let (source, rules) = session.frozen_local_scenario_settings()?;
+        let settings = (keep_room_rules && &session.local_network_scenario()?.key == destination)
+            .then(|| (source, rules.clone()));
         Some(Self {
             local_house,
             guests: ReturningGuestRoles {
@@ -59,6 +56,7 @@ impl RoomReturn {
                 guests,
             },
             settings,
+            game_speed: rules.game_speed,
         })
     }
 
@@ -70,12 +68,19 @@ impl RoomReturn {
         {
             return;
         }
-        if let Some((source, settings)) = self.settings
-            && session
-                .verify_local_scenario_source(&self.guests.destination, &source)
-                .is_ok()
-            && let Err(error) = session.set_local_scenario_rules(settings)
-        {
+        let Some(lobby) = session.local_scenario_lobby() else {
+            return;
+        };
+        let mut settings = self
+            .settings
+            .filter(|(source, _)| {
+                session
+                    .verify_local_scenario_source(&self.guests.destination, source)
+                    .is_ok()
+            })
+            .map_or_else(|| lobby.rules.clone(), |(_, rules)| rules);
+        settings.game_speed = self.game_speed;
+        if let Err(error) = session.set_local_scenario_rules(settings) {
             log::debug!("Could not restore authored room rules: {error:#}");
         }
         if let Some(local) = session

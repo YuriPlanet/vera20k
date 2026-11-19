@@ -82,7 +82,7 @@ With the map's player limits left at their defaults, one or two players can star
 
 1. From **Network**, the host creates a LAN room, opens **Choose Map** and selects **Multiplayer Campaign** and a valid installed stage. After entering the VMCE room, use **Choose stage** in the right sidebar to switch stages. The host uses a playing seat. Remove any computer seats already added to the ordinary room.
 2. Guests join from the LAN list. Use its **Multiplayer campaigns only** filter to find VMCE rooms. To spectate, enable the observer toggle before joining. The stage must allow observation and have an open observer seat.
-3. Players select a free role or **Random** below their name. **Details** shows map-configured funds, tech level, counts of placed units and buildings, and shared forces. The host can adjust an unlocked difficulty. The left column shows the seats, role colours, available flags and room rules. The middle column is for chat. The right column shows the preview and opens the mission briefing. Long text can span multiple pages.
+3. Players select a free role or **Random** below their name. **Details** shows map-configured funds, tech level, counts of placed units and buildings, and shared forces. The host can adjust the opening game speed and any unlocked difficulty using separate sliders. The left column shows the seats, role colours, available flags and room rules. The middle column is for chat. The right column shows the preview and opens the mission briefing. Long text can span multiple pages.
 4. Guests select **Ready** after verification. Observers also verify and select **Ready**. The host selects **Start** once the stage's player limit and readiness requirements are met.
 5. During a role, rules or roster change on the same stage, an existing Ready choice is restored after a successful recheck. Select **Ready** again after a stage change or when returning for a new match. The loading screen shows campaign art, the briefing and the local loading progress. **Waiting for other players...** appears inside the progress bar while another player is still loading.
 
@@ -96,30 +96,32 @@ Brackets enclose the section name. A key goes to the left of the equals sign and
 
 Each role maps to one primary House. Its country, colour, starting units and base funds come from the map. The room reserves explicit picks, then uses the host's seed to shuffle the unclaimed roles and assign them to Random players in seat order. With one playing participant, Random selects the first authored role. Each primary House can go to one player. Unassigned Houses keep their authored units, AI and triggers.
 
-The author can grant control of a supporting House to one or more roles. The House must be listed in the map's `[Houses]` and be outside the stage's primary-role list. Players can click, box-select and select discovered shared mobile units by type, group them with `1–9`, and move, attack, force-attack, deploy, enter transports or unload according to the unit's abilities. A granted building with a rally line can take a cell rally point.
+The author can grant control of a supporting House to one or more roles. The House must be listed in the map's `[Houses]` and be outside the stage's primary-role list. Players can click, box-select and select discovered shared mobile units by type, group them with `1–9`, and issue the unit's supported orders. These include move, attack, force-attack, stop (`S`), scatter (`X`), area guard, deploy, enter and unload transports, plant C4 and engineer capture. A building captured by an engineer goes to the engineer's House. A granted building with a rally line can take a cell rally point.
 
 Production, funds, superweapons, repair, sale and MCV repack belong to the primary House. Shroud and vision follow the map and its alliances.
 
 ### Mission rules
 
 - **Playing limits** follow `1 <= MinPlayers <= MaxPlayers <= PlayerCount <= 30`. Observer seats come after the playing capacity. `MaxPlayers=30` uses the full connection capacity. Role assignment, gameplay command grants and statistics use the playing seats.
-- **Map alliances** come from each House's `Allies=` and the map's triggers. Press the default `Tab` key or the sidebar button to open the briefing, then use **Diplomacy** to open dialog `0x73`. Human rows show the player name and role. Playing rows also show the available flag and faction. Use the chat column to select recipients. With `AllowAlliesChange=yes`, active human players can change alliances using the Allies checkbox. When the map locks alliances, the text shows reciprocal, outward-only, inward-only and unallied states. Return from Diplomacy to the briefing, then back to the battlefield. The match runs while either page is open.
+- **Map alliances** come from each House's `Allies=` and the map's triggers. Press the default `Tab` key or the sidebar button to open the briefing, then use **Diplomacy** to open dialog `0x73`. Human rows show the player name and role. Playing rows also show the available flag and faction. Observers appear as chat recipients and have no alliance state. With `AllowAlliesChange=yes`, active human players can change alliances using the Allies checkbox. When the map locks alliances, the text shows reciprocal, outward-only, inward-only and unallied states. Return from Diplomacy to the briefing, then back to the battlefield. The match runs while either page is open.
 - **Crates** placed on the map or spawned by triggers use single-player campaign rewards. In LAN, cash goes to the House that owns the collecting unit.
 - **Results** come from map triggers. If a primary House loses all its forces, the mission continues and the player can still command surviving granted units.
 - **Narrative playback** waits until every connected player and observer finishes a blocking movie. Esc skips local playback. Missing media or a playback failure counts as a skip on that client. Nonblocking radar movies let the mission run. Opening the regular Esc menu also lets the others keep playing.
 
-### Difficulty
+### Difficulty and game speed
 
 Set `Difficulty` to `0`, `1` or `2` for Easy, Normal or Hard. Normal is the default. These values select the Easy, Medium and Hard trigger columns and apply difficulty modifiers such as firepower, production and starting funds to each playing primary House. `LockDifficulty=yes` fixes the stage setting. Changing an unlocked difficulty makes clients verify again.
+
+The **Opening Speed** slider sets the opening pace and makes clients verify the updated room settings. The room keeps this speed when changing stages, and the host can edit it when the room reopens. During a mission, playing clients can change the shared live speed from **Esc → Game Controls**. A direct Retry uses the opening speed.
 
 ### Results and the next stage
 
 - **Victory** opens the `0x103` medal page. The report resolves the map's `[Ranking]` text labels in the series CSF, then in the running game's CSF. The default title and text are **After-action report** and **Mission complete.** The panels below the medal show time taken and par time. Par uses the map's Normal value. The right sidebar offers **Continue**, **Statistics** and **Leave Room**. Players select **Continue** independently.
-- **Returning to the room.** A guest can return early and chat. The room shows **No preview available** until the host returns and the preview and Ready control become available. If the guest cannot rejoin within two minutes, the game returns to the LAN list and shows a message. The host can change the preselected stage. An available role carries forward by its primary House. Continuing after a finale plays the credits, then reopens the room with the finale selected. Verify and select Ready again for the next match.
-- **Defeat** plays the single-player failure sequence when available, then shows the `0xBC6` statistics page. The right sidebar shows the stage name and available preview and offers **Retry Mission**, **Return to Room** and **Leave Room**. Retry requires a common defeat and the complete starting connection roster. Each playing participant selects Retry. Observers verify their local files and follow the room. Once every client has verified, the game reloads the original stage, roster, roles, settings, seed and incoming carry-over. **Return to Room** can cancel a pending retry. The exit controls are temporarily disabled during handoff. If handoff is interrupted, join the host's reopened room for the same stage from the LAN list.
+- **Returning to the room.** A guest can return early and chat. The room shows **No preview available** until the host returns and the preview and Ready control become available. If the guest cannot rejoin within two minutes, the game returns to the LAN list and shows a message. The host can change the preselected stage. An available role carries forward by its primary House. When the host continues after a finale, the credits play and the room reopens with the finale selected. Verify and select Ready again for the next match.
+- **Defeat** plays the single-player failure sequence when available, then shows the `0xBC6` statistics page. The right sidebar shows the stage name and available preview and offers **Retry Mission**, **Return to Room** and **Leave Room**. Retry requires a common defeat and every starting player still connected and voting to retry. The host excludes observers whose departure is known before the retry roster is frozen. The remaining observers verify their local files and follow the group. Retry reloads the original stage, playing roles, opening settings, seed and incoming carry-over. A player can use **Return to Room** to cancel a pending retry. The exit controls are temporarily disabled during handoff. If handoff is interrupted, join the host's reopened room for the same stage from the LAN list.
 - **Mixed results** give each player their own victory or defeat sequence. The host's result decides the room's next selection. A host victory preselects the successor, and a host defeat keeps the current stage.
 - **Departures.** A departing or disconnected player is omitted from the statistics table. Their primary House and units remain and still count for trigger outcomes. If the host leaves, the remaining players can finish and then return to the LAN list.
-- **Statistics** show both times and each remaining player's kills, losses, built count and score. The current build displays a dash in the Income column.
+- **Statistics** show both times and each remaining primary House's income, kills, losses, built count and score. Income totals all positive cash receipts after setup, including resource payments, sales, refunds, transfers and theft. Opening and inherited funds are excluded.
 
 ## Author the series
 
@@ -199,7 +201,7 @@ After a host victory, the room preselects a stage in this order.
 
 1. `EndOfGame=yes` completes the series and keeps the current stage selected.
 2. If `AltNextScenario` is set and the terminal `AltNextGlobal` is true, select that branch.
-3. Otherwise choose `NextScenario`, then fall back to the next list entry. At the end of the list, keep the current stage.
+3. Otherwise choose `NextScenario`, then fall back to the next list entry. If the last listed stage has no applicable successor, complete the series and play the credits.
 
 The host can change this selection when the room reopens. List both regular and alternate successors in the manifest. Each stage uses its own Houses, units and triggers.
 
@@ -287,6 +289,8 @@ The repository has a two-stage example with configured roles. [Two-stage manifes
 
 The `[Campaign]` section defines the series.
 
+Unrecognized keys in `campaign.ini` produce a message in the host's room chat when the host selects a stage. The game logs the full list of keys and can still load the series.
+
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `Name` | CSF label | Folder name when omitted | Series title. Lookup uses the series CSF, then the running game's strings. |
@@ -302,7 +306,7 @@ The `[Scenario:<MapPath>]` section defines the stage's roles and successors.
 | `Player1..PlayerN` | House name | Required | Primary Houses in role order. Each role uses a different House. |
 | `NextScenario` | Relative map path | Next list entry when omitted | Regular selection when the host returns after victory. |
 | `AltNextScenario` | Relative map path | Omitted | Stage preselected when the branch global is set. |
-| `EndOfGame` | Boolean | `no` | With `yes`, completes the series and keeps the finale selected when the host continues after victory. |
+| `EndOfGame` | Boolean | `no` | With `yes`, completes the series before checking successors. The last listed stage also completes the series when it has no applicable successor. |
 
 Both sections can also set the following options. The defaults apply when lower layers omit the key as well.
 
@@ -335,6 +339,7 @@ VMCE uses these original single-player campaign map fields.
 | `[Basic]` | `Name` | Stage display name. |
 | `[Basic]` | `Intro`, `Brief`, `Action` | Opening movie keys. See [Write triggers](#write-triggers). |
 | `[Basic]` | `TimerInherit`, `CarryOverMoney`, `CarryOverCap` | Control the incoming countdown and funds. Funds follow the primary-House mapping for this transition. |
+| `[SpecialFlags]` | `FogOfWar` | Enables the original campaign fog-of-war option for this stage. |
 | `[Houses]` | `N=<HouseName>` | Register primary and supporting Houses by numeric index `N`, for example `0=HouseAlpha`. |
 | `[<HouseName>]` | `Country`, `Allies`, `Credits`, `TechLevel` | The House's country, opening alliances, base funds and tech level. |
 
@@ -373,7 +378,7 @@ See the map format reference for other map sections and retail keys. [VERA map f
 | Start stalls while waiting | If loading stalls after GO and shows the connection error, acknowledge it. The host reopens the same stage. Healthy guests can rejoin via the LAN list and regain Ready after verifying the same stage. The stalled seat becomes available. A departure before the first frame is certified, including during the opening movies, follows the same recovery path. |
 | The mission continues after a House loses everything | Check for an outcome trigger for that situation. Check its country condition and difficulty columns. |
 | Victory preselects an unexpected stage | Check `EndOfGame`, `AltNextGlobal`, whether the global is set before the victory action, and whether the successor is listed in the manifest. |
-| Retry is unavailable or is canceled | Check that everyone lost, all starting players and observers remain connected, and all clients still have the original manifest and map. Verify and select Ready again when starting a new match from the room. |
+| Retry is unavailable or is canceled | Check that everyone lost, all starting players remain connected and vote to retry, and everyone on the frozen retry roster still has the original manifest and map. Verify and select Ready again when starting a new match from the room. |
 
 ### Versions and saved games
 

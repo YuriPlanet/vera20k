@@ -3495,6 +3495,9 @@ impl ScenarioBootstrapRng {
                 simulation
                     .session
                     .install_game_options(game_options.clone());
+                simulation.session.install_campaign_fog_of_war(
+                    map_data.special_flags.fog_of_war.unwrap_or(false),
+                );
                 simulation
                     .session
                     .install_authored_ai_difficulty(ai_difficulty);
@@ -4131,7 +4134,7 @@ mod tests {
             ..Default::default()
         };
         let (sim, projection) = authored_network_bootstrap(
-            "[Basic]\nPlayer=Alpha\n[General]\nCampaignMoneyDeltaHard=-200\n\
+            "[Basic]\nPlayer=Alpha\n[SpecialFlags]\nFogOfWar=yes\n[General]\nCampaignMoneyDeltaHard=-200\n\
              [Houses]\n0=Alpha\n1=Bravo\n2=Charlie\n\
              [Alpha]\nCountry=Americans\nPlayerControl=yes\nTechLevel=4\nCredits=9\nAllies=Bravo\n\
              [Bravo]\nCountry=Russians\nPlayerControl=no\nCredits=3\n\
@@ -4182,6 +4185,7 @@ mod tests {
         assert!(!installed_options.short_game);
         assert!(!installed_options.crates);
         assert!(!installed_options.ally_change_allowed);
+        assert!(installed_options.fog_of_war);
     }
 
     #[test]
