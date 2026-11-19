@@ -1051,21 +1051,29 @@ impl Simulation {
     ) -> bool {
         //50B716 loads A83D4C, the persisted native current-house input.
         //Presentation viewer binding cannot change this receiver's result.
-        Self::is_human_player_on(session, houses, owner, session.current_house())
+        Self::is_human_player_on(
+            !session.uses_local_player_shroud(),
+            houses,
+            owner,
+            session.current_house(),
+        )
     }
 
     /// [`Self::is_human_player`] asked on the client whose `PlayerPtr`
     /// (`[0x00A83D4C]`, read at `0x0050B716`) is `player`: a represented
-    /// network client's own house, or the current house.
-    pub(crate) fn is_human_player_on(
-        session: &crate::sim::scenario_session::ScenarioSession,
+    /// network client's own house, or the current house. `player_ptr_arm` is
+    /// `!ScenarioSession::uses_local_player_shroud()`, the nonzero-mode arm.
+    /// The client's radar asks it with the Houses and session of the world it
+    /// draws.
+    pub fn is_human_player_on(
+        player_ptr_arm: bool,
         houses: &crate::sim::houses::Houses,
         owner: InternedId,
         player: Option<InternedId>,
     ) -> bool {
         // House50B6F0: nonzero session mode compares exactly to PlayerPtr;
         // mode zero uses the two native human/control flags.
-        if !session.uses_local_player_shroud() {
+        if player_ptr_arm {
             player == Some(owner)
         } else {
             houses.get(&owner).is_some_and(|h| {

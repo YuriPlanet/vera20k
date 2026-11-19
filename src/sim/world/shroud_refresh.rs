@@ -1459,7 +1459,7 @@ impl Simulation {
                     || self.house_is_human_player(entity.owner()),
                     |viewer| {
                         Self::is_human_player_on(
-                            &self.session,
+                            !self.session.uses_local_player_shroud(),
                             &self.houses,
                             entity.owner(),
                             Some(viewer),
@@ -1610,7 +1610,12 @@ impl Simulation {
         candidates
             .into_iter()
             .filter(|&client| {
-                Self::is_human_player_on(&self.session, &self.houses, house, Some(client))
+                Self::is_human_player_on(
+                    !self.session.uses_local_player_shroud(),
+                    &self.houses,
+                    house,
+                    Some(client),
+                )
             })
             .collect()
     }

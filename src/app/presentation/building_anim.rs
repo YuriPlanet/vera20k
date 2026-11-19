@@ -439,7 +439,7 @@ pub(crate) fn power_bar_budget_px(state: &AppState) -> i32 {
 
 /// House508DF0 -> Radar656BE0 -> Voc750920: centred, volume 1, NULL
 /// handle. Both one-shots survive a reversal independently of the movie loop.
-pub(crate) fn radar_availability_sound(
+fn radar_availability_sound(
     rules: &crate::rules::ruleset::RuleSet,
     cue: crate::render::radar::anim::RadarAvailabilityCue,
 ) -> Option<crate::audio::events::GameSoundEvent> {
@@ -474,27 +474,45 @@ pub(crate) fn local_has_radar(state: &AppState) -> bool {
     }
 }
 
-/// Reconcile view/tool changes with the same radar owner the reached House
-/// boundaries update. Its equality guard suppresses already-delivered edges.
-pub(crate) fn update_radar_state(state: &mut AppState) {
-    let new_has_radar = local_has_radar(state);
-    state.match_state.match_presentation.has_radar = new_has_radar;
+/// The client half of `RadarClass::SetTacticalMapAvailable @ 0x00656DF0`,
+/// for both frame paths (`FrameClientBoundary`, `DeferredClientEffects`)
+/// and a watcher's view change: store the local radar's availability; on a
+/// change the housing opens or closes (`Radar656BE0`), the radar's movie
+/// loop ends (`0x00656C0E`, `0x00656C4E`) and the RadarOn or RadarOff
+/// one-shot comes back for the caller to play in its own sound order. The
+/// housing's equality guard (`0x00656DF8..0x00656E02`) returns nothing for
+/// an availability already delivered.
+pub(crate) fn set_tactical_radar(
+    has_radar: &mut bool,
+    radar_anim: Option<&mut crate::render::radar::anim::RadarAnimState>,
+    sfx: Option<&mut crate::audio::sfx::SfxPlayer>,
+    rules: &crate::rules::ruleset::RuleSet,
+    available: bool,
+) -> Option<crate::audio::events::GameSoundEvent> {
+    *has_radar = available;
+    let cue = radar_anim?.set_has_radar(available)?;
+    if let Some(sfx) = sfx {
+        crate::app::radar_movie::end_radar_sound_loop_with(sfx);
+    }
+    radar_availability_sound(rules, cue)
+}
 
-    let cue = state
-        .match_state
-        .match_presentation
-        .radar_anim
-        .as_mut()
-        .and_then(|radar| radar.set_has_radar(new_has_radar));
-    if let Some(cue) = cue {
-        //656BE0 ends the radar's movie loop before either cue.
-        crate::app::radar_movie::end_radar_sound_loop(state);
-        if let Some(sound) = state
-            .rules()
-            .and_then(|rules| radar_availability_sound(rules, cue))
-        {
-            state.match_state.match_audio.sound_events.push(sound);
-        }
+/// [`set_tactical_radar`] on the app's own owners, with the cue queued for
+/// the pass's sound drain: a threaded frame's recorded change, and a
+/// watcher's new view, whose House's radar no House update reports.
+pub(crate) fn set_local_tactical_radar(state: &mut AppState, available: bool) {
+    let Some(rt) = state.match_state.sim_runtime.runtime() else {
+        return;
+    };
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(sound) = set_tactical_radar(
+        &mut presentation.has_radar,
+        presentation.radar_anim.as_mut(),
+        state.audio.sfx_player.as_mut(),
+        &rt.resources.rules,
+        available,
+    ) {
+        state.match_state.match_audio.sound_events.push(sound);
     }
 }
 

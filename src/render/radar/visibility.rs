@@ -13,21 +13,6 @@ use crate::sim::vision::FogState;
 use super::helpers::{parse_foundation_size, world_to_minimap_pixel};
 use super::tracker::{RadarObjectUpdate, RadarProjectionFacts};
 
-pub(super) fn radar_owner_is_human_player(
-    owner: InternedId,
-    local_owner: InternedId,
-    houses: &crate::sim::houses::Houses,
-    game_mode_nonzero: bool,
-) -> bool {
-    if game_mode_nonzero {
-        owner == local_owner
-    } else {
-        houses
-            .get(&owner)
-            .is_some_and(|house| house.is_human() || house.player_control())
-    }
-}
-
 fn radar_packed_cell_from_leptons(x: i32, y: i32) -> (i32, i32) {
     // Coord2Cell uses signed division and then narrows to signed words.
     (
@@ -314,7 +299,7 @@ pub(super) fn build_radar_object_update(
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    game_mode_nonzero: bool,
+    player_ptr_arm: bool,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     projection: RadarProjectionFacts,
@@ -350,7 +335,12 @@ pub(super) fn build_radar_object_update(
     let facts = entity.radar();
     let foundation = facts.foundation;
     let owner_is_human_player = local_owner.is_none_or(|local_owner| {
-        radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero)
+        crate::sim::world::Simulation::is_human_player_on(
+            player_ptr_arm,
+            houses,
+            entity.owner(),
+            Some(local_owner),
+        )
     });
     let [coord_x, coord_y] = entity.center_xy();
     let current_cell = radar_fog_cell_from_leptons(coord_x, coord_y);
