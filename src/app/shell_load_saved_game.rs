@@ -219,6 +219,18 @@ impl App {
         }
     }
 
+    /// The description a new save of the running match gets by default.
+    /// Pause Save4F1416 selects retained Scenario+13DA in GameMode0.
+    pub(super) fn current_save_description(state: &AppState) -> String {
+        if state.match_state.session_mode()
+            == crate::app::match_runtime::session::SessionMode::Campaign
+        {
+            state.match_state.campaign_names.save_title()
+        } else {
+            Self::csf_label(state, "GUI:SkirmishGame", "Skirmish Game")
+        }
+    }
+
     /// Rows for a saved-game browser: every readable save with its header
     /// description, newest first (`0x005596A0`).
     pub(super) fn open_saved_game_rows(
@@ -236,20 +248,12 @@ impl App {
                 saved_game_row(entry, last_write_time, mode, &other_version)
             })
             .collect();
-        // Pause Save4F1416 selects retained Scenario+13DA in GameMode0.
         // Existing rows still keep their own saved descriptions.
-        let current = if state.match_state.session_mode()
-            == crate::app::match_runtime::session::SessionMode::Campaign
-        {
-            state.match_state.campaign_names.save_title()
-        } else {
-            Self::csf_label(state, "GUI:SkirmishGame", "Skirmish Game")
-        };
         let empty = Self::csf_label(state, "TXT_EMPTY_SLOT", "[EMPTY SLOT]");
         SavedSeedBrowserState::open_rows(
             mode,
             entries,
-            current.into(),
+            Self::current_save_description(state).into(),
             empty.into(),
             crate::map::rmg::saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now()),
             visible_rows,
