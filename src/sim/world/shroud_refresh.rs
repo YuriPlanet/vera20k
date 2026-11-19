@@ -1598,14 +1598,12 @@ impl Simulation {
         &self,
         house: crate::sim::intern::InternedId,
     ) -> Vec<crate::sim::intern::InternedId> {
-        let candidates = if !self.session.uses_local_player_shroud() {
-            if self.owner_is_human(house) {
-                vec![house]
-            } else {
-                Vec::new()
-            }
-        } else {
-            self.fog_viewers().to_vec()
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        let candidates = match self.session.native_player_identity() {
+            NativePlayerIdentity::PlayerPointer if self.owner_is_human(house) => vec![house],
+            NativePlayerIdentity::PlayerPointer => Vec::new(),
+            NativePlayerIdentity::HouseFlags => self.fog_viewers().to_vec(),
         };
         candidates
             .into_iter()

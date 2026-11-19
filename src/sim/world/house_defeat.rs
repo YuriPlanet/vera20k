@@ -403,7 +403,7 @@ impl Simulation {
         }
         let house = &self.houses[&owner];
         let local = if self.outcomes_follow_player_control() {
-            house.is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+            house.is_human() || house.player_control()
         } else {
             self.session.current_house() == Some(owner)
         };
@@ -787,10 +787,9 @@ impl Simulation {
     ) {
         let follow_player_control = self.outcomes_follow_player_control();
         let announce = if follow_player_control {
-            self.houses.get(&owner).is_some_and(|house| {
-                house
-                    .is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
-            })
+            self.houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human() || house.player_control())
         } else {
             self.session.current_house() == Some(owner)
         };

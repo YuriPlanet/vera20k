@@ -1063,14 +1063,13 @@ impl Simulation {
         owner: InternedId,
         player: Option<InternedId>,
     ) -> bool {
-        // House50B6F0: nonzero session mode compares exactly to PlayerPtr;
-        // mode zero uses the two native human/control flags.
-        if !session.uses_local_player_shroud() {
-            player == Some(owner)
-        } else {
-            houses.get(&owner).is_some_and(|h| {
-                h.is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
-            })
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        match session.native_player_identity() {
+            NativePlayerIdentity::PlayerPointer => player == Some(owner),
+            NativePlayerIdentity::HouseFlags => houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human() || house.player_control()),
         }
     }
 
@@ -1082,12 +1081,14 @@ impl Simulation {
     /// identity). Keep this distinct from `house_is_human_player`: its
     /// mode-zero branch also admits the separate `IsHuman` flag.
     pub fn house_controls_selection(&self, owner: InternedId) -> bool {
-        if self.session.game_mode_nonzero() {
-            self.house_is_human_player(owner)
-        } else {
-            self.houses
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        match self.session.native_player_identity() {
+            NativePlayerIdentity::PlayerPointer => self.house_is_human_player(owner),
+            NativePlayerIdentity::HouseFlags => self
+                .houses
                 .get(&owner)
-                .is_some_and(|house| house.player_control())
+                .is_some_and(|house| house.player_control()),
         }
     }
 
