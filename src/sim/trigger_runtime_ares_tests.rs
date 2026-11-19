@@ -257,15 +257,19 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     assert_eq!(locals(&sim, 5), [true, false, true, false, true]);
 }
 
+/// Drain expiry (Progress_Charged 10035730), a click-off and a low-power hold
+/// (SetOnHold 10035750 deactivates at 100357E3) all raise 76 with the
+/// caller's overlay table, so the Tag's action 108 places its crate.
 #[test]
 fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
     use crate::sim::{command::Command, superweapon, world::TickLane};
 
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    for expire in [false, true] {
+    for case in ["click", "expire", "hold"] {
+        let expire = case == "expire";
         let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules(
             "[SuperWeaponTypes]\n0=Cell\n[Cell]\nType=Battery\nRechargeTime=0.02\n\
-             IsPowered=no\nSW.AlwaysGranted=yes\nSW.InitialReady=yes\nSW.ChargeToDrainRatio=1\n\
+             IsPowered=yes\nSW.AlwaysGranted=yes\nSW.InitialReady=yes\nSW.ChargeToDrainRatio=1\n\
              [OverlayTypes]\n0=BOX\n[BOX]\nCrate=yes\n[CrateRules]\nWoodCrateImg=BOX\nCrateImg=BOX\n",
         );
         let owner = houses[0];
@@ -302,6 +306,18 @@ fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
                 sim.advance_app_frame(&[], &rules, 66, TickLane::Ordinary, effects)
                     .unwrap();
             }
+        } else if case == "hold" {
+            let power = sim.power_states.get_mut(&owner).unwrap();
+            power.set_is_low_power_for_test(true);
+            superweapon::update_owned_supers(
+                &mut sim,
+                &rules,
+                owner,
+                effects.with_overlay_registry(registry),
+            );
+            let instance = &sim.super_weapons[&owner][&cell];
+            assert!(instance.is_suspended());
+            assert_eq!(instance.charge_drain_state(), -1);
         } else {
             click(&mut sim);
         }
@@ -313,8 +329,11 @@ fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
         assert_eq!(
             sim.overlay_grid().unwrap().cell(15, 15).overlay_id,
             Some(crate_id),
-            "place crate on deactivation (timer expired: {expire})"
+            "place crate on deactivation ({case})"
         );
+        if case == "hold" {
+            continue;
+        }
         // Expiry restarts after the Tag's action 132. An immediate click-off at
         // a 1:1 ratio already converted the full drain back to zero recharge.
         let expected = if expire { 123 } else { 0 };
