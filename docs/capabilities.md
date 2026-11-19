@@ -2,7 +2,7 @@
 
 The engine ships optional feature flags that no default or release build
 compiles: `phobos`, `npatch`, `npbug` and the diagnostic builds
-(`debug-tools`, `telemetry-dashboard`). They are orthogonal and mixable
+(`debug-tools`, `telemetry-dashboard`, `perf`). They are orthogonal and mixable
 (`--features phobos,npatch,npbug`); an implemented capability must keep working
 with the others present without assuming they are absent. Ares is not among them:
 every build holds it, and a game's data switches it on ([Ares](ares.md)). A flag that nothing
