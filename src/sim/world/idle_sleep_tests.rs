@@ -283,6 +283,63 @@ fn a_building_in_a_sleeping_gis_cell_wakes_it() {
     });
 }
 
+/// An empty garrisonable house (`CanBeOccupied=yes`, a retail city building)
+/// sleeps like any plain building, and a GI garrisoning it wakes it: the
+/// twins stay equal through the admission and the occupied turns after it.
+#[test]
+fn an_empty_garrisonable_house_sleeps_and_wakes_for_its_occupant() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    assert!(rules.object("CATEXS03").unwrap().can_be_occupied);
+    let twin = |sleep: bool| {
+        let (mut sim, gi) = standing_gi(rules, sleep);
+        let house = sim
+            .spawn_object("CATEXS03", "Americans", 20, 16, 0, rules)
+            .expect("the house spawns");
+        (sim, gi, house)
+    };
+    let (mut asleep, gi, house) = twin(true);
+    let (mut awake, _, _) = twin(false);
+    let mut slept = 0;
+    for n in 0..400 {
+        if n == 100 {
+            for sim in [&mut asleep, &mut awake] {
+                assert!(sim.apply_command(
+                    "Americans",
+                    &crate::sim::command::Command::CaptureBuilding {
+                        engineer_id: gi,
+                        target_building_id: house,
+                    },
+                    Some(rules),
+                ));
+            }
+        }
+        frame(&mut asleep, rules);
+        frame(&mut awake, rules);
+        if n < 100 {
+            slept += u32::from(asleep.substrate.entities.sleeps_until(house).is_some());
+        }
+        assert_eq!(
+            asleep.state_hash(),
+            awake.state_hash(),
+            "the twins differ after frame {n}"
+        );
+    }
+    assert!(slept > 50, "the empty house slept {slept} of 100 frames");
+    for sim in [&asleep, &awake] {
+        let occupants = sim
+            .substrate
+            .entities
+            .get(house)
+            .unwrap()
+            .passenger_role()
+            .occupants();
+        assert_eq!(occupants.ids(), [gi], "the GI garrisoned the house");
+    }
+}
+
 /// Radiation in a sleeping GI's cell is no write to it: the visit on an
 /// application frame sees it and wakes it.
 #[test]
