@@ -1477,7 +1477,9 @@ mod tests {
             difficulty: Default::default(),
         });
         let slots = normalized_launch_slots(&session);
-        let alliances = launch_alliance_map(&slots, &session.mode);
+        let policy = crate::sim::scenario_session::ScenarioGameMode::Skirmish
+            .stock_rule_policy(Some(session.mode.class));
+        let alliances = launch_alliance_map(&slots, policy);
 
         assert!(
             alliances
@@ -1512,7 +1514,9 @@ mod tests {
         });
         let slots = normalized_launch_slots(&session);
 
-        let alliances = launch_alliance_map(&slots, &session.mode);
+        let policy = crate::sim::scenario_session::ScenarioGameMode::Lan
+            .stock_rule_policy(Some(session.mode.class));
+        let alliances = launch_alliance_map(&slots, policy);
 
         assert!(
             alliances

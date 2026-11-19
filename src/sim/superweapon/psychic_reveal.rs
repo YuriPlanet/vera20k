@@ -169,11 +169,8 @@ pub(super) fn ares_launch(
     let size = sim.map_size_diamond();
     let excluded = size
         .filter(|_| {
-            sim.session.game_mode().is_network()
-                && sim
-                    .session
-                    .multiplayer_mode_class()
-                    .is_some_and(|mode| !mode.policy().permits_all_allied)
+            sim.session.execution_topology().is_lockstep()
+                && sim.session.rule_policy().ares_psychic_reveal_exclusions()
         })
         .map(|(w, h)| [(7, w + 5), (13, w + 11), (h + 13, w + h - 15)]);
     let context = crate::sim::world::UninitContext::with_rules(rules);

@@ -716,6 +716,10 @@ impl ScenarioGameMode {
                     )
                     .with_shared_allied_victory(policy.shared_allied_victory)
                     .with_skips_network_score_dialog(policy.skips_network_score_dialog)
+                    .with_paranoid_ignores_allies_allowed(policy.permits_all_allied)
+                    .with_network_diplomacy_briefing(policy.restates_mission_for_diplomacy)
+                    .with_starting_house_role_alliances(policy.allies_starting_houses_by_role)
+                    .with_ares_psychic_reveal_exclusions(!policy.permits_all_allied)
             }
             None => rules,
         }

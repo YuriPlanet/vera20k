@@ -122,6 +122,7 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
     use crate::skirmish_modes::MpModeClass;
 
     let session = test_launch_session(LaunchCountry::America);
+    let skirmish_rules = RulePolicy::stock_multiplayer().with_ares_psychic_reveal_exclusions(true);
     let install = |raw_mode| {
         let game_mode = ScenarioGameMode::from_game_mode(raw_mode);
         let startup = LoadingStartup::Replay {
@@ -137,7 +138,7 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
         let construction_rules = startup
             .match_spec_for_construction(BootstrapRuleProfile::Multiplayer)
             .rules();
-        assert_eq!(construction_rules, RulePolicy::stock_multiplayer());
+        assert_eq!(construction_rules, skirmish_rules);
         let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
             rule_policy: construction_rules,
             ..Default::default()
@@ -154,8 +155,11 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
         );
         sim.session().rule_policy()
     };
-    assert_eq!(install(0), RulePolicy::stock_campaign());
-    assert_eq!(install(5), RulePolicy::stock_multiplayer());
+    assert_eq!(
+        install(0),
+        RulePolicy::stock_campaign().with_ares_psychic_reveal_exclusions(true)
+    );
+    assert_eq!(install(5), skirmish_rules);
 }
 
 #[test]
