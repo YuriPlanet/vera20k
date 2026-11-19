@@ -4976,7 +4976,9 @@ impl Simulation {
         synced.put(self);
         theirs.put(&mut copy);
         copy.fog = fog_copy;
-        copy.house_alliances = self.house_alliances.detached();
+        copy.house_alliances = self
+            .house_alliances
+            .detached(&self.interner, &copy.interner);
         copy.main_rng = self.main_rng.detached_copy();
         copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
         self.fog = fog;

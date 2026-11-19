@@ -436,6 +436,49 @@ fn ally_matrix_answers_as_the_graph_through_ally_writes() {
     assert!(allied(&sim, first, late));
 }
 
+/// The presentation copy takes the matrix the simulation built, read
+/// through the copy's own interner, instead of building it again each
+/// frame, and answers as the simulation does.
+#[test]
+fn a_detached_copy_keeps_the_built_matrix() {
+    let rules = rules();
+    let (mut sim, ids) = sim_with(
+        &rules,
+        &[
+            ("Player", "Americans", true),
+            ("Computer1", "Russians", false),
+            ("Computer2", "Russians", false),
+        ],
+    );
+    let one_way = HouseAllianceMap::from([("COMPUTER1".to_string(), set(&["Computer2"]))]);
+    sim.install_house_alliances(
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(one_way),
+        &rules,
+    );
+    assert!(sim.house_alliances.matrix(&sim.interner).is_some());
+    let interner = sim.interner.clone();
+    let copy = sim.house_alliances.detached(&sim.interner, &interner);
+    assert!(
+        copy.matrix.get().is_some_and(Option::is_some),
+        "the copy starts with the matrix built"
+    );
+    assert!(
+        copy.matrix(&interner).is_some(),
+        "read through its interner"
+    );
+    for &asker in &ids {
+        for &other in &ids {
+            assert_eq!(
+                copy.is_allied(&interner, asker, other),
+                sim.house_alliances.is_allied(&sim.interner, asker, other),
+            );
+        }
+    }
+    assert!(
+        copy.is_allied(&interner, ids[1], ids[2]) && !copy.is_allied(&interner, ids[2], ids[1])
+    );
+}
+
 /// A house the headless scenario adds after the load gets a matrix row, as
 /// a launch's houses do, instead of every question about it going to the
 /// graph by name: the load has already built the matrix.
