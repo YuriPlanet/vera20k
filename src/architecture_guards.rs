@@ -501,6 +501,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/scenario_bootstrap.rs", 5),
                 // Local identity owner, legacy restoration and its accessor.
                 ("sim/scenario_session.rs", 5),
+                // Cheat input reads the local player only in offline skirmish.
+                ("sim/skirmish_cheats.rs", 1),
                 ("sim/snapshot.rs", 2),
                 // Ares IsTimerVisible (10032E80): whether the local player
                 // sees a Super's timer line; only the timer drawing asks.
@@ -554,6 +556,8 @@ fn engine_per_client_reads_have_pinned_callers() {
             &[
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
+                // The same offline command refuses a local observer.
+                ("sim/skirmish_cheats.rs", 1),
                 // IsTimerVisible's observer case, as for `current_house`.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
@@ -1990,6 +1994,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "rules/object_type.rs",
             "set_secret_lab",
             "runs only inside RuleSet's load",
+        ),
+        (
+            "rules/personal_rules.rs",
+            "set_building_production_queue",
+            "VERA's own switch with no native member: the Options page's Building Production \
+             Queue box, which the app passes in for the rules the next scenario reads",
         ),
         (
             "rules/personal_rules.rs",

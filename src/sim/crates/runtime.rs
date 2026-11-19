@@ -116,7 +116,7 @@ pub(super) fn remove_pickup_crate(
     cell: (i16, i16),
 ) -> bool {
     let policy = sim.session.rule_policy();
-    if policy.crates_use_runtime_slots() {
+    if policy.uses_match_crates() {
         if let Some(index) = sim
             .crate_authority()
             .slots()
@@ -208,7 +208,7 @@ pub(crate) fn tick_crate_regeneration(
     effects: FrameEffects<'_>,
 ) -> Result<CrateRegeneration, RuntimeOverlayError> {
     let mut result = CrateRegeneration::default();
-    if !sim.session.rule_policy().crates_use_runtime_slots() || !sim.session.game_options().crates {
+    if !sim.session.rule_policy().uses_match_crates() || !sim.session.game_options().crates {
         return Ok(result);
     }
     let current_frame = sim.session.binary_frame() as i32;

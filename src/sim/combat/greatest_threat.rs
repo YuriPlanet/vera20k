@@ -1090,12 +1090,13 @@ impl<'a> ScannerStanding<'a> {
         };
         let house = world.houses.get(&attacker.owner);
         let policy = world.session.rule_policy();
+        let campaign_discovery = policy.uses_campaign_discovery();
         Self {
             house,
             human: house.is_none_or(|house| house.is_controlled_by_human(policy)),
-            requires_player_discovery: policy.targeting_requires_player_discovery()
+            requires_player_discovery: campaign_discovery
                 && !world.session.execution_topology().is_lockstep(),
-            respects_passive_houses: policy.targeting_respects_passive_houses(),
+            respects_passive_houses: !campaign_discovery,
             team: (attacker.category != EntityCategory::Structure)
                 .then(|| world.team_script_vm.team_for_member(attacker.stable_id))
                 .flatten()

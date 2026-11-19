@@ -712,11 +712,17 @@ impl ScenarioGameMode {
         profile: BootstrapRuleProfile,
         class: Option<crate::skirmish_modes::MpModeClass>,
     ) -> RulePolicy {
+        let lockstep = self.execution_topology().is_lockstep();
         let rules = match profile {
             BootstrapRuleProfile::Campaign => RulePolicy::stock_campaign(),
             BootstrapRuleProfile::Multiplayer => RulePolicy::stock_multiplayer(),
         }
         .with_allows_ownerless_terrain_logic(self.is_single_player());
+        // A recorded multiplayer execution mode can rebuild a campaign map.
+        // Campaign construction never uses the multiplayer mode object's rules.
+        if matches!(profile, BootstrapRuleProfile::Campaign) {
+            return rules.with_counts_player_control_as_human(!lockstep);
+        }
         match class {
             Some(class) => {
                 let policy = class.policy();
@@ -734,9 +740,7 @@ impl ScenarioGameMode {
                     )
             }
             // A legacy network startup can lack an MPGameMode object.
-            None if self.execution_topology().is_lockstep() => {
-                rules.with_ares_psychic_reveal_exclusions(false)
-            }
+            None if lockstep => rules.with_ares_psychic_reveal_exclusions(false),
             None => rules,
         }
     }
@@ -1054,6 +1058,13 @@ pub struct ScenarioSession {
     /// The field keeps its historical name until all persistence and app
     /// surfaces can be renamed together; it is not a synthetic 15 Hz clock.
     binary_frame: u32,
+}
+
+/// The native HouseClass::IsHumanPlayer (0x0050B6F0) identity source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativePlayerIdentity {
+    HouseFlags,
+    PlayerPointer,
 }
 
 /// Process-local House identity, shared-House sender and observer presentation.
@@ -1577,15 +1588,27 @@ impl ScenarioSession {
 
     /// The original campaign uses PlayerPtr discovery for local physics.
     /// Offline Skirmish has its own vision path even though it runs locally.
-    pub const fn uses_local_player_shroud(&self) -> bool {
-        !self.execution_topology().is_lockstep()
-            && matches!(self.game_mode, ScenarioGameMode::Campaign)
+    pub(crate) const fn uses_local_player_shroud(&self) -> bool {
+        self.rule_policy.uses_campaign_discovery() && !self.execution_topology().is_lockstep()
     }
 
-    /// Script 22 searches the process-local fog only in native modes 0 and 5.
-    pub(crate) const fn supports_local_team_shroud_search(&self) -> bool {
-        !self.execution_topology().is_lockstep() && self.game_mode.is_single_player()
+    /// TeamClass::AI Script 22 (0x006E9583) can read Map580BC0's
+    /// process-local view in the supported single-player modes.
+    pub(crate) const fn local_team_scout_view(&self) -> Option<&LocalViewIdentity> {
+        match self.game_mode {
+            ScenarioGameMode::Campaign | ScenarioGameMode::Skirmish => Some(&self.view),
+            _ => None,
+        }
     }
+
+    pub const fn native_player_identity(&self) -> NativePlayerIdentity {
+        if self.game_mode_nonzero() {
+            NativePlayerIdentity::PlayerPointer
+        } else {
+            NativePlayerIdentity::HouseFlags
+        }
+    }
+
     pub const fn rule_policy(&self) -> RulePolicy {
         self.rule_policy
     }
@@ -2640,6 +2663,25 @@ mod tests {
 
         session.install_admission(ScenarioGameMode::Lan, None, policy);
         assert!(!session.rule_policy().counts_player_control_as_human());
+    }
+
+    #[test]
+    fn campaign_bootstrap_ignores_multiplayer_class_and_projects_lockstep_player_control() {
+        let cooperative = Some(crate::skirmish_modes::MpModeClass::Cooperative);
+        let profile = BootstrapRuleProfile::Campaign;
+        assert_eq!(
+            ScenarioGameMode::Campaign.stock_rule_policy_for_bootstrap(profile, cooperative),
+            RulePolicy::stock_campaign()
+        );
+        for mode in [ScenarioGameMode::Lan, ScenarioGameMode::Wol] {
+            let rules = mode.stock_rule_policy_for_bootstrap(profile, cooperative);
+            assert_eq!(
+                rules,
+                RulePolicy::stock_campaign()
+                    .with_allows_ownerless_terrain_logic(false)
+                    .with_counts_player_control_as_human(false)
+            );
+        }
     }
 
     #[test]

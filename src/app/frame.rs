@@ -821,6 +821,12 @@ impl App {
         mut hidden_run: Option<&mut crate::app::hidden_run::HiddenRun>,
         pass: FramePass,
     ) -> Result<FrameRenderOutcome> {
+        // A lost device draws nothing more; the frame loop closes the game
+        // (`App::close_after_graphics_loss`).
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if state.renderer.gpu.device_lost().is_some() {
+            return Ok(FrameRenderOutcome::Unavailable);
+        }
         // Publish the player's colour-vision matrix before any early-return
         // present and before synchronous loading repaints: all of them encode
         // through the shared filter on GpuContext, not just the frame's tail.
@@ -1100,6 +1106,11 @@ impl App {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Frame"),
                 });
+        // DirectX 12 can find the device gone while making the encoder.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if state.renderer.gpu.device_lost().is_some() {
+            return Ok(FrameRenderOutcome::Unavailable);
+        }
         state.renderer.gpu.timer.begin_frame(&mut encoder);
         state.renderer.window_ui.begin_frame();
         if state.match_state.input.retail_screenshot_requested {

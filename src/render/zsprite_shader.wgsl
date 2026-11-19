@@ -28,6 +28,9 @@ struct Camera {
 // BUILDNGZ's remapped R8 canvas, or four raw overlay files in RGBA channels.
 // Both store signed bytes biased by128. Overlay instances carry their stride.
 @group(2) @binding(0) var t_zshape: texture_2d<f32>;
+// The skip table (render::zshape_skips): per slot (row) and frame row
+// (column), the columns a left-edge body's z-shape pointer trails by.
+@group(2) @binding(1) var t_zshape_skips: texture_2d<u32>;
 
 struct Instance {
     @location(0) position: vec2f,
@@ -126,43 +129,24 @@ fn tactical_view_rows(view_height: f32) -> vec2i {
         camera.screen_size.y / camera.zoom);
 }
 
+// One signed candidate owner for ordinary and packed SHP consumers follows.
+// terrain_draw.rs `edit_source` reuses the shader above this line.
+
 // Source columns the RLE ZReadWrite leaf (0x004990E0) leaves its z-shape
-// pointer behind by in this fragment's row of an extended z-shape body. The
-// leaf skips the fx_params.w columns the view's left edge clips a token at a
-// time (0x00499141..0x00499154); a skip that ends inside a transparent run
-// moves dest, Z and A on to the run's end (0x0049915D..0x0049918F) but not
-// the z-shape pointer (ECX), which pixels and later runs advance (0x00499234,
-// 0x004991C7). A transparent span is taken as runs of 255 from its start, as
-// retail frames encode it.
-// RESIDUAL: a mod frame that splits its spans otherwise overshoots
-// differently, and ore on a slope (the linear shape below, its quad already
-// clipped on the CPU) keeps no overshoot: where the view's left edge cuts
-// them, their depth can sit up to a run's worth of shape columns off.
+// pointer behind by in this fragment's row of an extended z-shape body the
+// view's left edge cuts (native_z::zshape_skip_overshoot, one byte per frame
+// row in the skip table; fx_params.w is the body's slot, 1-based, 0 none).
+// The columns left of the skip get it too; the view clips them anyway.
 fn skip_overshoot(input: VertexOutput) -> i32 {
-    let skip: i32 = i32(round(input.fx_params.w));
-    let width: i32 = i32(round(input.rect.z));
-    let texel: vec2i = source_texel(input.uv);
-    let column: i32 = i32(floor(input.world_pos.x)) - i32(round(input.rect.x));
-    let row_start: i32 = texel.x - column;
-    if (skip <= 0 || skip >= width || column < skip
-        || textureLoad(source_indices, vec2i(row_start + skip - 1, texel.y), 0).r != 0u) {
+    let slot: i32 = i32(round(input.fx_params.w)) - 1;
+    let row: i32 = i32(floor(input.world_pos.y)) - i32(round(input.rect.y));
+    let dims: vec2i = vec2i(textureDimensions(t_zshape_skips));
+    if (slot < 0 || slot >= dims.y || row < 0 || row >= dims.x) {
         return 0;
     }
-    var start: i32 = skip - 1;
-    while (start > 0
-        && textureLoad(source_indices, vec2i(row_start + start - 1, texel.y), 0).r == 0u) {
-        start -= 1;
-    }
-    let run_end: i32 = min(start + ((skip - 1 - start) / 255 + 1) * 255, width);
-    var end: i32 = skip;
-    while (end < run_end
-        && textureLoad(source_indices, vec2i(row_start + end, texel.y), 0).r == 0u) {
-        end += 1;
-    }
-    return end - skip;
+    return i32(textureLoad(t_zshape_skips, vec2i(row, slot), 0).r);
 }
 
-// One signed candidate owner for ordinary and packed SHP consumers.
 fn native_candidate(input: VertexOutput) -> i32 {
     let z_origin: i32 = native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan);
     var rect_top: i32 = i32(round(input.rect.y));

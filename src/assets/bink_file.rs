@@ -8,8 +8,7 @@
 //! Parses the fixed header, audio track descriptors, per-frame offset table,
 //! and splits each frame packet into its audio blocks + video bitstream.
 //!
-//! Only BIKi and BIKk revisions are supported — the only variants that ship
-//! in RA2 / Yuri's Revenge cutscenes.
+//! Supports BIKi (the retail movies) and BIKk.
 //!
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
@@ -26,7 +25,7 @@ pub enum BinkVersion {
     /// BIKi — standard Bink 1 used by nearly all RA2/YR cutscenes.
     BikI,
     /// BIKk — minor revision: extra 4-byte header field, 0xBB block-type XOR,
-    /// whole-plane fill shortcut, JPEG color range. One file in movmd03.mix.
+    /// whole-plane fill shortcut, JPEG color range.
     BikK,
 }
 
@@ -320,12 +319,11 @@ pub(crate) fn parse_frame_index(
 #[derive(Debug, Clone, Copy)]
 pub struct AudioPacket<'a> {
     pub track_index: usize,
-    /// Decompressed sample count (first 4 bytes of the packet payload, little-endian).
-    /// 0 if the packet is shorter than 4 bytes.
+    /// Number of decoded 16-bit PCM bytes, including all channels.
     #[cfg(test)]
-    pub sample_count: u32,
+    pub decoded_bytes: u32,
     /// Audio packet payload bytes, starting with the 4-byte little-endian
-    /// decompressed sample count that the audio decoder skips.
+    /// decoded PCM byte length.
     pub bytes: &'a [u8],
 }
 
@@ -366,11 +364,11 @@ impl BinkFile {
             // packets, but this is a legal container state, not a failure.
             if bytes.len() >= 4 {
                 #[cfg(test)]
-                let sample_count = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let decoded_bytes = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
                 out.push(AudioPacket {
                     track_index,
                     #[cfg(test)]
-                    sample_count,
+                    decoded_bytes,
                     bytes,
                 });
             }
@@ -595,7 +593,7 @@ mod tests {
         let audios = f.audio_packets(0).unwrap();
         assert_eq!(audios.len(), 1);
         assert_eq!(audios[0].bytes, &[1u8, 2, 3, 4, 5, 6, 7, 8]);
-        assert_eq!(audios[0].sample_count, 0x04030201);
+        assert_eq!(audios[0].decoded_bytes, 0x04030201);
     }
 
     #[test]

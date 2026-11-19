@@ -195,7 +195,20 @@ impl HudFacts {
             } else {
                 Vec::new()
             },
-            info_lines: status_info_lines(entity, object, rules, at.binary_frame),
+            // Convenience Help's rows: captured only while it is on, and only
+            // for the observer's and its allies' objects, which alone draw them.
+            info_lines: if at.status_rows
+                && at.observer.is_some_and(|viewer| {
+                    crate::map::houses::is_allied_with(
+                        sim.house_alliances().as_map(),
+                        viewer,
+                        sim.interner().resolve(entity.owner()),
+                    )
+                }) {
+                status_info_lines(entity, object, rules, at.binary_frame)
+            } else {
+                Vec::new()
+            },
         };
         Self {
             get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
@@ -266,29 +279,6 @@ impl HudFacts {
     }
 }
 
-/// Remaining repair time (frames→seconds) and cost for a repairing building,
-/// from the same per-period heal/cost loop `production_repair::repair_step`
-/// uses. `step` is health healed per period, `period_frames` the frames per
-/// period, `cost` the money paid per period. `None` when nothing is missing or
-/// the cadence is degenerate. Pure: every input is a frozen fact.
-fn building_repair_estimate(
-    strength: i32,
-    health: i32,
-    step: i32,
-    period_frames: i32,
-    cost_per_period: i32,
-) -> Option<(i32, i32)> {
-    let missing = strength - health;
-    if step <= 0 || period_frames <= 0 || missing <= 0 {
-        return None;
-    }
-    let periods = (missing + step - 1) / step; // ceil, all positive
-    let seconds = periods
-        .saturating_mul(period_frames)
-        / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
-    Some((seconds, periods.saturating_mul(cost_per_period)))
-}
-
 /// VERA's convenience help status lines, resolved from frozen sim facts at
 /// capture time (`HudFacts::capture`) so the draw pass never reads live state.
 /// Every number comes from the object's own sim fields plus Rules; nothing
@@ -296,7 +286,8 @@ fn building_repair_estimate(
 ///
 /// Two kinds are enabled here, both single-entity facts:
 /// - ammo reload: the Techno's reload clock while a magazine is incomplete;
-/// - building repair: the per-period heal/cost loop on a repairing building.
+/// - building repair: what the repair still needs, as its owner
+///   (`production_repair::repair_remaining`) counts it.
 /// Unit repair is depot-side (its progress lives on the servicing Building,
 /// keyed by radio contact) and is intentionally not shown here: the unit has
 /// no reliable single owning repair clock to report.
@@ -318,7 +309,8 @@ fn status_info_lines(
                 let timer = entity.ammo_reload_timer();
                 let remaining = timer.remaining(frame);
                 if remaining > 0 {
-                    let seconds = remaining / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+                    let seconds =
+                        remaining / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
                     if let Some(template) = crate::i18n::find("VERA:InfoReload") {
                         let time = crate::app::presentation::super_timers::time_text(seconds);
                         lines.push(crate::i18n::fill(&template, &[("time", &time)]));
@@ -328,28 +320,19 @@ fn status_info_lines(
         }
     }
 
-    // Building repair: a repairing Structure heals `RepairStep` per
-    // `RepairRate` period and pays `repair_step_cost` each period. Remaining
-    // periods = ceil(missing health / RepairStep); time and cost follow.
+    // Building repair: the repair's own owner answers what is left.
     if entity.category() == EntityCategory::Structure
-        && entity.building.repairing.is_on()
         && let Some(object) = object
+        && let Some((frames, cost)) =
+            crate::sim::production::repair_remaining(entity, object, rules, frame as u32)
+        && let Some(template) = crate::i18n::find("VERA:InfoBuildingRepair")
     {
-        let period = crate::sim::combat::veterancy::self_heal_interval_frames(
-            rules.general.repair_rate_minutes,
-        );
-        let step_cost = crate::sim::production::repair_step_cost(rules, object);
-        if let Some((seconds, cost)) = building_repair_estimate(
-            object.strength,
-            entity.health.current(),
-            rules.general.repair_step,
-            period,
-            step_cost,
-        ) && let Some(template) = crate::i18n::find("VERA:InfoBuildingRepair")
-        {
-            let time = crate::app::presentation::super_timers::time_text(seconds);
-            lines.push(crate::i18n::fill(&template, &[("time", &time), ("cost", &cost)]));
-        }
+        let seconds = frames / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+        let time = crate::app::presentation::super_timers::time_text(seconds);
+        lines.push(crate::i18n::fill(
+            &template,
+            &[("time", &time), ("cost", &cost)],
+        ));
     }
 
     lines
@@ -1154,9 +1137,7 @@ pub(crate) fn build_building_status_render_instances(
         for (row, text) in info_lines.iter().enumerate() {
             let anchor = [
                 anchor[0],
-                anchor[1].wrapping_add(
-                    line_height.wrapping_mul((lines.len() + row + 1) as i32),
-                ),
+                anchor[1].wrapping_add(line_height.wrapping_mul((lines.len() + row + 1) as i32)),
             ];
             let measure = font.compute_text_rect(text, anchor, 0x149, [4, 2]);
             if !rect_overlaps(measure, tactical_clip) {
@@ -3017,21 +2998,6 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
-    /// Repair estimate: missing health is rounded up to whole heal steps, and
-    /// both the time (frames→seconds) and the money follow the step count.
-    #[test]
-    fn building_repair_estimate_rounds_up_steps_and_costs_each() {
-        use super::building_repair_estimate as estimate;
-        // 15 fps; 10 missing health at 4/step = 3 steps; 15f period = 3s; 7/step.
-        assert_eq!(estimate(100, 90, 4, 15, 7), Some((3, 21)));
-        // An exact multiple needs no extra step.
-        assert_eq!(estimate(100, 92, 4, 15, 7), Some((2, 14)));
-        // Full health, zero cadence, or no cost cadence show nothing.
-        assert_eq!(estimate(100, 100, 4, 15, 7), None);
-        assert_eq!(estimate(100, 90, 0, 15, 7), None);
-        assert_eq!(estimate(100, 90, 4, 0, 7), None);
-    }
-
     #[cfg(not(feature = "phobos"))]
     #[test]
     fn ares_enemy_insignia_checks_the_owners_allies_and_the_observer_house() {

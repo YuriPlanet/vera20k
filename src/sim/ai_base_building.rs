@@ -332,7 +332,7 @@ pub(crate) fn economy_state_machine(
     };
     if house.is_controlled_by_human(policy)
         || house.command_driven()
-        || !session.rule_policy().uses_ai_production_modes()
+        || !session.rule_policy().uses_managed_ai_base()
     {
         return;
     }
@@ -427,7 +427,7 @@ pub(crate) fn update_production_choices(
         UnitChoiceKind::Aircraft,
     ];
     // A campaign runs mode 0's choices (`0x004F9099..0x004F90A1`).
-    let mode = if sim.session.rule_policy().uses_ai_production_modes() {
+    let mode = if sim.session.rule_policy().uses_managed_ai_base() {
         house.ai_production().mode
     } else {
         0

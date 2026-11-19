@@ -206,9 +206,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.convenience_help = enabled;
     }
     fn store_building_production_queue(&mut self, enabled: bool) {
-        // The next frame carries it onto FrameEffects; the simulation reads it
-        // there, so it stays out of the ruleset, saves and state hashes.
+        // A rule switch, as Terrain Deformation is: the next offline
+        // scenario's rules read it, so a running match keeps what it started
+        // with and every peer, save and replay plays the same rules.
         self.persistence.options_profile.building_production_queue = enabled;
+        self.process_assets.set_building_production_queue(enabled);
     }
     fn store_compact_super_timers(&mut self, enabled: bool) {
         // Presentation only: the next timer draw reads it.
@@ -266,11 +268,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // next frame.
         self.persistence.options_profile.vsync = vsync;
         App::sync_present_mode(self);
-    }
-    fn store_directx12(&mut self, enabled: bool) {
-        // The graphics API is chosen once, at launch: the next start reads
-        // it (`GpuContext::new`).
-        self.persistence.options_profile.directx12 = enabled;
     }
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.

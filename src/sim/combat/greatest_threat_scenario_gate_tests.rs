@@ -76,8 +76,7 @@ fn campaign_player_scan_skips_an_enemy_the_player_has_not_discovered() {
         "skirmish: no discovery gate"
     );
 
-    let rules_policy =
-        RulePolicy::stock_multiplayer().with_targeting_requires_player_discovery(true);
+    let rules_policy = RulePolicy::stock_multiplayer().with_uses_campaign_discovery(true);
     sim.session
         .install_admission(ScenarioGameMode::Skirmish, None, rules_policy);
     assert_eq!(guard_pick(&mut sim, rules, tank), None);
@@ -108,8 +107,7 @@ fn passive_house_targets_follow_the_admitted_policy() {
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     assert_eq!(guard_pick(&mut sim, rules, tank), None);
 
-    let rules_policy =
-        RulePolicy::stock_multiplayer().with_targeting_respects_passive_houses(false);
+    let rules_policy = RulePolicy::stock_multiplayer().with_uses_campaign_discovery(true);
     sim.session
         .install_admission(ScenarioGameMode::Skirmish, None, rules_policy);
     assert_eq!(guard_pick(&mut sim, rules, tank), Some(target));

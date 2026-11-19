@@ -55,6 +55,7 @@ pub mod locomotor_visual;
 pub mod main_menu_shell_chrome;
 pub mod native_surface_format;
 pub mod native_z;
+pub(crate) mod zshape_skips;
 pub mod overlay_assets;
 pub mod overlay_atlas;
 pub mod palette_light;

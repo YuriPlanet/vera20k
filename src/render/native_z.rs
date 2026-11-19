@@ -587,15 +587,48 @@ pub fn zshape_origin(
     )
 }
 
-/// What a body with an extended z-shape ([`Z_GRADIENT_ZSHAPE_FLAG`]) carries
-/// in `fx_params.w`: the source columns the view's left edge, at world column
-/// `view_left`, clips off its rect from world column `left` (WGSL `round`
-/// ties to even). The RLE ZReadWrite leaf (`0x004990E0`) skips them a token
-/// at a time; zsprite_shader.wgsl `skip_overshoot` replays that skip.
+/// The source columns the view's left edge, at world column `view_left`,
+/// clips off a body's rect from world column `left` (WGSL `round` ties to
+/// even). The RLE ZReadWrite leaf (`0x004990E0`) skips them a token at a
+/// time; [`zshape_skip_overshoot`] gives what that leaves behind per row.
 pub fn zshape_lead_skip(view_left: i32, left: f32) -> f32 {
     view_left
         .saturating_sub(left.round_ties_even() as i32)
         .max(0) as f32
+}
+
+/// The source columns the RLE ZReadWrite leaf (`0x004990E0`) leaves a body's
+/// z-shape pointer behind by in one frame row (`row`, its palette indices),
+/// skipped `skip` columns in from the left ([`zshape_lead_skip`]). The leaf
+/// skips a token at a time (`0x00499141..0x00499154`); a skip that ends inside
+/// a transparent run moves dest, Z and A on to the run's end
+/// (`0x0049915D..0x0049918F`) but not the z-shape pointer (ECX), which drawn
+/// pixels and later runs advance (`0x00499234`, `0x004991C7`): the rest of
+/// the row reads its shape that many columns back. A transparent span is
+/// taken as runs of 255 from its start, as retail frames encode it. The skip
+/// table carries the result per row (`render::zshape_skips`).
+///
+/// RESIDUAL: a mod frame that splits its spans otherwise overshoots
+/// differently, and ore on a slope (the linear shape, its quad already clipped
+/// on the CPU) keeps no overshoot: where the view's left edge cuts them, their
+/// depth can sit up to a run's worth of shape columns off.
+pub fn zshape_skip_overshoot(row: &[u8], skip: usize) -> u8 {
+    let width = row.len();
+    if skip == 0 || skip >= width || row[skip - 1] != 0 {
+        return 0;
+    }
+    // The transparent span the skip ends in, and the run of it the skip's
+    // last token covers.
+    let start = row[..skip - 1]
+        .iter()
+        .rposition(|&index| index != 0)
+        .map_or(0, |drawn| drawn + 1);
+    let run_end = (start + ((skip - 1 - start) / 255 + 1) * 255).min(width);
+    let end = row[skip..run_end]
+        .iter()
+        .position(|&index| index != 0)
+        .map_or(run_end, |drawn| skip + drawn);
+    (end - skip) as u8
 }
 
 /// `FUN_0045E8F0`: every non-zero BUILDNGZ byte is remapped by `-0x41` and
@@ -625,6 +658,28 @@ pub fn depth_for_native_z(z: i32, camera_y: i32, origin_y: f32, world_height: f3
 
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
+    /// The two cases of depth_gpu_tests
+    /// `building_zshape_trails_a_left_edge_skip_that_ends_inside_a_run`, as
+    /// the table computes them, and the skips that leave nothing behind.
+    #[test]
+    fn a_skip_ending_inside_a_transparent_run_trails_to_the_runs_end() {
+        use super::zshape_skip_overshoot;
+        // A 4-column run cut 2 in: the pointer trails by 2 to column 4.
+        assert_eq!(zshape_skip_overshoot(&[0, 0, 0, 0, 33, 33, 33, 33], 2), 2);
+        // A 300-column run encodes as 255 + 45: the skip ends 245 short of
+        // the first token's end.
+        let mut row = vec![0; 320];
+        row[300..].fill(33);
+        assert_eq!(zshape_skip_overshoot(&row, 10), 245);
+        // A drawn pixel before the skip starts the span and its runs there.
+        row[4] = 33;
+        assert_eq!(zshape_skip_overshoot(&row, 10), 250);
+        // A skip that ends on a drawn pixel, or outside the frame, trails nothing.
+        assert_eq!(zshape_skip_overshoot(&[33, 0, 0, 33], 1), 0);
+        assert_eq!(zshape_skip_overshoot(&[0, 0, 33], 3), 0);
+        assert_eq!(zshape_skip_overshoot(&[0, 0, 33], 0), 0);
+    }
+
     #[test]
     fn voxel_candidate_envelope_covers_existing_regions_and_shader_clip_boundaries() {
         for rect in [[43, 15], [43, 48], [-10, 64]] {

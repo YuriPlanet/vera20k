@@ -390,6 +390,8 @@ pub struct SkirmishShellState {
     /// Sits beside the setup modal rather than inside it because it replaces
     /// the setup dialog on screen while that dialog keeps its working options.
     pub saved_seed_browser: Option<super::SavedSeedBrowserState>,
+    /// VERA's Setups page over the Skirmish page, its rows named by setup.
+    pub setups_browser: Option<super::SavedSeedBrowserState<String>>,
     pub validation_modal: Option<SkirmishValidationModalState>,
     /// VERA's Game Options box, open over the page: it takes every press
     /// and key until OK, Enter or Esc closes it.
@@ -409,6 +411,8 @@ pub enum SkirmishShellDialog {
     ChooseMap,
     RandomMap,
     SeedBrowser,
+    /// VERA's Setups page, which covers `0x102` while it is open.
+    Setups,
 }
 
 impl SkirmishShellState {
@@ -429,7 +433,11 @@ impl SkirmishShellState {
     /// eject box.
     pub fn top_dialog(&self) -> Option<SkirmishShellDialog> {
         let Some(chooser) = self.choose_map_modal.as_ref() else {
-            return Some(SkirmishShellDialog::Skirmish);
+            return Some(if self.setups_browser.is_some() {
+                SkirmishShellDialog::Setups
+            } else {
+                SkirmishShellDialog::Skirmish
+            });
         };
         if self.saved_seed_browser.is_some() {
             Some(SkirmishShellDialog::SeedBrowser)
@@ -483,6 +491,7 @@ impl Default for SkirmishShellState {
             choose_map_modal: None,
             random_map_setup_modal: None,
             saved_seed_browser: None,
+            setups_browser: None,
             validation_modal: None,
             game_options: None,
             pending_ui_sounds: Vec::new(),

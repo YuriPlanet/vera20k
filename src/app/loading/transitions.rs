@@ -229,6 +229,13 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.palette_set = assets.palette_set;
     state.match_state.match_presentation.surface_palette = Default::default();
     state.match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
+    // The skip table decoded its frames from the atlas just replaced.
+    state
+        .match_state
+        .match_presentation
+        .zshape_skips
+        .get_mut()
+        .forget_frames();
     state.match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
     state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
     state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
@@ -335,8 +342,9 @@ pub(crate) fn install_world_presentation(
         .superweapon_building_timers = saved_timers;
     // VERA's Convenience Help starts each scenario from the saved switch too;
     // Ctrl+Alt+H flips it from there and writes it back to the profile.
-    state.match_state.match_presentation.convenience_help =
-        state.persistence.options_profile.convenience_help;
+    let help = state.persistence.options_profile.convenience_help;
+    state.match_state.match_presentation.convenience_help = help;
+    state.match_state.sim_runtime.show_status_rows(help);
     state.match_state.match_presentation.house_roster = map.house_roster;
     state.process_assets.csf = assets.csf;
     state.match_state.match_presentation.theater_name = map.theater_name;

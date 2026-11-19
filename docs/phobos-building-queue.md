@@ -1,18 +1,21 @@
-# Building production queue (player option)
+# Building production queue
 
-Tick **Gameplay → Building Production Queue** in Options, or set
-`[VERA] BuildingProductionQueue=yes` in `VERA.INI`. It is on in every build,
-no feature flag needed. Default is off.
+Every build reads Phobos' rules key; a mod, mode or map may set it. Default is
+`no`.
 
 ```ini
-[VERA]
+[General]
 BuildingProductionQueue=no ; boolean
 ```
 
-This is a player preference, not a ruleset setting: it is not part of a map or
-scenario, is not saved with a game, and is not written into either the ruleset
-hash or the simulation state hash. The app reads it from the profile and puts
-it on each frame's `FrameEffects`, which the simulation reads.
+Players turn it on with **Gameplay → Building Production Queue** in Options
+(`[VERA] BuildingProductionQueue=yes` in `VERA.INI`). That box is a rule
+switch, as Terrain Deformation is (`rules/personal_rules.rs`): the next offline
+scenario's root gets `[General] BuildingProductionQueue=yes`, so the simulation,
+saves, replays and the rules hash all read the same value, and a match keeps
+what it started with. A network room plays without it: its host's rules
+(`HostRules`) do not carry the box yet. The key is read outside `phobos_read`,
+so the box does not switch the rest of Phobos on.
 
 With the switch on, a BuildingType cameo press appends behind the category
 factory's running or completed product instead of being dropped or replacing
@@ -27,26 +30,24 @@ and `SelectClass::Action`'s busy structure check is skipped at `0x6AB689`
 
 ## Where VERA20K owns it
 
+- `rules/ruleset.rs` — the `[General]` read and its configuration hash.
+- `rules/personal_rules.rs` — the Options box composed into the scenario root.
 - `app/persistence/options_profile.rs` — the `[VERA]` read/write and default.
 - `ui/main_menu_dialogs/options.rs` — the Options checkbox and its event.
-- `app/match_runtime/sim_tick.rs` — reads the profile once per frame and puts
-  it on the tick's `FrameEffects`.
-- `sim/world/frame_effects.rs` — carries the flag to the simulation boundary.
 - `sim/production/factory_lifecycle.rs` — `enqueue_selected` gates the busy
   refusal and the held-product abandonment; the existing generic queue tail
   already starts the next building after placement.
 - `app/input/sidebar_eva.rs` — a busy structure strip accepts the press, and
   Shift repeat may append when the switch is on.
-- `app/input/dispatch.rs` — passes the player option to the click decision.
+- `app/input/dispatch.rs` — passes the rules switch to the click decision.
 - `app/presentation/sidebar_build.rs` — opens the Building/Defense queue-count
-  badge when the option is on.
+  badge under the `phobos` feature or the rules switch.
 - `sim/production/factory.rs` — `cancel_one` follows Phobos'
   `HouseClass_AbandonProduction_RewriteForBuilding @ 0x004FAAD8`, which replaces
   vanilla's `BuildCat == DontCare` test so a structure cancel removes queued
   copies before the held product. The rewrite is unconditional in Phobos, and
-  this player switch also enables it in a default build: `cancel_one` reads the
-  flag from the frame's `FrameEffects` and follows either `phobos` or this
-  option. That is what makes Shift + right-click ABANDON_ALL drain every queued
+  the rules switch also enables it in a default build: `cancel_one` follows
+  either the `phobos` feature or `[General] BuildingProductionQueue=`. That is what makes Shift + right-click ABANDON_ALL drain every queued
   copy of the clicked type (with `Shift-Click Batch Queue` also on) instead of
   abandoning only the held building.
 
@@ -58,7 +59,7 @@ and `SelectClass::Action`'s busy structure check is skipped at `0x6AB689`
   factory lookup resolves a structure's Factory only under Phobos'
   `StripClass_DrawStrip_FindFactoryDehardCode @ 0x006A9C54`, which is
   unconditional, so `shows_queue_badge` opens the Building/Defense categories
-  whenever this player option is on.
+  under the `phobos` feature or whenever the rules switch is on.
 - The rewrite sits in the shared `House::Abandon_Production` body, but of the
   other `cancel_production_for_owner` callers only the factory building's
   detach (`0x0044EE9E..0x0044EEC3`: `all = false` with the held type's index)
@@ -81,15 +82,17 @@ and `SelectClass::Action`'s busy structure check is skipped at `0x6AB689`
 
 The building production queue originates in Phobos, but VERA20K promotes it
 to a first-party player option available in **every** build — no feature flag
-and no dependence on a Phobos ruleset. It changes no simulation state: it is a
-player preference in `VERA.INI`, carried to the simulation on each frame's
-`FrameEffects`. It materially improves the playing experience and is meant to
-be a feature **usable in real matches**, not a debug or single-player toy. This
-follows the same precedent as VERA's Shift-Click batch queue, which was adopted
-from Ares and likewise promoted to a normal, always-available convenience.
+and no dependence on a Phobos ruleset. It changes how production plays, so it
+reaches the simulation as a rule of the scenario that every peer, save and
+replay reads, never as one client's preference. It materially improves the
+playing experience. Network rooms play without it until the room's shared
+rules (`HostRules`) carry it. This follows the precedent of VERA's Shift-Click
+batch queue, which was adopted from Ares and likewise promoted to a normal,
+always-available convenience.
 
 建筑生产线虽源自 Phobos，但我们把它转正为所有构建都可用的一方玩家功能：
-不依赖 Phobos 编译开关，也不依赖 Phobos 规则集。它不改动 SIM 状态（只是
-`VERA.INI` 里的玩家偏好，经 `FrameEffects` 逐帧传入），却能显著改善玩家
-体验，是对战中可用的功能，而非调试或单人玩具。这与 VERA 从 Ares 引入
-Shift-Click 批量队列、并把它转成普通可用功能的先例一致。
+不依赖 Phobos 编译开关，也不依赖 Phobos 规则集。它会改变生产的玩法，所以
+以场景规则的形式进入模拟，所有玩家、存档和录像读到的都一样，而不是某个
+客户端自己的偏好。它能显著改善玩家体验。在房间共享的规则（`HostRules`）
+带上它之前，联机房间不开启它。这与 VERA 从 Ares 引入 Shift-Click 批量
+队列、并把它转成普通可用功能的先例一致。

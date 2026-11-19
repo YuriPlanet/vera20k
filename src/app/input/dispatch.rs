@@ -1325,7 +1325,11 @@ fn sidebar_cameo_press(
     // The linked Factory's state also decides whether Shift may repeat: a held
     // or finished build takes the resume/placement arm, not a fresh PRODUCE.
     let own_for_repeat = linked_factory.map(|(status, _)| status);
-    let building_production_queue = state.persistence.options_profile.building_production_queue;
+    // The scenario's rules, as the simulation reads them, not the Options
+    // box: a change there waits for the next scenario.
+    let building_production_queue = state
+        .rules()
+        .is_some_and(|rules| rules.general.building_production_queue);
     let click = sidebar_eva::cameo_click_with_queue(
         &queue,
         category,
@@ -2302,6 +2306,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             *help = !*help;
             let on = *help;
             state.persistence.options_profile.convenience_help = on;
+            state.match_state.sim_runtime.show_status_rows(on);
             crate::app::persistence::options::persist_options_profile(state);
             log::info!("Convenience help: {}", if on { "shown" } else { "hidden" });
         }

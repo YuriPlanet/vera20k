@@ -230,7 +230,7 @@ fn virtual_purifiers_use_admitted_rules_and_the_raw_human_byte() {
     let campaign = ScenarioGameMode::from_game_mode(0);
     let skirmish = ScenarioGameMode::from_game_mode(5);
     let campaign_rules = campaign.stock_rule_policy(None);
-    let custom_rules = campaign_rules.with_allows_ai_virtual_purifiers(true);
+    let custom_rules = campaign_rules.with_uses_ai_economy(true);
     for (mode, policy, human, expected) in [
         (campaign, campaign_rules, false, 0),
         (skirmish, skirmish.stock_rule_policy(None), false, 3),

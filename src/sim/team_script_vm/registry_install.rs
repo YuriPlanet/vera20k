@@ -295,7 +295,7 @@ impl TeamScriptVm {
         );
         let owner = resolve_trigger_owner(trigger, rules, diagnostics);
         let object_type = resolve_trigger_object(trigger, rules, interner, diagnostics);
-        let use_default_tech_level = registry.uses_default_task_force_member_tech_level();
+        let use_default_tech_level = registry.uses_house_team_rules();
         let primary_tech_level = trigger_task_force_tech_level(
             self,
             primary_team_type,

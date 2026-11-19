@@ -217,10 +217,11 @@ impl Scene {
         let sim = &self.runtime.simulation;
         let presented = crate::app::presentation::frame::PresentationFrame::capture(
             &self.runtime,
-            &Default::default(),
+            &Default::default(), false,
         );
         let order = NativeDisplayOrder::from_world(&sim, None);
         let voxel_images = RefCell::new(VoxelImageCache::default());
+        let zshape_skips = std::cell::RefCell::default();
         let mut parents = Vec::new();
         build_shp_instances_from_inputs(
             &ShpInputs {
@@ -230,6 +231,7 @@ impl Scene {
                 overlay_atlas: None,
                 unit_atlas: None,
                 voxel_images: &voxel_images,
+                zshape_skips: &zshape_skips,
                 depth_tested_images: None,
                 camera: vera_camera(),
                 render_size: SIZE,
