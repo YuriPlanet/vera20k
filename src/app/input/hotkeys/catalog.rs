@@ -35,7 +35,6 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
         let mut all = RETAIL_COMMANDS.to_vec();
         all.extend_from_slice(&CAMERA_COMMANDS);
         all.extend_from_slice(&SHORTCUT_COMMANDS);
-        #[cfg(feature = "verax")]
         all.extend_from_slice(&VERA_COMMANDS);
         #[cfg(feature = "phobos")]
         all.extend_from_slice(&PHOBOS_COMMANDS);
@@ -909,9 +908,8 @@ const RETAIL_COMMANDS: [CommandMetadata; 87] = [
     ),
 ];
 
-/// VeraX's own commands, registered after every retail one. The CSF has no
+/// VERA's own commands, registered after every retail one. The CSF has no
 /// entries, so their names come from VERA's language files.
-#[cfg(feature = "verax")]
 const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
     HotkeyCommand::AutoLoad,
     "AutoLoad",

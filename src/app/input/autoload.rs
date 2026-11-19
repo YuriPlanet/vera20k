@@ -1,5 +1,6 @@
-//! VeraX AutoLoad: Ctrl+D loads the selected infantry and vehicles into the
-//! selected transports that are nearby and have room.
+//! AutoLoad transport planning, used by the Ctrl+D smart command. Loads the
+//! selected infantry and vehicles into the selected transports that are nearby
+//! and have room.
 //!
 //! The hotkey emits only ordinary Enter missions — the same command a click on
 //! a carrier produces (Foot `ClickedAction` `0x004D74E0` ->
@@ -14,9 +15,6 @@
 //! Occupy / Absorb chains, not EnterTransport, so only vehicle carriers are
 //! collected.
 
-use crate::app::AppState;
-use crate::app::input::commands::{preferred_local_owner_name, schedule_command};
-use crate::app::input::dispatch::selected_stable_ids_in_order;
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
@@ -325,36 +323,6 @@ pub(crate) fn autoload_orders(sim: &Simulation, rules: &RuleSet, selected: &[u64
     .collect()
 }
 
-/// The Ctrl+D press: plan from the live selection and queue the orders.
-pub(crate) fn hotkey_pressed(state: &mut AppState) {
-    let Some(owner) = preferred_local_owner_name(state) else {
-        return;
-    };
-    let orders = {
-        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
-            return;
-        };
-        let sim = &runtime.simulation;
-        let rules = &runtime.resources.rules;
-        let selected = selected_stable_ids_in_order(
-            Some(sim),
-            Some(rules),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
-        );
-        autoload_orders(sim, rules, &selected)
-    };
-    if orders.is_empty() {
-        return;
-    }
-    let count = orders.len();
-    for order in orders {
-        schedule_command(state, &owner, order);
-    }
-    crate::app::input::messages::post_eva_auto_loaded(state, count);
-    log::info!("VeraX AutoLoad: issued {count} enter orders");
-}
-
-#[cfg(all(test, tests_app_input_a_c, feature = "verax"))]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "autoload_tests.rs"]
 mod tests;

@@ -694,17 +694,15 @@ fn post_eva_text(state: &mut AppState, label: &str, name: &str) {
     );
 }
 
-/// The localized AutoLoad result line for `count` issued Enter orders.
-#[cfg(feature = "verax")]
+/// The localized smart-command result line for `count` issued orders.
 fn auto_loaded_line(count: usize) -> Option<String> {
     let template = crate::i18n::find("VERA:EvaAutoLoaded")?;
     Some(crate::i18n::fill(&template, &[("count", &count)]))
 }
 
-/// VERA's AutoLoad result line: the number of Enter orders Ctrl+D issued.
+/// VERA's smart-command result line: the number of orders Ctrl+D issued.
 /// Shares the detailed-EVA text lane and every one of its gates; the count is
 /// the number of orders the hotkey actually scheduled, never a guess.
-#[cfg(feature = "verax")]
 pub(crate) fn post_eva_auto_loaded(state: &mut AppState, count: usize) {
     if !state.persistence.options_profile.detailed_eva_text {
         return;
