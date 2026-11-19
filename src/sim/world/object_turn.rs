@@ -294,7 +294,7 @@ impl Simulation {
                 .process_ground_locomotor_one(stable_id, rules, overlay_registry, ctx.effects)
                 .map(LocomotorProcess::from_ground),
             LocomotorKind::Hover => {
-                self.complete_pending_order(stable_id, rules, overlay_registry, ctx.effects);
+                self.complete_pending_order(stable_id, rules, ctx.effects);
                 self.process_hover_locomotor(stable_id, rules, overlay_registry, ctx.effects)
                     .map(|hover| LocomotorProcess {
                         admitted: true,
@@ -308,10 +308,10 @@ impl Simulation {
             }
             LocomotorKind::Teleport => self.process_teleport_locomotor(stable_id, rules, ctx),
             LocomotorKind::Rocket => {
-                Ok(self.process_rocket_locomotor(stable_id, rules, overlay_registry, ctx.effects))
+                Ok(self.process_rocket_locomotor(stable_id, rules, ctx.effects))
             }
             LocomotorKind::Tunnel => {
-                self.complete_pending_order(stable_id, rules, overlay_registry, ctx.effects);
+                self.complete_pending_order(stable_id, rules, ctx.effects);
                 let tunnel =
                     self.process_tunnel_locomotor(stable_id, rules, overlay_registry, ctx.effects);
                 Ok(LocomotorProcess {
@@ -334,7 +334,7 @@ impl Simulation {
         effects: super::FrameEffects<'_>,
     ) -> Result<LocomotorProcess, super::FrameAdvanceError> {
         let mut process = LocomotorProcess::admitted();
-        self.complete_pending_order(stable_id, rules, overlay_registry, effects);
+        self.complete_pending_order(stable_id, rules, effects);
         let jumpjet = self
             .substrate
             .entities
@@ -375,7 +375,7 @@ impl Simulation {
             // The Infantry notice keeps the infantryman: its class AI runs on
             // to the sequencer and locomotion actions.
             self.substrate.aircraft_tracker_remove(stable_id);
-            self.infantry_crash_impact(stable_id, rules, overlay_registry, effects);
+            self.infantry_crash_impact(stable_id, rules, effects);
             return Ok(process);
         }
         // The impact UnInits the object; `FootClass::AI` returns on the
@@ -416,7 +416,7 @@ impl Simulation {
                 ..LocomotorProcess::default()
             });
         }
-        self.complete_pending_order(stable_id, rules, overlay_registry, ctx.effects);
+        self.complete_pending_order(stable_id, rules, ctx.effects);
         let sim = self;
         let mut process = LocomotorProcess::admitted();
         let teleport_armed = sim
@@ -434,7 +434,7 @@ impl Simulation {
             // `0x007193C7`: the detach sweep (`0x0070D4A0`) with the owner,
             // so every Techno aiming at it restores its mission and takes the
             // class NULL target setter.
-            sim.stop_all_targeting_on_detach(stable_id, rules, overlay_registry, ctx.effects);
+            sim.stop_all_targeting_on_detach(stable_id, rules, ctx.effects);
             // 7193CC..7193F4: walk the Bullet array backwards before WarpOut,
             // Mark(UP), or relocation changes the target's original pose.
             sim.lose_projectile_targets(stable_id, rules);
@@ -537,11 +537,10 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
     ) -> LocomotorProcess {
         let mut process = LocomotorProcess::admitted();
-        let outcome = self.process_rocket(stable_id, rules, overlay_registry, effects);
+        let outcome = self.process_rocket(stable_id, rules, effects);
         process.bridge_state_changed = outcome.bridge_state_changed;
         process.ended = !self
             .substrate
@@ -613,7 +612,7 @@ impl Simulation {
     ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
         let sim = self;
         let mut outcome = GroundLocomotorOutcome::default();
-        sim.complete_pending_order(stable_id, rules, overlay_registry, effects);
+        sim.complete_pending_order(stable_id, rules, effects);
         // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
         // cell slope before any active-track, destination or turn return.
         let slope = sim.substrate.entities.get(stable_id).and_then(|entity| {
@@ -636,7 +635,7 @@ impl Simulation {
         match sim.process_track_turn(stable_id, rules, overlay_registry, effects) {
             movement::track_turn::TrackProcessEntry::Movement => {}
             movement::track_turn::TrackProcessEntry::Tail => {
-                sim.track_process_rest_tail(stable_id, rules, overlay_registry, effects);
+                sim.track_process_rest_tail(stable_id, rules, effects);
                 return Ok(outcome);
             }
             movement::track_turn::TrackProcessEntry::Return => return Ok(outcome),
@@ -702,7 +701,6 @@ impl Simulation {
                         family,
                         movement::ProcessMovementArgs::OUTER,
                         rules,
-                        overlay_registry,
                         effects,
                     )
                     .map_err(|cause| frame_error(sim, cause))?;
@@ -788,7 +786,7 @@ impl Simulation {
                 pending_movement,
             ));
         if process_tail {
-            sim.track_process_rest_tail(stable_id, rules, overlay_registry, effects);
+            sim.track_process_rest_tail(stable_id, rules, effects);
         }
         Ok(outcome)
     }
@@ -881,7 +879,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
-        self.answer_batched_path_searches(rules, overlay_registry);
+        self.answer_batched_path_searches(rules);
         self.answer_batched_scans(rules, overlay_registry);
         let object_ctx = techno_ai::ObjectAiCtx {
             effects,
@@ -923,7 +921,7 @@ impl Simulation {
                 .get(stable_id)
                 .and_then(crate::sim::debug_event_log::DebugObservation::capture);
             // A sleeping object's visit is counted, not run (`idle_sleep`).
-            let check = match sim.visit_sleeper(stable_id, rules, overlay_registry, effects) {
+            let check = match sim.visit_sleeper(stable_id, rules, effects) {
                 super::idle_sleep::SleepVisit::Counted => return Ok(()),
                 super::idle_sleep::SleepVisit::Awake => None,
                 super::idle_sleep::SleepVisit::Check(check) => Some(check),
@@ -1048,7 +1046,7 @@ impl Simulation {
                     object_ctx.effects,
                 );
                 // A visit that fires nothing commits no consequences.
-                let receipt = sim.commit_no_fire(rules, overlay_registry, object_ctx.effects);
+                let receipt = sim.commit_no_fire(rules, object_ctx.effects);
                 outcome.bridge_state_changed |= receipt.bridge_state_changed;
                 outcome.destroyed_structure |= receipt.structure_destroyed;
             }
@@ -1130,7 +1128,7 @@ impl Simulation {
             sim.refresh_high_flying_sight_before_process(stable_id, rules, object_ctx.effects);
             sim.dispatch_airborne_cell_tag_event(
                 stable_id,
-                super::UninitContext::new(rules, overlay_registry).with_effects(object_ctx.effects),
+                super::UninitContext::new(rules).with_effects(object_ctx.effects),
             );
         }
 
@@ -1389,11 +1387,11 @@ impl Simulation {
         }
         // AircraftClass::AI after FootClass::AI: past the map's edge the
         // aircraft may be removed (`0x00414F47..0x00414FDE`), ending its AI.
-        if sim.remove_aircraft_off_map(stable_id, rules, overlay_registry, object_ctx.effects) {
+        if sim.remove_aircraft_off_map(stable_id, rules, object_ctx.effects) {
             return Ok(outcome);
         }
         // Aircraft414FDF..415046 follows removal, before its Ready/Commence.
-        sim.cleanup_aircraft_dummy_cells(stable_id, rules, overlay_registry, object_ctx.effects);
+        sim.cleanup_aircraft_dummy_cells(stable_id, rules, object_ctx.effects);
         // UnitClass::AI after FootClass::AI, before its second Ready/Commence.
         crate::sim::miner::miner_system::unit_ai_clear_harvesting(&mut sim.substrate, stable_id);
         // Unit7365E1 Fire_At_Target then7365E8 Facing_Update precede
@@ -1402,7 +1400,7 @@ impl Simulation {
             // A quiet unit's fire visit fires nothing and changes nothing
             // (`world::quiet_units`); its commit remains.
             let receipt = if quiet(sim) {
-                sim.commit_no_fire(rules, overlay_registry, object_ctx.effects)
+                sim.commit_no_fire(rules, object_ctx.effects)
             } else {
                 sim.commit_fire_visit(
                     crate::sim::combat::world_fire::FireVisit::UnitTarget(stable_id),
@@ -1414,7 +1412,7 @@ impl Simulation {
             outcome.bridge_state_changed |= receipt.bridge_state_changed;
             outcome.destroyed_structure |= receipt.structure_destroyed;
             // Unit73666B..736685: a visceroid's UpdateVisceroid737180.
-            sim.unit_update_visceroid(stable_id, rules, overlay_registry, object_ctx.effects);
+            sim.unit_update_visceroid(stable_id, rules, object_ctx.effects);
             // UnitAI736689 Reload+424 follows FireAtTarget/Facing and
             // precedes the second Ready/Commence. Aircraft/Infantry have
             // no corresponding ordinary Reload dispatch here. The native
@@ -1440,13 +1438,12 @@ impl Simulation {
             sim.object_ai_post_movement_promote_one(stable_id, rules);
             // Unit73671F..736817 follows that Commence (the CTF flag block
             // between them is unreachable).
-            sim.unit_ai_seek_repair(stable_id, rules, overlay_registry, object_ctx.effects);
+            sim.unit_ai_seek_repair(stable_id, rules, object_ctx.effects);
             // Unit73681D..73697B, the last block of UnitClass::AI.
             crate::sim::miner::miner_system::unit_ai_nudge_off_refinery_pad(
                 sim,
                 stable_id,
                 rules,
-                overlay_registry,
                 object_ctx.effects,
             );
         }

@@ -586,7 +586,7 @@ impl Simulation {
                     self, rules, registry, slave, range,
                 )? {
                     Some(cell) => {
-                        self.send_slave(slave, cell, rules, registry, frame_effects);
+                        self.send_slave(slave, cell, rules, frame_effects);
                         node.state = SlaveState::Moving;
                     }
                     None => {
@@ -594,7 +594,7 @@ impl Simulation {
                             entity.set_archive_target(None);
                         }
                         if let Some(drop) = self.slave_drop_cell(master, rules) {
-                            self.send_slave(slave, drop, rules, registry, frame_effects);
+                            self.send_slave(slave, drop, rules, frame_effects);
                         }
                         node.state = SlaveState::Returning;
                     }
@@ -634,7 +634,7 @@ impl Simulation {
                         entity.set_archive_target(Some(TargetKind::Cell(cell.0, cell.1)));
                     }
                     if let Some(drop) = self.slave_drop_cell(master, rules) {
-                        self.send_slave(slave, drop, rules, registry, frame_effects);
+                        self.send_slave(slave, drop, rules, frame_effects);
                     }
                     node.state = SlaveState::Returning;
                 } else if !crate::sim::miner::ore_scan::cell_is_tiberium_land(self, registry, cell)
@@ -652,7 +652,7 @@ impl Simulation {
                 let Some(slave) = node.slave else {
                     return Ok(());
                 };
-                self.slave_returning_step(master, slave, node, rules, registry, frame_effects);
+                self.slave_returning_step(master, slave, node, rules, frame_effects);
             }
             SlaveState::Reloading => {
                 if !node.timer.expired(now) {
@@ -678,7 +678,7 @@ impl Simulation {
             }
             SlaveState::Dead => {
                 if node.timer.expired(now) {
-                    self.regrow_slave(master, node, rules, registry, frame_effects);
+                    self.regrow_slave(master, node, rules, frame_effects);
                 }
             }
         }
@@ -692,7 +692,6 @@ impl Simulation {
         slave: u64,
         node: &mut SlaveNode,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         let Some(drop) = self.slave_drop_cell(master, rules) else {
@@ -724,12 +723,12 @@ impl Simulation {
         if cell == drop && nav_com.is_none() {
             // 0x006AFBCC: pay, go inside and reload.
             self.slave_deposit(slave, master, rules);
-            self.limbo_slave(slave, rules, registry, frame_effects);
+            self.limbo_slave(slave, rules, frame_effects);
             let reload = self.slave_manager(master).map_or(0, |m| m.reload_rate);
             node.state = SlaveState::Reloading;
             node.timer.start(Self::now_frame(&self.session), reload);
         } else if nav_com.is_none() || drifted {
-            self.send_slave(slave, drop, rules, registry, frame_effects);
+            self.send_slave(slave, drop, rules, frame_effects);
         }
     }
 
@@ -1347,14 +1346,12 @@ impl Simulation {
         slave: u64,
         cell: (u16, u16),
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         if let Err(cause) = self.assign_destination_represented(
             slave,
             Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
             rules,
-            registry,
             frame_effects,
         ) {
             log::debug!("slave {slave} could not be sent to {cell:?}: {cause}");
@@ -1431,7 +1428,7 @@ impl Simulation {
                 continue;
             };
             let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
-            if !self.unlimbo_slave(slave, drop, (sub_x, sub_y), rules, registry, frame_effects) {
+            if !self.unlimbo_slave(slave, drop, (sub_x, sub_y), rules, frame_effects) {
                 continue;
             }
             if let Some(source) = self.slave_owner_centre(master)
@@ -1480,7 +1477,6 @@ impl Simulation {
             crate::util::fixed_math::SimFixed,
         ),
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let z = self.terrain_cell_level(cell.0, cell.1).unwrap_or(0);
@@ -1491,7 +1487,6 @@ impl Simulation {
             RevealPosition::new(cell.0, cell.1, z, None, request.0, request.1),
             PlacementEvidence::EvaluateMark,
             rules,
-            registry,
         ) else {
             return false;
         };
@@ -1502,7 +1497,7 @@ impl Simulation {
                 placement,
                 logic_eligible: true,
             },
-            UninitContext::new(rules, registry)
+            UninitContext::new(rules)
                 .with_effects(frame_effects)
                 .with_unlimbo_facing(Some(0)),
         );
@@ -1510,16 +1505,10 @@ impl Simulation {
     }
 
     /// The slave's Limbo (`vt+0xD4`, `InfantryClass::Limbo @ 0x0051DF10`).
-    fn limbo_slave(
-        &mut self,
-        slave: u64,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
+    fn limbo_slave(&mut self, slave: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
         let _ = self.techno_limbo_with_context(
             slave,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
+            UninitContext::new(rules).with_effects(frame_effects),
         );
     }
 
@@ -1532,7 +1521,6 @@ impl Simulation {
         master: u64,
         node: &mut SlaveNode,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         let Some((slave_type, owner, cell, z)) =
@@ -1562,7 +1550,7 @@ impl Simulation {
         let Some(slave) = slave else {
             return;
         };
-        self.limbo_slave(slave, rules, registry, frame_effects);
+        self.limbo_slave(slave, rules, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(slave) {
             entity.slave.owner = Some(master);
         }
@@ -1768,7 +1756,7 @@ impl Simulation {
             };
             entity.slave.owner = None;
             if entity.lifecycle.in_limbo() {
-                self.slave_dies_inside(slave, killer, rules, registry, frame_effects);
+                self.slave_dies_inside(slave, killer, rules, frame_effects);
                 continue;
             }
             let Some(new_house) = new_house else {
@@ -1840,19 +1828,15 @@ impl Simulation {
         slave: u64,
         killer: Option<u64>,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         self.record_the_kill(
             slave,
             crate::sim::combat::KillSource::Techno(killer),
             crate::sim::combat::KillCallback::Terminal,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
+            UninitContext::new(rules).with_effects(frame_effects),
         );
-        self.uninit_with_context(
-            slave,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
-        );
+        self.uninit_with_context(slave, UninitContext::new(rules).with_effects(frame_effects));
     }
 
     /// `vt+0x16C(&Strength, 0, C4Warhead, 0, 0, 0, 0)` (`0x006B0BDF..`).
@@ -2009,8 +1993,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default()
+            crate::sim::world::FrameEffects::default(),
         ));
         assert!(
             sim.substrate
@@ -2036,8 +2019,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default()
+            crate::sim::world::FrameEffects::default(),
         )));
         let entity = sim.substrate.entities.get(slave).unwrap();
         assert!(!entity.lifecycle.in_limbo());
@@ -2080,8 +2062,7 @@ mod tests {
             (15, 15),
             (centre, centre),
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default()
+            crate::sim::world::FrameEffects::default(),
         )));
         assert!(sim.substrate.entities.get(slave).unwrap().on_bridge());
     }

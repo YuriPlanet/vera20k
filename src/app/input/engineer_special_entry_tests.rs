@@ -313,7 +313,7 @@ fn destroying_a_hospital_cleans_up_its_hidden_patient() {
         if sim.entities().get(actor).unwrap().in_limbo() {
             sim.uninit_with_context(
                 hover.stable_id,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             //UnInit makes the objects inactive; the frame's existing
             //retirement phase removes their retained storage.

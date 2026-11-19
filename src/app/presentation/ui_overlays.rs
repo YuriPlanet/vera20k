@@ -3545,7 +3545,7 @@ mod tests {
         for waypoint in [63, 66, 71, 99, 100, 114, 437, 647] {
             assert!(sim.trigger_reveal_at_waypoint(
                 waypoint,
-                crate::sim::world::UninitContext::with_rules(rules)
+                crate::sim::world::UninitContext::new(rules)
             ));
         }
         let target = sim.entities().get(id).unwrap();

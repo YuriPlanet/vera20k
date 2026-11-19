@@ -769,13 +769,7 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             }
         }
         if integer(&case["repeat"]) == 0 {
-            sim.process_pending_delete_with(
-                &rules,
-                Some(&overlay),
-                FrameEffects::default(),
-                0,
-                false,
-            );
+            sim.process_pending_delete_with(&rules, FrameEffects::default(), 0, false);
             sim.session.set_binary_frame_for_test(40);
             sim.raise_house_tags(houses[0], &rules, Some(&overlay), FrameEffects::default());
         }
@@ -2723,7 +2717,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
                 Some(&heights),
                 integer(&pass["final"]) != 0,
                 &config,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
                 crate::sim::vision::MapRevealProjection::Transient,
                 probe.session.current_house(),
             );
@@ -3299,7 +3293,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
             SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
         let (added, add_draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {
-                sim.team_add_member(team, member, false, &rules, None, FrameEffects::default())
+                sim.team_add_member(team, member, false, &rules, FrameEffects::default())
             })
         });
         assert_eq!(i32::from(added), integer(&control["added_al"]), "{input}");
@@ -4237,7 +4231,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                     }
                     "periodic_cell" => sim.dispatch_airborne_cell_tag_event(
                         periodic_actor.unwrap(),
-                        crate::sim::world::UninitContext::new(&rules, None),
+                        crate::sim::world::UninitContext::new(&rules),
                     ),
                     "global" | "local" => {
                         returned = Some(i32::from(
@@ -4292,7 +4286,6 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                     }
                     "drain" => sim.process_pending_delete_with(
                         &rules,
-                        None,
                         FrameEffects::default(),
                         integer(&flags[0]),
                         integer(&flags[1]) != 0,
@@ -4514,16 +4507,16 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
         let before = sim.trigger_runtime.clone();
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {
-                assert!(sim.discover_techno(id, owner, UninitContext::with_rules(&rules)));
+                assert!(sim.discover_techno(id, owner, UninitContext::new(&rules)));
             });
             assert!(sim.trigger_runtime.dispatch_trace.is_empty());
-            assert!(sim.discover_techno(id, player, UninitContext::with_rules(&rules)));
+            assert!(sim.discover_techno(id, player, UninitContext::new(&rules)));
         });
         assert!(draws.is_empty());
         assert_eq!(sim.trigger_runtime.dispatch_trace, [(tag, 4)]);
         assert_eq!(sim.trigger_runtime, before);
         assert!(sim.drain_trigger_effects().is_empty());
-        assert!(!sim.discover_techno(id, player, UninitContext::with_rules(&rules)));
+        assert!(!sim.discover_techno(id, player, UninitContext::new(&rules)));
         assert_eq!(sim.trigger_runtime.dispatch_trace, [(tag, 4)]);
         compared += 1;
     }

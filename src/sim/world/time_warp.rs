@@ -28,7 +28,7 @@ impl Simulation {
         if self.resolved_terrain.is_none() || !self.reset_allocated_map_cell_cursor() {
             return false;
         }
-        let context = UninitContext::with_rules(rules);
+        let context = UninitContext::new(rules);
         while let Some(source) = self.next_allocated_map_cell(context) {
             if let (Some(grid), Some(terrain)) =
                 (self.smudge_grid.as_mut(), self.resolved_terrain.as_ref())
@@ -211,7 +211,7 @@ impl Simulation {
             let Some(coord) = coord else {
                 self.uninit_with_context(
                     created,
-                    UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+                    UninitContext::new(rules).with_effects(frame_effects),
                 );
                 return false;
             };
@@ -242,7 +242,7 @@ impl Simulation {
                 // the shared owner's repeated lifecycle/queue semantics.
                 self.uninit_with_context(
                     created,
-                    UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
+                    UninitContext::new(rules).with_effects(frame_effects),
                 );
             }
         }

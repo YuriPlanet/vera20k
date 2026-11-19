@@ -613,10 +613,7 @@ fn cell_building_query_deploy_ignores_a_stored_unmarked_factory() {
     let factory = sim
         .spawn_object("GAWEAP", "Americans", 20, 20, 0, &rules)
         .unwrap();
-    assert!(sim.unmark_entity_remove(
-        factory,
-        crate::sim::world::UninitContext::with_rules(&rules)
-    ));
+    assert!(sim.unmark_entity_remove(factory, crate::sim::world::UninitContext::new(&rules)));
     let mcv = sim
         .spawn_object("AMCV", "Americans", 21, 21, 0, &rules)
         .unwrap();

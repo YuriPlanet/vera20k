@@ -35,7 +35,6 @@ impl Scene {
                 source,
                 Some(TargetKind::Entity(target)),
                 &rules,
-                None,
                 FrameEffects::default(),
             )
             .unwrap();

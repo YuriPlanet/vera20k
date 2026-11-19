@@ -327,7 +327,6 @@ fn command_attack(fixture: &mut SuppliedFootFixture, case: &Value, rules: &RuleS
             fixture.actor,
             target,
             rules,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -354,7 +353,6 @@ fn recorded_fire_error(fixture: &SuppliedFootFixture, case: &Value, rules: &Rule
     FireSubject {
         world: &fixture.sim,
         rules,
-        overlay_registry: None,
         fog: None,
         firer: actor,
         obj: fixture
@@ -948,7 +946,6 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
                     Some(owner),
                     PointerExpiryControl::Uninit,
                     &rules,
-                    None,
                     crate::sim::world::FrameEffects::default(),
                 );
                 assert_source(&fixture, &expiry["after"], name);
@@ -1090,7 +1087,6 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
                 .set_binary_frame_for_test(fixture.sim.session.binary_frame() + 1);
             fixture.sim.process_pending_delete_with(
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
                 1,
                 false,

@@ -68,7 +68,7 @@ fn damage_and_kill_events_compare_the_attacking_house() {
         victim,
         KillSource::House(Some(houses[1])),
         KillCallback::OwnerChange,
-        UninitContext::new(&rules, Some(&overlays)),
+        UninitContext::new(&rules),
     );
     assert_eq!(locals(&sim, 5), [true, true, false, true, false]);
 }
@@ -309,12 +309,7 @@ fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
         } else if case == "hold" {
             let power = sim.power_states.get_mut(&owner).unwrap();
             power.set_is_low_power_for_test(true);
-            superweapon::update_owned_supers(
-                &mut sim,
-                &rules,
-                owner,
-                effects.with_overlay_registry(registry),
-            );
+            superweapon::update_owned_supers(&mut sim, &rules, owner, effects);
             let instance = &sim.super_weapons[&owner][&cell];
             assert!(instance.is_suspended());
             assert_eq!(instance.charge_drain_state(), -1);
@@ -427,7 +422,7 @@ fn an_abduction_raises_its_events_on_both_objects() {
 #[test]
 fn ares_actions_write_power_group_voice_and_drivers() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules("");
+    let (mut sim, rules, _overlays, houses) = event_ingress_fixture_with_rules("");
     let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let other = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (17, 15));
     let untagged = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (19, 15));
@@ -443,13 +438,7 @@ fn ares_actions_write_power_group_voice_and_drivers() {
         sim.attach_object_trigger_tag(id, Some("TAG"));
     }
     sim.drain_trigger_effects();
-    sim.dispatch_object_tag_event(
-        actor,
-        83,
-        Some(actor),
-        None,
-        UninitContext::new(&rules, Some(&overlays)),
-    );
+    sim.dispatch_object_tag_event(actor, 83, Some(actor), None, UninitContext::new(&rules));
     sim.assess_power_for_test(&rules);
     assert_eq!(sim.power_states[&houses[0]].total_output(), 25);
     assert_eq!(sim.entities().get(actor).unwrap().object_group(), 4);

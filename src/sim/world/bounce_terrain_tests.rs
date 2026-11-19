@@ -383,7 +383,6 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .unwrap();
         sim.process_pending_delete_with(
             &rules,
-            Some(rules.overlay_registry()),
             crate::sim::world::FrameEffects::default(),
             1,
             sim.session().started(),

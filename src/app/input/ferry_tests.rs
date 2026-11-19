@@ -31,35 +31,26 @@ fn a_previous_worlds_ferry_cannot_board_units_in_a_fresh_world() {
     };
     let (old_sim, old_rules, old_owner, old_transport, _) = scene();
     let mut input = crate::app::input::state::MatchInputState::new(Default::default());
-    input.ferry.add(
-        route_for(
-            &old_sim,
-            &old_rules,
-            None,
-            old_owner,
-            old_transport,
-            (13, 2),
-            0,
-        )
-        .unwrap(),
-    );
+    input
+        .ferry
+        .add(route_for(&old_sim, &old_rules, old_owner, old_transport, (13, 2), 0).unwrap());
 
     input.reset_targeting_for_new_world();
     let (fresh, rules, owner, transport, gi) = scene();
     assert_eq!(transport, old_transport, "the new world reuses object ids");
     assert!(
-        input.ferry.check(&fresh, &rules, None, owner, 0).is_empty(),
+        input.ferry.check(&fresh, &rules, owner, 0).is_empty(),
         "a prior match's ferry must not issue commands in the new world"
     );
 
     // A route explicitly requested in this world still boards the nearby GI.
     input
         .ferry
-        .add(route_for(&fresh, &rules, None, owner, transport, (13, 2), 0).unwrap());
+        .add(route_for(&fresh, &rules, owner, transport, (13, 2), 0).unwrap());
     assert!(
         input
             .ferry
-            .check(&fresh, &rules, None, owner, 0)
+            .check(&fresh, &rules, owner, 0)
             .iter()
             .any(|order| matches!(order,
         Command::MegaMission { entity_id, mission: MissionType::Enter,
@@ -237,10 +228,10 @@ fn a_ferry_carries_a_unit_across_the_river_and_comes_back() {
 
     let start = sim.session().tick();
     // A drop spot beside the pick-up circle is refused.
-    assert!(route_for(&sim, &rules, None, owner, transport, (6, 4), start).is_none());
+    assert!(route_for(&sim, &rules, owner, transport, (6, 4), start).is_none());
     let mut ferry = FerryState::default();
     ferry.add(
-        route_for(&sim, &rules, None, owner, transport, (13, 2), start)
+        route_for(&sim, &rules, owner, transport, (13, 2), start)
             .expect("a route across the river"),
     );
 
@@ -249,7 +240,7 @@ fn a_ferry_carries_a_unit_across_the_river_and_comes_back() {
     for _ in 0..2000 {
         let now = sim.session().tick();
         if now % CHECK_INTERVAL == 0 {
-            for order in ferry.check(&sim, &rules, None, owner, now) {
+            for order in ferry.check(&sim, &rules, owner, now) {
                 if let Command::MegaMission {
                     entity_id,
                     mission: MissionType::Enter,
@@ -333,7 +324,7 @@ fn a_flak_track_and_a_nighthawk_ferry_too() {
         let start = sim.session().tick();
         let mut ferry = FerryState::default();
         ferry.add(
-            route_for(&sim, rules, None, owner, transport, (24, 18), start)
+            route_for(&sim, rules, owner, transport, (24, 18), start)
                 .unwrap_or_else(|| panic!("{carrier} takes the route")),
         );
         let drop = (24, 18);
@@ -345,7 +336,7 @@ fn a_flak_track_and_a_nighthawk_ferry_too() {
         for _ in 0..3000 {
             let now = sim.session().tick();
             if now % CHECK_INTERVAL == 0 {
-                for order in ferry.check(&sim, rules, None, owner, now) {
+                for order in ferry.check(&sim, rules, owner, now) {
                     if let Command::Move {
                         target_rx,
                         target_ry,

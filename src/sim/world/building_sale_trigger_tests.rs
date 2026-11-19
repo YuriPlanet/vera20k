@@ -354,10 +354,7 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
             .then_some((cell.rx, cell.ry))
         })
         .expect("allocated cell outside friendly sight and waypoint reveal");
-    sim.reveal_entire_map(
-        Some(player),
-        UninitContext::new(rules, Some(runtime.resources.rules.overlay_registry())),
-    );
+    sim.reveal_entire_map(Some(player), UninitContext::new(rules));
     assert!(sim.fog.is_ground_unshrouded(player, far.0, far.1));
     assert!(sim.fog.is_ground_unshrouded(player, WAYPOINT.0, WAYPOINT.1));
     sim.trigger_runtime.action_trace.clear();
@@ -495,13 +492,9 @@ fn stock_all02_hidden_player_flak_waits_for_discovery() {
         Some(MissionType::Guard)
     );
     let runtime = &mut scene.runtime;
-    runtime.simulation.reveal_entire_map(
-        Some(player),
-        UninitContext::new(
-            &runtime.resources.rules,
-            Some(runtime.resources.rules.overlay_registry()),
-        ),
-    );
+    runtime
+        .simulation
+        .reveal_entire_map(Some(player), UninitContext::new(&runtime.resources.rules));
     let entity = runtime.simulation.entities().get(flak).unwrap();
     assert!(entity.discovery.discovered_by_current_house());
     assert!(

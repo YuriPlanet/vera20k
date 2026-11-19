@@ -177,7 +177,6 @@ use super::movement_tick::FootPathRequest;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
@@ -721,23 +720,14 @@ impl Simulation {
     /// last frame, at most [`SEARCHES_PER_PASS`] of them besides their code-2
     /// re-paths, which take a turn per urgency within
     /// [`REPATH_STEPS_PER_PASS`] each.
-    pub(crate) fn answer_batched_path_searches(
-        &mut self,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-    ) {
+    pub(crate) fn answer_batched_path_searches(&mut self, rules: &RuleSet) {
         let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::PATHFINDING);
-        self.answer_path_searches_within(rules, registry, REPATH_STEPS_PER_PASS);
+        self.answer_path_searches_within(rules, REPATH_STEPS_PER_PASS);
     }
 
     /// [`Self::answer_batched_path_searches`] with a budget of
     /// `repath_steps` expansions, at least 1, for each re-path turn.
-    fn answer_path_searches_within(
-        &mut self,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        repath_steps: u64,
-    ) {
+    fn answer_path_searches_within(&mut self, rules: &RuleSet, repath_steps: u64) {
         let Some(batch) = self.path_batch.as_mut() else {
             return;
         };
@@ -794,7 +784,7 @@ impl Simulation {
         let searched = turn.len();
         let (turns, expanded, repaths_made) = match self.path_grid_snapshot() {
             Some(grid) if self.overlay_grid.is_some() && self.resolved_terrain.is_some() => {
-                self.search_batch(&turn, repaths, repath_steps, rules, registry, &grid)
+                self.search_batch(&turn, repaths, repath_steps, rules, &grid)
             }
             _ => (Vec::new(), 0, [0; 2]),
         };
@@ -899,7 +889,6 @@ impl Simulation {
         repaths: [usize; 2],
         repath_steps: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         grid: &PathGrid,
     ) -> (Vec<Turn>, u64, [u64; 2]) {
         // One blocker plane for every search. With an overlay grid movers
@@ -955,7 +944,6 @@ impl Simulation {
                         id,
                         request,
                         rules,
-                        registry,
                         grid,
                         counts,
                         Some(facts),
@@ -1030,7 +1018,6 @@ impl Simulation {
         id: u64,
         request: WaitingRequest,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         grid: &PathGrid,
         counts: &BlockerNeighborCounts,
         facts: Option<&EntryFacts>,
@@ -1043,9 +1030,7 @@ impl Simulation {
             | WaitingRequest::StraightReentry { .. } => self.no_queue_request(id)?,
         };
         let goal = request.destination;
-        let answer = self
-            .find_path_target_answer(id, goal, rules, registry)
-            .ok()??;
+        let answer = self.find_path_target_answer(id, goal, rules).ok()??;
         if self
             .find_path_redirect(id, goal, answer, rules)
             .ok()?
@@ -1057,7 +1042,6 @@ impl Simulation {
             &request,
             goal,
             rules,
-            registry,
             grid,
             counts,
             MoverLift::Emulated,

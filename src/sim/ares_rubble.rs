@@ -61,7 +61,7 @@ impl Simulation {
         );
         // `Facing.current().value256()` (`((raw >> 7) + 1) >> 1`).
         let facing = building.body_facing_dir(self.session.binary_frame());
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let _ = self.techno_limbo_with_context(building_id, context);
         self.clear_all_building_anim_slots(building_id);
 
@@ -188,7 +188,7 @@ impl Simulation {
             return;
         };
         let origin = (building.position.rx(), building.position.ry());
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         let mut removed = Vec::new();
         for cell in
             crate::sim::crew_survival::foundation_cells(origin.0, origin.1, &object.foundation)
@@ -259,7 +259,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) -> bool {
         let new = self.ares_switch_rubble(building_id, switch, rules, registry, effects);
-        let context = UninitContext::new(rules, registry).with_effects(effects);
+        let context = UninitContext::new(rules).with_effects(effects);
         self.uninit_with_context(building_id, context);
         let Some(new) = new else {
             return false;

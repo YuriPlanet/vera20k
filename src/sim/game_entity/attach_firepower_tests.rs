@@ -256,7 +256,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         1
     );
     // Remove the producer from Logic without deleting the real attachment.
-    sim.techno_limbo_with_rules(emitter, &rules, None);
+    sim.techno_limbo_with_rules(emitter, &rules);
     let estimate = crate::sim::combat::estimated_damage_on(
         &sim,
         &rules,
@@ -265,7 +265,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         rules.weapon("GUN").unwrap(),
     );
     assert_eq!(estimate, 25, "first-hit native damage/estimate golden");
-    sim.assign_target_represented(firer, None, &rules, None, FrameEffects::empty())
+    sim.assign_target_represented(firer, None, &rules, FrameEffects::empty())
         .unwrap();
     let estimated_before = sim.entities().get(dummy).unwrap().estimated_health.get();
     assert!(crate::sim::world::retaliate_and_scan(

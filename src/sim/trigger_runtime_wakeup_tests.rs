@@ -471,13 +471,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
             );
         }
         assert_eq!(candidate.rng_state(), rng);
-        candidate.process_pending_delete_with(
-            &rules,
-            Some(&overlays),
-            FrameEffects::default(),
-            1,
-            false,
-        );
+        candidate.process_pending_delete_with(&rules, FrameEffects::default(), 1, false);
         assert!(!candidate.trigger_runtime.has_live_tag(source_tag));
         assert!(!candidate.trigger_runtime.has_live_tag(wake_tag));
         assert!(candidate.trigger_runtime.trigger(source_live).is_none());

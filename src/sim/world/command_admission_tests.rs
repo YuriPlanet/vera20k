@@ -74,7 +74,7 @@ fn campaign_large_move_batch_reaches_every_actor_after_snapshot() {
         sim.resolve_type_handles(&rules);
         // This test covers delivery, not the formation algorithm: ask its
         // production owner for the destinations the entire batch should get.
-        sim.adjust_staged_megamission_destinations(&mut expected, &rules, Some(&registry), None);
+        sim.adjust_staged_megamission_destinations(&mut expected, &rules, None);
         let destinations: Vec<_> = expected
             .iter()
             .map(|command| {
@@ -93,8 +93,7 @@ fn campaign_large_move_batch_reaches_every_actor_after_snapshot() {
             })
             .collect();
         sim.transfer_local_commands();
-        let (executed, _) =
-            sim.apply_due_commands(&[], &rules, 0, Some(&registry), Default::default());
+        let (executed, _) = sim.apply_due_commands(&[], &rules, 0, Default::default());
         assert_eq!(executed, actors.len());
         for (index, &actor) in actors.iter().enumerate() {
             let actual = sim.entities().get(actor).unwrap().navigation.nav_com();

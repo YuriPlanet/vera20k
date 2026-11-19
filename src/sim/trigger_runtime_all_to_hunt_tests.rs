@@ -372,7 +372,7 @@ fn all06_elapsed_enable_chain(with_enemy: bool) {
             let id = sim
                 .spawn_object("YTNK", "YuriCountry", x, y, 0, &rules)
                 .unwrap();
-            assert!(sim.team_add_member(team, id, false, &rules, None, FrameEffects::default()));
+            assert!(sim.team_add_member(team, id, false, &rules, FrameEffects::default()));
             id
         })
         .collect();

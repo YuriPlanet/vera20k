@@ -280,7 +280,7 @@ fn sale_completion_tag_callbacks_match_original_histories() {
                 id,
                 KillSource::Techno(None),
                 KillCallback::Terminal,
-                UninitContext::with_rules(&rules),
+                UninitContext::new(&rules),
             );
         } else {
             assert!(!crate::sim::production::sell_complete(
@@ -439,7 +439,7 @@ fn restore130_after_owner_transfer_matches_native_blocked_and_cleared_cells() {
         assert_eq!(initial_techno_state(&sim, &[id]), case["after_transfer"]);
         if case["input"]["clear_foreign_resident"].as_bool().unwrap() {
             let before = sim.scenario_rng.native_state_hex();
-            sim.uninit_with_context(id, UninitContext::with_rules(&rules));
+            sim.uninit_with_context(id, UninitContext::new(&rules));
             assert_eq!(sim.scenario_rng.native_state_hex(), before);
         }
         assert_eq!(case["clear_rng_unchanged"], true);

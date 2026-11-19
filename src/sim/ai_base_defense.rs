@@ -558,7 +558,6 @@ pub(crate) fn choose_next_production(
     rules: &RuleSet,
     owner: InternedId,
     index: usize,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> bool {
     let Some(choice) = DefenseChoice::of_house(sim, rules, owner, index) else {
         return false;
@@ -576,7 +575,6 @@ pub(crate) fn choose_next_production(
             grid: &pick.grid,
             argument: pick.argument,
         },
-        registry,
     );
     if site == (0, 0) {
         return false;

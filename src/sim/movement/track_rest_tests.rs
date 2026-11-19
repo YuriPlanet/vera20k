@@ -270,7 +270,6 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
             id,
             Some(NavTargetRef::cell(11, 10)),
             &rules,
-            None,
             FrameEffects::default(),
         )
         .unwrap();
@@ -340,9 +339,9 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                 .unwrap()
                 .navigation
                 .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
-            sim.assign_destination_represented(id, None, &rules, None, FrameEffects::default())
+            sim.assign_destination_represented(id, None, &rules, FrameEffects::default())
                 .unwrap();
-            sim.complete_pending_order(id, &rules, None, FrameEffects::default());
+            sim.complete_pending_order(id, &rules, FrameEffects::default());
         }
         for state in row["states"].as_array().unwrap().iter().skip(1) {
             match state["stage"].as_str().unwrap() {
@@ -356,7 +355,6 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                         id,
                         Some(NavTargetRef::cell(11, 10)),
                         &rules,
-                        None,
                         FrameEffects::default(),
                     )
                     .unwrap();
@@ -401,7 +399,7 @@ fn a_callback_destination_is_published_before_the_drive_rest_decision() {
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
     entity.navigation.owe_destination_setter();
-    sim.track_process_rest_tail(id, &rules, None, FrameEffects::default());
+    sim.track_process_rest_tail(id, &rules, FrameEffects::default());
     let entity = sim.substrate.entities.get(id).unwrap();
     assert!(
         entity
@@ -458,7 +456,6 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
                 id,
                 Some(NavTargetRef::cell(11, 10)),
                 &rules,
-                None,
                 FrameEffects::default(),
             )
             .unwrap();

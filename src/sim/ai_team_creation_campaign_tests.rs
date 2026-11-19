@@ -188,7 +188,7 @@ fn campaign_recruitment_fallback_checks_autocreate_flags_and_team_identity() {
         .base_defense_response
         .author_recruitable(true, true);
     let team = sim.create_team(team_type, Some(owner), &rules).unwrap();
-    assert!(sim.team_add_member(team, member, false, &rules, None, FrameEffects::default()));
+    assert!(sim.team_add_member(team, member, false, &rules, FrameEffects::default()));
     assert!(
         !admitted(&sim),
         "an existing team of the same type is no source"

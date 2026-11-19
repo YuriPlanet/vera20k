@@ -47,7 +47,6 @@ mod plain_entry_tests;
 struct EntryReadContext<'a> {
     sim: &'a Simulation,
     rules: &'a RuleSet,
-    registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     /// A path search's kept cell and blocker facts ([`EntryFacts`]); `None`
     /// reads the world at each ask.
     facts: Option<&'a EntryFacts>,
@@ -465,7 +464,6 @@ impl Simulation {
         cell: Cell,
         args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Result<crate::sim::movement::infantry_entry::InfantryEntryClass, String> {
         if self
             .substrate
@@ -475,7 +473,7 @@ impl Simulation {
         {
             return Err("Infantry entry requires a live Infantry receiver".into());
         }
-        self.foot_can_enter(id, cell, args, rules, registry)
+        self.foot_can_enter(id, cell, args, rules)
             .map(crate::sim::movement::infantry_entry::InfantryEntryClass::from_raw)
     }
 
@@ -492,7 +490,6 @@ impl Simulation {
         cell: Cell,
         args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Result<u8, String> {
         if self.substrate.entities.get(id).is_none_or(|e| {
             !matches!(
@@ -514,7 +511,7 @@ impl Simulation {
         {
             return Ok(code);
         }
-        self.foot_entry_receiver(id, rules, registry, None)?
+        self.foot_entry_receiver(id, rules, None)?
             .can_enter(cell, args)
     }
 
@@ -592,7 +589,6 @@ impl Simulation {
         id: u64,
         cell: (i16, i16),
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Result<u8, String> {
         let e = self
             .substrate
@@ -613,7 +609,6 @@ impl Simulation {
         let live = EntryReadContext {
             sim: self,
             rules,
-            registry,
             facts: None,
         };
         building_impassable(&live, e, obj, cell, Some(&cells)).map(|hard| if hard { 7 } else { 0 })
@@ -649,7 +644,6 @@ impl Simulation {
         args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
         mode: crate::sim::movement::infantry_entry::EntryQueryMode,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Result<u8, String> {
         let mover = self
             .substrate
@@ -675,7 +669,7 @@ impl Simulation {
             .as_ref()
             .ok_or("Foot entry requires map cells")?;
         let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain).lookup(cell);
-        self.foot_can_enter(id, cell, args, rules, registry)
+        self.foot_can_enter(id, cell, args, rules)
     }
 }
 
@@ -684,7 +678,6 @@ impl Simulation {
 pub(super) fn classify_object(
     sim: &Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     object: CellObjectMember,
     cell: Cell,
     args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
@@ -693,7 +686,6 @@ pub(super) fn classify_object(
         &EntryReadContext {
             sim,
             rules,
-            registry,
             facts: None,
         },
         object,
@@ -843,7 +835,6 @@ impl Simulation {
         &'a self,
         id: u64,
         rules: &'a RuleSet,
-        registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
         facts: Option<&'a EntryFacts>,
     ) -> Result<FootEntryReceiver<'a>, String> {
         if self.resolved_terrain.is_none() {
@@ -852,7 +843,6 @@ impl Simulation {
         let live = EntryReadContext {
             sim: self,
             rules,
-            registry,
             facts,
         };
         let e = self
@@ -938,7 +928,7 @@ fn plain_entry(
             || CellFacts::of(live.sim, target),
             |kept| kept.overlay.overlay_id,
         )?;
-        let flags = live.registry?.flags(overlay)?;
+        let flags = live.rules.overlay_registry().flags(overlay)?;
         if flags.crate_type || flags.wall {
             return None;
         }
@@ -1116,8 +1106,9 @@ fn full_foot_entry<'a>(
     let live_overlay = target.overlay(live);
     if let Some(overlay) = live_overlay.overlay_id {
         let flags = live
-            .registry
-            .and_then(|r| r.flags(overlay))
+            .rules
+            .overlay_registry()
+            .flags(overlay)
             .ok_or("repair overlay receiver lacks registered type")?;
         // Infantry51C193..51C1AF always checks computer ownership.
         // Unit73F3EC..73F41D also gates crate avoidance at 0x0073F405.
@@ -1869,7 +1860,7 @@ fn terrain_impassable(
         if !crate::sim::build_site::is_clear_to_build(
             live.sim,
             live.rules,
-            live.registry,
+            Some(live.rules.overlay_registry()),
             selected,
             Some(speed),
             None,
@@ -1897,7 +1888,7 @@ fn building_impassable(
         crate::sim::build_site::is_clear_to_build(
             live.sim,
             live.rules,
-            live.registry,
+            Some(live.rules.overlay_registry()),
             cell,
             crate::sim::build_site::building_speed_type(obj),
             Some(obj),
@@ -1910,7 +1901,7 @@ fn building_impassable(
         crate::sim::build_site::can_place_building_at(
             live.sim,
             live.rules,
-            live.registry,
+            Some(live.rules.overlay_registry()),
             obj,
             origin,
             Some(e.owner()),
@@ -1964,7 +1955,6 @@ mod tests {
                     &EntryReadContext {
                         sim,
                         rules: &rules,
-                        registry: None,
                         facts: None,
                     },
                     &entity,
@@ -2067,7 +2057,7 @@ mod tests {
         use crate::rules::rule_policy::AuthoredCratePolicy;
         use crate::sim::{house_state::HouseState, scenario_session::ScenarioGameMode};
 
-        let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             "[VehicleTypes]\n0=TRUCK\n[TRUCK]\nStrength=100\nSpeedType=Wheel\n\
              Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n[O37]\nCrate=yes\n",
         );
@@ -2095,7 +2085,6 @@ mod tests {
                 cell,
                 crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
                 &rules,
-                Some(&overlays),
             )
         };
 
@@ -2134,7 +2123,7 @@ mod tests {
             .unwrap()
             .native_cell_identity((16, 15));
         let probe = |sim: &Simulation| {
-            sim.foot_entry_receiver(90, &rules, None, None)
+            sim.foot_entry_receiver(90, &rules, None)
                 .unwrap()
                 .can_enter(
                     cell,
@@ -2182,7 +2171,7 @@ mod tests {
 
     #[test]
     fn infantry_target_lookup_obeys_gates_and_retains_cell_identity() {
-        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture();
+        let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture();
         let hut = sim
             .spawn_object("CABHUT", "Americans", 16, 15, 0, &rules)
             .unwrap();
@@ -2206,7 +2195,6 @@ mod tests {
             let live = EntryReadContext {
                 sim,
                 rules: &rules,
-                registry: Some(&registry),
                 facts: None,
             };
             infantry_target_admission(
@@ -2307,7 +2295,7 @@ mod tests {
 
     #[test]
     fn slave_deposit_skip_keeps_later_building_refusal_and_raw_history() {
-        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture();
+        let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture();
         let hut = sim
             .spawn_object("CABHUT", "Americans", 16, 15, 0, &rules)
             .unwrap();
@@ -2337,7 +2325,6 @@ mod tests {
             let live = EntryReadContext {
                 sim,
                 rules: &rules,
-                registry: Some(&registry),
                 facts: None,
             };
             impassable(&live, CellObjectMember::Entity(slave), cell).unwrap()
@@ -2397,7 +2384,7 @@ mod tests {
              [VehicleTypes]\n0=TRUCK\n\
              [TRUCK]\nSpeedType=Wheel\nStrength=100\n\
              Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n";
-        let (mut sim, rules, registry) =
+        let (mut sim, rules, _registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules(RULES);
         let spawn = |sim: &mut Simulation, name: &str, at: (u16, u16)| {
             sim.spawn_object(name, "Americans", at.0, at.1, 0, &rules)
@@ -2420,7 +2407,6 @@ mod tests {
                 cell,
                 crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
                 &rules,
-                Some(&registry),
             )
             .unwrap()
         };

@@ -45,7 +45,6 @@
 //! Ready/Commence (`0x0041504A..0x00415058`; the takeoff shuts the Fly Process
 //! gate), and the aircraft flies on asleep.
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
@@ -225,14 +224,12 @@ pub(crate) fn mission_reload(
     sim: &mut Simulation,
     rules: &RuleSet,
     dock: u64,
-    registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> i32 {
     let mut host = WorldReload {
         sim,
         rules,
         dock,
-        registry,
         effects,
         detached_timers: DockReloadTimers::default(),
     };
@@ -247,7 +244,6 @@ struct WorldReload<'a> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
     dock: u64,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
     /// Stands in for the timers of a dock that is no longer in the store.
     detached_timers: DockReloadTimers,
@@ -341,7 +337,7 @@ impl ReloadHost for WorldReload<'_> {
             self.sim,
             contact,
             self.rules,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             self.effects,
         );
         let now = self.sim.session.binary_frame();

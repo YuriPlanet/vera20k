@@ -81,7 +81,7 @@ fn successful_load_discards_only_the_dummy_cell_tag_attachment() {
         expected.cell_tags[&real]
     );
     loaded.session.set_binary_frame_for_test(15);
-    loaded.dispatch_foot_cell_tag_events(actor, UninitContext::new(&rules, Some(&overlays)));
+    loaded.dispatch_foot_cell_tag_events(actor, UninitContext::new(&rules));
     assert!(
         loaded.global_variables()[8],
         "the real Cell still dispatches after load"
@@ -202,7 +202,7 @@ fn periodic_flight_cell_admission_matches_the_original_class_getter_controls() {
             sim.main_rng.logical_state(),
             sim.mapgen_rng.logical_state(),
         );
-        sim.dispatch_airborne_cell_tag_event(id, UninitContext::new(&rules, None));
+        sim.dispatch_airborne_cell_tag_event(id, UninitContext::new(&rules));
         let raised = row["raised"].as_bool().unwrap();
         assert_eq!(
             !sim.tag_dispatch_trace_for_test().is_empty(),
@@ -271,7 +271,7 @@ fn ground_foot_and_buildings_do_not_enter_the_periodic_flight_path() {
              [Actions]\nAIR=1,28,0,7,0,0,0,0,A\n[Tags]\nAIR_TAG=2,Air,AIR\n[CellTags]\n15015=AIR_TAG\n",
         );
         sim.session.set_binary_frame_for_test(16);
-        sim.dispatch_airborne_cell_tag_event(id, UninitContext::new(&rules, None));
+        sim.dispatch_airborne_cell_tag_event(id, UninitContext::new(&rules));
         assert!(sim.tag_dispatch_trace_for_test().is_empty());
         assert!(!sim.global_variables()[7]);
     }

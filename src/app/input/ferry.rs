@@ -34,7 +34,6 @@ use crate::app::input::dispatch::selected_stable_ids_in_order;
 use crate::app::input::transport_orders::unload_command;
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
@@ -461,7 +460,6 @@ impl FerryState {
         &mut self,
         sim: &Simulation,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         owner: InternedId,
         now: u64,
     ) -> Vec<Command> {
@@ -546,7 +544,6 @@ impl FerryState {
                 action = match ordinary_cell_move_goal(
                     sim,
                     rules,
-                    registry,
                     owner,
                     route.transport,
                     cell,
@@ -576,23 +573,16 @@ impl FerryState {
                         } else {
                             route.drop
                         };
-                        let cell =
-                            drop_cell(sim, rules, registry, owner, route, &claimed, fallback);
+                        let cell = drop_cell(sim, rules, owner, route, &claimed, fallback);
                         claimed.push((route.transport, cell));
                         cell
                     } else {
                         cell
                     };
                     route.target = cell;
-                    let Some(goal) = ordinary_cell_move_goal(
-                        sim,
-                        rules,
-                        registry,
-                        owner,
-                        route.transport,
-                        cell,
-                        false,
-                    ) else {
+                    let Some(goal) =
+                        ordinary_cell_move_goal(sim, rules, owner, route.transport, cell, false)
+                    else {
                         return false;
                     };
                     orders.push(Command::Move {
@@ -675,7 +665,6 @@ fn ferry_transport<'a>(
 fn drop_cell(
     sim: &Simulation,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     owner: InternedId,
     route: &FerryRoute,
     claimed: &[(u64, Cell)],
@@ -728,15 +717,8 @@ fn drop_cell(
                 .any(|&(other, taken)| other != route.transport && taken == cell)
                 && !within(cell, route.pickup, PICKUP_RADIUS_CELLS + 2)
                 && empty(cell)
-                && ordinary_cell_move_goal(
-                    sim,
-                    rules,
-                    registry,
-                    owner,
-                    route.transport,
-                    cell,
-                    false,
-                ) == Some(cell)
+                && ordinary_cell_move_goal(sim, rules, owner, route.transport, cell, false)
+                    == Some(cell)
         })
         .map(|cell| (cell, room(cell)))
         .filter(|&(_, room)| room > 0)
@@ -926,7 +908,6 @@ pub(crate) fn via_key_edge(state: &mut AppState, physical: winit::keyboard::KeyC
 fn route_for(
     sim: &Simulation,
     rules: &RuleSet,
-    registry: Option<&OverlayTypeRegistry>,
     owner: InternedId,
     transport: u64,
     clicked: Cell,
@@ -934,7 +915,7 @@ fn route_for(
 ) -> Option<FerryRoute> {
     let (entity, _) = ferry_transport(sim, rules, transport, owner)?;
     let pickup = (entity.position.rx(), entity.position.ry());
-    let drop = ordinary_cell_move_goal(sim, rules, registry, owner, transport, clicked, false)?;
+    let drop = ordinary_cell_move_goal(sim, rules, owner, transport, clicked, false)?;
     if within(pickup, drop, MIN_ROUTE_CELLS) {
         return None;
     }
@@ -993,16 +974,8 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
         transports
             .into_iter()
             .filter_map(|id| {
-                route_for(
-                    sim,
-                    &runtime.resources.rules,
-                    Some(runtime.resources.rules.overlay_registry()),
-                    owner,
-                    id,
-                    clicked,
-                    now,
-                )
-                .map(|route| route.with_via(via.clone()))
+                route_for(sim, &runtime.resources.rules, owner, id, clicked, now)
+                    .map(|route| route.with_via(via.clone()))
             })
             .collect()
     };
@@ -1032,13 +1005,9 @@ pub(crate) fn frame_pass(state: &mut AppState) {
             let sim = &runtime.simulation;
             let now = sim.session().tick();
             match sim.interner().get(&owner_name) {
-                Some(owner) if now % CHECK_INTERVAL == 0 => ferry.check(
-                    sim,
-                    &runtime.resources.rules,
-                    Some(runtime.resources.rules.overlay_registry()),
-                    owner,
-                    now,
-                ),
+                Some(owner) if now % CHECK_INTERVAL == 0 => {
+                    ferry.check(sim, &runtime.resources.rules, owner, now)
+                }
                 _ => Vec::new(),
             }
         }
@@ -1089,21 +1058,11 @@ fn find_armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     // click needs a whole route.
     let waypoint_click = state.match_state.input.ferry.waypoint_click();
     let rules = &runtime.resources.rules;
-    let registry = Some(runtime.resources.rules.overlay_registry());
     let accepted = transports.iter().any(|&id| {
         if waypoint_click {
-            ordinary_cell_move_goal(sim, rules, registry, owner, id, clicked, false).is_some()
+            ordinary_cell_move_goal(sim, rules, owner, id, clicked, false).is_some()
         } else {
-            route_for(
-                sim,
-                rules,
-                registry,
-                owner,
-                id,
-                clicked,
-                sim.session().tick(),
-            )
-            .is_some()
+            route_for(sim, rules, owner, id, clicked, sim.session().tick()).is_some()
         }
     });
     Some((pickups, clicked, accepted))

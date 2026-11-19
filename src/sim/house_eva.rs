@@ -148,7 +148,13 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // false). Native runs it for the local player's House only; VERA for
     // each human-controlled one, as this whole body.
     if ares && short {
-        sim.ares_set_firestorm_state(owner, false, rules, None, FrameEffects::default());
+        sim.ares_set_firestorm_state(
+            owner,
+            false,
+            rules,
+            Some(rules.overlay_registry()),
+            FrameEffects::default(),
+        );
     }
     if !short {
         guard = false;
@@ -362,8 +368,8 @@ mod tests {
 
         // Only the first Limbo recounts (`0x004458CE`); ChangeOwner moves a
         // limbo factory's counter all the same.
-        sim.techno_limbo_with_rules(yard, &rules, None);
-        sim.techno_limbo_with_rules(yard, &rules, None);
+        sim.techno_limbo_with_rules(yard, &rules);
+        sim.techno_limbo_with_rules(yard, &rules);
         assert_eq!(counts(&sim, owner), [1, 1, 0, 0, 0]);
         sim.change_owner_with_rules(
             yard,

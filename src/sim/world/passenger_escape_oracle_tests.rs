@@ -134,7 +134,12 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
         }
     }
     if let Some(slope) = input["slope"].as_u64() {
+        // The ramp is a tile with the row's ramp type, which the Recalc(-1)
+        // an escapee's Place_Down runs reads back.
+        crate::map::resolved_terrain::install_clear_test_catalog(terrain, slope as u8);
         let c = terrain.cell_mut_for_test(x, y).unwrap();
+        c.final_tile_index = 1;
+        c.final_sub_tile = 0;
         c.slope_type = slope as u8;
         c.has_ramp = true;
     }
@@ -253,7 +258,7 @@ fn scene(input: &Value) -> Scene {
     }
     for &id in passengers.iter().rev() {
         assert_eq!(
-            sim.techno_limbo_with_rules(id, &rules, None),
+            sim.techno_limbo_with_rules(id, &rules),
             crate::sim::world::ConcealOutcome::Concealed
         );
         sim.substrate
@@ -331,7 +336,7 @@ fn scene(input: &Value) -> Scene {
                 placement: PlacementEvidence::MarkSucceeded,
                 logic_eligible: true,
             },
-            UninitContext::with_rules(&rules),
+            UninitContext::new(&rules),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
     }

@@ -27,7 +27,7 @@ fn post_foot_dead_aircraft_skips_sink_suffix() {
         .spawn_object_at_height("DRON", "Russians", 22, 21, 0, 0, &rules)
         .expect("stock Terror Drone");
     // Supply AttachTo's prior after Stun, not a surviving pre-warp infection.
-    sim.techno_limbo_with_rules(drone, &rules, None);
+    sim.techno_limbo_with_rules(drone, &rules);
     assert!(sim.parasite_can_infect(drone, Some(aircraft), &rules));
     sim.parasite_attach(drone, Some(aircraft), &rules, FrameEffects::default());
     assert_eq!(

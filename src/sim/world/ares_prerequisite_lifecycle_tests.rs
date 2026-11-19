@@ -96,12 +96,7 @@ fn reached_alternate_events_match_executed_hook_controls() {
             "discovered" => {
                 // Use the common Techno body directly: Building's separate
                 //44D61A tail requests its own refresh after this body returns.
-                assert!(sim.record_techno_discovery(
-                    id,
-                    other,
-                    UninitContext::with_rules(&rules),
-                    0
-                ));
+                assert!(sim.record_techno_discovery(id, other, UninitContext::new(&rules), 0));
             }
             other => panic!("unhandled native refresh hook {other}"),
         }
@@ -142,7 +137,7 @@ fn alternate_dtor_rechecks_with_another_copy_and_obeys_game_state_gate() {
         );
         assert_eq!(sim.houses[&owner].tech_recheck_pending(), rules.ares());
         sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
-        sim.finalize_and_remove_common(second, UninitContext::with_rules(&rules), 0x100);
+        sim.finalize_and_remove_common(second, UninitContext::new(&rules), 0x100);
         assert!(
             !sim.houses[&owner].tech_recheck_pending(),
             "low GameState byte is zero"
@@ -163,14 +158,14 @@ fn repeated_successful_discovery_does_not_repeat_the_hook() {
             .unwrap()
             .discovery
             .classify_owner(current == owner);
-        assert!(sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules), 0));
+        assert!(sim.record_techno_discovery(id, viewer, UninitContext::new(&rules), 0));
         assert_eq!(sim.houses[&owner].tech_recheck_pending(), rules.ares());
         assert!(
             !sim.houses[&other].tech_recheck_pending(),
             "the live owner is the receiver"
         );
         sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
-        assert!(!sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules), 0));
+        assert!(!sim.record_techno_discovery(id, viewer, UninitContext::new(&rules), 0));
         assert!(!sim.houses[&owner].tech_recheck_pending());
     }
 }
@@ -215,7 +210,7 @@ fn alternate_membership_uses_actual_class_when_type_names_collide() {
         entity.discovery.classify_owner(false);
         sim.substrate.entities.insert(entity);
         sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
-        assert!(sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules), 0));
+        assert!(sim.record_techno_discovery(id, viewer, UninitContext::new(&rules), 0));
         assert_eq!(
             sim.houses[&owner].tech_recheck_pending(),
             expected,

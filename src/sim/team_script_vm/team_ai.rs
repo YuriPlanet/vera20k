@@ -225,9 +225,9 @@ impl Simulation {
             team.advance_pending = true;
         }
         if team.reforming || team.formed || team.zone.is_none() || team.closest_member.is_none() {
-            self.team_calc_center(team_id, rules, registry);
+            self.team_calc_center(team_id, rules);
         }
-        self.team_recruit_short_entries(team_id, rules, registry, frame_effects);
+        self.team_recruit_short_entries(team_id, rules, frame_effects);
 
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
@@ -260,7 +260,7 @@ impl Simulation {
             return;
         }
         if team.reforming || team.under_strength || warping {
-            let regrouped = self.team_regroup(team_id, rules, registry, frame_effects);
+            let regrouped = self.team_regroup(team_id, rules, frame_effects);
             if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                 team.reforming = !regrouped;
             }
@@ -276,7 +276,6 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         let vm = &self.team_script_vm;
@@ -303,7 +302,7 @@ impl Simulation {
                 return;
             };
             if super::membership::entry_short(entry.count, team.slot_counts[slot]) {
-                self.team_recruit(team_id, slot, &mut walks, rules, registry, frame_effects);
+                self.team_recruit(team_id, slot, &mut walks, rules, frame_effects);
             }
             slot += 1;
         }
@@ -389,12 +388,7 @@ impl Simulation {
     /// list order while there is none; a naval transport never counts; the
     /// head when none does) cannot enter it (`vt+0x1AC`), when the centre is
     /// that member. Without such members both are cleared.
-    pub(crate) fn team_calc_center(
-        &mut self,
-        team_id: u64,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-    ) {
+    pub(crate) fn team_calc_center(&mut self, team_id: u64, rules: &RuleSet) {
         let vm = &self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
             return;
@@ -452,9 +446,7 @@ impl Simulation {
                 }
                 let closest = closest.or(head);
                 let zone = match closest {
-                    Some(member)
-                        if self.team_member_refuses_cell(member, cell, rules, registry) =>
-                    {
+                    Some(member) if self.team_member_refuses_cell(member, cell, rules) => {
                         TeamTarget::Object(member)
                     }
                     _ => cell,
@@ -488,13 +480,7 @@ impl Simulation {
     /// `vt+0x1AC Can_Enter_Cell(cell, -1, -1, NULL, 1)` is not "move ok"
     /// (non-zero) for `member`, by its class's own answer
     /// ([`Simulation::mover_can_enter`]). An answer VERA cannot read admits.
-    fn team_member_refuses_cell(
-        &self,
-        member: u64,
-        cell: TeamTarget,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-    ) -> bool {
+    fn team_member_refuses_cell(&self, member: u64, cell: TeamTarget, rules: &RuleSet) -> bool {
         let TeamTarget::Cell { x, y } = cell else {
             return false;
         };
@@ -504,7 +490,6 @@ impl Simulation {
             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
             crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
             rules,
-            registry,
         )
         .is_ok_and(|code| code != 0)
     }
@@ -520,7 +505,6 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         use crate::sim::mission::MissionType;
@@ -544,7 +528,7 @@ impl Simulation {
             if !entity.lifecycle.object_alive() {
                 continue;
             }
-            self.team_member_join_up(team_id, member.id, rules, registry, frame_effects);
+            self.team_member_join_up(team_id, member.id, rules, frame_effects);
             let Some(entity) = self.substrate.entities.get(member.id) else {
                 continue;
             };
@@ -563,13 +547,13 @@ impl Simulation {
                 self.team_member_queue_mission(member.id, MissionType::Move, rules);
                 regrouped = false;
                 let cell = zone.and_then(|zone| self.team_target_cell_of_coord(zone));
-                self.team_member_set_destination(member.id, cell, rules, registry, frame_effects);
+                self.team_member_set_destination(member.id, cell, rules, frame_effects);
             } else {
                 if mission == Some(MissionType::AreaGuard) {
                     continue;
                 }
                 self.team_member_queue_mission(member.id, MissionType::Guard, rules);
-                self.team_member_set_destination(member.id, None, rules, registry, frame_effects);
+                self.team_member_set_destination(member.id, None, rules, frame_effects);
             }
         }
         regrouped
@@ -596,7 +580,7 @@ impl Simulation {
             team.zone = None;
             return;
         }
-        self.team_calc_center(team_id, rules, registry);
+        self.team_calc_center(team_id, rules);
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -666,8 +650,7 @@ impl Simulation {
                     continue;
                 };
                 let from = ((source.x / 256) as i16, (source.y / 256) as i16);
-                let Some((x, y)) =
-                    self.foot_nearby_location(leader, from, target, 2..4, rules, registry)
+                let Some((x, y)) = self.foot_nearby_location(leader, from, target, 2..4, rules)
                 else {
                     continue;
                 };
@@ -843,7 +826,6 @@ impl Simulation {
         team_id: u64,
         member: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         use crate::sim::mission::MissionType;
@@ -868,7 +850,7 @@ impl Simulation {
         if entity.navigation.nav_com().is_none() {
             self.team_member_queue_mission(member, MissionType::Move, rules);
             self.team_member_clear_target(member, rules);
-            self.team_member_set_destination(member, zone, rules, registry, frame_effects);
+            self.team_member_set_destination(member, zone, rules, frame_effects);
         }
         true
     }
@@ -966,7 +948,7 @@ mod tests {
     /// mapped.
     #[test]
     fn an_aircraft_member_refuses_a_shrouded_centre() {
-        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture();
+        let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture();
         let hornet = sim
             .spawn_object("HORNET", "Americans", 17, 15, 0, &rules)
             .expect("aircraft");
@@ -978,11 +960,11 @@ mod tests {
             .set_owned_by_current_house_for_test(true);
         sim.fog = crate::sim::vision::FogState::new(33, 33);
         let centre = TeamTarget::Cell { x: 12, y: 12 };
-        assert!(sim.team_member_refuses_cell(hornet, centre, &rules, Some(&registry)));
+        assert!(sim.team_member_refuses_cell(hornet, centre, &rules));
 
         let owner = sim.interner.intern("Americans");
         crate::sim::vision::reveal_radius(&mut sim.fog, owner, 12, 12, 2);
-        assert!(!sim.team_member_refuses_cell(hornet, centre, &rules, Some(&registry)));
+        assert!(!sim.team_member_refuses_cell(hornet, centre, &rules));
     }
 
     /// Ares TeamClass_AttackedBy_Retaliate (1003A180, hook 0x6EB432): with

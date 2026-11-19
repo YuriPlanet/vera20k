@@ -867,7 +867,6 @@ fn apply_event(fixture: &mut Fixture, action: &str, building: u64) {
                     building,
                     None,
                     &fixture.rules,
-                    None,
                     crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
@@ -1427,15 +1426,7 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
         .attack_target
         .set_for_test(Some(target));
     assert_eq!(
-        fire_error_at(
-            &fixture.sim,
-            &fixture.rules,
-            breaker,
-            Some(target),
-            0,
-            true,
-            None
-        ),
+        fire_error_at(&fixture.sim, &fixture.rules, breaker, Some(target), 0, true,),
         FireError::Ok
     );
     ares_attack(&mut fixture, breaker);

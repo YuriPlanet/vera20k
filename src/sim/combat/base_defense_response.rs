@@ -256,7 +256,6 @@ impl ResponseSelection {
                         responder.entity_id,
                         Some(TargetKind::Entity(attacker_id)),
                         rules,
-                        None,
                         FrameEffects::default(),
                     )
                     .expect(

@@ -1305,7 +1305,7 @@ fn nuke_awaited_anim_expiry_after_waiter_retirement_is_safe() {
     sim.notify_anim_pointer_expired(unrelated);
     assert_eq!(sim.projectiles.get(id).unwrap().awaited_anim(), Some(ball));
     sim.scalar_delete_anim(unrelated);
-    assert!(sim.retire_non_entity_object(id, crate::sim::world::UninitContext::with_rules(&rules)));
+    assert!(sim.retire_non_entity_object(id, crate::sim::world::UninitContext::new(&rules)));
     sim.process_pending_delete();
     assert!(sim.projectiles.get(id).is_none());
     assert!(sim.anim(ball).is_some());

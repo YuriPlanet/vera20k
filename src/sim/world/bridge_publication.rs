@@ -70,7 +70,6 @@ impl BodyResult {
 pub(super) fn run_state_machine(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     input: CellCoord,
     family: Family,
     frame_effects: FrameEffects<'_>,
@@ -84,7 +83,6 @@ pub(super) fn run_state_machine(
         let mut host = LivePublication {
             sim,
             rules,
-            registry,
             collapsed: false,
             frame_effects,
         };
@@ -118,7 +116,6 @@ pub(super) fn run_state_machine(
     let mut host = LivePublication {
         sim,
         rules,
-        registry,
         collapsed: false,
         frame_effects,
     };
@@ -135,7 +132,6 @@ pub(super) fn run_state_machine(
 pub(super) fn update_adjacent_bridges(
     sim: &mut Simulation,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     input: CellCoord,
     family: Family,
     frame_effects: FrameEffects<'_>,
@@ -143,7 +139,6 @@ pub(super) fn update_adjacent_bridges(
     let mut host = LivePublication {
         sim,
         rules,
-        registry,
         collapsed: false,
         frame_effects,
     };
@@ -154,7 +149,6 @@ pub(super) fn update_adjacent_bridges(
 struct LivePublication<'a> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
-    registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     collapsed: bool,
     frame_effects: FrameEffects<'a>,
 }
@@ -261,7 +255,7 @@ impl BridgePublicationHost for LivePublication<'_> {
             self.rules,
             x as u16,
             y as u16,
-            self.registry,
+            Some(self.rules.overlay_registry()),
             self.frame_effects,
         );
     }

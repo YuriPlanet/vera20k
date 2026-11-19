@@ -135,7 +135,6 @@ impl CellReader for LiveCells<'_> {
 pub(crate) struct BridgeDamageDrivers<'a> {
     pub(super) sim: &'a mut Simulation,
     pub(super) rules: &'a RuleSet,
-    registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     /// A driver collapsed a span.
     pub(super) collapsed: bool,
     frame_effects: FrameEffects<'a>,
@@ -145,13 +144,11 @@ impl<'a> BridgeDamageDrivers<'a> {
     pub(crate) fn new(
         sim: &'a mut Simulation,
         rules: &'a RuleSet,
-        registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'a>,
     ) -> Self {
         Self {
             sim,
             rules,
-            registry,
             collapsed: false,
             frame_effects,
         }
@@ -179,7 +176,7 @@ impl<'a> BridgeDamageDrivers<'a> {
             moving_collapse::apply(
                 self.sim,
                 self.rules,
-                self.registry,
+                Some(self.rules.overlay_registry()),
                 point,
                 self.frame_effects,
             );
@@ -208,7 +205,6 @@ impl<'a> BridgeDamageDrivers<'a> {
             live_publication::run_state_machine(
                 self.sim,
                 self.rules,
-                self.registry,
                 input,
                 family,
                 self.frame_effects,
@@ -217,7 +213,6 @@ impl<'a> BridgeDamageDrivers<'a> {
             live_publication::damage_ordinary(
                 self.sim,
                 self.rules,
-                self.registry,
                 input,
                 family,
                 self.frame_effects,
@@ -291,7 +286,6 @@ impl DamageHost for LiveDamage<'_> {
             rx as u16,
             ry as u16,
             rules,
-            self.drivers.registry,
             self.drivers.frame_effects,
         );
     }
@@ -312,7 +306,6 @@ pub(super) fn run(
     events: &[BridgeDamageEvent],
     strength: i32,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     if sim.resolved_terrain.is_none() || sim.bridge_state.is_none() {
@@ -326,7 +319,7 @@ pub(super) fn run(
             .unwrap()
             .native_cell_identity((event.rx as i16, event.ry as i16));
         let mut host = LiveDamage {
-            drivers: BridgeDamageDrivers::new(sim, rules, registry, frame_effects),
+            drivers: BridgeDamageDrivers::new(sim, rules, frame_effects),
             event,
             strength,
         };

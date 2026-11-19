@@ -213,7 +213,7 @@ fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
     assert!(allowed(&sim, &rules, OWNER, NORMAL));
     recheck(&mut sim, &rules, OWNER);
     assert!(active(&sim, OWNER, NORMAL));
-    sim.techno_limbo_with_rules(auxiliary, &rules, None);
+    sim.techno_limbo_with_rules(auxiliary, &rules);
     assert!(!allowed(&sim, &rules, OWNER, NORMAL));
     recheck(&mut sim, &rules, OWNER);
     assert!(!active(&sim, OWNER, NORMAL));

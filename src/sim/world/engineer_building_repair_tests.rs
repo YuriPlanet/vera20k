@@ -872,7 +872,6 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
         }
         fixture.sim.process_pending_delete_with(
             &fixture.rules,
-            Some(&fixture.registry),
             crate::sim::world::FrameEffects::default(),
             1,
             false,

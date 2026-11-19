@@ -376,8 +376,7 @@ fn building_crew_keeps_distinct_native_caller_placement_and_rng() {
         id,
         unlimbo,
         None,
-        None,
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
     )));
     let entity = sim.substrate.entities.get(id).unwrap();
     let foot = row["events"]
@@ -1872,7 +1871,7 @@ fn selection_ejects_partner_passenger(power_loss: bool) {
     } else {
         assert!(sim.techno_select(
             actor,
-            crate::sim::world::UninitContext::with_rules(&rules).with_effects(effects),
+            crate::sim::world::UninitContext::new(&rules).with_effects(effects),
         ));
     }
     let selected = |sim: &Simulation, id: u64| {
@@ -1911,7 +1910,7 @@ fn selection_ejects_partner_passenger(power_loss: bool) {
         .set_selected_for_test(false);
     assert!(sim.techno_select(
         passenger,
-        crate::sim::world::UninitContext::new(&rules, None).with_effects(
+        crate::sim::world::UninitContext::new(&rules).with_effects(
             crate::sim::world::FrameEffects::default().with_local_planning(&boundary)
         ),
     ));
@@ -2635,7 +2634,7 @@ fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
         .ares_capture_vehicle(thief, hull, &rules, Some(&overlays), Default::default())
         .unwrap();
     assert!(captured.consumed);
-    sim.uninit_with_context(thief, UninitContext::new(&rules, Some(&overlays)));
+    sim.uninit_with_context(thief, UninitContext::new(&rules));
     let passenger = spawn(&mut sim, &rules, "ENGINEER", "Americans", 17, 15);
     assert!(board_passenger(
         &mut sim,

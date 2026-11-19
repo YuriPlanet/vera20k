@@ -3,7 +3,6 @@
 //! dock coordinate and the landing step.
 use super::{FrameEffects, Simulation};
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::enter_mission::{self, EnterHost, EnterNav};
 use crate::sim::components::{DriveCoord, NavTargetRef};
@@ -24,14 +23,12 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> i32 {
         enter_mission::enter_visit(&mut WorldEnter {
             sim: self,
             id,
             rules,
-            registry,
             effects,
         })
     }
@@ -42,7 +39,6 @@ struct WorldEnter<'a> {
     sim: &'a mut Simulation,
     id: u64,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
 }
 
@@ -146,13 +142,7 @@ impl EnterHost for WorldEnter<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        crate::sim::aircraft::enter_idle_mode_for(
-            self.sim,
-            self.id,
-            self.rules,
-            self.registry,
-            self.effects,
-        );
+        crate::sim::aircraft::enter_idle_mode_for(self.sim, self.id, self.rules, self.effects);
     }
 
     /// Mission+0xBC as `Mission_Enter @ 0x00419C80` reads it (`0x00419DA9`).
@@ -234,8 +224,13 @@ impl EnterHost for WorldEnter<'_> {
             y: here.y.wrapping_add(step(target.y, here.y)),
             z: here.z,
         };
-        self.sim
-            .foot_set_location_marked(self.id, next, self.rules, self.registry, self.effects);
+        self.sim.foot_set_location_marked(
+            self.id,
+            next,
+            self.rules,
+            Some(self.rules.overlay_registry()),
+            self.effects,
+        );
     }
 
     fn dock_now(&mut self) -> i32 {
@@ -291,18 +286,29 @@ impl EnterHost for WorldEnter<'_> {
                 self.effects,
             ) == RadioResponse::Roger
         });
-        let context = crate::sim::world::UninitContext::new(self.rules, self.registry)
-            .with_effects(self.effects);
+        let context = crate::sim::world::UninitContext::new(self.rules).with_effects(self.effects);
         let _ = self
             .sim
             .add_cargo_passenger_chain(self.id, &[(cargo, size)], context);
         if accepted {
-            self.sim
-                .foot_mark_remove(self.id, self.rules, self.registry, self.effects);
-            self.sim
-                .carryall_unload(self.id, self.rules, self.registry, self.effects);
-            self.sim
-                .foot_mark_put(self.id, self.rules, self.registry, self.effects);
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                self.effects,
+            );
+            self.sim.carryall_unload(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                self.effects,
+            );
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                self.effects,
+            );
         } else {
             let airfield = self
                 .sim

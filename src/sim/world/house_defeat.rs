@@ -209,7 +209,7 @@ impl Simulation {
                 rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                 registry,
                 true,
-                crate::sim::world::FrameEffects::default().with_overlay_registry(registry),
+                crate::sim::world::FrameEffects::default(),
                 None,
             )
             .expect("headless House wait completes immediately");
@@ -365,7 +365,7 @@ impl Simulation {
                 );
                 generated.extend(self.mplayer_defeated(
                     owner,
-                    UninitContext::new(rules, registry).with_effects(frame_effects),
+                    UninitContext::new(rules).with_effects(frame_effects),
                 ));
             }
             self.raise_house_tags(owner, rules, registry, frame_effects);
@@ -383,7 +383,7 @@ impl Simulation {
             }
             self.update_initial_house_sight(
                 owner,
-                UninitContext::new(rules, registry).with_effects(frame_effects),
+                UninitContext::new(rules).with_effects(frame_effects),
             );
             index += 1;
         }
@@ -1040,7 +1040,7 @@ impl Simulation {
                 self,
                 id,
                 None,
-                UninitContext::new(rules, registry).with_effects(frame_effects),
+                UninitContext::new(rules).with_effects(frame_effects),
             );
         }
         if self.substrate.entities.get(id).map(|entity| entity.owner()) != Some(house)

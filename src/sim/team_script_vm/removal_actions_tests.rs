@@ -267,7 +267,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
             ).count(), 1, "FootLimbo detaches its sound once; UnInit's repeated Limbo does not");
         }
         assert_eq!(sim.houses[&owner].stats().units_lost(), 0);
-        sim.process_pending_delete_with(&rules, None, Default::default(), 1, true);
+        sim.process_pending_delete_with(&rules, Default::default(), 1, true);
         assert!(
             members
                 .iter()
@@ -328,7 +328,7 @@ fn first_unit_limbo_uses_shared_stop_driver_before_hiding_the_actor() {
             .track_destination(TrackFamily::Drive),
         Some(target)
     );
-    sim.techno_limbo_with_context(member, UninitContext::with_rules(&rules));
+    sim.techno_limbo_with_context(member, UninitContext::new(&rules));
     let entity = sim.substrate.entities.get(member).unwrap();
     assert!(entity.lifecycle.in_limbo());
     assert_eq!(

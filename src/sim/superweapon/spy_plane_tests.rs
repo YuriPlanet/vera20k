@@ -860,7 +860,6 @@ fn retail_spy_plane_drops_dummy_cells_and_picks_another_exit() {
             plane,
             Some(TargetKind::Cell(target.0, target.1)),
             &rules,
-            None,
             FrameEffects::default(),
         )
         .unwrap();

@@ -49,7 +49,7 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
         id,
         crate::sim::combat::KillSource::Techno(None),
         crate::sim::combat::KillCallback::Terminal,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     Simulation::close_kill_record(&mut sim.substrate, id);
     sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
@@ -471,7 +471,6 @@ fn retained_health_one_ship_is_illegal_as_firer_and_target() {
         FireSubject {
             world: sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(firer_id).unwrap(),
             obj: rules.object("TEST").unwrap(),
@@ -540,7 +539,7 @@ fn retained_ship_skips_process_but_keeps_its_head_and_runs_sinking_ai() {
     let slope_before = *slope_transition::state_for_entity(hull).unwrap();
     // A second Stun (Unit setter, Path[0] = -1, Stop_Driver) clears the
     // destination, retaining the committed head.
-    sim.stun(id, UninitContext::with_rules(&rules));
+    sim.stun(id, UninitContext::new(&rules));
     sim.advance_live_object_turn(id, &rules, ObjectAiCtx::default())
         .unwrap();
     let hull = sim.substrate.entities.get(id).unwrap();

@@ -789,7 +789,7 @@ fn a_dive_reaches_every_registered_object_but_leaves_radio_contacts_intact() {
 
     // Control 1 — `ObjectClass::UnInit` dispatches the same roster walk with a
     // nonzero control at `0x005F6616`, and the slot clear then runs.
-    sim.techno_limbo_with_rules(cloaker, &rules, None);
+    sim.techno_limbo_with_rules(cloaker, &rules);
     assert!(
         !sim.substrate
             .entities

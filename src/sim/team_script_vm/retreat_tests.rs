@@ -249,7 +249,6 @@ fn foot_nearby_matches_original_whole_infantry_and_unit_admission() {
             pair(&row["target"]),
             2..4,
             &rules,
-            None,
         );
         let expected = pair(&row["result"]);
         assert_eq!(result, (expected != (0, 0)).then_some(expected), "{row}");

@@ -75,7 +75,7 @@ fn recharge(rules: &RuleSet) -> i32 {
 /// A building leaves the map: its charges leave with it. Limbo is what the
 /// live-building walk reads, and the tech tree recheck syncs the charges.
 fn remove(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    sim.techno_limbo_with_rules(id, rules, None);
+    sim.techno_limbo_with_rules(id, rules);
     let owner = sim.interner.get(OWNER).unwrap();
     sim.recheck_house_tech_tree(owner, rules, Default::default());
 }

@@ -217,7 +217,6 @@ fn receiver_commit_keeps_negative_heal_on_exact_zero_techno_tail_and_wide_hits()
             ),
             &mut world,
             &rules,
-            None,
             Some(resolved),
             crate::sim::world::FrameEffects::default(),
             false,

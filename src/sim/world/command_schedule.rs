@@ -934,7 +934,6 @@ impl Simulation {
     fn group_destination_candidate_facts(
         &self,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         terrain: &ResolvedTerrainGrid,
         zones: &ZoneGrid,
         target: &GroupMemberTarget,
@@ -969,7 +968,6 @@ impl Simulation {
                 args,
                 crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
                 rules,
-                registry,
             )
             .unwrap_or_else(|error| {
                 log::warn!("group destination entry for {id}: {error}");
@@ -999,7 +997,6 @@ impl Simulation {
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         sender: Option<InternedId>,
     ) {
         let (Some(terrain), Some(zones)) =
@@ -1091,11 +1088,11 @@ impl Simulation {
                         }
                         let target = member_target.as_ref().expect("read for this member");
                         self.group_destination_candidate_facts(
-                            rules, registry, terrain, zones, target, candidate,
+                            rules, terrain, zones, target, candidate,
                         )
                     },
                 );
-                self.keep_jumpjets_off_promised_cells(&members, &mut assignments, rules, registry);
+                self.keep_jumpjets_off_promised_cells(&members, &mut assignments, rules);
                 for assignment in assignments {
                     let Some(command) = commands.get_mut(run_start + assignment.command_index)
                     else {
@@ -1119,7 +1116,6 @@ impl Simulation {
         members: &[group_destination::GroupDestinationMember],
         assignments: &mut [group_destination::GroupDestinationAssignment],
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let range = rules.general.jumpjet_land_nearby;
         if range <= 0 {
@@ -1171,7 +1167,6 @@ impl Simulation {
                             InfantryEntryArgs::REPAIR,
                             crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor,
                             rules,
-                            registry,
                         )
                         .is_ok_and(|code| code == 0);
                     (clear && !promised((x, y), &given)).then_some((x, y))
@@ -1238,7 +1233,12 @@ impl Simulation {
                     Command::Select { .. }
                     | Command::AssignControlGroup { .. }
                     | Command::MoveFlash { .. } => {
-                        let _ = self.apply_one_due_command(command, rules, None, frame_effects);
+                        let _ = self.apply_one_due_command(
+                            command,
+                            rules,
+                            Some(rules.overlay_registry()),
+                            frame_effects,
+                        );
                     }
                     _ => unreachable!("frame-ingress predicate admitted a tail command"),
                 }
@@ -1262,17 +1262,10 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> (usize, bool) {
-        self.dispatch_owned_commands(
-            commands,
-            rules,
-            execute_tick,
-            overlay_registry,
-            frame_effects,
-        )
-        .expect("component command dispatch must succeed")
+        self.dispatch_owned_commands(commands, rules, execute_tick, frame_effects)
+            .expect("component command dispatch must succeed")
     }
 
     /// How Execute_DoList scans this session's DoList.
@@ -1291,7 +1284,6 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
         let is_network = self.session.execution_topology().is_lockstep();
@@ -1346,7 +1338,6 @@ impl Simulation {
         let mut host = WorldCommandHost {
             sim: self,
             rules,
-            overlay_registry,
             frame_effects,
             execute_tick,
             spawned: false,
@@ -1458,7 +1449,6 @@ impl FormationCommand for QueuedCommand {
 struct WorldCommandHost<'a, 'r, 'e> {
     sim: &'a mut Simulation,
     rules: &'r RuleSet,
-    overlay_registry: Option<&'r crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'e>,
     execute_tick: u64,
     spawned: bool,
@@ -1492,12 +1482,8 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
     }
 
     fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        self.sim.adjust_staged_megamission_destinations(
-            entries,
-            self.rules,
-            self.overlay_registry,
-            Some(house.owner),
-        );
+        self.sim
+            .adjust_staged_megamission_destinations(entries, self.rules, Some(house.owner));
     }
 
     fn execute(
@@ -1536,7 +1522,7 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             let (applied, spawned) = self.sim.apply_one_due_command(
                 &command,
                 self.rules,
-                self.overlay_registry,
+                Some(self.rules.overlay_registry()),
                 self.frame_effects,
             );
             self.sim.executing_record_sender = None;

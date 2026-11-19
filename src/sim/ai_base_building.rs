@@ -557,8 +557,7 @@ pub(crate) fn choose_building(
             }
             return;
         }
-        if !crate::sim::ai_base_defense::choose_next_production(sim, rules, owner, index, registry)
-        {
+        if !crate::sim::ai_base_defense::choose_next_production(sim, rules, owner, index) {
             // `0x004FE640..0x004FE6D2`: a WallTower node goes first, then
             // the node at its index.
             if wall_tower.is_some() {
@@ -984,7 +983,7 @@ pub(crate) fn exit_building(
     let node = rules
         .building_type_index(&ty.id)
         .and_then(|index| find_node(sim, rules, owner, index, registry));
-    let site = building_site(sim, rules, owner, ty, node, registry);
+    let site = building_site(sim, rules, owner, ty, node);
     match flush_for_placement(sim, rules, registry, ty, site, owner, effects) {
         Flush::Scattered => {
             // `0x00445237..0x004452C3`.
@@ -1034,7 +1033,6 @@ fn building_site(
     owner: InternedId,
     ty: &ObjectType,
     node: Option<usize>,
-    registry: Option<&OverlayTypeRegistry>,
 ) -> (i16, i16) {
     let node_cell = node
         .map(|index| plan_node(&sim.houses, owner, index).packed_cell)
@@ -1045,7 +1043,7 @@ fn building_site(
             return cell;
         }
     }
-    let site = find_base_building_site(sim, rules, owner, ty, SiteKey::Ordinary, registry);
+    let site = find_base_building_site(sim, rules, owner, ty, SiteKey::Ordinary);
     if let Some(index) = node
         && let Some(house) = sim.houses.get_mut(&owner)
     {

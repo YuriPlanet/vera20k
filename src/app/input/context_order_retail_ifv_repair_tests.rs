@@ -854,7 +854,6 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
     depart_cargo_head(
         &mut sim,
         rules,
-        None,
         ifv,
         DepartureRoute::Vehicle,
         |sim, passenger| {
@@ -980,13 +979,7 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
         );
         use crate::sim::combat::fire_error::FireError;
         assert_eq!(
-            sim.selected_weapon_fire_error(
-                &rules,
-                actor,
-                TargetKind::Entity(targets[2]),
-                true,
-                None
-            ),
+            sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[2]), true,),
             FireError::Ok,
             "the same native Building vt+80 fact must reach UnitFireError"
         );
@@ -994,13 +987,7 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
         // vt+80 call with the health-ratio test alone, so a damaged NonVehicle
         // Unit may be repaired.
         assert_eq!(
-            sim.selected_weapon_fire_error(
-                &rules,
-                actor,
-                TargetKind::Entity(targets[1]),
-                true,
-                None
-            ),
+            sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[1]), true,),
             if ares_way {
                 FireError::Ok
             } else {

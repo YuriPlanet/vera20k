@@ -2677,7 +2677,6 @@ impl Simulation {
         let navigation = run.finish();
         let _ = self.absorb_noncombat_damage_effects(
             rules,
-            overlay_registry,
             commit.effects,
             commit.under_attack_events,
             navigation,
@@ -4392,7 +4391,6 @@ mod tests {
                 target,
                 Some(crate::sim::combat::TargetKind::Cell(30, 30)),
                 &rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .is_ok()
@@ -5772,7 +5770,6 @@ AttachEffect.InitialDelays=3
             crate::sim::combat::fire_error_world::FireSubject {
                 world: &sim,
                 rules: &rules,
-                overlay_registry: None,
                 fog: None,
                 firer: sim.substrate.entities.get(attacker).unwrap(),
                 obj: rules.object("ATTACKER").unwrap(),

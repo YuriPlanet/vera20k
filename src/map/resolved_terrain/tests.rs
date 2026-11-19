@@ -361,7 +361,6 @@ fn fractional_retail_land_row_reaches_rhino_entry_and_drive() {
             InfantryEntryArgs::REPAIR,
             EntryQueryMode::CheckLocomotor,
             rules,
-            Some(rules.overlay_registry())
         )
         .unwrap(),
         0

@@ -232,12 +232,12 @@ fn the_house_walk_falls_back_to_the_last_yard_then_the_first_building() {
     sim.determine_house_edge(owner, south, rules);
     assert_eq!(edge(&sim, "Americans"), SOUTH);
 
-    sim.techno_limbo_with_rules(north, rules, None);
-    sim.techno_limbo_with_rules(south, rules, None);
+    sim.techno_limbo_with_rules(north, rules);
+    sim.techno_limbo_with_rules(south, rules);
     sim.determine_house_edge(owner, south, rules);
     assert_eq!(edge(&sim, "Americans"), EAST);
 
-    sim.techno_limbo_with_rules(plant, rules, None);
+    sim.techno_limbo_with_rules(plant, rules);
     sim.determine_house_edge(owner, south, rules);
     assert_eq!(edge(&sim, "Americans"), EAST);
 }

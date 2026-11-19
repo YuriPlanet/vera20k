@@ -236,7 +236,6 @@ fn magnetron_aircraft_hit_and_release_match_original_composition() {
                 scene.victim,
                 height as i32,
                 &rules,
-                None,
                 FrameEffects::default(),
             );
             scene.assert_state(&row["before_release"], &format!("{name} release input"));

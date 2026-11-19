@@ -221,7 +221,6 @@ mod tests {
                 gun,
                 Some(TargetKind::Entity(target)),
                 rules,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();

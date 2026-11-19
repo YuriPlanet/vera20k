@@ -140,7 +140,6 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
             damage_ordinary(
                 &mut runtime.simulation,
                 &runtime.resources.rules,
-                Some(runtime.resources.rules.overlay_registry()),
                 (87, 54),
                 crate::sim::bridge_state::ramp_repair::Family::High,
                 crate::sim::world::FrameEffects::default(),
@@ -163,7 +162,10 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
             case["hut"][1].as_u64().unwrap() as u16,
         );
         assert!(crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
-            sim, &runtime.resources.rules, hut, Some(runtime.resources.rules.overlay_registry()), crate::sim::world::FrameEffects::default()
+            sim,
+            &runtime.resources.rules,
+            hut,
+            crate::sim::world::FrameEffects::default(),
         ));
         assert_eq!(
             json!({"main":sim.main_rng,"scenario":sim.scenario_rng,"mapgen":sim.mapgen_rng}),
@@ -258,14 +260,12 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
         impact_z_leptons: 416,
         is_ion_cannon: false,
     };
-    let registry = runtime.resources.rules.overlay_registry();
     assert!(
         !crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
             sim,
             rules,
             &[event],
-            Some(registry),
-            crate::sim::world::FrameEffects::default()
+            crate::sim::world::FrameEffects::default(),
         )
     );
     assert_eq!(
@@ -281,8 +281,7 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
             sim,
             rules,
             &[event],
-            Some(registry),
-            crate::sim::world::FrameEffects::default()
+            crate::sim::world::FrameEffects::default(),
         )
     );
     assert_eq!(

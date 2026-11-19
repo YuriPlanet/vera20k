@@ -459,7 +459,7 @@ fn voice_precedes_turret_controls_and_each_control_reaches_its_native_boundary()
     };
     sim.uninit_with_context(
         id,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
             .with_effects(FrameEffects::for_sound(&release)),
     );
     assert_eq!(*release.batches.borrow(), [(false, vec!["release"])]);
@@ -708,7 +708,6 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
         id,
         Some(TargetKind::Entity(enemy)),
         &rules,
-        None,
         FrameEffects::default(),
     )
     .expect("target assignment");

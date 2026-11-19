@@ -163,7 +163,7 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
         let probe = |sim: &mut Simulation| {
             let kept = EntryFacts::fitted(sim);
             let [world, batched] = [None, Some(&kept)].map(|facts| {
-                sim.foot_entry_receiver(90, &rules, None, facts)
+                sim.foot_entry_receiver(90, &rules, facts)
                     .unwrap()
                     .can_enter(cell, InfantryEntryArgs::REPAIR)
                     .unwrap()
@@ -265,7 +265,7 @@ fn a_tethered_enter_mover_may_take_its_warped_out_navcom() {
         CellListInsertion::from_category(EntityCategory::Structure),
     );
     let entry = |sim: &mut Simulation| {
-        sim.foot_entry_receiver(90, &rules, None, None)
+        sim.foot_entry_receiver(90, &rules, None)
             .unwrap()
             .can_enter(cell, InfantryEntryArgs::REPAIR)
             .unwrap()
@@ -294,7 +294,7 @@ fn an_engineer_patrolling_to_a_tree_cell_is_not_refused_by_the_tree() {
             &rules,
             false,
         );
-        sim.foot_entry_receiver(90, &rules, None, None)
+        sim.foot_entry_receiver(90, &rules, None)
             .unwrap()
             .can_enter(cell, InfantryEntryArgs::REPAIR)
             .unwrap()

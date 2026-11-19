@@ -135,7 +135,7 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
         );
         assert_eq!(sim.houses[&houses[0]].initial_techno_record_count(), 4);
         for &id in &ids {
-            sim.uninit_with_context(id, UninitContext::new(&rules, Some(&registry)));
+            sim.uninit_with_context(id, UninitContext::new(&rules));
         }
         sim.flush_pending_delete();
         assert!(active(&sim).is_empty());

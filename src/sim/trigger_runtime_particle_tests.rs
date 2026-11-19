@@ -216,7 +216,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     let system = sim.particle_systems().get(id).unwrap();
     assert!(!system.done_spawning());
@@ -250,7 +250,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
                 world,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             world.process_pending_delete();
         }

@@ -214,10 +214,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
     assert!(!clean_power.radar_recheck_for_test());
     assert!(!sim.houses[&remote].spy_sat_active());
     for waypoint in 0..3 {
-        assert!(sim.trigger_reveal_at_waypoint(
-            waypoint,
-            UninitContext::new(&rules, Some(rules.overlay_registry())),
-        ));
+        assert!(sim.trigger_reveal_at_waypoint(waypoint, UninitContext::new(&rules),));
     }
     // Supply a retained +41B=false history over genuinely mapped ground.
     // Keep the real prior House assessment, rather than inventing power or
@@ -274,7 +271,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
     // Building before returning, even with no following object-AI visit.
     assert!(sim.change_visible_map_area(
         [0, 0, 16, 16],
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     for id in ids {
         assert!(

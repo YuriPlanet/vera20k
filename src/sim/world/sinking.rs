@@ -68,10 +68,7 @@ impl Simulation {
         entity.health.set(1);
         entity.lifecycle.restore_alive();
         entity.sinking.active = true;
-        self.stun(
-            id,
-            UninitContext::with_rules(rules).with_effects(frame_effects),
-        );
+        self.stun(id, UninitContext::new(rules).with_effects(frame_effects));
     }
 
     /// PostWarpValidation (`0x00718968..0x00718977`, `0x00718ABF..0x00718ACE`)
@@ -108,10 +105,7 @@ impl Simulation {
                 self.dispatch_unit_lost_events(&[event]);
             }
         }
-        self.stun(
-            id,
-            UninitContext::with_rules(rules).with_effects(frame_effects),
-        );
+        self.stun(id, UninitContext::new(rules).with_effects(frame_effects));
     }
 
     /// Foot4DABC7..4DACD7: voice first (no local-player gate), then the type
@@ -213,12 +207,9 @@ impl Simulation {
                 id,
                 crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::Terminal,
-                UninitContext::new(rules, registry).with_effects(frame_effects),
+                UninitContext::new(rules).with_effects(frame_effects),
             );
-            self.uninit_with_context(
-                id,
-                UninitContext::new(rules, registry).with_effects(frame_effects),
-            );
+            self.uninit_with_context(id, UninitContext::new(rules).with_effects(frame_effects));
             self.sound_events
                 .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
             return true;

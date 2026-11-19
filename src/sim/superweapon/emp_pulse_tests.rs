@@ -413,7 +413,7 @@ fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
             temporary,
             host,
             &rules,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         ));
     } else {
         super::grant_provided_supers(&mut sim, &rules, owner);

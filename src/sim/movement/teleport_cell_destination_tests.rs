@@ -1137,7 +1137,7 @@ fn a_deferred_restore_keeps_a_cleg_object_navcom() {
     cleg.navigation.set_nav_com_for_test(Some(target));
     cleg.navigation
         .set_pending_destination_setter_for_test(true);
-    sim.complete_pending_order(id, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.complete_pending_order(id, &rules, crate::sim::world::FrameEffects::default());
     let cleg = sim.substrate.entities.get(id).unwrap();
     assert_eq!(cleg.navigation.nav_com(), Some(target));
     assert!(!cleg.navigation.pending_destination_setter());

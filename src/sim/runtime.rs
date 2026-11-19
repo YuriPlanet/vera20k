@@ -714,7 +714,7 @@ mod tests {
         let mut changed_id = original.clone();
         changed_id.set_native_unique_id_for_test(None);
         assert_ne!(hash(original), hash(&changed_id));
-        restored.uninit_with_context(doomed, UninitContext::with_rules(&rules));
+        restored.uninit_with_context(doomed, UninitContext::new(&rules));
         assert_eq!(
             restored
                 .terrain_objects
@@ -723,13 +723,7 @@ mod tests {
                 .native_unique_id(),
             ids[0].1
         );
-        restored.process_pending_delete_with(
-            &rules,
-            Some(rules.overlay_registry()),
-            Default::default(),
-            1,
-            true,
-        );
+        restored.process_pending_delete_with(&rules, Default::default(), 1, true);
         assert!(restored.terrain_objects.get(doomed).is_none());
         assert_eq!(
             restored.native_identity_cursor(),
@@ -1556,10 +1550,7 @@ pub fn finalize_constructed_scenario(
             skirmish_session,
             campaign_map,
         })?;
-    sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(
-        rules,
-        Some(overlay_registry),
-    ));
+    sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(rules));
     // Fresh source changes and Anim intensity reads transfer together to the
     // lighting owner. Discarding this prefix loses pre-building CellAnim light.
     Ok(output)

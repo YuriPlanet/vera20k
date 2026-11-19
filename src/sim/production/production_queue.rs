@@ -195,11 +195,7 @@ pub fn publish_production_changes_for_tests(
 /// without running unrelated world AI. The ordinary production runtime uses
 /// publish_production_changes plus the world's existing scheduled tail.
 #[cfg(any(test, feature = "test-support"))]
-pub fn dispatch_production_changes_for_tests(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-) -> bool {
+pub fn dispatch_production_changes_for_tests(sim: &mut Simulation, rules: &RuleSet) -> bool {
     sim.session
         .set_tick_for_test(sim.session.tick().saturating_add(1));
     sim.session
@@ -214,7 +210,6 @@ pub fn dispatch_production_changes_for_tests(
         &due,
         rules,
         sim.session.tick().saturating_add(1),
-        overlay_registry,
         crate::sim::world::FrameEffects::default(),
     );
     spawned
@@ -457,7 +452,6 @@ fn exit_naval(
             spawned,
             Some(crate::sim::components::NavTargetRef::cell(tx, ty)),
             rules,
-            overlay_registry,
             effects,
         ) {
             log::warn!("Rally destination {spawned}: {cause}");
@@ -640,8 +634,7 @@ fn exit_land(
         )?;
         // The native successful suffix44459F..4445C9 re-marks around the
         // second coordinate write. Use the shared Mark/SetLocation owners.
-        let context =
-            crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(effects);
+        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         sim.unmark_entity_remove(spawned, context);
         crate::sim::movement::ground_pose::foot_set_location(
             &mut sim.substrate.entities,
@@ -711,14 +704,7 @@ fn exit_at_dock(
     } else {
         (0, 0)
     };
-    let Some(exit) = dock_exit(
-        sim,
-        rules,
-        producer_id,
-        stable_id,
-        offered,
-        overlay_registry,
-    ) else {
+    let Some(exit) = dock_exit(sim, rules, producer_id, stable_id, offered) else {
         return BuildingExit::Failed;
     };
     // Ares BuildingClass_KickOutUnit_PreventClone (hook 0x004449DF ->
@@ -759,15 +745,7 @@ fn exit_at_dock(
                 effects,
             );
         } else {
-            generic_exit_tail(
-                sim,
-                rules,
-                producer_id,
-                spawned,
-                exit.cell,
-                overlay_registry,
-                effects,
-            );
+            generic_exit_tail(sim, rules, producer_id, spawned, exit.cell, effects);
         }
         Some(spawned)
     });
@@ -1021,7 +999,6 @@ fn infantry_exit_tail(
             spawned,
             Some(crate::sim::components::NavTargetRef::cell(dock.0, dock.1)),
             rules,
-            overlay_registry,
             effects,
         ) {
             log::debug!("{spawned} factory exit destination: {cause}");
@@ -1159,7 +1136,6 @@ fn generic_exit_tail(
     producer_id: u64,
     spawned: u64,
     dock: (u16, u16),
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
     use crate::sim::mission::{MissionId, MissionType, authority::LiveReadyInputProvider};
@@ -1174,7 +1150,6 @@ fn generic_exit_tail(
         spawned,
         Some(crate::sim::components::NavTargetRef::cell(dock.0, dock.1)),
         rules,
-        overlay_registry,
         effects,
     ) {
         log::debug!("{spawned} factory exit destination: {cause}");

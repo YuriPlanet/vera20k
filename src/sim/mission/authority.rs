@@ -533,14 +533,12 @@ impl Simulation {
         receiver: u64,
         requested: Option<TargetKind>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         if !self.substrate.entities.contains(receiver) {
             return Err(MissionAuthorityError::MissingReceiver(receiver));
         }
-        let mut effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects);
         let prepared =
             effects.preflight(self, receiver, ConcreteSetterRequest::Target { requested })?;
         effects.apply_target(self, &prepared, requested);
@@ -556,11 +554,10 @@ impl Simulation {
         receiver: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         self.assign_destination_through(
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects),
+            RepresentedConcreteMissionEffects::new(rules, frame_effects),
             receiver,
             requested,
         )
@@ -575,12 +572,10 @@ impl Simulation {
         receiver: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         self.assign_destination_through(
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects)
-                .keeping_queue(),
+            RepresentedConcreteMissionEffects::new(rules, frame_effects).keeping_queue(),
             receiver,
             requested,
         )
@@ -620,11 +615,9 @@ impl Simulation {
         &mut self,
         receiver: u64,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, MissionAuthorityError> {
-        let mut effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects);
         self.mission_restore_exact_with_effects(receiver, &mut effects)
     }
 
@@ -636,11 +629,9 @@ impl Simulation {
         receiver: u64,
         packet: OverridePacket,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, MissionAuthorityError> {
-        let mut effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects);
         self.mission_override_exact_with_effects(receiver, packet, &mut effects)
     }
 
@@ -659,7 +650,6 @@ impl Simulation {
         receiver: u64,
         attacker: u64,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(attacker)
@@ -678,7 +668,6 @@ impl Simulation {
                 destination: None,
             },
             rules,
-            overlay_registry,
             frame_effects,
         )
         .expect("present represented retaliation receiver has concrete setters")
@@ -711,7 +700,6 @@ impl Simulation {
                 destination: None,
             },
             rules,
-            None,
             frame_effects,
         )
         .expect("present represented blocker receiver has concrete setters")
@@ -1448,7 +1436,6 @@ mod tests {
                         1,
                         2,
                         rules,
-                        None,
                         crate::sim::world::FrameEffects::default(),
                     )
                 } else {

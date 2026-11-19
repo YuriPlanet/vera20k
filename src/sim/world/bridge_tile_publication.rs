@@ -187,10 +187,7 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
                 "dummy tile write is outside the admitted stock middle-bridge closure".into(),
             );
         };
-        let registry = self
-            .publication
-            .registry
-            .ok_or("missing live bridge overlay registry")?;
+        let registry = self.publication.rules.overlay_registry();
         let coord = self.publication.real_coord(cell).unwrap();
         let overlay = self
             .publication
@@ -215,10 +212,7 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
             // The original47D2B0 immediate dummy guard has no side effects.
             return Ok(());
         };
-        let registry = self
-            .publication
-            .registry
-            .ok_or("missing live bridge overlay registry")?;
+        let registry = self.publication.rules.overlay_registry();
         let coord = self.publication.real_coord(cell).unwrap();
         let sim = &mut self.publication.sim;
         let overlay = sim

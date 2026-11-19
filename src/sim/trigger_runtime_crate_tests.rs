@@ -316,7 +316,6 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             // this compares Overlay lifetime, not whole-frame parity.
             sim.process_pending_delete_with(
                 &rules,
-                Some(&registry),
                 FrameEffects::default(),
                 1,
                 sim.session.started(),

@@ -1210,7 +1210,6 @@ impl Simulation {
                 previous_cell: None,
             },
             rules,
-            registry,
         )?;
         //4B1C44..4B1C4D: the jump table 0x4B2608 over codes 0..6.
         match code {
@@ -1408,7 +1407,7 @@ impl Simulation {
             id,
             rules.ares_form(),
         );
-        if !self.foot_refresh_mega_mission(id, rules, registry, effects) {
+        if !self.foot_refresh_mega_mission(id, rules, effects) {
             self.planning_enter_idle(id, rules, planning_arrival);
         }
         // Foot4D831A..8376 asks the active IPiggyback, whatever its class,
@@ -1429,7 +1428,7 @@ impl Simulation {
         // represents, then the queue shift.
         if let Some(target) = queued_target {
             if let Err(cause) =
-                self.assign_destination_keeping_queue(id, Some(target), rules, registry, effects)
+                self.assign_destination_keeping_queue(id, Some(target), rules, effects)
             {
                 log::debug!("Foot {id} NavQueue destination: {cause:?}");
             }
@@ -1509,7 +1508,8 @@ impl Simulation {
         skip_human_land_check: bool,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let saved_base_return = self.foot_enter_idle_base(id, rules, None, effects);
+        let saved_base_return =
+            self.foot_enter_idle_base(id, rules, Some(rules.overlay_registry()), effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return saved_base_return;
         };
@@ -1522,7 +1522,7 @@ impl Simulation {
         }
         // 0x007389B1..0x007389BF: a Magnetron lets go of what it holds.
         if entity.lift.target().is_some() {
-            self.release_locomotor(id, true, rules, None, effects);
+            self.release_locomotor(id, true, rules, Some(rules.overlay_registry()), effects);
         }
         // 0x007389C4..0x00738A27: a Unit on Move (vt+0x184) with no NavCom,
         // standing exactly on its Cell's (vt+0x1B8) centre at height 0,
@@ -1547,7 +1547,7 @@ impl Simulation {
             }
         }
         // `0x00738A2F`: the navigation list may send it on.
-        self.handle_navigation_list(id, rules, None, effects);
+        self.handle_navigation_list(id, rules, effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return saved_base_return;
         };
@@ -1634,8 +1634,8 @@ impl Simulation {
             // Unit738AF5/738C75 calls Target(NULL) then Destination(NULL,1)
             // before its queue gate. Use the shared concrete setter owners,
             // including retained burst, movement, and Teleporter side effects.
-            let _ = self.assign_target_represented(id, None, rules, None, effects);
-            self.assign_null_destination(id, rules, None, effects);
+            let _ = self.assign_target_represented(id, None, rules, effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
         }
         // 0x00738C9D..0x00738CF8: a Unit on Enter (`+0xAC`) whose radio
         // contact 0 is a `Bunker=` building (`+0x16AB`) other than the first

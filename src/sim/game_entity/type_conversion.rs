@@ -168,10 +168,7 @@ impl Simulation {
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.recompute_ares_attached_stats(rules, &self.interner);
         }
-        self.destroy_spotlight_for_parent(
-            id,
-            UninitContext::with_rules(rules).with_effects(effects),
-        );
+        self.destroy_spotlight_for_parent(id, UninitContext::new(rules).with_effects(effects));
         self.construct_spotlight(id, rules);
         let frame = self.session.binary_frame();
         let Some(actor) = self.substrate.entities.get_mut(id) else {

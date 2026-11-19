@@ -363,7 +363,8 @@ pub(super) fn world_with(
             .flat_map(|y| (0..33).map(move |x| common_raw_terrain_cell(x, y, 0, false)))
             .collect(),
     );
-    crate::map::resolved_terrain::install_ordinary_repair_test_catalog(&mut terrain);
+    // The scenes' native map is Clear: the Recalc(-1) a Mark runs keeps it.
+    crate::map::resolved_terrain::install_clear_test_catalog(&mut terrain, 0);
     let terrain_rules = crate::rules::terrain_rules::TerrainRules::from_ini(ini);
     let costs = terrain_rules
         .semantics_for_land_type(0)
