@@ -2968,9 +2968,10 @@ pub(crate) fn spy_grant_super(
         return false;
     };
     let on_hold = sw.is_powered
-        && sim.power_states.get(&owner).is_some_and(|state| {
-            state.total_drain() != 0 && state.total_output() < state.total_drain()
-        });
+        && sim
+            .power_states
+            .get(&owner)
+            .is_some_and(|state| state.has_low_power());
     let granted = grant_super(
         &sim.interner,
         &sim.session,

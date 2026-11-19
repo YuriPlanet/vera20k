@@ -74,12 +74,10 @@ impl Simulation {
             .country_degrades(self.interner.resolve(house.house_type_id()))
             .unwrap_or(!house.multiplay_passive());
         let globals = rules.ares_building_globals();
-        // HasLowPower, inlined: a drain above the output.
         let low_power = self
             .power_states
             .get(&owner)
-            .map(|power| power.effective_totals())
-            .is_some_and(|(output, drain)| drain != 0 && output < drain);
+            .is_some_and(|power| power.has_low_power());
         if !degrades || !globals.degrade_enabled || !low_power {
             return;
         }

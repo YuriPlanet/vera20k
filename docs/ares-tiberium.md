@@ -134,7 +134,10 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   `GiveTiberium`, which Ares' `10024290` (hook `4F9610`) makes: score
   `ftol(amount * 5)`; a campaign or human House fills its on-map `Storage=`
   buildings in House+68 order up to the free capacity (`+0x310` minus the
-  stored total; the rest is lost), any other House takes cash. Every build
+  stored total; the rest is lost), any other House takes cash. One switch
+  makes the stores live: the game's money takes its Ares form
+  (`RuleSet::ares_form`), which the deposit, the sale's payout, the merge,
+  the withdrawal, the spill and the silo nag below all ask. Every build
   also ports the stock arms reading the stores, which change nothing in a
   game whose stores stay empty: Spend_Money's drain (`0x004F97DD..0x004F9925`,
   single units at `ftol(Value * IncomeMult)` each, the excess back as the
