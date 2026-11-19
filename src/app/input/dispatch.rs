@@ -2309,6 +2309,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             *help = !*help;
             let on = *help;
             state.persistence.options_profile.convenience_help = on;
+            state.match_state.sim_runtime.show_status_rows(on);
             crate::app::persistence::options::persist_options_profile(state);
             log::info!("Convenience help: {}", if on { "shown" } else { "hidden" });
         }

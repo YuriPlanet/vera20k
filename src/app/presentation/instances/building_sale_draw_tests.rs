@@ -201,7 +201,7 @@ fn gate_piece(
     let voxel_images = RefCell::new(VoxelImageCache::default());
     let zshape_skips = std::cell::RefCell::default();
     let presented =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
+        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
     let input = ShpInputs {
         runtime,
         frame: &presented,

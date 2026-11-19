@@ -114,6 +114,9 @@ pub(crate) struct SimHost {
     /// Every object type the local sidebar has asked of this scenario's
     /// frames ([`Self::ask_sidebar_types`]), which each frame answers.
     sidebar_types: SidebarTypes,
+    /// Whether frames capture VERA's Convenience Help status rows
+    /// ([`Self::show_status_rows`]); off, the capture skips them.
+    status_rows: bool,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -402,7 +405,11 @@ impl SimHost {
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Box::new(PresentationFrame::capture(runtime, &self.sidebar_types));
+            let frame = Box::new(PresentationFrame::capture(
+                runtime,
+                &self.sidebar_types,
+                self.status_rows,
+            ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
             costs.captures += 1;
@@ -421,6 +428,19 @@ impl SimHost {
             return;
         }
         self.sidebar_types = self.sidebar_types.union(types);
+        if !self.lent {
+            self.forget_frame();
+        }
+    }
+
+    /// Have frames capture VERA's Convenience Help status rows, or stop.
+    /// A home frame captured the other way is dropped, so the next read
+    /// captures it; a lent tick's frame stands until the tick comes back.
+    pub(crate) fn show_status_rows(&mut self, on: bool) {
+        if self.status_rows == on {
+            return;
+        }
+        self.status_rows = on;
         if !self.lent {
             self.forget_frame();
         }
