@@ -390,6 +390,7 @@ pub(super) fn build_world_instances(
                 tactical: [x, y, width, height],
                 zoom: state.match_state.input.zoom_level,
                 axis: instances::depth_axis(state),
+                z_seed: state.renderer.native_z_seed.seed(),
                 atlas: presentation.sprite_atlas.as_ref(),
                 detail: &presentation.detail,
                 detail_level: presentation.in_game_options.detail_level,
@@ -620,8 +621,21 @@ pub(super) fn build_world_instances(
         .map(|parent| parent.parent.id)
         .collect();
     let building_status_text = build_building_status_instances(state, &building_body_opportunities);
-    let object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
-    let fogged_objects = instances::build_fogged_instances(state);
+    let mut object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
+    let mut fogged_objects = instances::build_fogged_instances(state);
+    // Bit_Blit seeds a raw frame from its rect clipped to the view
+    // (`native_z::Z_GRADIENT_RAW_FRAME_FLAG`), which ends this far down.
+    let view_height = crate::app::input::camera::tactical_view_height(state);
+    for instance in object_layers
+        .iter_mut()
+        .flat_map(|layer| &mut layer.instances)
+        .chain(&mut fogged_objects.instances)
+        .chain(&mut cell_bodies)
+    {
+        if instance.z_gradient & crate::render::native_z::Z_GRADIENT_RAW_FRAME_FLAG != 0 {
+            instance.draw_state.fx_params[3] = view_height;
+        }
+    }
 
     // PixelFX water/ore sparkles — per-frame 1-pixel cell dots.
     let cell_sparkles: Vec<SpriteInstance> = build_pixel_fx_sparkle_instances(state, sw, sh);
@@ -1016,12 +1030,7 @@ pub(super) fn build_ui_instances(
     let placement_preview = build_placement_preview(state);
 
     let input = &state.match_state.input;
-    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let view = tactical_world_viewport(
-        [input.camera_x, input.camera_y],
-        [x, y, width, height],
-        state.renderer.world_zoom_pass.as_ref(),
-    );
+    let view = tactical_world_view(state);
     // The drained action stores go onto the whole logical surface, whose
     // pixels start at the frame's corner: the view's camera less the
     // battlefield's corner, which is the stored camera rounded as the view's.
@@ -1129,6 +1138,19 @@ pub(super) fn build_ui_instances(
 
 /// The one world-surface viewport for object admission, planning, action and rally producers.
 /// Wheel zoom changes its clip, while the native raster keeps one-pixel spans.
+pub(crate) fn tactical_world_view(
+    state: &AppState,
+) -> crate::app::presentation::target_lines::TacticalViewport {
+    let input = &state.match_state.input;
+    let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    tactical_world_viewport(
+        [input.camera_x, input.camera_y],
+        [x, y, width, height],
+        state.renderer.world_zoom_pass.as_ref(),
+    )
+}
+
+/// [`tactical_world_view`] of a stored `camera` and `tactical` rect.
 pub(crate) fn tactical_world_viewport(
     camera: [f32; 2],
     tactical: [u32; 4],

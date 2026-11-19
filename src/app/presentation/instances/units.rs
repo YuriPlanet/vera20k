@@ -2571,8 +2571,7 @@ fn composite_draw_state(state: &AppState, mut draw_state: DrawState) -> DrawStat
     // Only voxel body draws use this otherwise unused parameter. Shadows keep
     // their own state and depth. The shader needs the actual tactical scissor
     // to seed each native Bit_Blit from its clipped rectangle, split or not.
-    let (_, _, _, height) = crate::app::input::camera::tactical_viewport_px(state);
-    draw_state.fx_params[3] = height as f32 / state.match_state.input.zoom_level;
+    draw_state.fx_params[3] = crate::app::input::camera::tactical_view_height(state);
     draw_state
 }
 

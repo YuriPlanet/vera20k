@@ -196,6 +196,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
                 tactical: [0, 0, size[0], size[1]],
                 zoom: 1.,
                 axis: crate::render::batch::DepthAxis::NONE,
+                z_seed: crate::render::native_z::DEFAULT_Z,
                 atlas: Some(&atlas),
                 detail: &detail,
                 detail_level: 2,
