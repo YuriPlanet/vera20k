@@ -257,6 +257,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.vsync = vsync;
         App::sync_present_mode(self);
     }
+    fn store_directx12(&mut self, enabled: bool) {
+        // The graphics API is chosen once, at launch: the next start reads
+        // it (`GpuContext::new`).
+        self.persistence.options_profile.directx12 = enabled;
+    }
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.
         self.persistence.options_profile.hd_map_previews = enabled;

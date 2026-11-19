@@ -554,6 +554,21 @@ impl App {
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
+        // Options' DirectX 12 box, on Windows and for a player's own window.
+        // A start on it that never finished turns the box off instead
+        // (`persistence::directx12_start`).
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let mut options_profile = options_profile;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let directx12 = crate::render::gpu::HAS_DIRECTX12
+            && !capture
+            && !hidden_spawn_window
+            && game_config.as_ref().is_some_and(|config| {
+                crate::app::persistence::directx12_start::begin(
+                    config.paths.settings_dir(),
+                    &mut options_profile.directx12,
+                )
+            });
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
@@ -561,6 +576,7 @@ impl App {
             window.clone(),
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
+            directx12,
         )?;
         // On the processor, building the renderers and reaching the first
         // picture can take minutes, and the window stays blank until then: a
