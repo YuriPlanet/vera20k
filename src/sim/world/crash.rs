@@ -858,7 +858,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(transport)
-                .and_then(|entity| entity.cargo_mut())
+                .and_then(|entity| entity.passenger_role_mut().cargo_mut())
                 .and_then(|cargo| cargo.unload_first())
                 .map(|(passenger, _size)| passenger)
             else {
@@ -870,7 +870,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(passenger)
                 && entity.passenger_role().inside_transport_id() == Some(transport)
             {
-                entity.clear_carrier_relation();
+                entity.passenger_role_mut().clear_carrier_relation();
             }
             let nested = if nested_by_self {
                 Some(passenger)

@@ -5575,7 +5575,7 @@ impl Simulation {
 
             // TechnoClass removes an expiring passenger from its CargoClass before
             // clearing its target/archive/manager reference family.
-            if drops_passenger && let Some(cargo) = listener.cargo_mut() {
+            if drops_passenger && let Some(cargo) = listener.passenger_role_mut().cargo_mut() {
                 let _ = cargo.disembark(expired_id);
             }
             if drops_spawn_owner {
@@ -5805,10 +5805,10 @@ impl Simulation {
             ammo.set_dock(None);
         }
         if clear_transporter {
-            listener.clear_transporter();
+            listener.passenger_role_mut().clear_transporter();
         }
         if clear_passenger_role {
-            listener.clear_carrier_relation();
+            listener.passenger_role_mut().clear_carrier_relation();
         }
         if clear_c4_source {
             listener.building.pending_c4_detonation.forget_source();
@@ -5825,7 +5825,10 @@ impl Simulation {
             listener.building.building_light.take();
         }
         if clear_occupant {
-            listener.remove_garrison_reference(expired_id);
+            listener
+                .passenger_role_mut()
+                .occupants_mut()
+                .remove_expired(expired_id);
         }
     }
 
@@ -7021,7 +7024,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(building_id)
-                .and_then(|entity| entity.cargo_mut())
+                .and_then(|entity| entity.passenger_role_mut().cargo_mut())
                 .and_then(|cargo| cargo.unload_first())
                 .map(|(id, _)| id);
             let Some(passenger) = passenger else {
@@ -7305,7 +7308,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get_mut(stable_id)
-                    .and_then(|entity| entity.cargo_mut())
+                    .and_then(|entity| entity.passenger_role_mut().cargo_mut())
                     .and_then(|cargo| cargo.unload_first())
                     .map(|(id, _)| id);
                 let Some(passenger) = passenger else {

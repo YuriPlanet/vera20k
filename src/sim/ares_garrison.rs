@@ -216,7 +216,10 @@ impl Simulation {
             }
         }
         if let Some(source) = self.substrate.entities.get_mut(source_id) {
-            source.repair_garrison_fire_index();
+            source
+                .passenger_role_mut()
+                .occupants_mut()
+                .repair_fire_index();
         }
         self.ares_eval_raid_status(source_id, rules, registry, effects);
     }

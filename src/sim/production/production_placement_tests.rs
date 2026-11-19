@@ -3732,7 +3732,9 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     pax.set_passenger_role_for_test(PassengerRole::inside_for_test(30, false));
     sim.substrate.entities.insert(pax);
     if let Some(t) = sim.substrate.entities.get_mut(30) {
-        t.garrison_mut_for_test().add_for_test(31);
+        t.passenger_role_mut_for_test()
+            .occupants_mut()
+            .add_for_test(31);
     }
     // Accepted Building AddOccupant52298D refreshes after the append.
     sim.refresh_spatial_threat(30, &rules, None);

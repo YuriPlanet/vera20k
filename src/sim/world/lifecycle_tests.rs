@@ -564,7 +564,10 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         building
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
-        building.garrison_mut_for_test().add_for_test(passenger_id);
+        building
+            .passenger_role_mut_for_test()
+            .occupants_mut()
+            .add_for_test(passenger_id);
     }
     assert!(matches!(
         sim.try_reveal_entity_with_context(
@@ -6859,7 +6862,10 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.health.set_for_test(10);
-        building.garrison_mut_for_test().add_for_test(passenger_id);
+        building
+            .passenger_role_mut_for_test()
+            .occupants_mut()
+            .add_for_test(passenger_id);
     }
     assert!(matches!(
         sim.try_reveal_entity_with_context(
@@ -8145,7 +8151,10 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
     );
     assert_eq!(unit_health, 90);
     assert_eq!(tree_health, 95);
-    assert_eq!(building_health, 95, "the tree passes its five-point damage to the building");
+    assert_eq!(
+        building_health, 95,
+        "the tree passes its five-point damage to the building"
+    );
 
     let (_, unit_health, tree_health, building_health) = run(false);
     assert_eq!(unit_health, 90);
