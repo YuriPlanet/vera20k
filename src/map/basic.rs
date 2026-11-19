@@ -4,6 +4,7 @@
 //! This module keeps the first-pass support intentionally narrow: parse the most
 //! useful metadata now and leave the broader scenario semantics for later work.
 
+use crate::assets::csf_file::CsfFile;
 use crate::rules::ini_parser::IniFile;
 use crate::util::native_string::decode_widened_utf8;
 use crate::util::native_x87::NativeF64Bits;
@@ -316,15 +317,24 @@ const MAX_BRIEFING_CHARS: usize = 2000;
 /// list shows it. `None` without one, or when it is only a string-table name
 /// such as `Brief:TRN01`, which map editors leave in maps.
 pub fn briefing_text(map_bytes: &[u8]) -> Option<String> {
+    briefing_text_with_csf(map_bytes, None)
+}
+
+/// The same briefing reader with an active string table for installed maps.
+/// VERA resolves a label once and formats its text with the map's line breaks
+/// and length limit.
+pub fn briefing_text_with_csf(map_bytes: &[u8], csf: Option<&CsfFile>) -> Option<String> {
     let value = basic_briefing_value(map_bytes)?;
     let value = crate::util::native_string::widen_bytes(value);
     let value = decode_widened_utf8(&value);
-    if is_string_table_name(&value) {
-        return None;
-    }
+    let value = if is_string_table_name(&value) {
+        csf?.get(&value)?
+    } else {
+        &value
+    };
     let mut text = String::new();
     let mut blank = false;
-    for line in value.split('@') {
+    for line in value.split(['@', '\n']) {
         let line: String = line
             .chars()
             .filter(|c| !c.is_control() || c.is_whitespace())
@@ -647,6 +657,24 @@ mod tests {
         assert_eq!(
             briefing_text(b"[BASIC]\nbriefing=MISSION BRIEFING:@Retake the coast.\n").as_deref(),
             Some("MISSION BRIEFING:\nRetake the coast.")
+        );
+    }
+
+    #[test]
+    fn a_local_briefing_resolves_its_csf_label_and_keeps_paragraphs() {
+        let csf = crate::assets::csf_file::test_csf(&[(
+            "Brief:Bridge",
+            "  Retake  the bridge.\r\n\r\n守住@大桥  ",
+        )]);
+        let map = b"[Basic]\nBriefing=brief:BRIDGE\n";
+        assert_eq!(
+            briefing_text_with_csf(map, Some(&csf)).as_deref(),
+            Some("Retake the bridge.\n\n守住\n大桥")
+        );
+        assert_eq!(briefing_text(map), None);
+        assert_eq!(
+            briefing_text_with_csf(b"[Basic]\nBriefing=Brief:Unknown\n", Some(&csf)),
+            None
         );
     }
 }
