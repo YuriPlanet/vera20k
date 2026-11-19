@@ -8,7 +8,7 @@ use super::sound_dispatch::dispatch_sim_sound_events;
 use crate::app::input::messages::HudMessage;
 use crate::app::input::planning_mode::PlanningInputState;
 use crate::app::presentation::building_anim::SoundPlaybackInputs;
-use crate::audio::events::SoundEventQueue;
+use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::selection::SelectionState;
@@ -32,8 +32,11 @@ mod outcome_wait_tests;
 /// Source: `tools/input_oracle/gattling_loop.json` and its native harness.
 type RadarAdmission<'a> =
     dyn FnMut(crate::sim::radar::RadarEventRequest, u64, &RuleSet) -> bool + 'a;
+/// [`crate::app::presentation::building_anim::set_tactical_radar`] on the
+/// lent presentation owners: the availability, the frame's SFX player and
+/// the rules in, the cue to play out.
 type TacticalRadarSetter<'a> =
-    dyn FnMut(bool) -> Option<crate::render::radar::anim::RadarAvailabilityCue> + 'a;
+    dyn FnMut(bool, Option<&mut SfxPlayer>, &RuleSet) -> Option<GameSoundEvent> + 'a;
 
 struct ScenarioPauseOwners<'a> {
     clock: &'a mut super::scenario_pause::ScenarioPauseClock,
@@ -462,16 +465,13 @@ impl TacticalRadarBoundary for FrameClientBoundary<'_> {
         let Some(setter) = &self.tactical_radar else {
             return;
         };
-        let Some(cue) = (*setter.borrow_mut())(available) else {
+        let mut playback = self.playback.borrow_mut();
+        let sfx = playback.as_mut().map(|(sfx, _)| &mut **sfx);
+        let Some(sound) = (*setter.borrow_mut())(available, sfx, rules) else {
             return;
         };
-        if let Some((sfx, inputs)) = self.playback.borrow_mut().as_mut() {
-            crate::app::radar_movie::end_radar_sound_loop_with(sfx);
-            if let Some(sound) =
-                crate::app::presentation::building_anim::radar_availability_sound(rules, cue)
-            {
-                inputs.consume(sfx, &[sound], Some(sim), self.local_owner);
-            }
+        if let Some((sfx, inputs)) = playback.as_mut() {
+            inputs.consume(sfx, &[sound], Some(sim), self.local_owner);
         }
     }
 }
@@ -513,7 +513,7 @@ mod tactical_radar_tests {
             observed.borrow_mut().push("prefix");
             true
         };
-        let mut setter = |_| {
+        let mut setter = |_: bool, _: Option<&mut SfxPlayer>, _: &RuleSet| {
             observed.borrow_mut().push("setter");
             None
         };

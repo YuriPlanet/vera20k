@@ -1535,7 +1535,6 @@ fn after_simulation_pass(
     // output. Reconcile the detail option and any explicit tool mutations.
     refresh_cell_lighting(state);
 
-    crate::app::presentation::building_anim::update_radar_state(state);
     let sidebar_visits = crate::app::presentation::sidebar_gadgets::current_sidebar_action_visits(
         state,
         decision.sidebar_action,
@@ -2137,12 +2136,18 @@ fn advance_one_simulation_frame(
         };
         let has_radar = &mut state.match_state.match_presentation.has_radar;
         let radar_anim = &mut state.match_state.match_presentation.radar_anim;
-        let mut set_tactical_radar = |available| {
-            *has_radar = available;
-            radar_anim
-                .as_mut()
-                .and_then(|radar| radar.set_has_radar(available))
-        };
+        let mut set_tactical_radar =
+            |available: bool,
+             sfx: Option<&mut crate::audio::sfx::SfxPlayer>,
+             rules: &crate::rules::ruleset::RuleSet| {
+                crate::app::presentation::building_anim::set_tactical_radar(
+                    has_radar,
+                    radar_anim.as_mut(),
+                    sfx,
+                    rules,
+                    available,
+                )
+            };
         // Only Ares bounty or ProduceCashDisplay sums emit text, so this runs in every game.
         let flying_credits = &state.match_state.match_presentation.flying_credits;
         let queue_bounty = |sim: &crate::sim::world::Simulation,

@@ -139,7 +139,11 @@ impl DeferredClientEffects {
         state.match_state.scenario_outcome = self.outcome_wait.into_inner();
         for effect in self.recorded.into_inner() {
             match effect {
-                DeferredEffect::TacticalRadar(available) => set_tactical_radar(state, available),
+                DeferredEffect::TacticalRadar(available) => {
+                    crate::app::presentation::building_anim::set_local_tactical_radar(
+                        state, available,
+                    );
+                }
                 DeferredEffect::PlanningLeft => {
                     let rules = state
                         .match_state
@@ -180,30 +184,6 @@ impl DeferredClientEffects {
                 }
             }
         }
-    }
-}
-
-/// The client half of `Radar656DF0`, as `FrameClientBoundary` performs it.
-fn set_tactical_radar(state: &mut AppState, available: bool) {
-    let presentation = &mut state.match_state.match_presentation;
-    presentation.has_radar = available;
-    let Some(cue) = presentation
-        .radar_anim
-        .as_mut()
-        .and_then(|radar| radar.set_has_radar(available))
-    else {
-        return;
-    };
-    let Some(rt) = state.match_state.sim_runtime.runtime() else {
-        return;
-    };
-    if let Some(sfx) = state.audio.sfx_player.as_mut() {
-        crate::app::radar_movie::end_radar_sound_loop_with(sfx);
-    }
-    if let Some(sound) =
-        crate::app::presentation::building_anim::radar_availability_sound(&rt.resources.rules, cue)
-    {
-        state.match_state.match_audio.sound_events.push(sound);
     }
 }
 

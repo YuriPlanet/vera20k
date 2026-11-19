@@ -32,9 +32,7 @@ use crate::util::lookup_hash::{LookupMap, LookupSet};
 
 use super::geometry::NativeRadarSurfaceGeometry;
 use super::helpers::owner_dot_color;
-use super::visibility::{
-    RadarRegistrationVisibilityFacts, radar_cell_shrouded, radar_owner_is_human_player,
-};
+use super::visibility::{RadarRegistrationVisibilityFacts, radar_cell_shrouded};
 
 const TRACKER_BUCKET_COUNT: usize = 256;
 
@@ -165,7 +163,7 @@ pub(super) fn radar_pixel_candidate_eligible(
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    game_mode_nonzero: bool,
+    player_ptr_arm: bool,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     pixel_cell: Option<(u16, u16)>,
@@ -181,8 +179,12 @@ pub(super) fn radar_pixel_candidate_eligible(
     if let Some(local_owner) = local_owner {
         if !full_visibility {
             let (rx, ry) = pixel_cell.unwrap_or((entity.position().rx(), entity.position().ry()));
-            let owner_is_human =
-                radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero);
+            let owner_is_human = crate::sim::world::Simulation::is_human_player_on(
+                player_ptr_arm,
+                houses,
+                entity.owner(),
+                Some(local_owner),
+            );
             if radar_cell_shrouded(fog, cells, local_owner, (rx, ry)) && !owner_is_human {
                 return false;
             }
