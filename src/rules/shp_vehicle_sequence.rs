@@ -763,7 +763,7 @@ mod turret_shape_tests {
         assert_eq!(turret.start_frame, 32);
         assert_eq!(turret.facings, 8);
         assert_eq!(turret.facings, 8);
-        assert_eq!(turret.facing_multiplier, 1);
+        assert_eq!(turret.facings, 1);
 
         assert!(
             turret_set(4, 8, false, false)

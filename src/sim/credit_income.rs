@@ -1951,7 +1951,7 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            refinery
+            refinery,
             crate::rules::ares_switch::ares_way(),
         ));
 
@@ -2049,7 +2049,7 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            refinery
+            refinery,
             crate::rules::ares_switch::ares_way(),
         ));
         sim.session.set_binary_frame_for_test(17);
@@ -2116,7 +2116,7 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            refinery
+            refinery,
             crate::rules::ares_switch::ares_way(),
         ));
         sim.session.set_binary_frame_for_test(17);

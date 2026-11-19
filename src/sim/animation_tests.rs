@@ -2,6 +2,7 @@
 //!
 //! Separated from animation.rs to stay within the 400-line file limit.
 
+use crate::rules::animation_sequence::ShpVehicleTurret;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
