@@ -43,6 +43,7 @@ Thumbs.db
 /docs/*
 !/docs/capabilities.md
 !/docs/wasm.md
+!/docs/aarch64-linux.md
 !/docs/sim-thread.md
 !/docs/ares.md
 !/docs/android.md
