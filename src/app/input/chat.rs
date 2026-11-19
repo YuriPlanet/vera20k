@@ -33,6 +33,7 @@
 use crate::app::AppState;
 use crate::app::input::keyboard::InGameKeyEdge;
 use crate::app::match_runtime::beacons::{self, BeaconTarget};
+use crate::app::match_runtime::session::SessionMode;
 use crate::sim::intern::InternedId;
 use crate::ui::messages::{EditInput, EditKey};
 use winit::keyboard::{Key, NamedKey};
@@ -42,6 +43,8 @@ use winit::keyboard::{Key, NamedKey};
 pub(crate) enum ChatTarget {
     #[default]
     None,
+    /// VERA command line for an opted-in offline skirmish.
+    Skirmish,
     /// 1, Enter: the Houses whose chat-mask byte is set.
     Listeners,
     /// 2, Backspace or Home: allies.
@@ -138,11 +141,22 @@ fn edit_keys(edge: &InGameKeyEdge<'_>) -> Vec<EditKey> {
 pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
     let list = &state.match_state.match_presentation.message_list;
     if !list.editing() {
-        if !edge.state.is_pressed() || edge.repeat || !state.match_state.session_mode().is_network()
-        {
+        if !edge.state.is_pressed() || edge.repeat {
             return false;
         }
         let modifiers = state.match_state.input.hotkey_modifiers;
+        if !state.match_state.session_mode().is_network() {
+            if edge.text == Some("/") && !modifiers.super_key() && skirmish_input_available(state) {
+                let presentation = &mut state.match_state.match_presentation;
+                if presentation.message_list.add_edit("", [1.0; 3], true) {
+                    presentation.chat.target = ChatTarget::Skirmish;
+                    presentation.chat.overflowed = false;
+                    apply_input(state, EditKey::Unit(u16::from(b'/')));
+                    return true;
+                }
+            }
+            return false;
+        }
         let Some(target) = start_target(edge.logical, modifiers.control_key(), modifiers.alt_key())
         else {
             return false;
@@ -172,7 +186,9 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
         apply_input(state, EditKey::Unit(unit));
     }
     // VERA: the label shows the committed text now (see the module notes).
-    if beacons::own_selected(state) {
+    if state.match_state.match_presentation.chat.target != ChatTarget::Skirmish
+        && beacons::own_selected(state)
+    {
         follow_label(state, None);
     }
 }
@@ -181,7 +197,10 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
 /// input-method composition is open, the selected beacon's label follows
 /// the line and the composition.
 pub(crate) fn composition_changed(state: &mut AppState) {
-    if state.match_state.match_presentation.message_list.editing() && composition(state).is_some() {
+    if state.match_state.match_presentation.chat.target != ChatTarget::Skirmish
+        && state.match_state.match_presentation.message_list.editing()
+        && composition(state).is_some()
+    {
         follow_label(state, None);
     }
 }
@@ -284,6 +303,23 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     let result = presentation
         .message_list
         .input(key, &|text| font.text_width(text) as i32);
+    if presentation.chat.target == ChatTarget::Skirmish {
+        match result {
+            EditInput::Overflowed(_) => presentation.chat.overflowed = true,
+            EditInput::Ended => presentation.chat.target = ChatTarget::None,
+            EditInput::Sent(line) => {
+                presentation.chat.target = ChatTarget::None;
+                let reply = if presentation.chat.overflowed {
+                    crate::i18n::tr("VERA:CheatTooLong")
+                } else {
+                    skirmish_command(state, &line)
+                };
+                crate::app::input::messages::post_selection_navigation_text(state, &reply);
+            }
+            _ => {}
+        }
+        return;
+    }
     let typed = match &result {
         EditInput::Sent(text) => text.encode_utf16().collect(),
         _ => presentation
@@ -338,6 +374,102 @@ fn apply_input(state: &mut AppState, key: EditKey) {
             send(state, target, &chunk);
         }
         _ => {}
+    }
+}
+
+/// Only a player typing into an active, opted-in offline skirmish opens this edit.
+fn skirmish_input_available(state: &AppState) -> bool {
+    state.persistence.options_profile.skirmish_cheats
+        && state.match_state.session_mode() == SessionMode::Skirmish
+        && !state.match_state.match_diagnostics.is_replay_playback()
+        && !state.match_state.frame_stopped
+        && !state.match_state.paused()
+        && !crate::app::input::campaign_input::is_locked(state)
+        && !crate::app::App::house_outcome_wait_pending(state)
+}
+
+fn parse_skirmish_command(
+    line: &str,
+) -> Result<Option<crate::sim::skirmish_cheats::SkirmishCheat>, &'static str> {
+    use crate::sim::skirmish_cheats::SkirmishCheat;
+    const USAGE: &str = "VERA:CheatUsage";
+    let mut words = line.split_ascii_whitespace();
+    let name = words
+        .next()
+        .and_then(|word| word.strip_prefix('/'))
+        .ok_or(USAGE)?;
+    let command = if name.eq_ignore_ascii_case("help") {
+        None
+    } else if name.eq_ignore_ascii_case("spysat") {
+        Some(SkirmishCheat::SpySat)
+    } else if name.eq_ignore_ascii_case("money") {
+        Some(SkirmishCheat::Money(
+            words.next().and_then(|n| n.parse().ok()).ok_or(USAGE)?,
+        ))
+    } else if name.eq_ignore_ascii_case("spawn") || name.eq_ignore_ascii_case("rhino") {
+        let type_id = if name.eq_ignore_ascii_case("rhino") {
+            "HTNK"
+        } else {
+            words.next().ok_or(USAGE)?
+        };
+        let count = words.next().and_then(|n| n.parse().ok()).ok_or(USAGE)?;
+        Some(SkirmishCheat::Spawn {
+            type_id: type_id.to_owned(),
+            count,
+        })
+    } else {
+        return Err(USAGE);
+    };
+    if words.next().is_some() {
+        return Err(USAGE);
+    }
+    Ok(command)
+}
+
+fn skirmish_command(state: &mut AppState, line: &str) -> String {
+    use crate::app::match_runtime::{sim_host::SimWrite, sim_tick};
+    use crate::i18n::{tr, tr_fill};
+    use crate::sim::skirmish_cheats::CheatEffect;
+
+    if !skirmish_input_available(state) {
+        return tr("VERA:CheatUnavailable");
+    }
+    let command = match parse_skirmish_command(line) {
+        Ok(Some(command)) => command,
+        Ok(None) => return tr("VERA:CheatHelp"),
+        Err(key) => return tr(key),
+    };
+    // Finish and record an outstanding tick before appending this input after its hash.
+    sim_tick::finish_threaded_frame(state);
+    if !skirmish_input_available(state) {
+        return tr("VERA:CheatUnavailable");
+    }
+    sim_tick::prepare_replay_recording(state);
+    let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
+        return tr("VERA:CheatUnavailable");
+    };
+    let result = match state.match_state.match_diagnostics.replay_log.as_mut() {
+        Some(log) => log.apply_skirmish_cheat(&mut rt.simulation, &rt.resources.rules, command),
+        None => rt
+            .simulation
+            .apply_skirmish_cheat(&command, &rt.resources.rules),
+    };
+    match result {
+        Err(key) => tr(key),
+        Ok(CheatEffect::Money(amount)) => tr_fill("VERA:CheatMoney", &[("amount", &amount)]),
+        Ok(CheatEffect::SpySat) => tr("VERA:CheatSpySat"),
+        Ok(CheatEffect::Spawned {
+            placed,
+            requested,
+            type_id,
+        }) => tr_fill(
+            "VERA:CheatSpawn",
+            &[
+                ("placed", &placed),
+                ("count", &requested),
+                ("unit", &type_id),
+            ],
+        ),
     }
 }
 
@@ -468,7 +600,7 @@ fn route_houses(
     houses: &[ChatHouse],
 ) -> (Vec<usize>, bool) {
     let inside = |house: &ChatHouse| match target {
-        ChatTarget::None => false,
+        ChatTarget::None | ChatTarget::Skirmish => false,
         ChatTarget::Listeners => chat.listens(house.index),
         ChatTarget::Allies => house.allied,
         ChatTarget::All => true,
@@ -563,6 +695,25 @@ mod tests {
             Some(ChatTarget::All),
             "AltGr"
         );
+    }
+
+    #[test]
+    fn the_rhino_shortcut_and_rules_id_reach_the_same_command() {
+        use crate::sim::skirmish_cheats::SkirmishCheat;
+        assert_eq!(
+            parse_skirmish_command("/RhInO 200 "),
+            Ok(Some(SkirmishCheat::Spawn {
+                type_id: "HTNK".into(),
+                count: 200
+            }))
+        );
+        assert_eq!(
+            parse_skirmish_command("/spawn HTNK 200"),
+            parse_skirmish_command("/rhino 200")
+        );
+        assert!(parse_skirmish_command("/money 10000 extra").is_err());
+        assert!(parse_skirmish_command("/rhino -1").is_err());
+        assert_eq!(parse_skirmish_command("/help"), Ok(None));
     }
 
     #[test]

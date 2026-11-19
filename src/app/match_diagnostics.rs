@@ -913,7 +913,12 @@ mod tests {
         let log = ReplayLog::load(&flush.path).unwrap();
         assert_eq!(log.header.seed, 17);
         assert!(log.ticks.is_empty());
-        assert_eq!(log.initial_scenario_services, [ScenarioServiceInput::Pause]);
+        assert_eq!(
+            log.initial_scenario_services,
+            [crate::sim::replay::RecordedServiceInput::Scenario(
+                ScenarioServiceInput::Pause
+            )]
+        );
         assert!(diagnostics.replay_log.is_none());
         std::fs::remove_dir_all(root).unwrap();
     }

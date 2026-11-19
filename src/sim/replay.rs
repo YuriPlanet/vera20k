@@ -21,11 +21,11 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(any(test, feature = "test-support"))]
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{COMMAND_RECORD_LEN, CommandEnvelope, CommandRecord};
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::PathGrid;
+use crate::sim::skirmish_cheats::SkirmishCheat;
 use crate::sim::world::Simulation;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::world::TickLane;
@@ -724,6 +724,32 @@ impl ScenarioServiceInput {
     }
 }
 
+/// Inputs admitted between frames in the diagnostic replay. Existing scenario
+/// services keep their original JSON string representation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RecordedServiceInput {
+    Scenario(ScenarioServiceInput),
+    Cheat { skirmish_cheat: SkirmishCheat },
+}
+
+impl RecordedServiceInput {
+    fn replay(&self, sim: &mut Simulation, rules: &RuleSet) -> Result<()> {
+        match self {
+            Self::Scenario(service) => {
+                service.apply(sim);
+            }
+            Self::Cheat { skirmish_cheat } => {
+                sim.apply_skirmish_cheat(skirmish_cheat, rules)
+                    .map_err(|reason| {
+                        anyhow::anyhow!("recorded skirmish cheat rejected: {reason}")
+                    })?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// One tick in the Rust-only deterministic diagnostic log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayTick {
@@ -734,7 +760,7 @@ pub struct ReplayTick {
     pub state_hash: Option<u64>,
     /// Ordered inputs after this frame's hash and before the next frame.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scenario_services: Vec<ScenarioServiceInput>,
+    pub scenario_services: Vec<RecordedServiceInput>,
 }
 
 /// Rich Rust-only command/hash log used by tests and diagnostics.
@@ -747,7 +773,7 @@ pub struct ReplayLog {
     pub startup: Option<Box<ReplayStartup>>,
     pub ticks: Vec<ReplayTick>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub initial_scenario_services: Vec<ScenarioServiceInput>,
+    pub initial_scenario_services: Vec<RecordedServiceInput>,
 }
 
 pub const REPLAY_VERSION: u32 = 4;
@@ -970,12 +996,30 @@ impl ReplayLog {
         let effects = input.apply(sim);
         // A timed pause also polls an inactive Chrono effect. It changes nothing.
         if input != ScenarioServiceInput::StepChronoScreen || !effects.is_empty() {
-            match self.ticks.last_mut() {
-                Some(frame) => frame.scenario_services.push(input),
-                None => self.initial_scenario_services.push(input),
-            }
+            self.record_service(RecordedServiceInput::Scenario(input));
         }
         effects
+    }
+
+    /// Record every admitted cheat at the boundary where it changed the world.
+    pub fn apply_skirmish_cheat(
+        &mut self,
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        command: SkirmishCheat,
+    ) -> Result<crate::sim::skirmish_cheats::CheatEffect, &'static str> {
+        let effect = sim.apply_skirmish_cheat(&command, rules)?;
+        self.record_service(RecordedServiceInput::Cheat {
+            skirmish_cheat: command,
+        });
+        Ok(effect)
+    }
+
+    fn record_service(&mut self, input: RecordedServiceInput) {
+        match self.ticks.last_mut() {
+            Some(frame) => frame.scenario_services.push(input),
+            None => self.initial_scenario_services.push(input),
+        }
     }
 
     pub fn write_json(&self, writer: &mut impl std::io::Write) -> Result<()> {
@@ -1143,7 +1187,7 @@ impl ReplayPlayback {
             .simulation
             .hash_state_every(std::num::NonZeroU64::MIN);
         for input in &replay.initial_scenario_services {
-            input.apply(&mut runtime.simulation);
+            input.replay(&mut runtime.simulation, &runtime.resources.rules)?;
         }
         let every_frame_network = replay
             .startup
@@ -1255,7 +1299,7 @@ impl ReplayPlayback {
             );
         }
         for input in &entry.scenario_services {
-            input.apply(&mut runtime.simulation);
+            input.replay(&mut runtime.simulation, &runtime.resources.rules)?;
         }
         self.index += 1;
         Ok(output)
@@ -1444,7 +1488,9 @@ impl ReplayRunner {
         let network = std::cell::RefCell::new(crate::sim::command_queue::FrameChecksumState::new());
         let mut hashes: Vec<Option<u64>> = Vec::with_capacity(replay.ticks.len());
         for input in &replay.initial_scenario_services {
-            input.apply(sim);
+            input
+                .replay(sim, rules.unwrap_or(RuleSet::empty_for_test()))
+                .expect("valid fixture service input");
         }
         for (index, entry) in replay.ticks.iter().enumerate() {
             let due_commands = sim.take_due_replay_commands(entry.commands.iter().cloned());
@@ -1479,7 +1525,9 @@ impl ReplayRunner {
             let _ = sim.drain_trigger_effects();
             hashes.push(result.state_hash);
             for input in &entry.scenario_services {
-                input.apply(sim);
+                input
+                    .replay(sim, rules.unwrap_or(RuleSet::empty_for_test()))
+                    .expect("valid fixture service input");
             }
         }
         hashes
@@ -2379,10 +2427,10 @@ mod tests {
         // A tick that did not hash leaves its hash out.
         log.record_tick(2, Vec::new(), None);
         log.initial_scenario_services
-            .push(ScenarioServiceInput::Pause);
+            .push(RecordedServiceInput::Scenario(ScenarioServiceInput::Pause));
         log.ticks[0]
             .scenario_services
-            .push(ScenarioServiceInput::Resume);
+            .push(RecordedServiceInput::Scenario(ScenarioServiceInput::Resume));
         let mut bytes = Vec::new();
         log.write_json(&mut bytes).expect("write diagnostic log");
         let json = std::str::from_utf8(&bytes).expect("JSON is UTF-8");

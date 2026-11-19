@@ -237,6 +237,8 @@ pub(crate) struct RetailOptionsProfile {
     /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
     /// Off by default.
     pub(crate) terrain_deformation: bool,
+    /// `[VERA] SkirmishCheats=` enables the command line in offline skirmish.
+    pub(crate) skirmish_cheats: bool,
     /// `[VERA] SuperweaponLimit=`: the skirmish Game Options' Superweapon Limit.
     /// Each superweapon may be built that many times and each building
     /// charges its own shot (`docs/superweapon-limit.md`). Like Terrain
@@ -415,6 +417,7 @@ impl Default for RetailOptionsProfile {
             minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
+            skirmish_cheats: false,
             superweapon_limit: 0,
             solo_skirmish: false,
             commander_feedback: true,
@@ -449,7 +452,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 38],
+    pub(crate) vera: [(&'static str, String); 39],
 }
 
 impl RetailOptionsLoad {
@@ -678,6 +681,7 @@ impl RetailOptionsProfile {
             );
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
+            self.skirmish_cheats = vera.read_bool("SkirmishCheats", self.skirmish_cheats);
             self.superweapon_limit = crate::rules::personal_rules::admitted_superweapon_limit(
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
@@ -899,6 +903,10 @@ impl RetailOptionsProfile {
                     format_bool(self.terrain_deformation).to_string(),
                 ),
                 ("SuperweaponLimit", self.superweapon_limit.to_string()),
+                (
+                    "SkirmishCheats",
+                    format_bool(self.skirmish_cheats).to_string(),
+                ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
                 (
                     "MinimapBeacons",
@@ -2632,14 +2640,21 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
     }
 
     #[test]
-    fn terrain_deformation_defaults_off_and_round_trips_through_the_vera_section() {
+    fn skirmish_checkboxes_default_off_and_round_trip_through_the_vera_section() {
         let startup = RetailStartupOptions::default();
         let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
-        assert!(!read(b"").terrain_deformation);
+        let defaults = read(b"");
+        assert!(!defaults.terrain_deformation && !defaults.skirmish_cheats);
         let mut profile = read(b"[VERA]\nTerrainDeformation=yes\n");
         assert!(profile.terrain_deformation);
-        assert!(read(&profile.transform_settings(b"")).terrain_deformation);
+        assert!(!profile.skirmish_cheats);
+        profile.skirmish_cheats = true;
+        let written = profile.transform_settings(b"");
+        let enabled = read(&written);
+        assert!(enabled.terrain_deformation && enabled.skirmish_cheats);
         profile.terrain_deformation = false;
-        assert!(!read(&profile.transform_settings(b"")).terrain_deformation);
+        profile.skirmish_cheats = false;
+        let disabled = read(&profile.transform_settings(&written));
+        assert!(!disabled.terrain_deformation && !disabled.skirmish_cheats);
     }
 }
