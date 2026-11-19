@@ -118,6 +118,7 @@ pub(crate) mod shell_route;
 mod shell_saved_games;
 mod shell_saved_seeds;
 mod shell_skirmish;
+mod shell_skirmish_setups;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
 #[cfg(all(test, tests_app))]

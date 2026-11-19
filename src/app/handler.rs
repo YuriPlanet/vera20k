@@ -1125,6 +1125,11 @@ impl ApplicationHandler for App {
                     {
                         browser.reset_interaction();
                     }
+                    if let Some(browser) =
+                        state.frontend.skirmish_shell_state.setups_browser.as_mut()
+                    {
+                        browser.reset_interaction();
+                    }
                     if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
                         dialog.reset_interaction();
                     }
@@ -1393,6 +1398,19 @@ impl ApplicationHandler for App {
                             _ => None,
                         };
                         Self::handle_saved_seed_browser_key(state, code, event.text.as_deref());
+                        state.platform.window.request_redraw();
+                    }
+                    return;
+                }
+                if screen == ScreenPage::Skirmish
+                    && state.frontend.skirmish_shell_state.setups_browser.is_some()
+                {
+                    if event.state.is_pressed() {
+                        let code = match event.physical_key {
+                            PhysicalKey::Code(code) => Some(code),
+                            _ => None,
+                        };
+                        Self::handle_skirmish_setups_key(state, code, event.text.as_deref());
                         state.platform.window.request_redraw();
                     }
                     return;
@@ -2130,6 +2148,7 @@ impl ApplicationHandler for App {
                 crate::app::input::ime::sync(state);
             }
             Self::update_saved_seed_browser_scroll(state, false);
+            Self::update_skirmish_setups_scroll(state, false);
             Self::update_load_saved_game_scroll(state, false);
             [
                 crate::app::input::keyboard::poll_scroll_repeat(state),
