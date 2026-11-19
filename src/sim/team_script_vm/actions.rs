@@ -304,16 +304,16 @@ impl Simulation {
             // Its script argument is unused. Shared movement owns timers
             // and detach/EOF cleanup; only the search can request RNG.
             22 => {
-                if !self.session.supports_local_team_shroud_search() {
+                let Some(local_view) = self.session.local_team_scout_view() else {
                     self.refuse_team_script_action(team_id, action.action_id);
                     return;
-                }
+                };
                 if first {
                     let origin = self.team_script_vm.teams.get(&team_id).and_then(|team| {
                         team.zone
                             .or_else(|| team.members().next().map(TeamTarget::Object))
                     });
-                    let Some(viewer) = self.session.current_house() else {
+                    let Some(viewer) = local_view.current_house else {
                         return;
                     };
                     let target = origin

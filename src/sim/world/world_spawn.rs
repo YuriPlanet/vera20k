@@ -1097,7 +1097,9 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Option<u64> {
-        self.spawn_object_at_height_with_init(
+        let object = rules.object(type_id)?;
+        self.spawn_resolved_object_at_height(
+            object,
             type_id,
             owner,
             rx,
@@ -1106,9 +1108,7 @@ impl Simulation {
             z,
             rules,
             overlay_registry,
-            TechnoConstructorInit::FreshScenario,
         )
-        .expect("fresh Techno constructor initialization cannot fail")
     }
 
     /// Place a fixture at an explicit height using its own overlay-type table.
@@ -1136,8 +1136,10 @@ impl Simulation {
         )
     }
 
-    fn spawn_object_at_height_with_init(
+    /// Place the selected class's object, even when another class shares its ID.
+    pub(crate) fn spawn_resolved_object_at_height(
         &mut self,
+        object: &ObjectType,
         type_id: &str,
         owner: &str,
         rx: u16,
@@ -1146,13 +1148,20 @@ impl Simulation {
         z: u8,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        init: TechnoConstructorInit,
-    ) -> Result<Option<u64>, GeneratedTechnoInitError> {
-        let Some(ge) =
-            self.construct_runtime_techno(type_id, owner, rx, ry, facing, z, rules, init)?
-        else {
-            return Ok(None);
-        };
+    ) -> Option<u64> {
+        let ge = self
+            .construct_resolved_runtime_techno(
+                object,
+                type_id,
+                owner,
+                rx,
+                ry,
+                facing,
+                z,
+                rules,
+                TechnoConstructorInit::FreshScenario,
+            )
+            .expect("fresh Techno constructor initialization cannot fail")?;
         // This explicit adapter stands finished; authored map placement
         // uses only native discovery and animation readiness.
         let (stable_id, outcome) = self.with_buildup_bypass(|sim| {
@@ -1185,13 +1194,13 @@ impl Simulation {
             (stable_id, outcome)
         });
         if outcome == RevealOutcome::Consumed {
-            return Ok(Some(stable_id));
+            return Some(stable_id);
         }
         if !matches!(outcome, RevealOutcome::Revealed { .. }) {
             // This convenience path owns its transient constructor result.
             // Held production objects use the separate limbo/retry boundary.
             self.discard_constructed_limbo(stable_id, rules, FrameEffects::default());
-            return Ok(None);
+            return None;
         }
         Self::initialize_cloak_after_unlimbo(
             &self.interner,
@@ -1201,7 +1210,7 @@ impl Simulation {
             rules,
         );
         self.substrate.ready_finished_spawn_adapter(stable_id);
-        Ok(Some(stable_id))
+        Some(stable_id)
     }
 
     /// Create an object in limbo: stored in EntityStore and tracked by its
@@ -2717,7 +2726,7 @@ impl Simulation {
         let policy = self.session.rule_policy();
         let recalc_context = self.houses.get(&owner_id).and_then(|house| {
             (is_construction_yard
-                && policy.recalculates_ai_base_after_mcv_deploy()
+                && policy.uses_managed_ai_base()
                 && !house.is_controlled_by_human(policy))
             .then(|| {
                 let country_name = house

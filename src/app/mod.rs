@@ -67,6 +67,8 @@ pub(crate) mod display_target;
 mod frame;
 pub mod frontend;
 mod game_data_check;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+mod graphics_lost;
 mod handler;
 mod hidden_run;
 mod in_game;
@@ -116,6 +118,7 @@ pub(crate) mod shell_route;
 mod shell_saved_games;
 mod shell_saved_seeds;
 mod shell_skirmish;
+mod shell_skirmish_setups;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
 #[cfg(all(test, tests_app))]

@@ -33,9 +33,7 @@ const AUDIO_SECTION: &str = "Audio";
 const WONLINE_SECTION: &str = "WOnline";
 const NETWORK_SECTION: &str = "Network";
 /// VERA's own display preferences. gamemd never reads this section.
-pub(super) const VERA_SECTION: &str = "VERA";
-/// `[VERA] DirectX12=`, which `directx12_start` also turns off.
-pub(super) const DIRECTX12_KEY: &str = "DirectX12";
+const VERA_SECTION: &str = "VERA";
 /// Destination units `OptionsClass__ReadFromINI` passes for NetID (`push 0xC8`).
 const NET_ID_UNITS: usize = 0xC8;
 /// Destination units `[VERA] Display=`'s ReadString copies into. A VERA key, so
@@ -192,12 +190,6 @@ pub(crate) struct RetailOptionsProfile {
     /// (`GpuContext::set_vsync`). On by default; untick it for lower input
     /// latency, with tearing. Presentation only.
     pub(crate) vsync: bool,
-    /// `[VERA] DirectX12=`: on Windows the game draws through DirectX 12
-    /// instead of Vulkan, which wgpu takes first (`GpuContext::new`). Off by
-    /// default; read at launch, so a change applies at the next start, and a
-    /// start on it that never finished turns it off
-    /// (`persistence::directx12_start`). Presentation only.
-    pub(crate) directx12: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
@@ -237,6 +229,8 @@ pub(crate) struct RetailOptionsProfile {
     /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
     /// Off by default.
     pub(crate) terrain_deformation: bool,
+    /// `[VERA] SkirmishCheats=` enables the command line in offline skirmish.
+    pub(crate) skirmish_cheats: bool,
     /// `[VERA] SuperweaponLimit=`: the skirmish Game Options' Superweapon Limit.
     /// Each superweapon may be built that many times and each building
     /// charges its own shot (`docs/superweapon-limit.md`). Like Terrain
@@ -335,9 +329,9 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] BuildingProductionQueue=`: a BuildingType PRODUCE queues
     /// behind a running or completed building instead of being dropped or
     /// abandoning the held product. The next building starts only after the
-    /// held one is placed. The app carries this onto the frame, so the
-    /// simulation reads it without any ruleset field: it is neither saved in
-    /// a scenario nor hashed. Off by default, so gamemd play is unchanged.
+    /// held one is placed. A rule switch (`rules::personal_rules`): offline
+    /// scenarios read it as `[General] BuildingProductionQueue=yes`; network
+    /// rooms play without it. Off by default, so gamemd play is unchanged.
     pub(crate) building_production_queue: bool,
     /// `[VERA] CompactSuperTimers=`: the battlefield's super weapon timer
     /// list shows at most six lines, the player's own first, with an arrow
@@ -419,7 +413,6 @@ impl Default for RetailOptionsProfile {
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
-            directx12: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -427,6 +420,7 @@ impl Default for RetailOptionsProfile {
             minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
+            skirmish_cheats: false,
             superweapon_limit: 0,
             solo_skirmish: false,
             commander_feedback: true,
@@ -677,7 +671,6 @@ impl RetailOptionsProfile {
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.vsync = vera.read_bool("VSync", self.vsync);
-            self.directx12 = vera.read_bool(DIRECTX12_KEY, self.directx12);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -692,6 +685,7 @@ impl RetailOptionsProfile {
             );
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
+            self.skirmish_cheats = vera.read_bool("SkirmishCheats", self.skirmish_cheats);
             self.superweapon_limit = crate::rules::personal_rules::admitted_superweapon_limit(
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
@@ -893,7 +887,6 @@ impl RetailOptionsProfile {
                     format_bool(self.smooth_online_menus).to_string(),
                 ),
                 ("VSync", format_bool(self.vsync).to_string()),
-                (DIRECTX12_KEY, format_bool(self.directx12).to_string()),
                 (
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
@@ -924,6 +917,10 @@ impl RetailOptionsProfile {
                     format_bool(self.terrain_deformation).to_string(),
                 ),
                 ("SuperweaponLimit", self.superweapon_limit.to_string()),
+                (
+                    "SkirmishCheats",
+                    format_bool(self.skirmish_cheats).to_string(),
+                ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
                 (
                     "MinimapBeacons",
@@ -1898,22 +1895,6 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
-    fn directx12_starts_off_and_a_ticked_box_round_trips() {
-        let startup = RetailStartupOptions::default();
-        assert!(
-            !load_snapshot(&startup, b"[VERA]\n")
-                .retained_profile
-                .directx12
-        );
-        let on = RetailOptionsProfile {
-            directx12: true,
-            ..RetailOptionsProfile::default()
-        }
-        .transform_settings(b"");
-        assert!(load_snapshot(&startup, &on).retained_profile.directx12);
-    }
-
-    #[test]
     fn display_preference_round_trips_through_the_vera_section() {
         use crate::ui::main_menu_dialogs::options::DisplayTarget;
         let startup = RetailStartupOptions::default();
@@ -2690,14 +2671,21 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
     }
 
     #[test]
-    fn terrain_deformation_defaults_off_and_round_trips_through_the_vera_section() {
+    fn skirmish_checkboxes_default_off_and_round_trip_through_the_vera_section() {
         let startup = RetailStartupOptions::default();
         let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
-        assert!(!read(b"").terrain_deformation);
+        let defaults = read(b"");
+        assert!(!defaults.terrain_deformation && !defaults.skirmish_cheats);
         let mut profile = read(b"[VERA]\nTerrainDeformation=yes\n");
         assert!(profile.terrain_deformation);
-        assert!(read(&profile.transform_settings(b"")).terrain_deformation);
+        assert!(!profile.skirmish_cheats);
+        profile.skirmish_cheats = true;
+        let written = profile.transform_settings(b"");
+        let enabled = read(&written);
+        assert!(enabled.terrain_deformation && enabled.skirmish_cheats);
         profile.terrain_deformation = false;
-        assert!(!read(&profile.transform_settings(b"")).terrain_deformation);
+        profile.skirmish_cheats = false;
+        let disabled = read(&profile.transform_settings(&written));
+        assert!(!disabled.terrain_deformation && !disabled.skirmish_cheats);
     }
 }

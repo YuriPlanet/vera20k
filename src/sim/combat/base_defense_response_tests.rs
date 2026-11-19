@@ -117,7 +117,7 @@ fn armed_victim_can_skip_base_defense_without_writing_the_attacker_cooldown() {
     )))
     .unwrap();
     let campaign_calls_for_help =
-        RulePolicy::stock_campaign().with_armed_victims_defend_without_base_response(false);
+        RulePolicy::stock_campaign().with_uses_campaign_base_defense(false);
     for (mode, policy, responds) in [
         (
             ScenarioGameMode::Campaign,

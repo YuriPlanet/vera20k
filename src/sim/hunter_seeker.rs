@@ -56,15 +56,13 @@ impl crate::sim::world::Simulation {
         // may prune the pool to nonpassive Houses unless RandomOnly plays.
         let rules_policy = self.session.rule_policy();
         let human = house.is_controlled_by_human(rules_policy);
-        let designated_enemy =
-            if !human && rules_policy.hunter_seeker_limits_ai_to_designated_enemy() {
-                house.enemy_house()
-            } else {
-                None
-            };
-        let prefer_players = human
-            && rules_policy.hunter_seeker_humans_prefer_nonpassive_targets()
-            && settings.is_none_or(|s| !s.random_only);
+        let directed = rules_policy.uses_directed_hunter_seeker_targeting();
+        let designated_enemy = if !human && directed {
+            house.enemy_house()
+        } else {
+            None
+        };
+        let prefer_players = human && directed && settings.is_none_or(|s| !s.random_only);
         let mut preferred = false;
         let mut candidates = Vec::new();
         // EntityStore preserves TechnoClass::Array's construction order.

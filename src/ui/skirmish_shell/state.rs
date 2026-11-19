@@ -90,6 +90,8 @@ pub enum OwnerDrawButton {
     ChooseMap0x5aa,
     /// VERA's Game Options ([`super::game_options`]).
     GameOptions,
+    /// VERA's Setups: the page that saves and loads named setups.
+    Setups,
     Back0x5c0,
 }
 
@@ -101,6 +103,8 @@ pub enum SkirmishShellAction {
     ChooseMap,
     /// The app opens the box on the rules the profile keeps.
     GameOptions,
+    /// The app owns the saved setups.
+    Setups,
     SelectColor(ColorComboId),
     SelectMap(usize),
 }

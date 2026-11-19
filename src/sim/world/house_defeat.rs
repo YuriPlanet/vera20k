@@ -285,7 +285,7 @@ impl Simulation {
         let outcome_policy = self.session.rule_policy();
         // HouseClass::Update 0x004F8E86..0x004F8EB7 gates defeat past frame zero.
         let defeat_gate = defeat_pass
-            && outcome_policy.automatic_house_defeat()
+            && outcome_policy.uses_elimination_results()
             && (self.session.binary_frame() as i32) > 0;
         // Logic55B68D reloads the live House count after each complete body.
         // A House's power/radar and activation must precede its own teams,
@@ -403,7 +403,7 @@ impl Simulation {
         }
         let house = &self.houses[&owner];
         let local = if self.outcomes_follow_player_control() {
-            house.is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+            house.is_human() || house.player_control()
         } else {
             self.session.current_house() == Some(owner)
         };
@@ -421,7 +421,7 @@ impl Simulation {
     /// The PlayerControl route and its input lock at 0x00684240 apply
     /// to local outcomes. Lockstep announcements follow the current viewpoint.
     fn outcomes_follow_player_control(&self) -> bool {
-        self.session.rule_policy().outcomes_follow_player_control()
+        !self.session.rule_policy().uses_elimination_results()
             && !self.session.execution_topology().is_lockstep()
     }
 
@@ -787,10 +787,9 @@ impl Simulation {
     ) {
         let follow_player_control = self.outcomes_follow_player_control();
         let announce = if follow_player_control {
-            self.houses.get(&owner).is_some_and(|house| {
-                house
-                    .is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
-            })
+            self.houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human() || house.player_control())
         } else {
             self.session.current_house() == Some(owner)
         };
@@ -1002,11 +1001,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        if !self
-            .session
-            .rule_policy()
-            .ares_returns_defeated_structures()
-        {
+        if !self.session.rule_policy().uses_elimination_results() {
             return false;
         }
         let Some(entity) = self.substrate.entities.get(id) else {

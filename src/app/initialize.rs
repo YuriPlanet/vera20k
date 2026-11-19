@@ -404,6 +404,7 @@ impl App {
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
+        personal_rules.set_building_production_queue(options_profile.building_production_queue);
         // The Ares setting holds for the whole launch, as the mod does.
         let ares_setting = spawn_ares.unwrap_or(options_profile.ares);
         if ares_setting != crate::util::ares_launch::AresSetting::Auto {
@@ -554,21 +555,6 @@ impl App {
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
-        // Options' DirectX 12 box, on Windows and for a player's own window.
-        // A start on it that never finished turns the box off instead
-        // (`persistence::directx12_start`).
-        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let mut options_profile = options_profile;
-        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let directx12 = crate::render::gpu::HAS_DIRECTX12
-            && !capture
-            && !hidden_spawn_window
-            && game_config.as_ref().is_some_and(|config| {
-                crate::app::persistence::directx12_start::begin(
-                    config.paths.settings_dir(),
-                    &mut options_profile.directx12,
-                )
-            });
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
@@ -576,7 +562,6 @@ impl App {
             window.clone(),
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
-            directx12,
         )?;
         // On the processor, building the renderers and reaching the first
         // picture can take minutes, and the window stays blank until then: a
@@ -1084,6 +1069,7 @@ impl App {
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
                     sinking_waterlines: Default::default(),
                     voxel_images: Default::default(),
+                    zshape_skips: Default::default(),
                     building_zshape: None,
                     power_bar_anim: crate::ui::sidebar::PowerBarAnimState::new(),
                     sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState::new(
@@ -1245,6 +1231,8 @@ impl App {
                 match_winners: None,
                 external_progress: Default::default(),
                 network_goodbye_deadline: None,
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                graphics_lost: None,
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 browser_exit_pending: false,
                 screen: GameScreen::default(),
@@ -1280,7 +1268,7 @@ impl App {
                 main_menu_shell_chrome,
                 main_menu_movie: None,
                 main_menu_movie_identity: None,
-                main_menu_movie_last_step: Instant::now(),
+                main_menu_movie_clock: Default::default(),
                 main_menu_shell_error,
                 startup_files,
                 status_screen_drawn: false,

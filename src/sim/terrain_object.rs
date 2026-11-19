@@ -1559,6 +1559,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ownerless_terrain_logic_honors_an_independent_policy_override() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let rules = terrain_rules("TREE01", true, "SpawnsTiberium=yes\nIsAnimated=yes\n");
+        let terrain_type = rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .unwrap();
+        let mut sim = Simulation::new();
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let id = sim.terrain_objects.cell_index()[&(1, 1)];
+        let terrain = sim.terrain_objects.objects()[&id]
+            .clone()
+            .with_native_unique_id(Some(-2));
+        let campaign = ScenarioGameMode::Campaign.stock_rule_policy(None);
+        let skirmish = ScenarioGameMode::Skirmish.stock_rule_policy(None);
+
+        assert!(terrain.joins_logic_on_unlimbo(terrain_type, campaign, false));
+        assert!(terrain.joins_logic_on_unlimbo(terrain_type, skirmish, false));
+        assert!(!terrain.joins_logic_on_unlimbo(
+            terrain_type,
+            skirmish.with_allows_ownerless_terrain_logic(false),
+            false,
+        ));
+    }
+
     fn resolved_clear_grid() -> ResolvedTerrainGrid {
         crate::map::resolved_terrain::test_grid(2, 2, ResolvedTerrainCell::clear_for_test)
     }

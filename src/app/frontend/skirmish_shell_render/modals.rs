@@ -851,11 +851,23 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
         );
     }
     if column_buttons {
+        // VERA's Setups page adds Load and Delete, which act on a saved row.
         for (rect, control) in [
-            (layout.action, SavedSeedControl::Action),
-            (layout.back, SavedSeedControl::Back0x686),
+            (Some(layout.action), SavedSeedControl::Action),
+            (layout.load, SavedSeedControl::Load),
+            (layout.delete, SavedSeedControl::Delete),
+            (Some(layout.back), SavedSeedControl::Back0x686),
         ] {
-            let disabled = control == SavedSeedControl::Action && !browser.action_enabled();
+            let Some(rect) = rect else {
+                continue;
+            };
+            let disabled = match control {
+                SavedSeedControl::Action => !browser.action_enabled(),
+                SavedSeedControl::Load | SavedSeedControl::Delete => {
+                    browser.selected_saved().is_none()
+                }
+                _ => false,
+            };
             push_right_panel_button_shp(
                 out,
                 atlas,

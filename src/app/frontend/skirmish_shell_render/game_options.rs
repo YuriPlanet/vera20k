@@ -1,8 +1,7 @@
 //! VERA's Game Options box over the skirmish page
 //! (`ui::skirmish_shell::game_options`), drawn as the room draws its own
 //! (`multiplayer_setup.rs`): the online lobby's box art with its type-3 OK,
-//! then the Superweapon Limit slider with its plaque and the Terrain
-//! Deformation box.
+//! then the Superweapon Limit slider and the skirmish checkboxes.
 
 use super::chrome::type3_button_frames;
 use super::controls::{ControlPaint, paint_control};
@@ -16,8 +15,8 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::skirmish_shell::checkbox_text_rect;
 use crate::ui::skirmish_shell::game_options::{
-    GameOptionsBox, GameOptionsLayout, SUPERWEAPON_LIMIT_LABEL, SUPERWEAPON_LIMIT_RANGE,
-    TERRAIN_DEFORMATION_LABEL, superweapon_limit_text,
+    GameOptionsBox, GameOptionsLayout, SKIRMISH_CHEATS_LABEL, SUPERWEAPON_LIMIT_LABEL,
+    SUPERWEAPON_LIMIT_RANGE, TERRAIN_DEFORMATION_LABEL, superweapon_limit_text,
 };
 
 /// The open box's art and controls, then its text, over the page.
@@ -89,15 +88,6 @@ pub(super) fn push_game_options_box(
         },
         scale,
     );
-    paint_control(
-        sprites,
-        &chrome,
-        ControlPaint::Checkbox {
-            rect: layout.terrain_deformation,
-            checked: open.rules.terrain_deformation,
-        },
-        scale,
-    );
     texts.push(text(
         &crate::i18n::tr(SUPERWEAPON_LIMIT_LABEL),
         layout.superweapon_limit_label,
@@ -108,9 +98,28 @@ pub(super) fn push_game_options_box(
         crate::ui::shell::trackbar::value_text_rect(bar, scale),
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
     ));
-    texts.push(text(
-        &crate::i18n::tr(TERRAIN_DEFORMATION_LABEL),
-        checkbox_text_rect(layout.terrain_deformation, scale),
-        ShellAlign::V_CENTER,
-    ));
+    for (rect, checked, label) in [
+        (
+            layout.terrain_deformation,
+            open.rules.terrain_deformation,
+            TERRAIN_DEFORMATION_LABEL,
+        ),
+        (
+            layout.skirmish_cheats,
+            open.rules.skirmish_cheats,
+            SKIRMISH_CHEATS_LABEL,
+        ),
+    ] {
+        paint_control(
+            sprites,
+            &chrome,
+            ControlPaint::Checkbox { rect, checked },
+            scale,
+        );
+        texts.push(text(
+            &crate::i18n::tr(label),
+            checkbox_text_rect(rect, scale),
+            ShellAlign::V_CENTER,
+        ));
+    }
 }

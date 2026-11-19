@@ -6462,6 +6462,18 @@ impl Simulation {
         }
     }
 
+    /// HouseClass's power (AI_AssessPower508CBD..508CF0), radar
+    /// (UpdateTacticalRadarAvailability508ECD..508EF1) and SpySat
+    /// (Update_SpySat508FA2..508FDF) scans share this discovery admission.
+    /// Source: original gamemd instructions. Noncampaign scans admit hidden
+    /// providers, including the current player's; campaign computer Houses
+    /// do too. Only controlled campaign Houses require Techno+41B.
+    /// Lockstep service decisions cannot use a process's local +41B projection.
+    fn building_services_require_discovery(&self, house: &HouseState) -> bool {
+        self.session.uses_local_player_shroud()
+            && house.is_controlled_by_human(self.session.rule_policy())
+    }
+
     /// House4F844B..4F850C: assess dirty power, rewrite all owned Factory
     /// rates without touching timers, then refresh radar and SpySat.
     /// Numeric/order evidence: the engineer-repair native consumer packet.
@@ -6474,8 +6486,7 @@ impl Simulation {
         if !self.houses.contains_key(&owner) {
             return;
         }
-        let require_discovery =
-            self.houses[&owner].building_services_require_discovery(self.session.rule_policy());
+        let require_discovery = self.building_services_require_discovery(&self.houses[&owner]);
         #[cfg(feature = "debug-tools")]
         let debug_full_power = self.debug_flags_for(owner).infinite_power;
         let state = self.power_states.house_mut(owner);
@@ -8037,8 +8048,7 @@ impl Simulation {
         let selling =
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling);
         let house = &self.houses[&owner];
-        let require_discovery =
-            house.building_services_require_discovery(self.session.rule_policy());
+        let require_discovery = self.building_services_require_discovery(house);
         for &stable_id in house.base_projection().buildings() {
             let Some(entity) = self.substrate.entities.get(stable_id) else {
                 continue;

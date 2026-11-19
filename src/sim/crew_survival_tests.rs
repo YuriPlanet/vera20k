@@ -2514,7 +2514,8 @@ fn ares_fourth_side_crew_and_survivor_defaults_follow_side_extension() {
 }
 
 /// Unit ReceiveDamage737F80..737F92 clears +82 before the low-altitude
-/// Crashable early exit737FB0; Transporter+11C and cargo stay attached.
+/// Crashable early exit737FB0, which an airborne hull takes; Transporter+11C
+/// and cargo stay attached.
 #[test]
 fn open_topped_death_clears_rider_flags_before_crashable_exit() {
     use crate::sim::passenger::{BoardingArm, board_passenger};
@@ -2551,6 +2552,13 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
             Some((hull, true))
         );
     }
+    // Airborne, below KillPassengers' 0xD0: a grounded one lets them out (#2958).
+    sim.substrate
+        .entities
+        .get_mut(hull)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(100));
     let before = sim.scenario_rng.state();
     sim.release_dying_unit_passengers(
         &rules,

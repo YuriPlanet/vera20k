@@ -123,6 +123,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     let zbind = batch.create_zshape_bind_group_on_device(&gpu.device, &zview);
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
+    let zshape_skips = std::cell::RefCell::default();
     let order = NativeDisplayOrder::from_world(&sim, None);
     let before = (sim.state_hash(), sim.rng_state());
     let mut parents = Vec::new();
@@ -137,6 +138,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             overlay_atlas: None,
             unit_atlas: None,
             voxel_images: &voxel_images,
+            zshape_skips: &zshape_skips,
             depth_tested_images: None,
             camera: [1160., 2502.],
             render_size: [1024, 768],

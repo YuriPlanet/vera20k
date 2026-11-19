@@ -1858,7 +1858,7 @@ impl Simulation {
         };
         let policy = session.rule_policy();
         if entity.category() == EntityCategory::Structure
-            && policy.ai_buildings_repairable_on_unlimbo()
+            && policy.uses_managed_ai_base()
             && houses.get(&entity.owner()).is_some_and(|house| {
                 !house.is_controlled_by_human(policy) && !house.multiplay_passive()
             })

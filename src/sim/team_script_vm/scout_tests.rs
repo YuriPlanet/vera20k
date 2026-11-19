@@ -123,6 +123,32 @@ fn a_revealed_player_map_returns_the_scout_to_its_center_without_a_search_draw()
     );
 }
 
+#[test]
+fn script_22_refuses_the_other_mode_even_with_offline_topology() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some((mut scene, team, _)) = scene("0=22,-1", "E2", false, |_| {}) else {
+        return;
+    };
+    let sim = &mut scene.runtime.simulation;
+    sim.session.set_game_mode(ScenarioGameMode::Other);
+    assert!(!sim.session.execution_topology().is_lockstep());
+    let before = sim.scenario_rng.logical_state();
+    sim.team_run_action(
+        team,
+        TeamScriptAction {
+            action_id: 22,
+            argument: -1,
+        },
+        true,
+        &scene.runtime.resources.rules,
+        None,
+        FrameEffects::default(),
+    );
+    assert!(sim.team_script_vm.team(team).unwrap().refusal().is_some());
+    assert_eq!(sim.scenario_rng.logical_state(), before);
+}
+
 pub(super) fn campaign_scene(
     script: &str,
     member_type: &str,

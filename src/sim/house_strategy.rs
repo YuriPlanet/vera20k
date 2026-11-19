@@ -133,7 +133,7 @@ fn building_strategy(
         rules.general.ai_nearest_enemy,
     );
     // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
-    if policy.ai_ignores_superweapon_iq()
+    if policy.runs_ai_strategy()
         || sim
             .houses
             .get(&owner)
@@ -158,14 +158,14 @@ fn building_strategy(
     // slot 1 Check_Build_Need's answer (0 or 1), both asked before either
     // acts; from level 4 down, slot 0's sells off and hunts and slot 1's
     // runs Manage_Build_Queue.
-    let no_factory = policy.ai_sells_and_hunts_without_factory()
+    let no_factory = policy.runs_ai_strategy()
         && sim
             .houses
             .get(&owner)
             .is_some_and(|house| house.strategy_emergency().mode() != 3)
         && !has_live_factory(sim, rules, owner);
-    let build_need = policy.ai_manages_strategy_build_queue()
-        && crate::sim::ai_build_need::check_build_need(sim, rules, owner);
+    let build_need =
+        policy.runs_ai_strategy() && crate::sim::ai_build_need::check_build_need(sim, rules, owner);
     if no_factory {
         last_legs_actions(sim, rules, owner, registry, frame_effects);
     }
@@ -265,7 +265,7 @@ fn pick_enemy(
     nearest_enemy: bool,
 ) {
     let policy = session.rule_policy();
-    if !policy.ai_searches_for_enemy() {
+    if !policy.runs_ai_strategy() {
         return;
     }
     let Some(house) = houses.get(&owner) else {
@@ -531,7 +531,7 @@ pub(crate) fn update_anger_nodes(
     nearest_enemy: bool,
 ) {
     let passive_peer = ares
-        && policy.ares_skips_passive_house_anger()
+        && policy.runs_ai_strategy()
         && houses.get(&peer).is_some_and(HouseState::multiplay_passive);
     let peer_is_registered = peer != owner && houses.contains_key(&peer);
     if peer_is_registered

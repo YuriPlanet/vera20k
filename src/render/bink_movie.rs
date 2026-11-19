@@ -1,6 +1,7 @@
 //! Bink movie surface for shell playback.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::assets::bink_decode::{BinkDecoder, BinkFrame, ColorRange};
 use crate::assets::bink_file::BinkFile;
@@ -17,7 +18,7 @@ pub struct BinkMovieSurface {
     file: BinkFile,
     decoder: BinkDecoder,
     current_frame: usize,
-    accumulator_secs: f64,
+    clock: BinkFrameClock,
     texture: wgpu::Texture,
     batch_texture: BatchTexture,
     rgba: Vec<u8>,
@@ -52,7 +53,7 @@ impl BinkMovieSurface {
             file,
             decoder,
             current_frame: 1,
-            accumulator_secs: 0.0,
+            clock: BinkFrameClock::default(),
             texture,
             batch_texture,
             rgba,
@@ -95,17 +96,45 @@ impl BinkMovieSurface {
         &self.file
     }
 
+    /// BinkPause(0) at 0x1000A5C5 invalidates the clock; the next BinkWait
+    /// starts timing from the frame already on screen.
+    pub(crate) fn resume_clock(&mut self) {
+        self.clock.reanchor(self.current_frame);
+    }
+
     pub fn step(
         &mut self,
         gpu: &GpuContext,
         elapsed_secs: f64,
     ) -> Result<BinkMovieStep, crate::assets::error::AssetError> {
-        let fps = self.fps();
-        if fps <= 0.0 {
-            return Ok(BinkMovieStep::Unchanged);
-        }
+        self.step_with_sound(gpu, elapsed_secs, MovieSoundTiming::Silent)
+    }
+
+    pub(crate) fn step_with_sound(
+        &mut self,
+        gpu: &GpuContext,
+        elapsed_secs: f64,
+        sound: MovieSoundTiming,
+    ) -> Result<BinkMovieStep, crate::assets::error::AssetError> {
+        let elapsed = Duration::try_from_secs_f64(elapsed_secs).unwrap_or_default();
+        let due = self.clock.frames_due(
+            elapsed,
+            self.current_frame,
+            self.file.header.fps_num,
+            self.file.header.fps_den,
+            sound,
+        );
+        self.advance_frames(gpu, due)
+    }
+
+    /// Decode in order and upload the last of the requested frames.
+    pub(crate) fn advance_frames(
+        &mut self,
+        gpu: &GpuContext,
+        due: usize,
+    ) -> Result<BinkMovieStep, crate::assets::error::AssetError> {
         let mut changed = false;
-        for _ in 0..frames_due(&mut self.accumulator_secs, elapsed_secs, fps, 4) {
+        for i in 0..due {
             if self.current_frame >= self.frame_count() {
                 if self.looping {
                     self.restart_at_original_frame_one()?;
@@ -114,26 +143,32 @@ impl BinkMovieSurface {
                 }
                 // Upload the final decoded frame before reporting completion
                 // on a later step. Catch-up must not discard its last store.
-                if changed {
-                    break;
+                if i == 0 {
+                    return Ok(BinkMovieStep::Ended);
                 }
-                return Ok(BinkMovieStep::Ended);
+                break;
             }
             let pkt = self.file.video_packet(self.current_frame)?;
-            let frame = self.decoder.decode_frame(pkt)?;
-            self.rgba = frame_to_rgba(frame);
+            match self.decoder.decode_frame(pkt) {
+                Ok(_) => changed = true,
+                // Two retail clips contain a single rejected picture. The decoder
+                // keeps its last good reference; audio and subtitles keep this slot.
+                Err(err) => log::warn!("Skipping Bink video frame {}: {err}", self.current_frame),
+            }
             self.current_frame += 1;
-            changed = true;
         }
         if changed {
-            self.upload_rgba(gpu);
+            self.upload_current_frame(gpu);
             Ok(BinkMovieStep::FrameUploaded)
         } else {
             Ok(BinkMovieStep::Unchanged)
         }
     }
 
-    fn upload_rgba(&self, gpu: &GpuContext) {
+    fn upload_current_frame(&mut self, gpu: &GpuContext) {
+        // Intervening frames supply prediction data. Only the displayed frame
+        // needs RGB pixels, even when several frames were due on this redraw.
+        write_frame_rgba(&self.decoder.cur, &mut self.rgba);
         gpu.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,
@@ -158,18 +193,22 @@ impl BinkMovieSurface {
     fn restart_at_original_frame_one(&mut self) -> Result<(), crate::assets::error::AssetError> {
         self.decoder.flush();
         let pkt = self.file.video_packet(0)?;
-        let frame = self.decoder.decode_frame(pkt)?;
-        self.rgba = frame_to_rgba(frame);
+        self.decoder.decode_frame(pkt)?;
         self.current_frame = 1;
-        self.accumulator_secs = 0.0;
+        self.clock = BinkFrameClock::default();
         Ok(())
     }
 }
 
 pub fn frame_to_rgba(frame: &BinkFrame) -> Vec<u8> {
+    let mut out = vec![0u8; frame.width as usize * frame.height as usize * 4];
+    write_frame_rgba(frame, &mut out);
+    out
+}
+
+fn write_frame_rgba(frame: &BinkFrame, out: &mut [u8]) {
     let w = frame.width as usize;
     let h = frame.height as usize;
-    let mut out = vec![0u8; w * h * 4];
 
     for y in 0..h {
         for x in 0..w {
@@ -188,21 +227,65 @@ pub fn frame_to_rgba(frame: &BinkFrame) -> Vec<u8> {
             out[base + 3] = 255;
         }
     }
-    out
 }
 
-fn frames_due(accumulator: &mut f64, elapsed: f64, fps: f64, max: usize) -> usize {
-    if fps <= 0.0 {
-        return 0;
+pub(crate) enum MovieSoundTiming {
+    Silent,
+    Playing,
+    /// Real PCM delivered before the mixer started inserting silence.
+    Underrun(Duration),
+}
+
+/// BINKW32 BinkWait (0x1000A3C0) compares integer millisecond deadlines
+/// measured from one clock origin. Frame zero was decoded when the movie opened.
+#[derive(Default)]
+pub(crate) struct BinkFrameClock {
+    elapsed: Duration,
+    baseline_frame: usize,
+}
+
+impl BinkFrameClock {
+    fn reanchor(&mut self, decoded_frames: usize) {
+        self.elapsed = Duration::ZERO;
+        self.baseline_frame = decoded_frames - 1;
     }
-    *accumulator += elapsed.max(0.0);
-    let frame_dt = 1.0 / fps;
-    let mut count = 0;
-    while *accumulator >= frame_dt && count < max {
-        *accumulator -= frame_dt;
-        count += 1;
+
+    pub(crate) fn frames_due(
+        &mut self,
+        elapsed: Duration,
+        decoded_frames: usize,
+        fps_num: u32,
+        fps_den: u32,
+        sound: MovieSoundTiming,
+    ) -> usize {
+        if let MovieSoundTiming::Underrun(position) = sound {
+            self.elapsed = position;
+            self.baseline_frame = 0;
+            return self.ready_frames(decoded_frames, fps_num, fps_den);
+        }
+        self.elapsed = self.elapsed.saturating_add(elapsed);
+        let frame = decoded_frames - self.baseline_frame;
+        let period_numerator = 1000 * u128::from(fps_den);
+        let deadline = |n: usize| n as u128 * period_numerator / u128::from(fps_num);
+        if matches!(sound, MovieSoundTiming::Silent)
+            && self.elapsed.as_millis().saturating_sub(deadline(frame)) > deadline(2)
+        {
+            // BinkWait 0x1000A4B5..0x1000A4DD: if a silent movie is over two
+            // frames late, show the next frame and reanchor at decoded_count - 1.
+            self.reanchor(decoded_frames);
+            return 1;
+        }
+        self.ready_frames(decoded_frames, fps_num, fps_den).min(4)
     }
-    count
+
+    fn ready_frames(&self, decoded_frames: usize, fps_num: u32, fps_den: u32) -> usize {
+        // BinkWait rounds each deadline down to whole milliseconds. The first
+        // frame with a deadline after now is ceil((now_ms + 1) * fps / 1000).
+        let next = ((self.elapsed.as_millis() + 1) * u128::from(fps_num))
+            .div_ceil(1000 * u128::from(fps_den));
+        let ready = next.saturating_sub((decoded_frames - self.baseline_frame) as u128);
+        usize::try_from(ready).unwrap_or(usize::MAX)
+    }
 }
 
 #[inline]
@@ -250,9 +333,46 @@ mod tests {
     }
 
     #[test]
-    fn frame_clock_uses_fps_not_timer_interval() {
-        let mut acc = 0.0;
-        assert_eq!(frames_due(&mut acc, 0.034, 15.0, 4), 0);
-        assert_eq!(frames_due(&mut acc, 0.033, 15.0, 4), 1);
+    fn frame_clock_uses_bink_wait_millisecond_deadlines() {
+        let mut clock = BinkFrameClock::default();
+        let ms = Duration::from_millis;
+        assert_eq!(
+            clock.frames_due(ms(65), 1, 15, 1, MovieSoundTiming::Silent),
+            0
+        );
+        assert_eq!(
+            clock.frames_due(ms(1), 1, 15, 1, MovieSoundTiming::Silent),
+            1
+        );
+    }
+
+    #[test]
+    fn silent_movie_reanchors_only_beyond_bink_wait_lateness_allowance() {
+        // BINKW32 BinkWait at 15 fps: the first deadline is 66 ms, and
+        // 133 ms of lateness is still allowed. The next millisecond rebases.
+        let ms = Duration::from_millis;
+        let mut clock = BinkFrameClock::default();
+        assert_eq!(
+            clock.frames_due(ms(199), 1, 15, 1, MovieSoundTiming::Silent),
+            2
+        );
+        let mut late = BinkFrameClock::default();
+        assert_eq!(
+            late.frames_due(ms(200), 1, 15, 1, MovieSoundTiming::Silent),
+            1
+        );
+        assert_eq!(
+            late.frames_due(ms(132), 2, 15, 1, MovieSoundTiming::Silent),
+            0
+        );
+        assert_eq!(
+            late.frames_due(ms(1), 2, 15, 1, MovieSoundTiming::Silent),
+            1
+        );
+        let mut voiced = BinkFrameClock::default();
+        assert_eq!(
+            voiced.frames_due(ms(200), 1, 15, 1, MovieSoundTiming::Playing),
+            3
+        );
     }
 }

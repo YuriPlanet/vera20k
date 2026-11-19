@@ -1409,6 +1409,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     let outgoing = &mut state.match_state.match_presentation;
     outgoing.atlas_growth.cancel();
     outgoing.sprite_atlas = None;
+    outgoing.zshape_skips.get_mut().forget_frames();
     outgoing.unit_atlas = None;
     replace_loading_attempt(
         &mut state.frontend.loading_session,

@@ -866,12 +866,13 @@ impl Simulation {
     /// The passenger block of `UnitClass::ReceiveDamage`
     /// (`0x00737F80..0x007381B6`), after the dying unit's Mark(UP) and
     /// before its crew roll. Above 0xD0 leptons (`0x00737F97..0x00737FAB`)
-    /// KillPassengers kills them all, crediting the attacker; a `Crashable=`
-    /// type (`+0xD95`) stops there (`0x00737FB0`), so lower down its Crash
-    /// kills them uncredited. Every other passenger, in cargo order, steps
-    /// out onto the unit's cell or dies. An `OpenTopped=` unit first clears
-    /// each passenger's InOpenTransport (`0x007104C0`, `+0x82`) before
-    /// either the height test or the Crashable early exit.
+    /// KillPassengers kills them all, crediting the attacker; gamemd stops
+    /// every `Crashable=` type (`+0xD95`) there (`0x00737FB0`), VERA only an
+    /// airborne one, whose Crash then kills them uncredited (#2958, below).
+    /// Every other passenger, in cargo order, steps out onto the unit's cell
+    /// or dies, the attacker taking the kill. An `OpenTopped=` unit
+    /// first clears each passenger's InOpenTransport (`0x007104C0`, `+0x82`)
+    /// before either the height test or the Crashable early exit.
     pub(crate) fn release_dying_unit_passengers(
         &mut self,
         rules: &RuleSet,
@@ -904,7 +905,16 @@ impl Simulation {
                 UninitContext::new(rules).with_effects(effects),
             );
         }
-        if crashable {
+        // VERA fix of a gamemd bug, in every build (#2958, after NPExt's
+        // changelog item 29): gamemd exits here for every `Crashable=` type
+        // (`0x00737FB0`) and leaves the passengers to its Crash, but Crash
+        // refuses a unit on the ground (`0x004DEBB6`), so ReceiveDamage
+        // UnInits it (`0x0073847F`) and UnInit kills the cargo with no kill
+        // credit (`KillPassengers(NULL)`, `0x005F660D`): a Night Hawk shot
+        // after landing killed everyone aboard. A grounded one here lets them
+        // out like any other transport; an airborne one still crashes with
+        // them.
+        if crashable && height > 0 {
             return;
         }
         // `FootClass::RemoveFirstPassenger @ 0x004DE710` (`0x00737FD4`) until

@@ -409,17 +409,16 @@ fn side_admits(trigger_side: i32, house_side: i32, ares: bool) -> bool {
 
 #[derive(Clone, Copy)]
 struct AiTriggerAdmission {
-    require_multiplayer_flag: bool,
+    uses_house_team_rules: bool,
     difficulty: usize,
-    allow_recruits_without_factory: bool,
 }
 
 impl AiTriggerAdmission {
     fn resolve(session: &ScenarioSession, house: &HouseState) -> Self {
-        let policy = session.rule_policy();
+        let uses_house_team_rules = session.rule_policy().uses_house_team_rules();
         // AITriggerTypeClass::Is_Eligible @ 0x0041E7D7..0x0041E84A
         // selects House+184 (hardest first) or Scenario+60C (easiest first).
-        let difficulty = if policy.ai_trigger_uses_house_difficulty() {
+        let difficulty = if uses_house_team_rules {
             2 - house.difficulty().table_index()
         } else {
             session
@@ -427,9 +426,8 @@ impl AiTriggerAdmission {
                 .map_or(1, |(player, _)| player.table_index())
         };
         Self {
-            require_multiplayer_flag: policy.ai_triggers_require_multiplayer_flag(),
+            uses_house_team_rules,
             difficulty,
-            allow_recruits_without_factory: policy.team_admits_recruits_without_factory(),
         }
     }
 }
@@ -474,7 +472,7 @@ fn is_eligible(
         return false;
     }
     // AITriggerTypeClass::Is_Eligible @ 0x0041E7D7..0x0041E84A.
-    if (admission.require_multiplayer_flag && !trigger.multiplayer)
+    if (admission.uses_house_team_rules && !trigger.multiplayer)
         || !trigger.difficulty_enabled[admission.difficulty]
     {
         return false;
@@ -503,15 +501,9 @@ fn is_eligible(
     team_types
         .clone()
         .all(|tt| zones_admit(sim, tt, owner, enemy))
-        && team_types.clone().all(|tt| {
-            factories_admit(
-                sim,
-                rules,
-                tt,
-                owner,
-                admission.allow_recruits_without_factory,
-            )
-        })
+        && team_types
+            .clone()
+            .all(|tt| factories_admit(sim, rules, tt, owner, !admission.uses_house_team_rules))
         && team_types
             .clone()
             .all(|tt| !vm.at_max_teams(tt.id, owner, TeamLimitScope::PerHouse))

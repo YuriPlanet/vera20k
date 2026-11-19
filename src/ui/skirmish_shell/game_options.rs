@@ -1,11 +1,7 @@
-//! VERA's Game Options box on the skirmish page (`0x102`): the match rules
-//! gamemd has no control for, Superweapon Limit and Terrain Deformation
-//! (`rules::personal_rules`). The page's Game Options button opens it over
-//! the page; OK, Enter or Esc closes it and the app stores the rules
-//! (`[VERA] SuperweaponLimit=` and `TerrainDeformation=`), which every later
-//! skirmish plays and a network room's host starts its room with. The room
-//! sets the same two rules in its own Game Options box
-//! (`ui::multiplayer_setup`), whose art, columns and OK this one takes.
+//! VERA's Game Options box on the skirmish page (`0x102`). OK, Enter or Esc
+//! closes the box and stores the settings under `[VERA]`. Superweapon Limit
+//! and Terrain Deformation also seed a host's network room. Allow cheat codes
+//! applies only to typed commands during offline skirmish.
 
 use crate::rules::personal_rules::{SUPERWEAPON_LIMIT_MAX, admitted_superweapon_limit};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
@@ -19,6 +15,8 @@ pub const GAME_OPTIONS_HELP: &str = "VERA:SkirmishGameOptionsHelp";
 /// `docs/terrain-deformation.md`.
 pub const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
 pub const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
+pub const SKIRMISH_CHEATS_LABEL: &str = "VERA:SkirmishCheats";
+pub const SKIRMISH_CHEATS_HELP: &str = "VERA:SkirmishCheatsHelp";
 /// `docs/superweapon-limit.md`.
 pub const SUPERWEAPON_LIMIT_LABEL: &str = "VERA:SuperweaponLimit";
 pub const SUPERWEAPON_LIMIT_HELP: &str = "VERA:SuperweaponLimitHelp";
@@ -45,6 +43,7 @@ pub struct MatchRules {
     /// 0 while off, else 2 up ([`admitted_superweapon_limit`]).
     pub superweapon_limit: u8,
     pub terrain_deformation: bool,
+    pub skirmish_cheats: bool,
 }
 
 /// A control of the open box.
@@ -52,6 +51,7 @@ pub struct MatchRules {
 pub enum GameOptionsControl {
     SuperweaponLimit,
     TerrainDeformation,
+    SkirmishCheats,
     Ok,
 }
 
@@ -62,6 +62,7 @@ impl GameOptionsControl {
         match self {
             Self::SuperweaponLimit => Some(SUPERWEAPON_LIMIT_HELP),
             Self::TerrainDeformation => Some(TERRAIN_DEFORMATION_HELP),
+            Self::SkirmishCheats => Some(SKIRMISH_CHEATS_HELP),
             Self::Ok => None,
         }
     }
@@ -122,9 +123,17 @@ impl GameOptionsBox {
             self.ok_pressed = true;
             return GameOptionsOutcome::OkPressed;
         }
-        if checkbox_icon_rect(layout.terrain_deformation, layout.scale).contains(x, y) {
-            self.rules.terrain_deformation = !self.rules.terrain_deformation;
-            return GameOptionsOutcome::Changed(SkirmishShellUiSound::GuiCheckboxSound);
+        for (rect, checked) in [
+            (
+                layout.terrain_deformation,
+                &mut self.rules.terrain_deformation,
+            ),
+            (layout.skirmish_cheats, &mut self.rules.skirmish_cheats),
+        ] {
+            if checkbox_icon_rect(rect, layout.scale).contains(x, y) {
+                *checked = !*checked;
+                return GameOptionsOutcome::Changed(SkirmishShellUiSound::GuiCheckboxSound);
+            }
         }
         let press = SUPERWEAPON_LIMIT_RANGE.press_in(
             self.superweapon_limit_value(),
@@ -170,6 +179,7 @@ pub struct GameOptionsLayout {
     pub superweapon_limit_label: RectPx,
     pub superweapon_limit: RectPx,
     pub terrain_deformation: RectPx,
+    pub skirmish_cheats: RectPx,
     pub ok: RectPx,
     pub scale: ShellScale,
 }
@@ -198,6 +208,7 @@ impl GameOptionsLayout {
             superweapon_limit_label: popup(24, 32, 185, 17),
             superweapon_limit: popup(215, 30, 129, 21),
             terrain_deformation: popup(24, 62, 185, 17),
+            skirmish_cheats: popup(24, 92, 185, 17),
             ok: popup(276, 292, 124, 24),
             scale,
         }
@@ -213,6 +224,8 @@ impl GameOptionsLayout {
             Some(GameOptionsControl::SuperweaponLimit)
         } else if self.terrain_deformation.contains(x, y) {
             Some(GameOptionsControl::TerrainDeformation)
+        } else if self.skirmish_cheats.contains(x, y) {
+            Some(GameOptionsControl::SkirmishCheats)
         } else {
             None
         }
@@ -235,7 +248,7 @@ mod tests {
         let bar = layout.superweapon_limit;
         let mut open = GameOptionsBox::new(MatchRules {
             superweapon_limit: 6,
-            terrain_deformation: false,
+            ..Default::default()
         });
         let row = bar.y + bar.h - 4;
         assert_eq!(
@@ -256,6 +269,18 @@ mod tests {
             GameOptionsOutcome::Changed(SkirmishShellUiSound::GuiCheckboxSound)
         );
         assert!(open.rules.terrain_deformation);
+
+        let check = checkbox_icon_rect(layout.skirmish_cheats, layout.scale);
+        let (x, y) = (check.x + 2, check.y + 2);
+        assert_eq!(
+            layout
+                .control_at(x, y)
+                .and_then(GameOptionsControl::status_help_key),
+            Some(SKIRMISH_CHEATS_HELP),
+        );
+        assert!(!open.rules.skirmish_cheats);
+        open.mouse_down(&layout, x, y);
+        assert!(open.rules.skirmish_cheats);
     }
 
     /// OK closes the box only when the press and the release are both on it.

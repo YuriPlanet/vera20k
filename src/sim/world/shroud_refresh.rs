@@ -1457,7 +1457,7 @@ impl Simulation {
                     || self.house_is_human_player(entity.owner()),
                     |viewer| {
                         Self::is_human_player_on(
-                            !self.session.uses_local_player_shroud(),
+                            self.session.native_player_identity(),
                             &self.houses,
                             entity.owner(),
                             Some(viewer),
@@ -1596,25 +1596,17 @@ impl Simulation {
         &self,
         house: crate::sim::intern::InternedId,
     ) -> Vec<crate::sim::intern::InternedId> {
-        let candidates = if !self.session.uses_local_player_shroud() {
-            if self.owner_is_human(house) {
-                vec![house]
-            } else {
-                Vec::new()
-            }
-        } else {
-            self.fog_viewers().to_vec()
+        use crate::sim::scenario_session::NativePlayerIdentity;
+
+        let identity = self.session.native_player_identity();
+        let candidates = match identity {
+            NativePlayerIdentity::PlayerPointer if self.owner_is_human(house) => vec![house],
+            NativePlayerIdentity::PlayerPointer => Vec::new(),
+            NativePlayerIdentity::HouseFlags => self.fog_viewers().to_vec(),
         };
         candidates
             .into_iter()
-            .filter(|&client| {
-                Self::is_human_player_on(
-                    !self.session.uses_local_player_shroud(),
-                    &self.houses,
-                    house,
-                    Some(client),
-                )
-            })
+            .filter(|&client| Self::is_human_player_on(identity, &self.houses, house, Some(client)))
             .collect()
     }
 
@@ -2431,7 +2423,7 @@ impl Simulation {
         if (config.require_playfield_membership() && !entity.in_playfield())
             // TechnoClass::See 0x0070ADDE..0x0070ADEF gates this direct
             // sight admission for a MultiplayPassive House.
-            || (!self.session.rule_policy().passive_houses_cast_direct_sight()
+            || (!self.session.rule_policy().uses_campaign_discovery()
                 && config.passive_owner(entity.owner()))
         {
             return;

@@ -458,6 +458,22 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
         }
     }
 
+    /// VERA's Setups page: Load and Delete act on the selected saved row,
+    /// never the new one.
+    pub fn selected_saved(&self) -> Option<&I> {
+        self.selected_entry()?.file_name.as_ref()
+    }
+
+    /// VERA's Setups page: what its Load or Delete does.
+    pub fn setup_outcome(&self, control: SavedSeedControl) -> Option<SavedSeedOutcome<I>> {
+        let saved = self.selected_saved()?.clone();
+        match control {
+            SavedSeedControl::Load => Some(SavedSeedOutcome::Load(saved)),
+            SavedSeedControl::Delete => Some(SavedSeedOutcome::Delete(saved)),
+            _ => None,
+        }
+    }
+
     pub fn remove_entry(&mut self, file_name: &I, visible_rows: usize) {
         self.entries
             .retain(|row| row.file_name.as_ref() != Some(file_name));

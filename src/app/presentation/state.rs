@@ -32,6 +32,9 @@ pub(crate) struct MatchPresentationState {
     /// The original voxel image caches and UseBuffer flag every voxel draw
     /// replays: which style and barrel pitch each type's stored images hold.
     pub(crate) voxel_images: std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
+    /// The skip table of the building bodies the view's left edge cuts in
+    /// this picture, and the frames it decoded for them.
+    pub(crate) zshape_skips: std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     pub(crate) tile_atlas: Option<TileAtlas>,
     /// BUILDNGZ.SHA z-shape bound at group 2 of the Z-writing building draw.
     pub(crate) building_zshape: Option<crate::render::building_zshape::BuildingZShape>,

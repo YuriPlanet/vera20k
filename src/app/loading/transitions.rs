@@ -229,6 +229,13 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.palette_set = assets.palette_set;
     state.match_state.match_presentation.surface_palette = Default::default();
     state.match_state.match_presentation.sprite_atlas = assets.sprite_atlas;
+    // The skip table decoded its frames from the atlas just replaced.
+    state
+        .match_state
+        .match_presentation
+        .zshape_skips
+        .get_mut()
+        .forget_frames();
     state.match_state.match_presentation.overlay_atlas = assets.overlay_atlas;
     state.match_state.match_presentation.bridge_atlas = assets.bridge_atlas;
     state.match_state.match_presentation.sidebar_cameo_atlas = assets.sidebar_cameo_atlas;
