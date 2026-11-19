@@ -134,7 +134,7 @@ fn authored_lan_scout_uses_first_primary_even_on_a_guest_view() {
     sim.session.retire_started();
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
-    sim.session.install_authored_campaign(vec![1, 0]);
+    sim.session.install_authored_campaign(vec![1, 0], false);
     sim.session.install_current_house(Some(guest));
     for owner in [first, guest] {
         sim.houses

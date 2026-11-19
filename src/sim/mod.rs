@@ -53,6 +53,7 @@ pub(crate) mod building_power;
 pub(crate) mod building_upgrades;
 pub(crate) mod c4_plant;
 pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands to the next start
+pub use campaign_carry_over::AuthoredStageCarryOver;
 pub mod capture_manager;
 #[cfg(feature = "debug-tools")]
 pub mod cheats;

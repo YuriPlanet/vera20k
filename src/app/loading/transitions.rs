@@ -859,7 +859,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 && let Some(record) = authored.carry_over.as_ref()
                 && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
             {
-                runtime.simulation.restore_authored_campaign_carry_over(
+                runtime.simulation.restore_authored_stage_carry_over(
                     record,
                     authored.players.iter().map(|player| player.house.as_str()),
                 );

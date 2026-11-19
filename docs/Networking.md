@@ -782,6 +782,12 @@ the original stage, assignments, options, seed and incoming carry-over to each
 loader. Return to Room before confirmation cancels the agreement. A refusal
 shows its reason and offers Return to Room for a fresh start.
 
+Once the host queues the full Start batch, it waits for reliable delivery.
+An interruption at that point uses the failed-start return. The host opens
+the same stage under a fresh room epoch. A confirmed guest that times out
+before Start returns to LAN as well, and a guest already loading uses the
+first-frame failure path. Returning guests verify the new admission.
+
 Retry records carry the completed match scope. The Retry reload advances its
 revision so the next private channels reject former match packets. During the
 handoff, the global transport can acknowledge an already received retransmission

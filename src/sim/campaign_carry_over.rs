@@ -121,14 +121,14 @@ impl CampaignCarryOver {
 /// independent of which connection chooses that role.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AuthoredCampaignCarryOver {
+pub struct AuthoredStageCarryOver {
     #[serde(with = "saved_globals")]
     globals: [bool; SCENARIO_GLOBAL_COUNT],
     countdown_frames: i32,
     funds: Vec<(String, i32)>,
 }
 
-impl AuthoredCampaignCarryOver {
+impl AuthoredStageCarryOver {
     pub fn matches_roles(&self, roles: &[String]) -> bool {
         self.funds.len() <= roles.len()
             && self.funds.iter().enumerate().all(|(index, (house, _))| {
@@ -172,10 +172,10 @@ impl Simulation {
         self.session.set_campaign_map_stage(record.map_stage);
     }
 
-    pub fn save_authored_campaign_carry_over<'a>(
+    pub fn capture_authored_stage_carry_over<'a>(
         &self,
         roles: impl Iterator<Item = (&'a str, String)>,
-    ) -> AuthoredCampaignCarryOver {
+    ) -> AuthoredStageCarryOver {
         let funds = roles
             .filter_map(|(source, destination)| {
                 let source = self.interner.get(source)?;
@@ -183,7 +183,7 @@ impl Simulation {
                 Some((destination, money))
             })
             .collect();
-        AuthoredCampaignCarryOver {
+        AuthoredStageCarryOver {
             globals: self.global_variables(),
             countdown_frames: self.session.campaign_countdown_frames(),
             funds,
@@ -192,9 +192,9 @@ impl Simulation {
 
     /// Use the native Evade global, timer and money operations for the authored
     /// roster. Difficulty remains the receiving room's selected difficulty.
-    pub fn restore_authored_campaign_carry_over<'a>(
+    pub fn restore_authored_stage_carry_over<'a>(
         &mut self,
-        record: &AuthoredCampaignCarryOver,
+        record: &AuthoredStageCarryOver,
         playing_houses: impl Iterator<Item = &'a str> + Clone,
     ) {
         self.restore_campaign_globals(&record.globals);
@@ -391,9 +391,9 @@ mod tests {
             .session
             .change_scenario_timer(ScenarioTimerAction::Set(120));
         let record =
-            source.save_authored_campaign_carry_over(std::iter::once(("Player", "Target".into())));
+            source.capture_authored_stage_carry_over(std::iter::once(("Player", "Target".into())));
         let wire = serde_json::to_vec(&record).unwrap();
-        let record: AuthoredCampaignCarryOver = serde_json::from_slice(&wire).unwrap();
+        let record: AuthoredStageCarryOver = serde_json::from_slice(&wire).unwrap();
         assert!(record.matches_roles(&["Player".into(), "Target".into()]));
         assert!(!record.matches_roles(&["Player".into()]));
 
@@ -409,7 +409,7 @@ mod tests {
             next.session
                 .set_current_house_for_test(next.interner.get(local_name));
             next.session.set_scenario_timer_caption("DESC:NextMap");
-            next.restore_authored_campaign_carry_over(&record, ["Player", "Target"].into_iter());
+            next.restore_authored_stage_carry_over(&record, ["Player", "Target"].into_iter());
             let target_money = next.houses[&target].economy().credits();
             assert_eq!(next.houses[&player].economy().credits(), 0);
             assert_eq!(target_money, 9000);

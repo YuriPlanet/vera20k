@@ -243,7 +243,7 @@ struct LocalScenarioSetup {
     selection: crate::map::scenario_menu::LocalScenario,
     source: Option<LocalScenarioSource>,
     lobby: LocalScenarioLobby,
-    carry_over: Option<crate::sim::campaign_carry_over::AuthoredCampaignCarryOver>,
+    carry_over: Option<crate::sim::AuthoredStageCarryOver>,
 }
 
 /// Room settings admitted for the selected authored scenario. Stock settings
@@ -1171,9 +1171,7 @@ impl MatchSession {
         Ok(())
     }
 
-    pub(crate) fn local_scenario_carry_over(
-        &self,
-    ) -> Option<&crate::sim::campaign_carry_over::AuthoredCampaignCarryOver> {
+    pub(crate) fn local_scenario_carry_over(&self) -> Option<&crate::sim::AuthoredStageCarryOver> {
         match &self.network.as_ref()?.phase {
             NetworkPhase::Setup { local_scenario, .. } => {
                 local_scenario.as_ref()?.carry_over.as_ref()
@@ -1188,7 +1186,7 @@ impl MatchSession {
     pub(crate) fn set_local_scenario_carry_over(
         &mut self,
         key: &crate::map::scenario_menu::LocalScenarioKey,
-        record: Option<crate::sim::campaign_carry_over::AuthoredCampaignCarryOver>,
+        record: Option<crate::sim::AuthoredStageCarryOver>,
     ) -> anyhow::Result<()> {
         let Some(NetworkPhase::Setup {
             local_scenario: Some(setup),

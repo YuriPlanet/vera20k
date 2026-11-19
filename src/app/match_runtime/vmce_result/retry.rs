@@ -78,6 +78,15 @@ impl Phase {
             Self::Waiting | Self::Canceled => None,
         }
     }
+
+    fn failure_step(self) -> Step {
+        match self {
+            // A prepared guest has given the host permission to send Start.
+            // A starting host has queued it and a guest may already be loading.
+            Self::Prepared(_) | Self::Starting(_) => Step::RecoverStart,
+            _ => Step::Cancel,
+        }
+    }
 }
 
 pub(crate) struct RetryRound {
@@ -107,6 +116,20 @@ impl RetryRound {
         }
     }
 
+    fn receive_cancel(&mut self, from_host: bool) -> Step {
+        match self.phase {
+            Phase::Starting(_) => Step::RecoverStart,
+            Phase::Returning(..) | Phase::Canceled => Step::Wait,
+            // Only the host can resolve the prepared guest's uncertainty about
+            // whether the Start batch was queued. It sends Cancel before Start.
+            Phase::Prepared(_) if !from_host => Step::Wait,
+            _ => {
+                self.phase = Phase::Canceled;
+                Step::Cancel
+            }
+        }
+    }
+
     fn step(
         &self,
         host: bool,
@@ -128,7 +151,7 @@ impl RetryRound {
             | Phase::Starting(_)
                 if expired || !healthy =>
             {
-                Step::Cancel
+                self.phase.failure_step()
             }
             Phase::Waiting if !healthy && !self.votes.is_empty() => Step::Cancel,
             Phase::Waiting if host && self.votes.len() == players => Step::Prepare,
@@ -164,6 +187,7 @@ enum Step {
     Start,
     Return(ResultExit),
     Cancel,
+    RecoverStart,
 }
 
 fn current(state: &AppState) -> Option<&RetryRound> {
@@ -323,7 +347,7 @@ pub(super) fn retry_pressed(state: &mut AppState) {
         Ok(())
     })();
     if let Err(error) = result {
-        cancel(state, scope, &error);
+        fail(state, scope, &error);
     }
     state.platform.window.request_redraw();
 }
@@ -360,15 +384,36 @@ fn exit_result(state: &mut AppState, exit: ResultExit) {
     state.platform.window.request_redraw();
 }
 
-fn cancel(state: &mut AppState, scope: SessionScope, error: &anyhow::Error) {
+fn fail(state: &mut AppState, scope: SessionScope, error: &anyhow::Error) {
+    let Ok(round) = round_mut(state, scope) else {
+        log::debug!("VMCE retry round retired before failure: {error:#}");
+        return;
+    };
+    if round.phase.failure_step() == Step::RecoverStart {
+        recover_start(state, &format!("{error:#}"));
+        return;
+    }
     log::warn!("VMCE retry canceled: {error:#}");
-    if let Ok(round) = round_mut(state, scope) {
-        round.phase = Phase::Canceled;
-        if let Err(error) = send(state, scope, Record::Cancel) {
-            log::debug!("VMCE retry cancel could not notify the room: {error:#}");
-        }
+    round.phase = Phase::Canceled;
+    if let Err(error) = send(state, scope, Record::Cancel) {
+        log::debug!("VMCE retry cancel could not notify the room: {error:#}");
     }
     state.platform.window.request_redraw();
+}
+
+fn recover_start(state: &mut AppState, reason: &str) {
+    log::warn!("VMCE retry handoff interrupted: {reason}");
+    let guest_stage = crate::app::shell_lan::prepare_initial_failure_return(state);
+    App::close_finished_scenario(state);
+    if state.match_state.session.host() {
+        App::return_to_lan_room_after_score(state, true);
+    } else {
+        App::resume_shell_after_match(state);
+        if let Some(stage) = guest_stage {
+            crate::app::shell_lan::offer_ready_on_return(state, stage);
+        }
+    }
+    App::open_shell_notice(state, crate::i18n::tr("VERA:VmceRetryInterrupted"));
 }
 
 /// The normal receive path can see a peer's button before this machine's
@@ -420,6 +465,8 @@ fn receive(state: &mut AppState, message: &GlobalMessage, now: u32) -> Result<()
     if matches!(record, Record::Prepare | Record::Start) {
         lan_service::ensure_host_source(state, message.source)?;
     }
+    let host_cancel = matches!(record, Record::Cancel)
+        && lan_service::ensure_host_source(state, message.source).is_ok();
     let round = round_mut(state, scope)?;
     match record {
         // Everyone can display the confirmed count. Only the host takes
@@ -427,16 +474,18 @@ fn receive(state: &mut AppState, message: &GlobalMessage, now: u32) -> Result<()
         Record::Retry if source_plays && matches!(round.phase, Phase::Waiting) => {
             round.votes.insert(source);
         }
-        Record::Cancel if !matches!(round.phase, Phase::Returning(..) | Phase::Canceled) => {
-            round.phase = Phase::Canceled;
-        }
+        Record::Cancel => match round.receive_cancel(host_cancel) {
+            Step::RecoverStart => recover_start(state, "a peer withdrew during the start handoff"),
+            Step::Cancel if host => send(state, scope, Record::Cancel)?,
+            _ => {}
+        },
         Record::Prepare => round.receive_prepare(local, local_observer, visible, now),
         Record::Confirm if host && matches!(round.phase, Phase::Preparing(_)) => {
             round.confirmed.insert(source);
         }
         Record::Start if visible && matches!(round.phase, Phase::Prepared(_)) => {
             if let Err(error) = start(state, scope) {
-                cancel(state, scope, &error);
+                recover_start(state, &format!("{error:#}"));
             }
         }
         _ => {}
@@ -511,17 +560,10 @@ fn poll_step(state: &mut AppState, scope: SessionScope, now: u32, service_ok: bo
         players,
         participants,
         now,
-        observation.service_ok,
+        observation.service_ok && roster.is_ok(),
         observation.queued == 0,
     );
     match step {
-        Step::Wait
-            if roster.is_err()
-                && !round.votes.is_empty()
-                && !matches!(round.phase, Phase::Canceled | Phase::Returning(..)) =>
-        {
-            roster?;
-        }
         Step::Wait => {}
         Step::Return(exit) => exit.finish(state),
         Step::Prepare => {
@@ -546,6 +588,7 @@ fn poll_step(state: &mut AppState, scope: SessionScope, now: u32, service_ok: bo
         }
         Step::Start => start(state, scope)?,
         Step::Cancel => anyhow::bail!("the LAN result handoff did not complete"),
+        Step::RecoverStart => recover_start(state, "the LAN start handoff did not complete"),
     }
     Ok(())
 }
@@ -580,7 +623,7 @@ pub(crate) fn poll_result(state: &mut AppState, now: u32, service_ok: bool) -> b
             service.flush_setup();
         }
         if let Err(error) = poll_step(state, scope, now, service_ok) {
-            cancel(state, scope, &error);
+            fail(state, scope, &error);
         }
     }
     true
@@ -605,5 +648,32 @@ mod tests {
         player.receive_prepare(1, false, true, 10);
         assert_eq!(player.step(false, 2, 2, 11, true, true), Step::Wait);
         assert!(player.phase.can_leave());
+    }
+
+    #[test]
+    fn partial_start_delivery_cannot_return_to_the_finished_result() {
+        let mut round = RetryRound::new(SessionScope {
+            epoch: [1; 16],
+            revision: 6,
+        });
+        let deadline = WallBucketTimer::start(10, HANDOFF_BUCKETS);
+
+        round.phase = Phase::Preparing(deadline);
+        assert_eq!(round.step(true, 3, 3, 11, false, false), Step::Cancel);
+
+        round.phase = Phase::Starting(deadline);
+        assert_eq!(round.step(true, 3, 3, 11, true, false), Step::Wait);
+        assert_eq!(round.step(true, 3, 3, 11, true, true), Step::Start);
+        assert_eq!(round.step(true, 3, 3, 11, false, false), Step::RecoverStart);
+        assert_eq!(round.receive_cancel(false), Step::RecoverStart);
+
+        round.phase = Phase::Prepared(deadline);
+        assert_eq!(
+            round.step(false, 3, 3, 10 + HANDOFF_BUCKETS, true, false),
+            Step::RecoverStart
+        );
+        assert_eq!(round.receive_cancel(false), Step::Wait);
+        assert_eq!(round.receive_cancel(true), Step::Cancel);
+        assert!(round.phase.can_leave());
     }
 }

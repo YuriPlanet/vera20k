@@ -1227,19 +1227,24 @@ mod tests {
     use super::*;
     use crate::map::source::test_support::TestDirectory;
 
-    const MANIFEST: &str = include_str!("../../tests/fixtures/vmce/campaign.ini");
-    const MAP: &[u8] = include_bytes!("../../tests/fixtures/vmce/minimal_stage01.map");
+    fn fixture_manifest() -> &'static str {
+        crate::test_fixture::text("tests/fixtures/vmce/campaign.ini")
+    }
+
+    fn fixture_map() -> &'static [u8] {
+        crate::test_fixture::bytes("tests/fixtures/vmce/minimal_stage01.map")
+    }
 
     #[test]
     fn manifest_reads_entry_and_requires_the_declared_houses() {
-        let manifest = VmceManifest::parse(MANIFEST.as_bytes()).unwrap();
+        let manifest = VmceManifest::parse(fixture_manifest().as_bytes()).unwrap();
         let stage = &manifest.stages[manifest.entry_index];
-        let roster = parse_house_roster(&IniFile::from_bytes(MAP).unwrap(), &[], None);
+        let roster = parse_house_roster(&IniFile::from_bytes(fixture_map()).unwrap(), &[], None);
         assert_eq!(stage.path, "minimal_stage01.map");
         assert_eq!(stage.primary_roles, ["HouseAlpha"]);
         assert_eq!(stage.primary_houses(&roster).unwrap(), ["HouseAlpha"]);
 
-        let invalid = MANIFEST.replace("Player1=HouseAlpha", "Player1=MissingHouse");
+        let invalid = fixture_manifest().replace("Player1=HouseAlpha", "Player1=MissingHouse");
         let manifest = VmceManifest::parse(invalid.as_bytes()).unwrap();
         let error = manifest.stages[0].primary_houses(&roster).unwrap_err();
         assert!(error.to_string().contains("MissingHouse"));
@@ -1247,10 +1252,11 @@ mod tests {
 
     #[test]
     fn opening_camera_waypoints_are_scoped_to_the_primary_house() {
-        let roster = parse_house_roster(&IniFile::from_bytes(MAP).unwrap(), &[], None);
+        let manifest = fixture_manifest();
+        let roster = parse_house_roster(&IniFile::from_bytes(fixture_map()).unwrap(), &[], None);
         let projection = |value: &str| {
             let text = format!(
-                "{MANIFEST}\n[scenario:MINIMAL_STAGE01.MAP:housealpha]\nCameraWaypoint={value}\n"
+                "{manifest}\n[scenario:MINIMAL_STAGE01.MAP:housealpha]\nCameraWaypoint={value}\n"
             );
             let manifest = VmceManifest::parse(text.as_bytes()).unwrap();
             manifest.stages[manifest.entry_index]
@@ -1271,11 +1277,11 @@ mod tests {
             stage: "shared_move_stage01.map".into(),
         };
         let manifest_path = "VMCE/Shared/campaign.ini";
-        let manifest = include_str!("../../tests/fixtures/vmce/shared_move/campaign.ini");
+        let manifest = crate::test_fixture::text("tests/fixtures/vmce/shared_move/campaign.ini");
         fs::create_dir_all(&root.path().join("VMCE/Shared")).unwrap();
         root.write(
             "VMCE/Shared/shared_move_stage01.map",
-            include_bytes!("../../tests/fixtures/vmce/shared_move/shared_move_stage01.map"),
+            crate::test_fixture::bytes("tests/fixtures/vmce/shared_move/shared_move_stage01.map"),
         );
         let selected_grants = |text: &str| {
             root.write(manifest_path, text.as_bytes());
@@ -1314,37 +1320,38 @@ mod tests {
 
     #[test]
     fn manifest_rejects_an_unlisted_entry_repeated_houses_and_unsafe_paths() {
+        let manifest = fixture_manifest();
         for (text, expected) in [
             (
-                MANIFEST.replace("Entry=minimal_stage01.map", "Entry=missing.map"),
+                fixture_manifest().replace("Entry=minimal_stage01.map", "Entry=missing.map"),
                 "absent from the scenario list",
             ),
             (
-                format!("{MANIFEST}\nNextScenario=missing.map\n"),
+                format!("{manifest}\nNextScenario=missing.map\n"),
                 "NextScenario missing.map is absent from the scenario list",
             ),
             (
-                format!("{MANIFEST}\nAltNextScenario=missing.map\n"),
+                format!("{manifest}\nAltNextScenario=missing.map\n"),
                 "AltNextScenario missing.map is absent from the scenario list",
             ),
             (
-                format!("{MANIFEST}\nAltNextGlobal={SCENARIO_GLOBAL_COUNT}\n"),
+                format!("{manifest}\nAltNextGlobal={SCENARIO_GLOBAL_COUNT}\n"),
                 "AltNextGlobal must be a decimal global index",
             ),
             (
-                MANIFEST.replace("PlayerCount=1", "PlayerCount=2\nPlayer2=housealpha"),
+                fixture_manifest().replace("PlayerCount=1", "PlayerCount=2\nPlayer2=housealpha"),
                 "duplicate primary role",
             ),
             (
-                MANIFEST.replace("minimal_stage01.map", "../minimal_stage01.map"),
+                fixture_manifest().replace("minimal_stage01.map", "../minimal_stage01.map"),
                 "invalid logical multiplayer map name",
             ),
             (
-                MANIFEST.replace("minimal_stage01.map", "C:\\minimal_stage01.map"),
+                fixture_manifest().replace("minimal_stage01.map", "C:\\minimal_stage01.map"),
                 "invalid logical multiplayer map name",
             ),
             (
-                MANIFEST.replace(
+                fixture_manifest().replace(
                     "ScenarioCount=1",
                     "ScenarioCount=2\nScenario2=MINIMAL_STAGE01.MAP",
                 ),
@@ -1360,7 +1367,7 @@ mod tests {
     fn victory_successor_uses_the_accepted_manifest_without_opening_maps() {
         let root = TestDirectory::new("vmce-next-stage");
         let path = "VMCE/Outcomes/campaign.ini";
-        let original = include_str!("../../tests/fixtures/vmce/lan_outcomes/campaign.ini");
+        let original = crate::test_fixture::text("tests/fixtures/vmce/lan_outcomes/campaign.ini");
         fs::create_dir_all(&root.path().join("VMCE/Outcomes")).unwrap();
         let write = |text: &str| {
             root.write(path, text.as_bytes());
@@ -1440,7 +1447,7 @@ mod tests {
 
     #[test]
     fn victory_branch_uses_the_effective_global_and_yields_to_end_of_game() {
-        let original = MANIFEST.replace(
+        let original = fixture_manifest().replace(
             "ScenarioCount=1",
             "ScenarioCount=3\nScenario2=continue.map\nScenario3=alternate.map",
         ) + "\nAltNextScenario=ALTERNATE.MAP\n\
@@ -1493,12 +1500,12 @@ mod tests {
         for directory in [good, broken] {
             std::fs::create_dir_all(root.path().join(directory)).unwrap();
         }
-        let manifest = MANIFEST.replace(
+        let manifest = fixture_manifest().replace(
             "ScenarioCount=1",
             "ScenarioCount=2\nScenario2=stage02/missing.map",
         ) + "\n[Scenario:stage02/missing.map]\nPlayerCount=1\nPlayer1=HouseAlpha\n";
         root.write(&format!("{good}/{MANIFEST_FILE}"), manifest.as_bytes());
-        root.write(&format!("{good}/minimal_stage01.map"), MAP);
+        root.write(&format!("{good}/minimal_stage01.map"), fixture_map());
         root.write(&format!("{broken}/{MANIFEST_FILE}"), b"[Campaign]\n");
 
         let found = discover(root.path());
@@ -1536,8 +1543,8 @@ mod tests {
         let root = TestDirectory::new("vmce-stage-labels");
         let directory = "VMCE/Local";
         fs::create_dir_all(root.path().join(directory)).unwrap();
-        let manifest = MANIFEST.replace("[Campaign]", "[Campaign]\nName=VMCE:SERIES");
-        let map = String::from_utf8(MAP.to_vec()).unwrap();
+        let manifest = fixture_manifest().replace("[Campaign]", "[Campaign]\nName=VMCE:SERIES");
+        let map = String::from_utf8(fixture_map().to_vec()).unwrap();
         let basic_name = map.lines().find(|line| line.starts_with("Name=")).unwrap();
         let map = map.replacen(basic_name, "Name=VMCE:STAGE", 1);
         root.write(&format!("{directory}/{MANIFEST_FILE}"), manifest.as_bytes());
@@ -1579,16 +1586,18 @@ mod tests {
 
     #[test]
     fn ambiguous_manifest_sections_and_impossible_player_limits_are_refused() {
-        let duplicate = format!("{MANIFEST}\n[scenario:MINIMAL_STAGE01.MAP]\nPlayerCount=1\n");
+        let manifest = fixture_manifest();
+        let duplicate = format!("{manifest}\n[scenario:MINIMAL_STAGE01.MAP]\nPlayerCount=1\n");
         let error = VmceManifest::parse(duplicate.as_bytes()).unwrap_err();
         assert!(format!("{error:#}").contains("duplicate scenario section"));
 
-        let duplicate = MANIFEST.replace("Player1=HouseAlpha", "Player1=HouseAlpha\nPlayer1=Other");
+        let duplicate =
+            fixture_manifest().replace("Player1=HouseAlpha", "Player1=HouseAlpha\nPlayer1=Other");
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         let error = VmceManifest::parse(duplicate.as_bytes()).unwrap_err();
         assert!(format!("{error:#}").contains("duplicate key Player1"));
         let unused = format!(
-            "{MANIFEST}Author=Example\nauthor=Other\n[Scenario:unused.map]\nMinPlayers=1\n\
+            "{manifest}Author=Example\nauthor=Other\n[Scenario:unused.map]\nMinPlayers=1\n\
              [scenario:UNUSED.MAP]\nMinPlayers=2\n"
         );
         assert_eq!(
@@ -1598,9 +1607,9 @@ mod tests {
 
         let root = TestDirectory::new("vmce-player-limits");
         fs::create_dir_all(root.path().join("VMCE/Impossible")).unwrap();
-        let manifest = MANIFEST.replace("[Campaign]", "[Campaign]\nMinPlayers=2");
+        let manifest = fixture_manifest().replace("[Campaign]", "[Campaign]\nMinPlayers=2");
         root.write("VMCE/Impossible/campaign.ini", manifest.as_bytes());
-        root.write("VMCE/Impossible/minimal_stage01.map", MAP);
+        root.write("VMCE/Impossible/minimal_stage01.map", fixture_map());
         let found = discover(root.path());
         assert!(found.maps.is_empty());
         assert_eq!(found.errors.len(), 1);
@@ -1613,7 +1622,7 @@ mod tests {
         let root = TestDirectory::new("vmce-link");
         let series = root.path().join("VMCE/Linked");
         std::fs::create_dir_all(&series).unwrap();
-        root.write("outside.map", MAP);
+        root.write("outside.map", fixture_map());
         let link = series.join("outside");
         #[cfg(unix)]
         std::os::unix::fs::symlink(root.path(), &link).unwrap();
@@ -1634,7 +1643,7 @@ mod tests {
                 .unwrap();
             assert!(result.status.success(), "{:?}", result);
         }
-        let manifest = MANIFEST.replace("minimal_stage01.map", "outside/outside.map");
+        let manifest = fixture_manifest().replace("minimal_stage01.map", "outside/outside.map");
         root.write("VMCE/Linked/campaign.ini", manifest.as_bytes());
 
         let found = discover(root.path());

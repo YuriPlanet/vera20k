@@ -49,7 +49,7 @@ fn campaign_with_trigger(
     } else {
         sim.session
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
-        sim.session.install_authored_campaign(vec![]);
+        sim.session.install_authored_campaign(vec![], false);
         sim.session
             .install_authored_ai_difficulty(crate::sim::house_state::HouseDifficulty::Easy);
     }

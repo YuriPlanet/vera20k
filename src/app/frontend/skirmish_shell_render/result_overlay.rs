@@ -6,7 +6,7 @@ use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint;
 use crate::render::shell_text::{self, ShellAlign};
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
-use crate::ui::score_shell::ROOM_RESULT_PAGE;
+use crate::ui::score_shell::{ROOM_RESULT_DIALOG, ROOM_RESULT_PAGE};
 use crate::ui::shell::button::ButtonVisual;
 use crate::ui::shell::geom::{self, RectPx, ShellScale};
 
@@ -119,16 +119,19 @@ pub(crate) fn render_result_overlay(
         SHELL_CONTROL_TEXT_DEPTH,
         layout.scale.factor(),
     ));
-    let pressed = state.frontend.shell_controller.pressed();
+    let controller = &state.frontend.shell_controller;
+    let pressed = controller.pressed_in(ROOM_RESULT_DIALOG);
+    let hovered = controller.hovered_in(ROOM_RESULT_DIALOG);
     for button in overlay.buttons(&layout) {
         let enabled = overlay.button_enabled(state, button.id);
+        let pressed = enabled && pressed == Some(button.id);
         push_right_panel_button_shp(
             &mut art,
             atlas,
             button.rect,
             ButtonVisual {
-                pressed: enabled && pressed == Some(button.id),
-                highlighted: false,
+                pressed,
+                highlighted: enabled && hovered == Some(button.id),
             },
             !enabled,
             SHELL_CONTROL_DEPTH,
@@ -137,7 +140,7 @@ pub(crate) fn render_result_overlay(
         texts.push(shell_text::draw_in_rect_scaled(
             font,
             &caption,
-            button_text_rect(button.rect, false, layout.scale),
+            button_text_rect(button.rect, pressed, layout.scale),
             button_label_color_for_disabled(!enabled),
             ShellAlign::BUTTON_CAPTION,
             [0.0; 2],

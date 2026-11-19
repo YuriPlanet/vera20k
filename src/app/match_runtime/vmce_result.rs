@@ -221,7 +221,7 @@ pub(super) fn destination(
                             .find(|player| player.house.eq_ignore_ascii_case(&source))?;
                         Some((player.house.as_str(), destination))
                     });
-                    *carry_over = Some(sim.save_authored_campaign_carry_over(roles));
+                    *carry_over = Some(sim.capture_authored_stage_carry_over(roles));
                     *preselected = Some(key);
                 }
             }

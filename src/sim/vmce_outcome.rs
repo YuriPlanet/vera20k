@@ -10,11 +10,16 @@ use super::world::Simulation;
 
 impl Simulation {
     /// The admitted primary Houses in map order, even after a source leaves.
-    pub(crate) fn authored_campaign_players(&self) -> impl Iterator<Item = InternedId> + '_ {
+    pub(crate) fn authored_participants(&self) -> impl Iterator<Item = InternedId> + '_ {
         self.session
             .authored_primary_house_indices()
             .iter()
             .filter_map(|&index| self.houses.order().get(usize::from(index)).copied())
+    }
+
+    /// Match-wide participant identity from the frozen primary House indices.
+    pub(super) fn is_authored_participant(&self, house: InternedId) -> bool {
+        self.authored_participants().any(|player| player == house)
     }
 
     /// VMCE extension of TAction6DEA37/6DEA67's PlayerPtr Country test.
@@ -55,9 +60,7 @@ impl Simulation {
                 .session
                 .current_house()
                 .is_some_and(|local| self.session.is_observer_house(local))
-            && self
-                .authored_campaign_players()
-                .any(|player| player == owner)
+            && self.is_authored_participant(owner)
         {
             self.session.admit_outcome(kind);
         }

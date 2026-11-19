@@ -364,7 +364,7 @@ fn authored_triggers_keep_shared_move_after_the_primary_loses_its_army() {
     sim.session.install_network_timing(10);
     sim.session.set_current_house_for_test(Some(primary));
     sim.session.set_binary_frame_for_test(100);
-    sim.session.install_authored_campaign(vec![0, 1]);
+    sim.session.install_authored_campaign(vec![0, 1], false);
     sim.session.install_house_control_grants(vec![(0, 2)]);
     sim.session
         .install_game_options(crate::sim::game_options::GameOptions {
@@ -447,6 +447,81 @@ fn authored_triggers_keep_shared_move_after_the_primary_loses_its_army() {
 }
 
 #[test]
+fn authored_mixed_result_has_the_same_terminal_frame_and_rng_on_all_seats() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let rules = rules(4);
+    let outcomes = [
+        HouseOutcomeKind::Victory,
+        HouseOutcomeKind::Defeat,
+        HouseOutcomeKind::Victory,
+    ];
+    let terminal: Vec<_> = outcomes
+        .into_iter()
+        .enumerate()
+        .map(|(local, expected)| {
+            let (mut sim, owners) = sim_with_houses(&[0, 1, 2]);
+            sim.session.set_game_mode(ScenarioGameMode::Lan);
+            sim.session.install_network_timing(10);
+            sim.session.set_current_house_for_test(Some(owners[local]));
+            sim.session.install_authored_campaign(vec![0, 1], false);
+            sim.session.install_multiplayer_house_identity(
+                crate::skirmish_modes::MpModeClass::Battle,
+                vec![owners[2]],
+            );
+            for owner in &owners {
+                sim.houses
+                    .get_mut(owner)
+                    .unwrap()
+                    .set_is_human_for_test(true);
+            }
+            sim.houses
+                .get_mut(&owners[0])
+                .unwrap()
+                .economy_mut()
+                .set_score_for_test(100);
+            assert!(sim.request_player_outcome(
+                PlayerOutcomeRequest::Country {
+                    country_index: 0,
+                    win_on_match: true,
+                },
+                &rules,
+                FrameEffects::empty(),
+            ));
+            let frame = sim.session.binary_frame();
+            let delay = sim.houses[&owners[0]]
+                .outcome_timer()
+                .remaining(frame as i32);
+            sim.session.set_binary_frame_for_test(frame + delay as u32);
+            let rng_before = sim.rng_state();
+            let result = sim
+                .advance_master_frame(
+                    &[],
+                    &rules,
+                    None,
+                    33,
+                    TickLane::Ordinary,
+                    false,
+                    FrameEffects::empty(),
+                )
+                .unwrap();
+            assert!(!result.tick.frame_committed);
+            assert!(result.tick.terminal_score_finalized);
+            assert_eq!(
+                sim.ready_outcome_for_owner(owners[local]).unwrap().kind,
+                expected
+            );
+            let rng_after = sim.rng_state();
+            assert_ne!(rng_after, rng_before, "the terminal score must consume RNG");
+            (sim.session.binary_frame(), sim.state_hash(), rng_after)
+        })
+        .collect();
+    assert_eq!(terminal[0], terminal[1]);
+    assert_eq!(terminal[0], terminal[2]);
+}
+
+#[test]
 fn authored_country_outcomes_expand_to_direct_reciprocal_allies_and_then_lock() {
     use crate::map::houses::HouseAllianceMap;
     use crate::sim::command::Command;
@@ -461,7 +536,8 @@ fn authored_country_outcomes_expand_to_direct_reciprocal_allies_and_then_lock() 
         sim.session.set_game_mode(ScenarioGameMode::Lan);
         sim.session.install_network_timing(10);
         sim.session.set_current_house_for_test(Some(ally));
-        sim.session.install_authored_campaign(vec![3, 0, 2, 1]);
+        sim.session
+            .install_authored_campaign(vec![3, 0, 2, 1], false);
         sim.session.install_multiplayer_house_identity(
             crate::skirmish_modes::MpModeClass::Battle,
             vec![observer],
@@ -534,7 +610,7 @@ fn authored_country_outcomes_expand_to_direct_reciprocal_allies_and_then_lock() 
         ));
         assert_eq!(outcomes(&sim), expected);
         assert_eq!(
-            sim.authored_campaign_players().collect::<Vec<_>>(),
+            sim.authored_participants().collect::<Vec<_>>(),
             [departed, country_peer, ally, other]
         );
         let timer = sim.houses[&ally].outcome_timer();
@@ -554,7 +630,7 @@ fn authored_country_action_with_no_matching_player_gives_everyone_the_opposite_r
         (false, HouseOutcomeKind::Victory),
     ] {
         let (mut sim, owners) = network_result_world(1);
-        sim.session.install_authored_campaign(vec![0, 1]);
+        sim.session.install_authored_campaign(vec![0, 1], false);
         // Country2 exists, but its House is computer-controlled.
         assert!(sim.request_player_outcome(
             PlayerOutcomeRequest::Country {
@@ -581,7 +657,7 @@ fn authored_observer_follows_the_scripted_participant_result_without_a_country_v
         .get_mut(&observer)
         .unwrap()
         .set_is_human_for_test(true);
-    sim.session.install_authored_campaign(vec![0, 1]);
+    sim.session.install_authored_campaign(vec![0, 1], false);
     sim.session.install_multiplayer_house_identity(
         crate::skirmish_modes::MpModeClass::Battle,
         vec![observer],

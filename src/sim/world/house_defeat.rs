@@ -436,7 +436,7 @@ impl Simulation {
     /// shared +298 timer; nonhuman House behavior is not broadened.
     fn outcome_viewpoints(&self) -> Vec<InternedId> {
         if self.session.is_authored_campaign() {
-            self.authored_campaign_players().collect()
+            self.authored_participants().collect()
         } else if self.session.game_mode().is_network() {
             self.houses
                 .order()
@@ -622,7 +622,7 @@ impl Simulation {
         if self.session.is_authored_campaign() {
             self.terminal_score_snapshot()?;
             return Some(
-                self.authored_campaign_players()
+                self.authored_participants()
                     .filter(|&owner| {
                         self.authored_house_outcome(owner) == Some(HouseOutcomeKind::Victory)
                     })
@@ -641,10 +641,7 @@ impl Simulation {
     /// Project the House's accepted authored result across the native flag's
     /// completion. Observers do not occupy a participant result row.
     pub fn authored_house_outcome(&self, owner: InternedId) -> Option<HouseOutcomeKind> {
-        if !self
-            .authored_campaign_players()
-            .any(|player| player == owner)
-        {
+        if !self.is_authored_participant(owner) {
             return None;
         }
         self.houses

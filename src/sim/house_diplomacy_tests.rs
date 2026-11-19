@@ -569,11 +569,12 @@ fn authored_room_ally_records_obey_the_frozen_permission_and_sender() {
     let mut rules = rules();
     rules.general.allies_allowed = false;
     rules.general.ally_change_allowed = false;
-    for (room_scoped, room_allows_changes, sender_observes, expected) in [
-        (false, false, false, true),
-        (true, false, false, false),
-        (true, true, false, true),
-        (true, true, true, false),
+    for (room_scoped, room_allows_changes, sender_plays, sender_observes, expected) in [
+        (false, false, true, false, true),
+        (true, false, true, false, false),
+        (true, true, true, false, true),
+        (true, true, false, true, false),
+        (true, true, false, false, false),
     ] {
         let (mut sim, ids) = sim_with(
             &rules,
@@ -586,11 +587,11 @@ fn authored_room_ally_records_obey_the_frozen_permission_and_sender() {
         sim.session.set_game_mode(ScenarioGameMode::Lan);
         sim.session.set_current_house_for_test(Some(ids[1]));
         sim.session.game_options_mut_for_test().ally_change_allowed = room_allows_changes;
+        let playing = if sender_plays { vec![0, 1] } else { vec![1] };
+        sim.session.install_authored_campaign(playing, false);
         if room_scoped {
             sim.session
                 .install_player_alliance_admission(PlayerAllianceAdmission::RoomParticipants);
-        } else {
-            sim.session.install_authored_campaign(vec![0, 1]);
         }
         if sender_observes {
             sim.session.install_observer_houses_for_test(vec![ids[0]]);

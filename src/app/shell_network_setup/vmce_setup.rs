@@ -20,7 +20,7 @@ use crate::map::scenario_menu::{
 };
 use crate::map::vmce::{self, DiscoveredVmceMap, OpenedVmceStage, VmceMapId, VmceStageOptions};
 use crate::net::lan_messages::SessionScope;
-use crate::sim::campaign_carry_over::AuthoredCampaignCarryOver;
+use crate::sim::AuthoredStageCarryOver;
 use crate::sim::house_state::HouseDifficulty;
 use crate::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchOptions};
 use crate::ui::multiplayer_setup::{
@@ -571,7 +571,7 @@ pub(crate) struct ScenarioOptions {
     roles: Vec<String>,
     seats: Vec<ScenarioSeat>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    carry_over: Option<AuthoredCampaignCarryOver>,
+    carry_over: Option<AuthoredStageCarryOver>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1941,13 +1941,23 @@ mod tests {
 
     const STAGE: &str = "minimal_stage01.map";
     const SERIES: &str = "VMCE/Fixture";
-    const MANIFEST: &str = include_str!("../../../tests/fixtures/vmce/campaign.ini");
-    const MAP: &str = include_str!("../../../tests/fixtures/vmce/minimal_stage01.map");
     const LAN_STAGE: &str = "shared_move_stage02.map";
-    const LAN_MANIFEST: &str =
-        include_str!("../../../tests/fixtures/vmce/shared_move/campaign.ini");
-    const LAN_MAP: &str =
-        include_str!("../../../tests/fixtures/vmce/shared_move/shared_move_stage02.map");
+
+    fn fixture_manifest() -> &'static str {
+        crate::test_fixture::text("tests/fixtures/vmce/campaign.ini")
+    }
+
+    fn fixture_map() -> &'static str {
+        crate::test_fixture::text("tests/fixtures/vmce/minimal_stage01.map")
+    }
+
+    fn lan_manifest() -> &'static str {
+        crate::test_fixture::text("tests/fixtures/vmce/shared_move/campaign.ini")
+    }
+
+    fn lan_map() -> &'static str {
+        crate::test_fixture::text("tests/fixtures/vmce/shared_move/shared_move_stage02.map")
+    }
 
     fn fixture_directory(stage: &str, manifest: &str, map: &str) -> TestDirectory {
         let root = TestDirectory::new("vmce-room");
@@ -1996,13 +2006,13 @@ mod tests {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let manifest = LAN_MANIFEST.replace(
+        let manifest = lan_manifest().replace(
             "[Campaign]",
             "[Campaign]\nLockOptions=no\nShortGame=yes\nCrates=yes\nVictoryMode=Elimination\nDifficulty=2",
         );
         let manifest =
             manifest.replace("Player2=HouseCharlie", "Player2=HouseCharlie\nDifficulty=0");
-        let root = fixture_directory(LAN_STAGE, &manifest, LAN_MAP);
+        let root = fixture_directory(LAN_STAGE, &manifest, lan_map());
         let key = installed_lan_stage(&root);
         let mut session = host_room("stock.map");
         accept_selection(&mut session, root.path(), &key, None, None).unwrap();
@@ -2022,7 +2032,7 @@ mod tests {
             ("Fixture", LAN_STAGE)
         );
         assert_eq!(options.manifest_sha256, sha256_hex(manifest.as_bytes()));
-        assert_eq!(options.map_sha256, sha256_hex(LAN_MAP.as_bytes()));
+        assert_eq!(options.map_sha256, sha256_hex(lan_map().as_bytes()));
         assert_eq!(options.seed, 42);
         assert_eq!(
             (options.settings.min_players, options.settings.max_players),
@@ -2042,7 +2052,7 @@ mod tests {
             .verify_map_from(root.path(), &assets, None, None)
             .unwrap();
 
-        let changed = format!("{LAN_MAP}\n; unaccepted file edit\n");
+        let changed = format!("{}\n; unaccepted file edit\n", lan_map());
         root.write(&format!("{SERIES}/{LAN_STAGE}"), changed.as_bytes());
         assert!(options_from_selection(&session, root.path(), &key, &assets).is_err());
         accept_selection(&mut session, root.path(), &key, None, None).unwrap();
@@ -2062,7 +2072,7 @@ mod tests {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let host_files = fixture_directory(LAN_STAGE, LAN_MANIFEST, LAN_MAP);
+        let host_files = fixture_directory(LAN_STAGE, lan_manifest(), lan_map());
         let guest_files = TestDirectory::new("vmce-guest-stage");
         std::fs::create_dir_all(guest_files.path().join(SERIES)).unwrap();
         let manifest = format!("{SERIES}/campaign.ini");
@@ -2084,11 +2094,11 @@ mod tests {
         check_error(FileError::MissingManifest);
         guest_files.write(&manifest, b"invalid changed manifest");
         check_error(FileError::ManifestMismatch);
-        guest_files.write(&manifest, LAN_MANIFEST.as_bytes());
+        guest_files.write(&manifest, lan_manifest().as_bytes());
         check_error(FileError::MissingMap);
         guest_files.write(&map, b"invalid changed map");
         check_error(FileError::MapMismatch);
-        guest_files.write(&map, LAN_MAP.as_bytes());
+        guest_files.write(&map, lan_map().as_bytes());
         let (verified, _) = verify().unwrap();
         assert!(
             matches!(&verified.map, crate::map::source::LoadedMapSource::Loose { path, .. }
@@ -2132,7 +2142,7 @@ mod tests {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let root = fixture_directory(LAN_STAGE, LAN_MANIFEST, LAN_MAP);
+        let root = fixture_directory(LAN_STAGE, lan_manifest(), lan_map());
         let key = installed_lan_stage(&root);
         let mut host = host_room("stock.map");
         accept_selection(&mut host, root.path(), &key, None, None).unwrap();
@@ -2217,7 +2227,7 @@ mod tests {
 
     #[test]
     fn start_roles_agree_for_reversed_source_order_and_the_host_seed() {
-        let root = fixture_directory(LAN_STAGE, LAN_MANIFEST, LAN_MAP);
+        let root = fixture_directory(LAN_STAGE, lan_manifest(), lan_map());
         let assets = AssetManager::from_loose_root_for_test(root.path());
         let key = installed_lan_stage(&root);
         let stage = vmce::open_stage(root.path(), &map_id(&key).unwrap()).unwrap();
@@ -2289,13 +2299,13 @@ mod tests {
 
     #[test]
     fn observer_rows_follow_the_stage_policy_without_satisfying_player_limits() {
-        let root = fixture_directory(LAN_STAGE, LAN_MANIFEST, LAN_MAP);
+        let root = fixture_directory(LAN_STAGE, lan_manifest(), lan_map());
         let key = installed_lan_stage(&root);
         let mut host = host_room("stock.map");
         accept_selection(&mut host, root.path(), &key, None, None).unwrap();
         assert_eq!(host.network_join_row(true), None);
 
-        let manifest = LAN_MANIFEST.replace("[Campaign]", "[Campaign]\nAllowObservers=yes");
+        let manifest = lan_manifest().replace("[Campaign]", "[Campaign]\nAllowObservers=yes");
         root.write(&format!("{SERIES}/campaign.ini"), manifest.as_bytes());
         accept_selection(&mut host, root.path(), &key, None, None).unwrap();
         let (row, observer) = host.network_join_row(true).unwrap();
@@ -2325,10 +2335,10 @@ mod tests {
 
     #[test]
     fn local_lan_scenario_owns_its_view_and_closes_the_room_until_stock_is_selected() {
-        let manifest = MANIFEST
+        let manifest = fixture_manifest()
             .replace("ScenarioCount=1", "ScenarioCount=2\nScenario2=missing.map")
             + "\n[Scenario:missing.map]\nPlayerCount=1\nPlayer1=HouseAlpha\n";
-        let root = fixture_directory(STAGE, &manifest, MAP);
+        let root = fixture_directory(STAGE, &manifest, fixture_map());
         let modes = crate::skirmish_modes::stock_skirmish_modes();
         let stock_mode = modes
             .iter()
@@ -2513,13 +2523,13 @@ mod tests {
 
     #[test]
     fn solo_start_freezes_the_authored_seat_and_effective_options() {
-        let root = fixture_directory(STAGE, MANIFEST, MAP);
+        let root = fixture_directory(STAGE, fixture_manifest(), fixture_map());
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
         let manifest_path = format!("{SERIES}/campaign.ini");
         let map_path = format!("{SERIES}/{STAGE}");
-        let map = MAP
+        let map = fixture_map()
             .replacen(
                 "[Basic]",
                 "[Basic]\nMinPlayers=3\nShortGame=yes\nCrates=yes\nAllowAlliesChange=yes",
@@ -2530,7 +2540,7 @@ mod tests {
                 "[Waypoints]",
                 "[HouseBravo]\nCountry=Russians\n\n[Waypoints]",
             );
-        let series_minimum = MANIFEST
+        let series_minimum = fixture_manifest()
             .replace("[Campaign]", "[Campaign]\nMinPlayers=2\nCrates=no")
             .replace("PlayerCount=1", "PlayerCount=2\nPlayer2=HouseBravo");
         let scenario_override = series_minimum.replace(
@@ -2601,22 +2611,23 @@ mod tests {
     #[test]
     fn raw_manifest_and_current_map_changes_require_reselection() {
         use crate::util::sha256::sha256_hex;
-        let root = fixture_directory(STAGE, MANIFEST, MAP);
+        let root = fixture_directory(STAGE, fixture_manifest(), fixture_map());
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
         let manifest_path = format!("{SERIES}/campaign.ini");
         let current = format!("{SERIES}/{STAGE}");
         let later = format!("{SERIES}/later.map");
-        let manifest = MANIFEST.replace("ScenarioCount=1", "ScenarioCount=2\nScenario2=later.map")
+        let manifest = fixture_manifest()
+            .replace("ScenarioCount=1", "ScenarioCount=2\nScenario2=later.map")
             + "\n[Scenario:later.map]\nPlayerCount=1\nPlayer1=HouseAlpha\n";
         root.write(&manifest_path, manifest.as_bytes());
-        root.write(&later, MAP.as_bytes());
+        root.write(&later, fixture_map().as_bytes());
         let mut session = host_room("stock.map");
         let key = discover(root.path(), None).remove(0).selection.key;
         accept_selection(&mut session, root.path(), &key, None, None).unwrap();
         let changed_manifest = manifest + "\n; raw manifest change\n";
-        let changed_map = format!("{MAP}\n; raw map change\n");
+        let changed_map = format!("{}\n; raw map change\n", fixture_map());
         for (path, bytes, expected) in [
             (
                 &manifest_path,
@@ -2693,14 +2704,13 @@ mod tests {
             return;
         };
         const SHARED_STAGE: &str = "shared_move_stage01.map";
-        const SHARED_MAP: &str =
-            include_str!("../../../tests/fixtures/vmce/shared_move/shared_move_stage01.map");
-        let manifest = include_str!("../../../tests/fixtures/vmce/shared_move/campaign.ini")
-            .replace(
-                "Player1=HouseAlpha",
-                "Player1=HouseAlpha\nAllowAlliesChange=yes\nCrates=yes",
-            );
-        let root = fixture_directory(SHARED_STAGE, &manifest, SHARED_MAP);
+        let shared_map =
+            crate::test_fixture::text("tests/fixtures/vmce/shared_move/shared_move_stage01.map");
+        let manifest = lan_manifest().replace(
+            "Player1=HouseAlpha",
+            "Player1=HouseAlpha\nAllowAlliesChange=yes\nCrates=yes",
+        );
+        let root = fixture_directory(SHARED_STAGE, &manifest, shared_map);
         let manifest_path = format!("{SERIES}/campaign.ini");
         let map_path = format!("{SERIES}/{SHARED_STAGE}");
         let mut session = host_room("stock.map");
@@ -2748,7 +2758,7 @@ mod tests {
 
         root.write(
             &map_path,
-            format!("{SHARED_MAP}\n; changed after Start\n").as_bytes(),
+            format!("{shared_map}\n; changed after Start\n").as_bytes(),
         );
         let error = load().err().expect("the frozen map rejects changed bytes");
         assert!(
@@ -2756,7 +2766,7 @@ mod tests {
             "{error:#}"
         );
 
-        root.write(&map_path, SHARED_MAP.as_bytes());
+        root.write(&map_path, shared_map.as_bytes());
         root.write(
             &manifest_path,
             manifest
@@ -2823,7 +2833,7 @@ mod tests {
         }
         assert_eq!(
             std::fs::read(root.path().join(map_path)).unwrap(),
-            SHARED_MAP.as_bytes()
+            shared_map.as_bytes()
         );
 
         let charlie = sim.interner().get("HouseCharlie").unwrap();

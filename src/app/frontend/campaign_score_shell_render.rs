@@ -19,7 +19,7 @@ use crate::app::frontend::shell_pass::{
 };
 use crate::render::shell_paint::{
     self, CURSOR_DEPTH, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED,
+    SHELL_TEXT_RGB_DISABLED, SHELL_TEXT_RGB_ENABLED,
 };
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
@@ -224,12 +224,13 @@ pub(crate) fn render_campaign_score_page(
             },
         );
         for (id, rect, key) in button_controls {
-            let pressed = pressed == Some(id);
+            let enabled = overlay.is_none_or(|overlay| overlay.button_enabled(state, id));
+            let pressed = enabled && pressed == Some(id);
             buttons.push(PaintButton {
                 rect,
                 pressed,
-                hovered: false,
-                enabled: true,
+                hovered: enabled && overlay.is_some() && hovered == Some(id),
+                enabled,
             });
             let text = if key.starts_with("VERA:") {
                 crate::i18n::tr(key)
@@ -240,7 +241,11 @@ pub(crate) fn render_campaign_score_page(
                 text: text.into(),
                 rect: owner_draw_button_label_rect(rect, pressed),
                 align: ShellAlign::BUTTON_CAPTION,
-                rgb: SHELL_TEXT_RGB_ENABLED,
+                rgb: if enabled {
+                    SHELL_TEXT_RGB_ENABLED
+                } else {
+                    SHELL_TEXT_RGB_DISABLED
+                },
                 path_a_reveal: None,
             });
         }

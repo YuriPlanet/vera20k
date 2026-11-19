@@ -576,7 +576,7 @@ impl Simulation {
             PlayerAllianceAdmission::RoomParticipants => {
                 owner != other
                     && [owner, other].into_iter().all(|house| {
-                        !self.session.is_observer_house(house)
+                        self.is_authored_participant(house)
                             && self.houses.get(&house).is_some_and(|state| {
                                 state.is_human()
                                     && !state.is_defeated()

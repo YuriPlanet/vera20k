@@ -2181,7 +2181,7 @@ impl Simulation {
         };
         let reports_discovery = current
             && !owned
-            && (!self.session.is_authored_campaign() || !self.session.is_observer_house(viewer));
+            && (!self.session.is_authored_campaign() || self.is_authored_participant(viewer));
         let entity = self
             .substrate
             .entities
@@ -2403,8 +2403,7 @@ impl Simulation {
                 .iter()
                 .copied()
                 .find(|&viewer| {
-                    viewer != owner
-                        && (!authored_campaign || !self.session.is_observer_house(viewer))
+                    viewer != owner && (!authored_campaign || self.is_authored_participant(viewer))
                 })
                 .or_else(|| fresh.first().copied())
             else {

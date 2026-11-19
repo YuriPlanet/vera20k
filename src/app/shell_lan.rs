@@ -33,7 +33,7 @@ pub(crate) enum LanRematch {
     Host {
         preselected: Option<LocalScenarioKey>,
         room_scope: Option<crate::net::lan_messages::SessionScope>,
-        carry_over: Option<crate::sim::campaign_carry_over::AuthoredCampaignCarryOver>,
+        carry_over: Option<crate::sim::AuthoredStageCarryOver>,
     },
     Guest {
         host: String,
@@ -1604,7 +1604,7 @@ mod tests {
         let mut runtime = LanShellRuntime::new("Guest", false);
         runtime.take_service_requests();
         let stage = LocalScenarioKey {
-            source: "vmce",
+            source: "fixture",
             path: "Test/entry.map".into(),
         };
         runtime.rejoin = Some(Rejoin {

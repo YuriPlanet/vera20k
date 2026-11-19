@@ -3503,10 +3503,7 @@ impl ScenarioBootstrapRng {
                     .install_player_alliance_admission(alliance_admission);
                 simulation
                     .session
-                    .install_authored_campaign(primary_house_indices);
-                simulation
-                    .session
-                    .set_authored_auto_enemy_selection(auto_enemy_selection);
+                    .install_authored_campaign(primary_house_indices, auto_enemy_selection);
                 initialize_map_roster_houses_with_players(
                     &mut simulation,
                     &match_roster,
@@ -5260,7 +5257,8 @@ mod tests {
                 u16::try_from(index.unwrap()).unwrap()
             });
             sim.session.set_game_mode(ScenarioGameMode::Lan);
-            sim.session.install_authored_campaign(primaries.to_vec());
+            sim.session
+                .install_authored_campaign(primaries.to_vec(), false);
             // The skirmish fixture constructed the starting tanks before
             // authored rules were installed. Give discovery a fresh target.
             let hidden = sim.interner.intern("Hidden");

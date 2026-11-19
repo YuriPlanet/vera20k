@@ -333,6 +333,9 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/rmg/saved_seeds.rs",
                 "map/scenario_sources.rs",
                 "map/source/cache.rs",
+                // VMCE lists sorted chooser rows here. Launch reopens the
+                // chosen stage by ID and verifies its manifest and map bytes.
+                "map/vmce.rs",
                 // A received map's case-folded name check; a file it finds is
                 // kept only when it holds the same verified bytes.
                 "map/source.rs",
@@ -417,10 +420,14 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // labels, and which lines an enemy's building may show; only
                 // the label capture (HudFacts) asks, which feeds drawing.
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/superweapon/psychic_reveal.rs", 1),
+                // The local reveal and its notification in offline play.
+                ("sim/superweapon/psychic_reveal.rs", 2),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
                 ("sim/trigger_runtime.rs", 1),
+                // The observer follows the authored verdict on the terminal
+                // frame; the House results already come from the same roster.
+                ("sim/vmce_outcome.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
                 ("sim/world/camera_home.rs", 2),
                 ("sim/world/command_schedule.rs", 3),
@@ -430,6 +437,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/jumpjet_cruise.rs", 1),
                 ("sim/world/lifecycle.rs", 7),
                 ("sim/world/mod.rs", 7),
+                // Local What_Action admits a granted mover under the pointer.
+                ("sim/world/move_cell_input.rs", 1),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
                 ("sim/world/shroud_refresh.rs", 18),
@@ -437,8 +446,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
                 // Includes the Ares Guard key's own-actor check (1005CAF0)
-                // in the input producer `area_guard_key_command`.
-                ("sim/world/world_commands.rs", 7),
+                // and the local selection check for authored control grants.
+                ("sim/world/world_commands.rs", 8),
                 ("sim/world/world_orders.rs", 2),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
@@ -457,6 +466,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // IsTimerVisible's observer case, as for `current_house`.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
+                // Authored result routing for the local observer.
+                ("sim/vmce_outcome.rs", 1),
                 // The third is `network_ai_alone`: it asks of every House,
                 // and each peer holds the same observer list from the room.
                 ("sim/world/house_defeat.rs", 3),
@@ -503,7 +514,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/fly_process.rs", 1),
                 ("sim/world/lifecycle.rs", 1),
-                ("sim/world/move_cell_input.rs", 3),
+                ("sim/world/move_cell_input.rs", 1),
                 ("sim/world/planning.rs", 1),
                 ("sim/world/selection_voice.rs", 4),
                 ("sim/world/shroud_refresh.rs", 2),
@@ -537,7 +548,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/lifecycle.rs", 12),
                 ("sim/world/mod.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
-                ("sim/world/world_commands.rs", 1),
+                // Includes the local selection check for authored grants.
+                ("sim/world/world_commands.rs", 2),
                 ("sim/world/world_hash.rs", 1),
             ],
         ),

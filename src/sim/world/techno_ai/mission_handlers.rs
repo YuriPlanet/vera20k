@@ -1531,7 +1531,7 @@ fn hunt_march_on_player(
             .filter(|cell| *cell != (0, 0))
     };
     let cell = if sim.session.is_authored_campaign() {
-        sim.authored_campaign_players().find_map(base)
+        sim.authored_participants().find_map(base)
     } else {
         sim.session.current_house().and_then(base)
     };

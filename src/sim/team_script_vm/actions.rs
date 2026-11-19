@@ -327,7 +327,7 @@ impl Simulation {
                     // Authored lockstep peers substitute the same admitted
                     // House for the native PlayerPtr visibility query.
                     let viewer = if authored_campaign {
-                        self.authored_campaign_players().next()
+                        self.authored_participants().next()
                     } else {
                         self.session.current_house()
                     };

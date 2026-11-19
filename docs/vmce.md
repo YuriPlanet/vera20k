@@ -99,6 +99,8 @@ A player who leaves during the mission keeps their House and units on the map, a
 
 Defeat plays the stage's campaign failure scene when available before showing Retry and Return to Room. Retry can reload the original stage, assignments, settings, seed and incoming carry-over when every starting connection is still present. Each playing participant chooses Retry and all peers recheck their files. An observer follows the reload after verification. Return to Room cancels a pending retry and restores the stage, roles and settings. Guests click Ready again for the next match.
 
+If the restart is interrupted during handoff, return to LAN and join the host's reopened room for the same stage.
+
 ### Carry-over
 
 The host's room carries scenario globals into the preselected successor. The successor's map controls the countdown with `[Basic] TimerInherit=yes`. Changing the selection clears carry-over. Closing the room ends that continuation.

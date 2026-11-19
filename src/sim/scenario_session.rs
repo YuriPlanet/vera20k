@@ -1855,16 +1855,17 @@ impl ScenarioSession {
         !self.uses_campaign_rules() || self.authored_auto_enemy_selection
     }
 
-    pub(super) fn set_authored_auto_enemy_selection(&mut self, allowed: bool) {
-        self.authored_auto_enemy_selection = allowed;
-    }
-
-    pub(crate) fn install_authored_campaign(&mut self, primary_house_indices: Vec<u16>) {
+    pub(crate) fn install_authored_campaign(
+        &mut self,
+        primary_house_indices: Vec<u16>,
+        auto_enemy_selection: bool,
+    ) {
         debug_assert!(
             !self.started,
             "authored campaign participants come from fresh admission"
         );
         self.authored_outcomes = Some(AuthoredOutcomes::new(primary_house_indices));
+        self.authored_auto_enemy_selection = auto_enemy_selection;
     }
 
     pub(super) fn authored_primary_house_indices(&self) -> &[u16] {

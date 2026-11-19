@@ -92,7 +92,7 @@ pub(crate) struct AuthoredNetworkStart {
     pub(crate) ai_difficulty: crate::sim::house_state::HouseDifficulty,
     pub(crate) alliance_admission: crate::sim::house_diplomacy::PlayerAllianceAdmission,
     pub(crate) auto_enemy_selection: bool,
-    pub(crate) carry_over: Option<crate::sim::campaign_carry_over::AuthoredCampaignCarryOver>,
+    pub(crate) carry_over: Option<crate::sim::AuthoredStageCarryOver>,
 }
 
 /// Immutable accepted network handoff, shared with the live session owner.
