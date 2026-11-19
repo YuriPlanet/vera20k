@@ -36,6 +36,8 @@ pub(crate) struct MatchDiagnosticsState {
     replay_playback: Option<ReplayPlaybackState>,
     replay_capture_output: Option<PathBuf>,
     replay_artifact_sha256: Option<String>,
+    /// The startup refusal the active segment already logged.
+    replay_startup_refusal: Option<String>,
 }
 
 enum ReplayPlaybackState {
@@ -497,6 +499,9 @@ impl MatchDiagnosticsState {
             self.replay_log = None;
             return None;
         }
+        if self.replay_log.is_none() {
+            self.replay_startup_refusal = None;
+        }
         Some(self.replay_log.get_or_insert_with(|| {
             let sim = &runtime.simulation;
             ReplayLog::new(crate::sim::replay::ReplayHeader {
@@ -542,8 +547,23 @@ impl MatchDiagnosticsState {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;
                 log.startup = Some(Box::new(startup));
             }
-            Err(error) => log::warn!("This match's replay cannot be replayed: {error:#}"),
+            Err(error) => {
+                if let Some(refusal) = self.new_replay_startup_refusal(&error) {
+                    log::warn!("This match's replay cannot be replayed: {refusal}");
+                }
+            }
         }
+    }
+
+    /// A segment reports each refusal once. A network match retries startup on
+    /// every frame pass while it waits at frame zero, and gets the same answer.
+    fn new_replay_startup_refusal(&mut self, error: &anyhow::Error) -> Option<String> {
+        let refusal = format!("{error:#}");
+        if self.replay_startup_refusal.as_deref() == Some(refusal.as_str()) {
+            return None;
+        }
+        self.replay_startup_refusal = Some(refusal.clone());
+        Some(refusal)
     }
 
     /// Persist and consume the active segment. `Ok(None)` when there is no
@@ -859,6 +879,22 @@ mod tests {
             replay_log: Some(sample_log()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_segment_logs_its_replay_startup_refusal_once() {
+        let runtime = crate::sim::runtime::SimRuntime::from_simulation(
+            crate::sim::world::Simulation::with_seed(17),
+        );
+        let mut diagnostics = MatchDiagnosticsState::default();
+        diagnostics.get_or_begin_replay(&runtime).unwrap();
+        let refusal = anyhow::anyhow!("generated/legacy maps lack authored replay startup");
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_none());
+        // The next segment reports its own refusal.
+        diagnostics.replay_log = None;
+        diagnostics.get_or_begin_replay(&runtime).unwrap();
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
     }
 
     #[test]
