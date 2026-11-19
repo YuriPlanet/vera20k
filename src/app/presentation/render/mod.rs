@@ -106,7 +106,16 @@ impl GameRenderInstanceCounts {
 /// readers only ever see a window's totals or means, never one frame's spans.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RenderPhases {
-    /// Phase 1 — terrain, overlays, entities.
+    /// Capturing the presentation frame of the home world before the draw
+    /// (`SimHost::ensure_frame`); zero while a lent tick keeps its own.
+    pub snapshot: Duration,
+    /// Phase 1's visible terrain tiles.
+    pub terrain: Duration,
+    /// Phase 1's Display object walk: units, infantry, buildings, debris and
+    /// bullets, voxel image renders included.
+    pub objects: Duration,
+    /// The rest of phase 1: overlays, bridges, smudges, anims, particles,
+    /// selection brackets and health bars.
     pub world: Duration,
     /// Phase 2 — pathgrid / cell grid / heightmap overlays.
     pub debug: Duration,
@@ -137,11 +146,14 @@ pub(crate) struct RenderPhases {
 }
 
 impl RenderPhases {
-    pub(crate) const COUNT: usize = 11;
+    pub(crate) const COUNT: usize = 14;
 
     /// The spans in declaration order, for the meter and the wire.
     pub(crate) fn spans(&self) -> [Duration; Self::COUNT] {
         [
+            self.snapshot,
+            self.terrain,
+            self.objects,
             self.world,
             self.debug,
             self.shroud,
@@ -186,6 +198,9 @@ pub(crate) struct GameRenderTimes {
 /// The perf recorder uses these as CSV column names.
 #[cfg(feature = "perf")]
 pub(crate) const RENDER_PHASE_KEYS: [&str; RenderPhases::COUNT] = [
+    "snapshot",
+    "terrain",
+    "objects",
     "world",
     "debug",
     "shroud",
@@ -229,6 +244,7 @@ pub(crate) fn render_game(
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
+    let after_snapshot = render_started.map(|_| Instant::now());
 
     // Trigger action 0x28 mutates scroll/radar authority inside the committed
     // sim frame. Install and clamp it before constructing any world instances,
@@ -835,7 +851,13 @@ pub(crate) fn render_game(
     // the frame owner adds its final submission and present.
     let submitted = state.renderer.terrain_draw_renderer.frame_submit_time();
     let phases = render_started.map(|render_started| RenderPhases {
-        world: after_world.unwrap().duration_since(phase1_started.unwrap()),
+        snapshot: after_snapshot.unwrap().duration_since(render_started),
+        terrain: world.spans.terrain,
+        objects: world.spans.objects,
+        world: after_world
+            .unwrap()
+            .duration_since(phase1_started.unwrap())
+            .saturating_sub(world.spans.terrain + world.spans.objects),
         debug: after_debug.unwrap().duration_since(after_world.unwrap()),
         shroud: after_shroud.unwrap().duration_since(after_debug.unwrap()),
         ui: after_ui.unwrap().duration_since(after_shroud.unwrap()),
@@ -850,7 +872,9 @@ pub(crate) fn render_game(
             .duration_since(after_effects.unwrap())
             .saturating_sub(submitted),
         handoff: submitted,
-        other: phase1_started.unwrap().duration_since(render_started)
+        other: phase1_started
+            .unwrap()
+            .duration_since(after_snapshot.unwrap())
             + effects_started
                 .unwrap()
                 .duration_since(after_lights.unwrap()),
