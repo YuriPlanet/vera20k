@@ -37,7 +37,7 @@ mod disk_laser_tests;
 #[cfg(test)] // shared by test groups
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
-mod frame_effects;
+pub(crate) mod frame_effects;
 mod idle_sleep;
 #[cfg(all(test, tests_sim_world_c_o))]
 mod idle_sleep_tests;

@@ -1663,7 +1663,7 @@ mod tests {
         assert!(!super::direct_reach_is_planar(&unit, &no, &off));
         assert!(!super::direct_reach_is_planar(&unit, &unset, &off));
         assert!(super::direct_reach_is_planar(&unit, &unset, &on));
-        if crate::rules::ARES_ENABLED {
+        if crate::rules::ares_switch::ares_way() {
             assert!(
                 super::direct_reach_is_planar(&aircraft, &no, &off),
                 "the stock aircraft planar arm is unchanged"

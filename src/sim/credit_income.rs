@@ -1952,6 +1952,7 @@ mod tests {
             &mut sim.power_states,
             disk,
             refinery
+            crate::rules::ares_switch::ares_way(),
         ));
 
         // The common AI reads the pre-increment frame; 17 is a drain frame.
@@ -1965,7 +1966,6 @@ mod tests {
         sim.advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::empty().with_bounty_text(&observe),
@@ -2050,6 +2050,7 @@ mod tests {
             &mut sim.power_states,
             disk,
             refinery
+            crate::rules::ares_switch::ares_way(),
         ));
         sim.session.set_binary_frame_for_test(17);
         let events = std::cell::RefCell::new(Vec::new());
@@ -2061,7 +2062,6 @@ mod tests {
         sim.advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::empty().with_bounty_text(&observe),
@@ -2117,6 +2117,7 @@ mod tests {
             &mut sim.power_states,
             disk,
             refinery
+            crate::rules::ares_switch::ares_way(),
         ));
         sim.session.set_binary_frame_for_test(17);
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
@@ -2124,7 +2125,6 @@ mod tests {
         sim.advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::empty(),

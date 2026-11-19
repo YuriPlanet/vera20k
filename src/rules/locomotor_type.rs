@@ -497,7 +497,6 @@ mod tests {
     /// The two Tiberian Sun locomotor CLSIDs no retail type selects. DropPod
     /// has no VERA kind; Tunnel resolves to [`LocomotorKind::Tunnel`].
     const DORMANT_CLSID_TUNNEL: &str = "4A582743-9839-11D1-B709-00A024DDAFD1";
-    const DORMANT_CLSID_DROPPOD: &str = "4A582745-9839-11D1-B709-00A024DDAFD1";
 
     /// No stock unit selects the Tunnel or DropPod locomotor: Tunnel is
     /// dormant on retail data and DropPod has no movement system here.
