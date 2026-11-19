@@ -10,7 +10,9 @@
 //!   `TechnoExt::RefineTiberium @ 100461B0`).
 //! - `HouseClass::GiveTiberium @ 0x004F9610` is Ares'
 //!   `HouseClass_GiveTiberium_Storage @ 10024290` (hook `0x4F9610`): it
-//!   fills the House's `Storage=` buildings, or pays cash.
+//!   fills the House's `Storage=` buildings, or pays cash. Every caller
+//!   takes [`Simulation::give_tiberium`], which picks Ares' body or the
+//!   stock one.
 //! - The stock storage arms Ares relies on, which run on Ares' stores only
 //!   because nothing fills the stores in stock YR: Spend_Money's silo
 //!   drain (`0x004F97DD..0x004F9925`), Available_Money's storage value
@@ -457,12 +459,12 @@ impl Simulation {
     fn ares_storage_pricing(&self, owner: InternedId, rules: &RuleSet) -> StoragePricing {
         StoragePricing {
             values: std::array::from_fn(|slot| tiberium_value(rules, slot)),
-            income: self.ares_income_mult(owner, rules),
+            income: self.owner_income_mult(owner, rules),
         }
     }
 
     /// The owner's HouseType `IncomeMult` (`+0x148`).
-    fn ares_income_mult(&self, owner: InternedId, rules: &RuleSet) -> NativeF32Bits {
+    fn owner_income_mult(&self, owner: InternedId, rules: &RuleSet) -> NativeF32Bits {
         crate::sim::house_state::income_mult_for_owner(
             &self.houses,
             &self.interner,
@@ -486,7 +488,7 @@ impl Simulation {
     /// (a refinery, or a slave's master): the purifier `bonus` always pays
     /// cash; the raw `amount` pays cash too unless the building's type sets
     /// `Refinery.UseStorage`, which gives it to the owner's House
-    /// ([`Self::ares_give_tiberium`]). The cash, each part
+    /// ([`Self::give_tiberium`]). The cash, each part
     /// `ftol(amount * Value * IncomeMult)`, goes in one Add_Credits when
     /// positive; it adds no score. `TechnoExt::RefineTiberium @ 100461B0`
     /// (the slave's) computes the same bonus first.
@@ -508,7 +510,7 @@ impl Simulation {
         let slot = usize::from(slot.0);
         let (price, income) = (
             tiberium_value(rules, slot),
-            self.ares_income_mult(owner, rules),
+            self.owner_income_mult(owner, rules),
         );
         let mut value = 0_i32;
         if positive(bonus) {
@@ -516,7 +518,7 @@ impl Simulation {
         }
         if positive(amount) {
             if use_storage {
-                self.ares_give_tiberium(owner, amount, slot, rules);
+                self.give_tiberium(owner, amount, slot, rules);
             } else {
                 value = value.wrapping_add(worth(amount, price, income));
             }
@@ -526,12 +528,43 @@ impl Simulation {
         }
     }
 
+    /// `HouseClass::GiveTiberium @ 0x004F9610` (stock Add_Tiberium_Credits)
+    /// for `owner`: `amount` units of tiberium type `slot`. Every caller of
+    /// that address comes here: the unload's two calls (`0x0073E4A9`,
+    /// `0x0073E4C9`) and the slave's (`0x00522D71..0x00522E36`), Ares'
+    /// DepositTiberium (`10044230`), the sale's store payout
+    /// (`0x0044A232..0x0044A285`) and `[Basic] FillSilos=` (`0x00684F58`).
+    /// When the money takes its Ares form ([`RuleSet::ares_form`]) it is
+    /// Ares' body (hook `0x4F9610`, [`Self::ares_give_tiberium`]); otherwise
+    /// the stock one, score and cash
+    /// ([`crate::sim::economy::Economy::add_tiberium_credits`]) at the
+    /// type's `Value=` and the owner's `IncomeMult`. A slot no type fills is
+    /// worth 0 (natively it reads past `TiberiumClass::Array`).
+    pub(crate) fn give_tiberium(
+        &mut self,
+        owner: InternedId,
+        amount: NativeF32Bits,
+        slot: usize,
+        rules: &RuleSet,
+    ) {
+        if rules.ares_form() {
+            self.ares_give_tiberium(owner, amount, slot, rules);
+            return;
+        }
+        let income = self.owner_income_mult(owner, rules);
+        if let Some(house) = self.houses.get_mut(&owner) {
+            house
+                .economy_mut()
+                .add_tiberium_credits(tiberium_value(rules, slot), amount, income);
+        }
+    }
+
     /// `HouseClass::GiveTiberium @ 0x004F9610` as Ares 3.0
     /// `HouseClass_GiveTiberium_Storage @ 10024290` replaces it: the score
     /// (`+0x54E8`) gains `ftol(amount * 5)`; a campaign House or a human one
     /// stores the amount in its buildings ([`AresTiberiumStorage`]), any
     /// other is paid `ftol(amount * Value * IncomeMult)` in cash.
-    pub(crate) fn ares_give_tiberium(
+    fn ares_give_tiberium(
         &mut self,
         owner: InternedId,
         amount: NativeF32Bits,
@@ -706,8 +739,8 @@ impl Simulation {
     /// The sale's store payout (`BuildingClass::Mission_Selling
     /// 0x0044A232..0x0044A285`, after its Limbo): each non-empty slot of
     /// the sold building's store empties into GiveTiberium as
-    /// `(float)ftol(amount)`, which Ares makes [`Self::ares_give_tiberium`]:
-    /// a storing House moves it into its other silos, as room allows.
+    /// `(float)ftol(amount)` ([`Self::give_tiberium`], Ares' body here): a
+    /// storing House moves it into its other silos, as room allows.
     pub(crate) fn ares_sale_storage_payout(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -717,7 +750,7 @@ impl Simulation {
         while let Some(slot) = store.first_non_empty() {
             let removed = store.remove_amount(store.amount(slot), slot);
             let amount = as_float(X87::ftol_i32_low_masked(X87::load_f32(removed)));
-            self.ares_give_tiberium(owner, amount, slot, rules);
+            self.give_tiberium(owner, amount, slot, rules);
         }
     }
 }

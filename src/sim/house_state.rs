@@ -1723,6 +1723,16 @@ impl HouseState {
         &self.economy
     }
 
+    /// `HouseClass::Available_Storage @ 0x004F69D0`: the storage capacity
+    /// (`+0x310`) minus the House store's total (`+0x2FC`,
+    /// `StorageClass::GetTotalAmount`), which only Ares fills
+    /// (`sim::ares_tiberium_storage`).
+    pub(crate) fn available_storage(&self) -> i32 {
+        self.tracking
+            .storage_capacity()
+            .wrapping_sub(self.economy.ares_storage().house_store().total_amount())
+    }
+
     pub const fn strategy_emergency(&self) -> &HouseStrategyEmergencyState {
         &self.strategy_emergency
     }

@@ -455,7 +455,7 @@ mod tests {
         let (mut sim, owner) = sim_with_house(5_000, true);
         structure(&mut sim, &rules, "GASILO", 3);
         let give = |sim: &mut Simulation, units: f32| {
-            sim.ares_give_tiberium(owner, NativeF32Bits::from_bits(units.to_bits()), 0, &rules);
+            sim.give_tiberium(owner, NativeF32Bits::from_bits(units.to_bits()), 0, &rules);
         };
         give(&mut sim, 1960.0);
         assert!(run_frames(&mut sim, &rules, 3).is_empty());
