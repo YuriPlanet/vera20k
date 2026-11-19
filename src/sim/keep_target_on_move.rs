@@ -233,6 +233,6 @@ fn clear_latched_target(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "keep_target_on_move_tests.rs"]
 mod tests;

@@ -171,6 +171,6 @@ fn retreat_edge_mode(
         .unwrap_or(rules.phobos_globals.aircraft_retreat_to_edge)
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 #[path = "retreat_edge_mode_tests.rs"]
 mod retreat_edge_mode_tests;

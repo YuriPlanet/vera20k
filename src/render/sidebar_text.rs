@@ -282,7 +282,7 @@ pub fn build_indicator_instances(
     font.build_text(text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;

@@ -327,7 +327,7 @@ fn predicted_coord(location: i32, velocity: NativeF64Bits) -> i32 {
     (f64::from(location) + f64::from_bits(velocity.bits())).trunc() as i32
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;

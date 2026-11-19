@@ -109,6 +109,6 @@ impl DamageMultiplierRules {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_damage_multiplier_tests.rs"]
 mod tests;

@@ -57,6 +57,6 @@ impl PhobosExitThroughRoof {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_exit_through_roof_tests.rs"]
 mod tests;

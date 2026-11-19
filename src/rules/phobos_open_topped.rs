@@ -184,6 +184,6 @@ impl PhobosOpenTopped {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_open_topped_tests.rs"]
 mod tests;

@@ -136,6 +136,6 @@ fn parse_phobos_land_type_flags(raw: &str) -> Option<u16> {
     Some(flags)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_deploy_tests.rs"]
 mod tests;

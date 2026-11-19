@@ -193,6 +193,6 @@ fn type_list(section: &IniSection, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_auto_death_tests.rs"]
 mod tests;

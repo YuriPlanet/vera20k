@@ -87,6 +87,6 @@ fn is_prefiring(
     include_burst && weapon.burst > 0 && attacker.weapon_burst.index() % weapon.burst != 0
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "extra_range_tests.rs"]
 mod tests;

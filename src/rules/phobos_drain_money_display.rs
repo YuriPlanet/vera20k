@@ -109,6 +109,6 @@ impl DisplayIncomeSettings {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_drain_money_display_tests.rs"]
 mod tests;

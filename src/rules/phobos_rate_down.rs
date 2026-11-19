@@ -61,6 +61,6 @@ impl PhobosRateDown {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_rate_down_tests.rs"]
 mod tests;

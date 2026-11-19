@@ -2530,7 +2530,7 @@ mod native_slot_tests {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 mod roof_production_anim_tests {
     use super::*;
 

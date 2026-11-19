@@ -139,6 +139,6 @@ fn ground_anims(section: &IniSection) -> Option<[String; 2]> {
     Some([first, second])
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_droppod_tests.rs"]
 mod tests;

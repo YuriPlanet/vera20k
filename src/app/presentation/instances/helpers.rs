@@ -1701,7 +1701,7 @@ pub(crate) fn deploy_hides_unit_body(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_warp_draw_tests.rs"]
 mod building_warp_draw_tests;

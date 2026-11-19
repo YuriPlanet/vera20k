@@ -77,6 +77,6 @@ pub(crate) fn display_income_string(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_display_income_tests.rs"]
 mod tests;

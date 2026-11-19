@@ -106,7 +106,7 @@ pub(crate) mod unit_shadow;
 pub mod upscale_pass;
 pub(crate) mod voxel_gpu;
 pub mod voxel_image_cache;
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[cfg(all(test, tests_render_s_z))]
 mod voxel_parity_tests;
 pub mod vxl_normals;
@@ -119,6 +119,6 @@ pub mod xbr;
 mod sidebar_gpu_tests;
 #[cfg(all(test, tests_render_s_z))]
 mod smooth_chrome_gpu_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_render_s_z, feature = "phobos"))]
 #[path = "tooltip_blur_gpu_tests.rs"]
 mod tooltip_blur_gpu_tests;

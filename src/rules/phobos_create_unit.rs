@@ -90,6 +90,6 @@ pub(crate) fn read_nullable_mission(
     section.read_phobos_nullable_with(key, current, MissionType::from_map_name)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_create_unit_tests.rs"]
 mod tests;

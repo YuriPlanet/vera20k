@@ -6938,11 +6938,11 @@ mod talk_tests;
 #[path = "trigger_runtime_cargo_tests.rs"]
 mod cargo_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_trigger, feature = "phobos"))]
 #[path = "trigger_runtime_drop_crate_tests.rs"]
 mod drop_crate_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_restore_tests.rs"]
 mod restore_tests;
 
@@ -6971,6 +6971,6 @@ mod building_sale_native_tests;
 mod skirmish_map_tests;
 
 #[cfg(feature = "phobos")]
-#[cfg(test)]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_banner_tests.rs"]
 mod banner_tests;

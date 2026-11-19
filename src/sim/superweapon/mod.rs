@@ -54,7 +54,7 @@ mod chaining;
 pub(crate) use chaining::ChainDepth;
 #[cfg(feature = "phobos")]
 mod detonate;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
 mod detonate_tests;
 pub(crate) mod drop_pod;
 #[cfg(all(test, tests_sim_superweapon))]
@@ -65,13 +65,13 @@ mod emp_pulse_tests;
 mod fire;
 #[cfg(feature = "phobos")]
 pub(crate) mod launch_sw;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
 mod launch_sw_tests;
 #[cfg(feature = "phobos")]
 mod limbo;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
 mod phobos_ai_chronoshift_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
 #[path = "phobos_convert_pairs_tests.rs"]
 mod phobos_convert_pairs_tests;
 #[cfg(feature = "phobos")]
@@ -105,7 +105,7 @@ pub mod psychic_reveal;
 mod sonar_pulse;
 mod spy_plane;
 mod two_stage;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
 mod use_weeds_tests;
 pub use two_stage::PaidSuperWeaponSelection;
 
@@ -3410,7 +3410,7 @@ pub(crate) fn trigger_grant_super(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod show_timer_priority_tests {
     use super::*;
 

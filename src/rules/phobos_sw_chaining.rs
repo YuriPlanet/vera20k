@@ -294,6 +294,6 @@ fn read_appended_weights(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_sw_chaining_tests.rs"]
 mod tests;

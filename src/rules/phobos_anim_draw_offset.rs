@@ -84,6 +84,6 @@ impl PhobosAnimDrawOffset {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_anim_draw_offset_tests.rs"]
 mod tests;

@@ -1134,7 +1134,7 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_movement, feature = "phobos"))]
 mod chrono_pre_delay_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

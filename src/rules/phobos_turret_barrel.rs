@@ -95,6 +95,6 @@ impl PhobosTurretBarrel {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_turret_barrel_tests.rs"]
 mod tests;

@@ -687,7 +687,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod turret_shape_tests {
     use super::tests::{TEST_CADENCE, make_art_entry};
     use super::*;

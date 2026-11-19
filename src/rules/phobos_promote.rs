@@ -89,6 +89,6 @@ impl PhobosPromote {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_promote_tests.rs"]
 mod tests;

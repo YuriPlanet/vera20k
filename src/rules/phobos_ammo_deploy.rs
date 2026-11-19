@@ -92,6 +92,6 @@ impl PhobosAmmoDeploy {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_ammo_deploy_tests.rs"]
 mod tests;

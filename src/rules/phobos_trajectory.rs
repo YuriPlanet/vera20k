@@ -590,6 +590,6 @@ fn read_warhead_ref(section: &IniSection, key: &str, current: Option<String>) ->
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_trajectory_tests.rs"]
 mod tests;

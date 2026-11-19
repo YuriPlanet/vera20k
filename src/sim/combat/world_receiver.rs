@@ -5836,7 +5836,7 @@ mod building_hit_fire_tests;
 #[path = "phobos_bullet_init_tests.rs"]
 mod phobos_bullet_init_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "world_receiver_debris_tests.rs"]
 mod debris_tests;
 
@@ -5847,7 +5847,7 @@ fn warhead_damages_wall(
     warhead.wall || warhead.wall_absolute_destroyer || (warhead.wood && wall_flags.armor_is_wood)
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod prevent_scatter_tests {
     use super::warhead_prevents_scatter;
     use crate::rules::ini_parser::IniFile;

@@ -694,7 +694,7 @@ impl Simulation {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 mod phobos_powers_up_sim_tests {
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;

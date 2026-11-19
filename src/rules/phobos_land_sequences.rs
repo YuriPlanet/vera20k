@@ -91,6 +91,6 @@ impl PhobosLandSequences {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_land_sequences_tests.rs"]
 mod tests;

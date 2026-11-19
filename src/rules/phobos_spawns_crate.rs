@@ -64,6 +64,6 @@ fn read_weight(section: &IniSection, key: &str) -> Option<i32> {
         .flatten()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_spawns_crate_tests.rs"]
 mod tests;

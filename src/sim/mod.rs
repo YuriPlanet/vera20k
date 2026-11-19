@@ -22,7 +22,7 @@
 
 // --- Core types: entity storage, components, commands, RNG, interning ---
 pub(crate) mod abduction; // Ares Abductor= weapons (conductAbduction 10054A80)
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 mod affects_underground_tests;
 pub(crate) mod ai_base_building;
 pub(crate) mod ai_base_defense;
@@ -64,7 +64,7 @@ pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands
 pub mod capture_manager;
 #[cfg(feature = "debug-tools")]
 pub mod cheats;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_c_g, feature = "phobos"))]
 mod cloak_anim_tests;
 pub mod cloak_disguise;
 pub mod command;
@@ -114,7 +114,7 @@ pub(crate) mod reverse_engineering; // Ares grinder reverse engineering (1002236
 pub mod telemetry;
 #[cfg(feature = "phobos")]
 pub(crate) mod tiberium_eater;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_t_z, feature = "phobos"))]
 mod tiberium_eater_tests;
 pub(crate) mod vehicle_theft;
 // A wasm build has no threads (the browser package, the headless WASI run)
@@ -148,15 +148,15 @@ pub(crate) mod stage;
 pub use stage::StageClass;
 pub(crate) mod state_hasher; // parallel digests over util::state_hasher
 pub(crate) mod storage_class; // one owner of StorageClass GetTotalAmount/Add_Amount
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "weed_storage_tests.rs"]
 mod weed_storage_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_t_z, feature = "phobos"))]
 #[path = "units_repair_tests.rs"]
 mod units_repair_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 #[path = "adjacent_tests.rs"]
 mod adjacent_tests;
 pub mod temporal;

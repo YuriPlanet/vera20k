@@ -93,6 +93,6 @@ impl BuildLimitGroupSettings {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_build_limit_group_tests.rs"]
 mod tests;

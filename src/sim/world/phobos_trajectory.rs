@@ -945,6 +945,6 @@ fn sin_cos(radians: f64) -> (f64, f64) {
     (sin, cos)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "phobos_trajectory_tests.rs"]
 mod tests;

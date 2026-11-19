@@ -229,6 +229,6 @@ pub(super) fn apply_limbo_kill(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "limbo_tests.rs"]
 mod tests;

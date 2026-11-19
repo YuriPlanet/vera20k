@@ -607,7 +607,7 @@ pub(crate) fn depleted_ammo_actions(sim: &mut Simulation, id: u64, rules: &RuleS
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[cfg(all(test, tests_sim_t_z))]
 #[path = "unit_simple_deploy_tests.rs"]
 mod tests;

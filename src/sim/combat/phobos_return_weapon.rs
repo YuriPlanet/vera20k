@@ -205,6 +205,6 @@ fn return_damage(weapon_damage: i32, apply_mult: bool, firepower: NativeF64Bits)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "phobos_return_weapon_emission_tests.rs"]
 mod tests;

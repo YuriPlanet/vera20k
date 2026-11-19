@@ -816,7 +816,7 @@ fn sse_i32(value: f64) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod tests {
     use super::sse_i32;
 

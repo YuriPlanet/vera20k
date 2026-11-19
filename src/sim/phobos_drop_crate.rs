@@ -174,6 +174,6 @@ fn try_to_create_crate(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "phobos_drop_crate_tests.rs"]
 mod tests;

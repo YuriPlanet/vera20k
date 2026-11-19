@@ -37,16 +37,16 @@ mod infantry_entry_priority_tests;
 #[path = "wall_entry_tests.rs"]
 mod wall_entry_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_c_o, feature = "phobos"))]
 #[path = "phobos_wall_weapon_tests.rs"]
 mod phobos_wall_weapon_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[cfg(all(test, tests_sim_world_c_o))]
 #[path = "plain_entry_tests.rs"]
 mod plain_entry_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_c_o, feature = "phobos"))]
 #[path = "phobos_balloon_pathing_tests.rs"]
 mod phobos_balloon_pathing_tests;
 

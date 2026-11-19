@@ -39,6 +39,6 @@ impl PhobosHoverDrown {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_hover_drown_tests.rs"]
 mod tests;

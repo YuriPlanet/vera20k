@@ -1684,11 +1684,11 @@ mod invisible_tests;
 #[path = "entity_pick_band_owner_tests.rs"]
 mod band_owner_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_priority_tests.rs"]
 mod priority_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;

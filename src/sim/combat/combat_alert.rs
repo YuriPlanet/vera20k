@@ -208,6 +208,6 @@ fn choose_voice(
     CombatAlertVoice::None
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "phobos_combat_alert_tests.rs"]
 mod tests;

@@ -648,7 +648,7 @@ fn purifier_bonus_amount(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod drain_tests {
     use super::super::{CargoBale, ResourceType};
     use super::drain_first_slot;
@@ -704,7 +704,7 @@ mod drain_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[cfg(all(test, tests_sim_h_o))]
 mod income_tests {
     use super::purifier_bonus_amount;

@@ -445,10 +445,10 @@ fn choose_one_weighted(dice: f64, weights: &[i32]) -> i32 {
     -1
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "chaining_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "phobos_sw_messages_tests.rs"]
 mod phobos_sw_messages_tests;

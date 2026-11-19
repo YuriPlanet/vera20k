@@ -39,7 +39,7 @@ mod dock_cycle_tests;
 mod release_tests;
 #[cfg(all(test, tests_sim_a_b))]
 mod team_strike_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 #[path = "unland_damage_tests.rs"]
 mod unland_damage_tests;
 #[cfg(all(test, tests_sim_a_b))]

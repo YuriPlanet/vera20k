@@ -64,11 +64,11 @@ mod flaming_guy;
 #[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_animated_tiberium_tests.rs"]
 mod animated_tiberium_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 #[path = "anim_vein_attack_tests.rs"]
 mod vein_attack_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 #[path = "anim_firing_update_tests.rs"]
 mod anim_firing_update_tests;
 

@@ -617,6 +617,6 @@ fn anim_coord(coord: IVec3) -> AnimWorldCoord {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_t_z, feature = "phobos"))]
 #[path = "voxel_trailer_tests.rs"]
 mod voxel_trailer_tests;

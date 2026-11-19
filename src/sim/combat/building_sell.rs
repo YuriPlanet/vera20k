@@ -255,6 +255,6 @@ pub(super) fn relocation_cell(
     Some((x, y))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "building_sell_tests.rs"]
 mod tests;

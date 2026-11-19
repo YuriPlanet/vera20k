@@ -958,7 +958,7 @@ impl Simulation {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_c_o, feature = "phobos"))]
 mod phobos_spin_multiplier_tests {
     use super::*;
 

@@ -155,6 +155,6 @@ fn read_roll_chances(section: &IniSection, key: &str) -> Option<Vec<NativeF32Bit
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_limbo_tests.rs"]
 mod tests;

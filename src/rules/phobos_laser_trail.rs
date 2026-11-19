@@ -195,7 +195,7 @@ pub(crate) fn read_laser_trail_types(section: &IniSection, current: Vec<String>)
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

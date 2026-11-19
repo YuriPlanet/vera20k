@@ -970,7 +970,7 @@ pub(crate) fn apply_arcing_fix(
     velocity
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
@@ -1483,7 +1483,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
 mod arcing_fix_tests {
     use super::apply_arcing_fix;
 
@@ -1515,7 +1515,7 @@ mod arcing_fix_tests {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
 mod random_coords_near_tests {
     use super::random_coords_near;
     use crate::sim::combat::inviso_scatter::{

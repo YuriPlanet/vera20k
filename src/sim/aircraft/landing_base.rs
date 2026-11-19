@@ -205,7 +205,7 @@ pub(crate) fn get_landing_dir(
     unreachable!("the non-Phobos arm returns before the GetLandingDir arms")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;

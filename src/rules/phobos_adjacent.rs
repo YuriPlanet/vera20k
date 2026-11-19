@@ -61,6 +61,6 @@ impl PhobosAdjacent {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_adjacent_tests.rs"]
 mod tests;

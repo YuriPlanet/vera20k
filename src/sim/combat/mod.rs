@@ -113,20 +113,20 @@ mod ares_cliff_tests;
 mod ares_warhead_combat_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_warhead_effects_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod berzerk_alliance_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod berzerk_mission_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_cluster_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_launch_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_live_chain_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod burst_no_delay_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_cloak_damage_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
@@ -135,10 +135,10 @@ mod combat_cloak_fire_tests;
 mod combat_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_turret_facing_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "electric_bolt_bolt_keys_tests.rs"]
 mod electric_bolt_bolt_keys_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod electric_bolt_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
@@ -149,39 +149,39 @@ mod fireat_launch_tests;
 mod garrison_oracle_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod homing_shipyard_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_au_underground_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_burst_sequence_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_delayed_fire_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_detonate_all_map_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_extra_warheads_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_feedback_weapon_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_no_turret_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_omni_fire_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_open_topped_fire_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_open_transport_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_gattling_select_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_shrapnel_trigger_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_shield_weapon_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_shield_armor_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_spawns_crate_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_unlimbo_detonate_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_visual_scatter_tests;
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
@@ -192,11 +192,11 @@ mod ifv_fireat_tests;
 /// oracle cases in `bridge_launch_tests` and `world::projectile_collision`.
 #[cfg(all(test, any(tests_sim_combat_d_z, tests_sim_combat_a_c)))]
 mod impact_height_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod infantry_flh_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod laser_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod laser_tracking_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod mirage_disguise_tests;

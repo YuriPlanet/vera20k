@@ -47,6 +47,6 @@ impl PhobosPassengersSync {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_passengers_sync_tests.rs"]
 mod tests;

@@ -99,6 +99,6 @@ impl PhobosStrafingRules {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_strafing_tests.rs"]
 mod tests;

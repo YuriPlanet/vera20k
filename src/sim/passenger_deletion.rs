@@ -467,6 +467,6 @@ fn emit_soylent_text(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "passenger_deletion_tests.rs"]
 mod tests;

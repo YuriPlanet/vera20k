@@ -121,6 +121,6 @@ fn update_shared_ammo(
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
 #[path = "shared_ammo_tests.rs"]
 mod tests;

@@ -102,6 +102,6 @@ pub(crate) fn leave_target_cell(origin: (i16, i16), dir: usize) -> (i16, i16) {
     (origin.0.wrapping_sub(dx), origin.1.wrapping_add(dy))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "building_sell_leave_tests.rs"]
 mod tests;

@@ -136,6 +136,6 @@ impl PassengerDeletionSettings {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_passenger_deletion_tests.rs"]
 mod tests;

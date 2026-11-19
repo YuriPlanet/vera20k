@@ -121,6 +121,6 @@ pub fn aircraft_size_scale(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_shadow_tests.rs"]
 mod tests;

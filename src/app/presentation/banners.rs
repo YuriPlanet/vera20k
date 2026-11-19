@@ -497,7 +497,7 @@ pub(crate) fn texture(state: &AppState) -> Option<&BatchTexture> {
         .map(BannerArtSet::texture)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::{BannerDisplay, reconcile_displays};
 

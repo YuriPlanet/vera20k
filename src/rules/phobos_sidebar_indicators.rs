@@ -481,6 +481,6 @@ impl ProducingProgressSideSettings {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_sidebar_indicators_tests.rs"]
 mod tests;

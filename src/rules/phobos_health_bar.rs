@@ -38,6 +38,6 @@ impl HealthBarSettings {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_health_bar_tests.rs"]
 mod tests;

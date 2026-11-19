@@ -6999,10 +6999,10 @@ use super::bridge_test_evidence;
 #[path = "techno_ai/promotion_sound_tests.rs"]
 mod promotion_sound_tests;
 
-#[cfg(all(test, feature = "phobos"))]#[path = "techno_ai/promote_anim_tests.rs"]
+#[cfg(all(test, tests_sim_world_techno, feature = "phobos"))]#[path = "techno_ai/promote_anim_tests.rs"]
 mod promote_anim_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/surface_conversion_tests.rs"]
 mod surface_conversion_tests;
 

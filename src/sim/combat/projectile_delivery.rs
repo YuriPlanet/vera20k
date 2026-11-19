@@ -88,7 +88,7 @@ pub(crate) fn vertical_initial_facing(
         .unwrap_or_else(|| projectile.is_some_and(|kind| kind.voxel || kind.vertical))
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod vertical_initial_facing_tests {
     use super::vertical_initial_facing;
     use crate::rules::ini_parser::IniFile;

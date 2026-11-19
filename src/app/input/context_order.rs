@@ -9374,11 +9374,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 #[path = "allied_object_action_tests.rs"]
 mod allied_object_action_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_app_input_a_c, feature = "phobos"))]
 #[path = "phobos_attack_underground_tests.rs"]
 mod phobos_attack_underground_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[cfg(all(test, tests_app_input_a_c))]
 #[path = "context_order_cursor_contract_tests.rs"]
 mod cursor_contract_tests;

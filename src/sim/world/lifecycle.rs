@@ -7895,6 +7895,6 @@ mod watcher_tests;
 #[path = "ares_prerequisite_lifecycle_tests.rs"]
 mod ares_prerequisite_lifecycle_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_c_o, feature = "phobos"))]
 #[path = "building_ai_repairable_tests.rs"]
 mod building_ai_repairable_tests;

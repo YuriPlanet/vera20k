@@ -36,7 +36,7 @@ pub fn read_retreat_to_edge(section: &IniSection) -> Option<PhobosEdgeType> {
     section.read_phobos_nullable_with("RetreatToEdge", None, PhobosEdgeType::parse)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

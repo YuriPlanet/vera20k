@@ -53,6 +53,6 @@ impl PhobosReturnWeapon {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_return_weapon_tests.rs"]
 mod tests;

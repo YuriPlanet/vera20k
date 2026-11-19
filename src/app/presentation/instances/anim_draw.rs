@@ -573,7 +573,7 @@ fn shield_type_bracket_delta(
     .then(|| ty.bracket_delta())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[cfg(all(test, tests_app_presentation_instances))]
 #[path = "anim_draw_tests.rs"]
 mod tests;

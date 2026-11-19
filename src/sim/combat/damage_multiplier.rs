@@ -163,6 +163,6 @@ fn health_fraction(health: i32, strength: i32) -> f64 {
     f64::from(health) / f64::from(strength)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "damage_multiplier_tests.rs"]
 mod tests;

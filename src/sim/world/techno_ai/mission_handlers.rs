@@ -51,7 +51,7 @@ mod campaign_hunt_oracle_tests;
 #[path = "area_guard_post_tests.rs"]
 mod area_guard_post_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_techno, feature = "phobos"))]
 #[path = "phobos_harvester_guard_tests.rs"]
 mod phobos_harvester_guard_tests;
 

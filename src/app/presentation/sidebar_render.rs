@@ -1602,11 +1602,11 @@ pub(crate) fn begin_main_load_pass<'a>(
     })
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_app_presentation, feature = "phobos"))]
 #[path = "sidebar_indicator_tests.rs"]
 mod sidebar_indicator_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::shows_alt_cameo;
     use crate::sim::house_state::HouseState;

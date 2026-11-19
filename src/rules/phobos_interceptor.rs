@@ -104,6 +104,6 @@ impl InterceptorSettings {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_interceptor_tests.rs"]
 mod tests;

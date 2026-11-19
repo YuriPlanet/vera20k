@@ -7916,7 +7916,7 @@ fn building_bool(section: &IniSection, category: ObjectCategory, key: &str) -> b
 /// reader accepts only 0..=224, so an out-of-range integer keeps the current
 /// value. A `NumberOfDocks` of zero or less reads nothing.
 #[cfg(feature = "phobos")]
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_speed_type_tests.rs"]
 mod infantry_speed_type_tests;
 

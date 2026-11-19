@@ -64,6 +64,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "phobos_start_facing_tests.rs"]
 mod tests;

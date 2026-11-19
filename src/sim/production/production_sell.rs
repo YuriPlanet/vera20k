@@ -1130,7 +1130,7 @@ pub fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64
     true
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_production, feature = "phobos"))]
 mod phobos_sellable_tests {
     use super::*;
 

@@ -1312,7 +1312,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_techno, feature = "phobos"))]
 mod arcing {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, test_flat_cell, test_grid};

@@ -147,7 +147,7 @@ pub mod phobos_airburst;
 pub mod phobos_aircraft_edge;
 #[cfg(feature = "phobos")]
 pub mod phobos_ammo_deploy;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_amphibious_tests.rs"]
 mod phobos_amphibious_tests;
 #[cfg(feature = "phobos")]
@@ -392,7 +392,7 @@ mod ares_switch_tests;
 mod ares_type_selection_tests;
 pub mod armor;
 pub mod art_data;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_a_n, feature = "phobos"))]
 #[path = "art_data_translucency_tests.rs"]
 mod art_data_translucency_tests;
 pub mod bridge_warheads;

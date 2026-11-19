@@ -55,7 +55,7 @@ pub(crate) fn admit_scenario_start_briefing(state: &mut AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

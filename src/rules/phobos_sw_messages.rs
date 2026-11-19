@@ -167,6 +167,6 @@ pub(crate) fn read_eva_index(
     eva.entry(&raw).map(|entry| Some(entry.name.clone()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_sw_messages_tests.rs"]
 mod tests;

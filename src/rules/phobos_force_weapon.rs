@@ -155,6 +155,6 @@ impl PhobosForceWeapon {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_force_weapon_tests.rs"]
 mod tests;

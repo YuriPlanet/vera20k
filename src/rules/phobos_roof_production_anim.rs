@@ -113,6 +113,6 @@ fn read_anim_name(section: &IniSection, key: &str) -> Option<String> {
     section.read_type_name(key, 2048).map(str::to_owned)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_roof_production_anim_tests.rs"]
 mod tests;

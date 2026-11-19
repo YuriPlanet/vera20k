@@ -5492,15 +5492,15 @@ pub(crate) fn estimated_damage_on(
 #[path = "welding_native_tests.rs"]
 mod welding_native_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "world_fire_bunker_tests.rs"]
 mod world_fire_bunker_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "phobos_turret_recoil_tests.rs"]
 mod phobos_turret_recoil_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "phobos_unit_fire_up_tests.rs"]
 mod phobos_unit_fire_up_tests;
 

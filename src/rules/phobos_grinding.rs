@@ -78,6 +78,6 @@ impl PhobosGrindingSettings {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_grinding_tests.rs"]
 mod tests;

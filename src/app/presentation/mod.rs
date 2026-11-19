@@ -68,10 +68,10 @@ mod ammo_pip_tests;
 #[cfg(all(test, tests_app_presentation))]
 mod spawn_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod self_heal_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[cfg(all(test, tests_app_presentation))]
 mod absorber_pip_tests;
 

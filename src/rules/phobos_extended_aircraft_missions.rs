@@ -101,7 +101,7 @@ pub struct ExtendedAircraftMissionFlags {
     pub unland_damage: i32,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;

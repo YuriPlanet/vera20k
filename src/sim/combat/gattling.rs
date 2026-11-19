@@ -816,6 +816,6 @@ impl crate::sim::world::Simulation {
 #[path = "gattling_tests.rs"]
 mod tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "gattling_rate_down_tests.rs"]
 mod rate_down_tests;

@@ -832,21 +832,21 @@ fn health_in_threshold(
         )
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_c_g, feature = "phobos"))]
 #[path = "type_conversion_ammo_tests.rs"]
 mod ammo_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_c_g, feature = "phobos"))]
 #[path = "type_conversion_health_tests.rs"]
 mod health_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_c_g, feature = "phobos"))]
 #[path = "type_conversion_owner_tests.rs"]
 mod owner_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_c_g, feature = "phobos"))]
 #[path = "type_conversion_mind_control_tests.rs"]
 mod mind_control_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_c_g, feature = "phobos"))]
 #[path = "type_conversion_in_air_tests.rs"]
 mod in_air_tests;

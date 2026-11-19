@@ -539,6 +539,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_create_unit_tests.rs"]
 mod tests;

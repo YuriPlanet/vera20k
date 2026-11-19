@@ -177,6 +177,6 @@ impl Default for TurretAnimState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_turret_anim_tests.rs"]
 mod tests;

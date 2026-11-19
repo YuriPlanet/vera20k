@@ -117,7 +117,7 @@ pub(crate) fn producing_progress_label(progress: u16, steps: u16) -> String {
     format!("{percent}%")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

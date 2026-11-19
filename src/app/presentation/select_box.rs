@@ -221,7 +221,7 @@ pub(crate) fn select_box_sprites(
     sprites
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

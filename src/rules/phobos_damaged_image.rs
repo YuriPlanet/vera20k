@@ -81,6 +81,6 @@ impl PhobosDamagedImage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_damaged_image_tests.rs"]
 mod tests;

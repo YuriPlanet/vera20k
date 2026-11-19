@@ -85,6 +85,6 @@ pub fn takeoff_settings<'a>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_missile_tests.rs"]
 mod tests;

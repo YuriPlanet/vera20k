@@ -48,6 +48,6 @@ impl PhobosSwTabIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_sw_tab_index_tests.rs"]
 mod tests;

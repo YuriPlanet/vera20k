@@ -242,6 +242,6 @@ impl SelectBoxGlobals {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "select_box_type_tests.rs"]
 mod tests;

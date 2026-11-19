@@ -1129,7 +1129,7 @@ mod dead_body_tests {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_c_o, feature = "phobos"))]
 mod not_human_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -1206,7 +1206,7 @@ mod not_human_tests {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_c_o, feature = "phobos"))]
 mod not_human_precedence_tests {
     use super::not_human_tests::die_action;
 

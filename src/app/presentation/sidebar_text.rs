@@ -87,7 +87,7 @@ pub fn build_sidebar_indicator_instances(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;

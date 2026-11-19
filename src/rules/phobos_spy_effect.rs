@@ -73,6 +73,6 @@ fn read_super_weapon_ref(section: &IniSection, key: &str) -> Option<String> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_spy_effect_tests.rs"]
 mod tests;

@@ -2682,17 +2682,17 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[cfg(all(test, tests_sim_p_s))]
 mod gunner_tests;
 
 #[cfg(all(test, tests_sim_p_s))]
 mod allegiance_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
 mod sync_owner_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[cfg(all(test, tests_sim_p_s))]
 pub(crate) mod assault_tests;
 

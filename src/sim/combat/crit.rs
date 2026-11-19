@@ -1292,6 +1292,6 @@ fn detonation_targets(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "remove_mind_control_tests.rs"]
 mod tests;

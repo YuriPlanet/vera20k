@@ -419,6 +419,6 @@ pub(crate) fn destination_coord(entity: &GameEntity) -> Option<DriveCoord> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "tunnel_locomotion_tests.rs"]
 mod tests;

@@ -57,6 +57,6 @@ impl PhobosKeepTargetOnMove {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_keep_target_tests.rs"]
 mod tests;

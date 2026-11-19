@@ -85,6 +85,6 @@ pub(crate) fn unit_on_water(
             == i32::from(crate::rules::terrain_rules::LandType::Water.as_index())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "damaged_image_tests.rs"]
 mod tests;

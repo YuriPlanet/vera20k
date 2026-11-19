@@ -3642,6 +3642,6 @@ fn section_settings(section: &crate::rules::ini_parser::IniSection) -> PhobosGlo
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_globals_tests.rs"]
 mod tests;

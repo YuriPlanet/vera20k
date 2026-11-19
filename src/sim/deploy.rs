@@ -861,10 +861,10 @@ impl Simulation {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_c_g, feature = "phobos"))]
 #[path = "phobos_infantry_undeploy_convert_tests.rs"]
 mod phobos_undeploy_convert_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_c_g, feature = "phobos"))]
 #[path = "phobos_deploy_gates_tests.rs"]
 mod phobos_deploy_gates_tests;

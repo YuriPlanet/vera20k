@@ -24,7 +24,7 @@ use crate::sim::movement::ground_pose::position_world_coord;
 use crate::sim::projectile::intercepted_status;
 use crate::sim::world::{FrameEffects, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "interceptor_tests.rs"]
 mod tests;
 

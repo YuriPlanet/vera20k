@@ -802,7 +802,7 @@ pub(crate) fn sidebar_label_lookup(
     move |label| table.map(|table| table.text(label).into_owned())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_placement_oracle_tests.rs"]
 mod retail_placement_oracle_tests;

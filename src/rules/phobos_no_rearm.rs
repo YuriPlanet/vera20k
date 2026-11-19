@@ -59,6 +59,6 @@ impl PhobosNoRearm {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_no_rearm_tests.rs"]
 mod tests;

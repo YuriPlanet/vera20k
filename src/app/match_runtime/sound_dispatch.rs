@@ -25,7 +25,7 @@ mod sound_boundary_tests;
 #[path = "building_death_sound_tests.rs"]
 mod building_death_sound_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_app_match, feature = "phobos"))]
 #[path = "phobos_sw_messages_tests.rs"]
 mod phobos_sw_messages_tests;
 

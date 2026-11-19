@@ -299,7 +299,7 @@ pub fn phobos_flh_source(
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod phobos_source_tests {
     use super::phobos_flh_source;
 
