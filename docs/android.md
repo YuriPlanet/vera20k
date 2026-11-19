@@ -145,11 +145,11 @@ Two more conditions come from the game:
 - **Player names are the LAN identity**, and a clash looks like "the other
   player does not exist". A player discards advertisements whose name matches
   its own, so two peers left at the default `[New Player]` never see each
-  other's games. Android has no text input yet, so the activity
+  other's games. The stock name repeats on every install, so the activity
   appends the last three hex digits of the Android ID: a fresh install enters
-  the lobby as `[New Player]-1A2` (`util::device_identity`). The ID survives
-  reinstall and an app-data clear and changes only on a factory reset. Every
-  other platform keeps the stock name.
+  the lobby as `[New Player]-1A2` (`util::device_identity`), and the player can
+  rename it in the lobby. The ID survives reinstall and an app-data clear and
+  changes only on a factory reset. Every other platform keeps the stock name.
 
 A guest also needs the host's map in its own map library.
 
