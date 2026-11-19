@@ -57,7 +57,7 @@
 //!   the BuildingType array or a negative control other than -1/-2/-3 reads
 //!   memory past the array (`0x004FE537`, `0x004FE6F6`); a null power plant
 //!   slot is dereferenced (`0x004FE8A9`, `0x00505368`). VERA makes no choice
-//!   for such a node and splices nothing for a missing plant. With `ares`, a
+//!   for such a node and splices nothing for a missing plant. Read the Ares way, a
 //!   house whose country lists no plant and whose side has none (side 3 and
 //!   later, or unset `[General]` plants) stops the game (`0x1001DEF6`, "did
 //!   not find any powerplants it could construct"); VERA splices nothing.
@@ -147,7 +147,6 @@ impl Hash for HouseAiProduction {
 
 /// Phobos' per-house factory building pointers, one slot per producing
 /// building category (`HouseExt::Factory_*Type`).
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiFactorySlot {
     Building,
@@ -157,7 +156,6 @@ pub(crate) enum AiFactorySlot {
     Aircraft,
 }
 
-#[cfg(feature = "phobos")]
 impl AiFactorySlot {
     const fn index(self) -> usize {
         match self {
@@ -240,12 +238,10 @@ impl HouseAiProduction {
     }
     /// Phobos `BuildingClass_Update_Factory_Phobos @ 0x4502F4` remembers the
     /// first factory building of a category; a second one consults it.
-    #[cfg(feature = "phobos")]
     pub(crate) fn parallel_factory(&self, slot: AiFactorySlot) -> Option<u64> {
         self.parallel_factories[slot.index()]
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_parallel_factory(&mut self, slot: AiFactorySlot, building: Option<u64>) {
         self.parallel_factories[slot.index()] = building;
     }
@@ -254,12 +250,25 @@ impl HouseAiProduction {
     /// `0x44531F`) clear the pointer only while it still names the same
     /// factory building. `FactoryClass_AbandonProduction` (`0x4CA07A`) has no
     /// such test and uses [`Self::set_parallel_factory`] instead.
-    #[cfg(feature = "phobos")]
     pub(crate) fn clear_parallel_factory(&mut self, slot: AiFactorySlot, building: u64) {
         let entry = &mut self.parallel_factories[slot.index()];
         if *entry == Some(building) {
             *entry = None;
         }
+    }
+
+    /// Phobos `HouseExt::OnDetach`, which its `AnnounceInvalidPointer` hook
+    /// (`0x7258D0`) runs on every house for a removed building: each slot
+    /// that names the building is cleared. Answers whether one did.
+    pub(crate) fn forget_parallel_factory(&mut self, building: u64) -> bool {
+        let mut named = false;
+        for entry in &mut self.parallel_factories {
+            if *entry == Some(building) {
+                *entry = None;
+                named = true;
+            }
+        }
+        named
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -321,7 +330,10 @@ pub(crate) fn economy_state_machine(
     let Some(house) = houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(game_mode_nonzero) || !game_mode_nonzero {
+    if house.is_controlled_by_human(game_mode_nonzero)
+        || house.command_driven()
+        || !game_mode_nonzero
+    {
         return;
     }
     let mode = house.ai_production().mode;
@@ -801,8 +813,9 @@ fn append_perimeter_run(
 }
 
 /// The power splice gates of `AI_Choose_Building` (`0x004FE6F6..0x004FE8A6`):
-/// the building's drain would exceed the house's output (less `+0x160B4`,
-/// which only the constructor writes, zero), it is not a `BuildConst=` type,
+/// the building's drain would exceed the house's output less its spare power
+/// (`+0x160B4`, [`PowerState::power_surplus`]: zero unless Phobos'
+/// `EnablePowerSurplus` is on), it is not a `BuildConst=` type,
 /// it drains power, no blackout remains and no powered building is being
 /// drained (`+0x577B`). Returns the plant's BuildingType index: the side 0
 /// house's `GDIPowerPlant=`, the side 2 house's `ThirdPowerPlant=`, any other
@@ -816,6 +829,10 @@ fn power_surplus_short(output: i32, total_drain: i32, new_drain: i32, floor: i32
     output.wrapping_sub(total_drain).wrapping_sub(new_drain) < floor
 }
 
+/// `NodRegularPower=`. In a game read the Ares way, [`ares_power_plant`]
+/// chooses instead.
+///
+/// [`PowerState::power_surplus`]: crate::sim::power_system::PowerState::power_surplus
 fn power_plant_to_splice(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -851,20 +868,22 @@ fn power_plant_to_splice(
         drain,
         surplus_floor,
     );
+    // `0x004FE6FC..0x004FE71D`: dword SUB, ADD and a signed compare.
+    let output = power
+        .total_output()
+        .wrapping_sub(power.power_surplus(rules));
+    let short = power.total_drain().wrapping_add(drain) > output;
     if !short
-        || ty.build_const_eligible
+        || ty.build_const_eligible()
         || drain <= 0
         || power.blackout_remaining(sim.session.binary_frame()) > 0
         || power.has_drained_power_source()
     {
         return None;
     }
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares_form() {
         ares_power_plant(sim, rules, owner, side)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         let plants = &rules.general.building_types;
         let index = |name: Option<&str>| name.and_then(|name| rules.building_type_index(name));
         // A missing plant is dereferenced natively (module residual): no splice.
@@ -901,7 +920,6 @@ fn power_plant_to_splice(
 /// to the first one").
 ///
 /// [`owns_prerequisites`]: crate::sim::production::owns_prerequisites
-#[cfg(feature = "ares")]
 fn ares_power_plant(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1193,8 +1211,9 @@ fn place_building(
     }
     // Ares BuildingClass_KickOutUnit_Firewall (10014A50, hook 0x445355):
     // a firestorm wall section fills the gaps to the sections it links to.
-    #[cfg(feature = "ares")]
-    sim.ares_build_lines(product, (rx, ry), owner, rules, registry, effects);
+    if rules.ares_form() {
+        sim.ares_build_lines(product, (rx, ry), owner, rules, registry, effects);
+    }
     true
 }
 
@@ -1625,10 +1644,10 @@ fn map_cell_offset(rx: u16, ry: u16, dx: i32, dy: i32) -> Option<(u16, u16)> {
     Some((x, y))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_base_building_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_base_perimeter_tests.rs"]
 mod perimeter_tests;

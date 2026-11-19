@@ -2,8 +2,9 @@
 //! Choose Map lists the lobby's curated maps under its Online Maps row, and
 //! Use Map on one asks to download it. The download is saved in VERA's own
 //! Maps folder (never the game folder) as a loose `.yrm`, where it is an
-//! ordinary map from then on, in every game type's list. Players star maps they like; the stars are kept in
-//! `MapFavorites.txt` in the settings folder. VERA-only; gamemd has no map
+//! ordinary map from then on, in every game type's list. Players star maps they like, online or not; the stars are kept in
+//! `MapFavorites.txt` in the settings folder and list under Choose Map's
+//! Favorites row. VERA-only; gamemd has no map
 //! library.
 //!
 //! The catalog is read in the background when the player goes online, and
@@ -75,17 +76,13 @@ pub(crate) struct MapLibrary {
     phase: Phase,
     maps: Vec<OnlineMap>,
     download: Option<Download>,
-    /// Starred maps by SHA-256, read when the catalog read starts.
+    /// Starred maps by `favorite_key`, read when Choose Map opens.
     favorites: std::collections::BTreeSet<String>,
 }
 
 const FAVORITES_FILE: &str = "MapFavorites.txt";
 
 impl MapLibrary {
-    pub(crate) fn favorites(&self) -> &std::collections::BTreeSet<String> {
-        &self.favorites
-    }
-
     /// The library entry behind an Online Choose Map row.
     pub(crate) fn online_map(&self, record: &SkirmishScenarioRecord) -> Option<&OnlineMap> {
         let SkirmishScenarioSource::Online(sha256) = &record.source else {
@@ -104,10 +101,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let phase = match taken {
         // A launcher-started match has no Choose Map to fill.
         Phase::NotStarted if state.frontend.external_launch => Phase::Ready,
-        Phase::NotStarted if online => {
-            state.frontend.map_library.favorites = read_favorites(state);
-            fetch_catalog(state, false)
-        }
+        Phase::NotStarted if online => fetch_catalog(state, false),
         Phase::Fetching { result, retried } => match result.try_recv() {
             Ok(Ok(maps)) => {
                 log::info!("The online map library lists {} maps", maps.len());
@@ -186,7 +180,7 @@ fn failed(retried: bool) -> Phase {
 fn fetch_catalog(state: &AppState, retried: bool) -> Phase {
     match start_catalog(state) {
         Some(result) => Phase::Fetching { result, retried },
-        // No worker threads (the browser build): no library this run.
+        // No game folder, or no worker thread: no library this run.
         None => Phase::Ready,
     }
 }
@@ -230,10 +224,15 @@ pub(crate) fn append_online_records(state: &mut AppState) {
     if maps.is_empty() {
         return;
     }
+    // A map in the mod folder in use is one the player has, too.
+    let folders: Vec<&std::path::Path> = crate::map::source::mod_dir()
+        .into_iter()
+        .chain([ra2_dir.as_path(), maps_dir.as_path()])
+        .collect();
     append_rows(
         &mut state.frontend.scenario_catalog.records_mut(),
         maps,
-        &[&ra2_dir, &maps_dir],
+        &folders,
     );
 }
 
@@ -242,7 +241,8 @@ fn append_rows(
     maps: &[OnlineMap],
     folders: &[&std::path::Path],
 ) {
-    // Each folder is listed once, the game folder first; names compare
+    // Each folder is listed once, in the order a map lookup reads them (the
+    // mod folder in use, then the game folder); names compare
     // without case, as macOS and Windows file systems do.
     let mut files = std::collections::HashMap::new();
     for path in folders.iter().flat_map(|folder| {
@@ -269,18 +269,16 @@ fn append_rows(
     }
 }
 
-/// The file name a library map's row goes by: its own, or
-/// `<stem>-<sha8>.yrm` when another map has that name, as
-/// `keep_received_map` saves it. `None` when a file of either name already
-/// holds this map, so the player has it, or both names are taken.
+/// The file name a library map's row goes by: the first of the names a
+/// download is kept under ([`crate::map::source::kept_map_names`]) that no
+/// other file or row has. `None` when a file of either name already holds
+/// this map, so the player has it, or both names are taken.
 fn row_file_name(
     map: &OnlineMap,
     files: &std::collections::HashMap<String, std::path::PathBuf>,
     taken: &std::collections::HashSet<String>,
 ) -> Option<String> {
-    let stem = map.file_name.strip_suffix(".yrm").unwrap_or(&map.file_name);
-    let suffixed = format!("{stem}-{}.yrm", map.sha256.get(..8)?);
-    for name in [map.file_name.clone(), suffixed] {
+    for name in crate::map::source::kept_map_names(&map.file_name, &map.sha256) {
         let key = name.to_lowercase();
         match files.get(&key) {
             Some(path) if holds_map(path, map) => return None,
@@ -360,9 +358,11 @@ pub(crate) fn download_progress(state: &AppState) -> Option<(u64, u64)> {
 }
 
 /// Whether this Choose Map shows the Online Maps row: online game rooms
-/// only, which are network setup routes of a Westwood Online session.
+/// only, which are network setup routes of a Westwood Online session, in a
+/// build that can read the library.
 pub(crate) fn listed_in_choose_map(state: &AppState) -> bool {
-    state.frontend.shell_route.network_setup()
+    crate::app::worker::THREADS
+        && state.frontend.shell_route.network_setup()
         && state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 
@@ -371,13 +371,22 @@ fn in_online_play(state: &AppState) -> bool {
     state.frontend.wol.is_some()
 }
 
-/// Star or unstar a map, and keep the stars for later runs.
-pub(crate) fn set_favorite(state: &mut AppState, sha256: String, starred: bool) {
+/// Star or unstar a map, and keep the stars for later runs. The library
+/// owns the stars; an open Choose Map gets a fresh copy.
+pub(crate) fn set_favorite(state: &mut AppState, key: String, starred: bool) {
     let favorites = &mut state.frontend.map_library.favorites;
     if starred {
-        favorites.insert(sha256);
+        favorites.insert(key);
     } else {
-        favorites.remove(&sha256);
+        favorites.remove(&key);
+    }
+    if let Some(modal) = state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_mut()
+    {
+        modal.favorites = state.frontend.map_library.favorites.clone();
     }
     let Some(path) = favorites_path(state) else {
         return;
@@ -387,7 +396,7 @@ pub(crate) fn set_favorite(state: &mut AppState, sha256: String, starred: bool) 
         .map_library
         .favorites
         .iter()
-        .map(|sha| format!("{sha}\n"))
+        .map(|key| format!("{key}\n"))
         .collect();
     if let Err(error) = std::fs::create_dir_all(path.parent().unwrap_or(&path))
         .and_then(|()| std::fs::write(&path, text))
@@ -404,19 +413,33 @@ fn favorites_path(state: &AppState) -> Option<std::path::PathBuf> {
         .map(|config| config.paths.settings_dir().join(FAVORITES_FILE))
 }
 
-/// The stars from earlier runs; a missing or unreadable file stars nothing.
-fn read_favorites(state: &AppState) -> std::collections::BTreeSet<String> {
-    favorites_path(state)
+/// The stars from earlier runs, read as Choose Map opens; a missing or
+/// unreadable file stars nothing. A line is an online map's SHA-256 or
+/// another map's lower-case file name.
+pub(crate) fn read_favorites(state: &mut AppState) -> std::collections::BTreeSet<String> {
+    let favorites: std::collections::BTreeSet<String> = favorites_path(state)
         .and_then(|path| crate::util::file_system::read(path).ok())
         .map(|bytes| {
             String::from_utf8_lossy(&bytes)
                 .lines()
                 .map(str::trim)
-                .filter(|sha| crate::map::source::valid_source_sha256(sha))
+                .filter(|key| valid_favorite_key(key))
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    state.frontend.map_library.favorites = favorites.clone();
+    favorites
+}
+
+/// A star's key as [`crate::ui::skirmish_shell::favorite_key`] writes it:
+/// one short line with no upper-case ASCII or control characters.
+fn valid_favorite_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= 260
+        && !key
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_ascii_uppercase())
 }
 
 /// Use Map on an Online row: ask to download it first. False for a map
@@ -448,9 +471,11 @@ pub(crate) fn start_download(state: &mut AppState, selection: ChooseMapSelection
     let sha256 = map.sha256.clone();
     let length = map.byte_length;
     let counter = Arc::clone(&received);
-    let Some(result) = spawn("vera-map-download", Arc::clone(&cancel), move |cancel| {
-        fetch::map(&map.sha256, map.byte_length, cancel, &counter)
-    }) else {
+    let Some(result) =
+        crate::app::worker::spawn("vera-map-download", Arc::clone(&cancel), move |cancel| {
+            fetch::map(&map.sha256, map.byte_length, cancel, &counter)
+        })
+    else {
         set_prompt(state, selection, ChooseMapPromptKind::DownloadFailed);
         return;
     };
@@ -593,17 +618,25 @@ pub(crate) fn keep_map(
     let listed = records.iter().any(|record| {
         !record.is_online() && record.file_name.to_lowercase() == kept.name.to_lowercase()
     });
+    let mut carried_star = None;
     if online.is_some() || !listed {
         let ordinal = online.map_or(records.len(), |index| records[index].source_ordinal);
         let record =
             crate::map::scenario_sources::loose_yrm_record(&kept.path, kept.name.clone(), ordinal)
                 .context("the kept map does not read as a map")?;
+        // A starred online map stays starred under its file name.
+        if online.is_some() && state.frontend.map_library.favorites.contains(&sha256) {
+            carried_star = crate::ui::skirmish_shell::favorite_key(&record);
+        }
         match online {
             Some(index) => records[index] = record,
             None => records.push(record),
         }
     }
     drop(records);
+    if let Some(key) = carried_star {
+        set_favorite(state, key, true);
+    }
     refresh_choose_map(state);
     Ok(kept.path)
 }
@@ -615,7 +648,7 @@ fn start_catalog(state: &AppState) -> Option<Receiver<Result<Vec<OnlineMap>>>> {
         .game_config
         .as_ref()
         .map(|config| config.paths.settings_dir().to_path_buf())?;
-    spawn(
+    crate::app::worker::spawn(
         "vera-map-library",
         Arc::new(AtomicBool::new(false)),
         move |_| {
@@ -624,26 +657,6 @@ fn start_catalog(state: &AppState) -> Option<Receiver<Result<Vec<OnlineMap>>>> {
             read_catalog(&body).inspect_err(|_| fetch::forget(&cache))
         },
     )
-}
-
-/// One worker thread whose result arrives on the receiver. `None` where
-/// threads cannot start, as in the browser build, which has no library yet.
-pub(crate) fn spawn<T: Send + 'static>(
-    name: &str,
-    cancel: Arc<AtomicBool>,
-    work: impl FnOnce(&AtomicBool) -> Result<T> + Send + 'static,
-) -> Option<Receiver<Result<T>>> {
-    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
-        return None;
-    }
-    let (output, input) = std::sync::mpsc::channel();
-    std::thread::Builder::new()
-        .name(name.into())
-        .spawn(move || {
-            let _ = output.send(work(&cancel));
-        })
-        .ok()?;
-    Some(input)
 }
 
 #[derive(serde::Deserialize)]
@@ -703,7 +716,6 @@ fn read_catalog(body: &[u8]) -> Result<Vec<OnlineMap>> {
         .collect())
 }
 
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 mod fetch {
     //! The library's HTTPS reads, on worker threads only.
 
@@ -713,9 +725,8 @@ mod fetch {
 
     use anyhow::{Context, Result, bail, ensure};
 
-    use std::time::Duration;
+    use crate::app::shell_wol::lobby_get;
 
-    const USER_AGENT: &str = concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " map-library");
     /// A curated library of a few hundred maps is a few MB.
     const MAX_CATALOG_BYTES: u64 = 32 * 1024 * 1024;
     /// The last catalog and its ETag, so an unchanged one is not sent again.
@@ -727,46 +738,18 @@ mod fetch {
         let _ = std::fs::remove_file(cache.join(CACHE_FILE));
     }
 
-    fn agent(base: &str) -> ureq::Agent {
-        ureq::Agent::config_builder()
-            .https_only(base.starts_with("https://"))
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .timeout_connect(Some(Duration::from_secs(15)))
-            .timeout_recv_response(Some(Duration::from_secs(30)))
-            .timeout_per_read(Some(Duration::from_secs(30)))
-            .build()
-            .into()
-    }
-
-    fn base() -> Result<String> {
-        Ok(crate::app::shell_wol::lobby_base_url()?
-            .trim_end_matches('/')
-            .to_owned())
-    }
-
     /// `GET /v1/library/catalog`, revalidated against the cached copy.
     pub(super) fn catalog(cache: &Path) -> Result<Vec<u8>> {
-        let base = base()?;
-        let url = format!("{base}/v1/library/catalog");
+        const PATH: &str = "/v1/library/catalog";
         let cached_tag = std::fs::read_to_string(cache.join(CACHE_TAG_FILE)).ok();
         let cached = std::fs::read(cache.join(CACHE_FILE)).ok();
-        let mut request = agent(&base).get(&url).header("User-Agent", USER_AGENT);
-        if let (Some(tag), Some(_)) = (&cached_tag, &cached) {
-            request = request.header("If-None-Match", tag.trim());
-        }
-        let mut response = request
-            .call()
-            .with_context(|| format!("cannot reach {url}"))?;
-        match response.status().as_u16() {
+        let tag = cached_tag.as_deref().filter(|_| cached.is_some());
+        let answer = lobby_get(PATH, tag.map(str::trim))?;
+        match answer.status {
             304 => cached.context("the cached catalog is gone"),
             200 => {
-                let body = read_limited(response.body_mut().as_reader(), MAX_CATALOG_BYTES, None)?;
-                if let Some(tag) = response
-                    .headers()
-                    .get("ETag")
-                    .and_then(|tag| tag.to_str().ok())
-                {
+                let body = read_limited(answer.body, MAX_CATALOG_BYTES, None)?;
+                if let Some(tag) = answer.etag {
                     // A failed write only costs the next run a full read.
                     let _ = std::fs::create_dir_all(cache)
                         .and_then(|()| std::fs::write(cache.join(CACHE_FILE), &body))
@@ -774,7 +757,7 @@ mod fetch {
                 }
                 Ok(body)
             }
-            status => bail!("{url} answered {status}"),
+            status => bail!("{PATH} answered {status}"),
         }
     }
 
@@ -786,23 +769,10 @@ mod fetch {
         cancel: &AtomicBool,
         received: &AtomicUsize,
     ) -> Result<Vec<u8>> {
-        let base = base()?;
-        let url = format!("{base}/v1/library/maps/{sha256}");
-        let mut response = agent(&base)
-            .get(&url)
-            .header("User-Agent", USER_AGENT)
-            .call()
-            .with_context(|| format!("cannot reach {url}"))?;
-        ensure!(
-            response.status() == 200,
-            "{url} answered {}",
-            response.status()
-        );
-        let bytes = read_limited(
-            response.body_mut().as_reader(),
-            length as u64,
-            Some((cancel, received)),
-        )?;
+        let path = format!("/v1/library/maps/{sha256}");
+        let answer = lobby_get(&path, None)?;
+        ensure!(answer.status == 200, "{path} answered {}", answer.status);
+        let bytes = read_limited(answer.body, length as u64, Some((cancel, received)))?;
         ensure!(
             bytes.len() == length && crate::util::sha256::sha256_hex(&bytes) == sha256,
             "the downloaded map differs from the library's"
@@ -835,7 +805,7 @@ mod fetch {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, tests_app))]
     mod tests {
         use super::*;
 
@@ -851,31 +821,7 @@ mod fetch {
     }
 }
 
-/// The browser build has no map library yet.
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-mod fetch {
-    use std::path::Path;
-    use std::sync::atomic::{AtomicBool, AtomicUsize};
-
-    use anyhow::{Result, bail};
-
-    pub(super) fn catalog(_cache: &Path) -> Result<Vec<u8>> {
-        bail!("the browser build has no map library")
-    }
-
-    pub(super) fn forget(_cache: &Path) {}
-
-    pub(super) fn map(
-        _sha256: &str,
-        _length: usize,
-        _cancel: &AtomicBool,
-        _received: &AtomicUsize,
-    ) -> Result<Vec<u8>> {
-        bail!("the browser build has no map library")
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use base64::Engine;

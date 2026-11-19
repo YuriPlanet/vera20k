@@ -225,22 +225,10 @@ fn detonation_firer(
 /// `GetLaunchSiteRange` for the types VERA owns range keys for; the negative
 /// sentinel answers "no range restriction".
 pub(super) fn launch_site_range(rules: &RuleSet, sw: &SuperWeaponType) -> Option<(f64, f64)> {
-    #[cfg(feature = "ares")]
     {
         rules
             .super_weapon_target_policy(&sw.id)
             .map(|policy| policy.range())
-    }
-    #[cfg(all(feature = "phobos", not(feature = "ares")))]
-    {
-        rules
-            .phobos_super_weapon_metadata(&sw.id)
-            .map(|metadata| metadata.range())
-    }
-    #[cfg(not(any(feature = "ares", feature = "phobos")))]
-    {
-        let _ = (rules, sw);
-        None
     }
 }
 

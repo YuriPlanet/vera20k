@@ -634,7 +634,7 @@ fn ground_command_fixture(
                 sim.playfield_bounds,
             )
             .expect("the existing load owner binds the supplied flat map");
-        sim.zone_grid = Some(zones);
+        sim.zone_grid = Some(zones.into());
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         for cell in map["cells"].as_array().unwrap() {
             let (rx, ry) = fixture_cell(&cell["xy"]);
@@ -1590,7 +1590,7 @@ fn check_initialized_no_order_contexts(names: &[&str]) {
         // ClickedAction can send (`click_order_receivers`, the Berserk
         // refusal), then resolves the Cell, which the class What_Action and
         // ClickedAction refuse.
-        let berserk_refused = sim.click_order_receivers(&[id]).is_empty();
+        let berserk_refused = sim.click_order_receivers(&[id], rules.ares()).is_empty();
         assert_eq!(berserk_refused, name.contains("berserk"), "{name}");
         if !berserk_refused {
             let input = &row["inputs"][0];
@@ -2023,14 +2023,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {});
         if route == OutputRoute::RallyBetweenCompletionAndPlace {
             let mut output = sim
-                .advance_app_frame(
-                    &due,
-                    &rules,
-                    Some(&registry),
-                    TICK_MS,
-                    super::TickLane::Ordinary,
-                    effects,
-                )
+                .advance_app_frame(&due, &rules, TICK_MS, super::TickLane::Ordinary, effects)
                 .expect("the ordinary app frame completes");
             let admitted = output.take_admitted_commands();
             if products[0].completed_frame.is_some() && products[0].placed_frame.is_none() {

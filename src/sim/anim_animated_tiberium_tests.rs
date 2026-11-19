@@ -44,7 +44,7 @@ fn animated_tiberium_checks_live_cell_identity_after_delay_without_cutting_the_v
     );
 
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
-    sim.install_overlay_grid_for_load(OverlayGrid::new(32, 32));
+    *sim.overlay_grid_mut_for_test() = Some(OverlayGrid::new(32, 32));
     let owner = sim
         .spawn_object_at_height("E1", "Americans", 12, 12, 0, 0, &rules)
         .unwrap();

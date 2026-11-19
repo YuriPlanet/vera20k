@@ -36,9 +36,9 @@ fn weapon_wave_visible(
 /// (10057080, hook 0x75FA29) computes once per DrawIt: the colours of the
 /// weapon CreateWave registered, with `Wave.IsHouseColor` taking the
 /// owner's House+56F9 through the shared colour-map lookup.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_wave_blend(
     sim: &Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
     rules: &crate::rules::ruleset::RuleSet,
     house_colors: &crate::map::houses::HouseColorMap,
     wave: &crate::sim::wave::Wave,
@@ -49,7 +49,7 @@ pub(crate) fn ares_wave_blend(
     };
     let owner_rgb = wave
         .owner_id()
-        .and_then(|owner| sim.entities().get(owner))
+        .and_then(|owner| frame.object(owner))
         .map(|owner| {
             let index = house_colors
                 .get(sim.interner().resolve(owner.owner()))
@@ -69,11 +69,12 @@ pub(crate) fn ares_wave_blend(
 /// Native type0..3 geometry is owned by WaveClass, including projected fade
 /// and the type3 Unit endpoint reversal. Rendering translates it once and supplies the
 /// current packed destination; it never rebuilds a quad from world endpoints.
-/// `blend` answers each wave's pixel colouring.
+/// `blend` answers each wave's pixel colouring; `ares`, whether Ares plays.
 pub(crate) fn build_weapon_wave_draws(
     sim: &Simulation,
     observer: Option<crate::sim::intern::InternedId>,
     camera: [i32; 2],
+    ares: bool,
     blend: impl Fn(&crate::sim::wave::Wave) -> crate::render::wave_geometry::WaveBlend,
 ) -> Vec<(u64, crate::render::wave_geometry::WaveDraw)> {
     use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon};
@@ -122,13 +123,14 @@ pub(crate) fn build_weapon_wave_draws(
                     // production footprints remain inside both margins.
                     clip_path: WaveClipPath::Fast,
                     blend: blend(wave),
+                    ares,
                 },
             ))
         })
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 
@@ -194,9 +196,7 @@ mod tests {
             assert!(!flashes.is_empty() && !weapon.report.is_empty());
             // Bind the real SHP bytes so absence of an animation cannot pass.
             for flash in flashes {
-                rules
-                    .bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE")
-                    .unwrap();
+                rules.bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE");
             }
             let mut sim = Simulation::new();
             crate::sim::arena_fixture::flat_ground(&mut sim, rules);
@@ -216,10 +216,7 @@ mod tests {
                 TargetKind::Entity(target),
             )
             .unwrap();
-            sim.entities_mut_for_test()
-                .get_mut(gun)
-                .unwrap()
-                .body_facing = FacingClass::new(facing, 0);
+            sim.entity_mut_for_test(gun).unwrap().body_facing = FacingClass::new(facing, 0);
             sim.assign_target_represented(
                 gun,
                 Some(TargetKind::Entity(target)),

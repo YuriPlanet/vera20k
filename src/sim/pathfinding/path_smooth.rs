@@ -433,6 +433,6 @@ pub(crate) fn finish_path<C: PathFinishingContext>(
     optimize_straight_segments(start, dirs, heights, ctx)
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "path_finishing_native_tests.rs"]
 mod native_tests;

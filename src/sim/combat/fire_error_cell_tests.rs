@@ -239,7 +239,7 @@ fn original_early_fire_error_retains_cell_between_temporal_and_lifted_gates() {
         if row.name == "target_cloaked" {
             let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
             cloak.set_state_for_test(2);
-            target.cloak = Some(cloak);
+            target.cloak = Some(Box::new(cloak));
         }
         let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
         let [x, y] = row.supplied.initial_dummy_xy;

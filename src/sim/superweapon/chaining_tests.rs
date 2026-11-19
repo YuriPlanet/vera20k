@@ -160,7 +160,6 @@ fn next_rolls_and_weights_select_the_chained_supers() {
 
 /// A next type's `SW.Inhibitors` blocks the chain unless
 /// `SW.Next.IgnoreInhibitors=yes` (the lists are the Ares-owned keys).
-#[cfg(feature = "ares")]
 #[test]
 fn next_inhibitors_block_the_chain_unless_ignored() {
     let blocked = rules_with(

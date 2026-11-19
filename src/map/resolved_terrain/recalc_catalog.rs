@@ -157,6 +157,29 @@ impl BridgeRecalcCatalog {
             .map_err(Clone::clone)
     }
 
+    /// A save's cached variant, held inside this session's registered files.
+    /// The saving session can have registered more files for the tile than
+    /// this one (a mod map loaded with other assets). The variant selects only
+    /// radar colours and draw offsets, so the pristine file 0 stands in rather
+    /// than the whole save being refused; file 1 can be a damaged picture.
+    /// VERA load hardening, no native counterpart.
+    fn saved_variant(&self, tile: u16, variant: u8) -> u8 {
+        match self.files.get(&tile) {
+            Some(files) if usize::from(variant) >= files.len() => {
+                static WARNED: std::sync::Once = std::sync::Once::new();
+                WARNED.call_once(|| {
+                    log::warn!(
+                        "saved terrain: tile {tile} variant {variant} exceeds its {} registered \
+                         TMP files; drawing such cells with the first file",
+                        files.len()
+                    );
+                });
+                0
+            }
+            _ => variant,
+        }
+    }
+
     pub(super) fn tactical_metadata(
         &self,
         tile: u16,
@@ -674,7 +697,7 @@ impl ResolvedTerrainGrid {
                 cell.final_sub_tile,
                 draw_sub,
                 clear_fallback,
-                cell.variant,
+                catalog.saved_variant(tile, cell.variant),
             ),
         }
         .map_err(LoadCellRecalcError::ResidentInput)?;
@@ -711,7 +734,7 @@ impl ResolvedTerrainGrid {
                 cell.final_sub_tile,
                 if fallback { 0 } else { cell.final_sub_tile },
                 fallback,
-                cell.variant,
+                catalog.saved_variant(tile, cell.variant),
             )?;
             self.damaged_radar_metadata[index] = metadata.damaged_radar;
         }

@@ -204,7 +204,6 @@ fn a_house_change_syncs_every_passenger_and_stock_keeps_its_cargo() {
 /// under their board-time houses (`Hooks.Transport.cpp:125-149`). The Ares
 /// survivor hook replaces the stock tail, so the fate assert is a
 /// no-ares one; the revert itself runs before it either way.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_dying_transport_restores_the_recorded_house_before_the_escape() {
     let rules = rules();

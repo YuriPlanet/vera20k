@@ -218,7 +218,7 @@ fn ascii_preview(data: &[u8], max: usize) -> String {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

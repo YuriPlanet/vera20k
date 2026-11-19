@@ -13,8 +13,8 @@ use crate::ui::main_menu_dialogs::options::shell::{
     LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
-    HealthBarMode, LauncherButton, LauncherCheckboxId, LauncherComboId, OptionsDialogState,
-    SidebarSize, Zoom,
+    ColorVisionMode, HealthBarMode, LauncherCheckboxId, LauncherComboId, OptionsDialogState,
+    SidebarColumns, SidebarSize, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
@@ -68,7 +68,7 @@ fn text_draw(
 
 /// The left-side controls, and the right-panel buttons unless a slide draws
 /// the column in their place.
-fn build_controls(
+pub(super) fn build_controls(
     atlas: &SkirmishShellChromeAtlas,
     layout: &LauncherOptionsLayout,
     dialog: &OptionsDialogState,
@@ -94,9 +94,14 @@ fn build_controls(
         paint_control(
             &mut out,
             &chrome,
-            ControlPaint::Checkbox {
+            ControlPaint::StatefulCheckbox {
+                face: if dialog.shell_checkbox_checked(id) {
+                    crate::ui::shell::button::CheckboxFace::Checked
+                } else {
+                    crate::ui::shell::button::CheckboxFace::Unchecked
+                },
+                disabled: false,
                 rect,
-                checked: dialog.shell_checkbox_checked(id),
             },
             scale,
         );
@@ -118,11 +123,11 @@ fn build_controls(
     let mut page_buttons = Vec::new();
     for &(id, rect) in &layout.buttons {
         let pressed = dialog.shell_button_pressed(id);
-        if id == LauncherButton::CheckForUpdates {
+        if id.on_page() {
             page_buttons.push(crate::render::shell_paint::ModalButton {
                 rect,
                 pressed,
-                enabled: true,
+                enabled: dialog.button_enabled(id),
             });
         } else if buttons {
             // The page that shows keeps its category button lit in the
@@ -140,9 +145,9 @@ fn build_controls(
             );
         }
     }
-    // Check for Updates is drawn as Sound Options' Play and Stop are
+    // The page's own buttons are drawn as Sound Options' Play and Stop are
     // (609FC7..609FE2/60A330): owner-draw type 3, MNBTTN centred on the
-    // control, so it paints with the page's other controls during the slide.
+    // control, so they paint with the page's other controls during the slide.
     let (width, height) = layout.screen();
     out.extend(crate::render::shell_paint::paint_modal_sprites(
         None,
@@ -159,7 +164,7 @@ fn build_controls(
     out
 }
 
-fn build_text(
+pub(super) fn build_text(
     font: &BitFont,
     layout: &LauncherOptionsLayout,
     dialog: &OptionsDialogState,
@@ -252,10 +257,14 @@ fn build_text(
                 dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape),
             ),
             LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label(),
+            LauncherComboId::SidebarColumns => dialog.shell_selected_sidebar_columns().label(),
             LauncherComboId::Display => dialog.shell_display_label(),
             LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label(),
+            LauncherComboId::ColorVision => dialog.shell_selected_color_vision().label(),
+            LauncherComboId::Ares => {
+                crate::ui::main_menu_dialogs::options::ares_label(dialog.shell_selected_ares())
+            }
             LauncherComboId::Language => dialog.shell_language_label(),
-            LauncherComboId::ChatTranslation => dialog.shell_chat_translation_label(),
         };
         out.push(text_draw(
             font,
@@ -269,7 +278,7 @@ fn build_text(
     for &(id, rect) in layout
         .buttons
         .iter()
-        .filter(|(id, _)| buttons || *id == LauncherButton::CheckForUpdates)
+        .filter(|(id, _)| buttons || id.on_page())
     {
         let pressed = dialog.shell_button_pressed(id);
         // 612B70 type1: ordinary press retains AC18A4 foreground; the text
@@ -285,7 +294,7 @@ fn build_text(
                 native_text.h as i32,
             ),
             ShellAlign::BUTTON_CAPTION,
-            button_label_color(),
+            super::text::button_label_color_for_disabled(!dialog.button_enabled(id)),
             glyph,
         ));
     }
@@ -293,7 +302,7 @@ fn build_text(
 }
 
 /// The list that is open, over the page: its backing and frame, then its rows.
-fn build_open_list(
+pub(super) fn build_open_list(
     font: &BitFont,
     atlas: &SkirmishShellChromeAtlas,
     layout: &LauncherOptionsLayout,
@@ -325,13 +334,24 @@ fn build_open_list(
             .into_iter()
             .map(SidebarSize::label)
             .collect(),
+        LauncherComboId::SidebarColumns => SidebarColumns::choices()
+            .into_iter()
+            .map(SidebarColumns::label)
+            .collect(),
         LauncherComboId::Display => dialog.shell_display_rows(),
         LauncherComboId::HealthBars => HealthBarMode::choices()
             .into_iter()
             .map(HealthBarMode::label)
             .collect(),
+        LauncherComboId::Ares => crate::ui::main_menu_dialogs::options::ares_choices()
+            .into_iter()
+            .map(crate::ui::main_menu_dialogs::options::ares_label)
+            .collect(),
+        LauncherComboId::ColorVision => ColorVisionMode::choices()
+            .into_iter()
+            .map(ColorVisionMode::label)
+            .collect(),
         LauncherComboId::Language => dialog.shell_language_rows(),
-        LauncherComboId::ChatTranslation => dialog.shell_chat_translation_rows(),
     };
     for (i, row_text) in rows.iter().enumerate() {
         let rect = popup.row_rect(i);
@@ -362,6 +382,19 @@ fn build_open_list(
     (instances, texts)
 }
 
+/// `layout` without the captions and buttons `list` lies over. A box draws all
+/// its art before its text, so that text would otherwise show through the list.
+fn without_text_under(layout: &LauncherOptionsLayout, list: RectPx) -> LauncherOptionsLayout {
+    let mut shown = layout.clone();
+    shown
+        .labels
+        .retain(|(rect, _)| !text_covered_by_overlay(*rect, &[list]));
+    shown
+        .buttons
+        .retain(|(_, rect)| !text_covered_by_overlay(*rect, &[list]));
+    shown
+}
+
 /// Options' controls on another box's art: VERA's Esc menu shows a few of
 /// them. They paint in submission order, after the box and its buttons.
 pub(crate) fn paint_options_settings(
@@ -373,8 +406,16 @@ pub(crate) fn paint_options_settings(
 ) {
     draw.sprites
         .extend(build_controls(atlas, layout, settings, false));
-    draw.text
-        .extend(build_text(font, layout, settings, None, false));
+    let shown = settings
+        .shell_popup(layout)
+        .map(|popup| without_text_under(layout, popup.rect));
+    draw.text.extend(build_text(
+        font,
+        shown.as_ref().unwrap_or(layout),
+        settings,
+        None,
+        false,
+    ));
     let (list, rows) = build_open_list(font, atlas, layout, settings);
     draw.sprites.extend(list);
     draw.text.extend(rows);
@@ -641,10 +682,31 @@ pub(crate) fn render_launcher_options(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
-    use super::zoom_label;
-    use crate::ui::main_menu_dialogs::options::Zoom;
+    use super::{LauncherOptionsLayout, without_text_under, zoom_label};
+    use crate::ui::main_menu_dialogs::options::shell::PageLabel;
+    use crate::ui::main_menu_dialogs::options::{HAS_SET_WINDOW_SIZE, LauncherComboId, Zoom};
+    use crate::ui::shell::geom::{RectPx, ShellScale};
+
+    /// The Language list opens over the Set Window Size row, whose text is
+    /// drawn after the list's backing: it has to go, and the caption above
+    /// the list stays.
+    #[test]
+    fn an_open_list_hides_the_esc_menu_text_it_covers() {
+        if !HAS_SET_WINDOW_SIZE {
+            return;
+        }
+        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL);
+        let face = layout.combo_rect(LauncherComboId::Language).unwrap();
+        let list = RectPx::new(face.x, face.y + face.h, face.w, 160);
+        let shown = without_text_under(&layout, list);
+        assert!(shown.buttons.is_empty());
+        assert_eq!(
+            shown.labels.iter().map(|(_, id)| *id).collect::<Vec<_>>(),
+            [PageLabel::List(LauncherComboId::Language)]
+        );
+    }
 
     #[test]
     fn zoom_rows_name_the_battle_size() {

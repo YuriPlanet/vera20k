@@ -1,14 +1,21 @@
 //! One root-file choice for Rules, fixed Art and standalone AI, plus optional
-//! SOUNDMD/EVAMD roots.
+//! SOUNDMD/EVAMD roots, the theater control-file suffix and the profile's
+//! fixed THEMEMD, BATTLEMD, MISSIONMD and MAPSELMD names.
 //!
 //! Adapted from my ra2-mono GameConfig/GameIniLoader file selection. VERA
 //! keeps one root per family and its existing native layer processing; this
-//! does not import mono's multi-file AI merging or change archive mounting.
+//! does not import mono's multi-file AI merging. The archive names a profile
+//! mounts are `assets::asset_manager::ArchiveFamily`'s.
 //!
 //! SOUNDMD and EVAMD are unlayered presentation readers, not part of the
 //! rules/art/AI triplet: their overrides are optional for every profile and a
 //! missing file keeps the tolerant empty audio catalog instead of failing the
-//! root selection.
+//! root selection. The theater suffix is optional for every profile too and is
+//! never probed: the theater loader reports its own missing INI.
+//!
+//! The theme and campaign names (THEMEMD, BATTLEMD, MISSIONMD, MAPSELMD) come
+//! only from the preset: they have no config key, are never probed and have no
+//! stock fallback. Each reader treats a missing file as gamemd does.
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -48,6 +55,10 @@ pub struct IniRootConfig {
     /// Optional EVAMD root for any profile. Absent keeps the profile's preset:
     /// `evamd.ini` for YR/custom, `evamo.ini` for MO.
     pub eva: Option<String>,
+    /// Optional theater control-file suffix for any profile, the `MD` of
+    /// `SNOWMD.INI`. Absent keeps the profile's preset: `md` for YR/custom,
+    /// `mo` for MO.
+    pub theater_suffix: Option<String>,
 }
 
 /// Frozen file names, resolved once before any consumer builds game data.
@@ -60,6 +71,11 @@ pub struct IniRoots {
     ai: String,
     sound: String,
     eva: String,
+    theater_suffix: String,
+    theme: String,
+    battle: String,
+    mission: String,
+    mapsel: String,
 }
 
 impl Default for IniRoots {
@@ -70,23 +86,34 @@ impl Default for IniRoots {
 
 impl IniRoots {
     fn preset(profile: IniProfile) -> Self {
-        let (rules, art, ai, sound, eva) = match profile {
-            IniProfile::Yr => (
-                "rulesmd.ini",
-                "artmd.ini",
-                "aimd.ini",
-                "soundmd.ini",
-                "evamd.ini",
-            ),
-            IniProfile::Mo => (
-                "rulesmo.ini",
-                "artmo.ini",
-                "aimo.ini",
-                "soundmo.ini",
-                "evamo.ini",
-            ),
-            _ => unreachable!("only concrete built-in profiles have presets"),
-        };
+        let (rules, art, ai, sound, eva, theater_suffix, theme, battle, mission, mapsel) =
+            match profile {
+                IniProfile::Yr => (
+                    "rulesmd.ini",
+                    "artmd.ini",
+                    "aimd.ini",
+                    "soundmd.ini",
+                    "evamd.ini",
+                    "md",
+                    "thememd.ini",
+                    "BATTLEMD.INI",
+                    "MISSIONMD.INI",
+                    "MAPSELMD.INI",
+                ),
+                IniProfile::Mo => (
+                    "rulesmo.ini",
+                    "artmo.ini",
+                    "aimo.ini",
+                    "soundmo.ini",
+                    "evamo.ini",
+                    "mo",
+                    "thememo.ini",
+                    "BATTLEMO.INI",
+                    "MISSIONMO.INI",
+                    "MAPSELMO.INI",
+                ),
+                _ => unreachable!("only concrete built-in profiles have presets"),
+            };
         Self {
             profile,
             rules: rules.into(),
@@ -94,6 +121,11 @@ impl IniRoots {
             ai: ai.into(),
             sound: sound.into(),
             eva: eva.into(),
+            theater_suffix: theater_suffix.into(),
+            theme: theme.into(),
+            battle: battle.into(),
+            mission: mission.into(),
+            mapsel: mapsel.into(),
         }
     }
 
@@ -114,6 +146,45 @@ impl IniRoots {
     }
     pub fn eva(&self) -> &str {
         &self.eva
+    }
+    pub fn theater_suffix(&self) -> &str {
+        &self.theater_suffix
+    }
+
+    /// The theater INI for a control-file name such as `snow`.
+    /// `Read_Theater_TileSets_INI` (`0x00545150`) formats it with `"%sMD.INI"`
+    /// (pushed at `0x005454FE`); this keeps that format with the selected
+    /// suffix in place of `MD`.
+    pub fn theater_ini(&self, control_name: &str) -> String {
+        format!("{control_name}{}.ini", self.theater_suffix)
+    }
+
+    // The four names below are gamemd's literals under YR and custom. Under
+    // MO they take the spelling MO's spawner patches over those literals
+    // (contributor-reported from the spawner's patch table, not native
+    // evidence).
+
+    /// The Theme catalog: `THEMEMD.INI` (`0x00825D94`), pushed by Init_Game at
+    /// `0x0052C8B9` for `ThemeClass::ReadINI` (`0x00720590`); MO `thememo.ini`.
+    pub fn theme(&self) -> &str {
+        &self.theme
+    }
+    /// The campaign catalog: `BATTLEMD.INI` (`0x00826198`), read by
+    /// Load_Campaigns (`0x0052CB90`) at `0x0052CC4E`/`0x0052CCCD`; MO
+    /// `BATTLEMO.INI`.
+    pub fn battle(&self) -> &str {
+        &self.battle
+    }
+    /// Mission metadata: `MISSIONMD.INI` (`0x00839724`), read by
+    /// InitializeScenarioFromINI (`0x00686D46`) and, through `[0x00839710]`,
+    /// by ShowMissionRestateBriefing at `0x0065F57F`; MO `MISSIONMO.INI`.
+    pub fn mission(&self) -> &str {
+        &self.mission
+    }
+    /// The map-select stages: `MAPSELMD.INI` (`0x00830370`), read by
+    /// MapSelect__LoadStagesFromINI (`0x005CEF62`); MO `MAPSELMO.INI`.
+    pub fn mapsel(&self) -> &str {
+        &self.mapsel
     }
 
     pub fn names(&self) -> [&str; 3] {
@@ -151,6 +222,13 @@ impl IniRootConfig {
                 validate_ini_basename(family, name)?;
             }
         }
+        if let Some(suffix) = self.theater_suffix.as_deref()
+            && (suffix.is_empty() || !suffix.bytes().all(|c| c.is_ascii_alphanumeric()))
+        {
+            return Err(format!(
+                "theater_suffix must be letters and digits only: '{suffix}'"
+            ));
+        }
         Ok(())
     }
 
@@ -165,7 +243,7 @@ impl IniRootConfig {
         // must not eagerly require AI in asset-only tools or small fixtures.
         if self.profile == IniProfile::Yr {
             let mut roots = IniRoots::default();
-            self.apply_audio_roots(&mut roots);
+            self.apply_optional_roots(&mut roots);
             return Ok(roots);
         }
         if self.profile == IniProfile::Auto {
@@ -190,14 +268,15 @@ impl IniRootConfig {
                     ));
                 }
             };
-            self.apply_audio_roots(&mut selected);
+            self.apply_optional_roots(&mut selected);
             return Ok(selected);
         }
         let mut selected = if self.profile == IniProfile::Mo {
             IniRoots::preset(IniProfile::Mo)
         } else {
-            // Start from the YR preset so the optional audio roots keep one
-            // default source, then replace the required triplet.
+            // Start from the YR preset so the optional audio roots and the
+            // theater suffix keep one default source, then replace the
+            // required triplet.
             let mut custom = IniRoots::preset(IniProfile::Yr);
             custom.profile = IniProfile::Custom;
             custom.rules = self.rules.clone().unwrap();
@@ -217,16 +296,19 @@ impl IniRootConfig {
                 missing.join(", ")
             ));
         }
-        self.apply_audio_roots(&mut selected);
+        self.apply_optional_roots(&mut selected);
         Ok(selected)
     }
 
-    fn apply_audio_roots(&self, roots: &mut IniRoots) {
+    fn apply_optional_roots(&self, roots: &mut IniRoots) {
         if let Some(sound) = &self.sound {
             roots.sound.clone_from(sound);
         }
         if let Some(eva) = &self.eva {
             roots.eva.clone_from(eva);
+        }
+        if let Some(suffix) = &self.theater_suffix {
+            roots.theater_suffix.clone_from(suffix);
         }
     }
 }
@@ -253,7 +335,7 @@ fn validate_ini_basename(family: &str, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 
@@ -398,7 +480,10 @@ mod tests {
         .resolve(|name| matches!(name, "rulesmo.ini" | "artmo.ini" | "aimo.ini"))
         .unwrap();
         assert_eq!(auto_mo.profile(), IniProfile::Mo);
-        assert_eq!((auto_mo.sound(), auto_mo.eva()), ("soundmo.ini", "evamo.ini"));
+        assert_eq!(
+            (auto_mo.sound(), auto_mo.eva()),
+            ("soundmo.ini", "evamo.ini")
+        );
 
         let auto = IniRootConfig {
             profile: IniProfile::Auto,
@@ -408,6 +493,37 @@ mod tests {
         .resolve(|name| matches!(name, "rulesmd.ini" | "artmd.ini" | "aimd.ini"))
         .unwrap();
         assert_eq!((auto.sound(), auto.eva()), ("soundmd.ini", "my-eva.ini"));
+    }
+
+    #[test]
+    fn ini_roots_theater_suffix_follows_the_profile_and_its_override() {
+        let yr = IniRootConfig::default()
+            .resolve(|_| panic!("legacy YR must not probe"))
+            .unwrap();
+        assert_eq!(yr.theater_ini("snow"), "snowmd.ini");
+        let mo = IniRootConfig {
+            profile: IniProfile::Mo,
+            ..Default::default()
+        }
+        .resolve(|_| true)
+        .unwrap();
+        assert_eq!(mo.theater_ini("urbann"), "urbannmo.ini");
+
+        let custom = IniRootConfig {
+            theater_suffix: Some("x2".into()),
+            ..Default::default()
+        };
+        let roots = custom
+            .resolve(|_| panic!("legacy YR must not probe"))
+            .unwrap();
+        assert_eq!(roots.theater_ini("temperat"), "temperatx2.ini");
+        for bad in ["", "md.ini", "../md", "m d"] {
+            let request = IniRootConfig {
+                theater_suffix: Some(bad.into()),
+                ..Default::default()
+            };
+            assert!(request.validate().is_err(), "{bad}");
+        }
     }
 
     #[test]

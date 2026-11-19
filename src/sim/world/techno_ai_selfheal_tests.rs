@@ -583,9 +583,10 @@ fn missing_house_self_heal_keys_retain_constructor_defaults_and_completed_buildi
 }
 
 /// Native IDIV6FA7EE/6FA8E2 raises interrupt0 before either HasSelfHeal
-/// query, including count0. Missing keys are covered separately above.
+/// query, including count0; VERA carries on without the heal. Missing keys
+/// are covered separately above.
 #[test]
-fn authored_house_self_heal_divide_faults_precede_the_house_count() {
+fn authored_house_self_heal_divide_faults_carry_on_without_a_heal() {
     let native = crate::test_fixture::json("tools/procedural_drawing_oracle/self_heal_status.json");
     let mut checked = 0;
     for row in native["divide_controls"].as_array().unwrap() {
@@ -626,7 +627,7 @@ fn authored_house_self_heal_divide_faults_precede_the_house_count() {
             );
         }));
         assert_eq!(row["fault"]["interrupt"], 0);
-        assert!(result.is_err(), "{row}");
+        assert!(result.is_ok(), "{row}");
         assert_eq!(
             sim.entities().get(actor).unwrap().health.current(),
             row["health_after"].as_i64().unwrap() as i32,
@@ -699,7 +700,7 @@ fn the_mechanism_runs_on_a_real_map() {
     let site = {
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
-        let registry = Some(&runtime.resources.overlay_registry);
+        let registry = Some(runtime.resources.rules.overlay_registry());
         let hospital = rules.object("CATHOSP").unwrap();
         (6i16..70)
             .flat_map(|ry| (6i16..70).map(move |rx| (rx, ry)))

@@ -103,7 +103,7 @@ fn relay_uses_existing_reliable_owner_across_a_lost_and_duplicated_datagram() {
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut tick = 0;
-    let mut relay = |server: &mut RelayServer| {
+    let relay = |server: &mut RelayServer| {
         let mut buffer = [0; MAX_DATAGRAM + 1];
         loop {
             let (length, source) = match socket.recv_from(&mut buffer) {
@@ -146,8 +146,6 @@ fn relay_uses_existing_reliable_owner_across_a_lost_and_duplicated_datagram() {
     assert_eq!(first_sample[0].0, 29);
     assert_eq!(second_sample[0].0, 0);
     assert!(first_sample[0].1 > 0 && second_sample[0].1 > 0);
-    // Release closure borrows so the impairment applies only after admission.
-    drop(relay);
     let mut drop_next = true;
     assert!(
         first
@@ -378,6 +376,7 @@ fn ordered_relay() -> (
         tick_hz: 45,
         expires: 2000,
         pacing: Default::default(),
+        ordered_alone: false,
     }
     .sign(&key)
     .unwrap();
@@ -459,23 +458,168 @@ fn unacknowledged_relay_leave_releases_the_route_after_bounded_attempts() {
     let (socket, _server, mut wire, ticket, packet_key) = ordered_relay();
     let mut bytes = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
     wire.retire_relay();
-    let attempts = u32::from(RELAY_LEAVE_ATTEMPTS);
+    let attempts = u32::from(LEAVE_ATTEMPTS);
     for attempt in 0..attempts {
         assert!(wire.relay_retirement_pending());
-        wire.service(attempt * 16);
+        wire.service(attempt * RELAY_LEAVE_TICKS);
         socket.recv_from(&mut bytes).unwrap();
     }
-    wire.service(attempts * 16 - 1);
+    wire.service(attempts * RELAY_LEAVE_TICKS - 1);
     assert!(
         wire.relay_retirement_pending(),
         "the last attempt keeps its full retry interval"
     );
-    wire.service(attempts * 16);
+    wire.service(attempts * RELAY_LEAVE_TICKS);
     assert!(!wire.relay_retirement_pending());
     assert_eq!(wire.relay_source(), None);
     let address = ipv4_addr(&socket).unwrap();
     wire.enable_relay(address, &ticket, packet_key, [17; 32])
         .unwrap();
+}
+
+/// The relay drops a lapsed ticket unanswered and retires a silent player after
+/// ABSENT_MS, so nothing tells a game that its place is gone. A route that has
+/// heard nothing for that long and 15 seconds more is released and stops
+/// knocking, whatever holds the transport: a one-human match and the score
+/// screen have no ordered session to end.
+#[test]
+fn a_relay_route_silent_past_the_relays_own_limit_is_released() {
+    use vera20k_relay_protocol::{SecretKey, Ticket, derive_packet_key};
+
+    let sink = raw_peer();
+    let address = ipv4_addr(&sink).unwrap();
+    let key = SecretKey::new([31; 32]);
+    let ticket = Ticket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
+    let mut wire = transport();
+    wire.enable_relay(address, &ticket, packet_key, [29; 32])
+        .unwrap();
+    let limit = ((ABSENT_MS + 15_000) / 16) as u32;
+    wire.service(100);
+    assert!(relay_datagrams(&sink) > 0);
+    // A sample older than the last one is not 49 days of silence.
+    wire.service(99);
+    wire.service(100 + limit);
+    assert!(!wire.relay_absent() && wire.relay_expires().is_some());
+    assert!(relay_datagrams(&sink) > 0);
+    wire.service(100 + limit + 1);
+    assert!(wire.relay_absent() && wire.relay_expires().is_none());
+    relay_datagrams(&sink);
+    wire.service(100 + limit + 1_000);
+    assert_eq!(relay_datagrams(&sink), 0);
+    // The lobby's reply to a renewal asked before the release is not an error.
+    wire.renew_relay(address, &ticket, packet_key, [29; 32])
+        .unwrap();
+}
+
+/// `ordered_relay` once a second source's Ready has started its match and the
+/// game has sent its first UPLINK at bucket 20, so the I/O worker owes the
+/// relay a heartbeat 250 ms later (spec §6.6). The relay socket reads nothing.
+fn started_relay() -> (UdpSocket, LanUdpTransport) {
+    use vera20k_relay_protocol::{
+        ClientSession, MAX_DATAGRAM, SecretKey, ServerEvent, Ticket, derive_packet_key,
+    };
+
+    let (socket, mut server, mut wire, _, _) = ordered_relay();
+    let key = SecretKey::new([42; 32]);
+    let ticket = Ticket {
+        room: [11; 16],
+        source: 1,
+        expires: 1200,
+        nonce: [2; 16],
+        player: [2; 16],
+        generation: 1,
+    }
+    .sign(&key)
+    .unwrap();
+    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
+    let mut other = ClientSession::new(&ticket, packet_key, [17; 32]).unwrap();
+    let other_address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9);
+    let certificate = wire.ordering_certificate().unwrap();
+    let mut bytes = Vec::new();
+    other.probe_at(0, &mut bytes).unwrap();
+    let challenge = server.process_at(other_address, &bytes, 1000, 0).unwrap();
+    let ServerEvent::Challenge(cookie) = other.receive_at(&challenge[0].bytes, 0).unwrap() else {
+        panic!("challenge");
+    };
+    other.confirm_at(cookie, 0, &mut bytes).unwrap();
+    for reply in server.process_at(other_address, &bytes, 1000, 0).unwrap() {
+        other.receive_at(&reply.bytes, 0).unwrap();
+    }
+    other
+        .configure_ordering_at(&certificate, [7; 32], 0, &mut bytes)
+        .unwrap();
+    server.process_at(other_address, &bytes, 1000, 0).unwrap();
+    // The start is due 200 ms after both were ready; the STATUS answering
+    // the next Ready reports it.
+    wire.service(19);
+    relay_datagrams(&socket);
+    wire.configure_ordering([7; 32]).unwrap();
+    let mut datagram = [0; MAX_DATAGRAM + 1];
+    let (length, SocketAddr::V4(source)) = socket.recv_from(&mut datagram).unwrap() else {
+        panic!("IPv4");
+    };
+    for output in server
+        .process_at(source, &datagram[..length], 1000, 304)
+        .unwrap()
+    {
+        if output.endpoint == source {
+            socket.send_to(&output.bytes, output.endpoint).unwrap();
+        }
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !wire.poll_uplink().unwrap() {
+        wire.service(20);
+        assert!(Instant::now() < deadline, "the match did not start");
+        std::thread::yield_now();
+    }
+    relay_datagrams(&socket);
+    (socket, wire)
+}
+
+/// What reached the relay, waiting 100 ms for the last of it.
+fn relay_datagrams(socket: &UdpSocket) -> usize {
+    let mut datagram = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
+    socket
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    let count = std::iter::from_fn(|| socket.recv_from(&mut datagram).ok()).count();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    count
+}
+
+#[test]
+fn io_worker_answers_for_a_long_frame_but_not_a_stalled_or_crashed_game() {
+    let (socket, mut wire) = started_relay();
+    // The game thread last serviced at bucket 20. A one-second frame later
+    // the worker heartbeats (the 2-second keepalive is not due).
+    wire.lock().background_pass(80, false);
+    assert_eq!(relay_datagrams(&socket), 1, "the UPLINK heartbeat");
+    // A bucket past 60 seconds the game counts as gone: the keepalive the
+    // unanswered route now owes goes unsent too.
+    let stalled = 21 + GAME_STALL_TICKS as u32;
+    wire.lock().background_pass(stalled, false);
+    assert_eq!(relay_datagrams(&socket), 0);
+    // The game services again (its own pass probes): the worker's next
+    // keepalive, a second later, goes out.
+    wire.service(stalled);
+    relay_datagrams(&socket);
+    wire.lock().background_pass(stalled + 62, false);
+    assert_eq!(relay_datagrams(&socket), 1, "heard again");
+    // A crash silences the next one.
+    wire.lock().background_pass(stalled + 124, true);
+    assert_eq!(relay_datagrams(&socket), 0);
 }
 
 #[test]
@@ -889,7 +1033,7 @@ fn manager_response_reset_keeps_sockets_raw_queues_and_pending_channel_traffic()
     let mut global_ack = global_frame.clone();
     global_ack[2] = 2;
     wire.global_mut()
-        .receive(peer, 0, &global_ack, 122, &mut |_, _| {})
+        .receive(peer, 0, &global_ack, &mut |_, _| {})
         .unwrap();
     wire.global_mut().service(122, &mut |_, _| {});
     assert_eq!(wire.connections().mean_response_time(1), Some(11));
@@ -912,7 +1056,7 @@ fn manager_response_reset_keeps_sockets_raw_queues_and_pending_channel_traffic()
         )
         .unwrap();
     wire.global_mut()
-        .receive(peer, 0, &global_frame, 123, &mut |_, _| {})
+        .receive(peer, 0, &global_frame, &mut |_, _| {})
         .unwrap();
     wire.lock().primary_send.send(
         peer,
@@ -1010,7 +1154,7 @@ fn response_time_matches_native_private_maximum_excluding_primary_global() {
             .service(1, &mut |_, frame| ack = frame.to_vec());
         ack[2] = 2;
         wire.global_mut()
-            .receive(endpoint, 0, &ack, 1, &mut |_, _| {})
+            .receive(endpoint, 0, &ack, &mut |_, _| {})
             .unwrap();
         wire.global_mut()
             .service(1_u32.wrapping_add(primary), &mut |_, _| {});
@@ -1116,6 +1260,31 @@ fn alternate_global_receive_also_sends_ack_from_primary() {
     frame.truncate(16);
     frame[2] = 2;
     assert_eq!(&reply[..length], datagram(&frame));
+}
+
+/// Winsock reports the ICMP port-unreachable an earlier send drew as
+/// WSAECONNRESET on a later read; the datagram behind it arrives in the same
+/// pass. Other platforms report nothing on an unconnected socket.
+#[cfg(windows)]
+#[test]
+fn port_unreachable_from_an_earlier_send_does_not_end_the_receive_pass() {
+    let mut receiver = transport();
+    let closed = ipv4_addr(&raw_peer()).unwrap();
+    receiver.lock().primary.send_to(b"gone", closed).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    let mut frame = vec![0x36, 0x12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0xaa];
+    frame.extend(b"after reset");
+    raw_peer()
+        .send_to(&datagram(&frame), receiver.primary_addr().unwrap())
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    let report = receiver.service(1);
+    let failure = report.first_io_error.as_ref().expect("WSAECONNRESET");
+    assert_eq!(failure.error.raw_os_error(), Some(10054));
+    assert_eq!(
+        receiver.pop_global_received().unwrap().payload,
+        b"after reset"
+    );
 }
 
 #[test]

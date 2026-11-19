@@ -17,7 +17,6 @@ use crate::render::overlay_assets::{render_overlay_names, resolve_overlay_name_f
 use crate::render::overlay_atlas::{self, OverlayAtlas};
 use crate::rules::color_scheme::{ColorSchemeEntry, scheme_entry_by_name};
 use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::skirmish_colors::SkirmishColorMode;
 use crate::sim::scenario_bootstrap::normalized_launch_slots;
@@ -57,7 +56,8 @@ pub(crate) fn house_color_map_for_launch_session(
         // `slot.color_index` is the colour priority gamemd hands
         // `Game_GetLinkedColor` (0x69A310); resolve it to a `[Colors]` entry
         // index. The vanilla build divides the priority table's odd index by
-        // two; Phobos SkirmishUnlimitedColors makes the index itself the entry.
+        // two, VERA's extra lobby colours name their entry, and Phobos
+        // SkirmishUnlimitedColors makes the index itself the entry.
         let entry = skirmish_colors.entry_for_priority(slot.color_index as i32) as u8;
         colors.insert(slot.owner_name, HouseColorIndex(entry));
     }
@@ -86,7 +86,6 @@ pub(crate) fn build_overlay_presentation(
     theater_ext: &str,
     theater_name: &str,
     rules: &RuleSet,
-    overlay_registry: &OverlayTypeRegistry,
     theater_iso_palette: Option<&Palette>,
     theater_unit_palette: Option<&Palette>,
     theater_tiberium_palette: Option<&Palette>,
@@ -112,6 +111,7 @@ pub(crate) fn build_overlay_presentation(
         );
     }
 
+    let overlay_registry = rules.overlay_registry();
     let art_registry = rules.art();
     let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
 
@@ -245,7 +245,7 @@ pub(crate) fn build_overlay_presentation(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -271,10 +271,10 @@ mod tests {
     }
 
     fn test_session() -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: test_battle_mode(),
-            selected_map_file: Some("test.mmx".to_string()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            test_battle_mode(),
+            Some("test.mmx".to_string()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: "Player".to_string(),
                 slot: SkirmishLocalSlot {
@@ -287,9 +287,8 @@ mod tests {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: 1,
-            opponents: vec![SkirmishAiSlot {
+            0,
+            vec![SkirmishAiSlot {
                 raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
@@ -299,10 +298,8 @@ mod tests {
                 team: LaunchTeam::None,
                 difficulty: Default::default(),
             }],
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-            options: SkirmishLaunchOptions::default(),
-        }
+            SkirmishLaunchOptions::default(),
+        )
     }
 
     #[test]
@@ -1816,6 +1813,27 @@ mod tests {
         assert_eq!(rng.logical_state(), before);
     }
 
+    /// VERA: where players share bases, as in a room with Teams set, a House
+    /// whose start a later House also asked for starts there too, beside
+    /// it, with no draw. The table keeps the last owner.
+    #[test]
+    fn a_house_sharing_bases_starts_beside_the_later_one() {
+        let mut session = test_session();
+        session.options.teams = Some(2);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+        session.opponents[0].start_position = LaunchStartPosition::Position(0);
+        let all_starts = test_launch_starts();
+        let starts = &all_starts[..3];
+        let mut rng = SimRng::new(8);
+        let before = rng.logical_state();
+
+        let assignment = native_assign_launch_starts(&session, starts, &mut rng);
+
+        assert_eq!(assignment.placements, vec![(0, starts[0]), (1, starts[0])]);
+        assert_eq!(assignment.start_table, vec![Some(1), None, None]);
+        assert_eq!(rng.logical_state(), before);
+    }
+
     #[test]
     fn gsi_04_16_standard_three_auto_houses_consume_only_first_draw() {
         let mut session = test_session();
@@ -1857,6 +1875,7 @@ mod tests {
         let starts = test_launch_starts();
         let map = test_map_with_starts(&starts);
         let rules = test_standard_launch_rules();
+        let ares = rules.ares();
         let roster = roster_with_neutral_and_playable();
 
         for (country, expected_theme) in [
@@ -1871,7 +1890,7 @@ mod tests {
             session.options.bases = false;
             session.options.unit_count = 0;
 
-            let result = apply_explicit_skirmish_launch_session(
+            apply_explicit_skirmish_launch_session(
                 &mut sim,
                 &map,
                 &roster,
@@ -1890,8 +1909,9 @@ mod tests {
             let side = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
                 Some(owner),
+                ares,
             );
-            let actual = crate::render::sidebar_chrome::sidebar_theme_for_side(side);
+            let actual = crate::render::sidebar_chrome::sidebar_theme_for_side(side, ares);
             assert_eq!(
                 actual, expected_theme,
                 "{country:?} launch owner must reach its live side theme"
@@ -1911,14 +1931,11 @@ mod tests {
             let selected = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
                 Some(owner),
+                ares,
             );
             assert_eq!(
                 selected,
-                if cfg!(feature = "ares") {
-                    3
-                } else {
-                    expected_side
-                },
+                if ares { 3 } else { expected_side },
                 "actual Scenario.Side and development owner have separate authority"
             );
         }
@@ -2239,7 +2256,6 @@ mod tests {
 
     // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
     // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn skirmish_positive_unit_count_spawns_extra_starting_units() {
         let mut sim = Simulation::new();
@@ -2326,6 +2342,67 @@ mod tests {
         };
         assert_eq!(credits("Player"), Some(10_000));
         assert_eq!(credits("Computer1"), Some(10_000));
+
+        // The base unit (`0x005D708B`) and the extra units (`0x00688F90`,
+        // `0x0068927F`) all Unlimbo with facing 0.
+        let frame = sim.session().binary_frame();
+        for entity in sim.entities().values() {
+            assert_eq!(
+                entity.body_facing_byte(frame),
+                0,
+                "{} must start facing north",
+                sim.interner().resolve(entity.type_ref())
+            );
+        }
+    }
+
+    /// Unholy Alliance's base-unit callback (`0x005CB440`): every house gets
+    /// one unit per `BaseUnit=` entry, whatever its Owner. The last entry
+    /// takes the base cell (the fallback's seed cell, no draw) and entry 0
+    /// the base cell plus (3, 3).
+    #[test]
+    fn unholy_alliance_starts_every_house_with_one_unit_per_base_unit_entry() {
+        let mut sim = Simulation::new();
+        let mut session = test_session();
+        session.mode = SkirmishLaunchMode::stock(4).expect("stock Unholy Alliance row");
+        session.options.bases = true;
+        session.options.unit_count = 0;
+        let terrain = test_terrain(64, 64);
+        let starts = test_in_playfield_launch_starts();
+        let map = test_map_with_starts(&starts);
+        let rules = RuleSet::from_ini(&launch_fixture_ini(
+            "[General]\nBaseUnit=AMCV,SMCV\n[VehicleTypes]\n1=AMCV\n2=SMCV\n\
+             [AMCV]\nOwner=Americans\n[SMCV]\nOwner=Russians\n",
+        ))
+        .expect("unholy rules parse");
+
+        let result = apply_explicit_skirmish_launch_session(
+            &mut sim,
+            &map,
+            &roster_with_neutral_and_playable(),
+            &rules,
+            &terrain,
+            &launch_descriptor(&session),
+        );
+
+        assert_eq!(result.spawned_mcvs, 4);
+        for owner in ["Player", "Computer1"] {
+            let base =
+                crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
+                    .and_then(|house| house.base_center())
+                    .expect("the house has a base cell");
+            let cell_of = |type_id: &str| {
+                sim.entities()
+                    .values()
+                    .find(|entity| {
+                        sim.interner().resolve(entity.owner()) == owner
+                            && sim.interner().resolve(entity.type_ref()) == type_id
+                    })
+                    .map(|entity| (entity.position.rx(), entity.position.ry()))
+            };
+            assert_eq!(cell_of("SMCV"), Some(base), "{owner}");
+            assert_eq!(cell_of("AMCV"), Some((base.0 + 3, base.1 + 3)), "{owner}");
+        }
     }
 
     /// `Post_Map_Init` calls `Generate_Starting_Units` at `0x00686937` before
@@ -2333,7 +2410,6 @@ mod tests {
     /// balance that already includes the credited leftover budget.
     // The stock budget: Ares 3.0 MPGameModeClass_CreateStartingUnits_UnitCost
     // (1001EE10, hook 0x5D6D9A) averages a type set without BaseUnit.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_09_01_ai_grant_multiplies_post_leftover_balance() {
         let mut sim = Simulation::new();
@@ -2495,7 +2571,6 @@ mod tests {
             let mut session = test_session();
             session.opponents.clear();
             session.ai_player_count = 0;
-            session.rebuild_house_roster();
             session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
             session.options.bases = true;
             session.options.unit_count = 0;

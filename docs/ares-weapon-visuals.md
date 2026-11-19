@@ -1,7 +1,7 @@
 # Optional Ares weapon visuals
 
-Build with `--features ares` to let a weapon colour its radiation beam, electric
-bolt and Sonic/Magnetron/laser wave, reverse a wave against chosen target
+When a game plays Ares ([Ares](ares.md)), every build lets a weapon colour its
+radiation beam, electric bolt and Sonic/Magnetron/laser wave, reverse a wave against chosen target
 classes, fire a Tiberian Sun laser wave and fire a detached railgun.
 
 ```ini
@@ -39,9 +39,9 @@ AmbientDamage=10                 ; struck on the beam's cells each of its 22 fra
 IsDetachedRailgun=yes            ; railgun line and system on every shot
 ```
 
-Default builds ignore every key above and keep the stock drawing and wave rules.
+Other games ignore every key above and keep the stock drawing and wave rules.
 
-## Wave rules in Ares builds
+## Wave rules in Ares games
 
 Every Sonic and Magnetron wave is built through Ares's `CreateWave`, so these hold
 for retail weapons too (and for the laser waves, which only Ares creates):

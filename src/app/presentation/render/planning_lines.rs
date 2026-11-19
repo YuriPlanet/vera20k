@@ -5,14 +5,13 @@
 //! unproven. No presentation result feeds back into synchronized state.
 
 use crate::app::AppState;
-use crate::app::presentation::target_lines::{TacticalViewport, push_surface_rect};
-use crate::render::batch::SpriteInstance;
-use crate::render::native_surface_format::{
-    ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565, interpolate_rgb8,
-};
-use crate::render::surface_line::{clip_line, patterned_line, solid_line};
+use crate::app::presentation::target_lines::{TacticalViewport, push_rect};
+use crate::render::native_surface_format::{RGB565, interpolate_rgb8};
+use crate::render::surface_line::{StoreGate, SurfaceStroke, clip_line};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
-use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment};
+use crate::sim::intern::InternedId;
+use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment, Simulation};
 
 // Original static bytes836880;63D8B8 negates the presentation wall clock.
 const PATTERN: [u8; 16] = [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0];
@@ -22,133 +21,51 @@ pub(super) fn build(
     state: &AppState,
     view: TacticalViewport,
     wall_ms: u32,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+) -> (Vec<SurfaceStroke>, Vec<SurfaceStroke>) {
     let mut out = Vec::new();
     let mut highlights = Vec::new();
     // Tactical6D46DD calls both PlanMgr drawing passes only while active.
     if !state.match_state.input.planning.active() {
         return (out, highlights);
     }
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
+    let Some(rt) = state.match_state.sim_runtime.presentation() else {
         return (out, highlights);
     };
     let sim = &rt.simulation;
     let Some(viewer) = sim.session().current_house() else {
         return (out, highlights);
     };
-    let mut graph = sim.planning_draw_graph(
-        viewer,
-        crate::app::input::planning_mode::hover_node(state),
-        state.match_state.input.planning.highlighted_node(),
-    );
-    // This is a disposable read projection. Node identity/membership and every
-    // actual command stay in the authoritative planning graph.
-    let cache = &state.match_state.match_presentation.interpolation;
-    let sample = |kind, id, owner, c: DriveCoord| {
-        use crate::app::presentation::interpolation::PointPose;
-        let [x, y, z] = cache
-            .sample_draw_point(
-                kind,
-                id,
-                PointPose::new([c.x, c.y, c.z], 0, owner),
-                sim.session().binary_frame(),
-            )
-            .coord;
-        DriveCoord { x, y, z }
+    let Some(frame) = state.match_state.sim_runtime.frame() else {
+        return (out, highlights);
     };
-    use crate::app::presentation::interpolation::PointKind;
-    let mut projected_nodes = std::collections::HashMap::new();
-    for node in &mut graph.nodes {
-        let owner = node.members.first().copied();
-        let raw = node.coord;
-        node.coord = sample(PointKind::PlanningNode, node.id, owner, raw);
-        projected_nodes.insert((raw.x, raw.y, raw.z), node.coord);
-        for (i, line) in node
-            .incoming
-            .iter_mut()
-            .chain(node.loop_segment.iter_mut())
-            .enumerate()
-        {
-            line.source = sample(
-                PointKind::PlanningEdge((i * 2) as u16),
-                node.id,
-                owner,
-                line.source,
-            );
-            line.target = sample(
-                PointKind::PlanningEdge((i * 2 + 1) as u16),
-                node.id,
-                owner,
-                line.target,
-            );
-        }
-    }
-    for actor in &mut graph.actors {
-        let mut slot = 0;
-        for line in actor
-            .current_leg
-            .iter_mut()
-            .chain(actor.mega_leg.iter_mut())
-            .chain(actor.connection.iter_mut())
-        {
-            line.source = sample(
-                PointKind::PlanningActor(slot),
-                actor.actor_id,
-                Some(actor.actor_id),
-                line.source,
-            );
-            line.target = sample(
-                PointKind::PlanningActor(slot + 1),
-                actor.actor_id,
-                Some(actor.actor_id),
-                line.target,
-            );
-            slot += 2;
-        }
-        actor.marker_only = actor.marker_only.map(|c| {
-            sample(
-                PointKind::PlanningActor(6),
-                actor.actor_id,
-                Some(actor.actor_id),
-                c,
-            )
-        });
-    }
-    for coord in [&mut graph.hovered_coord, &mut graph.highlighted_coord] {
-        if let Some(c) = coord.as_mut() {
-            *c = projected_nodes.get(&(c.x, c.y, c.z)).copied().unwrap_or(*c);
-        }
-    }
-    let phase = ((wall_ms as i32).wrapping_neg() >> 5) & 15;
-    let color = |owner, bright| {
-        let name = sim.interner().resolve(owner);
-        let index = state
-            .match_state
-            .match_presentation
-            .house_color_map
-            .get(name)
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP);
-        let rgb = crate::render::palette_light::house_color_rgb(
-            &rt.resources.rules.house_color_ramps,
-            index,
-        );
-        if bright {
-            interpolate_rgb8(rgb, [255; 3], 100)
-        } else {
-            interpolate_rgb8(rgb, [0; 3], 80)
-        }
+    // The captured graph has no hovered or highlighted node: those are
+    // local input, applied here to the nodes it holds.
+    let Some(graph) = frame
+        .scene
+        .planning
+        .as_ref()
+        .filter(|graph| graph.viewer == viewer)
+        .map(|graph| &graph.graph)
+    else {
+        return (out, highlights);
     };
+    let node = |id: Option<u64>| id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
+    let hovered = node(crate::app::input::planning_mode::hover_node(state));
+    let highlighted = node(state.match_state.input.planning.highlighted_node());
+    let phase = stroke_phase(wall_ms);
+    let color = |owner, bright| stroke_rgb(state, sim, &rt.resources.rules, owner, bright);
     // A derived frame-local membership index avoids scanning the whole graph
     // once per badge in large selected groups. It dies with this projection.
-    let highlighted_members: std::collections::HashSet<_> =
-        graph.highlighted_members.iter().copied().collect();
+    let highlighted_members: std::collections::HashSet<_> = highlighted
+        .into_iter()
+        .flat_map(|node| node.members.iter().copied())
+        .collect();
     let badge_white = |actor_id| {
-        if graph.highlighted_node.is_some() {
+        if highlighted.is_some() {
             highlighted_members.contains(&actor_id)
         } else {
-            sim.entities()
-                .get(actor_id)
+            frame
+                .object(actor_id)
                 .is_some_and(|actor| actor.selection.is_selected())
         }
     };
@@ -319,7 +236,10 @@ pub(super) fn build(
     // grown by4 inline); retained AC4BF0 uses the node's8x8 rect
     // (GetSurfaceRect6345A0) grown twice by4 (Inflate6357D0), giving24x24.
     // Both draw three white outlines.
-    for (coord, size) in [(graph.hovered_coord, 16), (graph.highlighted_coord, 24)] {
+    for (coord, size) in [
+        (hovered.map(|node| node.coord), 16),
+        (highlighted.map(|node| node.coord), 24),
+    ] {
         if let Some(coord) = coord {
             let at = project(coord, view);
             for inset in 0..3 {
@@ -340,9 +260,39 @@ pub(super) fn build(
     (out, highlights)
 }
 
+/// The patterned strokes' phase: 63D8B8 negates the presentation wall clock.
+pub(super) fn stroke_phase(wall_ms: u32) -> i32 {
+    ((wall_ms as i32).wrapping_neg() >> 5) & 15
+}
+
+/// A house's stroke and marker colour: toward white for a stroke not yet
+/// committed, toward black otherwise.
+pub(super) fn stroke_rgb(
+    state: &AppState,
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    bright: bool,
+) -> [u8; 3] {
+    let name = sim.interner().resolve(owner);
+    let index = state
+        .match_state
+        .match_presentation
+        .house_color_map
+        .get(name)
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
+    let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
+    if bright {
+        interpolate_rgb8(rgb, [255; 3], 100)
+    } else {
+        interpolate_rgb8(rgb, [0; 3], 80)
+    }
+}
+
 /// `Planning__CoordsToSurfacePoint @ 0x006339E0`: `CoordsToClient2`, then
 /// the tactical view's surface offset.
-fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
+pub(super) fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     [
         x as i32 - view.camera[0] + view.clip[0],
@@ -350,18 +300,13 @@ fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
     ]
 }
 
-fn tint(rgb: [u8; 3]) -> [f32; 3] {
-    let rgba = ACTIVE_RETAIL_RGB565_PRESENTATION.quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
-    [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.)
-}
-
-fn emit_rect(out: &mut Vec<SpriteInstance>, rect: [i32; 4], rgb: [u8; 3], view: TacticalViewport) {
+fn emit_rect(out: &mut Vec<SurfaceStroke>, rect: [i32; 4], rgb: [u8; 3], view: TacticalViewport) {
     let rect = crate::util::rect::clip_rect(rect, view.clip);
-    push_surface_rect(out, rect, tint(rgb), view);
+    push_rect(out, rect, RGB565.pack_rgb8(rgb), view);
 }
 
-fn emit_marker(
-    out: &mut Vec<SpriteInstance>,
+pub(super) fn emit_marker(
+    out: &mut Vec<SurfaceStroke>,
     at: [i32; 2],
     size: i32,
     rgb: [u8; 3],
@@ -378,7 +323,7 @@ fn emit_marker(
 }
 
 fn emit_outline(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     [x, y, w, h]: [i32; 4],
     rgb: [u8; 3],
     view: TacticalViewport,
@@ -389,8 +334,8 @@ fn emit_outline(
     emit_rect(out, [x + w - 1, y, 1, h], rgb, view);
 }
 
-fn emit_marker_outer(
-    out: &mut Vec<SpriteInstance>,
+pub(super) fn emit_marker_outer(
+    out: &mut Vec<SurfaceStroke>,
     at: [i32; 2],
     size: i32,
     rgb: [u8; 3],
@@ -406,7 +351,7 @@ fn emit_marker_outer(
 }
 
 fn emit_badge_outer(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     kind: Option<PlanningBadgeKind>,
     [from, to]: [[i32; 2]; 2],
     rgb: [u8; 3],
@@ -422,7 +367,7 @@ fn emit_badge_outer(
 }
 
 fn emit_badge(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     state: &AppState,
     kind: Option<PlanningBadgeKind>,
     [from, to]: [[i32; 2]; 2],
@@ -479,8 +424,8 @@ fn emit_badge(
     }
 }
 
-fn emit_segment(
-    out: &mut Vec<SpriteInstance>,
+pub(super) fn emit_segment(
+    out: &mut Vec<SurfaceStroke>,
     from: [i32; 2],
     to: [i32; 2],
     rgb: [u8; 3],
@@ -492,22 +437,28 @@ fn emit_segment(
     //has already drawn their selected-white/unselected-black outer pass.
     //The strict minor-axis comparison gives45-degree ties the X offset.
     let minor = usize::from((to[1] - from[1]).abs() < (to[0] - from[0]).abs());
-    let tint = tint(rgb);
+    let word = RGB565.pack_rgb8(rgb);
     for offset in 0..strokes {
         let mut start = from;
         let mut end = to;
         start[minor] += offset;
         end[minor] += offset;
         if clip_line(&mut start, &mut end, view.clip) {
-            patterned_line(start, end, &PATTERN, phase, |point| {
-                push_surface_rect(out, [point[0], point[1], 1, 1], tint, view)
-            });
+            out.push(SurfaceStroke::patterned(
+                start,
+                end,
+                &PATTERN,
+                phase,
+                word,
+                StoreGate::All,
+                view.camera,
+            ));
         }
     }
 }
 
-fn emit_solid_segment(
-    out: &mut Vec<SpriteInstance>,
+pub(super) fn emit_solid_segment(
+    out: &mut Vec<SurfaceStroke>,
     from: [i32; 2],
     to: [i32; 2],
     rgb: [u8; 3],
@@ -517,19 +468,19 @@ fn emit_solid_segment(
     //63D910 centers width rows with offsets1-ceil(width/2)..floor(width/2).
     //63D810 uses strict abs(dx)>abs(dy), including X-offset diagonal ties.
     let minor = usize::from((to[1] - from[1]).abs() < (to[0] - from[0]).abs());
-    let tint = tint(rgb);
+    let word = RGB565.pack_rgb8(rgb);
     for offset in width / 2 - width + 1..=width / 2 {
         let mut start = from;
         let mut end = to;
         start[minor] += offset;
         end[minor] += offset;
         if clip_line(&mut start, &mut end, view.clip) {
-            solid_line(start, end, |rect| push_surface_rect(out, rect, tint, view));
+            out.push(SurfaceStroke::solid(start, end, word, view.camera));
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::*;
 
@@ -544,7 +495,6 @@ mod tests {
         let view = TacticalViewport {
             camera: [0; 2],
             clip: [0, 0, 160, 120],
-            zoom: 1.,
         };
         for row in corpus["render"]["stroke_controls"].as_array().unwrap() {
             let from = point(&row["start"]);
@@ -562,10 +512,10 @@ mod tests {
                 ((word & 31) as u8) << 3,
             ];
             let ms = row["ms"].as_i64().unwrap() as i32;
-            let mut instances = Vec::new();
-            emit_solid_segment(&mut instances, from, to, outer, width, view);
+            let mut strokes = Vec::new();
+            emit_solid_segment(&mut strokes, from, to, outer, width, view);
             emit_segment(
-                &mut instances,
+                &mut strokes,
                 from,
                 to,
                 inner,
@@ -573,19 +523,17 @@ mod tests {
                 width - 2,
                 view,
             );
-            emit_outline(&mut instances, [to[0] - 3, to[1] - 3, 6, 6], outer, view);
-            emit_marker(&mut instances, to, 4, inner, view);
+            emit_outline(&mut strokes, [to[0] - 3, to[1] - 3, 6, 6], outer, view);
+            emit_marker(&mut strokes, to, 4, inner, view);
             let mut actual = vec![0x39E7u16; 160 * 120];
-            for instance in instances {
-                let x = instance.position[0] as i32;
-                let y = instance.position[1] as i32;
-                let rgb = instance.tint.map(|v| (v * 255.).round() as u8);
-                let word = RGB565.pack_rgb8([rgb[0], rgb[1], rgb[2]]);
-                for dy in 0..instance.size[1] as i32 {
-                    for dx in 0..instance.size[0] as i32 {
-                        actual[((y + dy) * 160 + x + dx) as usize] = word;
+            for stroke in strokes {
+                stroke.for_each_rect(|[x, y, width, height]| {
+                    for y in y..y + height {
+                        for x in x..x + width {
+                            actual[(y * 160 + x) as usize] = stroke.word();
+                        }
                     }
-                }
+                });
             }
             let mut expected = vec![0x39E7u16; actual.len()];
             for pixel in row["pixels"].as_array().unwrap() {

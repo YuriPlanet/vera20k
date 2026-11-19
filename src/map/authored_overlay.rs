@@ -1119,7 +1119,7 @@ impl LiveOverlayCells {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{SharedCellDummy, zone_class};

@@ -1,4 +1,5 @@
-// Read-write Terrain edits (DrawIt 0071C304/0071C34E -> 004990E0/00497390)
+// Terrain edits (DrawIt 0071C304/0071C34E -> 004990E0/00497390) and read-only
+// Bullet edits (DrawIt 00468090 -> 00494B60/00497FD0, 00492D20/00496820)
 // against the live Depth32Float test instead of a snapshot of old Z. VERA
 // scheduling only (terrain_draw.rs `draw_depth_run`).
 //
@@ -12,6 +13,10 @@
 // A body replaces its pixel and restarts the pixel's shadow count; a shadow
 // stores its Z and only counts (its colour write is masked). Shadow496250 then
 // halves the packed word once per counted shadow (terrain_depth_resolve.wgsl).
+// A read-only interval's pipelines mask the Z store, so every piece tests the
+// Z the interval began with, as the original leaves do. An opaque SHP body may
+// sit between these edits (zsprite_shader.wgsl `fs_counted`): it stores like a
+// body here, and later pieces test the Z it stored, as in parent order.
 struct DepthTestedOutput {
     @location(0) color: vec4f,
     @location(1) shadows: vec4f,
@@ -38,3 +43,24 @@ fn fs_depth_shadow(input: VertexOutput) -> DepthTestedOutput { return depth_test
 fn fs_depth_body_wrapped(input: VertexOutput) -> DepthTestedOutput { return depth_tested(input, false, true); }
 @fragment
 fn fs_depth_shadow_wrapped(input: VertexOutput) -> DepthTestedOutput { return depth_tested(input, true, true); }
+
+// A read-only body stores its packed word. A native palette body's colour is
+// already one (`resolve_palette`); only a compatibility body needs packing.
+fn packed_body(input: VertexOutput, body: DepthTestedOutput) -> DepthTestedOutput {
+    var output = body;
+    if input.palette_light.x >> 24u == 0u {
+        output.color = vec4f(retail_linear(body_word(output.color.rgb)), 1.0);
+    }
+    return output;
+}
+// The entry points call `depth_tested` themselves. One more call level around
+// its discard and `own_pixel`'s makes optimizing FXC stop with an internal
+// error, so the DirectX 12 pipeline never builds.
+@fragment
+fn fs_depth_read_only_body(input: VertexOutput) -> DepthTestedOutput {
+    return packed_body(input, depth_tested(input, false, false));
+}
+@fragment
+fn fs_depth_read_only_body_wrapped(input: VertexOutput) -> DepthTestedOutput {
+    return packed_body(input, depth_tested(input, false, true));
+}

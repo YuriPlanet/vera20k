@@ -263,7 +263,8 @@ fn walk_tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGri
             width,
             height,
             Some((i32::from(width), i32::from(height))),
-        ),
+        )
+        .into(),
     );
     crate::sim::arena_fixture::supply_native_map(sim);
     sim.install_fixture_path_grid(Some(grid));
@@ -1467,9 +1468,9 @@ fn foot_set_location_always_writes_but_moves_riders_only_on_a_change() {
     transport.position.set_exact_z_leptons_for_test(Some(0));
     let mut cargo = PassengerCargo::new(5, 2.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
-    transport.passenger_role = PassengerRole::transport(cargo);
+    transport.set_passenger_role_for_test(PassengerRole::transport(cargo));
     let mut rider = GameEntity::test_default(2, "E1", "Americans", 3, 0);
-    rider.passenger_role = PassengerRole::inside_for_test(1, true);
+    rider.set_passenger_role_for_test(PassengerRole::inside_for_test(1, true));
     entities.insert(transport);
     entities.insert(rider);
     let interner = crate::sim::intern::test_interner();

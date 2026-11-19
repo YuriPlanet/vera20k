@@ -4,6 +4,13 @@ use crate::rules::terrain_rules::LandType;
 
 #[test]
 fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
+    for ares in [false, true] {
+        let _scope = crate::rules::ares_switch::read_ares_way(ares);
+        check_surface_conversion(ares);
+    }
+}
+
+fn check_surface_conversion(ares: bool) {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=LAND\n1=WATER\n\
          [LAND]\nStrength=100\nSpeed=5\nSpeedType=Hover\nMovementZone=Amphibious\n\
@@ -14,6 +21,7 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
          Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n",
     );
     let rules = RuleSet::from_ini(&ini).unwrap();
+    assert_eq!(rules.ares(), ares);
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 29);
     let id = sim
         .spawn_object("LAND", "Americans", 10, 10, 0, &rules)
@@ -34,6 +42,7 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
         .unwrap()
         .land_type = LandType::Water.as_index();
     sim.take_lifecycle_outputs_for_test();
+    sim.take_looks();
     // The new descriptor reaches attached effects in the same AI head.
     for frame in 100..103 {
         sim.session.set_binary_frame_for_test(frame);
@@ -42,28 +51,22 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
     let actor = sim.entities().get(id).unwrap();
     assert_eq!(
         sim.interner.resolve(actor.type_ref()),
-        if cfg!(feature = "ares") {
-            "WATER"
-        } else {
-            "LAND"
-        }
+        if rules.ares() { "WATER" } else { "LAND" }
     );
-    assert_eq!(
-        actor.health.current(),
-        if cfg!(feature = "ares") { 200 } else { 100 }
-    );
+    assert_eq!(actor.health.current(), if rules.ares() { 200 } else { 100 });
     assert_eq!(actor.owner(), owner);
     assert_eq!(sim.entities().len(), 1);
     assert!(!actor.locomotor.as_ref().unwrap().is_powered());
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
         assert_eq!(
-            actor.crate_multipliers.firepower(),
+            actor.firepower_multiplier(),
             crate::util::native_x87::NativeF64Bits::from_bits(3.0_f64.to_bits())
         );
-        assert_eq!(sim.take_lifecycle_outputs_for_test().into_iter().filter(|event|
-            matches!(event, crate::sim::world::LifecycleOutput::ObjectTypeChanged { stable_id } if *stable_id == id)
-        ).count(), 1);
+        // The atlas check learns of the new model.
+        assert_eq!(
+            sim.take_looks().entities,
+            crate::sim::Touched::Ids(vec![id])
+        );
         // A self pointer must not call ConvertTechno again and overwrite
         // the existing damage reservation with actual health.
         sim.substrate
@@ -98,11 +101,7 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
         let actor = sim.entities().get(id).unwrap();
         assert_eq!(
             sim.interner.resolve(actor.type_ref()),
-            if cfg!(feature = "ares") {
-                expected
-            } else {
-                "LAND"
-            }
+            if rules.ares() { expected } else { "LAND" }
         );
         assert_eq!(actor.owner(), owner);
         assert!(!actor.locomotor.as_ref().unwrap().is_powered());

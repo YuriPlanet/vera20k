@@ -224,7 +224,7 @@ fn cross_repaired_road(scene: &mut HeadlessScenario) {
             55,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary FV on the north road");
     let command = CommandEnvelope::new(
@@ -276,7 +276,7 @@ fn cross_repaired_road(scene: &mut HeadlessScenario) {
 #[test]
 #[ignore = "physical Shrapnel naval head meeting ordinary Engineer repair"]
 fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
-    use crate::sim::world::{LifecycleOutput, LifecycleTestEvent, TickLane};
+    use crate::sim::world::{LifecycleTestEvent, TickLane};
 
     let head_native: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/naval_head_producer.json",
@@ -356,7 +356,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
             59,
             64,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary AEGIS placement in the untouched water lane");
     let ship_type = runtime.simulation.entities().get(ship).unwrap().type_ref();
@@ -644,11 +644,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
             );
             assert!(lifetime.contains(&LifecycleTestEvent::ConcealLimboSet));
             assert_eq!(terminal["limbo"], 1);
-            assert!(
-                output
-                    .lifecycle_outputs
-                    .contains(&LifecycleOutput::DisplayRemove { stable_id: ship })
-            );
+            assert!(lifetime.contains(&LifecycleTestEvent::ConcealDisplayBoundary));
             // Native cleanup stops after UnInit; the same ordinary Rust frame
             // additionally runs its production pending-delete drain.
             assert!(lifetime.contains(&LifecycleTestEvent::FinalizedCommon { stable_id: ship }));

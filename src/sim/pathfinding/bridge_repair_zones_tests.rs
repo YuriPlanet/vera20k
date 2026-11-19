@@ -320,3 +320,52 @@ fn recalc_publication_updates_only_touched_class_and_unsigned_height() {
     assert_eq!(base.raw_zone_ids_by_row, before_base.raw_zone_ids_by_row);
     assert_eq!(format!("{:?}", zones.hierarchy), before_hierarchy);
 }
+
+/// A wall's FullRebuild projects every movement row again. The bridge
+/// redirect reads only the terrain and the records, so the rows that use
+/// bridges share one table instead of each building its own: building ten
+/// copies made each AI wall segment stall the frame on large maps.
+#[test]
+fn connectivity_rebuild_shares_one_bridge_redirect_across_rows() {
+    let mut terrain =
+        crate::sim::pathfinding::zone_map_tests::terrain_from_zone_classes(6, 1, &[0; 6], &[0; 6]);
+    for rx in 1..=3 {
+        terrain
+            .cell_mut_for_test(rx, 0)
+            .unwrap()
+            .bridge_facts
+            .raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+    }
+    let path = PathGrid::from_resolved_terrain(&terrain);
+    let records = [BridgeEndpointRecord {
+        endpoint_a: (0, 0),
+        endpoint_b: (4, 0),
+        active: true,
+        bridge_kind: BridgeRecordKind::High,
+    }];
+    let mut zones =
+        ZoneGrid::build_with_native_bridge_geometry(&path, &terrain, &records, 6, 1, None);
+    zones.rebuild_base_connectivity_preserving_hierarchy(&path, &terrain, &records);
+
+    let mut shared: Option<&crate::sim::pathfinding::zone_map::BridgeRedirect> = None;
+    for (movement, map) in &zones.maps {
+        if !movement.can_use_bridges() {
+            assert!(
+                map.bridge_redirect.is_none(),
+                "{movement:?} has no bridge layer"
+            );
+            continue;
+        }
+        let redirect = map
+            .bridge_redirect
+            .as_ref()
+            .expect("a structural cell builds a table");
+        assert_eq!(redirect[2], Some((0, 0)));
+        let first = shared.get_or_insert(redirect);
+        assert!(
+            std::sync::Arc::ptr_eq(first, redirect),
+            "{movement:?} built its own table"
+        );
+    }
+    assert!(shared.is_some());
+}

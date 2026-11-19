@@ -226,8 +226,8 @@ fn scene(input: &Value) -> Scene {
         if input["gunner"] == true {
             unit.set_gunner_selection_for_test(0, -1);
         }
-        if unit.passenger_role.cargo().is_none() {
-            unit.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
+        if unit.passenger_role().cargo().is_none() {
+            unit.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(5, 0.0)));
         }
     }
     let attacker = sim
@@ -256,13 +256,19 @@ fn scene(input: &Value) -> Scene {
             sim.techno_limbo_with_rules(id, &rules, None),
             crate::sim::world::ConcealOutcome::Concealed
         );
-        sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-            PassengerRole::boarded_for_test(transport, input["open_topped"] == true);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::boarded_for_test(
+                transport,
+                input["open_topped"] == true,
+            ));
         sim.substrate
             .entities
             .get_mut(transport)
             .unwrap()
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .board_forced_chain(&[(id, 1.0)]);
@@ -280,6 +286,7 @@ fn scene(input: &Value) -> Scene {
                 sim.substrate.entities.get_mut(id).unwrap(),
                 Some(TargetKind::Entity(attacker)),
                 stored,
+                rules.ares_form(),
             );
         }
     }
@@ -406,7 +413,7 @@ fn compare(row: &Value) {
         .entities
         .get(transport)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .cargo()
         .unwrap()
         .passengers()
@@ -472,9 +479,9 @@ fn compare(row: &Value) {
         );
         // Transporter (`+0x11C`) is cleared after a successful Unlimbo
         // (`0x007380FA`); the carrier relation ends with it.
-        let aboard = entity.passenger_role.inside_transport_id() == Some(transport);
+        let aboard = entity.passenger_role().inside_transport_id() == Some(transport);
         assert_eq!(
-            entity.passenger_role.transporter() == Some(transport),
+            entity.passenger_role().transporter() == Some(transport),
             expected["transporter"] == "transport",
             "{context}: transporter"
         );

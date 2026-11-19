@@ -36,7 +36,7 @@ fn world(terrain: ResolvedTerrainGrid) -> Simulation {
     let mut sim = Simulation::new();
     sim.playfield_bounds = Some(bounds());
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim
 }
 

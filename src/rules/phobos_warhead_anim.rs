@@ -88,6 +88,7 @@ impl Default for PhobosWarheadAnimRules {
 
 impl PhobosWarheadAnimRules {
     pub fn from_section(section: &IniSection) -> Self {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         let mut value = Self::default();
         // Names resolve when the list is used, not at the read: an unknown
         // name stays in the list, where Phobos `parse_values` drops it.
@@ -202,6 +203,7 @@ impl Default for PhobosWarheadAnimGlobals {
 
 impl PhobosWarheadAnimGlobals {
     pub fn from_ini(ini: &IniFile) -> Self {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         let mut value = Self::default();
         if let Some(section) = ini.section("General") {
             value.create_anims_on_zero_damage =
@@ -217,7 +219,7 @@ impl PhobosWarheadAnimGlobals {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

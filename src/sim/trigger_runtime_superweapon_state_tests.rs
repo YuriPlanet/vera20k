@@ -152,7 +152,7 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
             Some(&map.ini),
         );
         sim.session.install_waypoints(&map.waypoints);
-        sim.install_team_ai_registry(&teams, &rules).unwrap();
+        sim.install_team_ai_registry(&teams, &rules);
         sim.initialize_trigger_definitions(&map, &teams, None, None, None);
         let owner = sim.interner.get("YuriCountry").unwrap();
         let enemy = sim.interner.get("Americans").unwrap();
@@ -199,7 +199,12 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
             match stage {
                 "grant" => superweapon::grant_provided_supers(&mut sim, &rules, owner),
                 "before_elapsed_ai" | "elapsed_ai" => {
-                    superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner)
+                    superweapon::tick_house_superweapon_instances(
+                        &mut sim,
+                        &rules,
+                        owner,
+                        Default::default(),
+                    )
                 }
                 "npc_ai_fire" => {
                     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));

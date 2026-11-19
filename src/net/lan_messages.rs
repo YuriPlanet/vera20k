@@ -53,7 +53,6 @@ pub enum LanMessageKind {
     Departure,
     Go,
     ReadyToGo,
-    Roster,
     Options,
     PlayerChoices,
     StartPrompt,
@@ -61,6 +60,28 @@ pub enum LanMessageKind {
 }
 
 impl LanMessageKind {
+    const KNOWN: [Self; 19] = [
+        Self::Discovery,
+        Self::Advertisement,
+        Self::GameQuery,
+        Self::ParticipantDetails,
+        Self::Presence,
+        Self::Keepalive,
+        Self::JoinRequest,
+        Self::JoinAccepted,
+        Self::JoinDenied,
+        Self::JoinConfirm,
+        Self::JoinConfirmed,
+        Self::CancelJoin,
+        Self::JoinCanceled,
+        Self::Departure,
+        Self::Go,
+        Self::ReadyToGo,
+        Self::Options,
+        Self::PlayerChoices,
+        Self::StartPrompt,
+    ];
+
     pub const fn raw(self) -> u32 {
         match self {
             Self::Discovery => 0,
@@ -79,7 +100,6 @@ impl LanMessageKind {
             Self::Departure => 10,
             Self::Go => 0x0b,
             Self::ReadyToGo => 0x13,
-            Self::Roster => 0x16,
             Self::Options => 0x17,
             Self::PlayerChoices => 0x18,
             Self::StartPrompt => 0x28,
@@ -254,29 +274,11 @@ impl LanMessage {
     }
 
     pub fn kind(&self) -> LanMessageKind {
-        match self.u32(0) {
-            0 => LanMessageKind::Discovery,
-            1 => LanMessageKind::Advertisement,
-            2 => LanMessageKind::GameQuery,
-            3 => LanMessageKind::ParticipantDetails,
-            4 => LanMessageKind::Presence,
-            5 => LanMessageKind::Keepalive,
-            6 => LanMessageKind::JoinRequest,
-            7 => LanMessageKind::JoinAccepted,
-            8 => LanMessageKind::JoinDenied,
-            0x564a_0001 => LanMessageKind::JoinConfirm,
-            0x564a_0002 => LanMessageKind::JoinConfirmed,
-            0x564a_0003 => LanMessageKind::CancelJoin,
-            0x564a_0004 => LanMessageKind::JoinCanceled,
-            10 => LanMessageKind::Departure,
-            0x0b => LanMessageKind::Go,
-            0x13 => LanMessageKind::ReadyToGo,
-            0x16 => LanMessageKind::Roster,
-            0x17 => LanMessageKind::Options,
-            0x18 => LanMessageKind::PlayerChoices,
-            0x28 => LanMessageKind::StartPrompt,
-            raw => LanMessageKind::Unknown(raw),
-        }
+        let raw = self.u32(0);
+        LanMessageKind::KNOWN
+            .into_iter()
+            .find(|kind| kind.raw() == raw)
+            .unwrap_or(LanMessageKind::Unknown(raw))
     }
 
     pub fn name_bytes(&self) -> &[u8] {
@@ -285,10 +287,6 @@ impl LanMessage {
 
     pub fn name(&self) -> String {
         widen_bytes(self.name_bytes())
-    }
-
-    pub fn serial_bytes(&self) -> &[u8] {
-        c_string(&self.bytes[SERIAL_OFFSET..SERIAL_OFFSET + SERIAL_LEN])
     }
 
     pub fn advertisement_flags(&self) -> Option<u32> {
@@ -501,8 +499,7 @@ impl LanMessage {
 
     fn with_name(kind: LanMessageKind, name: &str) -> Result<Self, LanMessageError> {
         let mut message = Self::zeroed(kind);
-        let narrow = narrow_utf16_c_string(name.encode_utf16());
-        message.put_text(NAME_OFFSET, NAME_LEN, &narrow, "name")?;
+        message.put_text(NAME_OFFSET, NAME_LEN, &narrow_wire_name(name), "name")?;
         Ok(message)
     }
 
@@ -553,6 +550,23 @@ impl LanMessage {
     }
 }
 
+/// The bytes the name field carries for `name`: narrowed like every native
+/// producer, then cut to the field's 19 bytes. VERA-only cut: an online name
+/// may be 24 characters where a LAN name is already at most 19, and a name the
+/// field cannot hold must not fail the message (a loading report that fails
+/// ends that player's load).
+fn narrow_wire_name(name: &str) -> Vec<u8> {
+    let mut narrow = narrow_utf16_c_string(name.encode_utf16());
+    narrow.truncate(NAME_LEN - 1);
+    narrow
+}
+
+/// Whether a received message's name is the one `name` is sent as: receivers
+/// compare the same cut prefix [`narrow_wire_name`] writes, ASCII case folded.
+pub fn wire_name_matches(name: &str, received: &[u8]) -> bool {
+    narrow_wire_name(name).eq_ignore_ascii_case(received)
+}
+
 fn c_string(bytes: &[u8]) -> &[u8] {
     &bytes[..bytes
         .iter()
@@ -560,7 +574,7 @@ fn c_string(bytes: &[u8]) -> &[u8] {
         .unwrap_or(bytes.len())]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "lan_messages_tests.rs"]
 mod tests;
 

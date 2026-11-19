@@ -1020,7 +1020,7 @@ impl AttachEffectGlobals {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_a_n, feature = "phobos"))]
 mod tests {
     use super::*;
 

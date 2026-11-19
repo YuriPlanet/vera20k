@@ -22,9 +22,11 @@ jobs:
   test:
     name: test (${{ inputs.os }})
     runs-on: ${{ inputs.os }}
-    # About twice the slowest normal run (a cold-cache Windows build takes
-    # ~21 min), so a hung test fails fast without false timeouts.
-    timeout-minutes: 45
+    # About twice the slowest normal run, so a hung test still fails without
+    # false timeouts: on macos-15 (Apple Silicon) the test build alone takes
+    # 24-28 min with a warm cache, 37 min without, and up to 43 min on a slow
+    # runner.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master

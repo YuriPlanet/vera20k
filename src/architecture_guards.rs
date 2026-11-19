@@ -72,14 +72,10 @@ fn production_dependency_edges_match_frozen_ledger_inventory() {
     );
 }
 
-/// F09: `Simulation::advance_master_frame` and `advance_app_frame` accept
-/// swappable rules/map/path resources, so their production call sites are
-/// pinned — the master frame is reached only inside
-/// `sim/world/master_frame.rs`, the app frame only there and in
-/// `SimRuntime::advance_frame`. Every other
-/// caller must be `#[cfg(test)]` (the `advance_tick` fixture adapter and the
-/// replay `run_fixture*` runners are compile-time gated already); production
-/// and tooling advance exclusively through the bound-resource runtime.
+/// Production and tooling advance through `SimRuntime`, which supplies the
+/// match rules to the app frame. The rules supply its overlay types. Only
+/// fixture adapters drive a frame with explicitly substituted inputs. Pin the
+/// production call sites so new callers go through the bound runtime.
 #[test]
 fn master_frame_adapters_have_pinned_production_callers() {
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -127,6 +123,8 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 ("app/persistence/profile_file.rs", 1),
                 // `ini-get --reader raw` and the presence report.
                 ("asset_tools/verb_ini.rs", 1),
+                // A random map's `.yrm` export copies its sections as stored.
+                ("map/map_export.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
                 ("rules/native_processing.rs", 1),
             ],
@@ -135,7 +133,6 @@ fn raw_ini_walks_have_pinned_production_callers() {
             "registry_ids",
             &[
                 ("rules/ini_parser.rs", 1), // the definition
-                ("rules/overlay_types.rs", 1),
                 // Includes parse_registry copying already resolved stored IDs.
                 ("rules/ruleset.rs", 3),
                 ("rules/smudge_type.rs", 1),
@@ -292,6 +289,7 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/source/cache.rs",
                 "net/live_commands/sequenced.rs",
                 "net/udp.rs",
+                "net/web_socket.rs",
                 "util/logging.rs",
                 "util/logging_telemetry.rs",
                 // The browser file system's modification times.
@@ -313,6 +311,10 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // Switches that only remove debug assertions.
                 "util/debug_checks.rs",
                 "sim/world/master_frame.rs",
+                // The idle-sleep switch for fault reports: sleeping leaves
+                // results unchanged, and the hash and saves read a sleeper as
+                // settled.
+                "sim/world/idle_sleep.rs",
                 // Retail probes that movement_bridge_retail_tests.rs includes
                 // by `#[path]`, which the test-gate scan cannot see.
                 "sim/movement/bridge_restamp_retail_probe.rs",
@@ -399,6 +401,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/crit.rs", 1),
                 ("sim/combat/world_fire.rs", 1),
                 ("sim/combat/world_receiver.rs", 1),
+                // Campaign Money crates pay PlayerPtr (0x004824B0): mode 0 only.
+                ("sim/crates/pickup.rs", 1),
                 ("sim/flashing.rs", 1),
                 ("sim/house_diplomacy.rs", 1),
                 ("sim/miner/ore_scan.rs", 1),
@@ -409,7 +413,14 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/scenario_bootstrap.rs", 5),
                 ("sim/scenario_session.rs", 5),
                 ("sim/snapshot.rs", 2),
+                // Ares IsTimerVisible (10032E80): whether the local player
+                // sees a Super's timer line; only the timer drawing asks.
+                ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/lightning_storm.rs", 1),
+                // building_super_charges: whose providers draw the countdown
+                // labels, and which lines an enemy's building may show; only
+                // the label capture (HudFacts) asks, which feeds drawing.
+                ("sim/superweapon/mod.rs", 1),
                 ("sim/superweapon/psychic_reveal.rs", 1),
                 ("sim/team_script_vm/actions.rs", 1),
                 ("sim/team_script_vm/reinforcements.rs", 2),
@@ -421,7 +432,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/gap_generator.rs", 1),
                 ("sim/world/house_defeat.rs", 9),
                 ("sim/world/jumpjet_cruise.rs", 1),
-                ("sim/world/lifecycle.rs", 6),
+                ("sim/world/lifecycle.rs", 7),
                 ("sim/world/mod.rs", 7),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
@@ -451,8 +462,12 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
                 ("sim/superweapon/chaining.rs", 1),
+                // IsTimerVisible's observer case, as for `current_house`.
+                ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/world/house_defeat.rs", 2),
+                // The third is `network_ai_alone`: it asks of every House,
+                // and each peer holds the same observer list from the room.
+                ("sim/world/house_defeat.rs", 3),
             ],
         ),
         (
@@ -466,6 +481,10 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "house_is_human_player",
             &[
+                // What_Action's Tote rung (0x00417CC0): the clicked action.
+                ("sim/aircraft/carryall.rs", 1),
+                // What_Action's Detonate rung (0x006FFF8D): the clicked action.
+                ("sim/bomb.rs", 1),
                 ("sim/building_art.rs", 2),
                 ("sim/building_entry.rs", 1),
                 ("sim/building_power.rs", 2),
@@ -474,10 +493,15 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/parasite.rs", 2),
                 ("sim/combat/techno_death.rs", 1),
                 ("sim/combat/world_receiver.rs", 2),
+                // Campaign Money crates (0x004824A7): mode 0 only, where it
+                // reads the House's own control flags.
+                ("sim/crates/pickup.rs", 1),
                 ("sim/docking/hospital.rs", 1),
                 ("sim/flashing.rs", 1),
                 ("sim/infantry.rs", 1),
                 ("sim/movement/per_cell.rs", 1),
+                // Process's deselect over the player's shroud (0x007290F6).
+                ("sim/movement/tunnel_process.rs", 1),
                 ("sim/passenger.rs", 1),
                 ("sim/production/can_build.rs", 1),
                 ("sim/production/production_repair.rs", 1),
@@ -495,6 +519,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/world_commands.rs", 2),
                 // The Phobos Grinding cursor gate (Hooks.Grinding.cpp:68-89)
                 // reads the actor's player to answer the click action.
+                // The clicked actions, with Ares' infantry heal arm (0x0051E710).
                 ("sim/world/world_orders.rs", 13),
             ],
         ),
@@ -506,7 +531,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/world/camera_home.rs", 1),
-                ("sim/world/lifecycle.rs", 8),
+                ("sim/world/lifecycle.rs", 9),
                 ("sim/world/object_entry.rs", 1),
             ],
         ),
@@ -519,7 +544,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/power_system.rs", 2),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/trigger_runtime.rs", 1),
-                ("sim/world/lifecycle.rs", 11),
+                ("sim/world/lifecycle.rs", 12),
                 ("sim/world/mod.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
                 ("sim/world/world_commands.rs", 1),
@@ -1233,8 +1258,7 @@ fn sim_names_no_upper_layer_root_even_in_tests() {
         offenders.is_empty(),
         "sim/ references upper-layer root(s): {offenders:?}\n\
          Sim tests that need render/net live in those layers' boundary test \
-         modules (e.g. render::locomotor_visual tests, \
-         net::lockstep_sim_convergence_tests), never inside sim/."
+         modules (e.g. render::locomotor_visual tests), never inside sim/."
     );
 }
 
@@ -1369,7 +1393,7 @@ const ROOTS: &[(&str, &str)] = &[
 /// owner: a struct whose fields are all private, so other modules change its
 /// state only through its operations. A raw container, primitive, enum or
 /// open struct in a root slot would let any module write that state directly.
-/// `Option`, `Box`, `Arc` and `Rc` wrappers are looked through.
+/// `Option`, `Box`, `Arc`, `Rc` and `Sparse` wrappers are looked through.
 #[test]
 fn composition_root_slots_are_owner_types() {
     // Root slots that are not owner structs, each with its reason.
@@ -1414,6 +1438,9 @@ fn composition_root_slots_are_owner_types() {
             "firing_anim_update_count",
             "the transient `FiringAnimUpdateCount` register: `sim/anim_class.rs` counts each \
              muzzle anim it marks, and the firing-anim pass consumes it",
+            "building",
+            "a Building's own fields stored apart from the record every turn reads; each \
+             keeps its visibility and owning module, so the slot opens nothing that was closed",
         ),
     ];
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -1492,6 +1519,7 @@ fn slot_type_scan_reads_wrappers_tuples_and_visibility() {
         .map(|(name, fields)| (name, vec![fields]))
         .collect();
     assert!(owner_type_verdict(&structs, "Option<C>").is_ok());
+    assert!(owner_type_verdict(&structs, "Sparse<crate::x::C>").is_ok());
     assert!(owner_type_verdict(&structs, "crate::x::B").is_err());
     assert!(owner_type_verdict(&structs, "BTreeMap<u8, C>").is_err());
     assert!(owner_type_verdict(&structs, "SomeEnum").is_err());
@@ -1533,13 +1561,13 @@ fn owner_type_verdict(
     }
 }
 
-/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc` and paths.
+/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc`/`Sparse` and paths.
 fn slot_base_type(ty: &str) -> &str {
     let mut ty = ty.trim();
     loop {
         let (path, generics) = ty.find('<').map_or((ty, ""), |at| ty.split_at(at));
         let last = path.rsplit("::").next().unwrap_or(path).trim();
-        if ["Option", "Box", "Arc", "Rc"].contains(&last)
+        if ["Option", "Box", "Arc", "Rc", "Sparse"].contains(&last)
             && generics.starts_with('<')
             && generics.ends_with('>')
         {
@@ -1765,9 +1793,23 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         "a command's payload bytes under construction, which the simulation decodes";
     const CELL_MAP: &str =
         "a generic cell-keyed container; every CellMap is a private field of its owner";
+    const TERRAIN: &str = "the resolved terrain grid's private cell storage (pub(super)); \
+                             ResolvedTerrainGrid owns every write to its cells";
+    const SHARED: &str = "generic change-tracking containers the presentation copy syncs from \
+                          (docs/sim-thread.md); every Synced, DerivedCache and ChunkedVec is a \
+                          field of its owner";
+    const SPARSE: &str = "a generic out-of-line holder for state most objects leave at its \
+                          default; every Sparse is a field of its owner and holds an owner struct";
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
     const PINNED_HANDOUTS: &[(&str, &str, &str)] = &[
+        ("map/resolved_terrain/terrain_cells.rs", "get_mut", TERRAIN),
+        ("map/resolved_terrain/terrain_cells.rs", "iter_mut", TERRAIN),
+        (
+            "map/resolved_terrain/terrain_cells.rs",
+            "index_mut",
+            TERRAIN,
+        ),
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),
@@ -1791,6 +1833,13 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              entries, and fixtures reach it through art_entry_mut_for_test",
         ),
         ("sim/command.rs", "payload_mut", PAYLOAD),
+        (
+            "sim/game_entity.rs",
+            "deref_mut",
+            "the object record's seldom part is the same record stored apart \
+             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
+             so the deref opens nothing that was closed",
+        ),
         ("sim/cell_map.rs", "get_mut", CELL_MAP),
         ("sim/cell_map.rs", "get_or_insert_with", CELL_MAP),
         ("sim/cell_map.rs", "values_mut", CELL_MAP),
@@ -1856,9 +1905,25 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              invalidates navigation history",
         ),
         (
+            "sim/runtime.rs",
+            "resources_mut",
+            "SimRuntime's bound resources for a write; SimResources is the slot's own type, \
+             shared only with a presentation frame the host drops first (docs/sim-thread.md)",
+        ),
+        (
             "sim/world/frame_channel.rs",
             "emit_and_finish",
             "a producer finishes the fact it just emitted, before the frame tail reads the channel",
+        ),
+        ("util/synced.rs", "deref_mut", SHARED),
+        ("util/synced.rs", "get_mut", SHARED),
+        ("util/synced.rs", "iter_mut", SHARED),
+        ("util/synced.rs", "index_mut", SHARED),
+        ("util/sparse.rs", "deref_mut", SPARSE),
+        (
+            "util/sync.rs",
+            "get_mut",
+            "the threaded browser build's stand-in for OnceLock::get_mut, on a cell held exclusively",
         ),
     ];
     // (file, method, reason): `set`/`set_*` methods whose body stores one
@@ -1876,6 +1941,10 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_stored_location",
             "AnimClass::SetLocation's +0x9C write; Phobos UpdateAsFiringAnim stores the \
              owner-relative muzzle delta through it",
+            "map/resolved_terrain/deformation.rs",
+            "set_terrain_deformation",
+            "VERA's own switch with no native member: whether a grid may deform, set by the \
+             simulation from the scenario's [CombatDamage] TerrainDeformation=",
         ),
         (
             "net/global.rs",
@@ -1906,6 +1975,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "runs only inside RuleSet's load",
         ),
         (
+            "rules/personal_rules.rs",
+            "set_terrain_deformation",
+            "VERA's own switch with no native member: the skirmish Game Options' Terrain \
+             Deformation box, which the app passes in for the rules the next scenario reads",
+        ),
+        (
             "rules/superweapon_type.rs",
             "set_tech_level",
             "runs only inside RuleSet's load: Phobos SW.TechLevel",
@@ -1931,6 +2006,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "TAction 76 stores the signed +0x90 dword unchanged (0x006DF364)",
         ),
         (
+            "sim/aircraft/carryall.rs",
+            "set",
+            "Foot+0x424, written by the pickup (0x00417297), the drop (0x00416C66) and an \
+             ordinary aircraft unload (0x00415548)",
+        ),
+        (
             "sim/ammo.rs",
             "set_dock",
             "the +0x6CC writers and PointerExpired's clear",
@@ -1947,12 +2028,6 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              PointerExpired's NULL store (0x00707A33)",
         ),
         (
-            "sim/cloak_disguise.rs",
-            "set_attached",
-            "Ares RecalculateStats 0x1004613B/0x1004617D commits the cloak aggregate \
-             derived from the canonical attachment vector; permanent crate capability stays separate",
-        ),
-        (
             "sim/combat/base_defense_response.rs",
             "set_team_recruitable",
             "TeamClass::Add_Member stores AreTeamMembersRecruitable into +0x422 (0x006EA500)",
@@ -1967,6 +2042,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set",
             "the native +0x6C stores outside ReceiveDamage listed on Health::set, \
              such as a crash's kill (0x004DEC72) and a parasite's death (0x0062A46A)",
+        ),
+        (
+            "sim/components.rs",
+            "set_attached",
+            "Ares RecalculateStats 0x100460A0 derives Foot+580 from the attachment vector; \
+             GameEntity::set_attached_speed records here whether it differs from the crate baseline",
         ),
         (
             "sim/game_entity.rs",
@@ -2063,6 +2144,16 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "Techno+0x271, cleared by TimerCheck's expiry and state 7",
         ),
         (
+            "sim/movement/tunnel_movement.rs",
+            "set_state",
+            "TunnelLocomotionClass+0x18, written directly by its members in tunnel_process.rs",
+        ),
+        (
+            "sim/movement/tunnel_movement.rs",
+            "set_destination",
+            "TunnelLocomotionClass+0x1C, written directly by its members in tunnel_process.rs",
+        ),
+        (
             "sim/object_fall.rs",
             "set_attached_anim_flag",
             "Object+84: SetOwnerObject 0x00424B50 sets it when an Anim attaches and the last \
@@ -2118,6 +2209,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_credits_counter",
             "MouseClass::Save (0x005BE6D0, store 0x005BE715) captures CreditsClass+4; \
              this snapshot field records the presentation owner's displayed counter",
+        ),
+        (
+            "sim/snapshot/saved_local_view.rs",
+            "set_radar_housing",
+            "RadarClass::Load (0x006568A0) and MouseClass::Load (0x005BDF70, 0x005BE092) \
+             read the radar housing back; this snapshot field records the render owner's housing",
         ),
         (
             "sim/stage.rs",

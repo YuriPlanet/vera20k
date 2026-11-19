@@ -81,7 +81,7 @@ pub(super) fn launch(
                 SPY_PLANE,
                 MissionType::SpyplaneApproach,
                 (rx, ry),
-                None,
+                super::paradrop::Payload::None,
                 frame_effects,
             );
         }
@@ -101,7 +101,6 @@ pub(super) fn launch(
 /// RESIDUALS: an unknown `SpyPlane.Type` (index -1) indexes the type array
 /// out of range natively; VERA sends nothing. An off-map cell targets the
 /// shared dummy cell natively; VERA targets the requested cell.
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -131,7 +130,7 @@ pub(super) fn ares_launch(
             plane,
             spy_plane.mission,
             cell,
-            None,
+            super::paradrop::Payload::None,
             frame_effects,
         ) {
             break;

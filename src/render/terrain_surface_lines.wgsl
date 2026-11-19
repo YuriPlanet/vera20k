@@ -187,7 +187,5 @@ fn fs_main(input: Output) -> @location(0) vec4f {
         touched = true;
     }
     if !touched { discard; }
-    let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
-        f32(RETAIL_SIX[(word >> 5u) & 63u]),f32(RETAIL_FIVE[word & 31u])) / 255.0;
-    return vec4f(srgb_decode(encoded),1);
+    return vec4f(retail_linear(word),1);
 }

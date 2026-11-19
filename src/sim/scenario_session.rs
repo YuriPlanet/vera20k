@@ -30,7 +30,6 @@ const fn initial_map_regrowth_timer() -> CdTimer {
 }
 
 /// `ScenarioClass::Set_Defaults @ 0x00683610` stores true.
-#[cfg(feature = "ares")]
 const fn tiberium_death_to_visceroid_default() -> bool {
     true
 }
@@ -183,10 +182,10 @@ impl NukeFlash {
     /// (`10037330`, hook `0x53A6CF`) runs only a nonnegative duration, so a
     /// `NukeFlash.Duration` below -1 never ends the flash there.
     fn ran_out(&self, frame: i32) -> bool {
-        #[cfg(feature = "ares")]
+        // Ares' test runs in every game: without Ares the duration is only
+        // -1, 15 or 30, where it is stock's `!= -1`; another one comes only
+        // from Ares' impact hook (`start_nuke_flash_for`).
         let running = self.duration >= 0;
-        #[cfg(not(feature = "ares"))]
-        let running = self.duration != -1;
         running && self.start.wrapping_add(self.duration) < frame
     }
 }
@@ -222,7 +221,6 @@ pub struct ScenarioLightingState {
     /// Ares UpdateLightingColor's `Light.Ambient`/`.Red`/`.Green`/`.Blue`
     /// over the selected profile (SWTypeExt of the active superweapon), set
     /// by [`Self::select_ares`]; `None` after a stock [`Self::select`].
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_light: Option<[Option<i32>; 4]>,
 }
@@ -317,7 +315,6 @@ impl ScenarioLightingState {
             nuke_change_rate,
             nuke_flash: NukeFlash::OFF,
             ambient_change_overrides: [None; 2],
-            #[cfg(feature = "ares")]
             ares_light: None,
         }
     }
@@ -468,10 +465,7 @@ impl ScenarioLightingState {
     pub fn select(&mut self, profile: ScenarioLightingProfile) {
         self.selected_profile = profile;
         self.target_ambient = self.profile(profile).ambient_percent;
-        #[cfg(feature = "ares")]
-        {
-            self.ares_light = None;
-        }
+        self.ares_light = None;
     }
 
     /// Ares SWTypeExt::GetLightingColor (hook 53C280, 10037B50) for a special
@@ -480,7 +474,6 @@ impl ScenarioLightingState {
     /// normal ambient, RecalcLighting restores); otherwise the type's set,
     /// nonnegative overrides replace the profile's ambient (x1) and RGB
     /// (x10 in RecalcLighting).
-    #[cfg(feature = "ares")]
     pub(crate) fn select_ares(
         &mut self,
         profile: ScenarioLightingProfile,
@@ -574,9 +567,7 @@ impl ScenarioLightingState {
     /// (`-1, -1, -1`).
     pub fn alternate_rgb(&self) -> Option<[i32; 3]> {
         (self.selected_profile != ScenarioLightingProfile::Normal).then(|| {
-            #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
             let mut rgb = self.profile(self.selected_profile).alternate_rgb();
-            #[cfg(feature = "ares")]
             if let Some([_, red, green, blue]) = self.ares_light {
                 for (slot, value) in rgb.iter_mut().zip([red, green, blue]) {
                     if let Some(value) = value {
@@ -877,6 +868,18 @@ pub struct ScenarioSession {
     /// identity, like `current_house`.
     #[serde(default)]
     local_shared_house_source: Option<i8>,
+    /// VERA watching (docs/Networking.md "Watching"): this process watches
+    /// the match and sends no command records, so no record's sender is its
+    /// own, not even the followed player's. Local identity, like
+    /// `current_house`, outside the shared hash.
+    #[serde(default)]
+    watcher: bool,
+    /// VERA watching: the watcher shows the observer's sidebar, Tab's stop
+    /// after the last player ([`crate::sim::world::Simulation::observe`]),
+    /// while its world keeps the House it last followed. Local identity, like
+    /// the current House, outside the shared hash.
+    #[serde(default)]
+    watcher_observes: bool,
     /// Scenario+11E4 is included in Save689372's complete Scenario block and
     /// retained by Load6894A8/NoInit683560. Fresh Clear_Scene starts at4.
     #[serde(default)]
@@ -932,7 +935,6 @@ pub struct ScenarioSession {
     /// (`BasicSection`): `Set_Defaults @ 0x00683610` stores true and a map
     /// key replaces it. Ares' tiberium death visceroid (`TechnoExt::
     /// SpawnVisceroid @ 100468B0`) is its only reader.
-    #[cfg(feature = "ares")]
     #[serde(default = "tiberium_death_to_visceroid_default")]
     tiberium_death_to_visceroid: bool,
     /// Scenario+34A8. Execute87 stores the literal low byte at6DDBE1;
@@ -1293,6 +1295,11 @@ impl ScenarioSession {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn install_observer_houses_for_test(&mut self, observers: Vec<InternedId>) {
+        self.observer_houses = observers;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_scenario_side_for_test(&mut self, side: i32) {
         self.install_scenario_side(side);
     }
@@ -1466,6 +1473,25 @@ impl ScenarioSession {
     /// This process's sender while players share Houses.
     pub(crate) fn local_shared_house_source(&self) -> Option<i8> {
         self.local_shared_house_source
+    }
+
+    /// VERA watching: this process watches the match and sends nothing.
+    pub fn watcher(&self) -> bool {
+        self.watcher
+    }
+
+    pub(crate) fn install_watcher(&mut self) {
+        self.watcher = true;
+    }
+
+    /// VERA watching: the watcher shows the observer's sidebar.
+    pub fn watcher_observes(&self) -> bool {
+        self.watcher_observes
+    }
+
+    /// The watcher's Tab moves between a player's sidebar and the observer's.
+    pub(crate) fn show_observer_sidebar(&mut self, shown: bool) {
+        self.watcher_observes = shown;
     }
 
     /// Retire the existing admitted timing row at a shared EXIT/REMOVEPLAYER
@@ -1716,6 +1742,9 @@ impl ScenarioSession {
             .expect("the admitted menu row has a complementary computer row");
         // External launch input enters before House/terrain constructors. The
         // existing session remains the sole live owner of per-match options.
+        // RESIDUAL: gamemd's BuildOffAlly (0x00A8B264) is a process global that only
+        // option setup writes (e.g. `0x0052D20D`, the skirmish dialog's `0x006AD803`),
+        // so a campaign inherits the last game's value; VERA keeps this session's.
         if let Some(options) = game_options {
             self.game_options = options.clone();
         } else {
@@ -1841,6 +1870,9 @@ impl ScenarioSession {
         // observer_houses, like current_house, selects process-local presentation
         // and accepted outcome, and skips the observer's terminal score draw
         // (every peer holds the same node data, and the RNG state is hashed).
+        // VERA's network_ai_alone also asks it of every House for the shared
+        // MPlayer_Defeated and Computer_Paranoid decisions; every peer holds
+        // the same list, built from the room's roster.
         // It is saved and reference-validated, not shared CRC input.
         if let Some(campaign) = s.campaign {
             b"scenario-campaign-startup-v1".hash(hasher);
@@ -1908,7 +1940,6 @@ impl ScenarioSession {
         if s.truck_crate {
             b"scenario-truck-crate-v1".hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if !s.tiberium_death_to_visceroid {
             b"scenario-no-tiberium-death-to-visceroid-v1".hash(hasher);
         }
@@ -2001,7 +2032,6 @@ impl ScenarioSession {
             0x1668u16.hash(hasher);
             lighting.ambient_change_overrides.hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if let Some(light) = lighting.ares_light {
             b"ares-sw-light-v1".hash(hasher);
             light.hash(hasher);
@@ -2048,14 +2078,12 @@ impl ScenarioSession {
     }
 
     /// Scenario+0x34B3 (`TiberiumDeathToVisceroid`).
-    #[cfg(feature = "ares")]
     pub(crate) const fn tiberium_death_to_visceroid(&self) -> bool {
         self.tiberium_death_to_visceroid
     }
 
     /// `ScenarioClass::Read_INI_Basic @ 0x00689E90`: the map's
     /// `TiberiumDeathToVisceroid`, else the fresh `Set_Defaults` true.
-    #[cfg(feature = "ares")]
     pub(crate) fn read_map_tiberium_death_to_visceroid(&mut self, map_value: Option<bool>) {
         self.tiberium_death_to_visceroid =
             map_value.unwrap_or(tiberium_death_to_visceroid_default());
@@ -2107,6 +2135,8 @@ impl ScenarioSession {
             network_command_timing: None,
             shared_house_sources: Vec::new(),
             local_shared_house_source: None,
+            watcher: false,
+            watcher_observes: false,
             start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,
             campaign_map_stage: 0,
@@ -2124,7 +2154,6 @@ impl ScenarioSession {
             ignore_global_ai_triggers: desc.ignore_global_ai_triggers,
             train_crate: desc.train_crate,
             truck_crate: desc.truck_crate,
-            #[cfg(feature = "ares")]
             tiberium_death_to_visceroid: tiberium_death_to_visceroid_default(),
             ice_growth: u8::from(desc.ice_growth_enabled.unwrap_or(true)),
             vein_growth: u8::from(desc.vein_growth_enabled.unwrap_or(true)),
@@ -2156,7 +2185,7 @@ impl ScenarioSession {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::sim::world::Simulation;

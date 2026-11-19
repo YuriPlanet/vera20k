@@ -64,7 +64,7 @@ pub fn read_f32_le(data: &[u8], offset: usize) -> f32 {
     ])
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

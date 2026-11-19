@@ -89,6 +89,7 @@ fn load_campaign(
             assets,
             process.native_rules_mut_with_tile_cache().0,
             None,
+            None,
             &mut SilentProgress,
         )
         .unwrap();
@@ -96,8 +97,7 @@ fn load_campaign(
         request,
         initial,
         context,
-        #[cfg(feature = "ares")]
-            rules_prefix: mut prepared_rules_prefix,
+        rules_prefix: mut prepared_rules_prefix,
     } = request.prepare_initial(initial).unwrap();
     let dummy = process.shared_cell_dummy.clone();
     let (rules, cache, audio) = process.native_rules_mut_with_tile_cache();
@@ -112,7 +112,6 @@ fn load_campaign(
         8,
         false,
         rules.unwrap(),
-        #[cfg(feature = "ares")]
         &mut prepared_rules_prefix,
         audio,
         None,
@@ -126,9 +125,9 @@ fn load_campaign(
         simulation: result.scenario.simulation.take().unwrap(),
         resources: crate::sim::runtime::SimResources {
             rules: result.scenario.rules.take().unwrap(),
-            overlay_registry: result.scenario.overlay_registry,
             terrain_template: result.scenario.resolved_terrain.take(),
-        },
+        }
+        .into(),
     }
 }
 
@@ -181,8 +180,8 @@ fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
 
 fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u16) -> bool) {
     let sim = &mut runtime.simulation;
-    let registry = &runtime.resources.overlay_registry;
-    let mut grid = sim.take_overlay_grid_for_load().unwrap();
+    let registry = runtime.resources.rules.overlay_registry();
+    let mut grid = sim.overlay_grid_mut_for_test().take().unwrap();
     let remove: Vec<_> = grid
         .iter_occupied()
         .filter(|(x, y, cell)| {
@@ -201,7 +200,7 @@ fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u1
             (x, y),
         );
     }
-    sim.install_overlay_grid_for_load(grid);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
 }
 
 #[test]

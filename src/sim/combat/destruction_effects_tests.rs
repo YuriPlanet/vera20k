@@ -158,12 +158,16 @@ fn rules() -> RuleSet {
 }
 
 fn rules_from(text: &str) -> RuleSet {
+    rules_with_art(text, ART)
+}
+
+fn rules_with_art(text: &str, art_text: &str) -> RuleSet {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(text),
-        &IniFile::from_str(ART),
+        &IniFile::from_str(art_text),
     )
     .expect("death anim rules");
-    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(ART));
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(art_text));
     for name in ["EXPA", "EXPB", "EXPC", "DESTA"] {
         art.bind_anim_frame_count_for_test(name, 10);
     }
@@ -185,7 +189,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, rx: u16, ry: u16) ->
 }
 
 /// Every anim in creation order: (type, coordinate, delay, flags, zAdjust).
-fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, u16, u32, i32)> {
+fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, i32, u32, i32)> {
     sim.substrate
         .anims
         .iter()
@@ -238,7 +242,7 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
                 0x40,
                 super::super::inviso_scatter::RandomDirectionSnap::Preserve,
             );
-            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let delay = replay.next_range_u32_inclusive(0, 3) as i32;
             let anim = pick(&mut replay, &["EXPA", "EXPB"]);
             let coord = AnimWorldCoord {
                 x,
@@ -670,14 +674,15 @@ fn a_low_dropped_bomb_over_water_fires_no_death_weapon() {
             "death weapon: {case}"
         );
         // The +8F passenger kill (7380AF) is in the stock Unit tail Ares replaces.
-        #[cfg(not(feature = "ares"))]
-        assert!(
-            sim.substrate
-                .entities
-                .get(rider)
-                .is_none_or(|rider| !rider.lifecycle.object_alive()),
-            "passenger: {case}"
-        );
+        if !rules.ares() {
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(rider)
+                    .is_none_or(|rider| !rider.lifecycle.object_alive()),
+                "passenger: {case}"
+            );
+        }
     }
 }
 
@@ -945,7 +950,7 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
         hall,
         [(
             "DESTA".to_string(),
-            crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner))
+            rules.ares().then_some(AnimRemap::House(owner))
         )]
     );
 }
@@ -958,7 +963,6 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
 /// first draw.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_killed_building_draws_its_death_anims_before_its_survivors() {
     let rules = rules();
@@ -982,7 +986,7 @@ fn a_killed_building_draws_its_death_anims_before_its_survivors() {
                 0x40,
                 super::super::inviso_scatter::RandomDirectionSnap::Preserve,
             );
-            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let delay = replay.next_range_u32_inclusive(0, 3) as i32;
             let anim = pick(&mut replay, &["EXPA", "EXPB"]);
             let coord = AnimWorldCoord {
                 x,
@@ -1356,7 +1360,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                     cell_y,
                     0,
                     rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
             })
             .unwrap_or_else(|| {
@@ -1408,7 +1412,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             [&input["max_debris"], &input["min_debris"]].map(|v| v.as_i64().unwrap() as i32)
         );
         assert_eq!(gapowr.foundation.dimensions(), (2, 2));
-        let flagged = |burn: bool, crater: bool, w: u8, h: u8| {
+        let flagged = |burn: bool, crater: bool, w: i32, h: i32| {
             (burn || crater).then_some((burn, crater, w, h))
         };
         assert_eq!(
@@ -1429,8 +1433,8 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                     flagged(
                         field("burn") == 1,
                         field("crater") == 1,
-                        field("width") as u8,
-                        field("height") as u8,
+                        field("width") as i32,
+                        field("height") as i32,
                     )
                     .map(|flags| (def["name"].as_str().unwrap().to_string(), flags))
                 })
@@ -1499,7 +1503,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             );
             sim.commit_noncombat_aoe_hits(
                 rules,
-                Some(&resources.overlay_registry),
+                Some(resources.rules.overlay_registry()),
                 &[hit],
                 crate::sim::world::FrameEffects::default(),
             );
@@ -1546,7 +1550,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             assert_eq!(
                 (anim.2, anim.3, anim.4),
                 (
-                    ctor["delay"].as_u64().unwrap() as u16,
+                    ctor["delay"].as_u64().unwrap() as i32,
                     ctor["flags"].as_u64().unwrap() as u32,
                     0
                 ),
@@ -1605,7 +1609,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 (
                     event["type"].as_str().unwrap().to_string(),
                     ints(&event["coord"]),
-                    event["delay"].as_u64().unwrap() as u16,
+                    event["delay"].as_u64().unwrap() as i32,
                     event["flags"].as_u64().unwrap() as u32,
                 )
             })
@@ -1876,6 +1880,7 @@ fn a_nuclear_reactor_outlives_its_killing_blow_and_sends_a_second_crew_round() {
                 .entities
                 .get(reactor)
                 .unwrap()
+                .building
                 .no_survivor
                 .is_set()
         );
@@ -1906,6 +1911,7 @@ fn an_ignore_defenses_kill_leaves_a_reactor_no_survivor_in_either_round() {
                 .entities
                 .get(reactor)
                 .unwrap()
+                .building
                 .no_survivor
                 .is_set()
         );
@@ -1985,7 +1991,9 @@ fn palette_binding_missing_file_keeps_destroy_anim_unremapped() {
         remaps,
         [(
             "DESTA",
-            crate::rules::ARES_ENABLED.then_some(crate::sim::anim_class::AnimRemap::House(owner))
+            rules
+                .ares()
+                .then_some(crate::sim::anim_class::AnimRemap::House(owner))
         )]
     );
 }
@@ -2060,7 +2068,7 @@ fn palette_binding_failed_request_does_not_shadow_or_inherit_loaded_group() {
                         palette: sim.interner.get("lib").unwrap(),
                     })
                 } else {
-                    crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner))
+                    rules.ares().then_some(AnimRemap::House(owner))
                 }
             )],
             "{kind}"
@@ -2100,7 +2108,7 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
     rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     assert_eq!(
         one_group_hash != rules.simulation_config_hash(),
-        crate::rules::ARES_ENABLED
+        rules.ares()
     );
     assert!(rules.art().get("FIRST").unwrap().terrain_palette);
 
@@ -2110,13 +2118,13 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
     // case-insensitive after this identity is frozen and later rendered.
     let first = sim.interner.intern("FIRST");
     let lib = sim.interner.intern("lib");
-    let fallback = crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner));
+    let fallback = rules.ares().then_some(AnimRemap::House(owner));
     let expected = [
         Some(AnimRemap::ExtraBuildingScheme {
             house: owner,
             palette: first,
         }),
-        if crate::rules::ARES_ENABLED {
+        if rules.ares() {
             Some(AnimRemap::ExtraBuildingScheme {
                 house: owner,
                 palette: lib,

@@ -97,7 +97,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .and_then(|entity| entity.cloak.as_mut())
-            .and_then(CloakRuntime::take_pending_anim)
+            .and_then(|runtime| runtime.take_pending_anim())
         else {
             return;
         };

@@ -194,8 +194,9 @@ pub(super) fn hotspot(cursor: &MouseCursor) -> CursorHotspot {
     }
 }
 
-/// The match cursor of an Ares build: every entry of `cursors` with its main
-/// set and, when it has radar frames, its radar set, keyed by
+/// The match cursor of a game whose Ares hooks name `[MouseCursors]` entries
+/// (`app::input::ares_cursor::draws_through_list`): every entry of `cursors`
+/// with its main set and, when it has radar frames, its radar set, keyed by
 /// [`CursorId::Ares`]. Frames shared by several entries share one texture.
 pub(crate) fn build_ares_software_cursor(
     gpu: &GpuContext,
@@ -238,7 +239,7 @@ pub(crate) fn build_ares_software_cursor(
             );
         }
     }
-    // The arrow must load, as the stock build requires.
+    // The arrow must load, as the stock cursors require.
     sequences.get(&CursorId::Ares {
         index: 0,
         mini: false,
@@ -261,7 +262,7 @@ pub(crate) fn build_ares_software_cursor(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::super::{CURSOR_DEFS, hotspot_offset};
     use super::*;

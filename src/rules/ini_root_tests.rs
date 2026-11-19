@@ -71,6 +71,9 @@ fn ini_roots_mo_triplet_reaches_rules_art_and_standalone_ai_without_yr_mixing() 
 
 #[test]
 fn ini_roots_process_diagnostics_freeze_selected_names_and_hashes() {
+    use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+
+    let install = audio_test_install("ini-roots-diagnostic-install");
     for (config, rules_name, art_name, ai_name) in [
         (
             IniRootConfig::default(),
@@ -108,9 +111,14 @@ fn ini_roots_process_diagnostics_freeze_selected_names_and_hashes() {
             "langrule.ini",
             crate::rules::retail_ini_fixture::DIGESTED_LANGRULE_CONTROL.as_bytes(),
         );
-        let assets = AssetManager::from_loose_root_for_test(dir.path())
-            .with_ini_roots(&config)
-            .unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap()
+        .with_ini_roots(&config)
+        .unwrap();
         let sources = RetailRulesSources::select(&assets).unwrap();
         let expected = [
             (rules_name, Some(sources.rulesmd.ini.content_hash())),

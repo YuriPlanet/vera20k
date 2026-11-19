@@ -634,7 +634,6 @@ fn ballistic_scatter_bounds(
     sim: &Simulation,
 ) -> (i32, i32) {
     let _ = (projectile, sim);
-    #[cfg(feature = "ares")]
     if let Some(kind) = projectile
         .payload()
         .projectile_type()

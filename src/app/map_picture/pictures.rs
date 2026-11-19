@@ -37,6 +37,9 @@ pub(crate) struct MapPictures {
     /// The pictures for the game folder (`super::generation_folder`), found on
     /// first use.
     folder: Option<PathBuf>,
+    /// The switch that gives a run this game's mod, or none
+    /// (`Mods::child_args`), taken with `folder`.
+    mod_args: Vec<std::ffi::OsString>,
 }
 
 struct Identity {
@@ -60,7 +63,10 @@ pub(crate) fn picture_for_map(state: &mut AppState, map_index: usize) -> Option<
         Some(folder) => folder.clone(),
         None => {
             let paths = &state.platform.game_config.as_ref()?.paths;
-            let folder = super::generation_folder(&paths.map_pictures_dir(), &paths.ra2_dir);
+            let mods = &state.frontend.mods;
+            let folder =
+                super::generation_folder(&paths.map_pictures_dir(), &paths.ra2_dir, mods.dir());
+            state.frontend.map_pictures.mod_args = mods.child_args();
             state.frontend.map_pictures.folder = Some(folder.clone());
             folder
         }
@@ -147,7 +153,7 @@ fn start_wanted(pictures: &mut MapPictures) {
     let Some(request) = pictures.wanted.take() else {
         return;
     };
-    match start(&request) {
+    match start(&request, &pictures.mod_args) {
         Ok(child) => {
             log::info!("Drawing the picture of {}", request.map);
             pictures.running = Some(Running {
@@ -164,12 +170,18 @@ fn start_wanted(pictures: &mut MapPictures) {
 }
 
 /// This executable in the hidden map-picture run, in the same folder and
-/// with the same game configuration, silent.
-fn start(request: &MapPictureRequest) -> Result<std::process::Child> {
+/// with the same game configuration and mod, silent.
+fn start(
+    request: &MapPictureRequest,
+    mod_args: &[std::ffi::OsString],
+) -> Result<std::process::Child> {
     let executable = std::env::current_exe().context("find VERA20k's executable")?;
     let mut command = std::process::Command::new(executable);
     command
         .args(request.args())
+        // After the run's own arguments, which it is known by
+        // (`is_invocation`); start-up takes the switch out first.
+        .args(mod_args)
         // The developer sandbox would start a different map at start-up.
         .env_remove("RA2_QUICKPLAY")
         .stdin(std::process::Stdio::null())

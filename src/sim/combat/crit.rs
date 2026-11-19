@@ -445,7 +445,7 @@ pub(crate) fn detonate(
         // not `MultiplayPassive` records the victim's type through Ares'
         // HouseExt::ExtData::ReverseEngineer (10022360), which only exists
         // with Ares.
-        #[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
         if warhead.reverse_engineer
             && let Some(owner) = house
             && !world
@@ -704,12 +704,9 @@ pub(crate) fn can_affect_target(
     };
     let armor = crate::sim::shield::warhead_versus_armor(target, rules, warhead, target_type);
     let verses = warhead.interaction(armor).multiplier();
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
         f64::from_bits(verses.bits()) != 0.0
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         super::damage::kernel::apply_warhead_damage(
             100,
             warhead.cell_spread_f64,
@@ -1139,7 +1136,7 @@ pub(crate) fn current_firepower_multiplier(
     use crate::rules::object_type::Ability;
     use crate::util::native_x87::NativeF64Bits;
     let f64_bits = |bits: NativeF64Bits| f64::from_bits(bits.bits());
-    let mut multiplier = f64_bits(entity.crate_multipliers.firepower());
+    let mut multiplier = f64_bits(entity.firepower_multiplier());
     multiplier *= world
         .houses
         .get(&entity.owner())

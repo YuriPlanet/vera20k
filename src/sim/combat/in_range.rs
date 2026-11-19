@@ -199,19 +199,9 @@ fn direct_reaches(src: (i64, i64, i64), target: (i64, i64, i64), range: i64, pla
     i64::from(distance) <= range
 }
 
-/// The `planar` argument of [`direct_reaches`] for `attacker`
-/// (`0x006F755A`, `Ext/Techno/Hooks.Firing.cpp:1265-1274`): the weapon's
-/// `CylinderRangefinding` or the `[General]` fallback takes the planar
-/// `dx²+dy²` arm for every techno; the stock aircraft arm remains.
-fn direct_reach_is_planar(attacker: &GameEntity, weapon: &WeaponType, rules: &RuleSet) -> bool {
-    #[cfg(feature = "phobos")]
-    let cylinder = weapon
-        .phobos_cylinder_rangefinding
-        .unwrap_or(rules.phobos_globals.cylinder_rangefinding);
-    #[cfg(not(feature = "phobos"))]
-    let cylinder = false;
-    let _ = (weapon, rules);
-    cylinder || (crate::rules::ARES_ENABLED && attacker.category() == EntityCategory::Aircraft)
+/// The `planar` argument of [`direct_reaches`] for `attacker`.
+fn direct_reach_is_planar(attacker: &GameEntity, ares: bool) -> bool {
+    ares && attacker.category() == EntityCategory::Aircraft
 }
 
 /// `0x006F727E..0x006F729F`: an occupied building
@@ -253,6 +243,7 @@ pub(crate) fn open_topped_range_bonus_leptons(
     if !attacker.passenger_role.in_open_transport() {
         return 0;
     }
+
     let bonus = {
         #[cfg(feature = "phobos")]
         {
@@ -777,7 +768,7 @@ pub(crate) fn compute_range_target(
         src,
         (tx, ty, tz),
         max_range_lep,
-        direct_reach_is_planar(attacker, weapon, rules),
+        direct_reach_is_planar(attacker, rules.ares()),
     ) {
         return false;
     }
@@ -819,8 +810,7 @@ fn line_of_fire_clear(
     los: &LineOfFireInputs<'_>,
     entities: Option<&crate::sim::entity_store::EntityStore>,
 ) -> bool {
-    #[cfg(not(feature = "ares"))]
-    let _ = target;
+    let ares = rules.ares_form();
     #[cfg(feature = "phobos")]
     let phobos = phobos_scan_input(
         attacker, target, weapon, src, target_xyz, rules, interner, cells, entities,
@@ -833,12 +823,14 @@ fn line_of_fire_clear(
         weapon,
         line_of_fire::LineOfFireParties {
             firing_house: Some(attacker.owner()),
-            #[cfg(feature = "ares")]
-            source_object: Some(attacker.stable_id()),
-            #[cfg(feature = "ares")]
-            target_object: match target {
-                RangeTarget::Techno(target) => Some(target.stable_id()),
-                _ => None,
+            source_object: ares.then(|| attacker.stable_id()),
+            target_object: if ares {
+                match target {
+                    RangeTarget::Techno(target) => Some(target.stable_id()),
+                    _ => None,
+                }
+            } else {
+                None
             },
         },
         rules,
@@ -1290,7 +1282,7 @@ pub(crate) fn is_on_bridge_for_firing_at(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "in_range_cell_tests.rs"]
 mod cell_query_tests;
 
@@ -1375,7 +1367,6 @@ impl crate::sim::world::Simulation {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
                     alliances: Some(&self.house_alliances),
-                    #[cfg(feature = "ares")]
                     buildings: Some(line_of_fire::CellBuildings::of(self)),
                 },
             )
@@ -1596,11 +1587,11 @@ pub fn mapless_in_range(
         src,
         target,
         range + foundation,
-        direct_reach_is_planar(attacker, weapon, rules),
+        direct_reach_is_planar(attacker, rules.ares()),
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
@@ -1917,7 +1908,7 @@ mod tests {
                 actor.type_facts.set_foundation_for_test(
                     rules.object("ATKR").unwrap().foundation.clone().into(),
                 );
-                actor.passenger_role.occupants_mut().set_ids_for_test(
+                actor.garrison_mut_for_test().set_ids_for_test(
                     (2..2 + building["occupants"].as_u64().unwrap_or(1))
                         .rev()
                         .collect(),
@@ -1954,8 +1945,9 @@ mod tests {
                 );
             }
             if input["open_topped"] == true {
-                actor.passenger_role =
-                    crate::sim::passenger::PassengerRole::inside_for_test(2, true);
+                actor.set_passenger_role_for_test(
+                    crate::sim::passenger::PassengerRole::inside_for_test(2, true),
+                );
             }
             let mut weapon = rules.weapon("GUN").unwrap().clone();
             weapon.range_leptons = input["range"].as_i64().unwrap_or(768) as i32;
@@ -2243,6 +2235,37 @@ mod tests {
                 "InRange6F724E sentinel precedes live or missing Object reads: {target:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_long_range_mod_weapon_reaches_across_a_large_map() {
+        let rules = rules_with_weapon("Damage=1\nROF=20\nRange=300\nWarhead=WH", "", "");
+        let weapon = rules.weapon("GUN").unwrap();
+        // Two playable cells on a 350 by 350 map using extended coordinates.
+        let terrain = ResolvedTerrainGrid::from_cells(
+            700,
+            700,
+            [(150, 250), (440, 250)]
+                .map(|(x, y)| crate::map::resolved_terrain::test_filled_smudge_cell(x, y))
+                .into(),
+        );
+        let attacker = ground_attacker(150, 250, 0, "ATKR");
+        let mut entities = Simulation::new();
+        entities
+            .substrate
+            .entities
+            .insert(ground_target(440, 250, 0, "TGT"));
+        assert!(compute_in_range(
+            &attacker,
+            src_at_cell(150, 250, 0),
+            &TargetKind::Entity(200),
+            weapon,
+            &rules,
+            &test_interner(),
+            &entities,
+            &terrain,
+            &LineOfFireInputs::terrain_only(),
+        ));
     }
 
     // Test 2: Boundary inclusive max
@@ -3209,9 +3232,9 @@ mod tests {
     /// its target to `FindFirstImpenetrableObstacle 1006E1F0`: a solid
     /// building refuses a `SubjectToBuildings=` shot past it, while its own
     /// cells never block a shot at it.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_a_solid_building_refuses_shots_past_it_but_not_at_it() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::movement::locomotor::MovementLayer;
         use crate::sim::occupancy::CellListInsertion;
         let rules = RuleSet::from_ini_with_fixed_art_for_test(

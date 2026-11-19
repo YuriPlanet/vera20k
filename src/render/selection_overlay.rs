@@ -17,6 +17,8 @@ use crate::sim::production::{BuildingPlacementCell, BuildingPlacementPreview};
 use crate::sim::selection::SelectionState;
 
 /// Drag rectangle color — white.
+/// RESIDUAL: `Tactical::DrawBandBoxRect @ 0x006DA180` draws colour 15 of the
+/// PALETTE.PAL Convert (0x0087F6C4, `0x006DA1D2..0x006DA1F7`); VERA draws pure white.
 const DRAG_RECT_COLOR: [u8; 4] = [255, 255, 255, 255];
 /// Depth for the drag rectangle — always in front of everything.
 const DRAG_RECT_DEPTH: f32 = 0.001;
@@ -24,6 +26,20 @@ const DRAG_RECT_DEPTH: f32 = 0.001;
 /// Thickness of the drag rectangle outline in pixels (1px = RA2 original style).
 const DRAG_RECT_THICKNESS: f32 = 1.0;
 
+/// VERA formation line dots: a circle [`FORMATION_DOT_SIZE`] world pixels
+/// across, as rects (left, top, width, height, alpha) inside its box. A
+/// 4-pixel core and, around it, the circle's remaining pixels fainter. No
+/// two rects overlap, so each pixel is blended once.
+const FORMATION_DOT_SIZE: f32 = 6.0;
+const FORMATION_DOT_CORE_ALPHA: f32 = 0.75;
+const FORMATION_DOT_EDGE_ALPHA: f32 = 0.35;
+const FORMATION_DOT: [(f32, f32, f32, f32, f32); 5] = [
+    (1.0, 0.0, 4.0, 1.0, FORMATION_DOT_EDGE_ALPHA),
+    (1.0, 5.0, 4.0, 1.0, FORMATION_DOT_EDGE_ALPHA),
+    (0.0, 1.0, 1.0, 4.0, FORMATION_DOT_EDGE_ALPHA),
+    (5.0, 1.0, 1.0, 4.0, FORMATION_DOT_EDGE_ALPHA),
+    (1.0, 1.0, 4.0, 4.0, FORMATION_DOT_CORE_ALPHA),
+];
 /// Manages textures and rendering for selection overlays.
 pub struct SelectionOverlay {
     /// Solid color texture for drag rectangle lines.
@@ -49,6 +65,9 @@ pub struct SelectionOverlay {
     talk_bubble: Option<CenteredShapeStrip>,
     /// WRENCH.SHP, the repairing building's wrench.
     repair_wrench: Option<CenteredShapeStrip>,
+    /// POWEROFF.SHP, which only Ares draws (TechnoClass_DrawExtras_PowerOff
+    /// 10049FE0, hook 0x6F526C).
+    power_off: Option<CenteredShapeStrip>,
     /// Full PIPS: health, rank, raw garrison Pip values and self-heal.
     /// Native LoadPipAssets 5F76B0 binds AC147C; both use Convert 87F6C4.
     pips: Option<CenteredShapeStrip>,
@@ -57,8 +76,7 @@ pub struct SelectionOverlay {
     /// Phobos then draws that display with the game font.
     #[cfg(feature = "phobos")]
     digital_shapes: Vec<Option<CenteredShapeStrip>>,
-    /// Phobos custom insignia SHPs keyed by their normalized file name.
-    #[cfg(feature = "phobos")]
+    /// Ares/Phobos custom insignia SHPs keyed by their normalized file name.
     insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
     /// One optional `[SelectBoxTypes]` `Shape=` per catalog entry, in catalog
     /// order (`Ext/Techno/Body.Visuals.cpp:394-407`).
@@ -70,7 +88,6 @@ pub struct SelectionOverlay {
     select_box_ground_shapes: Vec<Option<CenteredShapeStrip>>,
     /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
     /// the BOMBCURS.SHP they replace; a name that did not load is absent.
-    #[cfg(feature = "ares")]
     ares_bomb_images: std::collections::HashMap<String, CenteredShapeStrip>,
 }
 
@@ -166,14 +183,10 @@ impl CenteredShapeStrip {
     /// without A/Z interaction. Source: placement_render native execution.
     pub(crate) fn building_placement_instance(
         &self,
-        cell: BuildingPlacementCell,
+        draw: PlacementCellDraw,
         alpha: f32,
     ) -> Option<SpriteInstance> {
-        let frame = if cell.valid {
-            0
-        } else {
-            usize::from(cell.slope) + 2
-        };
+        let PlacementCellDraw { cell, frame } = draw;
         // Caller supplies the unraised tile point;47EC90 adds30 to X and
         // subtracts15*signed_level+1 from Y before the centered shape draw.
         // iso_to_screen includes that signed level and VERA's shared row bias.
@@ -275,40 +288,86 @@ impl CenteredShapeStrip {
             frames,
         })
     }
-    /// Active foundation cells in Tactical6D5030's rectangular draw order.
-    /// Admission and current Cell ground fields are recomputed with the preview;
-    /// this consumer never decides buildability or uses the render height cache.
+    /// The PLACE instances of [`placement_cell_draws`], in its order.
     pub fn build_building_preview(
         &self,
-        preview: &BuildingPlacementPreview,
+        draws: &[PlacementCellDraw],
         alpha: f32,
     ) -> Vec<SpriteInstance> {
-        let mut instances = Vec::with_capacity(preview.cells.len());
-        //Ares10015340/100153B0 (hooks 4A8C77/4A8DD7) lift SetActiveFoundation's
-        //120- and SetPendingFoundation's 50-cell copies; previews hold the
-        //whole list.
-        //6D5030 / Ares100155C0 walks actual-list bounds X outer/Y inner;
-        //The ordinary preview contains its bit2 active cells, possibly sparse
-        //or outside declared X/Y. Pending-bit4 drawing is a separate residual.
-        //Preserve draw order independently of stock row-major vs Custom
-        //X-first gameplay list order; never regroup by admitted color.
-        let mut active: Vec<_> = preview.cells.iter().collect();
-        active.sort_by_key(|cell| (cell.coord.0 as i16, cell.coord.1 as i16));
-        for cell in active {
-            if let Some(instance) = self.building_placement_instance(*cell, alpha) {
-                instances.push(instance);
-            }
+        draws
+            .iter()
+            .filter_map(|draw| self.building_placement_instance(*draw, alpha))
+            .collect()
+    }
+}
+
+/// One PLACE.SHP draw of `Tactical6D5030`: the cell and its frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlacementCellDraw {
+    pub cell: BuildingPlacementCell,
+    pub frame: usize,
+}
+
+/// `BuildingPlacement_OverlayRenderer @ 0x006D5030`'s PLACE cells in draw
+/// order. With a building armed, a mouse outside the tactical rect
+/// (`0x006D505B..0x006D50A7`) returns at `0x006D571B` before either grid.
+/// The current grid walks its bounds X outer, Y inner, and wall auto-fill
+/// follows it. The pending grid (`0x006D550C..0x006D56F3`) then walks the
+/// saved foundation that `SetPendingFoundation @ 0x004A8D50` marked with flag
+/// 4 until the PLACE event resolves. `Cell47EC90` draws a flag-4 cell with
+/// frame 1, whichever grid reaches it, instead of its admission frame.
+///
+/// Ares 10015340/100153B0 (hooks 4A8C77/4A8DD7) lift SetActiveFoundation's
+/// 120- and SetPendingFoundation's 50-cell copies; previews hold the whole
+/// list. The ordinary preview holds its bit-2 active cells, possibly sparse
+/// or outside declared X/Y; sorting keeps the draw order independent of stock
+/// row-major or Custom X-first list order, never regrouped by color.
+pub fn placement_cell_draws(
+    current: Option<&BuildingPlacementPreview>,
+    pending: Option<&BuildingPlacementPreview>,
+    cursor_over_battlefield: bool,
+) -> Vec<PlacementCellDraw> {
+    if current.is_some() && !cursor_over_battlefield {
+        return Vec::new();
+    }
+    let pending = pending.map_or(&[][..], |preview| preview.cells.as_slice());
+    let x_outer = |cells: &[BuildingPlacementCell]| {
+        let mut cells = cells.to_vec();
+        cells.sort_by_key(|cell| (cell.coord.0 as i16, cell.coord.1 as i16));
+        cells
+    };
+    let admission_frame = |cell: BuildingPlacementCell| {
+        if cell.valid {
+            0
+        } else {
+            usize::from(cell.slope) + 2
         }
-        // Preserve existing wall auto-fill admission and order; pending marks
-        // and blocked-wall suppression remain explicit separate residuals.
-        instances.extend(
-            preview
+    };
+    let mut draws = Vec::new();
+    if let Some(current) = current {
+        for cell in x_outer(&current.cells) {
+            let marked = pending.iter().any(|mark| mark.coord == cell.coord);
+            let frame = if marked { 1 } else { admission_frame(cell) };
+            draws.push(PlacementCellDraw { cell, frame });
+        }
+        // Preserve existing wall auto-fill admission and order; blocked-wall
+        // suppression remains an explicit separate residual.
+        draws.extend(
+            current
                 .wall_autofill_cells
                 .iter()
-                .filter_map(|cell| self.building_placement_instance(*cell, alpha)),
+                .map(|&cell| PlacementCellDraw {
+                    cell,
+                    frame: admission_frame(cell),
+                }),
         );
-        instances
     }
+    draws.extend(
+        x_outer(pending)
+            .into_iter()
+            .map(|cell| PlacementCellDraw { cell, frame: 1 }),
+    );
+    draws
 }
 
 impl SelectionOverlay {
@@ -434,6 +493,18 @@ impl SelectionOverlay {
                 "mousepal.pal",
             )
         });
+        // POWEROFF.SHP by name (0x0045E970, beside WRENCH.SHP); Ares draws
+        // it through the same MOUSEPAL Convert.
+        let power_off = assets.and_then(|assets| {
+            CenteredShapeStrip::from_assets_on_device(
+                device,
+                queue,
+                batch,
+                assets,
+                "poweroff.shp",
+                "mousepal.pal",
+            )
+        });
         // Original 5F76B0 /52BF26..52BFC1: one PIPS.SHP/PALETTE.PAL
         // resource serves health6F66BA/6F6A4A, rank70AA4F and self-heal70A6BB.
         // Keep every frame's native origin and original index plane.
@@ -459,16 +530,15 @@ impl SelectionOverlay {
             bomb_clock,
             talk_bubble,
             repair_wrench,
+            power_off,
             pips,
             #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
-            #[cfg(feature = "phobos")]
             insignia_shapes: std::collections::HashMap::new(),
             #[cfg(feature = "phobos")]
             select_box_shapes: Vec::new(),
             #[cfg(feature = "phobos")]
             select_box_ground_shapes: Vec::new(),
-            #[cfg(feature = "ares")]
             ares_bomb_images: std::collections::HashMap::new(),
         }
     }
@@ -477,7 +547,7 @@ impl SelectionOverlay {
     /// `read<SHPStruct*>` (Ares.dll 10040640) loads the file at Rules read
     /// and keeps the pointer; TechnoClass_DrawExtras_IvanBombImage
     /// (10056CC0, hook 0x6F523C) draws it through BOMBCURS's MOUSEPAL convert.
-    #[cfg(feature = "ares")]
+    /// The match loader calls it when the Rules were read the Ares way.
     pub(crate) fn load_ares_bomb_images(
         &mut self,
         device: &wgpu::Device,
@@ -511,9 +581,9 @@ impl SelectionOverlay {
     }
 
     /// The bomb image for a carrier whose `IvanBomb.Image` candidates are
-    /// `names`: the last that loaded, else BOMBCURS.SHP.
+    /// `names`: the last that loaded, else BOMBCURS.SHP. Runs in every game:
+    /// the caller passes no names unless the Rules were read the Ares way.
     pub(crate) fn bomb_image(&self, names: &[String]) -> Option<&CenteredShapeStrip> {
-        #[cfg(feature = "ares")]
         if let Some(strip) = names
             .iter()
             .rev()
@@ -521,7 +591,6 @@ impl SelectionOverlay {
         {
             return Some(strip);
         }
-        let _ = names;
         self.bomb_clock()
     }
 
@@ -623,9 +692,9 @@ impl SelectionOverlay {
     }
 
     /// Load every TechnoType/`[InsigniaTypes]` insignia SHP once per match.
-    /// Phobos loads each `Promotable<SHPStruct*>` through the SHP reader with
-    /// `PALETTE.PAL` and retains the pointer for the match.
-    #[cfg(feature = "phobos")]
+    /// Ares and Phobos load each `Promotable<SHPStruct*>` through the SHP
+    /// reader, draw it with `PALETTE.PAL` (Ares 1004E1FD's 0x87F6C4) and
+    /// retain the pointer for the match.
     pub(crate) fn load_insignia_shapes(
         &mut self,
         device: &wgpu::Device,
@@ -635,6 +704,7 @@ impl SelectionOverlay {
         rules: &crate::rules::ruleset::RuleSet,
     ) {
         let mut names = std::collections::BTreeSet::new();
+        #[cfg(feature = "phobos")]
         for object in rules.all_objects() {
             let insignia = &object.phobos_insignia;
             for variant in std::iter::once(&insignia.base)
@@ -644,8 +714,15 @@ impl SelectionOverlay {
                 names.extend(variant.images.iter().flatten().cloned());
             }
         }
+        #[cfg(feature = "phobos")]
         for entry in rules.insignia_types().entries() {
             names.extend(entry.images.iter().flatten().cloned());
+        }
+        // Ares's own draw runs only without Phobos's DrawInsignia, and its
+        // keys are read only the Ares way.
+        #[cfg(not(feature = "phobos"))]
+        for object in rules.all_objects().filter(|_| rules.ares_form()) {
+            names.extend(object.ares_insignia.images.iter().flatten().cloned());
         }
         for name in names {
             let strip = CenteredShapeStrip::from_assets_on_device(
@@ -657,7 +734,7 @@ impl SelectionOverlay {
                 "palette.pal",
             );
             if strip.is_none() {
-                log::warn!("Phobos insignia: cannot load {name}");
+                log::warn!("insignia: cannot load {name}");
             }
             if let Some(strip) = strip {
                 self.insignia_shapes.insert(name, strip);
@@ -666,7 +743,6 @@ impl SelectionOverlay {
     }
 
     /// One custom insignia SHP by normalized file name, when loaded.
-    #[cfg(feature = "phobos")]
     pub(crate) fn insignia_shape(&self, name: &str) -> Option<&CenteredShapeStrip> {
         self.insignia_shapes.get(name)
     }
@@ -685,6 +761,11 @@ impl SelectionOverlay {
         self.repair_wrench.as_ref()
     }
 
+    /// The power-off marker art (POWEROFF.SHP), when the assets have it.
+    pub fn power_off(&self) -> Option<&CenteredShapeStrip> {
+        self.power_off.as_ref()
+    }
+
     /// Physical PIPS.SHP shared by health, rank14/15/19 and self-heal13/20.
     pub fn pips(&self) -> Option<&CenteredShapeStrip> {
         self.pips.as_ref()
@@ -693,6 +774,37 @@ impl SelectionOverlay {
     /// Physical PIPBRD.SHP selected-background frames 0/1.
     pub fn pipbrd(&self) -> Option<&CenteredShapeStrip> {
         self.pipbrd.as_ref()
+    }
+
+    /// VERA formation line: one round dot per unit at the given world-pixel
+    /// points, as world-surface stores for the ground pass (`draw_passes`,
+    /// "ground_marks"): drawn on the finished ground and before the buildings
+    /// and objects, which cover them. `tint` is the Move action line's
+    /// colour, drawn see-through: a core with a fainter edge of the same
+    /// colour.
+    pub fn build_formation_dots(
+        world_points: &[(f32, f32)],
+        tint: [f32; 3],
+    ) -> Vec<SpriteInstance> {
+        let mut instances = Vec::with_capacity(world_points.len() * FORMATION_DOT.len());
+        for &(x, y) in world_points {
+            let corner = [
+                x.round() - FORMATION_DOT_SIZE / 2.0,
+                y.round() - FORMATION_DOT_SIZE / 2.0,
+            ];
+            for &(left, top, width, height, alpha) in &FORMATION_DOT {
+                instances.push(SpriteInstance {
+                    position: [corner[0] + left, corner[1] + top],
+                    size: [width, height],
+                    uv_origin: [0.0, 0.0],
+                    uv_size: [1.0, 1.0],
+                    tint,
+                    alpha,
+                    ..Default::default()
+                });
+            }
+        }
+        instances
     }
 
     /// Build sprite instances for the selection drag rectangle outline.
@@ -857,4 +969,75 @@ fn generate_diamond_cell(color: [u8; 4]) -> Vec<u8> {
         }
     }
     rgba
+}
+
+#[cfg(all(test, tests_render_s_z))]
+mod tests {
+    use super::*;
+
+    fn grid(cells: &[(u16, u16, bool)]) -> BuildingPlacementPreview {
+        BuildingPlacementPreview {
+            rx: 0,
+            ry: 0,
+            width: 1,
+            height: 1,
+            valid: true,
+            in_build_area: true,
+            foundation_visible: true,
+            reason: None,
+            cells: cells
+                .iter()
+                .map(|&(x, y, valid)| BuildingPlacementCell {
+                    coord: (x, y),
+                    valid,
+                    level: 0,
+                    slope: 0,
+                })
+                .collect(),
+            wall_autofill_cells: Vec::new(),
+        }
+    }
+
+    fn drawn(draws: &[PlacementCellDraw]) -> Vec<((u16, u16), usize)> {
+        draws
+            .iter()
+            .map(|draw| (draw.cell.coord, draw.frame))
+            .collect()
+    }
+
+    #[test]
+    fn the_pending_grid_draws_frame_one_after_the_current_grid() {
+        // 0x006D550C..0x006D56F3 follow the current grid; Cell47EC90 draws a
+        // flag-4 cell with frame 1 even when the current grid reaches it.
+        let current = grid(&[(11, 10, true), (10, 10, false)]);
+        let pending = grid(&[(12, 10, true), (11, 10, true)]);
+        assert_eq!(
+            drawn(&placement_cell_draws(Some(&current), Some(&pending), true)),
+            vec![((10, 10), 2), ((11, 10), 1), ((11, 10), 1), ((12, 10), 1)]
+        );
+    }
+
+    #[test]
+    fn an_armed_building_hides_both_grids_off_the_battlefield() {
+        // 0x006D505B..0x006D50A7 return at 0x006D571B; with nothing armed
+        // the pending grid draws wherever the mouse is.
+        let current = grid(&[(10, 10, true)]);
+        let pending = grid(&[(12, 10, true)]);
+        assert!(placement_cell_draws(Some(&current), Some(&pending), false).is_empty());
+        assert_eq!(
+            drawn(&placement_cell_draws(None, Some(&pending), false)),
+            vec![((12, 10), 1)]
+        );
+    }
+
+    #[test]
+    fn formation_dots_are_placed_in_world_pixels() {
+        let dots = SelectionOverlay::build_formation_dots(&[(100.4, 50.6)], [0.0, 1.0, 0.0]);
+        // The 4x4 core of the 6-pixel dot centred on the rounded point.
+        let core = dots
+            .iter()
+            .find(|dot| dot.size == [4.0, 4.0])
+            .expect("the dot's core");
+        assert_eq!(core.position, [98.0, 49.0]);
+    }
 }

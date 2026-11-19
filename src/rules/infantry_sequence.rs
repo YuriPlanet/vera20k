@@ -816,7 +816,7 @@ fn build_sequence_set_from_records(records: &[InfantrySequenceEntry]) -> Sequenc
     set
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "infantry_sequence_tests.rs"]
 mod tests;
 

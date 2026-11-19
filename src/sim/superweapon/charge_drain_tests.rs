@@ -16,7 +16,9 @@ use crate::util::save_codec;
 const SHIELD: &str = "DrainShield";
 
 /// A full charge's AnimStage: the stock clamp, or Ares 100354C0's 54.
-const FULL_STAGE: i32 = if cfg!(feature = "ares") { 54 } else { 53 };
+fn full_stage(rules: &RuleSet) -> i32 {
+    if rules.ares() { 54 } else { 53 }
+}
 
 fn layers() -> RulesLayerStack {
     RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(
@@ -89,7 +91,7 @@ fn world(rules: &RuleSet) -> (Simulation, InternedId, InternedId, InternedId, u6
     sim.spawn_object("TARGET", "Russians", 20, 20, 0, rules)
         .unwrap();
     sim.assess_power_for_test(rules);
-    sim.recheck_house_tech_tree(local, rules);
+    sim.recheck_house_tech_tree(local, rules, Default::default());
     let id = sim.interner.get(SHIELD).unwrap();
     (sim, local, remote, id, provider)
 }
@@ -201,7 +203,7 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
         &sim,
         &rules,
         owner,
-        FULL_STAGE,
+        full_stage(&rules),
         SuperWeaponStatus::Ready,
         true,
     );
@@ -280,7 +282,6 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
         .advance_app_frame(
             &commands,
             &rules,
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::for_sound(&boundary),
@@ -451,7 +452,7 @@ fn authored_drain_provider_commands_effects_and_saved_phase_follow_native_conver
         &sim,
         &rules,
         owner,
-        FULL_STAGE,
+        full_stage(&rules),
         SuperWeaponStatus::Ready,
         true,
     );
@@ -470,7 +471,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
     for human in [true, false] {
         // Ares ClickFire10035130 drops the computer's FirestormActive arm:
         // every House converts the timer and toggles.
-        let toggles = human || cfg!(feature = "ares");
+        let toggles = human || rules.ares();
         let (mut sim, local, remote, id, _) = world(&rules);
         sim.houses
             .get_mut(&remote)

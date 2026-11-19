@@ -314,7 +314,7 @@ fn assert_retail_wall_fire_profile(
         .hash_state_every(std::num::NonZeroU64::MAX);
     let initial_hash = scene.sim().state_hash();
     let owner = scene.sim().session.current_house().unwrap();
-    let mut orders: Vec<_> = profile["commands"]
+    let orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -327,16 +327,6 @@ fn assert_retail_wall_fire_profile(
             )
         })
         .collect();
-    if wall_name == "GAWALL" {
-        // Target the paid endpoint using an ordinary attack order. Filler
-        // constructor draws change the later damage history; retain this
-        // witness's pristine-child branch without seeding RNG or wall state.
-        for order in &mut orders {
-            if let Command::ForceAttackCell { target_ry, .. } = &mut order.payload {
-                *target_ry = 87;
-            }
-        }
-    }
     let (attacker_id, source) = orders
         .iter()
         .find_map(|order| match order.payload {
@@ -351,7 +341,7 @@ fn assert_retail_wall_fire_profile(
     let tank = scene.sim().entities().get(attacker_id).unwrap();
     assert_eq!(scene.sim().resolve(tank.type_ref()), "MTNK");
     assert_eq!(tank.owner(), owner);
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let wall = registry.id_for_name(wall_name).unwrap();
     let flags = registry.flags(wall).unwrap();
     let native_type = native["cases"][0]["input"]["wall_types"]
@@ -451,7 +441,11 @@ fn assert_retail_wall_fire_profile(
     // Wall damage (Cell480CB0) and that jitter draw the Scenario RNG, so other
     // Houses' play moves the removal by whole shots. Run one full rearm past
     // the removal, where a further shot at the expired Cell would land; four
-    // profiles' frames bound a run that never removes the wall.
+    // profiles' frames bound a run that never removes the wall. The stream
+    // also decides which spread visit removes the source: 4896B2..4896BA
+    // tests only the visited cell, so a source cleared by a neighbour's
+    // PostDestructionWallCleanup (0x00480630) keeps the tank's Cell target.
+    // A change to earlier draws can move this profile onto that branch.
     let profile_ticks = profile["ticks"].as_u64().unwrap();
     let mut step = 0;
     while step < 4 * profile_ticks && removed_at.is_none_or(|at| step < at + rearm) {
@@ -567,13 +561,12 @@ fn assert_retail_wall_fire_profile(
         // (HouseExt::GetTypeToProduce 100216A0, hooks 0x4FEA60/0x4FEEE0/
         // 0x4FF210) where stock draws `RandomRanged(0, 0x7FFFFFFE)`, so the
         // other Houses' Scenario draws move it; only the stock stream pins it.
-        #[cfg(not(feature = "ares"))]
-        assert!(
-            inline_child_admission_seen,
-            "ordinary AP reaches stage two beside a pristine same-type child"
-        );
-        #[cfg(feature = "ares")]
-        let _ = inline_child_admission_seen;
+        if !scene.runtime.resources.rules.ares() {
+            assert!(
+                inline_child_admission_seen,
+                "ordinary AP reaches stage two beside a pristine same-type child"
+            );
+        }
         let house = scene.sim().houses.get(&owner).unwrap();
         assert_eq!(house.economy().credits(), 8500);
         assert_eq!(house.economy().spent_credits(), 1500);
@@ -674,7 +667,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
     )
     .unwrap();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let sim = &mut scene.runtime.simulation;
     let id = 1376;
     let at = (43, 82);
@@ -894,7 +887,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         )
         .unwrap();
         let rules = &scene.runtime.resources.rules;
-        let registry = &scene.runtime.resources.overlay_registry;
+        let registry = scene.runtime.resources.rules.overlay_registry();
         if let Some(gdi) = case["input"].get("gdi_type_inputs") {
             let final_types = &gdi["layers"]
                 .as_array()
@@ -940,8 +933,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
             // The original component starts before the later Building/Foot
             // population. Run its wall Mark material through the shared owner;
             // do not copy its resulting data/122/zone fields from the packet.
-            sim.dirty_cells
-                .acknowledge_radar(sim.dirty_cells.radar_generation());
+            sim.dirty_cells.take_radar();
             for placement in construction["placements"].as_array().unwrap() {
                 let coordinate = (
                     placement["cell"][0].as_u64().unwrap() as u16,
@@ -1037,8 +1029,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng(sim), case["initial"]["rng"]);
         if case.get("construction").is_none() {
-            sim.dirty_cells
-                .acknowledge_radar(sim.dirty_cells.radar_generation());
+            sim.dirty_cells.take_radar();
         }
         assert_eq!(
             json!(sim.dirty_cells.radar()),

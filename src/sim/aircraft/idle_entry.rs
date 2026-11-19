@@ -74,7 +74,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::sim::world::display_layers::DisplayLayer;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "idle_entry_tests.rs"]
 mod tests;
 
@@ -400,7 +400,7 @@ fn enter_idle_mode_with(
         airstrike: entity.airstrike_link().is_some(),
         mission_only: entity.is_mission_only(),
         passengers: entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_some_and(|cargo| cargo.count() != 0),
         human: sim.owner_is_human(entity.owner()),
@@ -471,9 +471,19 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn restore(&mut self) -> MissionId {
-        self.sim
-            .mission_restore_represented(self.id, self.rules, self.registry, self.frame_effects)
-            .expect("Restore setters accept a live aircraft's archived Target and NavCom");
+        // As at the expiry receiver (`world/lifecycle.rs`): a refused Restore
+        // leaves the override in place and the caller reads that mission.
+        if let Err(error) = self.sim.mission_restore_represented(
+            self.id,
+            self.rules,
+            self.registry,
+            self.frame_effects,
+        ) {
+            log::error!(
+                "idle entry: aircraft {} kept its override: {error}",
+                self.id
+            );
+        }
         self.entity().mission.current()
     }
 

@@ -39,7 +39,7 @@ fn repair_scan(rules: &RuleSet, offset: (i32, i32), mission: MissionType) -> (Op
         .entities
         .get_mut(ifv)
         .unwrap()
-        .set_gunner_weapon(mode, ifv_type);
+        .set_gunner_weapon(mode, ifv_type, rules.ares());
     let grizzly = sim.substrate.entities.get_mut(tank).unwrap();
     grizzly
         .position
@@ -69,6 +69,18 @@ fn repair_scan(rules: &RuleSet, offset: (i32, i32), mission: MissionType) -> (Op
 /// InRange decides.
 #[test]
 fn a_guarding_repair_ifv_walks_only_the_adjacent_cells() {
+    guarding_repair_ifv_walk(false);
+}
+
+/// [`a_guarding_repair_ifv_walks_only_the_adjacent_cells`] in a game read the
+/// Ares way.
+#[test]
+fn ares_guarding_repair_ifv_walks_only_the_adjacent_cells() {
+    guarding_repair_ifv_walk(true);
+}
+
+fn guarding_repair_ifv_walk(ares_way: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };

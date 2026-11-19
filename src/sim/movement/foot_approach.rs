@@ -32,15 +32,15 @@ const OFFSETS: [i16; 25] = [
     0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64,
 ]; // original signed table8224DC
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_approach_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "approach_crush_tests.rs"]
 mod approach_crush_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "mission_approach_tests.rs"]
 mod mission_approach_tests;
 
@@ -135,10 +135,9 @@ impl Simulation {
             object: true,
             // Ares UnitClass_ApproachTarget_OmniCrusher (Ares.dll 1004BC10,
             // hook 0x741613): `OmniCrusher.Aggressive=no` skips the arm.
-            #[cfg(feature = "ares")]
-            omni: object.omni_crusher && object.techno_combat().combat().omni_crusher_aggressive(),
-            #[cfg(not(feature = "ares"))]
-            omni: object.omni_crusher,
+            omni: object.omni_crusher
+                && (!rules.ares_form()
+                    || object.techno_combat().combat().omni_crusher_aggressive()),
             is_human: self
                 .houses
                 .get(&actor.owner())
@@ -181,17 +180,8 @@ impl Simulation {
     /// the call, or None where native goes on to FootClass::Approach_Target
     /// (`0x00741685`).
     ///
-    /// Residuals:
-    /// - With the no-move flag set, native returns the Target without the
-    ///   destination. Every mission passes 0, and no VERA caller passes 1.
-    /// - Mission_Patrol calls Approach too (`0x004D473A`), and VERA has no
-    ///   Foot Patrol body (`FootClass::Mission_Patrol @ 0x004D4280`). Trigger:
-    ///   a Foot on Patrol holding a target. Effect: it does not approach the
-    ///   target; only the reach block's (`0x006FAB74`) does, for one it
-    ///   cannot reach. Frequency: a map can author Patrol in an object's
-    ///   `MISSION=` column (retail maps not surveyed); the team script's
-    ///   Patrol action (`0x006ECCE0`) is not ported. Risk: a whole unported
-    ///   mission.
+    /// Residual: with the no-move flag set, native returns the Target without
+    /// the destination. Every mission passes 0, and no VERA caller passes 1.
     pub(crate) fn unit_approach_head(&self, id: u64, rules: &RuleSet) -> Option<NavTargetRef> {
         let crush = self.approach_crush(id, rules);
         if let Some((facts, target)) = crush
@@ -563,7 +553,6 @@ impl Simulation {
             overlay_grid: self.overlay_grid.as_ref(),
             overlay_registry: registry,
             alliances: Some(&self.house_alliances),
-            #[cfg(feature = "ares")]
             buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
         };
         let can_fire = match (weapon, identity) {
@@ -602,14 +591,11 @@ impl Simulation {
         // Ares 3.0 FootClass_ApproachTarget_Passive (1005C9F0, hook
         // 0x4D5782): a passively acquired Target (`+0x50C`) is not chased
         // either.
-        #[cfg(feature = "ares")]
-        let passive_target = actor.passive_scan.acquired();
-        #[cfg(not(feature = "ares"))]
-        let passive_target = false;
+        let passive_target = rules.ares_form() && actor.passive_scan.acquired();
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()
-            && !(actor.passenger_role.in_open_transport() || passive_target);
+            && !(actor.passenger_role().in_open_transport() || passive_target);
         //4D5716..4D57E4: the drop arms ahead of the search. A Sticky mission,
         // or a mover that may not approach off Attack, a human's Area Guard or
         // a computer's Hunt, clears the Target and the destination.
@@ -836,6 +822,18 @@ impl Simulation {
             in_range::resolve_target_coords_3d(&target, self, rules, &self.interner, &cells)
         }
         .ok_or("Approach target surface failed")?;
+        // VERA: preserve every native ring (including CloseRange infantry spot RNG)
+        // for any range that can span a supported map. Beyond that, start the
+        // search at the farthest corner's Manhattan distance from the target,
+        // rounding up for subcell positions and keeping the ring sequence.
+        // This omits unplayable outer rings, their Dummy accesses and spot draws.
+        let full_map_span = 2 * i32::from(crate::map::cell_index::MAX_CELL_SIDE);
+        if radius / 256 > full_map_span {
+            let (x, y) = (i32::from(target_cell.0), i32::from(target_cell.1));
+            let dx = x.abs().max((i32::from(terrain.width()) - x).abs());
+            let dy = y.abs().max((i32::from(terrain.height()) - y).abs());
+            radius = radius.min((dx + dy + 2) * 256 + radius % 256);
+        }
         let mut retained_candidate = target_cell;
         //4D5FE0: after the CloseRange= arm's spot the destination is the
         // Target's own cell, without the search (4D6892 -> 4D689A).
@@ -1255,7 +1253,6 @@ impl Simulation {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
                     alliances: Some(&self.house_alliances),
-                    #[cfg(feature = "ares")]
                     buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
                 },
             )

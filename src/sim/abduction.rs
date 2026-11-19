@@ -281,7 +281,7 @@ impl Simulation {
             return false;
         }
         let (count, total) = carrier
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or((0, 0), |cargo| (cargo.count(), cargo.total_size()));
         if carrier_type.ares_passengers_by_size {
@@ -308,6 +308,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "abduction_tests.rs"]
 mod tests;

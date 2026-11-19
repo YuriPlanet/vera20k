@@ -6,7 +6,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::world::{Simulation, UninitContext};
+use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 use std::collections::BTreeMap;
 
 /// Mutable BuildingType normal animation names changed by Unlimbo44099B.
@@ -47,7 +47,7 @@ impl BuildingUpgradeArtNames {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -245,7 +245,7 @@ mod tests {
                     row["initial_count"].as_i64().unwrap() as i8,
                     types,
                 );
-            sim.power_down_building_upgrade(host, &rules);
+            sim.power_down_building_upgrade(host, &rules, Default::default());
             let actual = sim
                 .substrate
                 .entities
@@ -327,7 +327,7 @@ mod tests {
                     .anim_slots_mut_for_test()[slot] = Some(anim);
                 sentinels.push((slot, anim));
             }
-            sim.power_down_building_upgrade(host, &rules);
+            sim.power_down_building_upgrade(host, &rules, Default::default());
             let actual = sim.entities().get(host).unwrap();
             assert_eq!(
                 i64::from(actual.building_upgrades().count()),
@@ -600,8 +600,9 @@ impl Simulation {
         }
         // Ares4409F4 ->10014490/100144CD uses the installed host's retained
         // Country, after the new upgrade pointer has been committed.
-        #[cfg(feature = "ares")]
-        self.grant_factory_plans(host_id, rules);
+        if rules.ares_form() {
+            self.grant_factory_plans(host_id, rules);
+        }
         crate::sim::superweapon::grant_provided_supers(self, rules, owner);
         self.houses.request_house_tech_tree_recheck(owner);
         // Ordinary power-up path has no satellite flag. The satellite-upgrade
@@ -664,6 +665,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
     ) -> Option<InternedId> {
         let entity = self.substrate.entities.get(id)?;
         let slot = usize::try_from(i32::from(entity.building_upgrades().count()) - 1).ok()?;
@@ -686,7 +688,7 @@ impl Simulation {
         }
         if refresh_supers {
             let owner = self.substrate.entities.get(id)?.owner();
-            crate::sim::superweapon::update_owned_supers(self, rules, owner);
+            crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
         }
         removed
     }

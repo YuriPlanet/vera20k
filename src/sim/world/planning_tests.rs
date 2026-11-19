@@ -86,7 +86,7 @@ fn native_loop_consumption_rotates_head_and_updates_pending() {
 #[test]
 fn edit_append_commit_preserves_missions_and_shares_same_frame_nodes() {
     let (mut sim, rules, owner) = fixture();
-    let before = sim.substrate.entities.get(1).unwrap().mission;
+    let before = sim.substrate.entities.get(1).unwrap().mission.clone();
     append(&mut sim, &rules, owner, 1, (12, 15));
     append(&mut sim, &rules, owner, 2, (12, 15));
     assert_eq!(sim.planning.nodes.len(), 1);
@@ -2057,13 +2057,16 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
             .set_discovered_by_current_house_for_test(discovered);
         sim.lifecycle_outputs.clear_for_test();
 
-        assert!(sim.techno_select(
-            1,
-            false,
-            crate::sim::world::UninitContext::new(&rules, None).with_effects(
-                crate::sim::world::FrameEffects::default().with_local_planning(&PlanningMode)
-            ),
-        ));
+        assert!(
+            sim.techno_select(
+                1,
+                crate::sim::world::UninitContext::new(&rules, None).with_effects(
+                    crate::sim::world::FrameEffects::default()
+                        .with_local_planning(&PlanningMode)
+                        .without_selection_voice()
+                ),
+            )
+        );
         let selected: Vec<u64> = (1..=3)
             .filter(|&id| {
                 sim.substrate

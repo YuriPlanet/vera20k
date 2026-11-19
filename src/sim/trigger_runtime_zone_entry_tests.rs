@@ -394,7 +394,6 @@ fn last_reference_line_tag_preserves_the_arrival_cells_independent_tag() {
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn vanilla_event_fallback_reaches_actions_from_an_ordinary_cell_entry() {
     use crate::sim::command::{Command, CommandEnvelope};
     // HasOccurred71E950's unsigned range dispatch admits unknown kinds to

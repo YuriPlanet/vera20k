@@ -127,7 +127,10 @@ impl PaidHead {
             .or_default();
         power.set_total_output_for_test(99);
         power.set_total_drain_for_test(0);
-        assert!(sim.recheck_house_tech_tree(owner, rules).is_empty());
+        assert!(
+            sim.recheck_house_tech_tree(owner, rules, Default::default())
+                .is_empty()
+        );
         for _ in 0..2 {
             assert!(production::enqueue_by_type(
                 sim,
@@ -298,9 +301,13 @@ impl PaidHead {
                 &mut sim.houses,
                 &mut sim.power_states,
                 self.attacker,
+                rules.ares_form(),
             ),
             "release_house_suffix" => {
-                assert!(sim.recheck_house_tech_tree(self.owner, rules).is_empty())
+                assert!(
+                    sim.recheck_house_tech_tree(self.owner, rules, Default::default())
+                        .is_empty()
+                )
             }
             "release_rate_refresh" => {
                 production::refresh_factory_rates_for_house(sim, rules, self.owner)
@@ -313,7 +320,7 @@ impl PaidHead {
                 FrameEffects::default(),
             ),
             "declared_successful_delivery_completion" => {
-                assert!(sim.production.factories_mut().complete_production(
+                assert!(sim.production.edit_factories().complete_production(
                     self.owner,
                     CATEGORY,
                     sim.session.binary_frame(),

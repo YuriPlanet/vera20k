@@ -64,6 +64,24 @@ fn super_weapon_index(object: &ObjectType, rules: &RuleSet) -> Option<i32> {
         .map(|index| index as i32)
 }
 
+/// VERA's Superweapon Limit: the frames left on `building`'s own shot of the
+/// Super its `SuperWeapon=` names. `None` when the type keeps gamemd's one
+/// charge per house, so the stock pass below answers (a Battle Lab shares the
+/// house's charge). Each such building opens and closes its own anims on its
+/// own timer instead of all of them on the first building's.
+fn own_charge_remaining(
+    sim: &Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &ObjectType,
+) -> Option<i32> {
+    if !object.super_weapon_per_building {
+        return None;
+    }
+    let id = sim.interner.get(object.super_weapon.as_deref()?)?;
+    let instance = sim.super_weapons.get(&entity.owner())?.get(&id)?;
+    instance.building_charge_remaining(entity.stable_id(), sim.session.binary_frame() as i32)
+}
+
 impl Simulation {
     /// `BuildingClass::OnConstructionComplete @ 0x00445F80`'s first-opening
     /// block `0x004463F0..0x00446580`: for each of the owner's Supers
@@ -82,26 +100,21 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        #[cfg(not(feature = "ares"))]
-        let owner = entity.owner();
-        #[cfg(not(feature = "ares"))]
-        let Some(index) = self
-            .object_type(entity.type_ref(), rules)
-            .and_then(|object| super_weapon_index(object, rules))
-        else {
-            return;
-        };
-        #[cfg(not(feature = "ares"))]
-        let remaining =
-            crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index);
-        #[cfg(feature = "ares")]
-        let remaining = {
+        let remaining = if rules.ares_form() {
             // Installed Ares4463F0 ->10034A60 replaces the retail Type-vs-
             // definition-index scan. No eligible Super still creates14 when
             // the primary definition exists (10034A91..10034ACD).
-            let selected =
-                crate::sim::superweapon::first_available_building_super(self, rules, entity)
-                    .map(|instance| instance.charge_remaining(self.session.binary_frame() as i32));
+            let selected = crate::sim::superweapon::first_available_building_super(
+                self, rules, entity,
+            )
+            .map(|instance| {
+                let frame = self.session.binary_frame() as i32;
+                // The building's own shot under the Superweapon Limit, else
+                // the House's one charge ([`own_charge_remaining`]).
+                instance
+                    .building_charge_remaining(id, frame)
+                    .unwrap_or_else(|| instance.charge_remaining(frame))
+            });
             if let Some(remaining) = selected {
                 vec![remaining]
             } else {
@@ -113,6 +126,20 @@ impl Simulation {
                     self.set_building_anim_slot(id, SUPER_ANIM, damaged, garrisoned, 0, rules);
                 }
                 return;
+            }
+        } else {
+            let owner = entity.owner();
+            let Some(object) = self.object_type(entity.type_ref(), rules) else {
+                return;
+            };
+            let Some(index) = super_weapon_index(object, rules) else {
+                return;
+            };
+            match own_charge_remaining(self, entity, object) {
+                Some(remaining) => vec![remaining],
+                None => {
+                    crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index)
+                }
             }
         };
         for remaining in remaining {
@@ -142,7 +169,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        #[cfg(not(feature = "ares"))]
+        let ares = rules.ares_form();
         let owner = entity.owner();
         let health = entity.health;
         if matches!(
@@ -154,20 +181,18 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        #[cfg(not(feature = "ares"))]
-        let Some(index) = super_weapon_index(object, rules) else {
+        // The stock pass leaves here without a `SuperWeapon=` index; Ares
+        // asks for the building's available Super below instead.
+        let index = super_weapon_index(object, rules);
+        if !ares && index.is_none() {
             return;
-        };
+        }
         let charged_anim_time = object.charged_anim_time;
         if charged_anim_time > CHARGED_ANIM_TIME_LIMIT {
             return;
         }
         let strength = object.strength;
-        #[cfg(not(feature = "ares"))]
-        let remaining =
-            crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index);
-        #[cfg(feature = "ares")]
-        let remaining = {
+        let remaining = if ares {
             // Ares450F9E ->10034AF0: unavailable returns451145; only an
             // actual selected instance reaches the shared retail timer body.
             let Some(instance) =
@@ -175,7 +200,24 @@ impl Simulation {
             else {
                 return;
             };
-            [instance.charge_remaining(self.session.binary_frame() as i32)]
+            let frame = self.session.binary_frame() as i32;
+            vec![
+                object
+                    .super_weapon_per_building
+                    .then(|| instance.building_charge_remaining(id, frame))
+                    .flatten()
+                    .unwrap_or_else(|| instance.charge_remaining(frame)),
+            ]
+        } else {
+            let Some(index) = index else {
+                return;
+            };
+            match own_charge_remaining(self, entity, object) {
+                Some(remaining) => vec![remaining],
+                None => {
+                    crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index)
+                }
+            }
         };
         for remaining in remaining {
             let (occupied, replacement) = if near_charged(remaining, charged_anim_time) {
@@ -197,7 +239,7 @@ impl Simulation {
     }
 }
 
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     //! Native comparisons (`tools/superweapon_oracle.py` sections
     //! `super_anim` and `opening_super_anim`; `--check` regenerates them).

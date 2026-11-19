@@ -76,7 +76,7 @@ impl Simulation {
     /// native detaches a destroyed object (a bullet's source is cleared when
     /// its firer expires). `malicious` is the hit warhead's Ares
     /// `Malicious=` (BuildingClass_ReceiveDamage_Malicious, hook 0x442974,
-    /// hands it to NotifyUnderAttack); default builds pass true.
+    /// hands it to NotifyUnderAttack); a game without Ares passes true.
     pub(crate) fn building_hit_response(
         &mut self,
         id: u64,
@@ -103,6 +103,7 @@ impl Simulation {
             owner: building.owner(),
             victim_type: building.type_ref(),
             own_alert: malicious,
+            line: crate::sim::combat::UnderAttackLine::House { allies: true },
         });
         // NotifyUnderAttack (`0x0044297B`) ends with its House Tag raise
         // before `0x00442980` asks the source for its House.
@@ -165,6 +166,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "building_retaliation_tests.rs"]
 mod tests;

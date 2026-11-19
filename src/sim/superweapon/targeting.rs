@@ -2,26 +2,22 @@
 //! gameplay state is duplicated here: occupancy, power, alliances and fog
 //! stay with their existing VERA owners.
 
-#[cfg(feature = "ares")]
 use crate::map::entities::EntityCategory;
-#[cfg(feature = "ares")]
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::superweapon_targeting::HouseMask;
 use crate::rules::superweapon_targeting::TargetReject;
-#[cfg(feature = "ares")]
 use crate::rules::superweapon_targeting::{
-    HouseMask, LaunchSite, TargetContent, TargetMask, TargetPreflightInput, evaluate_target,
+    LaunchSite, TargetContent, TargetMask, TargetPreflightInput, evaluate_target,
 };
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::intern::InternedId;
-#[cfg(feature = "ares")]
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::Simulation;
 
 /// One read-only TargetingData observation (Ares1006D1E0). The owning
 /// command/AI attempt drops it; entity positions, power and alliances remain
 /// authoritative. AI prepares it once, rather than rescanning for every cell.
-#[cfg(feature = "ares")]
 pub(super) struct TargetingData {
     sites: Vec<LaunchSite>,
     needs_designator: bool,
@@ -29,7 +25,6 @@ pub(super) struct TargetingData {
     inhibitors: Vec<RangedSite>,
 }
 
-#[cfg(feature = "ares")]
 impl TargetingData {
     fn check_influences(&self, cell: (u16, u16)) -> Result<(), TargetReject> {
         // NewSWType::CanFireAt1006CE5F..1006CF31: after the type and
@@ -44,13 +39,11 @@ impl TargetingData {
     }
 }
 
-#[cfg(feature = "ares")]
 struct RangedSite {
     center: (i16, i16),
     range_squared: i32,
 }
 
-#[cfg(feature = "ares")]
 impl RangedSite {
     fn contains(&self, cell: (u16, u16)) -> bool {
         //1006CE80..1006CF16 squares the signed-word differences in x87;
@@ -62,7 +55,6 @@ impl RangedSite {
     }
 }
 
-#[cfg(feature = "ares")]
 pub(super) fn prepare(
     sim: &Simulation,
     rules: &RuleSet,
@@ -108,7 +100,6 @@ pub(super) fn prepare(
 /// for inhibition, alive/nonzero HP/nonlimbo/not deactivated for both, plus
 /// Building IsPowerOnline4555D0 for inhibitors only. Query XY is pure; the
 /// scan draws no RNG and writes no timer, detach, fog or cell state.
-#[cfg(feature = "ares")]
 pub(super) fn scan_influences(
     sim: &Simulation,
     rules: &RuleSet,
@@ -172,7 +163,6 @@ pub(super) fn scan_influences(
 /// Phobos `SWTypeExt::HasDesignator` (`Ext/SWType/SWHelpers.cpp:122-131`): an
 /// empty list and no `SW.AnyDesignator` require none; otherwise a single
 /// owning designator in range answers true.
-#[cfg(feature = "ares")]
 pub(super) fn has_designator(
     sim: &Simulation,
     rules: &RuleSet,
@@ -192,7 +182,6 @@ pub(super) fn has_designator(
 /// Phobos `SWTypeExt::HasInhibitor` (`Ext/SWType/SWHelpers.cpp:83-93`): an
 /// empty list and no `SW.AnyInhibitor` refuse nothing; otherwise a single
 /// hostile inhibitor in range blocks.
-#[cfg(feature = "ares")]
 pub(super) fn has_inhibitor(
     sim: &Simulation,
     rules: &RuleSet,
@@ -210,7 +199,6 @@ pub(super) fn has_inhibitor(
 }
 
 /// Shared optional-SW target/placement bound, using the terrain owner.
-#[cfg(feature = "ares")]
 pub(super) fn on_map(sim: &Simulation, cell: (u16, u16)) -> bool {
     sim.resolved_terrain
         .as_ref()
@@ -252,33 +240,27 @@ pub(super) fn check(
     cell: (u16, u16),
     automatic: bool,
 ) -> Result<(), TargetReject> {
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = (sim, rules, owner, cell, automatic);
-        if sw.kind.is_extension() {
+    if !rules.ares_form() {
+        return if sw.kind.is_extension() {
             Err(TargetReject::InvalidPayload)
         } else {
             Ok(())
-        }
+        };
     }
-    #[cfg(feature = "ares")]
-    {
-        // A new type without an action launches without a target: the
-        // sidebar sends SPECIAL_PLACE at (0,0) (6AAF10) and Activate never asks
-        // CanFireAt (HunterSeeker10072850, Battery1006EBD0, a whole-map
-        // SonarPulse100753A0). Selected automatic cells still follow their
-        // shared CanFireAt path.
-        if !automatic && sw.action.is_none() {
-            return Ok(());
-        }
-        let data = prepare(sim, rules, owner, sw);
-        check_with_data(sim, rules, owner, sw, cell, automatic, &data)
+    // A new type without an action launches without a target: the
+    // sidebar sends SPECIAL_PLACE at (0,0) (6AAF10) and Activate never asks
+    // CanFireAt (HunterSeeker10072850, Battery1006EBD0, a whole-map
+    // SonarPulse100753A0). Selected automatic cells still follow their
+    // shared CanFireAt path.
+    if !automatic && sw.action.is_none() {
+        return Ok(());
     }
+    let data = prepare(sim, rules, owner, sw);
+    check_with_data(sim, rules, owner, sw, cell, automatic, &data)
 }
 
 /// AI prepares the launcher observation once per SW, not once per candidate.
 /// This is a borrowed query input, never a persistent cache or new authority.
-#[cfg(feature = "ares")]
 pub(super) fn check_with_data(
     sim: &Simulation,
     rules: &RuleSet,
@@ -371,7 +353,6 @@ pub(super) fn check_with_data(
 /// ra2-mono ResolveSuperweaponLaunchSites adaptation: VERA's retained House
 /// building order and operational-state owner replace OOP/ECS bridge lookups.
 /// The House's buildings that are launch sites of the type ([`launch_site`]).
-#[cfg(feature = "ares")]
 pub(super) fn launch_sites(
     sim: &Simulation,
     rules: &RuleSet,
@@ -391,7 +372,6 @@ pub(super) fn launch_sites(
 /// takes the `EMPulse.Cannons` types whatever they provide, else the
 /// providing `EMPulseCannon=` ones, and gives each its own range
 /// ([`emp_pulse_site_range`]).
-#[cfg(feature = "ares")]
 pub(super) fn launch_site(
     sim: &Simulation,
     rules: &RuleSet,
@@ -403,8 +383,7 @@ pub(super) fn launch_site(
         .then(|| rules.super_weapon_metadata(&sw.id))
         .flatten();
     let entity = sim.substrate.entities.get(id)?;
-    let provides =
-        || super::provided_supers(sim, rules, entity).any(|name| name.eq_ignore_ascii_case(&sw.id));
+    let provides = || super::building_has_super_weapon(sim, rules, entity, &sw.id);
     let site = match emp_pulse {
         Some(metadata) => {
             let cannons = &metadata.launch().emp_pulse().cannons;
@@ -437,7 +416,6 @@ pub(super) fn launch_site(
 /// GetLaunchSiteRange without a building: NewSWType's (1006D180) is
 /// `SW.RangeMinimum`/`.RangeMaximum`; SW_EMPulse's (10071380) is (-1, -1)
 /// under `EMPulse.TargetSelf`, else (0, 0), so its sites are always asked.
-#[cfg(feature = "ares")]
 pub(super) fn launch_site_range(rules: &RuleSet, sw: &SuperWeaponType) -> (f64, f64) {
     let Some(metadata) = rules.super_weapon_metadata(&sw.id) else {
         return (-1.0, -1.0);
@@ -458,7 +436,6 @@ pub(super) fn launch_site_range(rules: &RuleSet, sw: &SuperWeaponType) -> (f64, 
 /// `SW.RangeMaximum` takes its `Range=` and a negative `SW.RangeMinimum` its
 /// `MinimumRange=` in whole cells (`>> 8` unsigned, `0x100713D9`/`0x100713FB`);
 /// without one, NewSWType's type range.
-#[cfg(feature = "ares")]
 fn emp_pulse_site_range(
     sim: &Simulation,
     rules: &RuleSet,
@@ -499,7 +476,6 @@ fn emp_pulse_site_range(
     )
 }
 
-#[cfg(feature = "ares")]
 impl Simulation {
     /// Ares's house relation (10021440): the same house is the owner, then
     /// the owner's directed IsAlliedWith(other) makes an ally; any other

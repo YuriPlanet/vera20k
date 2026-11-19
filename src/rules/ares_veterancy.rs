@@ -224,6 +224,7 @@ impl AcademyTypeRules {
         types: Option<Vec<TechnoTypeReference>>,
         ignore: Option<Vec<TechnoTypeReference>>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(types) = types {
             self.types = types;
         }
@@ -273,6 +274,7 @@ pub(crate) struct VeterancyGlobalRules {
 impl VeterancyGlobalRules {
     /// LoadBeforeTypeData1002AB60: Valueable<int>1000A570 in AudioVisual.
     pub(crate) fn read_before_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(section) = pass.section("AudioVisual") {
             self.veteran_flash_timer =
                 section.read_ares_int("VeteranFlashTimer", self.veteran_flash_timer);

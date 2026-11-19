@@ -8,7 +8,10 @@ use crate::map::source::{LoadedTransferAsset, TransferResource};
 use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
-const CHUNK: usize = 32768;
+/// The lobby's map transfer chunk (docs/lobby-protocol.md, `map_upload`):
+/// each chunk but a transfer's last holds exactly this many bytes, which
+/// [`Transfer::append_chunk`] alone checks.
+const MAP_CHUNK_BYTES: usize = 32768;
 
 #[derive(PartialEq, Eq)]
 struct Key {
@@ -55,7 +58,7 @@ impl Transfer {
         complete: bool,
     ) -> Result<()> {
         let (expected_digest, expected_total) = key.asset(self.resource);
-        let expected_size = CHUNK.min(expected_total.saturating_sub(self.offset));
+        let expected_size = MAP_CHUNK_BYTES.min(expected_total.saturating_sub(self.offset));
         ensure!(
             digest == expected_digest
                 && total == expected_total
@@ -89,6 +92,9 @@ pub(super) struct Transfers {
     /// VERA: a guest's download of a map it does not have waits for the
     /// player's answer to the room's missing-map offer.
     asking: bool,
+    /// VERA: the match whose map a watcher's game downloads, which takes
+    /// the room's place (docs/lobby-protocol.md "Watching").
+    watching: Option<String>,
 }
 
 pub(super) fn received_options(
@@ -106,8 +112,17 @@ pub(super) fn received_options(
     Ok(())
 }
 
+/// A watcher's game fetches the map of the match `match_id`, as a guest
+/// fetches its room's: from its own maps, its cache, then the lobby.
+pub(super) fn watch(service: &mut LiveService, match_id: String) {
+    service.maps.watching = Some(match_id);
+    service.maps.generated = None;
+    service.maps.active = true;
+}
+
 pub(super) fn cancel(state: &mut AppState, service: &mut LiveService) {
     service.maps.active = false;
+    service.maps.watching = None;
     service.maps.generation = service.maps.generation.wrapping_add(1);
     service.maps.key = None;
     service.maps.transfer = None;
@@ -138,9 +153,19 @@ impl Transfers {
                     && key.total == usize::try_from(metadata.byte_length).unwrap_or(0)
                     && key.effective_digest == metadata.effective_digest
                     && key.random == self.generated
-                    && super::super::lobby::current_channel(state)
-                        .is_some_and(|channel| channel.name == key.room)
+                    && self.scope(state).is_some_and(|scope| scope == key.room)
             })
+    }
+    /// The transfer failed and will not retry.
+    pub(super) fn failed(&self) -> bool {
+        self.failed
+    }
+    /// What the transfer belongs to: the room this game is in, or the match
+    /// it watches.
+    fn scope(&self, state: &AppState) -> Option<String> {
+        self.watching.clone().or_else(|| {
+            super::super::lobby::current_channel(state).map(|channel| channel.name.clone())
+        })
     }
     fn fail(&mut self, state: &mut AppState) {
         // Retried failures and the deadline are the connection, not the map.
@@ -171,38 +196,28 @@ impl Transfers {
         if !self.active {
             return Ok(());
         }
-        let Some(launch) = state.match_state.session.network_setup() else {
+        if state.match_state.session.network_setup().is_none() {
             self.key = None;
             self.transfer = None;
             return Ok(());
-        };
+        }
         let Some(metadata) = state.match_state.session.network_map_metadata().cloned() else {
             return Ok(());
         };
-        let Some(channel) = super::super::lobby::current_channel(state) else {
+        let Some(scope) = self.scope(state) else {
             return Ok(());
         };
-        let seed = launch
-            .selected_map_file
-            .as_deref()
-            .is_some_and(|s| s.eq_ignore_ascii_case("RandMap.Sed"));
+        let seed = shared_maps::generated_selection(&state.match_state.session);
         if seed && self.generated.is_none() {
             return Ok(());
         }
         let key = Key {
-            room: channel.name.clone(),
+            room: scope,
             digest: metadata.source_sha256.clone(),
-            total: usize::try_from(metadata.byte_length)?,
+            total: shared_maps::transfer_length(&metadata)?,
             effective_digest: metadata.effective_digest.clone(),
             random: self.generated.clone(),
         };
-        ensure!(
-            crate::map::source::valid_source_sha256(&key.digest)
-                && crate::map::source::valid_source_sha256(&key.effective_digest)
-                && key.total > 0
-                && key.total <= TransferResource::Map.limit(),
-            "invalid map transfer identity"
-        );
         if self.key.as_ref() != Some(&key) {
             self.forget_other_available(&key);
             // An offer for the previous map closes, asking or downloading.
@@ -246,7 +261,7 @@ impl Transfers {
         let (digest, total) = key.asset(transfer.resource);
         let request = match transfer.direction {
             Direction::Upload => {
-                let end = (transfer.offset + CHUNK).min(total);
+                let end = (transfer.offset + MAP_CHUNK_BYTES).min(total);
                 let id = service.next_request;
                 service.next_request = service.next_request.wrapping_add(1);
                 http::Request::UploadMapChunk {
@@ -265,6 +280,7 @@ impl Transfers {
                 seed_digest: key.digest.clone(),
                 digest: digest.to_owned(),
                 offset: transfer.offset,
+                match_id: self.watching.clone(),
             },
         };
         service.requests.send(request)?;
@@ -523,7 +539,7 @@ impl Transfers {
             http::Response::MapUploaded { completed, .. } => {
                 let transfer = self.transfer.as_mut().unwrap();
                 ensure!(
-                    completed == (transfer.offset + CHUNK).min(total),
+                    completed == (transfer.offset + MAP_CHUNK_BYTES).min(total),
                     "upload offset differs"
                 );
                 transfer.offset = completed;
@@ -539,7 +555,7 @@ impl Transfers {
                             .ok_or_else(|| anyhow!("no asset directory"))?;
                         let source = crate::map::source::transfer_file_source(
                             &crate::map::source::random_map_dir(&config.paths.ra2_dir)
-                                .join("RandMap.img"),
+                                .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
                             resource,
                         )?;
                         ensure!(
@@ -663,7 +679,7 @@ impl Transfer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -765,11 +781,11 @@ mod tests {
         assert!(transfer.retry_after_failure(false).is_err());
     }
     #[test]
-    fn download_rejects_duplicate_offsets_and_changed_identity_without_appending() {
+    fn download_rejects_oversized_or_duplicate_chunks_and_changed_identity_without_appending() {
         let key = Key {
             room: "room".into(),
             digest: "a".repeat(64),
-            total: CHUNK + 2,
+            total: MAP_CHUNK_BYTES + 2,
             effective_digest: "b".repeat(64),
             random: None,
         };
@@ -785,23 +801,58 @@ mod tests {
             retries: 0,
             directory: PathBuf::new(),
         };
+        let (full, oversized) = (vec![1; MAP_CHUNK_BYTES], vec![1; MAP_CHUNK_BYTES + 1]);
+        let (digest, total) = (&key.digest, key.total);
+        assert!(
+            transfer
+                .append_chunk(&key, digest, total, 0, &oversized, false)
+                .is_err()
+        );
         transfer
-            .append_chunk(&key, &key.digest, key.total, 0, &vec![1; CHUNK], false)
+            .append_chunk(&key, digest, total, 0, &full, false)
             .unwrap();
         assert!(
             transfer
-                .append_chunk(&key, &key.digest, key.total, 0, &vec![1; CHUNK], false)
+                .append_chunk(&key, digest, total, 0, &full, false)
                 .is_err()
         );
+        let changed = "b".repeat(64);
         assert!(
             transfer
-                .append_chunk(&key, &"b".repeat(64), key.total, CHUNK, &[2, 3], true)
+                .append_chunk(&key, &changed, total, MAP_CHUNK_BYTES, &[2, 3], true)
                 .is_err()
         );
-        assert_eq!(transfer.offset, CHUNK);
+        assert_eq!(transfer.offset, MAP_CHUNK_BYTES);
         transfer
-            .append_chunk(&key, &key.digest, key.total, CHUNK, &[2, 3], true)
+            .append_chunk(&key, digest, total, MAP_CHUNK_BYTES, &[2, 3], true)
             .unwrap();
-        assert_eq!(&transfer.bytes[CHUNK..], &[2, 3]);
+        assert_eq!(&transfer.bytes[MAP_CHUNK_BYTES..], &[2, 3]);
+    }
+
+    /// The lobby keeps its own copies of a room's speeds, the rate it signs
+    /// for each and the map chunk size; this file is what its tests compare.
+    #[test]
+    fn the_lobby_reads_the_games_speeds_rates_and_map_chunk() {
+        let game_speeds: Vec<_> = (0..=u8::MAX)
+            .filter(|&speed| crate::sim::game_options::is_selectable_game_speed(speed))
+            .map(|speed| {
+                // The lobby signs, as `tick_hz`, the PreCalcFrameRate the host
+                // (the channel owner) sets for its speed.
+                let timing = crate::net::lockstep::wol_start_timing(i32::from(speed), [0], true);
+                serde_json::json!({"game_speed": speed, "tick_hz": timing.precalc_frame_rate})
+            })
+            .collect();
+        crate::test_fixture::assert_sent_json(
+            "tests/fixtures/lobby/game_contract.json",
+            &serde_json::json!({
+                "about": "Each Game Speed a room can select (`launch.options.game_speed`) \
+                    with the rate a match at that speed runs at, which the lobby signs \
+                    as the ordering certificate's `tick_hz`, and the map transfer's \
+                    chunk size (docs/lobby-protocol.md). The game's test in \
+                    src/app/shell_wol/live_service/maps.rs writes this file.",
+                "game_speeds": game_speeds,
+                "map_chunk_bytes": MAP_CHUNK_BYTES,
+            }),
+        );
     }
 }

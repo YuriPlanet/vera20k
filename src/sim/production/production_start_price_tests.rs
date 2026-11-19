@@ -56,7 +56,7 @@ fn scene() -> Option<(SimRuntime, InternedId)> {
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     frame(&mut runtime, owner);
     frame(&mut runtime, owner);
@@ -277,7 +277,7 @@ fn finish_history(start_before_plants: bool) {
             type_id: "GAREFN",
             cell: (12, 13)
         },
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         FrameEffects::default(),
     ));
     for _ in 0..600 {

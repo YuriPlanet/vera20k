@@ -20,10 +20,11 @@ use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::vision::{
     FoggedDrawKind, FoggedObjectFootprintRecord, FoggedObjectId, FrozenBuilding,
 };
+use smol_str::StrExt;
 
 pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
     let (Some(runtime), Some(atlas)) = (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
         state.match_state.match_presentation.sprite_atlas.as_ref(),
     ) else {
         return ObjectLayerPass::default();
@@ -43,12 +44,40 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         rules: &runtime.resources.rules,
         atlas,
         lighting: presentation.lighting.grid(),
-        house_colors: &presentation.house_color_map,
+        house_colors: presentation.effective_house_color_map(),
         axis: super::depth_axis(state),
         building_zshape: presentation.building_zshape.is_some(),
         detail_level: presentation.in_game_options.detail_level as i32,
     };
-    let snapshots = fogged_draw_order(sim.fog().fogged_objects().values(), viewer);
+    // A saved picture far off the view puts no pixel on it: its cell passes
+    // it by before its pieces are built and uploaded. DrawAll4D1890's order
+    // among the rest stands.
+    let zoom = state.match_state.input.zoom_level;
+    let camera = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let viewport = [
+        state.render_width() as f32 / zoom,
+        state.render_height() as f32 / zoom,
+    ];
+    let window = frozen_building_window(sim.resolved_terrain(), camera, viewport);
+    let near_view = |draw: &FrozenBuilding| {
+        let near = frozen_building_in_window(draw, window);
+        debug_assert!(
+            near || frozen_building_pieces(&input, draw).iter().all(|piece| {
+                let [x, y] = piece.instance.position;
+                let [width, height] = piece.instance.size;
+                x >= camera[0] + viewport[0]
+                    || y >= camera[1] + viewport[1]
+                    || x + width <= camera[0]
+                    || y + height <= camera[1]
+            }),
+            "the frozen building window left out a picture in view"
+        );
+        near
+    };
+    let snapshots = fogged_draw_order(sim.fog().fogged_objects().values(), viewer, near_view);
     lower_fogged_object_pieces(
         snapshots
             .into_iter()
@@ -56,17 +85,54 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
     )
 }
 
+/// The cells whose saved building picture can reach `camera`/`viewport`: the
+/// view widened by [`super::shp::BUILDING_SLOT_WINDOW_SLACK`].
+fn frozen_building_window(
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> crate::render::cell_window::CellWindow {
+    let slack = super::shp::BUILDING_SLOT_WINDOW_SLACK;
+    crate::render::cell_window::CellWindow::covering(
+        crate::render::cell_window::AnchorBounds {
+            left: camera[0] - slack,
+            top: camera[1] - slack,
+            right: camera[0] + viewport[0] + slack,
+            bottom: camera[1] + viewport[1] + slack,
+        },
+        terrain.map_or_else(Default::default, |terrain| terrain.level_span()),
+    )
+}
+
+/// Whether `draw`'s cell lies in `window`; a location off the cell grid
+/// stays in, so only a known far cell is passed by.
+fn frozen_building_in_window(
+    draw: &FrozenBuilding,
+    window: crate::render::cell_window::CellWindow,
+) -> bool {
+    match (
+        u16::try_from(draw.location.x >> 8),
+        u16::try_from(draw.location.y >> 8),
+    ) {
+        (Ok(rx), Ok(ry)) => window.contains(rx, ry),
+        _ => true,
+    }
+}
+
 /// FoggedObjectClass::DrawAll @ 0x004D1890 gates each saved picture on its
 /// retained visible byte at4D18F7, not current sight or a live source object.
 /// Constructor4D0EF0 supplies the signed sort key;4D18C6 sorts with4D2ED0.
+/// Only `viewer`'s pictures `near_view` keeps are drawn; the cheap tests go
+/// first, and every test only reads.
 fn fogged_draw_order<'a>(
     records: impl Iterator<Item = &'a FoggedObjectFootprintRecord>,
     viewer: InternedId,
+    near_view: impl Fn(&FrozenBuilding) -> bool,
 ) -> Vec<(FoggedObjectId, &'a FrozenBuilding)> {
     let mut snapshots: Vec<_> = records
         .filter(|record| record.viewer == viewer)
         .filter_map(|record| record.drawing.as_ref().map(|draw| (record.id, draw)))
-        .filter(|(_, draw)| draw.visible)
+        .filter(|(_, draw)| draw.visible && near_view(draw))
         .collect();
     snapshots.sort_by_key(|(_, draw)| {
         i32::MAX
@@ -156,7 +222,7 @@ fn frozen_building_pieces(
         palette_context: art.map_or(ShpPaletteContext::SelectedScheme, |art| {
             crate::render::sprite_atlas::building_art_palette_context(art)
         }),
-        type_id: name.to_string(),
+        type_id: name.into(),
         facing: 0,
         frame,
         house_color,
@@ -180,6 +246,7 @@ fn frozen_building_pieces(
             // so the `0x43D6E5` skip in the live `BuildingClass::Draw` does
             // not apply here; the frozen snapshot always adds the point move.
             let origin = native_z::zshape_origin(
+                native_z::FOGGED_ZSHAPE_ANCHOR,
                 (x as i32, y as i32),
                 object.foundation.dimensions(),
                 art.map_or((0, 0), |art| art.z_shape_point_move),
@@ -218,7 +285,7 @@ fn frozen_building_pieces(
     {
         let key = ShpSpriteKey {
             palette_context: crate::render::sprite_atlas::building_art_palette_context(art),
-            type_id: bib.to_ascii_uppercase(),
+            type_id: bib.to_ascii_uppercase_smolstr(),
             facing: 0,
             frame,
             house_color,
@@ -245,7 +312,7 @@ fn frozen_building_pieces(
         let context = crate::render::sprite_atlas::frozen_anim_palette_context(config);
         let key = ShpSpriteKey {
             palette_context: context,
-            type_id: name.to_string(),
+            type_id: name.into(),
             facing: 0,
             frame,
             house_color: if context == ShpPaletteContext::AnimPalette {
@@ -305,7 +372,7 @@ fn sprite(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -417,9 +484,9 @@ mod tests {
         };
         // The production selector has only immutable records: current sight
         // and the former live building cannot veto this remembered picture.
-        let selected = fogged_draw_order(std::iter::once(&record), owner);
+        let selected = fogged_draw_order(std::iter::once(&record), owner, |_| true);
         assert_eq!(selected.len(), 1);
-        assert!(fogged_draw_order(std::iter::once(&record), building).is_empty());
+        assert!(fogged_draw_order(std::iter::once(&record), building, |_| true).is_empty());
         let pieces = frozen_building_pieces(&input, selected[0].1);
         assert_eq!(
             pieces.iter().map(|piece| piece.target).collect::<Vec<_>>(),
@@ -439,6 +506,9 @@ mod tests {
                 .iter()
                 .all(|piece| piece.instance.position == [x + 3.0, y - 4.0])
         );
+        // The remembered body places BUILDNGZ from (0x90, 0xAC), not the
+        // live (0xC6, 0x1BE) (0x004D1DBD, 0x004D1DCE).
+        assert_eq!(pieces[0].instance.zshape_origin, [x - 144.0, y - 172.0]);
         assert!(pieces.iter().all(|piece| piece.instance.alpha == 1.0
             && piece.instance.draw_state.native_selector_bits() == 0
             && piece.instance.palette_light.colour_word() == 0));
@@ -456,9 +526,12 @@ mod tests {
         raised.location.z = 3744;
         let raised = frozen_building_pieces(&input, &raised);
         assert_eq!(raised.len(), pieces.len());
+        // FoggedObject 0x004D1E5B lifts by AdjustForZ alone.
+        let lift = (crate::util::native_x87::adjust_for_z_standard(3744)
+            - crate::util::native_x87::adjust_for_z_standard(104)) as f32;
         for (low, high) in pieces.iter().zip(&raised) {
-            assert_eq!(high.instance.position[1], low.instance.position[1] - 525.0);
-            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - 525.0);
+            assert_eq!(high.instance.position[1], low.instance.position[1] - lift);
+            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - lift);
             assert_eq!(high.instance.depth, low.instance.depth);
         }
     }
@@ -473,5 +546,32 @@ fn piece(
         target: ObjectTexture::ShpPage(entry.page as usize),
         render_z,
         instance,
+    }
+}
+
+#[cfg(all(test, tests_app_presentation_instances))]
+mod window_tests {
+    use super::*;
+    use crate::sim::components::DriveCoord;
+
+    /// A saved picture is passed by only on a known cell far off the view:
+    /// one in the view stays, and so does a location off the cell grid.
+    #[test]
+    fn a_frozen_building_far_off_the_view_is_passed_by() {
+        let frozen = |rx, ry| FrozenBuilding {
+            owner: Default::default(),
+            location: DriveCoord::cell(rx, ry, 0),
+            level: 0,
+            visible: true,
+            records: Vec::new(),
+        };
+        let window = frozen_building_window(None, [0.0, 0.0], [600.0, 400.0]);
+        // Anchor (-30, 315): in the view.
+        assert!(frozen_building_in_window(&frozen(10, 10), window));
+        // Anchor x = -2,430: far left of the view and its slack.
+        assert!(!frozen_building_in_window(&frozen(10, 90), window));
+        let mut off_grid = frozen(10, 90);
+        off_grid.location.x = -300;
+        assert!(frozen_building_in_window(&off_grid, window));
     }
 }

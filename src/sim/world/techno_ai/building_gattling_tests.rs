@@ -3,9 +3,8 @@
 //! Mission_Attack's arms, Mission_Guard and the Update's Gattling block one
 //! call at a time, and its engagements through the production frame.
 //!
-//! Ares builds skip the two charging replays: their stage test reads the
-//! charged value (TechnoClass_UpdateGattling_Cycle, hook 0x70DEBA).
-#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
+//! The two charging replays hold in a stock game only: Ares' stage test reads
+//! the charged value (TechnoClass_UpdateGattling_Cycle, hook 0x70DEBA).
 
 use std::collections::BTreeMap;
 
@@ -103,14 +102,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
     ));
     let started = (0..120).any(|_| {
         let output = sim
-            .advance_app_frame(
-                &[],
-                &rules,
-                None,
-                33,
-                TickLane::Ordinary,
-                FrameEffects::empty(),
-            )
+            .advance_app_frame(&[], &rules, 33, TickLane::Ordinary, FrameEffects::empty())
             .unwrap();
         output.sound_events.iter().any(|event| {
             matches!(event,
@@ -140,7 +132,6 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         sim.advance_app_frame(
             &[],
             &rules,
-            None,
             33,
             TickLane::Ordinary,
             FrameEffects::for_sound(&heard),
@@ -413,7 +404,6 @@ fn assert_gattling(sim: &Simulation, id: u64, row: &Value, stage_before: i32) {
 /// count and advances `+0x148` on OK and REARM. The combat phase then fires
 /// each requested shot with the FireAt's weapon, the stage's own even when
 /// the charge after it stepped the stage (`ok_stage_up`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn gattling_attack_matches_the_original() {
     let golden = golden();
@@ -715,7 +705,6 @@ enum Event {
 /// before each frame, since the oracle's FireAt draws nothing. The
 /// turretless fixture never answers FACING, so `facing_stretch` (whose arm
 /// the `attack` rows pin) is not replayed.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn gattling_cadence_matches_the_original() {
     let golden = golden();

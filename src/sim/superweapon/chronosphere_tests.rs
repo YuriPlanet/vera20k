@@ -186,9 +186,8 @@ pub(crate) fn place(
     entity.position.set_z_for_test(level + deck);
     entity.set_on_bridge(bridge);
     if latch {
-        entity
-            .drop_credit
-            .set_warped_by_house_for_test(Some(entity.owner()));
+        let owner = entity.owner();
+        entity.drop_credit.set_warped_by_house_for_test(Some(owner));
         entity
             .locomotor
             .as_mut()
@@ -299,7 +298,7 @@ fn retail_chrono_rules() {
     let warp = rules.super_weapon("ChronoWarpSpecial").unwrap();
     // Ares LoadFromINIFile (10033370's tail) writes -1 for a handled type;
     // Fire_SW pairs it with the House's last Super (hook 4FAE72).
-    let pre_dependent = if cfg!(feature = "ares") { -1 } else { 3 };
+    let pre_dependent = if rules.ares() { -1 } else { 3 };
     assert_eq!(
         (
             warp.kind,
@@ -361,7 +360,7 @@ fn retail_chrono_warp_moves_the_source_block() {
     // Case 3 lifts the cell 5 leptons and CreateChronoAnim 5 more
     // (`0x006CC423`, `0x006CB43B`); Ares's Activate (1006ED30) lifts it by
     // SW.AnimationHeight (Initialize 5) only.
-    let lift = if cfg!(feature = "ares") { 5 } else { 10 };
+    let lift = if rules.ares() { 5 } else { 10 };
     assert_eq!(
         anim.world_coord().z,
         super::deck_coords(&sim, SOURCE)[2] + lift
@@ -443,15 +442,8 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
 
     fn frame(sim: &mut Simulation, rules: &RuleSet) {
         let due = sim.take_due_commands();
-        sim.advance_app_frame(
-            &due,
-            rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .expect("ordinary skirmish frame");
+        sim.advance_app_frame(&due, rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .expect("ordinary skirmish frame");
     }
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -611,7 +603,6 @@ fn chain(sim: &Simulation, id: u64) -> Vec<LocomotorKind> {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_carries_a_driving_chrono_miner() {
     use LocomotorKind::{Drive, Teleport};
@@ -698,7 +689,6 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
     use LocomotorKind::{Ship, Teleport};
@@ -1034,9 +1024,9 @@ fn retail_chrono_warp_onto_the_iron_curtain_kills_the_warper() {
 /// Ares 3.0 TeleportLocomotionClass_Unwarp_PreventSelfCrush (10037BC0, hook
 /// 0x7187DA): a warper that came under the Iron Curtain during its warp is
 /// not crushed by its own curtain on the landing cell.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_iron_curtained_warper_survives_its_own_landing() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((rules, mut sim, americans)) = retail_world() else {
         return;
     };
@@ -1062,9 +1052,9 @@ fn ares_iron_curtained_warper_survives_its_own_landing() {
 /// 0x7188F2): a Robot Tank offline for want of power does not float on a
 /// water landing, though its AmphibiousDestroyer zone floats it otherwise
 /// (SinkOrSwim, 0x718871).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_chrono_warp_sinks_an_offline_robot_tank_on_water() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
     let Some(rules) = retail_rules() else {
         return;
@@ -1410,7 +1400,6 @@ fn retail_chrono_update_position_matches_native_rows() {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_destinations_match_native_rows() {
     if retail_rules().is_none() {

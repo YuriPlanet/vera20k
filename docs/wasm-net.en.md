@@ -2,7 +2,7 @@
 
 [简体中文](wasm-net.md) | [English](wasm-net.en.md)
 
-`wasm-net` gives the browser build access to the existing online lobby and UDP relay. Default builds, desktop networking and single-player packages enabling only `wasm` retain their existing paths. The connection uses transparent WS/UDP conversion: the original lobby and relay servers, message formats, tickets, encryption, ACKs, reliable messaging and command-ordering protocols remain unchanged.
+`wasm-net` gives the browser build access to the existing online lobby and UDP relay. Default builds, desktop networking and single-player packages enabling only `wasm` retain their existing paths. The connection uses transparent WS/UDP conversion: the original lobby and relay servers, message formats, tickets, per-hop authentication, ACKs, reliable messaging and command-ordering protocols remain unchanged.
 
 ## Build and addresses
 
@@ -26,7 +26,7 @@ Both modes write to `target/wasm-dist/` and accept `--profile release`. Online p
 
 `WS_PROXY_URL` is a compile-time proxy origin, with the full default value `wss://wss.vera20k.com`. The sole Rust configuration entry is [`net::udp::browser_proxy_url`](../src/net/udp.rs), which reads the build environment through `option_env!`; JS supplies no separate default. The build helper rejects empty values, credentials, paths, query strings, fragments and non-WebSocket schemes. `ws://` is allowed only for loopback addresses; normal deployments use `wss://`.
 
-The default WS endpoints are `wss://wss.vera20k.com/game/primary` and `wss://wss.vera20k.com/game/alternate`. Lobby Fetch requests use HTTPS `/v1/*` at the same authority (local `ws:` maps to `http:`). There is no runtime address setting, localStorage override or fallback to the page's domain. The default domain is a build convention, not a claim that the service has been deployed. `WS_PROXY_URL` does not change the lobby's `RelayGrant.address`.
+The default WS endpoints are `wss://wss.vera20k.com/game/primary/<relay>` and `wss://wss.vera20k.com/game/alternate/<relay>`, where `<relay>` is the grant's IPv4:port. Lobby Fetch requests use HTTPS `/v1/*` at the same authority (local `ws:` maps to `http:`). There is no runtime address setting, localStorage override or fallback to the page's domain. The default domain is a build convention, not a claim that the service has been deployed. `WS_PROXY_URL` does not change the lobby's `RelayGrant.address`; that address chooses the relay.
 
 ## LAN (`wasm-lan`)
 
@@ -59,16 +59,16 @@ The separate manual WASM workflow packages single-player and online versions; de
 
 ```text
 Existing online lobby logic → Fetch → gateway /v1/* → original HTTPS lobby
-Existing network protocol → browser socket → WS /game/primary → separate UDP socket → original relay
-                           browser alternate → WS /game/alternate → another UDP socket
+Existing network protocol → browser socket → WS /game/primary/<relay> → separate UDP socket → grant's relay
+                           browser alternate → WS /game/alternate/<relay> → another UDP socket
 Desktop client → original HTTPS lobby and UDP relay
 ```
 
-One WS binary message carries one complete original UDP datagram. There is no added destination header, JSON, base64 or custom handshake, and datagrams are not combined. Authentication, renewal, ACKs, retries, ordering and match logs remain with their original owners. WS OPEN does not mean relay admission, and connection Ping/Pong is not a game-layer acknowledgement.
+One WS binary message carries one complete original UDP datagram. The relay is named once per connection, in the WS path; datagrams get no added destination header, JSON, base64 or custom handshake, and are not combined. Authentication, renewal, ACKs, retries, ordering and match logs remain with their original owners. WS OPEN does not mean relay admission, and connection Ping/Pong is not a game-layer acknowledgement.
 
-Each WS connection owns a connected UDP socket whose source port stays stable for that connection's lifetime. Players and channels do not share ports. An administrator configures the gateway's fixed UDP target, which must correspond to the lobby's relay; browsers cannot choose arbitrary forwarding destinations. See the [gateway guide](../tools/wasm/gateway/README.md) for deployment and limits.
+Each WS connection owns a connected UDP socket whose source port stays stable for that connection's lifetime. Players and channels do not share ports. The gateway forwards each connection to the relay its path names only when that relay is on the administrator's `VERA_RELAYS` list, every relay the lobby grants, and refuses any other path; browsers cannot choose arbitrary forwarding destinations. See the [gateway guide](../tools/wasm/gateway/README.md) for deployment and limits.
 
-The `/v1/*` proxy preserves the existing method, path, Authorization, request body, status code and response body. It neither parses nor rewrites game JSON, and it does not retry on the client's behalf. The gateway handles cross-origin CORS, so the original lobby needs no OPTIONS support. The gateway's HTTP component handles bearer tokens and responses containing payload keys, making it part of the lobby credential trust boundary. It needs no relay signing key, logs no credentials and reads no retail assets.
+The `/v1/*` proxy preserves the existing method, path, Authorization, the headers a game signs in with (`Vera-Version`, `Vera-Build`, `Vera-Quick-Match`, `Vera-Host-Handover`, `Vera-Watch-AI` and `Vera-Language`; [lobby protocol](lobby-protocol.md#sign-in-headers)), request body, status code and response body. It neither parses nor rewrites game JSON, and it does not retry on the client's behalf. The gateway handles cross-origin CORS, so the original lobby needs no OPTIONS support. The gateway's HTTP component handles bearer tokens and responses containing tickets and packet keys, making it part of the lobby credential trust boundary; it also carries game datagrams, which are authenticated per hop but not encrypted. It needs no relay signing key, logs no credentials and reads no retail assets.
 
 ## Client boundaries
 
@@ -76,9 +76,11 @@ The `/v1/*` proxy preserves the existing method, path, Authorization, request bo
 
 [`web_socket.rs`](../src/net/web_socket.rs) replaces only `UdpIo`'s private physical socket, preserving the `LanUdpTransport` interface and original protocol queues. `bind` creates only logical handles; WS connections open after the original owner accepts a relay grant. Opening the LAN menu cannot incidentally connect to a remote proxy (`wasm-lan` connects only to signaling; see above). Send and receive endpoints are pinned to that grant, rather than inferring the source from the last send destination.
 
-[`network.js`](../tools/wasm/network.js) buffers only raw bytes. Reception is limited to 256 packets and 256 KiB; sending uses `bufferedAmount` to enforce a 256 KiB limit. Rust uses the original codec's `MAX_DATAGRAM`. A pending connection or send backlog returns WouldBlock, leaving retries with the protocol queues.
+[`network.js`](../tools/wasm/network.js) buffers only raw bytes. Reception is limited to 256 packets and 256 KiB, and a full queue loses the arriving datagram, as UDP would; sending uses `bufferedAmount` to enforce a 256 KiB limit. Rust uses the original codec's `MAX_DATAGRAM`. A pending connection or send backlog returns WouldBlock, leaving retries with the protocol queues.
 
-Physical connection failures trigger reconnects with bounded backoff, clear the old connection's bytes and callbacks, and notify the original Rust owner to repeat the relay challenge. Original reliable queues, match identity, unacknowledged batches and the log cursor remain intact. Network loss never creates Leave; explicit exit still follows the original acknowledgement flow. Browsers have no native I/O pump thread, so incremental app service calls and the event loop advance networking together.
+Physical connection failures trigger reconnects with backoff capped at 2 seconds (the relay counts a hop silent for 1.5 s as offline), clear the old connection's bytes and callbacks, and notify the original Rust owner to repeat the relay challenge. Original reliable queues, match identity, unacknowledged batches and the log cursor remain intact. Network loss never creates Leave; explicit exit still follows the original acknowledgement flow. Browsers have no native I/O pump thread, so incremental app service calls and the event loop advance networking together.
+
+Because the game loop drains received datagrams only between frames, `network.js` records each message's arrival time and the socket hands it to the relay session as the receive time (adaptive-transport spec §6.5), so frame time does not enter RTT, loss judgement or JITTERY. Where the browser allows a Worker, a dedicated Worker created inline by `network.js` owns the WebSockets and times each message on its own thread, so a long frame on the page's thread does not delay the timestamp either; it moves bytes and reports its send backlog, and every limit, reconnect and route rule stays in `network.js`. Without a Worker the sockets open on the page's thread. The protocol, its sends and heartbeats still run on the page's thread. A browser relay session also marks its hop as a stream transport (`ClientSession::use_stream_transport`): a lossy-state uplink copy could only queue behind its original on the WebSocket, so none is sent, while RTO resends still recover what the gateway drops or its UDP leg loses. The relay's downlink policy is unchanged.
 
 ### Lobby executor
 
@@ -113,6 +115,6 @@ Before release, cover native default, native `wasm`, native `wasm-net`, WASM `wa
 
 Runtime acceptance still requires complete two-client matches, matching committed-frame digests between browser and unchanged desktop logic, catch-up after a temporary disconnection, explicit exit and starting another match. Only those runs can establish that online play works; compilation or UDP echo is insufficient. Report validation results with delivery, rather than retaining run logs in this document.
 
-Interop tests require identical source and feature sets on both clients: the existing build identity includes every Cargo feature. This adaptation does not relax that check. Build the desktop test client corresponding to the browser online package with `--no-default-features --features wasm-net`; it still uses native networking. Do not assume an existing older desktop installation can join the new build.
+Interop tests require identical source and feature sets on both clients: the existing build identity includes every Cargo feature but the test groups and the thread pool (`wasm-threads`, [build check](Networking.md#build-check)). This adaptation does not relax that check. Build the desktop test client corresponding to the browser online package with `--no-default-features --features wasm-net`; it still uses native networking. Do not assume an existing older desktop installation can join the new build.
 
 This work connects existing online play and optional browser-to-browser LAN play (above). It does not add browser LAN play with desktop clients, arbitrary direct-IP connections, CnCNet, a new protocol, random map generation or simulation restoration after page reload. Browser background throttling, long synchronous asset operations and WS head-of-line blocking still need runtime observation; the original relay's process-restart recovery limits remain. Support for 30 protocol sources does not establish browser performance at 30 players and 20,000 units.

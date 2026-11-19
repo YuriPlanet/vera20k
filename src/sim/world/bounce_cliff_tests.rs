@@ -189,6 +189,7 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
             ),
             true,
             &mut Vec::new(),
+            rules,
         )
         .unwrap();
     });

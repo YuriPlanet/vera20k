@@ -9,15 +9,8 @@ use crate::sim::world::{FrameEffects, SimFrameOutput, SimSoundEvent, TickLane};
 
 fn frame(sim: &mut Simulation, rules: &RuleSet) -> SimFrameOutput {
     let due = sim.take_due_commands();
-    sim.advance_app_frame(
-        &due,
-        rules,
-        None,
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .expect("ordinary authoritative frame")
+    sim.advance_app_frame(&due, rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .expect("ordinary authoritative frame")
 }
 
 fn command(sim: &mut Simulation, owner: InternedId, payload: Command) {
@@ -368,31 +361,21 @@ fn authored_stock_action_case_and_unknown_layer_drive_cursor_and_press() {
         .entry(owner)
         .or_default()
         .insert(id, instance);
-    for (kind, raw, canonical, expected, cursor) in [
+    for (kind, raw, stock_way, ares_way) in [
         (
             RulesLayerKind::GameMode,
             "nUkE",
-            "Nuke",
-            SuperWeaponClick::Target,
-            Some(CursorId::Nuke),
+            ("Nuke", SuperWeaponClick::Target, Some(CursorId::Nuke)),
+            ("Nuke", SuperWeaponClick::Target, Some(CursorId::Nuke)),
         ),
-        // Installed Ares gives the redirected MultiMissile its custom action
-        // whatever Action= says (SW_NuclearMissile::Initialize 10073360).
-        #[cfg(not(feature = "ares"))]
+        // When the Rules were read the Ares way (`RuleSet::ares_form`), Ares
+        // gives the redirected MultiMissile its custom action whatever
+        // Action= says (SW_NuclearMissile::Initialize 10073360).
         (
             RulesLayerKind::Scenario,
             "UnknownAction",
-            "None",
-            SuperWeaponClick::Launch(id),
-            None,
-        ),
-        #[cfg(feature = "ares")]
-        (
-            RulesLayerKind::Scenario,
-            "UnknownAction",
-            "Nuke",
-            SuperWeaponClick::Target,
-            Some(CursorId::Nuke),
+            ("None", SuperWeaponClick::Launch(id), None),
+            ("Nuke", SuperWeaponClick::Target, Some(CursorId::Nuke)),
         ),
     ] {
         layers.push(
@@ -401,6 +384,11 @@ fn authored_stock_action_case_and_unknown_layer_drive_cursor_and_press() {
         );
         let processed = layers.process_with_fixed_art(&art).unwrap();
         let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let (canonical, expected, cursor) = if rules.ares_form() {
+            ares_way
+        } else {
+            stock_way
+        };
         let action = rules.super_weapon("NukeSpecial").unwrap().action.as_deref();
         assert_eq!(action, Some(canonical));
         assert_eq!(

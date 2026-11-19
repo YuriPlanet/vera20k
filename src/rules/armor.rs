@@ -79,7 +79,6 @@ impl ArmorInteraction {
         self.passive_acquire
     }
 
-    #[cfg(not(feature = "ares"))]
     pub(crate) fn retail(multiplier: NativeF64Bits) -> Self {
         let value = f64::from_bits(multiplier.bits());
         Self {
@@ -93,7 +92,6 @@ impl ArmorInteraction {
         }
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn ares(
         multiplier: NativeF64Bits,
         force_fire: bool,

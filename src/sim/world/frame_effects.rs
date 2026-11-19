@@ -125,11 +125,12 @@ pub struct FrameEffects<'a> {
     tactical_radar: Option<&'a dyn TacticalRadarBoundary>,
     outcome_wait: Option<&'a dyn OutcomeWaitBoundary>,
     local_planning: Option<&'a dyn LocalPlanningBoundary>,
+    selection_voice_suppressed: bool,
     network_commands: Option<&'a dyn NetworkCommandBoundary>,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
     before_logic: Option<&'a dyn Fn(&Simulation)>,
     command_applied: Option<&'a dyn Fn(&Simulation, &CommandRecord, bool)>,
-    #[cfg(any(feature = "ares", feature = "phobos"))]
+#[cfg(feature = "phobos")]
     bounty_text: Option<&'a dyn Fn(&Simulation, &RuleSet, crate::sim::flying_text::BountyText)>,
     production_factories: &'a [crate::sim::production::ProductionFactoryVisit],
     production_request_cleared: Option<&'a dyn Fn(crate::sim::intern::InternedId)>,
@@ -151,11 +152,11 @@ impl<'a> FrameEffects<'a> {
             tactical_radar: None,
             outcome_wait: None,
             local_planning: None,
+            selection_voice_suppressed: false,
             network_commands: None,
             overlay_registry: None,
             before_logic: None,
             command_applied: None,
-            #[cfg(any(feature = "ares", feature = "phobos"))]
             bounty_text: None,
             production_factories: &[],
             production_request_cleared: None,
@@ -172,10 +173,11 @@ impl<'a> FrameEffects<'a> {
             overlay_registry: None,
             before_logic: None,
             command_applied: None,
-            #[cfg(any(feature = "ares", feature = "phobos"))]
+#[cfg(feature = "phobos")]
             bounty_text: None,
             production_factories: &[],
             production_request_cleared: None,
+            ..Self::empty()
         }
     }
 
@@ -188,7 +190,6 @@ impl<'a> FrameEffects<'a> {
 
     /// Client-only display delivery at the reached native call. The core
     /// consumed its pending sum/deadline before this optional observer runs.
-    #[cfg(any(feature = "ares", feature = "phobos"))]
     pub fn with_bounty_text(
         self,
         boundary: &'a dyn Fn(&Simulation, &RuleSet, crate::sim::flying_text::BountyText),
@@ -199,7 +200,6 @@ impl<'a> FrameEffects<'a> {
         }
     }
 
-    #[cfg(any(feature = "ares", feature = "phobos"))]
     pub(crate) fn emit_bounty_text(
         self,
         sim: &Simulation,
@@ -356,6 +356,19 @@ impl<'a> FrameEffects<'a> {
     pub(crate) fn local_planning_active(self) -> bool {
         self.local_planning
             .is_some_and(LocalPlanningBoundary::planning_active)
+    }
+
+    /// Ares clears 0x00822CF2 around a silent Select. Its synchronous tag
+    /// actions and any Select they start inherit the same voice setting.
+    pub(crate) fn without_selection_voice(self) -> Self {
+        Self {
+            selection_voice_suppressed: true,
+            ..self
+        }
+    }
+
+    pub(super) fn selection_voice_enabled(self) -> bool {
+        !self.selection_voice_suppressed
     }
 
     /// Bind the match's OverlayTypeClass table for receivers the frame reaches

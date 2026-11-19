@@ -32,6 +32,7 @@ pub(crate) fn fixed_art(row: &Value) -> IniFile {
 }
 
 pub(crate) fn rules(row: &Value) -> RuleSet {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let art = fixed_art(row);
     let processed = RulesLayerStack::new(base_ini())
         .process_with_fixed_art(&art)
@@ -48,6 +49,7 @@ fn terminated(row: &Value) -> Value {
 
 #[test]
 fn custom_foundations_match_native_reader_geometry_and_retention() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::docking::building_dock::{foundation_exit_list, foundation_exit_pair};
     for row in native_rows() {
         let art = fixed_art(&row);
@@ -134,6 +136,7 @@ fn custom_foundations_match_native_reader_geometry_and_retention() {
 
 #[test]
 fn fixed_art_custom_geometry_affects_configuration_hash_and_rejects_unsupported_sizes() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let row = native_rows().remove(0);
     let original = rules(&row);
     let mut changed = row.clone();
@@ -159,6 +162,7 @@ fn fixed_art_custom_geometry_affects_configuration_hash_and_rejects_unsupported_
 
 #[test]
 fn custom_outline_backing_and_cursor_match_native_direct_consumers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::docking::building_dock::foundation_exit_pair;
     let packet: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/rules_oracle/ares_foundation.json",
@@ -201,25 +205,26 @@ fn custom_outline_backing_and_cursor_match_native_direct_consumers() {
     assert_eq!(row["rng_states_before"], row["rng_states_after"]);
 }
 
-/// Ares BuildingTypeClass_GetMaxPips 10010150 (hook 0x45ECE0): a custom
-/// foundation's building answers `Foundation.X` whatever its PipScale, where
-/// the stock answer of a passenger building is its `Passengers=`.
+/// Ares BuildingTypeClass_GetMaxPips 10010150 (hook 0x45ECE0) only loads a
+/// custom foundation's `Foundation.X` as the width and resumes in the stock
+/// body (0x45ECED): a passenger building still answers its `Passengers=`,
+/// and a Tiberium one its `Storage=` capped at width x 60 / 8.
 /// Ares BuildingTypeClass_IsUndeployable 100101D0 (hook 0x465D4A): only a
 /// 1x1 custom foundation undeploys.
 #[test]
-fn custom_foundation_answers_its_width_as_max_pips() {
-    let rules_for = |cells: &str| {
+fn custom_foundation_width_feeds_the_stock_building_pip_max() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules_for = |cells: &str, pips: &str| {
         let art = IniFile::from_str(&format!(
             "[CUSTOM_ART]\nFoundation=Custom\n{cells}Foundation.0=0,0\nFoundation.1=1,0\n\
              Foundation.2=2,0\n"
         ));
-        let ini = IniFile::from_str(
+        let ini = IniFile::from_str(&format!(
             "[Clear]\nBuildable=yes\n[Countries]\n0=Americans\n[Americans]\nSide=GDI\n\
              [VehicleTypes]\n0=MCV\n[MCV]\nStrength=100\n\
              [BuildingTypes]\n0=CUSTOM_TEST\n[CUSTOM_TEST]\nImage=CUSTOM_ART\n\
-             Owner=Americans\nStrength=500\nTechLevel=1\nPipScale=Passengers\nPassengers=5\n\
-             UndeploysInto=MCV\n",
-        );
+             Owner=Americans\nStrength=500\nTechLevel=1\n{pips}UndeploysInto=MCV\n",
+        ));
         let processed = RulesLayerStack::new(ini)
             .process_with_fixed_art(&art)
             .unwrap();
@@ -227,13 +232,19 @@ fn custom_foundation_answers_its_width_as_max_pips() {
         rules.install_art_data(ArtRegistry::from_ini(&art));
         rules
     };
-    let wide = rules_for("Foundation.X=3\nFoundation.Y=1\n");
+    let passengers = "PipScale=Passengers\nPassengers=5\n";
+    let wide = rules_for("Foundation.X=3\nFoundation.Y=1\n", passengers);
     let object = wide.object("CUSTOM_TEST").unwrap();
     assert!(matches!(object.foundation, Foundation::Custom(_)));
-    assert_eq!(object.pip_max(&wide), 3);
+    assert_eq!(object.pip_max(&wide), 5);
     assert!(!object.is_1x1_with_undeploy());
-    let single = rules_for("Foundation.X=1\nFoundation.Y=1\n");
+    let silo = rules_for(
+        "Foundation.X=3\nFoundation.Y=1\n",
+        "PipScale=Tiberium\nStorage=200\n",
+    );
+    assert_eq!(silo.object("CUSTOM_TEST").unwrap().pip_max(&silo), 22);
+    let single = rules_for("Foundation.X=1\nFoundation.Y=1\n", passengers);
     let object = single.object("CUSTOM_TEST").unwrap();
-    assert_eq!(object.pip_max(&single), 1);
+    assert_eq!(object.pip_max(&single), 5);
     assert!(object.is_1x1_with_undeploy());
 }

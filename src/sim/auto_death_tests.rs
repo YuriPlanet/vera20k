@@ -497,7 +497,6 @@ fn after_delay_without_a_behavior_never_arms_the_clock() {
 /// test drives a real shoreline crossing: a timed unit converts to an untimed
 /// type and must not carry its countdown across. The stale clock would complete
 /// two frames after the crossing and kill the converted unit.
-#[cfg(feature = "ares")]
 #[test]
 fn an_ares_surface_conversion_stops_the_countdown() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(

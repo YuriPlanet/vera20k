@@ -66,7 +66,7 @@ fn supplied_fixture(rules: &RuleSet, fixture: &Value, row: &Value) -> (Simulatio
         // The native loaded-admission control also supplies a head sentinel;
         // neither comparison dispatches its passenger handler or placement.
         entity
-            .passenger_role
+            .passenger_role_mut_for_test()
             .cargo_mut()
             .unwrap()
             .board_forced_chain(&[(999, 1.0)]);
@@ -91,7 +91,7 @@ fn supplied_fixture(rules: &RuleSet, fixture: &Value, row: &Value) -> (Simulatio
 
 fn assert_mission_state(sim: &Simulation, id: u64, expected: &Value) {
     let entity = sim.substrate.entities.get(id).unwrap();
-    let state = entity.mission;
+    let state = entity.mission.clone();
     for (key, actual) in [
         ("mission", i64::from(state.current().raw())),
         ("suspended_mission", i64::from(state.suspended().raw())),
@@ -120,7 +120,7 @@ fn assert_mission_state(sim: &Simulation, id: u64, expected: &Value) {
     );
     assert_eq!(entity.archive_target(), target(&expected["archive"]));
     assert_eq!(
-        u64::from(entity.passenger_role.passenger_count()),
+        u64::from(entity.passenger_role().passenger_count()),
         expected["cargo"].as_u64().unwrap()
     );
     assert_eq!(

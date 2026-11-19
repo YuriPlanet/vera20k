@@ -1,4 +1,4 @@
-//! Per-client counters and the JSON report (e2e-plan §1.3).
+//! Per-client counters and the JSON report `relay_netsim` prints.
 
 use std::collections::BTreeMap;
 
@@ -34,8 +34,6 @@ pub struct Direction {
     pub bytes_per_s: f64,
     /// Datagrams per second by kind.
     pub kinds: BTreeMap<String, f64>,
-    /// Datagrams the network lost (rules, outages, random, queue), per second.
-    pub net_lost_per_s: f64,
 }
 
 #[derive(Debug, Serialize, Clone, Default)]
@@ -78,9 +76,7 @@ pub struct ClientReport {
     pub down: Direction,
     /// Command issued to its frame executed at the issuing client, in ms.
     pub command_latency_ms: Distribution,
-    /// Time between frame-end advances, in ms.
-    pub turn_interval_ms: Distribution,
-    /// Advances more than two turns apart.
+    /// Frame-end advances more than two turns apart.
     pub hitches: f64,
     /// Gaps reported to the session (§10.1 `gaps`, whole run).
     pub gaps: f64,
@@ -90,23 +86,14 @@ pub struct ClientReport {
     pub repair_pulls: f64,
     /// RTO expiries that resent batches (§10.1 `rto_timeouts`, whole run).
     pub resends: f64,
-    /// UPLINKs per batch first sent in the window.
-    pub submits_per_batch: f64,
+    /// Batches first sent in the window.
     pub batches: f64,
-    pub executed_frames: f64,
     /// Ordering errors received, by code.
     pub errors: BTreeMap<String, f64>,
     /// Datagrams the client session refused (duplicates, replays).
     pub refused: BTreeMap<String, f64>,
-    /// Gap UPLINKs spec §6.3 row 2 would send on this stream: one per gap,
-    /// at once when reordered, after `turn_ms` behind a STATUS. Counted the
-    /// same way for both clients, so the baseline shows how often the
-    /// adaptive transport would fire it.
-    pub gap_uplink_triggers: f64,
-    /// Second gap UPLINKs for gaps still open `max(16, 4 rttvar)` ms
-    /// after the first (§6.7 item 1).
-    pub gap_uplink_resends: f64,
-    /// The adaptive client's §10.1 statistics at the end of the run.
+    /// The client's §10.1 statistics at the end of the run; none for a
+    /// group's mean.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<LinkSummary>,
     /// The relay's §10.2 view of this reader at the end of the run.
@@ -236,8 +223,8 @@ impl RelayTraffic {
     }
 }
 
-/// The mean client of `members`, with latency and turn samples pooled.
-pub fn mean(label: &str, members: &[(&ClientReport, Vec<f64>, Vec<f64>)]) -> ClientReport {
+/// The mean client of `members`, with latency samples pooled.
+pub fn mean(label: &str, members: &[(&ClientReport, Vec<f64>)]) -> ClientReport {
     let n = members.len().max(1) as f64;
     let avg = |get: &dyn Fn(&ClientReport) -> f64| {
         members.iter().map(|(report, ..)| get(report)).sum::<f64>() / n
@@ -253,7 +240,6 @@ pub fn mean(label: &str, members: &[(&ClientReport, Vec<f64>, Vec<f64>)]) -> Cli
             packets_per_s: avg(&|report| get(report).packets_per_s),
             bytes_per_s: avg(&|report| get(report).bytes_per_s),
             kinds,
-            net_lost_per_s: avg(&|report| get(report).net_lost_per_s),
         }
     };
     let sum_maps = |get: &dyn Fn(&ClientReport) -> &BTreeMap<String, f64>| {
@@ -270,24 +256,15 @@ pub fn mean(label: &str, members: &[(&ClientReport, Vec<f64>, Vec<f64>)]) -> Cli
         clients: members.len(),
         up: direction(&|report| &report.up),
         down: direction(&|report| &report.down),
-        command_latency_ms: Distribution::of(
-            members.iter().flat_map(|(_, l, _)| l.clone()).collect(),
-        ),
-        turn_interval_ms: Distribution::of(
-            members.iter().flat_map(|(_, _, t)| t.clone()).collect(),
-        ),
+        command_latency_ms: Distribution::of(members.iter().flat_map(|(_, l)| l.clone()).collect()),
         hitches: avg(&|report| report.hitches),
         gaps: avg(&|report| report.gaps),
         pulls: avg(&|report| report.pulls),
         repair_pulls: avg(&|report| report.repair_pulls),
         resends: avg(&|report| report.resends),
-        submits_per_batch: avg(&|report| report.submits_per_batch),
         batches: avg(&|report| report.batches),
-        executed_frames: avg(&|report| report.executed_frames),
         errors: sum_maps(&|report| &report.errors),
         refused: sum_maps(&|report| &report.refused),
-        gap_uplink_triggers: avg(&|report| report.gap_uplink_triggers),
-        gap_uplink_resends: avg(&|report| report.gap_uplink_resends),
         link: None,
         reader: None,
     }

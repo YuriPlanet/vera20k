@@ -409,7 +409,7 @@ fn apply_recalc_sweeps(
     slopes
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::theater::RmgTileKeys;

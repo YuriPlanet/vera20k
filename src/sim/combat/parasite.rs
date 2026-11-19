@@ -466,7 +466,11 @@ impl Simulation {
                 if clear_archive {
                     entity.set_archive_target(None);
                 }
-                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+                crate::sim::mission::concrete_effects::represented_assign_target(
+                    entity,
+                    None,
+                    rules.ares_form(),
+                );
             }
             self.assign_null_destination(owner, rules, effects.overlay_registry(), effects);
         }
@@ -492,7 +496,7 @@ impl Simulation {
     /// `+0x432` reselect memo, consumed only by successful releases
     /// (`0x0062A71C`, `0x0062A37F`) for a human player's house
     /// (`HouseClass::IsHumanPlayer @ 0x0050B6F0`), then Select (vt+0x14C,
-    /// `0x0062A744`/`0x0062A3A7`) with the voice latch set.
+    /// `0x0062A744`/`0x0062A3A7`) with the current voice latch.
     fn parasite_reselect(&mut self, owner: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         let Some(entity) = self.substrate.entities.get(owner) else {
             return;
@@ -505,7 +509,6 @@ impl Simulation {
         }
         self.techno_select(
             owner,
-            true,
             UninitContext::with_rules(rules).with_effects(effects),
         );
     }
@@ -639,6 +642,10 @@ impl Simulation {
                     rules,
                 );
             }
+            // RESIDUAL: native reads Anim[dir8] of any non-empty list
+            // without a bound check (`0x0062A11D..0x0062A138`), so a list
+            // under eight entries reads past its end; VERA plays none there.
+            // Retail parasite weapons list eight or none.
             if let Some(name) = anims
                 .get(usize::from(dir_from_facing16(raw)))
                 .filter(|_| !anims.is_empty())
@@ -888,8 +895,7 @@ impl Simulation {
         // 0x62A2F8): a non-naval Unit or an Infantry owner whose victim is
         // at least two levels up (GetHeight 208) drops from the victim's
         // Location as a bomb (+0x8D, +0x8F).
-        #[cfg(feature = "ares")]
-        let coords = {
+        let coords = if rules.ares() {
             let terrain = self.resolved_terrain.as_ref();
             let falls =
                 self.substrate
@@ -918,6 +924,8 @@ impl Simulation {
                 eater.begin_bomb_fall();
             }
             drop.or(coords)
+        } else {
+            coords
         };
         // 0x0062A2F8..0x0062A379: the 0xA8E7AC bracket around Unlimbo.
         let placed = coords.is_some_and(|coords| {
@@ -1396,10 +1404,7 @@ impl Simulation {
                 .and_then(|object| object.phobos_cloak_kick_out_parasite)
                 .unwrap_or(rules.phobos_globals.cloak_kick_out_parasite)
         };
-        #[cfg(all(not(feature = "phobos"), feature = "ares"))]
-        let removed = removed;
-        #[cfg(not(any(feature = "phobos", feature = "ares")))]
-        let removed = true;
+        let removed = !rules.ares() || removed;
         let Some(eater) = self
             .substrate
             .entities
@@ -1469,10 +1474,18 @@ impl Simulation {
         };
         let warhead_type = rules.warhead(self.interner.resolve(warhead));
         let sonic = warhead_type.is_some_and(|w| w.sonic);
+        let sonic = self
+            .interner
+            .warhead_type(warhead, rules)
+            .is_some_and(|w| w.sonic);
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);
             if let Some(source) = source.and_then(|id| self.substrate.entities.get_mut(id)) {
-                crate::sim::mission::concrete_effects::represented_assign_target(source, None);
+                crate::sim::mission::concrete_effects::represented_assign_target(
+                    source,
+                    None,
+                    rules.ares_form(),
+                );
             }
             return;
         }
@@ -1579,6 +1592,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "parasite_tests.rs"]
 mod tests;

@@ -186,11 +186,13 @@ fn query_report(
     }
     // Same owner/candidate admission as app/loading/init::load_csf; --source
     // deliberately bypasses composition so individual files remain inspectable.
-    let (csf, admitted) =
-        CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(|error| ErrorReport {
-            error: error.to_string(),
-            hint: None,
-        })?;
+    let (csf, admitted) = CsfFile::load_active(asset_manager.ships_ares(), |name| {
+        asset_manager.get_ref(name)
+    })
+    .map_err(|error| ErrorReport {
+        error: error.to_string(),
+        hint: None,
+    })?;
     // CsfFile owns slot selection, including Ares duplicates created by an
     // unsorted in-file append. Carry raw text from that SAME selected slot.
     let scan = RawScan {
@@ -238,12 +240,12 @@ fn locate_table<'a>(
                 )),
             });
         };
-        return Ok(table_from(name, resolved));
+        return Ok(table_from(name, resolved, asset_manager.ships_ares()));
     }
 
     for candidate in CSF_CANDIDATES {
         if let Some(resolved) = crate::asset_tools::locate::locate(asset_manager, candidate) {
-            return Ok(table_from(candidate, resolved));
+            return Ok(table_from(candidate, resolved, asset_manager.ships_ares()));
         }
     }
 
@@ -259,15 +261,17 @@ fn locate_table<'a>(
     })
 }
 
-/// Assemble a [`LocatedTable`] and its provenance warnings from one hit.
+/// Assemble a [`LocatedTable`] and its provenance warnings from one hit;
+/// `ares` is whether the game is an Ares game, which composes its table.
 fn table_from<'a>(
     name: &str,
     resolved: crate::asset_tools::locate::Resolved<'a>,
+    ares: bool,
 ) -> LocatedTable<'a> {
     let mut warnings: Vec<String> = Vec::new();
     warnings.extend(resolved.catalog_warning());
     if !name.eq_ignore_ascii_case(YR_CSF) {
-        warnings.push(if cfg!(feature = "ares") {
+        warnings.push(if ares {
             format!("read one raw table \"{name}\"; drop --source to inspect the composed active Ares table")
         } else { format!(
             "read from \"{name}\", not \"{YR_CSF}\" — active Yuri's Revenge initialises the md \
@@ -581,11 +585,10 @@ fn read_u32_at(data: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes(bytes))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 
-    #[cfg(feature = "ares")]
     #[test]
     fn default_query_and_raw_text_use_the_native_duplicate_winner() {
         // Native witness: ares_csf_ordered.json's first control. Each source
@@ -602,7 +605,7 @@ mod tests {
             build_csf(&[("B", "b"), ("C", "c"), ("D", "d"), ("KEEP", "replacement")]),
         )
         .unwrap();
-        let manager = AssetManager::from_loose_root_for_test(directory.path());
+        let manager = AssetManager::from_loose_root_with_ares_for_test(directory.path());
         let active = get(&manager, "keep", &CsfOptions::default()).unwrap();
         assert_eq!(active.entries[0].value, "keep");
         assert_eq!(active.entries[0].key, "Keep");
@@ -643,41 +646,37 @@ mod tests {
             build_csf(&[("A", "  layered   text  "), ("NEW", "extra")]),
         )
         .unwrap();
-        let manager = AssetManager::from_loose_root_for_test(directory.path());
-        let active = get(&manager, "A", &CsfOptions::default()).unwrap();
-        assert_eq!(
-            active.entries[0].value,
-            if cfg!(feature = "ares") {
-                "layered text"
+        for ares in [false, true] {
+            let manager = if ares {
+                AssetManager::from_loose_root_with_ares_for_test(directory.path())
             } else {
-                "base"
-            }
-        );
-        assert_eq!(
-            active.source.contains("stringtable00.csf"),
-            cfg!(feature = "ares")
-        );
-        assert_eq!(
-            active.entries[0].changed_by_normalization,
-            cfg!(feature = "ares")
-        );
-        let explicit = get(
-            &manager,
-            "A",
-            &CsfOptions {
-                source: Some("ra2md.csf".to_string()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        assert_eq!(explicit.entries[0].value, "base");
-        assert_eq!(explicit.source, "ra2md.csf");
-        assert_eq!(
-            grep(&manager, "extra", &CsfOptions::default())
-                .unwrap()
-                .matched,
-            usize::from(cfg!(feature = "ares"))
-        );
+                AssetManager::from_loose_root_for_test(directory.path())
+            };
+            let active = get(&manager, "A", &CsfOptions::default()).unwrap();
+            assert_eq!(
+                active.entries[0].value,
+                if ares { "layered text" } else { "base" }
+            );
+            assert_eq!(active.source.contains("stringtable00.csf"), ares);
+            assert_eq!(active.entries[0].changed_by_normalization, ares);
+            let explicit = get(
+                &manager,
+                "A",
+                &CsfOptions {
+                    source: Some("ra2md.csf".to_string()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(explicit.entries[0].value, "base");
+            assert_eq!(explicit.source, "ra2md.csf");
+            assert_eq!(
+                grep(&manager, "extra", &CsfOptions::default())
+                    .unwrap()
+                    .matched,
+                usize::from(ares)
+            );
+        }
     }
 
     /// File header marker, " FSC" in Westwood byte order.

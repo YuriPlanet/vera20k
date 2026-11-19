@@ -182,16 +182,14 @@ fn production_admission_runs_before_reserving_capacity() {
     add(&mut sim, &rules, 2, "E1", 10);
     add(&mut sim, &rules, 10, "FV", 11);
     let enemy = sim.intern("Russians");
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .set_owner_for_test(enemy);
     assert_eq!(pairs(&sim, &rules, &[1, 2, 10]), [(2, 10)]);
 
     // A nearer enemy carrier must not hide an eligible friendly one.
     add(&mut sim, &rules, 11, "FV", 10);
-    sim.entities_mut_for_test()
-        .get_mut(11)
+    sim.entity_mut_for_test(11)
         .unwrap()
         .set_owner_for_test(enemy);
     assert_eq!(pairs(&sim, &rules, &[2, 11, 10]), [(2, 10)]);

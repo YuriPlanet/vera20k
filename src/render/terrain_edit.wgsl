@@ -53,6 +53,12 @@ fn body_color(input: VertexOutput, index: u32) -> vec3f {
     return resolve_palette(color.rgb, input.tint, input.palette_light, index, tactical_a_at(input.position.xy));
 }
 
+// The RGB565 word a read-only body leaf (00494B60/00497FD0) stores for `color`,
+// the bound native Convert/LightConvert result.
+fn body_word(color: vec3f) -> u32 {
+    return native_rgb565_word(vec3u(round(clamp(srgb_encode(color), vec3f(0.0), vec3f(1.0)) * 255.0)));
+}
+
 // One window of a read-write wave in draw order (VERA scheduling only,
 // `TerrainDrawRenderer::draw_wave`). Each edit first replays, at its own
 // pixel, the earlier edits of its window it overlaps, so overlapping edits
@@ -135,7 +141,7 @@ fn terrain_pixel(input: VertexOutput, shadow: bool) -> TerrainOutput {
                 tactical_a_at(input.position.xy));
         }
         for (var i = 0u; i <= state.halves; i++) { word = native_half_word(word); }
-        output.color = vec4f(srgb_decode(retail_encoded(word)), 1.0);
+        output.color = vec4f(retail_linear(word), 1.0);
     } else {
         output.color = vec4f(body_color(input, admitted.index), 1.0);
     }

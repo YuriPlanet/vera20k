@@ -110,17 +110,14 @@ pub fn splash_cells(cell_spread: f64) -> &'static [(i16, i16)] {
 /// cell at all for a negative band. Bands 1..10 hold the stock cells with
 /// `(-1,-1)` and `(1,-1)` swapped; band 11 has no repeated `(-3,11)` and
 /// wider bands are no longer clamped.
-pub fn area_damage_cells(cell_spread: f64) -> std::borrow::Cow<'static, [(i16, i16)]> {
-    #[cfg(feature = "ares")]
-    {
+pub fn area_damage_cells(cell_spread: f64, ares: bool) -> std::borrow::Cow<'static, [(i16, i16)]> {
+    if ares {
         let band = X87Chop53::ftol_f64_low_masked(cell_spread + 0.99);
         match usize::try_from(band) {
             Ok(band) => std::borrow::Cow::Owned(crate::sim::cell_rect::cell_spread_offsets(band)),
             Err(_) => std::borrow::Cow::Borrowed(&[]),
         }
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         std::borrow::Cow::Borrowed(splash_cells(cell_spread))
     }
 }
@@ -157,7 +154,7 @@ pub fn splash_threshold_leptons(cell_spread: f64) -> i64 {
     i64::from(X87Chop53::ftol_f64_low_masked(cell_spread * 256.0))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
 

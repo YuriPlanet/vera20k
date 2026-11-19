@@ -753,7 +753,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
     let c4 = sim.interner.intern(&rules.bridge_warheads.c4_name);
     sim.commit_direct_damage_receiver(
         rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         crate::sim::combat::EntityDamageEvent::direct_receiver(
             airfield,
             health,

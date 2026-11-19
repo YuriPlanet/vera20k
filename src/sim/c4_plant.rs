@@ -203,7 +203,6 @@ impl C4Detonation {
     /// Ares `SpyEffect.SabotageDelay` (`BuildingExt::ExtData::InfiltratedBy
     /// @ 10012000`, hook `0x004571E0`): the latch (`+0x6DF`) is set and the
     /// fuse starts at `frame`; C4AppliedBy is left as it was.
-    #[cfg(feature = "ares")]
     pub(crate) fn arm_sabotage(&mut self, frame: i32, duration_frames: i32) {
         self.restart_fuse(frame, duration_frames);
     }
@@ -300,12 +299,14 @@ impl Simulation {
         };
         // Ares 3.0 InfantryClass_UpdatePosition_C4Ability 10025730 (hook
         // 0x0051A4D2) also admits a rank holding the C4 ability.
-        #[cfg(feature = "ares")]
+        let ares = rules.ares_form();
         let c4 = |object: &crate::rules::object_type::ObjectType| {
-            crate::sim::combat::veterancy::holds_c4(infantry.veterancy.rank_kind(), object)
+            if ares {
+                crate::sim::combat::veterancy::holds_c4(infantry.veterancy.rank_kind(), object)
+            } else {
+                object.c4
+            }
         };
-        #[cfg(not(feature = "ares"))]
-        let c4 = |object: &crate::rules::object_type::ObjectType| object.c4;
         if infantry.mission.effective().known() != Some(MissionType::Sabotage)
             || !self.object_type(infantry.type_ref(), rules).is_some_and(c4)
         {
@@ -342,7 +343,7 @@ impl Simulation {
                 frame,
             );
         if !refused {
-            if target.pending_c4_detonation.pending().is_some() {
+            if target.building.pending_c4_detonation.pending().is_some() {
                 self.assign_null_destination(id, rules, registry, effects);
                 Self::rearm_c4_planter(
                     &self.interner,
@@ -360,7 +361,10 @@ impl Simulation {
             let (flash, fuse) = (rules.c4_flash_frames(), rules.c4_delay_frames());
             self.substrate.flash_building(building, flash, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
-                target.pending_c4_detonation.plant(frame as i32, fuse, id);
+                target
+                    .building
+                    .pending_c4_detonation
+                    .plant(frame as i32, fuse, id);
             }
         }
         if let Some(infantry) = self.substrate.entities.get_mut(id) {
@@ -398,7 +402,6 @@ impl Simulation {
     /// Answering false, it has rearmed ([`Self::rearm_c4_planter`]) and the
     /// caller turns it away (`0x0051A03E`). RNG: the rearm's GetROF draw;
     /// timers: the fuse and the rearm.
-    #[cfg(feature = "ares")]
     pub(crate) fn infantry_per_cell_sabotage(
         &mut self,
         id: u64,
@@ -421,11 +424,14 @@ impl Simulation {
                 infantry.navigation.stop_moving();
             }
             crate::sim::combat::world_fire::start_uncloaking_to_fire(self, rules, id);
-        } else if target.pending_c4_detonation.pending().is_none() {
+        } else if target.building.pending_c4_detonation.pending().is_none() {
             let fuse = rules.c4_delay_frames();
             self.substrate.flash_building(building, fuse / 2, frame);
             if let Some(target) = self.substrate.entities.get_mut(building) {
-                target.pending_c4_detonation.plant(frame as i32, fuse, id);
+                target
+                    .building
+                    .pending_c4_detonation
+                    .plant(frame as i32, fuse, id);
             }
             let context = UninitContext::new(rules, registry).with_effects(effects);
             self.dispatch_object_tag_event(building, 1, Some(id), None, context);
@@ -692,6 +698,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "c4_plant_tests.rs"]
 mod tests;

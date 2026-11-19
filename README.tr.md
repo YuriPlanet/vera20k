@@ -1,33 +1,34 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K kapak görseli" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Son macOS kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS kütüphane testleri" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Son Linux kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux kütüphane testleri" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Son Windows kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows kütüphane testleri" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Son WebAssembly derlemesi (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly derlemesi" height="23" align="middle"></a>
-  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord'a katılın" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ grubu" height="23" align="middle">
+  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FkmjRUn5m5F%3Fwith_counts%3Dtrue&amp;query=%24.approximate_presence_count&amp;suffix=%20online&amp;label=VERA20K%20Discord&amp;color=5865F2&amp;style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord'a katılın" height="23" align="middle"></a>
+  <img src="https://img.shields.io/badge/VERA20K_QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ grubu (VERA20K)" height="23" align="middle">
+  <img src="https://img.shields.io/badge/ra20k.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ grubu (ra20k.com)" height="23" align="middle">
 </p>
 
 # VERA20K
 
-VERA20K, özgün oyun motoru `gamemd.exe`'nin topluluk öncülüğünde geliştirilen yeniden
-yazımıdır. Orijinal oyun dosyalarını kullandığı için kendi Red Alert 2: Yuri's Revenge
-kopyanıza ihtiyacınız var.
+VERA20K, Red Alert 2: Yuri's Revenge için yeni bir oyun motorudur. Orijinali gibi oynanır;
+birimler, haritalar ve görünüm aynıdır. Windows, macOS ve Linux'ta çalışır. Daha büyük savaşlar
+için yapılmıştır: bir haritada 30 oyuncuya ve 20.000 birime kadar.
 
 VERA20K oyuncular tarafından, oyuncular için yapılıyor ve projenin nereye gideceğine son sözü
 oyuncular söylüyor.
 
-**Daha fazla bakımcıya ihtiyacımız var.** PR'ları incelemeye yardım etmek, yeni katkıda
-bulunanlara yol göstermek veya motorun bir bölümünün sorumluluğunu almak isterseniz, bunu bize
-[Discord](https://discord.gg/kmjRUn5m5F) üzerinden ya da QQ grubunda (1097193563) bildirin.
-
-**PR göndermekten çekinmeyin.** Mükemmel olması gerekmiyor; gerisi için biz yardımcı oluruz.
-
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K çatışma ayarları ekranı ve oyun içi görünüm" width="100%">
+
+## İndir ve oyna
+
+1. Red Alert 2: Yuri's Revenge'i Steam'den ya da EA uygulamasından kurun.
+2. Sisteminize uygun VERA20K'yi [sürümler sayfasından](https://github.com/YuriPlanet/vera20k/releases) indirin.
+3. İndirdiğiniz dosyayı açın. Oyununuzu bulur ve VERA20K'yi kendi klasörüne kurar.
+
+Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
 ## Projenin hedefleri
 
@@ -36,29 +37,7 @@ bulunanlara yol göstermek veya motorun bir bölümünün sorumluluğunu almak i
 3. Bilinen RTS özelliklerini ve daha önce hiç görülmemiş bazı özellikleri eklemek.
 4. Entegre çok oyunculu istemci
 
-Güncel öncelikler ve gelecek planları için [yol haritasına](https://github.com/orgs/YuriPlanet/projects/1) bakın.
-
-## İndir ve oyna
-
-Windows, macOS veya Linux yükleyicisini
-[sürümler sayfasından](https://github.com/YuriPlanet/vera20k/releases) indirin. Yükleyici,
-Yuri's Revenge kopyanızı bulur ve VERA20K'yi yeni bir klasöre kurar.
-
-Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
-[çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
-
 ## Katkıda bulunma
-
-Her alanda yardımınızı bekliyoruz; en çok yardıma ihtiyaç duyan alanlar aşağıda. Her biri yol
-haritasındaki sayfasına bağlanır; orada süren çalışmayı ve sonraki adımı bulabilirsiniz:
-
-- **[Oynanış ve çatışma](https://github.com/YuriPlanet/vera20k/issues/3830):** birim davranışı, hasar ve çatışma maçlarının güvenilirliği.
-- **[Performans](https://github.com/YuriPlanet/vera20k/issues/3831):** büyük savaşlarda ve eski donanımda kare hızı ve tepki süresi.
-- **[Çok oyunculu mod](https://github.com/YuriPlanet/vera20k/issues/3832):** çevrimiçi maçlara katılma, maç başlatma ve maçları sürdürme, ayrıca ortak oyunun güvenilirliği.
-- **[Arayüz ve ses](https://github.com/YuriPlanet/vera20k/issues/3833):** menüler, metinler, [çeviriler](src/i18n/README.md) ve ses.
-- **[Senaryolar](https://github.com/YuriPlanet/vera20k/issues/3834):** görevler başlatılabiliyor, ancak sonuna kadar oynanabilmeleri için daha çalışma gerekiyor: hedefler, tetikleyiciler, betikli geçişler, kaydetme/yükleme ve sonraki göreve geçiş.
-- **[Mod uyumluluğu](https://github.com/YuriPlanet/vera20k/issues/3835):** orijinal oyunun varsayılanlarını değiştirmeden Ares ve Phobos özellikleri.
-- **[Test](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** VERA20K'yi orijinal oyunla yan yana oynayıp farklı oynanan yerleri bildirmek.
 
 Katkıda bulunanlar motorun belirli alanlarının sorumluluğunu üstlenebilir ve VERA20K'yi
 ileriye taşıyan değişiklikleri geniş bir özgürlükle yapabilir.
@@ -73,8 +52,7 @@ Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda
 Motorun üç ana bölümü vardır:
 
 - **Simülasyon:** Oyun durumunu ve mantığını yönetir.
-- **Görüntüleme:** Orijinal oyun kaynaklarını kullanan, orijinal görünümü korumak için
-  oluşturulmuş tamamen yeni bir GPU görüntüleme hattı.
+- **Görüntüleme:** Araziyi, birimleri ve binaları orijinal oyunun görsellerini kullanarak GPU'da çizer.
 - **Uygulama:** Girdi, menüler, ses ve platform entegrasyonunu yönetir, sistemleri birbirine bağlar.
 
 Bu ayrım deterministik oynanışı destekler.
@@ -109,17 +87,16 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 
 ## Özelleştirme
 
-Harita kapasitesi derleme bayrağı olmadan otomatik seçilir: `Size` genişliği ile yüksekliğinin toplamı en fazla 1024 olabilir.
+VERA20K varsayılan olarak Yuri's Revenge'in orijinal kurallarını kullanır. **Options** menüsünden
+ses, grafik ve kontrol ayarlarını değiştirebilir veya VERA özelliklerini açabilirsiniz. Oyun
+tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` bölümünde yer alır.
 
-VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gelen eklentiler dahil
-diğer her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
+Lobi ayarları, modlar ve haritalar maç kurallarını değiştirebilir. Modlar ve haritalar, INI
+dosyaları aracılığıyla VERA20K'nin desteklediği [Ares](docs/ares.md) ve [Phobos](docs/phobos.md)
+özelliklerini etkinleştirebilir. Bir mod, `ares.mix` dosyasını içeriyorsa Ares'i de etkinleştirir.
+Bazı Phobos özellikleri için hâlâ `--features phobos` seçeneğiyle derlenmiş bir sürüm gerekir.
 
-- **Bir VERA oyuncu seçeneği**: **Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
-- **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
-- **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
-
-Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
-ayarlarından, modlardan veya haritalardan gelir.
+Kendi modunuzu yapmak için [mod yapım kılavuzuyla](docs/modding.md) başlayabilirsiniz.
 
 ## Destek
 
@@ -148,6 +125,8 @@ Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir v
 tarafından desteklenmemektedir.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **VERA20K'yı paylaşmadan, satmadan veya fork'lamadan önce [yasal bildirimi](LEGAL.md) okuyun.**
 

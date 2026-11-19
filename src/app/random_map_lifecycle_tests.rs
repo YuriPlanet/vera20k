@@ -25,8 +25,8 @@ impl LoadingProgressSink for SilentProgress {
 }
 
 fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
-    SkirmishLaunchSession {
-        mode: SkirmishLaunchMode {
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode {
             class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
@@ -37,8 +37,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             allies_allowed: true,
             must_ally: false,
         },
-        selected_map_file: Some(seed_name.to_string()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        Some(seed_name.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Player".to_string(),
             slot: SkirmishLocalSlot {
@@ -51,9 +51,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: 1,
-        opponents: vec![SkirmishAiSlot {
+        0,
+        vec![SkirmishAiSlot {
             raw_slot_index: 1,
             country: LaunchCountry::Russia,
             country_random: false,
@@ -63,9 +62,8 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
             team: LaunchTeam::None,
             difficulty: AiDifficulty::Easy,
         }],
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
-        options: SkirmishLaunchOptions::default(),
-    }
+        SkirmishLaunchOptions::default(),
+    )
 }
 
 fn start_production_worker(
@@ -93,7 +91,7 @@ fn start_production_worker(
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        prepared.tech_types,
+        super::shell_random_map::RandomMapObjects::tech(prepared.tech_types, prepared.ares),
         shared_cell_dummy.clone(),
         decision,
     )
@@ -104,7 +102,7 @@ fn start_production_worker(
 
 fn receive_production_generation(
     receiver: std::sync::mpsc::Receiver<RandomMapUpdate>,
-) -> (usize, crate::map::rmg::GeneratedMap) {
+) -> (usize, crate::map::rmg::GeneratedMapRun) {
     let mut entries = 0;
     loop {
         match receiver
@@ -170,18 +168,24 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         tiberium: 35,
         vegetation: 30,
         urban_presence: 40,
+        urban_enabled: false,
+        fair_starts: false,
         seed: 4242,
         description: "Unit 2 lifecycle".into(),
         ..Default::default()
     };
-    std::fs::write(seed_dir.join(seed_name), options.to_sed_bytes()).expect("write lifecycle .SED");
+    std::fs::write(
+        seed_dir.join(seed_name),
+        options.to_sed_bytes(native_rules.reads_ares_way()),
+    )
+    .expect("write lifecycle .SED");
     const MATCH_SEED: u32 = 0x0412_0419;
 
     // U2-02: collect cross-thread receipts from the production worker. Every
     // Generate enters the real generator once; accepting a valid preview adds
     // no run, while accepting an empty setup adds exactly one.
     let previous_selection = ChooseMapSelection {
-        mode_id: 1,
+        mode: 1.into(),
         record_index: Some(7),
     };
     let mut runtime = MultiplayerShellRuntime::initialize(
@@ -202,7 +206,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     generated_modal
         .as_mut()
@@ -216,7 +219,8 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         &mut retention,
         &shared_cell_dummy,
     );
-    let (entries, generated_a) = receive_production_generation(receiver);
+    let (entries, run_a) = receive_production_generation(receiver);
+    let generated_a = run_a.map();
     assert!(
         !generated_a.construction_trace.events.is_empty(),
         "the preview RNG control requires an actual Building constructor"
@@ -234,7 +238,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         &mut runtime,
         &mut retention,
         generated_modal.as_mut().expect("generated modal"),
-        generated_a,
+        run_a,
         Some(lifecycle_preview([0x10, 0x20, 0x30])),
         false,
     ));
@@ -251,7 +255,8 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         &mut retention,
         &shared_cell_dummy,
     );
-    let (entries, generated_b) = receive_production_generation(receiver);
+    let (entries, run_b) = receive_production_generation(receiver);
+    let generated_b = run_b.map();
     generation_entries += entries;
     let signature_b = (
         generated_b.map_file.ini.content_hash(),
@@ -265,7 +270,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         &mut runtime,
         &mut retention,
         generated_modal.as_mut().expect("generated modal"),
-        generated_b,
+        run_b,
         Some(lifecycle_preview([0x11, 0x21, 0x31])),
         false,
     ));
@@ -291,13 +296,16 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     assert_eq!(generation_entries, 2, "valid preview adds no worker run");
     assert!(randmap_img.is_file());
     assert!(!randmap_sed.exists(), "accepted caller follows teardown");
-    std::fs::write(&randmap_sed, committed.to_sed_bytes()).expect("accepted caller writes .SED");
+    std::fs::write(
+        &randmap_sed,
+        committed.to_sed_bytes(native_rules.reads_ares_way()),
+    )
+    .expect("accepted caller writes .SED");
 
     let mut empty_modal = Some(RandomMapSetupModalState::open(
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     assert_eq!(
         empty_modal.as_ref().expect("empty modal").accept(),
@@ -312,7 +320,8 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         &mut retention,
         &shared_cell_dummy,
     );
-    let (entries, generated_for_accept) = receive_production_generation(receiver);
+    let (entries, run_for_accept) = receive_production_generation(receiver);
+    let generated_for_accept = run_for_accept.map();
     generation_entries += entries;
     let signature_for_accept = (
         generated_for_accept.map_file.ini.content_hash(),
@@ -326,7 +335,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         &mut runtime,
         &mut retention,
         empty_modal.as_mut().expect("empty modal"),
-        generated_for_accept,
+        run_for_accept,
         Some(lifecycle_preview([0x12, 0x22, 0x32])),
         true,
     ));
@@ -349,7 +358,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     cancel_modal
         .as_mut()
@@ -421,7 +429,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         runtime.random_map_options_for_setup(),
         Some(previous_selection),
         false,
-        true,
     );
     assert_eq!(reopened.options, options);
     assert_eq!(reopened.previous_selection, Some(previous_selection));
@@ -444,6 +451,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         Some("MPBattleMD.ini"),
         crate::app::match_runtime::session::SessionMode::Skirmish,
         false,
+        None,
         &mut SilentProgress,
     )
     .expect("direct .SED launch regeneration");
@@ -463,19 +471,20 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     let mut poison_trace = RmgConstructionTrace::default();
     poison_trace.push_discarded(RmgConstructionPhase::NeutralTech, "POISON_TECH".to_string());
     let poison_trace_reference = poison_trace.clone();
-    let poison_mapgen_reference = crate::sim::rng::SimRng::from_mapgen_continuation(
-        RmgRng::new(poison_options.seed_u16()).into_continuation(),
-    )
-    .logical_state();
+    let poison_cursor = RmgRng::new(poison_options.seed_u16()).into_continuation();
+    let poison_mapgen_reference =
+        crate::sim::rng::SimRng::from_mapgen_continuation(poison_cursor.snapshot_for_fresh_load())
+            .logical_state();
     let poison = crate::map::rmg::GeneratedMap {
         map_file: poison_map,
-        mapgen_continuation: Some(RmgRng::new(poison_options.seed_u16()).into_continuation()),
         construction_trace: poison_trace,
         start_waypoints: accepted_start_waypoints.clone(),
         stages_run: Vec::new(),
         unfilled_start_slots: 0,
+        fairness: None,
     };
     let mut retention = RandomMapGenerationRetention::default();
+    retention.publish_mapgen_continuation(None, poison_cursor);
     retention.finish_generation(poison);
     retention.accept_setup(seed_name);
     retention.destroy_map_storage();
@@ -497,6 +506,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
             seed_dir.clone(),
             &mut assets,
             Some(&mut native_rules),
+            &mut retention,
             &mut SilentProgress,
         )
         .expect("accepted UI .SED regeneration and admitted bundle transfer");
@@ -505,11 +515,11 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     // an arbitrary direct `.SED` is intentionally not a parity builder.
     let direct_preview = crate::map::rmg::GeneratedMap {
         map_file: crate::map::rmg::emit::empty_map_file(&options, 32, 32),
-        mapgen_continuation: Some(RmgRng::new(options.seed_u16()).into_continuation()),
         construction_trace: RmgConstructionTrace::default(),
         start_waypoints: accepted_start_waypoints.clone(),
         stages_run: Vec::new(),
         unfilled_start_slots: 0,
+        fairness: None,
     };
     let mut direct_retention = RandomMapGenerationRetention::default();
     direct_retention.finish_generation(direct_preview);
@@ -533,6 +543,13 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     assert_ne!(ui_launch.map.header.0, "POISON_PREVIEW");
     assert_ne!(ui_launch.trace, poison_trace_reference);
     assert_ne!(ui_launch.mapgen_continuation, poison_mapgen_reference);
+    let published = retention
+        .snapshot_mapgen_continuation_for_fresh_load(None)
+        .expect(".SED regeneration published its cursor");
+    assert_eq!(
+        crate::sim::rng::SimRng::from_mapgen_continuation(published).logical_state(),
+        ui_launch.mapgen_continuation
+    );
     assert!(
         !ui_launch.trace.events.is_empty(),
         "retail fixture must exercise launch constructor replay"

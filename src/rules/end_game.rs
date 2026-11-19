@@ -420,7 +420,7 @@ fn read_music(section: &IniSection, id: &str, key: &str, legacy: &str) -> Option
     Some(value.to_owned())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
 

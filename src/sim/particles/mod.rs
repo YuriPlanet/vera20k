@@ -27,6 +27,7 @@ use glam::IVec3;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod ares_system;
 pub mod fire;
 pub mod gas;
 pub mod railgun;
@@ -38,8 +39,7 @@ pub mod spawn;
 pub mod system_ai;
 pub mod wind;
 
-#[cfg(all(test, feature = "ares"))]
-mod ares_gas_tests;
+#[cfg(test)]mod ares_gas_tests;
 #[cfg(test)]
 mod fire_native_tests;
 #[cfg(test)]
@@ -51,6 +51,20 @@ mod native_identity_tests;
 #[cfg(test)]
 mod railgun_native_tests;
 #[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
+mod ares_gas_tests;
+#[cfg(all(test, tests_sim_p_s))]
+mod fire_native_tests;
+#[cfg(all(test, tests_sim_p_s))]
+mod gas_native_tests;
+#[cfg(all(test, tests_sim_p_s))]
+mod native_fixture;
+#[cfg(all(test, tests_sim_p_s))]
+mod native_identity_tests;
+// Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
+#[cfg(all(test, tests_sim_p_s))]
+mod railgun_native_tests;
+#[cfg(all(test, tests_sim_p_s))]
 mod virus_tests;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +96,10 @@ pub struct ParticleSystem {
     owner_entity: Option<u64>,
     #[serde(with = "ivec3_serde")]
     target_coords: IVec3,
+    /// `+0xFC`. gamemd's Load (`0x0062FF20`) swizzles the type, target, owner
+    /// and particle pointers but not this one, so after a load it keeps a
+    /// stale House pointer that gas damage credits (`0x0062C2CC`). VERA
+    /// restores the House by name instead; kept.
     owner_house: Option<InternedId>,
     /// `ParticleSystemClass+0xF8` — one byte with two jobs, and this engine
     /// used to model it as two fields that drifted apart.
@@ -107,6 +125,10 @@ pub struct ParticleSystem {
     owner_fire_link: bool,
     alive: bool,
     in_limbo: bool,
+    /// Ares 3.0 ParticleSystemExt (`ares_system`): present for a system Ares
+    /// simulates itself, from the constructor hook `0x62DF05` on.
+    #[serde(default)]
+    ares: Option<Box<ares_system::AresParticleSystemExt>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -406,8 +428,17 @@ impl Particle {
         } else {
             pt.velocity
         };
-        assert_ne!(divisor, 0, "native Particle constructor divides by MaxEC");
-        let lifetime_extra = sim.particle_rng().next_raw_abs_modulo(divisor) as i16;
+        // The native Particle constructor (0x0062B5E0) divides its lifetime
+        // draw by MaxEC, so `MaxEC=0`, which only a map or mod can set, traps
+        // in gamemd. VERA carries on: no draw and no extra lifetime. The
+        // identity and any Smoke draw are already taken here and the callers
+        // cannot carry a refusal, so the particle is still built.
+        let lifetime_extra = if divisor == 0 {
+            log::warn!("particle type {type_id:?} has MaxEC=0: no lifetime draw");
+            0
+        } else {
+            sim.particle_rng().next_raw_abs_modulo(divisor) as i16
+        };
         let lifetime_remaining = (pt.max_ec as i16).wrapping_add(lifetime_extra);
         let location = floor_constructor_coords_with(coords, |x, y| ground(sim, x, y))?;
         let direction = spawn::native_velocity(coords, target);
@@ -534,6 +565,18 @@ impl ParticleSystem {
         self.lifetime = lifetime;
     }
 
+    /// BuildingClass::ReceiveDamage's NowYellow arm for its natural system
+    /// (`0x004426B6..0x004426C2`): FLD the spawn timer (`+0xE8`), FMUL the
+    /// binary32 1.5 at `0x007E4460`, FSTP it back.
+    pub(crate) fn slow_spawning_at_yellow(&mut self) {
+        use crate::util::native_x87::MaskedX87Chop53 as X87;
+        const ONE_AND_A_HALF: NativeF32Bits = NativeF32Bits::from_bits(0x3FC0_0000);
+        self.spawn_timer = X87::store_f32_masked_chop(X87::mul(
+            X87::load_f32(self.spawn_timer),
+            X87::load_f32(ONE_AND_A_HALF),
+        ));
+    }
+
     pub const fn stable_id(&self) -> u64 {
         self.stable_id
     }
@@ -556,6 +599,21 @@ impl ParticleSystem {
 
     pub fn particles(&self) -> &[Particle] {
         &self.particles
+    }
+
+    /// The Ares records of a system Ares simulates ([`ares_system`]).
+    pub fn ares(&self) -> Option<&ares_system::AresParticleSystemExt> {
+        self.ares.as_deref()
+    }
+
+    /// No ParticleClass child (`+0xCC`) and, under Ares 3.0
+    /// (`ExtData::Update @ 10026C70`), no record of its own either: the
+    /// emptiness the AI tail retires a done system on.
+    pub(crate) fn holds_no_particles(&self) -> bool {
+        if self.ares.as_ref().is_some_and(|ext| !ext.is_empty()) {
+            return false;
+        }
+        self.particles.is_empty()
     }
 
     pub const fn lifetime(&self) -> i32 {
@@ -704,6 +762,7 @@ impl ParticleSystem {
             owner_fire_link: false,
             alive: true,
             in_limbo: false,
+            ares: None,
         }
     }
 }
@@ -808,14 +867,12 @@ pub struct ParticleSystemStore {
 /// log. Each reads its own log, so one reader's take leaves the others' intact.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ParticleTouchReader {
-    /// The kept Ground display sort keys.
-    GroundKeys = 0,
     /// The pointer-expiry broadcast's listener index.
-    ExpiryListeners = 1,
+    ExpiryListeners = 0,
 }
 
 impl ParticleTouchReader {
-    const COUNT: usize = 2;
+    const COUNT: usize = 1;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -826,9 +883,36 @@ struct DetachedParticle {
     in_limbo: bool,
 }
 
+impl DetachedParticle {
+    /// Whether the body still draws: alive and out of Limbo.
+    fn draws(&self) -> bool {
+        self.object_alive && !self.in_limbo
+    }
+}
+
+/// Where a Display particle ([`ParticleSystemStore::display_particles`]) is
+/// kept, so a reader can find it again without walking every system.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DisplayParticlePlace {
+    /// Entry `index` of system `system`'s particles.
+    InSystem { system: u64, index: usize },
+    /// A body detached from its system, kept under its own id.
+    Detached,
+}
+
 impl ParticleSystemStore {
     pub(crate) fn gas_cloud_system(&self) -> Option<u64> {
         self.gas_cloud_system
+    }
+
+    /// `DispatchPointerExpiredCleanup @ 0x007258D0` (`0x0072590E..0x0072591F`):
+    /// the gas cloud (`0x00A8ED78`) lets go of a system whose expiry is
+    /// announced, before any listener runs. What the next gas particle does
+    /// then is VERA's own: see the residual on `spawn_gas_particle`.
+    pub(crate) fn expire_gas_cloud_system(&mut self, expired_id: u64) {
+        if self.gas_cloud_system == Some(expired_id) {
+            self.gas_cloud_system = None;
+        }
     }
     #[cfg(test)]
     pub fn new() -> Self {
@@ -893,9 +977,59 @@ impl ParticleSystemStore {
             .chain(
                 self.detached_particles
                     .values()
-                    .filter(|particle| particle.object_alive && !particle.in_limbo)
+                    .filter(|particle| particle.draws())
                     .map(|particle| (None, &particle.body)),
             )
+    }
+
+    /// [`Self::display_particles`] as each particle's id and place, in the
+    /// same order. [`Self::display_particle_at`] finds one again.
+    pub fn display_particle_places(
+        &self,
+    ) -> impl Iterator<Item = (u64, DisplayParticlePlace)> + '_ {
+        self.systems
+            .iter()
+            .flat_map(|(&system, body)| {
+                body.particles
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, particle)| {
+                        (
+                            particle.stable_id,
+                            DisplayParticlePlace::InSystem { system, index },
+                        )
+                    })
+            })
+            .chain(
+                self.detached_particles
+                    .iter()
+                    .filter(|(_, particle)| particle.draws())
+                    .map(|(&id, _)| (id, DisplayParticlePlace::Detached)),
+            )
+    }
+
+    /// Display particle `id` at `place`, as [`Self::display_particles`]
+    /// gives it, or `None` when it is no longer there.
+    pub fn display_particle_at(
+        &self,
+        id: u64,
+        place: DisplayParticlePlace,
+    ) -> Option<(Option<&ParticleSystem>, &Particle)> {
+        match place {
+            DisplayParticlePlace::InSystem { system, index } => {
+                let system = self.systems.get(&system)?;
+                let particle = system
+                    .particles
+                    .get(index)
+                    .filter(|particle| particle.stable_id == id)?;
+                Some((Some(system), particle))
+            }
+            DisplayParticlePlace::Detached => self
+                .detached_particles
+                .get(&id)
+                .filter(|particle| particle.draws())
+                .map(|particle| (None, &particle.body)),
+        }
     }
 
     pub fn get(&self, id: u64) -> Option<&ParticleSystem> {
@@ -1059,9 +1193,11 @@ impl ParticleSystemStore {
 
     /// Physical removal boundary used only by the shared pending-delete finalizer.
     pub(crate) fn finalize_remove(&mut self, id: u64) -> Option<ParticleSystem> {
-        if self.gas_cloud_system == Some(id) {
-            self.gas_cloud_system = None;
-        }
+        debug_assert_ne!(
+            self.gas_cloud_system,
+            Some(id),
+            "a system's expiry is announced before its removal"
+        );
         self.remove(id)
     }
 
@@ -1098,12 +1234,93 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
     fn fake_system(stable_id: u64) -> ParticleSystem {
         ParticleSystem::test_fixture(stable_id, ParticleSystemTypeId(0), IVec3::ZERO)
+    }
+
+    #[test]
+    fn zero_max_ec_constructs_without_a_lifetime_draw() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[Particles]\n0=GasP\n[GasP]\nBehavesLike=Gas\nMaxEC=0\n",
+            ))
+            .expect("particle rules");
+        let mut sim = Simulation::with_seed(7);
+        let rng_before = sim.scenario_rng.logical_state();
+        let particle = Particle::new(
+            ParticleTypeId(0),
+            IVec3::ZERO,
+            IVec3::ZERO,
+            rules.particle_type(ParticleTypeId(0)),
+            &mut sim,
+        );
+        assert_eq!(particle.lifetime_remaining(), 0);
+        assert_eq!(sim.scenario_rng.logical_state(), rng_before);
+    }
+
+    /// Gas drift (`0x0062BD93..0x0062BE05`) takes each draw's absolute value
+    /// before testing or dividing it: a raw i32::MIN third draw is a delta of
+    /// -3, which the clamp holds at -2.
+    #[test]
+    fn an_int_min_gas_drift_draw_drifts_the_other_way() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[Particles]\n0=GasP\n[GasP]\nBehavesLike=Gas\nMaxEC=0\n",
+            ))
+            .expect("particle rules");
+        let mut sim = Simulation::with_seed(7);
+        let mut particle = Particle::new(
+            ParticleTypeId(0),
+            IVec3::new(0x800, 0x800, 0),
+            IVec3::ZERO,
+            rules.particle_type(ParticleTypeId(0)),
+            &mut sim,
+        );
+        sim.scenario_rng = crate::sim::rng::SimRng::with_next_draws_for_test(&[0, 0, 0x8000_0000]);
+        sim.session.set_binary_frame_for_test(0);
+
+        let _ = gas::tick_particle(
+            &mut particle,
+            &mut sim,
+            &rules,
+            None,
+            None,
+            crate::sim::world::UninitContext::with_rules(&rules),
+        );
+
+        assert_eq!((particle.drift_x, particle.drift_y), (-2, 0));
+    }
+
+    /// `0x0072590E..0x0072591F`: announcing the gas cloud's expiry lets go of
+    /// it at once, not when the drained system is removed.
+    #[test]
+    fn a_retired_gas_cloud_lets_go_before_its_removal() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[Particles]\n0=GasP\n[GasP]\nBehavesLike=Gas\nMaxEC=0\n\
+                 [ParticleSystems]\n0=GasCloudSys\n\
+                 [GasCloudSys]\nBehavesLike=Gas\nHoldsWhat=GasP\n",
+            ))
+            .expect("particle rules");
+        let mut sim = Simulation::with_seed(7);
+        let first = sim.initialize_gas_cloud_system(&rules).unwrap();
+        sim.substrate
+            .particle_systems
+            .get_mut(first)
+            .unwrap()
+            .done_spawning = true;
+
+        sim.retire_particle_system(first, crate::sim::world::UninitContext::with_rules(&rules));
+
+        assert!(
+            sim.particle_systems().contains_key(first),
+            "not drained yet"
+        );
+        assert_eq!(sim.particle_systems().gas_cloud_system(), None);
     }
 
     #[test]

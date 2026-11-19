@@ -754,7 +754,7 @@ fn draw_span(surface: &mut [u8], y: i32, x0: i32, x1: i32, intensity: u8) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

@@ -59,7 +59,6 @@ pub fn log_banner(log_path: Option<&Path>) {
         std::env::consts::OS,
         std::env::consts::ARCH,
     );
-    log::info!("Ares support compiled in: {}", crate::rules::ARES_ENABLED);
     log::info!(
         "Phobos support compiled in: {}",
         crate::rules::PHOBOS_ENABLED
@@ -101,13 +100,18 @@ pub fn run(app_bundle: bool) -> Result<i32> {
 }
 
 fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> Result<i32> {
+    let (mod_switch, args) = crate::app::mods::take_switch(args.into_iter().collect())?;
     let launch_mode = parse_launch_args(args)?;
 
-    // Help must work without a display server or an OS event loop, including
-    // when called from a non-main thread by a headless command-line tool.
-    if matches!(launch_mode, AppLaunchMode::Usage) {
-        return Ok(print_usage());
+    // Help and an invalid switch must work without a display server or an OS
+    // event loop, including when called from a non-main thread by a headless
+    // command-line tool.
+    if let AppLaunchMode::Exit(exit) = launch_mode {
+        return Ok(print_exit(exit));
     }
+
+    // gamemd's 1 ms Windows timer period, until the event loop returns.
+    let _wall_clock_period = crate::app::match_runtime::frame_pacer::WallClockPeriod::hold();
 
     // Create the OS event loop. This drives the entire application:
     // window events, input, redraws, lifecycle events.
@@ -124,12 +128,20 @@ fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> 
     }
     let event_loop: EventLoop<()> = builder.build()?;
 
-    run_with_loop(launch_mode, app_bundle, event_loop)
+    run_with(launch_mode, app_bundle, event_loop, mod_switch)
 }
 
-fn print_usage() -> i32 {
-    println!("{}", crate::app::frontend::startup_options::usage_text());
-    0
+/// Both exits leave through the same WinMain shutdown (`0x006BE0EB`), which
+/// returns 1.
+fn print_exit(exit: crate::app::frontend::startup_options::StartupExit) -> i32 {
+    let text = crate::app::frontend::startup_options::exit_text(exit);
+    if exit == crate::app::frontend::startup_options::StartupExit::InvalidSwitch {
+        log::warn!(
+            "Invalid option switch: an -X switch had something other than Q after it, so the game did not start."
+        );
+    }
+    println!("{text}");
+    1
 }
 
 /// Shared start-up once an event loop exists.
@@ -141,6 +153,15 @@ pub fn run_with_loop(
     app_bundle: bool,
     event_loop: EventLoop<()>,
 ) -> Result<i32> {
+    run_with(launch_mode, app_bundle, event_loop, None)
+}
+
+fn run_with(
+    launch_mode: AppLaunchMode,
+    app_bundle: bool,
+    event_loop: EventLoop<()>,
+    mod_switch: Option<crate::app::mods::ModSwitch>,
+) -> Result<i32> {
     // A player started this launch and may have no console: a failure that
     // ends it shows a message box. Spawn, replay and capture launches come
     // from other programs and scripts, which must never wait on a click.
@@ -151,10 +172,10 @@ pub fn run_with_loop(
         crate::i18n::init(None, None);
     }
 
-    // Callers supplying their own loop share the same help output. Desktop
+    // Callers supplying their own loop share the same exit output. Desktop
     // startup handles this before creating its event loop.
-    if matches!(launch_mode, AppLaunchMode::Usage) {
-        return Ok(print_usage());
+    if let AppLaunchMode::Exit(exit) = launch_mode {
+        return Ok(print_exit(exit));
     }
 
     // Native claims its single-instance gate before it creates a window: a
@@ -190,8 +211,8 @@ pub fn run_with_loop(
     // Create the app and hand control to the event loop.
     // This blocks until the window is closed.
     let mut app: crate::app::App = match launch_mode {
-        AppLaunchMode::Usage => {
-            unreachable!("usage returned above")
+        AppLaunchMode::Exit(_) => {
+            unreachable!("a startup exit returned above")
         }
         AppLaunchMode::Interactive(options) => {
             // Pass the parsed process policy to its consumers: options,
@@ -220,6 +241,8 @@ pub fn run_with_loop(
             crate::app::App::new_tactical_capture(request)
         }
     };
+    app.set_mod_switch(mod_switch);
+    app.set_sim_wake(event_loop.create_proxy());
     // A panic skips `exiting`, where the match replay is saved. winit stops
     // its loop and hands the panic back here (macOS and Windows catch it in
     // their callbacks; elsewhere it unwinds straight out), with `app` intact.
@@ -231,6 +254,8 @@ pub fn run_with_loop(
         Ok(result) => result?,
         Err(panic) => {
             app.save_replay_after_panic();
+            // resume_unwind skips the hook: a worker's panic gets its box here.
+            crate::app::system_dialog::report_reraised_panic(&*panic);
             std::panic::resume_unwind(panic);
         }
     }
@@ -243,7 +268,8 @@ pub fn run_with_loop(
 }
 
 /// Flush the log, report a failed launch, and turn the status into the process
-/// result. A non-zero `-SPAWN` status ends the process here.
+/// result. A non-zero `-SPAWN` status ends the process here. A copy that shut
+/// down in the ordinary way starts the next one when the Mods page asked.
 pub fn finish(result: Result<i32>) -> Result<()> {
     if let Err(error) = &result {
         log::error!("VERA20k exited with an error: {error:#}");
@@ -251,12 +277,16 @@ pub fn finish(result: Result<i32>) -> Result<()> {
     log::logger().flush();
     // docs/spawn.md: a `-SPAWN` launch exits with its result's status.
     match result? {
-        0 => Ok(()),
+        0 => {
+            // The Mods page's restart: this copy is done, the next may start.
+            crate::app::restart::start_again_if_asked();
+            Ok(())
+        }
         status => std::process::exit(status),
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::run_with_args;
     use std::ffi::OsString;
@@ -265,6 +295,9 @@ mod tests {
     fn native_help_exits_without_initializing_an_event_loop() {
         // The test runs off the main thread, where constructing an OS event
         // loop would fail even on a machine with a display server.
-        assert_eq!(run_with_args(false, [OsString::from("-h")]).unwrap(), 0);
+        // WinMain returns 1 on this path (0x006BE161).
+        assert_eq!(run_with_args(false, [OsString::from("-h")]).unwrap(), 1);
+        // An invalid `-X` tail leaves the same way (0x0052FB41).
+        assert_eq!(run_with_args(false, [OsString::from("-XA")]).unwrap(), 1);
     }
 }

@@ -84,7 +84,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     if passenger {
         let mut cargo = crate::sim::passenger::PassengerCargo::new(8, 0.0);
         cargo.board_forced_chain(&[(2, 1.0)]);
-        entity.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        entity.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
     }
     sim.substrate.entities.insert(entity);
     sim.set_next_stable_object_id_for_test(2);
@@ -108,7 +108,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         infantry.set_category_for_test(EntityCategory::Infantry);
         infantry.set_is_voxel_for_test(false);
         infantry.set_sub_cell(Some(2));
-        infantry.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(1, false);
+        infantry.set_passenger_role_for_test(
+            crate::sim::passenger::PassengerRole::inside_for_test(1, false),
+        );
         sim.substrate.entities.insert(infantry);
         sim.set_next_stable_object_id_for_test(3);
     }
@@ -626,10 +628,10 @@ fn an_aircraft_carrying_a_passenger_drops_it_instead_of_firing() {
     assert!(result.is_empty(), "no shot");
     assert!(sim.projectiles.is_empty(), "no bullet");
     let aircraft = sim.substrate.entities.get(1).unwrap();
-    assert!(aircraft.passenger_role.cargo().unwrap().is_empty());
+    assert!(aircraft.passenger_role().cargo().unwrap().is_empty());
     assert_eq!(crate::sim::aircraft::attack_state(aircraft), Some(5));
     let dropped = sim.substrate.entities.get(2).unwrap();
-    assert!(!dropped.passenger_role.is_inside_transport(), "dropped");
+    assert!(!dropped.passenger_role().is_inside_transport(), "dropped");
 }
 
 /// `0x00418506`: state 4 reads Ammo again after the release, so a fighter
@@ -646,7 +648,7 @@ fn a_fighter_that_drops_its_last_ammo_with_a_passenger_leaves() {
     dispatch(&mut sim, &rules);
     let aircraft = sim.substrate.entities.get(1).unwrap();
     assert!(
-        aircraft.passenger_role.cargo().unwrap().is_empty(),
+        aircraft.passenger_role().cargo().unwrap().is_empty(),
         "dropped"
     );
     assert_eq!(aircraft.ammo().unwrap().current(), 0);

@@ -132,7 +132,6 @@ impl GuardScene {
             .advance_app_frame(
                 &commands,
                 &self.rules,
-                None,
                 33,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -183,7 +182,7 @@ fn distributed_guard_normal_and_elite_cycle_live_targets_and_reset_only_burst() 
             );
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
             // keeps the index instead.
-            if !cfg!(feature = "ares") {
+            if !scene.rules.ares() {
                 assert_eq!(
                     source.weapon_burst.index(),
                     0,

@@ -4,6 +4,7 @@
 //! The network thread only queues a bounded request. The game thread checks
 //! the current world/session again before reaching the simulation's owner.
 
+use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::VecDeque;
 
 use crate::sim::cheats::{CheatFlags, TrainerAction};
@@ -94,7 +95,7 @@ pub(crate) fn reset_session(state: &mut crate::app::AppState) {
     if let Some(server) = state.diag.telemetry_server.as_ref() {
         server.set_debug_session(None);
     }
-    if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
         runtime.simulation.clear_debug_tools();
     }
 }
@@ -121,7 +122,7 @@ pub(crate) fn service(state: &mut crate::app::AppState) {
         && state.match_state.scenario_exit.is_none()
         && state.match_state.scenario_outcome.is_none();
     let context = context(state.match_state.session_mode(), active);
-    let allowed = if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    let allowed = if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
         runtime.simulation.set_debug_session_context(context);
         let logging = runtime.simulation.debug_event_logging();
         runtime.simulation.set_debug_event_logging(logging);
@@ -143,8 +144,16 @@ pub(crate) fn service(state: &mut crate::app::AppState) {
     for command in commands {
         apply(state, command);
     }
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
-        state.match_state.sandbox_full_visibility = runtime.simulation.debug_reveal_map();
+    if let Some(reveal) = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .map(|runtime| runtime.simulation.debug_reveal_map())
+    {
+        // A watcher on the observer's sidebar keeps the whole map whatever
+        // the trainer says.
+        state.match_state.sandbox_full_visibility =
+            reveal || crate::app::match_runtime::watching::whole_map(state);
     }
 }
 
@@ -152,7 +161,7 @@ fn close_unmodified_recording(state: &mut crate::app::AppState) {
     if state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| !runtime.simulation.trainer_modified())
     {
         crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
@@ -163,13 +172,13 @@ fn set_flags(state: &mut crate::app::AppState, flags: CheatFlags) {
     if !state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| runtime.simulation.trainer_available())
     {
         return;
     }
     close_unmodified_recording(state);
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) else {
         return;
     };
     if let Err(error) = runtime.simulation.set_cheat_flags(flags) {
@@ -179,11 +188,13 @@ fn set_flags(state: &mut crate::app::AppState, flags: CheatFlags) {
     runtime
         .simulation
         .apply_debug_tools(&runtime.resources.rules);
-    state.match_state.sandbox_full_visibility = runtime.simulation.debug_reveal_map();
+    let reveal = runtime.simulation.debug_reveal_map();
+    state.match_state.sandbox_full_visibility =
+        reveal || crate::app::match_runtime::watching::whole_map(state);
 }
 
 pub(crate) fn toggle_reveal(state: &mut crate::app::AppState) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let mut flags = runtime.simulation.cheat_flags();
@@ -192,7 +203,7 @@ pub(crate) fn toggle_reveal(state: &mut crate::app::AppState) {
 }
 
 pub(crate) fn toggle_inspector(state: &mut crate::app::AppState) {
-    if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+    if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
         let enabled = !runtime.simulation.debug_event_logging();
         runtime.simulation.set_debug_event_logging(enabled);
     }
@@ -204,7 +215,7 @@ fn apply(state: &mut crate::app::AppState, command: DebugCommand) {
         DebugCommand::SetCheats { flags } => set_flags(state, flags),
         DebugCommand::CheatAction { action } => {
             close_unmodified_recording(state);
-            if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+            if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Debug) {
                 match runtime.simulation.request_trainer_action(action) {
                     Ok(()) => runtime
                         .simulation
@@ -228,7 +239,7 @@ fn apply(state: &mut crate::app::AppState, command: DebugCommand) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -97,9 +97,9 @@ impl QueuedCommand {
                 let native_frame = sim.session.binary_frame() as i32;
                 if record.frame_stamp() > native_frame
                     || (record.frame_stamp() < native_frame
-                        && sim.session.game_mode().command_queue_route()
-                            == super::CommandQueueRoute::Multiplayer
-                        && record.opcode() != 0x1c)
+                        && sim
+                            .command_dispatch_mode()
+                            .skips_late(Some(record.opcode())))
                 {
                     return None;
                 }

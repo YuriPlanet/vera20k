@@ -31,7 +31,7 @@ pub(crate) struct PcmObservationConfig {
     pub max_samples_per_event: usize,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
     use crate::audio::arbiter::{EntryFacts, PlayRequest, TestPlayback};
@@ -449,7 +449,7 @@ mod tests {
         let mut draws = PlaybackDraws::new(|low, _| low);
         let loaded = LoadedPlayback::load(entry, &mut draws, |_| {
             Some(DecodedAudio {
-                samples: vec![0.25; 8],
+                samples: vec![0.25; 8].into(),
                 sample_rate: 22_050,
                 channels: 2,
                 native_channels: 1,

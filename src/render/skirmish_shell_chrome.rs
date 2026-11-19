@@ -96,7 +96,7 @@ const TRACKBAR_FRAME_BORDER: i32 = 2;
 /// BC/BD/C2/C9 place their speed, credits and units sliders at 129x21 and the
 /// co-op difficulty slider at 266x22, or 266x21 on WOL's host C2
 /// (`0x0060B950` placement, `tools/storage_oracle/lan_lobby.json`).
-pub const TRACKBAR_FRAMES: [(i32, i32, i32); 10] = [
+pub const TRACKBAR_FRAMES: [(i32, i32, i32); 11] = [
     (129, 22, 50),
     (226, 22, 50),
     (263, 21, 50),
@@ -108,6 +108,9 @@ pub const TRACKBAR_FRAMES: [(i32, i32, i32); 10] = [
     (266, 21, 0),
     // The online pause menu FF's Connection and Game Speed (60B7A0).
     (210, 21, 50),
+    // VERA's room's team bar: Teams and Room size, half again as wide as
+    // the room's own 129x21 (`ui::multiplayer_setup`).
+    (194, 21, 50),
 ];
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",
@@ -116,15 +119,9 @@ const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
 /// Owner-draw preload 61F7FD..61F857 -> PCX cache 6B9D00 (embedded palette).
 /// BB 5EE200 selects observer art; 5DAFE0 selects host/accepted glyphs.
 const LAN_PCX_NAMES: [&str; 4] = ["wolnob.pcx", "wolob.pcx", "wolhost.pcx", "wolacpt.pcx"];
-/// WOL setup C2/C9 art: ping statics 004E34A0 and the 0x3ED emote images
-/// (0x49C wodact, 0x4AA wouact, C2 `0x791231`).
-const WOL_SETUP_PCX_NAMES: [&str; 5] = [
-    "pingg.pcx",
-    "pingy.pcx",
-    "pingr.pcx",
-    "wodact.pcx",
-    "wouact.pcx",
-];
+/// WOL setup C2/C9 art: the 0x3ED emote images (0x49C wodact, 0x4AA
+/// wouact, C2 `0x791231`).
+const WOL_SETUP_PCX_NAMES: [&str; 2] = ["wodact.pcx", "wouact.pcx"];
 /// YR `0x72CF40/0x72D030` setup pair, shared by offline Skirmish `0x102` and
 /// the BC/BD/C2/C9 setup family: the large art and the palette that decodes
 /// both sizes. Only the offline Skirmish screen selects it, under
@@ -172,7 +169,9 @@ pub struct SkirmishShellChromeAtlas {
     /// and palette, RA2 style the shared MNSCRN pair through SHELL.PAL.
     pub setup_backgrounds: [Option<SkirmishShellChromeEntry>; 2],
     lan_icons: [Option<SkirmishShellChromeEntry>; 4],
-    wol_setup_icons: [Option<SkirmishShellChromeEntry>; 5],
+    wol_setup_icons: [Option<SkirmishShellChromeEntry>; 2],
+    /// VERA's online room: the lobby's badge PCX images by file name.
+    wol_badges: Vec<(&'static str, SkirmishShellChromeEntry)>,
     pub lower_side_640_lwscrns: Option<SkirmishShellChromeEntry>,
     pub lower_side_large_lwscrnl: Option<SkirmishShellChromeEntry>,
     mode_two_dialog_backgrounds: [Option<SkirmishShellChromeEntry>; 4],
@@ -306,14 +305,6 @@ impl SkirmishShellChromeAtlas {
             .map(|(_, entry)| *entry)
     }
 
-    /// 004E34A0 ping image 0/1/2: pingg, pingy, pingr.
-    pub fn wol_ping_icon(&self, icon: u8) -> Option<SkirmishShellChromeEntry> {
-        self.wol_setup_icons
-            .get(usize::from(icon))
-            .copied()
-            .flatten()
-    }
-
     /// C2/C9 0x3ED images: element+0x14 (`wodact`, message 0x49C) and
     /// element+0x18 (`wouact`, message 0x4AA).
     pub fn wol_emote_images(
@@ -322,7 +313,15 @@ impl SkirmishShellChromeAtlas {
         Option<SkirmishShellChromeEntry>,
         Option<SkirmishShellChromeEntry>,
     ) {
-        (self.wol_setup_icons[3], self.wol_setup_icons[4])
+        (self.wol_setup_icons[0], self.wol_setup_icons[1])
+    }
+
+    /// VERA's online room: a player's badge ([`crate::ui::wol_lobby::badge`]).
+    pub fn wol_badge(&self, file: &str) -> Option<SkirmishShellChromeEntry> {
+        self.wol_badges
+            .iter()
+            .find(|(name, _)| *name == file)
+            .map(|(_, entry)| *entry)
     }
 
     /// BB5DAFE0 gives the host glyph precedence, then accepted, else no icon.
@@ -397,6 +396,30 @@ pub fn trackbar_frame_slot(plaque: bool, width: i32, height: i32) -> Option<usiz
     TRACKBAR_FRAMES
         .iter()
         .position(|&(w, h, reserve)| (w, h, reserve > 0) == (width, height, plaque))
+}
+
+/// The [`TRACKBAR_FRAMES`] slot of a `width` x `height` trackbar window
+/// drawn at `scale`. Below the shell's own size (VERA's team bar draws its
+/// controls at 78%) the window's size rounds back from its authored one by
+/// a pixel or two, so it takes the frame of the nearest window within two
+/// pixels each way.
+pub fn drawn_trackbar_frame_slot(
+    plaque: bool,
+    width: i32,
+    height: i32,
+    scale: crate::ui::shell::geom::ShellScale,
+) -> Option<usize> {
+    if scale.factor() >= 1.0 {
+        return trackbar_frame_slot(plaque, width, height);
+    }
+    TRACKBAR_FRAMES
+        .iter()
+        .enumerate()
+        .filter(|&(_, &(w, h, reserve))| {
+            (reserve > 0) == plaque && (w - width).abs() <= 2 && (h - height).abs() <= 2
+        })
+        .min_by_key(|&(_, &(w, h, _))| (w - width).abs() + (h - height).abs())
+        .map(|(slot, _)| slot)
 }
 
 impl ControlChrome {
@@ -762,7 +785,11 @@ pub fn build_skirmish_shell_chrome_atlas(
     for name in &flag_names {
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
     }
-    for name in LAN_PCX_NAMES.into_iter().chain(WOL_SETUP_PCX_NAMES) {
+    for name in LAN_PCX_NAMES
+        .into_iter()
+        .chain(WOL_SETUP_PCX_NAMES)
+        .chain(crate::ui::wol_lobby::badge_files())
+    {
         // 6B9D00 packs embedded PCX palette to display RGB565; list images
         // and kind-2 statics compare the same packed magenta key as flags.
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
@@ -820,6 +847,9 @@ pub fn build_skirmish_shell_chrome_atlas(
         generic_background_large_mnscrnl_shell: by_label.get("mnscrnl.shp#shell").copied(),
         lan_icons: LAN_PCX_NAMES.map(|name| by_label.get(name).copied()),
         wol_setup_icons: WOL_SETUP_PCX_NAMES.map(|name| by_label.get(name).copied()),
+        wol_badges: crate::ui::wol_lobby::badge_files()
+            .filter_map(|name| by_label.get(name).map(|entry| (name, *entry)))
+            .collect(),
         lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),
         lower_side_large_lwscrnl: by_label.get("lwscrnl.shp").copied(),
         mode_two_dialog_backgrounds: mode_two_dialog_labels(side_dialog_art.as_deref())
@@ -1318,7 +1348,7 @@ fn average_rgb(a: [u8; 3], b: [u8; 3]) -> [u8; 3] {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::{
         AssetManager, COOP_SETUP_PALETTE, COOP_SETUP_SHAPE, ChromePiece,
@@ -1328,7 +1358,9 @@ mod tests {
         render_primitive_bevel_entry, render_shp_entry, render_trackbar_frame_geometry, rgba_color,
         setup_background_pair, trackbar_frame_rgba,
     };
+    use super::{TRACKBAR_FRAMES, drawn_trackbar_frame_slot};
     use crate::assets::asset_manager::MediaArchiveMode;
+    use crate::ui::shell::geom::ShellScale;
     use std::collections::HashMap;
 
     /// The hook at `0x622223` keeps the stock selection unless both slots of
@@ -1670,6 +1702,21 @@ mod tests {
         assert_eq!(pixel(&entry, 79, 10), [0, 0, 0, 0]);
         assert_eq!(pixel(&entry, 100, 10), [0, 0, 0, 0]);
         assert_eq!(pixel(&entry, 80, 24), mixed);
+    }
+
+    /// A trackbar drawn below the shell's size takes the nearest window's
+    /// frame; at the shell's own size only its exact window has one.
+    #[test]
+    fn trackbar_below_the_shell_size_takes_the_nearest_frame() {
+        let half = ShellScale::from_screen(400, 300);
+        let slot = |plaque, w, h, scale| {
+            drawn_trackbar_frame_slot(plaque, w, h, scale).map(|slot| TRACKBAR_FRAMES[slot])
+        };
+        assert_eq!(slot(true, 130, 22, half), Some((129, 22, 50)));
+        assert_eq!(slot(true, 129, 21, half), Some((129, 21, 50)));
+        assert_eq!(slot(false, 130, 22, half), None);
+        assert_eq!(slot(true, 132, 22, half), None);
+        assert_eq!(slot(true, 130, 22, ShellScale::RETAIL), None);
     }
 
     #[test]

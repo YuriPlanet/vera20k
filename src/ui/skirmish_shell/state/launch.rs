@@ -2,11 +2,10 @@
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
-    HOUSE_COLOR_COUNT, LaunchStartPosition, LaunchTeam, LaunchValidationError,
-    NETWORK_PLAYER_SLOT_COUNT, PreFillHouseRoster, SkirmishAiSlot, SkirmishLaunchMode,
-    SkirmishLaunchSession, SkirmishLocalSlot,
+    LaunchStartPosition, LaunchTeam, LaunchValidationError, SKIRMISH_MAX_SLOT_COUNT,
+    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession, SkirmishLocalSlot,
 };
-use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
+use crate::skirmish_modes::SkirmishGameMode;
 
 use super::SkirmishShellState;
 
@@ -16,8 +15,9 @@ fn launch_start_position(
 ) -> Result<LaunchStartPosition, LaunchValidationError> {
     match start_position {
         LaunchStartPosition::Auto => Ok(LaunchStartPosition::Auto),
-        // VERA's maps with more than eight starts list them up to thirty.
-        LaunchStartPosition::Position(position) if position < NETWORK_PLAYER_SLOT_COUNT as u8 => {
+        // VERA's maps with more than eight starts list them up to
+        // SKIRMISH_MAX_SLOT_COUNT.
+        LaunchStartPosition::Position(position) if position < SKIRMISH_MAX_SLOT_COUNT as u8 => {
             Ok(LaunchStartPosition::Position(position))
         }
         LaunchStartPosition::Position(position) => {
@@ -26,11 +26,22 @@ fn launch_start_position(
     }
 }
 
-fn launch_color_index(slot: usize, color_index: usize) -> Result<u8, LaunchValidationError> {
-    if color_index < HOUSE_COLOR_COUNT {
-        Ok(color_index as u8)
-    } else {
-        Err(LaunchValidationError::InvalidColorIndex { slot, color_index })
+/// A picked colour has to be one the lobby lists. A Random row's stored
+/// colour is only what it last showed and the draw replaces it, so one the
+/// lobby no longer lists packs as the first colour instead of stopping Start.
+fn launch_color_index(
+    state: &SkirmishShellState,
+    slot: usize,
+    color_index: usize,
+    claimed: bool,
+) -> Result<u8, LaunchValidationError> {
+    let listed = u8::try_from(color_index)
+        .ok()
+        .filter(|&color| state.lobby_colors.is_lobby_priority(i32::from(color)));
+    match listed {
+        Some(color) => Ok(color),
+        None if !claimed => Ok(0),
+        None => Err(LaunchValidationError::InvalidColorIndex { slot, color_index }),
     }
 }
 
@@ -102,14 +113,22 @@ pub fn pack_launch_session_without_start_validation(
         .get(state.selected_map_idx)
         .ok_or(LaunchValidationError::NoSelectedMap)?;
     let selected_mode =
-        mode_by_id(modes, state.selected_mode_id).ok_or(LaunchValidationError::NoSelectedMode {
-            mode_id: state.selected_mode_id,
-        })?;
+        state
+            .selected_mode
+            .resolve(modes)
+            .ok_or(LaunchValidationError::NoSelectedMode {
+                mode_id: state.selected_mode.id,
+            })?;
 
     let local = SkirmishLocalSlot {
         country: state.player_country,
         country_random: state.player_country_random,
-        color_index: launch_color_index(0, state.player_color_index)?,
+        color_index: launch_color_index(
+            state,
+            0,
+            state.player_color_index,
+            state.player_color_claimed,
+        )?,
         color_random: !state.player_color_claimed,
         start_position: launch_start_position(0, state.player_start_position)?,
         team: LaunchTeam::from_shell_value(state.player_team),
@@ -125,7 +144,12 @@ pub fn pack_launch_session_without_start_validation(
             raw_slot_index: (idx + 1) as u8,
             country: opponent.country,
             country_random: opponent.country_random,
-            color_index: launch_color_index(slot, opponent.color_index)?,
+            color_index: launch_color_index(
+                state,
+                slot,
+                opponent.color_index,
+                opponent.color_claimed,
+            )?,
             color_random: !opponent.color_claimed,
             start_position: launch_start_position(slot, opponent.start_position)?,
             team: LaunchTeam::from_shell_value(opponent.team),
@@ -156,21 +180,17 @@ pub fn pack_launch_session_without_start_validation(
     options.harvester_truce = false;
     options.multi_engineer = false;
 
-    let mut session = SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::from_game_mode(selected_mode),
-        selected_map_file: Some(selected_map.file_name.clone()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+    Ok(SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::from_game_mode(selected_mode),
+        Some(selected_map.file_name.clone()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: state.player_name_edit.text.clone(),
             slot: local,
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: opponents.len() as i32,
+        0,
         opponents,
-        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(0),
         options,
-    };
-    session.rebuild_house_roster();
-    Ok(session)
+    ))
 }

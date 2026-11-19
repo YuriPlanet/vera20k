@@ -853,6 +853,18 @@ fn native_coord(value: &serde_json::Value) -> crate::sim::projectile::Projectile
 /// are supplied boundaries; it does not run a whole native skirmish.
 #[test]
 fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
+    spawn_shrapnel_matches_the_original(false);
+}
+
+/// [`shrapnel_children_and_lasers_match_original_spawn_shrapnel`] in a game
+/// read the Ares way.
+#[test]
+fn ares_shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
+    spawn_shrapnel_matches_the_original(true);
+}
+
+fn spawn_shrapnel_matches_the_original(ares_way: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
     use crate::map::entities::EntityCategory;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::MovementLayer;
@@ -1150,7 +1162,7 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
                     .payload()
                     .installed_weapon()
                     .map(|id| world.interner.resolve(id)),
-                crate::rules::ARES_ENABLED.then_some(child_weapon.id.as_str()),
+                ares_way.then_some(child_weapon.id.as_str()),
                 "{name}: Construct does not SetWeapon"
             );
             assert_eq!(

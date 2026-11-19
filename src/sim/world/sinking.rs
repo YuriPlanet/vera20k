@@ -101,6 +101,7 @@ impl Simulation {
                     entity.position.rx(),
                     entity.position.ry(),
                     entity.owner(),
+                    rules.ares_form(),
                 )
             });
             if let Some(event) = announcement {
@@ -299,10 +300,10 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "sinking_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "aircraft_sinking_tests.rs"]
 mod aircraft_tests;

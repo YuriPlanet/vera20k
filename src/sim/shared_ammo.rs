@@ -39,7 +39,7 @@ pub(crate) fn start_reloading(
         return;
     };
     if let Some(entity) = entities.get_mut(id) {
-        entity.start_reloading_ammo(object, rules, now);
+        entity.start_reloading_ammo(object, now);
     }
 }
 

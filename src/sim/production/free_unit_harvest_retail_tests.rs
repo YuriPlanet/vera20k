@@ -82,6 +82,10 @@ fn nonharvester_free_unit_commits_harvest_through_paid_refinery_completion() {
         harvester_truce: false,
         ally_change_allowed: true,
         bans: Default::default(),
+        teams: None,
+        auto_balance: false,
+        queue: Vec::new(),
+        host_rules: Default::default(),
     };
     let mut scene = load_session(&root, map_name, 0x1234_5678, launch).unwrap();
     // Observation cadence only; every gameplay frame still uses the real runtime.
@@ -148,7 +152,7 @@ fn nonharvester_free_unit_commits_harvest_through_paid_refinery_completion() {
                                 kind,
                                 rx,
                                 ry,
-                                Some(&scene.runtime.resources.overlay_registry),
+                                Some(scene.runtime.resources.rules.overlay_registry()),
                             )
                             .unwrap()
                             .valid
@@ -243,7 +247,7 @@ fn nonharvester_free_unit_commits_harvest_through_paid_refinery_completion() {
     let actor = sim.entities().get(tank).unwrap();
     let start = (actor.position.rx(), actor.position.ry());
     let rules = &scene.runtime.resources.rules;
-    let registry = Some(&scene.runtime.resources.overlay_registry);
+    let registry = Some(scene.runtime.resources.rules.overlay_registry());
     let destination = [(-1, 0), (0, -1), (1, 0), (0, 1)]
         .into_iter()
         .map(|(dx, dy)| {

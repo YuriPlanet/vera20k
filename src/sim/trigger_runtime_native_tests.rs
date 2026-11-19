@@ -194,7 +194,7 @@ fn loss_threshold_events_bind_retail_all04_reinforcement_operands() {
         &rules,
         Some(&map.ini),
     );
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_team_ai_registry(&teams, &rules);
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     let routes = corpus["retail_routes"].as_array().unwrap();
     assert_eq!(routes.len(), 2);
@@ -1169,7 +1169,6 @@ fn damage_source_event44_matches_original_registered_house_index() {
 
 // The stock tag section of 5F5390; Ares replaces it (hook 0x5F57B5, see the
 // ares tests).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn surviving_object_damage_tag_ingress_matches_original_call_admission() {
     use super::tests::{
@@ -1666,9 +1665,7 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     );
     roots.sort();
     roots.dedup();
-    rules
-        .bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater)
-        .expect("physical selected building SHP bounds");
+    rules.bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater);
     for name in ["YAPPET_E", "YAPPET_F", "YAPPET_G", "YAPPET_H"] {
         assert!(
             rules
@@ -1769,15 +1766,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         .0;
     let identity = sim.super_weapons[&owner][&dominator].native_unique_id();
     for _ in 0..15 {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
     }
     assert_eq!(sim.session.binary_frame(), 15);
     assert_eq!(sim.entities().get(reactor).unwrap().health.current(), 769);
@@ -1790,15 +1780,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     );
     assert!(!sim.super_weapons[&owner][&dominator].is_suspended());
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(
-        &[],
-        &rules,
-        None,
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
     assert_eq!(sim.trigger_runtime.action_trace, vec![(129, 7), (63, 364)]);
     let reactor = sim.entities().get(reactor).unwrap();
     assert_eq!(
@@ -1857,15 +1840,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     assert!(!before_pause.is_empty());
     assert!(before_pause.iter().all(|(_, _, paused)| !paused));
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(
-        &[],
-        &rules,
-        None,
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
     let paused = super_slots(&sim);
     assert!(!paused.is_empty());
     assert!(paused.iter().all(|(_, _, paused)| *paused));
@@ -2988,6 +2964,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         .iter()
         .find(|row| row["input"]["name"] == "reverse_chain")
         .unwrap()["input"];
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     let mut sim = Simulation::with_seed(31);
     sim.trigger_runtime.definitions = supplied_definitions(input);
     sim.trigger_runtime.definitions_prepared = true;
@@ -3023,7 +3000,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     sim.trigger_runtime
         .replace_cell_trigger_tag(cell, Some(tag));
     sim.trigger_runtime.logic_tags.push(tag);
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(ares).unwrap();
     let owner = sim.trigger_runtime.clone();
     let corruptions: [(&str, fn(&mut Simulation)); 9] = [
         ("definition link", |sim| {
@@ -3064,7 +3041,10 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     for (name, corrupt) in corruptions {
         sim.trigger_runtime = owner.clone();
         corrupt(&mut sim);
-        assert!(sim.validate_restored_trigger_runtime().is_err(), "{name}");
+        assert!(
+            sim.validate_restored_trigger_runtime(ares).is_err(),
+            "{name}"
+        );
     }
     sim.trigger_runtime = owner;
     crate::sim::world::Simulation::mark_live_tag_for_delete(
@@ -3072,7 +3052,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         &mut sim.trigger_runtime,
         tag,
     );
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(ares).unwrap();
     // The Tag deleting destructor leaves its Triggers in the common queue.
     // This valid saved intermediate state must not reconstruct or reject them.
     sim.substrate
@@ -3084,7 +3064,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         0,
         false,
     );
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(ares).unwrap();
 }
 
 #[test]
@@ -3240,7 +3220,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
             }
         ));
         let registry = TeamAiIniRegistry::from_sources(&definitions, &IniFile::from_str(""), false);
-        sim.install_team_ai_registry(&registry, &rules).unwrap();
+        sim.install_team_ai_registry(&registry, &rules);
         let author_type = sim.trigger_runtime.definitions.tag_type("author").unwrap();
         let team_type = sim.trigger_runtime.definitions.tag_type("team").unwrap();
         sim.trigger_runtime.definitions.team_types = vec!["TT".into()];
@@ -3627,7 +3607,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
             .map(|(index, typ)| {
                 json!({ "id": typ.id, "repeat": typ.repeat,
                 "trigger": typ.trigger.map(|id| &runtime.definitions.trigger_types[id].id),
-                "flags": runtime.definitions.classification(index) })
+                "flags": runtime.definitions.classification(index, rules.ares_form()) })
             })
             .collect();
         assert_eq!(json!(tag_definitions), row["definitions"]);
@@ -4414,7 +4394,8 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                 // Original destruction keeps Tag+2C after the last object
                 // is gone. Preserve it across restore without retaining a
                 // Rust attachment to vanished object storage.
-                sim.validate_restored_trigger_runtime().unwrap();
+                sim.validate_restored_trigger_runtime(rules.ares_form())
+                    .unwrap();
             }
         }
         if let Some(states) = row.get("full_rng_after_history") {

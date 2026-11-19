@@ -25,7 +25,7 @@ pub(crate) fn execute(state: &mut AppState) {
     if state.match_state.session_mode() != SessionMode::Wol {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;

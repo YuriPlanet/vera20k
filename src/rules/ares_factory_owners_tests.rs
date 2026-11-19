@@ -8,7 +8,6 @@
 
 use super::*;
 use crate::rules::ruleset::{CountryIdx, RuleSet};
-#[cfg(feature = "ares")]
 use crate::util::save_codec;
 
 #[test]
@@ -44,8 +43,8 @@ fn shared_ares_country_find_matches_native_controls_and_rules_projection() {
             .and_then(|id| rules.country_index(id));
         assert_eq!(rules.ares_find_country(token), expected, "{row}");
     }
-    #[cfg(feature = "ares")]
     {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut reader = RulesPassProcessor::default();
         for id in ids {
             reader.find_or_construct(RulesTypeFamily::Country, id);
@@ -86,19 +85,21 @@ fn shared_ares_country_find_matches_native_controls_and_rules_projection() {
 
 #[test]
 fn all_techno_families_project_factory_fields_from_process_without_a_second_reader() {
-    for family in [
-        "BuildingTypes",
-        "VehicleTypes",
-        "AircraftTypes",
-        "InfantryTypes",
-    ] {
-        let registries = if family == "BuildingTypes" {
-            "[BuildingTypes]\n0=CONTROL\n1=SOURCE\n".to_owned()
-        } else {
-            format!("[BuildingTypes]\n0=SOURCE\n[{family}]\n0=CONTROL\n")
-        };
-        let ini = IniFile::from_str(&format!(
-            "[Countries]\n0=CountryA\n1=CountryB\n\
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        for family in [
+            "BuildingTypes",
+            "VehicleTypes",
+            "AircraftTypes",
+            "InfantryTypes",
+        ] {
+            let registries = if family == "BuildingTypes" {
+                "[BuildingTypes]\n0=CONTROL\n1=SOURCE\n".to_owned()
+            } else {
+                format!("[BuildingTypes]\n0=SOURCE\n[{family}]\n0=CONTROL\n")
+            };
+            let ini = IniFile::from_str(&format!(
+                "[Countries]\n0=CountryA\n1=CountryB\n\
              [CountryA]\nName=Alias\nParentCountry=CountryB\n\
              {registries}[SOURCE]\nFactory.ExplicitOnly=yes\n[CONTROL]\n\
              BuiltAt=SOURCE,SOURCE,unknown\nFactory.ExplicitOnly=yes\n\
@@ -106,68 +107,69 @@ fn all_techno_families_project_factory_fields_from_process_without_a_second_read
              FactoryOwners.Forbidden=CountryB\n\
              FactoryOwners.HaveAllPlans=yes\nFactoryOwners.Permanent=no\n\
              FactoryOwners.HasAllPlans=yes\n"
-        ));
-        let direct = crate::rules::object_type::ObjectType::from_ini_section(
-            "CONTROL",
-            ini.section("CONTROL").unwrap(),
-            ObjectCategory::Building,
-        );
-        assert!(
-            direct.factory_owners().is_empty(),
-            "raw constructor has no Country registry"
-        );
-        assert!(!direct.factory_owners_permanent());
-        assert!(!direct.factory_has_all_plans());
-        assert!(direct.built_at().is_empty());
-        assert!(!direct.factory_explicit_only());
+            ));
+            let direct = crate::rules::object_type::ObjectType::from_ini_section(
+                "CONTROL",
+                ini.section("CONTROL").unwrap(),
+                ObjectCategory::Building,
+            );
+            assert!(
+                direct.factory_owners().is_empty(),
+                "raw constructor has no Country registry"
+            );
+            assert!(!direct.factory_owners_permanent());
+            assert!(!direct.factory_has_all_plans());
+            assert!(direct.built_at().is_empty());
+            assert!(!direct.factory_explicit_only());
 
-        let rules = RuleSet::from_ini(&ini).unwrap();
-        let object = rules.object("CONTROL").unwrap();
-        let allowed = if crate::rules::ARES_ENABLED {
-            vec![CountryIdx(0), CountryIdx(0), CountryIdx(1)]
-        } else {
-            vec![]
-        };
-        assert_eq!(object.factory_owners(), allowed, "{family}");
-        assert_eq!(
-            object.forbidden_factory_owners(),
-            if crate::rules::ARES_ENABLED {
-                vec![CountryIdx(1)]
+            let rules = RuleSet::from_ini(&ini).unwrap();
+            let object = rules.object("CONTROL").unwrap();
+            let allowed = if ares_way {
+                vec![CountryIdx(0), CountryIdx(0), CountryIdx(1)]
             } else {
                 vec![]
-            },
-            "{family}"
-        );
-        assert!(!object.factory_owners_permanent(), "later alias wins");
-        assert_eq!(object.factory_has_all_plans(), crate::rules::ARES_ENABLED);
-        let source = rules
-            .type_array_index(ObjectCategory::Building, "SOURCE")
-            .unwrap();
-        assert_eq!(rules.ares_find_building("sOuRcE"), Some(source));
-        assert_eq!(rules.ares_find_building("none"), None);
-        assert_eq!(rules.ares_find_building(" SOURCE"), None);
-        assert_eq!(
-            object.built_at(),
-            if crate::rules::ARES_ENABLED {
-                vec![source, source]
-            } else {
-                vec![]
-            }
-        );
-        assert_eq!(
-            object.factory_explicit_only(),
-            crate::rules::ARES_ENABLED && family == "BuildingTypes"
-        );
-        assert_eq!(
-            rules.object("SOURCE").unwrap().factory_explicit_only(),
-            crate::rules::ARES_ENABLED
-        );
+            };
+            assert_eq!(object.factory_owners(), allowed, "{family}");
+            assert_eq!(
+                object.forbidden_factory_owners(),
+                if ares_way {
+                    vec![CountryIdx(1)]
+                } else {
+                    vec![]
+                },
+                "{family}"
+            );
+            assert!(!object.factory_owners_permanent(), "later alias wins");
+            assert_eq!(object.factory_has_all_plans(), ares_way);
+            let source = rules
+                .type_array_index(ObjectCategory::Building, "SOURCE")
+                .unwrap();
+            assert_eq!(rules.ares_find_building("sOuRcE"), Some(source));
+            assert_eq!(rules.ares_find_building("none"), None);
+            assert_eq!(rules.ares_find_building(" SOURCE"), None);
+            assert_eq!(
+                object.built_at(),
+                if ares_way {
+                    vec![source, source]
+                } else {
+                    vec![]
+                }
+            );
+            assert_eq!(
+                object.factory_explicit_only(),
+                ares_way && family == "BuildingTypes"
+            );
+            assert_eq!(
+                rules.object("SOURCE").unwrap().factory_explicit_only(),
+                ares_way
+            );
+        }
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn factory_lists_and_flags_retain_across_layers_and_replace_only_on_nonempty_reads() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = RulesLayerStack::new(IniFile::from_str(
         "[Countries]\n0=A\n1=B\n[BuildingTypes]\n0=CONTROL\n\
          [CONTROL]\nFactoryOwners=A,A\nFactoryOwners.Forbidden=B\n\
@@ -209,9 +211,9 @@ fn factory_lists_and_flags_retain_across_layers_and_replace_only_on_nonempty_rea
     assert!(!object.factory_explicit_only());
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn factory_country_binding_uses_current_registry_and_retained_extension_admission() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut reader = RulesPassProcessor::default();
     reader.find_or_construct(RulesTypeFamily::Country, "EARLY");
     let index = reader.find_or_construct(RulesTypeFamily::Building, "CONTROL");
@@ -346,9 +348,9 @@ fn factory_country_binding_uses_current_registry_and_retained_extension_admissio
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn factory_state_save_restore_hash_validation_and_reset_preserve_one_owner() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let initial = RulesLayerStack::new(IniFile::from_str(
         "[Countries]\n0=A\n1=B\n[BuildingTypes]\n0=CONTROL\n[CONTROL]\n\
          FactoryOwners=A,A,B\nFactoryOwners.Forbidden=B\n\
@@ -409,9 +411,9 @@ fn factory_state_save_restore_hash_validation_and_reset_preserve_one_owner() {
     assert!(!object.factory_explicit_only());
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn explicit_factory_uses_separate_building_phase_and_current_stock_repair_guard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut reader = RulesPassProcessor::default();
     reader.find_or_construct(RulesTypeFamily::Country, "A");
     let index = reader.find_or_construct(RulesTypeFamily::Building, "CONTROL");
@@ -471,9 +473,9 @@ fn explicit_factory_uses_separate_building_phase_and_current_stock_repair_guard(
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn retained_global_controls_match_native_constructor_and_eight_read_history_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let native = &crate::test_fixture::json("tools/rules_oracle/ares_factory_owners.json")["global_controls"];
     let mut state = AresGlobalControls::default();
     assert_eq!(
@@ -540,23 +542,23 @@ fn retained_global_controls_match_native_constructor_and_eight_read_history_cont
 
 #[test]
 fn global_controls_project_only_reached_build_capability_and_difficulty_indices() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[GlobalControls]\nAllowBypassBuildLimit=no,yes,no\n",
-    ))
-    .unwrap();
-    assert!(!rules.ares_ai_bypasses_build_limit(0));
-    assert_eq!(
-        rules.ares_ai_bypasses_build_limit(1),
-        crate::rules::ARES_ENABLED
-    );
-    assert!(!rules.ares_ai_bypasses_build_limit(2));
-    assert!(!rules.ares_ai_bypasses_build_limit(3));
-    assert!(!rules.ares_ai_bypasses_build_limit(usize::MAX));
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[GlobalControls]\nAllowBypassBuildLimit=no,yes,no\n",
+        ))
+        .unwrap();
+        assert!(!rules.ares_ai_bypasses_build_limit(0));
+        assert_eq!(rules.ares_ai_bypasses_build_limit(1), ares_way);
+        assert!(!rules.ares_ai_bypasses_build_limit(2));
+        assert!(!rules.ares_ai_bypasses_build_limit(3));
+        assert!(!rules.ares_ai_bypasses_build_limit(usize::MAX));
+    }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn global_controls_process_save_and_hash_retain_flag_prefix_and_reader_phase() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let initial = RulesLayerStack::new(IniFile::from_str(
         "[GlobalControls]\nAllowBypassBuildLimit=yes,yes,yes\n",
     ))

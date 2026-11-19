@@ -399,7 +399,7 @@ pub(super) fn unlimbo_held_naval_unit(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;

@@ -171,7 +171,14 @@ fn native_change_owner_score_and_kill_counter_wrap() {
     let mut economy = crate::sim::economy::Economy::new(0);
     economy.set_score_for_test(score);
     economy.add_score(i32::try_from(native_price).unwrap());
-    stats.record_kill(crate::map::entities::EntityCategory::Structure);
+    // The table slot that changed is the old owner's House index.
+    let slot = row["before"]["new"]["building_kills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(row["after"]["new"]["building_kills"].as_array().unwrap())
+        .position(|(before, after)| before != after);
+    stats.record_kill(crate::map::entities::EntityCategory::Structure, slot);
     assert_eq!(
         (stats, economy.score()),
         capture_totals(&row["after"]["new"])
@@ -501,4 +508,23 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     );
     assert_eq!(restored.rng_state(), sim.rng_state());
     assert_eq!(restored.state_hash(), sim.state_hash());
+}
+
+/// Each 20-entry kill table is followed by its loss counter (`+0x5434`,
+/// `+0x5488`), so kills of House 20 and later land past the tables the score
+/// screen and Diplomacy dialog sum (`0x005C996D`, `0x00658330`).
+#[test]
+fn kills_of_house_twenty_and_later_land_past_the_kill_tables() {
+    use crate::map::entities::EntityCategory;
+    let mut stats = MatchStatistics::default();
+    stats.record_kill(EntityCategory::Unit, Some(19));
+    stats.record_kill(EntityCategory::Structure, Some(19));
+    stats.record_kill(EntityCategory::Unit, Some(20));
+    stats.record_kill(EntityCategory::Structure, Some(20));
+    stats.record_kill(EntityCategory::Infantry, Some(21));
+    stats.record_kill(EntityCategory::Structure, Some(21));
+    assert_eq!(
+        (stats.kills(), stats.units_lost(), stats.buildings_lost()),
+        (3, 1, 1)
+    );
 }

@@ -174,6 +174,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "scatter_cell_tests.rs"]
 mod tests;

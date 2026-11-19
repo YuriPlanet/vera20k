@@ -9,19 +9,19 @@ use crate::audio::events::{GameSoundEvent, SoundEventQueue, SoundSource};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "bridge_child_sound_tests.rs"]
 mod bridge_child_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "selection_voice_tests.rs"]
 mod selection_voice_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "sound_boundary_tests.rs"]
 mod sound_boundary_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "building_death_sound_tests.rs"]
 mod building_death_sound_tests;
 
@@ -121,14 +121,16 @@ fn collect_eva_object(
 /// at most once, in producer order; its result gates the caller's EVA line.
 /// That ordering belongs to the caller, not to radar events.
 ///
-/// RESIDUAL: five events are fed by both kinds of site and keep the PlayerPtr
+/// RESIDUAL: four events are fed by both kinds of site and keep the PlayerPtr
 /// test: CannotDeployHere (IsHumanPlayer in `UnitClass::Deploy` `0x007394E6`,
 /// after the `DeploysInto=` building refuses the cell), UnderAttack (building
 /// arm `0x004F9407`), HouseEva (Robot Tank, GoOnline / GoOffline, crate
-/// upgrades), Repairing (ToggleRepair `0x004470A4`) and UnitRepaired (the
-/// hospital's owner, `0x0044B93F`). Trigger: a campaign `PlayerControl=` house
+/// upgrades) and Repairing (ToggleRepair `0x004470A4`). Trigger: a campaign
+/// `PlayerControl=` house
 /// that is not the player owns a building, a `DeploysInto=` unit or a Robot
-/// Tank, or picks up a crate; effect: that line stays silent. No retail
+/// Tank, or picks up a crate; effect: that line stays silent, except that
+/// such a house's building that lists the player as an ally gives the ally
+/// line where native gives the base line (`0x004F9411..0x004F9429`). No retail
 /// campaign reaches it. Only ALL01 (Alliance: two ORCA teams; British:
 /// nothing), ALL03 (Alliance: nothing) and SOV04 (Germans: RMNV infantry and a
 /// SHAD transport with no `DeploysInto=`) have such a house; no map gives one
@@ -147,6 +149,9 @@ pub(super) fn dispatch_sim_sound_events(
     output: &mut SoundEventQueue,
     mut hud_text: Option<&mut Vec<crate::app::input::messages::HudMessage>>,
 ) {
+    // The superweapons' Ares arms and the slam sound follow how the Rules
+    // were read.
+    let ares = rules.ares_form();
     // Convert sim sound events to app-layer sound events for playback.
     for sim_event in events {
         let app_event: GameSoundEvent = match sim_event {
@@ -161,6 +166,9 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 GameSoundEvent::UiSound { sound_id }
             }
+            SimSoundEvent::TriggerAudio { reference, target } => {
+                GameSoundEvent::TriggerAudio { reference, target }
+            }
             SimSoundEvent::TriggerEva { index } => GameSoundEvent::TriggerEva { index },
             SimSoundEvent::VocCenteredIndex { index } => GameSoundEvent::VocIndex { index },
             SimSoundEvent::UnitVoiceVisit { owner } => GameSoundEvent::UnitVoiceVisit { owner },
@@ -172,6 +180,9 @@ pub(super) fn dispatch_sim_sound_events(
             }
             SimSoundEvent::UnitVoiceDestroyed { owner } => {
                 GameSoundEvent::UnitVoiceDestroyed { owner }
+            }
+            SimSoundEvent::UnitVoiceMoved { from, to } => {
+                GameSoundEvent::UnitVoiceMoved { from, to }
             }
             SimSoundEvent::ObjectSoundStarted {
                 owner,
@@ -248,10 +259,6 @@ pub(super) fn dispatch_sim_sound_events(
                 sound_id: sim.interner().resolve(deploy_sound_id).to_string(),
                 source: Some(anim_world_sound_source(world)),
             },
-            SimSoundEvent::LeaveTransport { sound_id, world } => GameSoundEvent::LeaveTransport {
-                sound_id: sim.interner().resolve(sound_id).to_string(),
-                source: Some(anim_world_sound_source(world)),
-            },
             SimSoundEvent::EntityUndeployed {
                 undeploy_sound_id,
                 world,
@@ -268,7 +275,6 @@ pub(super) fn dispatch_sim_sound_events(
                 sound_id,
                 type_id,
                 world,
-                #[cfg(feature = "ares")]
                 eva,
             } => {
                 // `HouseClass::IsHumanPlayer @ 0x0050B6F0` (`0x006FA089` /
@@ -288,22 +294,22 @@ pub(super) fn dispatch_sim_sound_events(
                         source: Some(anim_world_sound_source(world)),
                     });
                 }
-                // `0x006FA0C6 MOV ECX,0x843138 ("EVA_UnitPromoted") ; OR
-                // EDX,-1 ; CALL VoxClass::PlayEVA`: the voice slot, with
-                // the entry's own type (STANDARD LOW on stock data).
-                #[cfg(not(feature = "ares"))]
-                output.push(GameSoundEvent::Eva {
-                    event: "EVA_UnitPromoted".to_string(),
-                    type_override: None,
-                });
-                #[cfg(not(feature = "ares"))]
-                collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
-                // Ares UpdateVeterancy10046D4B..10046D54 queues the type's
-                // EVA.*Promoted index instead; -1 queues nothing.
-                #[cfg(feature = "ares")]
-                if let Some(eva) = eva {
+                if rules.ares() {
+                    // Ares UpdateVeterancy10046D4B..10046D54 queues the type's
+                    // EVA.*Promoted index instead; -1 queues nothing.
+                    if let Some(eva) = eva {
+                        output.push(GameSoundEvent::Eva {
+                            event: sim.interner().resolve(eva).to_string(),
+                            type_override: None,
+                        });
+                        collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
+                    }
+                } else {
+                    // `0x006FA0C6 MOV ECX,0x843138 ("EVA_UnitPromoted") ; OR
+                    // EDX,-1 ; CALL VoxClass::PlayEVA`: the voice slot, with
+                    // the entry's own type (STANDARD LOW on stock data).
                     output.push(GameSoundEvent::Eva {
-                        event: sim.interner().resolve(eva).to_string(),
+                        event: "EVA_UnitPromoted".to_string(),
                         type_override: None,
                     });
                     collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
@@ -380,20 +386,12 @@ pub(super) fn dispatch_sim_sound_events(
                 coordinate,
                 flags,
             } => {
-                // Original750B32 uses arithmetic coord>>8 for the shroud
-                // cell. Preserve direct Location XYZ; do not recenter it.
+                let coordinate = [coordinate.x, coordinate.y, coordinate.z];
                 GameSoundEvent::VocAtCoord {
                     sound_id,
-                    coordinate: [coordinate.x, coordinate.y, coordinate.z],
+                    coordinate,
                     flags,
-                    source: SoundSource::new(
-                        crate::util::lepton::absolute_leptons_to_screen(
-                            coordinate.x,
-                            coordinate.y,
-                            coordinate.z,
-                        ),
-                        ((coordinate.x >> 8) as u16, (coordinate.y >> 8) as u16),
-                    ),
+                    source: SoundSource::from_coordinate(coordinate),
                 }
             }
             SimSoundEvent::VocStopAtCoord { coordinate, flags } => GameSoundEvent::VocStopAtCoord {
@@ -429,8 +427,8 @@ pub(super) fn dispatch_sim_sound_events(
                     }
                 }
                 // Ares SW_Protect::Activate10074750: StartSound at the cell.
-                #[cfg(feature = "ares")]
-                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect
+                if ares
+                    && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect
                     && let Some(sound_id) = sw.start_sound.clone()
                 {
                     output.push(GameSoundEvent::VocAt {
@@ -460,17 +458,35 @@ pub(super) fn dispatch_sim_sound_events(
                 // A handler's launch (hook 6CC390) skips the stock case: its
                 // EVA and cleanup are the common Launch's own facts, its
                 // sounds the handler's.
-                #[cfg(feature = "ares")]
-                let ares_handler = sw.ares_eva().is_some();
-                #[cfg(not(feature = "ares"))]
-                let ares_handler = false;
-                let cue = if ares_handler
+                let ares_handler = ares && sw.ares_eva().is_some();
+                let mut cue = if ares_handler
                     || sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
                 {
                     SuperWeaponLaunchCue::default()
                 } else {
                     superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref())
                 };
+                // Cases 0, 7, 9 and 11 play their cue through
+                // `VocClass::PlayAtCoord @ 0x00750E20` with flags 0
+                // (`0x006CDCAE`/`0x006CDDE9`, `0x006CCE28`, `0x006CD8D3`,
+                // `0x006CD7BF`): a retained request the sound pump re-pans
+                // and stops out of earshot, not a one-shot. ForceShield's
+                // `PlayAt` cue is not dispatched here.
+                // It follows the case's EVA line (the silo arm of case 0
+                // has them the other way round, `0x006CDDE9`/`0x006CDE01`).
+                let retained_cue =
+                    cue.positional
+                        .then(|| cue.sound_id.take())
+                        .flatten()
+                        .map(|sound_id| {
+                            let coordinate = [world.x, world.y, world.z];
+                            GameSoundEvent::VocAtCoord {
+                                sound_id,
+                                coordinate,
+                                flags: 0,
+                                source: SoundSource::from_coordinate(coordinate),
+                            }
+                        });
                 // The EVA column is picked for the *listening* client's
                 // side, not the launcher's: `VoxClass::PlayEVA` takes
                 // only the event name; the consumer resolves the side.
@@ -480,35 +496,38 @@ pub(super) fn dispatch_sim_sound_events(
                             sw,
                             eva_producers::SuperWeaponEvaStage::Activated,
                             cue.eva_event,
+                            ares,
                         )
                     })
                     .flatten()
                     .filter(|_| local_owner_name.is_some() && !sim.local_player_defeated())
                     .map(str::to_string);
-                let activated = (cue.sound_id.is_some() || eva_event.is_some()).then(|| {
-                    GameSoundEvent::SuperWeaponActivated {
-                        sound_id: cue.sound_id.unwrap_or_default(),
-                        source: cue.positional.then(|| anim_world_sound_source(world)),
-                        eva_event,
-                    }
+                // What is left of the cue is its EVA line, with no position.
+                let activated = eva_event.map(|line| GameSoundEvent::SuperWeaponActivated {
+                    sound_id: String::new(),
+                    source: None,
+                    eva_event: Some(line),
                 });
                 // The player's tail ([`launch_drops_ready_line`]): after
                 // the case's line, the queued Ready line is dropped.
                 if let Some(ready) = launch_drops_ready_line(sw.kind).filter(|_| !ares_handler)
                     && owner_is_local(sim.interner(), owner, local_owner_name)
                 {
-                    if let Some(activated) = activated {
-                        output.push(activated);
+                    for event in activated.into_iter().chain(retained_cue) {
+                        output.push(event);
                     }
                     output.push(GameSoundEvent::EvaRemove {
                         event: ready.to_string(),
                     });
                     continue;
                 }
-                let Some(activated) = activated else {
+                if let Some(activated) = activated {
+                    output.push(activated);
+                }
+                let Some(retained_cue) = retained_cue else {
                     continue;
                 };
-                activated
+                retained_cue
             }
             #[cfg(not(feature = "phobos"))]
             SimSoundEvent::SuperWeaponActivatedMessage { .. }
@@ -713,18 +732,19 @@ pub(super) fn dispatch_sim_sound_events(
                 let sound_id = rules.general.building_slam.as_deref();
                 // Ares HouseClass_UnitFromFactory_BuildingSlam (10010290, hook
                 // 0x4FB2FD): the placed type's SlamSound, else BuildingSlam.
-                #[cfg(feature = "ares")]
-                let sound_id = sim
-                    .interner()
-                    .object_type_in_category(
-                        building_type,
-                        crate::rules::object_type::ObjectCategory::Building,
-                        rules,
-                    )
-                    .and_then(|object| object.slam_sound())
-                    .unwrap_or(sound_id);
-                #[cfg(not(feature = "ares"))]
-                let _ = building_type;
+                // SlamSound binds only for Rules read the Ares way.
+                let sound_id = if ares {
+                    sim.interner()
+                        .object_type_in_category(
+                            building_type,
+                            crate::rules::object_type::ObjectCategory::Building,
+                            rules,
+                        )
+                        .and_then(|object| object.slam_sound())
+                        .unwrap_or(sound_id)
+                } else {
+                    sound_id
+                };
                 let Some(sound_id) = sound_id.map(str::to_owned) else {
                     continue;
                 };
@@ -922,34 +942,31 @@ pub(super) fn dispatch_sim_sound_events(
                 owner,
                 radar,
                 type_id,
-                #[cfg(feature = "ares")]
-                eva,
-                #[cfg(feature = "ares")]
-                radar_event,
+                ares,
             } => {
-                // `TechnoClass::Death_Announcement 0x004D98CA..0x004D9911`:
-                // `PlayEVA("EVA_UnitLost", -1)` when IsHumanPlayer accepts
-                // the owner, the sim's Spawned gate passed and this radar
-                // type-7 request is admitted.
-                #[cfg(not(feature = "ares"))]
-                let event = {
-                    if !sim.house_is_human_player(owner) || !admit_radar(radar) {
-                        continue;
+                let event = match ares {
+                    // `TechnoClass::Death_Announcement 0x004D98CA..0x004D9911`:
+                    // `PlayEVA("EVA_UnitLost", -1)` when IsHumanPlayer accepts
+                    // the owner, the sim's Spawned gate passed and this radar
+                    // type-7 request is admitted.
+                    None => {
+                        if !sim.house_is_human_player(owner) || !admit_radar(radar) {
+                            continue;
+                        }
+                        "EVA_UnitLost".to_string()
                     }
-                    "EVA_UnitLost".to_string()
-                };
-                // Ares FootClass_Destroyed (10049080) creates the radar event
-                // and plays the type's EVA.Lost whatever it answers;
-                // BuildingClass_Destroyed_UnitLost (10013F10) creates none.
-                #[cfg(feature = "ares")]
-                let event = {
-                    if !sim.house_is_human_player(owner) {
-                        continue;
+                    // Ares FootClass_Destroyed (10049080) creates the radar
+                    // event and plays the type's EVA.Lost whatever it answers;
+                    // BuildingClass_Destroyed_UnitLost (10013F10) creates none.
+                    Some(ares) => {
+                        if !sim.house_is_human_player(owner) {
+                            continue;
+                        }
+                        if ares.radar_event {
+                            let _ = admit_radar(radar);
+                        }
+                        sim.interner().resolve(ares.eva).to_string()
                     }
-                    if radar_event {
-                        let _ = admit_radar(radar);
-                    }
-                    sim.interner().resolve(eva).to_string()
                 };
                 collect_eva_object(&mut hud_text, "VERA:EvaUnitLost", type_id);
                 GameSoundEvent::Eva {
@@ -957,16 +974,12 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            #[cfg(not(feature = "ares"))]
-            SimSoundEvent::SuperWeaponInsufficientFunds { .. } => continue,
-            #[cfg(feature = "ares")]
+            SimSoundEvent::SuperWeaponInsufficientFunds { .. } if !ares => continue,
             SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponActivated { .. }
             | SimSoundEvent::AresLightningStormApproaching { .. }
             | SimSoundEvent::AresSuperWeaponAborted { .. } => continue,
             // 100731FD..10073236: IsAlliedWith(PlayerPtr) on the owner.
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresAlliedRadarEvent { owner, radar } => {
                 let local = local_owner_name.and_then(|name| {
                     sim.houses()
@@ -985,7 +998,6 @@ pub(super) fn dispatch_sim_sound_events(
             }
             // Common Launch10032FC3: VoxClass::PlayIndex of the data type's
             // EVA_Activated, on every client behind the launch-mute byte.
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponActivatedEva { sw_type } => {
                 let Some(event) = rules
                     .super_weapon(sim.interner().resolve(sw_type))
@@ -1003,7 +1015,6 @@ pub(super) fn dispatch_sim_sound_events(
             }
             // SuperClass_Update_DrainMoney100358A0 plays the cue on every
             // client while the House is ControlledByHuman (the sim's gate).
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponDrainRefused { sw_type, .. } => {
                 let Some(event) = sim
                     .interner()
@@ -1018,7 +1029,8 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            #[cfg(feature = "ares")]
+            // Reached only when the Rules were read the Ares way
+            // (`RuleSet::ares_form`): the stock arm above takes the rest.
             SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
@@ -1110,10 +1122,17 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            SimSoundEvent::UnitRepaired { owner, radar } => {
-                // MissionRepair44BD96's local+41A test precedes its type8
-                // radar insertion44BDB2; admission gates the voice44BDC5.
-                if !owner_is_local(sim.interner(), owner, local_owner_name) || !admit_radar(radar) {
+            SimSoundEvent::UnitRepaired {
+                owner,
+                owner_admitted,
+                radar,
+            } => {
+                // Hospital44B93F already admitted House50B6F0. Depot44BD96
+                // defers its local+41A test; both radar insertions gate EVA
+                // (44B973/44BDC5). Do not discard an admitted campaign house.
+                if (!owner_admitted && !owner_is_local(sim.interner(), owner, local_owner_name))
+                    || !admit_radar(radar)
+                {
                     continue;
                 }
                 GameSoundEvent::Eva {
@@ -1127,7 +1146,6 @@ pub(super) fn dispatch_sim_sound_events(
                 tech_building,
                 radar,
                 capture_eva_event,
-                #[cfg(feature = "ares")]
                 ares_tech,
             } => {
                 // `BuildingClass::ChangeOwner 0x004483C6/0x004483D1
@@ -1145,12 +1163,13 @@ pub(super) fn dispatch_sim_sound_events(
                 let capture_event = capture_eva_event.map(|id| sim.interner().resolve(id));
                 // Ares 3.0 10013E40 (hook 0x0044840B) plays the type's
                 // LostEvaEvent instead.
-                #[cfg(feature = "ares")]
-                let tech_lost = ares_tech
-                    .lost_eva_event
-                    .map(|id| sim.interner().resolve(id));
-                #[cfg(not(feature = "ares"))]
-                let tech_lost = Some(eva_producers::EVA_TECH_BUILDING_LOST);
+                let tech_lost = if rules.ares() {
+                    ares_tech
+                        .lost_eva_event
+                        .map(|id| sim.interner().resolve(id))
+                } else {
+                    Some(eva_producers::EVA_TECH_BUILDING_LOST)
+                };
                 for event in eva_producers::capture_eva_events(
                     tech_building,
                     radar_accepted,
@@ -1206,6 +1225,7 @@ pub(super) fn dispatch_sim_sound_events(
                         sw,
                         eva_producers::SuperWeaponEvaStage::Ready,
                         eva_producers::super_weapon_ready_event(sw.kind),
+                        ares,
                     )
                 }) else {
                     continue;
@@ -1222,7 +1242,6 @@ pub(super) fn dispatch_sim_sound_events(
             // its AddMessage plays the only sound.
             SimSoundEvent::LightningStormRefused { .. }
             | SimSoundEvent::PsychicDominatorRefused { .. } => continue,
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponFinished { owner, sw_type, .. } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
@@ -1258,6 +1277,7 @@ pub(super) fn dispatch_sim_sound_events(
                             sw,
                             eva_producers::SuperWeaponEvaStage::Detected,
                             eva_producers::super_weapon_detected_event(sw.kind, index),
+                            ares,
                         )
                     })
                 else {
@@ -1313,14 +1333,15 @@ fn super_weapon_detection_admitted(
     let type_name = sim.interner().resolve(sw_type).to_string();
     // `0x004468FA..0x00446935`: `AuxBuilding=` absent, or the building's own
     // house owns one (`CountOwnedInstances` on `Owner+0x5550`). Optional Ares
-    // lists use the same grant availability owner.
-    #[cfg(not(feature = "ares"))]
-    let aux_satisfied = rules.super_weapon(&type_name).is_none_or(|sw| {
-        crate::sim::superweapon::super_weapon_available(sim, rules, owner, &sw.id)
-    });
-    #[cfg(feature = "ares")]
-    let aux_satisfied =
-        crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name);
+    // lists, when the Rules were read the Ares way (`RuleSet::ares_form`), use
+    // the same grant availability owner.
+    let aux_satisfied = if rules.ares_form() {
+        crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name)
+    } else {
+        rules.super_weapon(&type_name).is_none_or(|sw| {
+            crate::sim::superweapon::super_weapon_available(sim, rules, owner, &sw.id)
+        })
+    };
     eva_producers::super_weapon_detected_allowed(
         sim.house_alliances().as_map(),
         &owner_name,
@@ -1335,7 +1356,7 @@ fn super_weapon_detection_admitted(
 /// `0x0044840B`): a captured tech building prints `Message.Lost` when the
 /// old owner is the player (`HouseClass::Player` outside a campaign), then
 /// `Message.Capture` when the new owner is; an empty label prints nothing.
-#[cfg(feature = "ares")]
+/// The sim fills these labels only when Ares plays (`RuleSet::ares`).
 pub(super) fn ares_tech_capture_messages(
     events: &[SimSoundEvent],
     sim: &crate::sim::world::Simulation,
@@ -1376,8 +1397,8 @@ pub(super) fn ares_tech_capture_messages(
 /// refusal on a human-controlled House (100358A0, firer the player),
 /// `Message.Launch` on every client after a new type's launch (Launch
 /// 10032ED0, firer the owner) and `Message.Activate` when UnitDelivery's
-/// deferment ends (10075DE0, firer the owner).
-#[cfg(feature = "ares")]
+/// deferment ends (10075DE0, firer the owner). The caller asks for them only
+/// when the Rules were read the Ares way (`RuleSet::ares_form`).
 pub(super) fn ares_superweapon_messages(
     events: &[SimSoundEvent],
     sim: &crate::sim::world::Simulation,
@@ -1730,7 +1751,6 @@ pub(super) fn hud_messages(
                 owner_is_local(interner, owner, local_owner_name)
                     .then_some(HudMessage::SuperWeapon("Msg:DominatorActive"))
             }
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused { owner, sw_type } => {
                 // Ares10038ECE compares the event House with PlayerPtr.
                 owner_is_local(interner, owner, local_owner_name)
@@ -1778,7 +1798,7 @@ fn cloak_sound_for_app(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
     use crate::app::input::messages::HudMessage;
@@ -1793,9 +1813,23 @@ mod tests {
         .unwrap()
     }
 
-    #[cfg(feature = "ares")]
+    /// What a lost Foot's event carries in a game read the Ares way
+    /// (`EVA_UnitLost` and its radar event); a stock game's event has none.
+    fn ares_foot_lost_line(
+        rules: &RuleSet,
+        sim: &mut Simulation,
+    ) -> Option<crate::sim::world::AresUnitLostLine> {
+        rules
+            .ares_form()
+            .then(|| crate::sim::world::AresUnitLostLine {
+                eva: sim.intern("EVA_UnitLost"),
+                radar_event: true,
+            })
+    }
+
     #[test]
     fn hunter_seeker_eva_runs_after_payload_and_cleans_ready_after_sound() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
         use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
@@ -1930,9 +1964,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_refusal_eva_is_owner_local_configurable_and_silenceable() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for (setting, expected) in [
             ("", Some("EVA_InsufficientFunds")),
             ("EVA.InsufficientFunds=CustomFunds\n", Some("CustomFunds")),
@@ -2280,9 +2314,9 @@ mod tests {
     /// Ares HouseClass_UnitFromFactory_BuildingSlam (10010290, hook
     /// 0x4FB2FD): the placed type's `SlamSound` replaces BuildingSlam, and
     /// `none` silences it.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_slam_sound_replaces_the_building_slam() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         let ini = IniFile::from_str(
             "[BuildingTypes]\n0=LOUD\n1=QUIET\n[LOUD]\nSlamSound=Slam\n[QUIET]\nSlamSound=none\n",
@@ -2384,7 +2418,6 @@ mod tests {
             .set_current_house_for_test(Some(local));
         let sound = sim.intern("Promotion");
         let promoted_type = sim.intern("E1");
-        #[cfg(feature = "ares")]
         let eva = sim.intern("EVA_UnitPromoted");
         let promotion = |owner| SimSoundEvent::UnitPromoted {
             owner,
@@ -2396,7 +2429,6 @@ mod tests {
                 y: 7 * 256 + 128,
                 z: 0,
             },
-            #[cfg(feature = "ares")]
             eva: Some(eva),
         };
         use crate::sim::radar::{RadarEventRequest, RadarEventType};
@@ -2416,16 +2448,12 @@ mod tests {
                 ry: 7,
             }
         };
-        #[cfg(feature = "ares")]
-        let lost_eva = sim.intern("EVA_UnitLost");
+        let lost_line = ares_foot_lost_line(&rules, &mut sim);
         let unit_lost = |owner, rx| SimSoundEvent::UnitLost {
             owner,
             radar: RadarEventRequest::new(RadarEventType::UnitLost, rx, 7),
             type_id: promoted_type,
-            #[cfg(feature = "ares")]
-            eva: lost_eva,
-            #[cfg(feature = "ares")]
-            radar_event: true,
+            ares: lost_line,
         };
         let mut admitted = Vec::new();
         let mut admit_radar = |request: RadarEventRequest| {
@@ -2477,8 +2505,9 @@ mod tests {
             "EVA_UnitLost",
         ];
         // Ares 10049080 speaks EVA.Lost even for the refused radar event.
-        #[cfg(feature = "ares")]
-        expected.push("EVA_UnitLost");
+        if rules.ares_form() {
+            expected.push("EVA_UnitLost");
+        }
         assert_eq!(
             events
                 .iter()
@@ -2494,14 +2523,21 @@ mod tests {
     }
 
     #[test]
-    fn depot_eva_uses_the_local_listener_and_existing_radar_admission() {
+    fn depot_and_hospital_eva_use_their_native_listener_and_radar_admission() {
+        use crate::sim::house_state::HouseState;
         use crate::sim::radar::{RadarEventRequest, RadarEventType};
         let rules = dispatch_rules();
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let remote = sim.intern("Remote");
-        let repaired = |owner, rx| SimSoundEvent::UnitRepaired {
+        let controlled = sim.intern("Alliance");
+        let mut house = HouseState::new(controlled, 0, None, false, 0, 10);
+        house.set_player_control_for_test(true);
+        sim.houses_mut_for_test().register(house);
+        assert!(sim.house_is_human_player(controlled));
+        let repaired = |owner, rx, owner_admitted| SimSoundEvent::UnitRepaired {
             owner,
+            owner_admitted,
             radar: RadarEventRequest::new(RadarEventType::UnitRepaired, rx, 7),
         };
         let repair_type = sim.intern("GAPOWR");
@@ -2509,7 +2545,9 @@ mod tests {
         let mut output = SoundEventQueue::new();
         dispatch_sim_sound_events(
             [
-                repaired(remote, 5),
+                repaired(remote, 5, false),
+                repaired(controlled, 6, false),
+                repaired(controlled, 8, true),
                 SimSoundEvent::Repairing {
                     owner: local,
                     type_id: repair_type,
@@ -2518,8 +2556,8 @@ mod tests {
                     owner: local,
                     event: "EVA_InsufficientFunds",
                 },
-                repaired(local, 99),
-                repaired(local, 5),
+                repaired(local, 99, false),
+                repaired(local, 5, false),
             ],
             &sim,
             &rules,
@@ -2534,6 +2572,7 @@ mod tests {
         assert_eq!(
             admitted,
             [
+                (RadarEventType::UnitRepaired, 8),
                 (RadarEventType::UnitRepaired, 99),
                 (RadarEventType::UnitRepaired, 5)
             ]
@@ -2544,7 +2583,12 @@ mod tests {
                 .iter()
                 .map(GameSoundEvent::sound_id)
                 .collect::<Vec<_>>(),
-            ["EVA_Repairing", "EVA_InsufficientFunds", "EVA_UnitRepaired"],
+            [
+                "EVA_UnitRepaired",
+                "EVA_Repairing",
+                "EVA_InsufficientFunds",
+                "EVA_UnitRepaired"
+            ],
         );
     }
 
@@ -2568,8 +2612,7 @@ mod tests {
         house.set_player_control_for_test(true);
         sim.houses_mut_for_test().register(house);
         let radar = RadarEventRequest::new(RadarEventType::UnitLost, 20, 30);
-        #[cfg(feature = "ares")]
-        let lost_eva = sim.intern("EVA_UnitLost");
+        let lost_line = ares_foot_lost_line(&rules, &mut sim);
         let lost = |sim: &Simulation| {
             let mut asked = 0;
             let mut output = SoundEventQueue::new();
@@ -2578,10 +2621,7 @@ mod tests {
                     owner: ally,
                     radar,
                     type_id: lost_type,
-                    #[cfg(feature = "ares")]
-                    eva: lost_eva,
-                    #[cfg(feature = "ares")]
-                    radar_event: true,
+                    ares: lost_line,
                 }],
                 sim,
                 &rules,
@@ -2738,7 +2778,6 @@ mod tests {
     // Installed Ares hands ChronoWarp and PsychicDominator to their handlers
     // (hook 6CC390), whose line and cleanup are the common Launch's own facts
     // (`ares_launch_eva_follows_the_data_type_and_skips_the_stock_tail`).
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn launch_drops_the_ready_line_for_its_player_only() {
         launch_drops_the_ready_line(
@@ -2757,9 +2796,9 @@ mod tests {
     /// case's line and Ready drop stay out of the launch fact; the
     /// activation line is the data type's (the ChronoSphere's), heard on
     /// every client, and its Ready leaves the launching player's queue.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_launch_eva_follows_the_data_type_and_skips_the_stock_tail() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
         use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
@@ -2828,7 +2867,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(feature = "ares"))]
     fn launch_drops_the_ready_line(name: &str, activated: &str, ready: &str) {
         use crate::sim::radar::{RadarEventRequest, RadarEventType};
 
@@ -2929,26 +2967,31 @@ mod tests {
         let oracle: serde_json::Value =
             serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
                 .unwrap();
-        for (section, name, sound, expected) in [
-            // Installed Ares hands MultiMissile to SW_NuclearMissile, whose
-            // cue and line are its own facts (`ares_stock_types_tests`).
-            #[cfg(not(feature = "ares"))]
-            ("nuke_launch", "NukeSpecial", "NukeSiren", 12),
-            ("iron_curtain_launch", "IronCurtainSpecial", "", 18),
-            #[cfg(not(feature = "ares"))]
+        let ares = rules.ares_form();
+        for (section, name, sound, expected, redirected) in [
+            // When the Rules were read the Ares way (`RuleSet::ares_form`),
+            // Ares hands MultiMissile to SW_NuclearMissile, whose cue and line
+            // are its own facts (`ares_stock_types_tests`).
+            ("nuke_launch", "NukeSpecial", "NukeSiren", 12, true),
+            ("iron_curtain_launch", "IronCurtainSpecial", "", 18, false),
             (
                 "genetic_launch",
                 "GeneticConverterSpecial",
                 "GeneticMutatorActivate",
                 18,
+                true,
             ),
             (
                 "psychic_launch",
                 "PsychicRevealSpecial",
                 "PsychicRevealActivate",
                 11,
+                false,
             ),
         ] {
+            if ares && redirected {
+                continue;
+            }
             let mut compared = 0;
             for row in oracle[section].as_array().unwrap() {
                 let events = row["events"].as_array().unwrap();
@@ -2994,15 +3037,25 @@ mod tests {
                     .drain()
                     .into_iter()
                     .flat_map(|event| match event {
+                        // The cue is a retained 750E20 request at the target
+                        // with flags 0 (`PUSH 0` at each Launch site), never
+                        // a one-shot riding on the EVA event.
                         GameSoundEvent::SuperWeaponActivated {
                             eva_event,
                             sound_id,
-                            ..
-                        } => eva_event
+                            source: None,
+                        } if sound_id.is_empty() => eva_event
                             .map(|line| format!("eva {line}"))
                             .into_iter()
-                            .chain((!sound_id.is_empty()).then(|| format!("play {sound_id}")))
-                            .collect::<Vec<_>>(),
+                            .collect(),
+                        GameSoundEvent::VocAtCoord {
+                            sound_id,
+                            coordinate,
+                            flags: 0,
+                            ..
+                        } if coordinate == [40 * 256 + 128, 40 * 256 + 128, 0] => {
+                            vec![format!("play {sound_id}")]
+                        }
                         GameSoundEvent::EvaRemove { event } => vec![format!("remove {event}")],
                         other => panic!("{other:?}"),
                     })
@@ -3017,8 +3070,8 @@ mod tests {
                     }
                 }
                 if section == "nuke_launch" {
-                    // Case 0 plays DigSound before its line (`0x006CDDE9`,
-                    // `0x006CDE01`); the one launch event carries both.
+                    // Case 0's silo arm plays DigSound before its line
+                    // (`0x006CDDE9`, `0x006CDE01`); VERA keeps one order.
                     lines.sort();
                     native.sort();
                 }
@@ -3035,13 +3088,22 @@ mod tests {
     }
 
     /// Cases 5, 6 and 8 play nothing, but their player's launch still drops
-    /// the queued Ready line through the shared tail `0x006CD51E`. Installed
-    /// Ares hands SpyPlane to SW_SpyPlane (`HandlesType @ 100757F0`, hook
-    /// 6CC390): its launch skips case 8, and the Ready line it drops is the
-    /// common Launch's (`AresSuperWeaponFinished`), so the launch fact plays
-    /// and drops nothing.
+    /// the queued Ready line through the shared tail `0x006CD51E`. When the
+    /// Rules were read the Ares way (`RuleSet::ares_form`), Ares hands
+    /// SpyPlane to SW_SpyPlane (`HandlesType @ 100757F0`) and both paradrops
+    /// to SW_ParaDrop (`10073DA0`), hook 6CC390: their launch skips the
+    /// stock case, and the Ready line it drops is the common Launch's
+    /// (`AresSuperWeaponFinished`), so the launch fact plays and drops
+    /// nothing.
     #[test]
     fn silent_launches_drop_their_ready_line_for_their_player_only() {
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            silent_launches_drop_their_ready_line(ares_way);
+        }
+    }
+
+    fn silent_launches_drop_their_ready_line(ares_way: bool) {
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
@@ -3051,6 +3113,8 @@ mod tests {
                  [SpyPlaneSpecial]\nType=SpyPlane\n",
             ))
             .unwrap();
+        let ares = rules.ares_form();
+        assert_eq!(ares, ares_way);
         for (name, ready) in [
             ("ParaDropSpecial", "EVA_ReinforcementsReady"),
             ("AmericanParaDropSpecial", "EVA_ReinforcementsReady"),
@@ -3076,7 +3140,7 @@ mod tests {
                 None,
             );
             let emitted = output.drain();
-            if cfg!(feature = "ares") && name == "SpyPlaneSpecial" {
+            if ares {
                 assert!(emitted.is_empty(), "{name}: {emitted:?}");
                 continue;
             }
@@ -3285,9 +3349,9 @@ mod tests {
     /// refusal only for the local owner, Launch (10032ED0) on every client
     /// with the owner as firer, a drain refusal (100358A0) in the player's
     /// colour wherever the sim announced it.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_superweapon_message_lines_follow_their_printing_hooks() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::app::input::messages::HudMessage;
         use crate::rules::superweapon_type::AresSuperWeaponMessage as M;
         let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
@@ -3339,9 +3403,9 @@ mod tests {
     /// Ares `10013E40`: the local loser reads `Message.Lost` and the local
     /// captor `Message.Capture`; another client's capture and an ordinary
     /// building print nothing.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_tech_capture_labels_print_for_the_local_sides() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::app::input::messages::HudMessage;
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
@@ -3385,19 +3449,16 @@ mod tests {
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let other = sim.intern("Other");
-        #[cfg(feature = "ares")]
         let sw_type = sim.intern("Strike");
         let events = [
             SimSoundEvent::LightningStormRefused { owner: local },
             SimSoundEvent::PsychicDominatorRefused { owner: other },
             SimSoundEvent::PsychicDominatorRefused { owner: local },
             SimSoundEvent::LightningStormRefused { owner: other },
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused {
                 owner: local,
                 sw_type,
             },
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused {
                 owner: other,
                 sw_type,
@@ -3408,7 +3469,6 @@ mod tests {
             [
                 HudMessage::SuperWeapon("Msg:LightningStormActive"),
                 HudMessage::SuperWeapon("Msg:DominatorActive"),
-                #[cfg(feature = "ares")]
                 HudMessage::AresSuperWeaponRefused(sw_type),
             ]
         );
@@ -3487,7 +3547,6 @@ mod tests {
             sim.advance_app_frame(
                 &commands,
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -3650,9 +3709,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn construction_detection_uses_the_shared_extension_building_gate() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         let ini = crate::sim::arena_fixture::clear_ground_ini(
             "[BuildingTypes]\n0=AUX\n1=VETO\n[AUX]\nStrength=100\n[VETO]\nStrength=100\n[SuperWeaponTypes]\n0=Gate\n[Gate]\nType=PsychicReveal\nSW.AuxBuildings=AUX\nSW.NegBuildings=VETO\n",
@@ -3772,14 +3831,7 @@ mod tests {
         }
         let mut runtime = SimRuntime {
             simulation: sim,
-            resources: SimResources {
-                rules,
-                overlay_registry: crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
-                    &retail.processed_rules,
-                    Some(&retail.fixed_art),
-                ),
-                ..SimResources::empty()
-            },
+            resources: SimResources::new(rules).into(),
         };
         let frame = |runtime: &mut SimRuntime, commands: &[CommandEnvelope]| {
             let output = runtime
@@ -3932,7 +3984,6 @@ mod tests {
         let remote = sim.intern("Remote");
         let building = sim.intern("GAPOWR");
         let unit = sim.intern("HTNK");
-        #[cfg(feature = "ares")]
         let promoted_eva = sim.intern("EVA_UnitPromoted");
         sim.session_mut_for_test()
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
@@ -3960,7 +4011,6 @@ mod tests {
                 sound_id: None,
                 type_id: unit,
                 world: crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 },
-                #[cfg(feature = "ares")]
                 eva: Some(promoted_eva),
             },
             SimSoundEvent::UnitPromoted {
@@ -3968,7 +4018,6 @@ mod tests {
                 sound_id: None,
                 type_id: unit,
                 world: crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 },
-                #[cfg(feature = "ares")]
                 eva: Some(promoted_eva),
             },
         ];
@@ -4036,8 +4085,7 @@ mod tests {
         let remote = sim.intern("Remote");
         let building = sim.intern("GAPOWR");
         let unit = sim.intern("E1");
-        #[cfg(feature = "ares")]
-        let lost_eva = sim.intern("EVA_UnitLost");
+        let lost_line = ares_foot_lost_line(&rules, &mut sim);
         sim.session_mut_for_test()
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
         sim.session_mut_for_test()
@@ -4048,10 +4096,7 @@ mod tests {
                 owner: local,
                 radar,
                 type_id: unit,
-                #[cfg(feature = "ares")]
-                eva: lost_eva,
-                #[cfg(feature = "ares")]
-                radar_event: true,
+                ares: lost_line,
             },
             SimSoundEvent::Repairing {
                 owner: local,
@@ -4111,19 +4156,13 @@ mod tests {
                     owner: remote,
                     radar,
                     type_id: unit,
-                    #[cfg(feature = "ares")]
-                    eva: lost_eva,
-                    #[cfg(feature = "ares")]
-                    radar_event: true,
+                    ares: lost_line,
                 },
                 SimSoundEvent::UnitLost {
                     owner: local,
                     radar,
                     type_id: unit,
-                    #[cfg(feature = "ares")]
-                    eva: lost_eva,
-                    #[cfg(feature = "ares")]
-                    radar_event: true,
+                    ares: lost_line,
                 },
                 SimSoundEvent::StructureAbandoned {
                     owner: local,
@@ -4140,10 +4179,11 @@ mod tests {
         );
         // Ares FootClass_Destroyed (10049080) speaks the local loss, and so
         // posts its row, whatever the radar answers.
-        #[cfg(feature = "ares")]
-        let expected_refused = vec![row("VERA:EvaUnitLost", unit)];
-        #[cfg(not(feature = "ares"))]
-        let expected_refused = Vec::new();
+        let expected_refused = if rules.ares_form() {
+            vec![row("VERA:EvaUnitLost", unit)]
+        } else {
+            Vec::new()
+        };
         assert_eq!(refused, expected_refused);
         assert_eq!(
             refused_output.drain().len(),
@@ -4160,6 +4200,7 @@ mod tests {
         dispatch_sim_sound_events(
             [SimSoundEvent::UnitRepaired {
                 owner: local,
+                owner_admitted: false,
                 radar,
             }],
             &sim,

@@ -99,7 +99,7 @@ fn world(rules: &RuleSet) -> Simulation {
     sim.session.publish_started();
     sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     let owner = sim.interner.intern("Americans");
@@ -133,7 +133,7 @@ fn state(sim: &Simulation, id: u64) -> Value {
         "mission": entity.mission.current().raw(),
         "queued": entity.mission.queued().raw(),
         "mega_mission": if entity.mega_mission.is_attack_move() { 29 } else { -1 },
-        "transporter": entity.passenger_role.transporter().is_some(),
+        "transporter": entity.passenger_role().transporter().is_some(),
         "nav_cell": nav,
         "drive_destination": destination,
     })
@@ -220,7 +220,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 MissionId::from_raw(spec["mission"].as_i64().unwrap() as i32),
                 0,
             );
-            entity.passenger_role = PassengerRole::boarded_for_test(transport, false);
+            entity.set_passenger_role_for_test(PassengerRole::boarded_for_test(transport, false));
             if !spec["nav_cell"].is_null() {
                 let (nx, ny) = cell(&spec["nav_cell"]);
                 // Explicit retained raw NavCom input; no destination setter
@@ -236,7 +236,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 .entities
                 .get_mut(transport)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .cargo_mut()
                 .unwrap()
                 .board_forced_chain(&[(id, 1.0)]);
@@ -278,7 +278,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 .entities
                 .get(transport)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .is_empty(),

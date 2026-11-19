@@ -120,14 +120,12 @@ impl ObjectFallState {
 
     /// Ares 3.0 ObjectClass_SpawnParachuted_Animation (10047C60, hook
     /// 0x5F5ADD) raises +8F alone for an `IsBomb` Foot's paradrop.
-    #[cfg(feature = "ares")]
     pub(crate) fn mark_bomb(&mut self) {
         self.dropped_as_bomb = true;
     }
 
     /// Ares 3.0 LogicClass_Update_1000 (100680F0, hook 0x55AFB3) under
     /// CanMakeStuffUp: FallRate +2C becomes 0 and +8F rises.
-    #[cfg(feature = "ares")]
     pub(crate) fn drop_parachute_as_bomb(&mut self) {
         self.rate = 0;
         self.dropped_as_bomb = true;
@@ -142,11 +140,16 @@ impl ObjectFallState {
         self.falling = false;
     }
 
+    /// Whether [`Self::observe_falling_edge`] copies +8D over +8E: they differ.
+    pub(crate) fn falling_edge_pending(&self) -> bool {
+        self.falling != self.was_falling
+    }
+
     /// FootClass::AI `0x004DAB3C..0x004DABC2`: when +8D differs from +8E it
     /// is copied over. True for the start of a DropAsBomb fall (+8F), the only
     /// edge on which `VoiceFalling=` plays (`0x004DAB67`).
     pub(crate) fn observe_falling_edge(&mut self) -> bool {
-        if self.falling == self.was_falling {
+        if !self.falling_edge_pending() {
             return false;
         }
         self.was_falling = self.falling;
@@ -157,26 +160,25 @@ impl ObjectFallState {
     /// attached-Anim flag selects DEC or the 1.4 free-fall gravity.
     ///
     /// Ares 3.0 ObjectClass_Update_MaxFallRate (10049BA0, hook 0x5F3FB2)
-    /// steps such an object by 1 either way.
-    pub(crate) fn advance_rate(&mut self, parachute_cap: i32, free_fall_cap: i32) {
-        #[cfg(feature = "ares")]
-        {
+    /// steps such an object by 1 either way; `ares` is the caller's
+    /// `RuleSet::ares_form`.
+    pub(crate) fn advance_rate(&mut self, parachute_cap: i32, free_fall_cap: i32, ares: bool) {
+        if ares {
             let cap = if self.parachuted {
                 parachute_cap
             } else {
                 free_fall_cap
             };
             self.rate = self.rate.wrapping_sub(1).max(cap);
+        } else {
+            self.advance_stock_rate(parachute_cap, free_fall_cap);
         }
-        #[cfg(not(feature = "ares"))]
-        self.advance_stock_rate(parachute_cap, free_fall_cap);
     }
 
     /// Ares 3.0 10049BA0 (hook 0x5F3FB2) for a Techno: the Parachute pointer
     /// (+0x88) in place of +84 selects the type's `FallRate.*` step and cap
     /// (`rules_caps` the Rules `ParachuteMaxFallRate` and
     /// `NoParachuteMaxFallRate`), `max(cap, FallRate - step)`.
-    #[cfg(feature = "ares")]
     pub(crate) fn advance_techno_rate(
         &mut self,
         fall: &crate::rules::ares_techno_type::FallRateTypeRules,
@@ -186,7 +188,6 @@ impl ObjectFallState {
         self.rate = self.rate.wrapping_sub(step).max(cap);
     }
 
-    #[cfg(not(feature = "ares"))]
     fn advance_stock_rate(&mut self, parachute_cap: i32, free_fall_cap: i32) {
         self.rate = if self.parachuted {
             self.rate.wrapping_sub(1).max(parachute_cap)
@@ -212,7 +213,7 @@ impl ObjectFallState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::ObjectFallState;
 
@@ -220,10 +221,10 @@ mod tests {
     /// Techno falls by its `FallRate.NoParachute` to its own cap, and with a
     /// Parachute pointer (not the retained +84 alone) by `FallRate.Parachute`
     /// to the Rules cap; an object without a TechnoType steps 1 either way.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_fall_rate_steps_by_type_and_parachute_pointer() {
         use crate::rules::ini_parser::IniFile;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[General]\nParachuteMaxFallRate=-3\nNoParachuteMaxFallRate=-100\n\
              [VehicleTypes]\n0=DROP\n[DROP]\nFallRate.NoParachute=3\n\
@@ -250,8 +251,8 @@ mod tests {
         techno.advance_techno_rate(fall, caps);
         assert_eq!(techno.rate(), -3);
         let mut anim = ObjectFallState::default();
-        anim.advance_rate(caps[0], caps[1]);
-        anim.advance_rate(caps[0], caps[1]);
+        anim.advance_rate(caps[0], caps[1], rules.ares_form());
+        anim.advance_rate(caps[0], caps[1], rules.ares_form());
         assert_eq!(anim.rate(), -2, "no 1.4 gravity");
     }
 

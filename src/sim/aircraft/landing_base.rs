@@ -31,7 +31,7 @@ pub(crate) fn landing_base(
         return 0;
     }
     let loaded = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .is_some_and(|cargo| cargo.count() != 0);
     if !loaded && entity.mission.effective() == MissionId::from_known(MissionType::Enter) {
@@ -88,7 +88,7 @@ pub(crate) fn landing_direction(
         return dir8(contact.body_facing.current(frame));
     }
     if entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .is_some_and(|cargo| cargo.count() != 0)
     {
@@ -206,6 +206,7 @@ pub(crate) fn get_landing_dir(
 }
 
 #[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

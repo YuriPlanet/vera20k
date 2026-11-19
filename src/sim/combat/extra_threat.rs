@@ -192,7 +192,6 @@ mod implementation {
             overlay_grid: world.overlay_grid.as_ref(),
             overlay_registry: context.overlay_registry,
             alliances: Some(&world.house_alliances),
-            #[cfg(feature = "ares")]
             buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(world)),
         };
         in_range::can_fire_at_target(

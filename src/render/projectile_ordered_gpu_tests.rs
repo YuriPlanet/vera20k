@@ -22,32 +22,11 @@ fn upload_color(gpu: &Gpu, color: &wgpu::Texture, bytes: &[u8]) {
     );
 }
 
-fn force_scratch_rows(gpu: &Gpu, terrain: &mut TerrainDrawRenderer, width: u32, rows: u32) {
-    // Exercise the production capacity-band path without allocating an 8K
-    // target. This replaces only derived scratch with a smaller valid binding.
-    let scratch = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Bounded storage band fixture"),
-        size: u64::from(width * rows) * 8,
-        usage: wgpu::BufferUsages::STORAGE,
-        mapped_at_creation: false,
-    });
-    let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Bounded storage band fixture"),
-        layout: &terrain.read_only_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: scratch.as_entire_binding(),
-        }],
-    });
-    let targets = terrain.targets.as_mut().unwrap();
-    targets.read_only = group;
-    targets.read_only_rows = rows;
-}
-
 #[test]
-#[ignore = "requires GPU; ordered native Bullet leaf sequences, reused indices and bounded storage bands"]
+#[ignore = "requires GPU; ordered native Bullet leaf sequences and reused indices"]
 fn ordered_reduction_matches_original_sequence_prefixes() {
     let gpu = Gpu::new();
+    let webgl = crate::render::gpu::webgl_fallback(&gpu.device);
     let native = native();
     let cases = native["sequence_cases"].as_array().unwrap();
     assert_eq!(cases.len(), 13);
@@ -65,7 +44,7 @@ fn ordered_reduction_matches_original_sequence_prefixes() {
         let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
         let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
         // Reusing the owner across different attachment heights also exercises
-        // target/bind-group replacement, then one-row scratch reuse at height3.
+        // target/bind-group replacement.
         for height in [1, 3] {
             let size = [4, height];
             batch.write_camera(&gpu.queue, camera(size));
@@ -74,10 +53,6 @@ fn ordered_reduction_matches_original_sequence_prefixes() {
             let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
             let dv = depth.create_view(&Default::default());
             terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-            // Storage bands do not exist on the WebGL2 fallback's render targets.
-            if height == 3 && !crate::render::gpu::webgl_fallback(&gpu.device) {
-                force_scratch_rows(&gpu, &mut terrain, 4, 1);
-            }
             for case in cases {
                 let steps = case["steps"].as_array().unwrap();
                 let old_words = case["initial_colors"]
@@ -176,7 +151,7 @@ fn ordered_reduction_matches_original_sequence_prefixes() {
                         usage: wgpu::BufferUsages::VERTEX,
                     });
                 for prefix in 1..=steps.len() {
-                    // All prefixes at height1; one full span for forced bands.
+                    // All prefixes at height1; one full span at height3.
                     if height != 1 && prefix != steps.len() {
                         continue;
                     }
@@ -197,12 +172,15 @@ fn ordered_reduction_matches_original_sequence_prefixes() {
                         commands[..prefix * height as usize].iter().copied(),
                         [0, 0, 4, height],
                     );
-                    let bands = if crate::render::gpu::webgl_fallback(&gpu.device) {
-                        1
-                    } else {
-                        height as usize
+                    let shadows = commands[..prefix * height as usize]
+                        .iter()
+                        .any(|command| command.piece == TerrainPiece::Shadow);
+                    let passes = match (webgl, shadows) {
+                        (true, _) => 4,
+                        (false, true) => 3,
+                        (false, false) => 1,
                     };
-                    assert_eq!(stats.passes, 4 * bands);
+                    assert_eq!(stats.passes, passes);
                     assert_eq!(stats.waves, 1);
                     assert_eq!(stats.tile_dependencies, 0);
                     let reads = [
@@ -327,7 +305,16 @@ fn ordered_reduction_preserves_noop_bytes_and_chunk_continuation() {
             commands,
             [0, 0, 1, 1],
         );
-        assert_eq!((stats.pieces, stats.waves, stats.passes), (65536, 2, 8));
+        // Only WebGL2's reduction chunks command ordinals.
+        let intervals = if crate::render::gpu::webgl_fallback(&gpu.device) {
+            (2, 8)
+        } else {
+            (1, 3)
+        };
+        assert_eq!(
+            (stats.pieces, (stats.waves, stats.passes)),
+            (65536, intervals)
+        );
         let reads = [
             gpu.read(&mut encoder, &color),
             gpu.read(&mut encoder, &depth),

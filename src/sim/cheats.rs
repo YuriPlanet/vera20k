@@ -77,7 +77,7 @@ pub enum DebugToolsError {
     NoLocalHouse,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct DebugToolsState {
     context: DebugSessionContext,
     flags: CheatFlags,
@@ -376,7 +376,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;

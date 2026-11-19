@@ -468,7 +468,7 @@ pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
                 "TXT_SAVE_CAMP_AVAILABLE",
                 "TXT_SAVE_CAMP_AVAILABLE",
             );
-            crate::app::shell_lan::append_chat(
+            crate::app::shell_lan::append_room_chat(
                 state,
                 crate::ui::lan_shell::LanChatLine {
                     text: text.encode_utf16().collect(),
@@ -501,7 +501,7 @@ fn peer_mode_cooperative(state: &AppState) -> bool {
         .choose_map_modal
         .as_ref()
     {
-        Some(modal) => modal.selected_mode_id,
+        Some(modal) => modal.selected_mode.id,
         None => match state.match_state.session.network_setup() {
             Some(launch) => launch.mode.id,
             None => return false,
@@ -568,24 +568,11 @@ pub(super) fn admit_join_country(
     state: &AppState,
     slot: &mut crate::skirmish_launch::SkirmishLocalSlot,
 ) {
-    if !current(state) {
-        return;
-    }
-    let runtime = &state.frontend.multiplayer_shell_runtime;
-    let requested = if slot.country_random {
-        -2
-    } else {
-        i32::from(slot.country.raw_index())
-    };
-    if runtime.cooperative_admits(requested) {
-        return;
-    }
-    match runtime.cooperative_default_country() {
-        Some(country) => {
-            slot.country = country;
-            slot.country_random = false;
-        }
-        None => slot.country_random = true,
+    if current(state) {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .cooperative_admit_country(slot);
     }
 }
 

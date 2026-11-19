@@ -1,10 +1,9 @@
-//! Front-end modal substrate: `ModalKind` table + native result conventions.
+//! Front-end modal substrate: `ModalKind` table + the message-box result codes.
 //!
-//! Render-agnostic data describing the YR front-end pop-up modals as plain Rust:
-//! which RT_DIALOG template each `ModalKind` loads, the native "count-rule" the
-//! generic CSF message-box helper uses to pick a template from its populated
-//! string slots, and the TWO distinct result conventions the modals resolve under
-//! (the message-box helper vs the in-game Options own dialog proc). Depends only on
+//! Render-agnostic data describing the YR front-end pop-up message boxes as plain
+//! Rust: which RT_DIALOG template each `ModalKind` loads, the native "count-rule"
+//! the generic CSF message-box helper uses to pick a template from its populated
+//! string slots, and the result codes those boxes resolve to. Depends only on
 //! the shared shell descriptor/geometry types (no sim/render/assets), so it honors
 //! the ui/ layering rule. The shared modal renderer consumes these descriptors.
 
@@ -39,42 +38,15 @@ pub enum ModalKind {
     /// 0x121 — adds a fourth owner-draw button. Reachable but unused by the three
     /// target modals; render-UNTESTED, excluded from the in-game OK acceptance.
     ThreeButton,
-    /// 0xBBB (active game) / 0xF5 (shell) — the in-game Options dialog. A SEPARATE
-    /// full-shell mechanism (its own dialog proc), NOT the count-rule message box;
-    /// it must not be passed to `build_message_box_descriptor`.
-    InGameOptions,
 }
 
 impl ModalKind {
-    /// The RT_DIALOG resource id this modal loads. Only `InGameOptions` varies with
-    /// `in_active_game`: its own proc reads a byte discriminator and selects 0xBBB
-    /// when that byte equals 1 (active game), else 0xF5 (shell). The compare is an
-    /// equality test (`== 1`), PROOFED from the binary (no emulate gate). The
-    /// message-box template ids are fixed and ignore `in_active_game`.
-    pub fn template_id(self, in_active_game: bool) -> u16 {
+    /// The RT_DIALOG resource id this message box loads.
+    pub fn template_id(self) -> u16 {
         match self {
             ModalKind::BodyOk => 0x00CE,
             ModalKind::Confirm => 0x0120,
             ModalKind::ThreeButton => 0x0121,
-            ModalKind::InGameOptions => {
-                if in_active_game {
-                    0x0BBB
-                } else {
-                    0x00F5
-                }
-            }
-        }
-    }
-
-    /// Which native result convention this modal resolves under. Keeping the two
-    /// conventions explicit prevents reading a message-box code (0/1/2) as an
-    /// Options code (1/2) or vice-versa — the slice's highest-risk parity fact.
-    pub fn result_convention(self) -> ResultConvention {
-        match self {
-            ModalKind::BodyOk | ModalKind::Confirm | ModalKind::ThreeButton => {
-                ResultConvention::MessageBox
-            }
-            ModalKind::InGameOptions => ResultConvention::OwnProc,
         }
     }
 }
@@ -109,31 +81,16 @@ fn slot_populated(slot: Option<&str>) -> bool {
     matches!(slot, Some(s) if !s.is_empty() && !s.starts_with('\0'))
 }
 
-/// The native result convention a modal resolves under.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResultConvention {
-    /// Count-rule message-box helper: writes 0 (OK), 1 (Cancel/IDCANCEL), or 2
-    /// (third button); the caller inits the result slot to -1 (dismissed/unset).
-    MessageBox,
-    /// In-game Options own dialog proc: writes 1 for every close button (persist),
-    /// and 2 only when the game ends while the modal is open (no persist).
-    OwnProc,
-}
-
 /// Result value the message-box helper leaves when no button resolved the dialog
 /// (the caller inits the result slot to -1 before pumping it).
 pub const MESSAGE_BOX_DISMISSED: i32 = -1;
 
-/// A resolved modal outcome, tagged by convention so the two native result codings
-/// can never be confused.
+/// A resolved message-box outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalResult {
     /// Count-rule message-box family (0xCE/0x120/0x121): 0=OK, 1=Cancel/ESC,
     /// 2=third button, -1=dismissed (slot left at its init value).
     MessageBox(i32),
-    /// In-game Options own proc (0xBBB/0xF5): 1=persist (any close button),
-    /// 2=game-ended (no persist).
-    InGameOptions(i32),
 }
 
 impl ModalResult {
@@ -157,13 +114,6 @@ impl ModalResult {
     pub fn quit_confirm_quits(self) -> bool {
         matches!(self, ModalResult::MessageBox(0))
     }
-
-    /// In-game Options persist semantics: result == 1 (every close button) writes
-    /// the settings; result == 2 (game ended) does not. No discard-without-save
-    /// path exists.
-    pub fn options_persists(self) -> bool {
-        matches!(self, ModalResult::InGameOptions(1))
-    }
 }
 
 /// DLU rects for the message-box controls, taken from the parsed RT_DIALOG
@@ -181,14 +131,8 @@ pub struct MessageBoxRects {
 /// modal. Background is mode-2 SHP (PUDLGBGN + DIALOGN), centered (no fullscreen
 /// re-anchor), not slide-eligible. The control SET follows the count rule: body
 /// static + OK always; Cancel (control 2) for `Confirm`/`ThreeButton`; the third
-/// button (`0x5AF`) for `ThreeButton`. `InGameOptions` is NOT a message box and
-/// must not be passed here (it builds a full-shell owner-draw descriptor in a
-/// later slice).
+/// button (`0x5AF`) for `ThreeButton`.
 pub fn build_message_box_descriptor(kind: ModalKind, rects: &MessageBoxRects) -> DialogDescriptor {
-    debug_assert!(
-        kind.result_convention() == ResultConvention::MessageBox,
-        "build_message_box_descriptor is only for the count-rule message-box family"
-    );
     let mut controls = vec![
         modal_control(control::BODY_STATIC, ControlKind::Static, rects.body),
         modal_control(control::OK, ControlKind::Button, rects.ok),
@@ -204,9 +148,7 @@ pub fn build_message_box_descriptor(kind: ModalKind, rects: &MessageBoxRects) ->
         controls.push(modal_control(control::THIRD, ControlKind::Button, rect));
     }
     DialogDescriptor {
-        // in_active_game is irrelevant for message-box ids (only InGameOptions
-        // varies); the debug_assert above guarantees we never reach here for it.
-        id: DialogId(kind.template_id(false)),
+        id: DialogId(kind.template_id()),
         controls,
         bg_kind: BgKind::ModalShp,
         slide_eligible: false,
@@ -326,7 +268,6 @@ fn message_box_layout_in(kind: ModalKind, area: RectPx) -> MessageBoxLayout {
         ModalKind::BodyOk => 175,
         ModalKind::Confirm => 155,
         ModalKind::ThreeButton => 135,
-        ModalKind::InGameOptions => panic!("Options is not a count-rule message box"),
     };
     MessageBoxLayout {
         dialog,
@@ -470,7 +411,7 @@ pub fn wait_box_layout_on(screen_w: i32, screen_h: i32, scale: geom::ShellScale)
 }
 
 /// The Westwood Online Create Game popup `0xC3` (`0x0078DB70`), the same
-/// 451x326 centred box: executed client rects (tools/storage_oracle/
+/// 451x326 centred box: executed screen rects (tools/storage_oracle/
 /// wol_shell.json) of its controls from their templates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolCreateGameLayout {
@@ -490,6 +431,8 @@ pub struct WolCreateGameLayout {
     pub name: Option<(RectPx, RectPx)>,
     /// VERA's online popup's Ranked game box, below Allow spectators.
     pub ranked: Option<RectPx>,
+    /// VERA's online popup's Watching caption and box, below Ranked game.
+    pub watching: Option<(RectPx, RectPx)>,
     pub ok: RectPx,
     pub cancel: RectPx,
     /// Its own status line `0x695`.
@@ -506,9 +449,8 @@ const ONLINE_STATUS_INSET: i32 = 10;
 
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
 /// observer box (the lobby's own Observe box still seats an observer); Room
-/// name, Password, Limit Screen Resolution, Max players, Allow spectators and
-/// Ranked game in the field column clear of the art's Tesla Trooper, and the
-/// status line inside the frame.
+/// name, Password and Max players share a field column to the right of the
+/// Tesla Trooper, with four checkbox rows below.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = menu_box(screen_w, screen_h);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -527,6 +469,7 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         room: None,
         name: None,
         ranked: None,
+        watching: None,
         ok: child(33, 128, 83, 15),
         cancel: child(184, 128, 83, 15),
         status,
@@ -534,29 +477,41 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
     if !online {
         return layout;
     }
-    // Room name and Password, then the four option rows at the native
-    // 17-unit pitch, and the buttons a row lower than the native box's.
-    let row = |y| child(133, y, 140, 12);
-    let caption = |y| child(11, y + 1, 113, 12);
-    let password_label = caption(58);
-    let password = row(58);
-    let check = |y| RectPx::new(password.x, child(34, y, 234, 14).y, password.w, clan.h);
+    // Use the shell's 210x21 value-plaque trackbar for the field width.
+    let row = |y, h| RectPx::new(layout.password.x, dialog.y + y, 210, h);
+    let field = |index| row(44 + 32 * index, 21);
+    let check = |index| row(151 + 26 * index, 18);
+    let caption = |rect: RectPx| RectPx {
+        y: rect.y,
+        h: rect.h,
+        ..layout.password_label
+    };
+    let name = field(0);
+    let password = field(1);
+    let players = field(2);
+    let watching = check(3);
+    let field_right = name.x + name.w;
+    let margin = dialog.x + dialog.w - field_right;
+    let ok = RectPx::new(dialog.x + margin, dialog.y + 272, layout.ok.w, layout.ok.h);
     WolCreateGameLayout {
-        password_label,
-        password: new_edit_window(password),
+        password_label: caption(password),
+        password,
         clan: None,
         observe: None,
-        limit: check(79),
-        room: Some(room_limits_layout(
-            password_label,
-            password,
-            child(34, 96, 234, 14).y,
-            check(113),
-        )),
-        name: Some((caption(40), new_edit_window(row(40)))),
-        ranked: Some(check(130)),
-        ok: child(33, 152, 83, 15),
-        cancel: child(184, 152, 83, 15),
+        limit: check(0),
+        room: Some(crate::ui::room_limits::RoomLimitsLayout {
+            players_label: caption(players),
+            players,
+            spectators: check(1),
+        }),
+        name: Some((caption(name), name)),
+        ranked: Some(check(2)),
+        watching: Some((caption(watching), watching)),
+        ok,
+        cancel: RectPx {
+            x: field_right - ok.w,
+            ..ok
+        },
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,
             status.y,
@@ -597,6 +552,7 @@ pub fn wol_create_game_layout_on(
             }),
         name: base.name.map(|(label, edit)| (s(label), s(edit))),
         ranked: base.ranked.map(s),
+        watching: base.watching.map(|(label, rect)| (s(label), s(rect))),
         ok: s(base.ok),
         cancel: s(base.cancel),
         status: s(base.status),
@@ -611,22 +567,18 @@ pub struct WolAccountFormLayout {
     pub dialog: RectPx,
     /// Each field's right-aligned caption and its edit.
     pub fields: Vec<(RectPx, RectPx)>,
-    /// Login's Remember password box, the row under the fields, as the
-    /// online Create Game box's checkboxes.
-    pub remember: Option<RectPx>,
     pub ok: RectPx,
     pub cancel: RectPx,
     pub status: RectPx,
 }
 
-/// `count` fields and the `remember` row (at most four rows) 18 units apart,
-/// centred on the Create Game box's Room name and Password rows. The box is
-/// centred on `area`, in the shell's authored 800x600 units.
-pub fn wol_account_form_layout(area: RectPx, count: usize, remember: bool) -> WolAccountFormLayout {
+/// Up to four fields, 18 units apart, centred above the buttons. The box
+/// is centred on `area` in the shell's authored 800x600 units.
+pub fn wol_account_form_layout(area: RectPx, count: usize) -> WolAccountFormLayout {
     let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
-    let count = count.min(4 - usize::from(remember)) as i32;
-    let top = 40 + 9 * (4 - count - i32::from(remember));
+    let count = count.min(4) as i32;
+    let top = 40 + 9 * (4 - count);
     let row = |index: i32| top + 18 * index;
     let status = child(0, 172, 291, 24);
     WolAccountFormLayout {
@@ -640,13 +592,6 @@ pub fn wol_account_form_layout(area: RectPx, count: usize, remember: bool) -> Wo
                 )
             })
             .collect(),
-        remember: remember.then(|| {
-            let (edit, check) = (
-                child(133, row(count), 140, 12),
-                child(34, row(count), 234, 14),
-            );
-            RectPx::new(edit.x, check.y, edit.w, check.h)
-        }),
         ok: child(33, 128, 83, 15),
         cancel: child(184, 128, 83, 15),
         status: RectPx::new(
@@ -663,10 +608,9 @@ pub fn wol_account_form_layout(area: RectPx, count: usize, remember: bool) -> Wo
 pub fn wol_account_form_layout_on(
     area: RectPx,
     count: usize,
-    remember: bool,
     scale: geom::ShellScale,
 ) -> WolAccountFormLayout {
-    let base = wol_account_form_layout(area, count, remember);
+    let base = wol_account_form_layout(area, count);
     if scale.is_retail() {
         return base;
     }
@@ -678,7 +622,6 @@ pub fn wol_account_form_layout_on(
             .iter()
             .map(|&(caption, edit)| (s(caption), s(edit)))
             .collect(),
-        remember: base.remember.map(s),
         ok: s(base.ok),
         cancel: s(base.cancel),
         status: s(base.status),
@@ -764,27 +707,20 @@ pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayo
     let native = wol_create_game_layout(screen_w, screen_h, false);
     let field = modal_child(native.dialog, geom::child_window(133, 47, 140, 12));
     let clan = native.clan.expect("the native box has its clan row");
+    let players = RectPx::new(field.x, field.y, 129, 22);
     LanCreateGameLayout {
         dialog: native.dialog,
-        room: room_limits_layout(native.password_label, field, field.y, clan),
+        room: crate::ui::room_limits::RoomLimitsLayout {
+            players_label: RectPx {
+                y: players.y,
+                h: players.h,
+                ..native.password_label
+            },
+            players,
+            spectators: RectPx::new(field.x, clan.y, field.w, clan.h),
+        },
         ok: native.ok,
         cancel: native.cancel,
-    }
-}
-
-/// Max players beside its caption at `players_y`, the trackbar under `field`'s
-/// left edge, and Allow spectators in `checkbox_row` from the same edge.
-fn room_limits_layout(
-    caption: RectPx,
-    field: RectPx,
-    players_y: i32,
-    checkbox_row: RectPx,
-) -> crate::ui::room_limits::RoomLimitsLayout {
-    let players = RectPx::new(field.x, players_y, 129, 22);
-    crate::ui::room_limits::RoomLimitsLayout {
-        players_label: RectPx::new(caption.x, players.y, caption.w, players.h),
-        players,
-        spectators: RectPx::new(field.x, checkbox_row.y, field.w, checkbox_row.h),
     }
 }
 
@@ -833,7 +769,7 @@ pub fn wol_channel_password_layout_on(
 }
 
 /// The WOL page dialog `0xCF` (proc `0x0078D120`), the same 451x326
-/// centred box: executed client rects (tools/storage_oracle/wol_shell.json).
+/// centred box: executed screen rects (tools/storage_oracle/wol_shell.json).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolPageLayout {
     pub dialog: RectPx,
@@ -1005,7 +941,7 @@ fn modal_child(dialog: RectPx, local: RectPx) -> RectPx {
     RectPx::new(dialog.x + local.x, dialog.y + local.y, local.w, local.h)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -1024,13 +960,9 @@ mod tests {
 
     #[test]
     fn template_id_table() {
-        assert_eq!(ModalKind::BodyOk.template_id(false), 0x00CE);
-        assert_eq!(ModalKind::BodyOk.template_id(true), 0x00CE);
-        assert_eq!(ModalKind::Confirm.template_id(false), 0x0120);
-        assert_eq!(ModalKind::ThreeButton.template_id(false), 0x0121);
-        // Only InGameOptions varies with the active-game discriminator (== 1).
-        assert_eq!(ModalKind::InGameOptions.template_id(true), 0x0BBB);
-        assert_eq!(ModalKind::InGameOptions.template_id(false), 0x00F5);
+        assert_eq!(ModalKind::BodyOk.template_id(), 0x00CE);
+        assert_eq!(ModalKind::Confirm.template_id(), 0x0120);
+        assert_eq!(ModalKind::ThreeButton.template_id(), 0x0121);
     }
 
     #[test]
@@ -1055,26 +987,6 @@ mod tests {
             ModalKind::Confirm
         );
         assert_eq!(message_box_kind(Some(""), Some("")), ModalKind::BodyOk);
-    }
-
-    #[test]
-    fn result_convention_split() {
-        assert_eq!(
-            ModalKind::BodyOk.result_convention(),
-            ResultConvention::MessageBox
-        );
-        assert_eq!(
-            ModalKind::Confirm.result_convention(),
-            ResultConvention::MessageBox
-        );
-        assert_eq!(
-            ModalKind::ThreeButton.result_convention(),
-            ResultConvention::MessageBox
-        );
-        assert_eq!(
-            ModalKind::InGameOptions.result_convention(),
-            ResultConvention::OwnProc
-        );
     }
 
     #[test]
@@ -1104,12 +1016,6 @@ mod tests {
         assert!(!ModalResult::MessageBox(1).quit_confirm_quits()); // Cancel / ESC
         assert!(!ModalResult::MessageBox(2).quit_confirm_quits());
         assert!(!ModalResult::MessageBox(MESSAGE_BOX_DISMISSED).quit_confirm_quits());
-    }
-
-    #[test]
-    fn options_persists_only_on_result_one() {
-        assert!(ModalResult::InGameOptions(1).options_persists());
-        assert!(!ModalResult::InGameOptions(2).options_persists());
     }
 
     #[test]
@@ -1363,29 +1269,21 @@ mod tests {
     #[test]
     fn account_popups_keep_their_fields_between_the_title_and_the_buttons() {
         let screen = menu_popup_area(800, 600);
-        let create = wol_account_form_layout(screen, 4, false);
+        let create = wol_account_form_layout(screen, 4);
         let frame = create.dialog;
         let (_, first) = create.fields[0];
         let (_, last) = create.fields[3];
-        // The Create Game box's Room name row, and the last above OK.
+        // Account fields start in the same column as the Create Game fields.
         assert_eq!(
-            first,
-            wol_create_game_layout(800, 600, true).name.unwrap().1
+            first.x,
+            wol_create_game_layout(800, 600, true).name.unwrap().1.x
         );
         assert!(last.y + last.h < create.ok.y);
         assert!(create.status.y >= create.ok.y + create.ok.h);
         assert!(create.status.y + create.status.h <= frame.y + frame.h);
         // One field sits mid-way between the four's first and last rows.
-        let (_, code) = wol_account_form_layout(screen, 1, false).fields[0];
+        let (_, code) = wol_account_form_layout(screen, 1).fields[0];
         assert!(((code.y - first.y) - (last.y - code.y)).abs() <= 1);
-        // Login's two fields and Remember password take the rows of three
-        // fields, the box in the edits' column.
-        let login = wol_account_form_layout(screen, 2, true);
-        let three = wol_account_form_layout(screen, 3, false);
-        assert_eq!(login.fields[..], three.fields[..2]);
-        let (remember, (_, third)) = (login.remember.unwrap(), three.fields[2]);
-        assert_eq!(remember.x, three.fields[2].1.x - 1);
-        assert!(remember.y <= third.y && remember.y + remember.h >= third.y + third.h);
     }
 
     #[test]
@@ -1400,16 +1298,27 @@ mod tests {
         };
         assert!(inside(online.status), "{:?}", online.status);
         assert!(inside(online.limit), "{:?}", online.limit);
-        // Limit sits between the password field and the buttons.
-        assert!(online.limit.y >= online.password.y + online.password.h);
-        assert!(online.limit.y + online.limit.h <= online.ok.y);
-        // Ranked game sits below Allow spectators, above the buttons, which
-        // stay above the status line.
+        let (_, name) = online.name.unwrap();
+        let room = online.room.unwrap();
+        assert_eq!((room.players.x, room.players.w), (name.x, name.w));
+        assert_eq!(
+            online.password.y - name.y,
+            room.players.y - online.password.y
+        );
+        assert!(online.limit.y >= room.players.y + room.players.h);
+        // Ranked game sits below Allow spectators and Watching below it,
+        // above the buttons, which stay above the status line.
         let ranked = online.ranked.unwrap();
-        let spectators = online.room.unwrap().spectators;
+        let spectators = room.spectators;
+        let (caption, watching) = online.watching.unwrap();
         assert!(inside(ranked), "{ranked:?}");
+        assert!(inside(caption) && inside(watching), "{watching:?}");
+        assert_eq!(spectators.y - online.limit.y, ranked.y - spectators.y);
+        assert_eq!(watching.y - ranked.y, ranked.y - spectators.y);
         assert!(ranked.y >= spectators.y + spectators.h);
-        assert!(ranked.y + ranked.h <= online.ok.y);
+        assert!(watching.y >= ranked.y + ranked.h);
+        assert!(caption.x + caption.w <= watching.x);
+        assert!(watching.y + watching.h <= online.ok.y);
         assert!(online.ok.y + online.ok.h <= online.status.y);
     }
 

@@ -1810,6 +1810,7 @@ pub(crate) fn mission_repair(
                 let building = sim.substrate.entities.get(depot)?;
                 sim.sound_events.emit(SimSoundEvent::UnitRepaired {
                     owner: building.owner(),
+                    owner_admitted: false,
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::UnitRepaired,
                         building.position.rx(),
@@ -1830,11 +1831,11 @@ pub(crate) fn mission_repair(
     Some(rate)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "building_dock_frame_tests.rs"]
 mod frame_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -3353,11 +3354,11 @@ mod tests {
     fn spawn_damaged_miner(sim: &mut Simulation, sid: u64, rx: u16, ry: u16) {
         spawn_entity(sim, sid, "HARV", EntityCategory::Unit, rx, ry, 100);
         let e = sim.substrate.entities.get_mut(sid).unwrap();
-        e.miner = Some(crate::sim::miner::Miner::new(
+        e.miner = Some(Box::new(crate::sim::miner::Miner::new(
             crate::sim::miner::MinerKind::War,
             &miner_cfg(),
             0,
-        ));
+        )));
     }
 
     /// The object-AI pass with the Harvest handler live, in live-object
@@ -3859,7 +3860,11 @@ mod tests {
             spawn_entity(&mut sim, 1, "HARV", EntityCategory::Unit, 14, 11, 600);
             {
                 let unit = sim.substrate.entities.get_mut(1).unwrap();
-                unit.miner = Some(Miner::new(MinerKind::War, &MinerConfig::default(), 0));
+                unit.miner = Some(Box::new(Miner::new(
+                    MinerKind::War,
+                    &MinerConfig::default(),
+                    0,
+                )));
                 unit.mark_live_contact_with(DEPOT);
             }
             sim.substrate

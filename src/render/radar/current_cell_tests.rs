@@ -204,6 +204,7 @@ fn apply_incremental(
             overlay_pixels: &mut projection.overlay_pixels,
             native_surface: projection.native_radar_surface,
             native_terrain: &mut projection.native_radar_terrain,
+            playfield: Some(expanded_bounds()),
         },
         CurrentRadarCellAuthority::from_runtime(runtime),
         BRIDGE_COLOR,
@@ -270,28 +271,19 @@ fn snapshot_restored_collapsed_high_runtime(
 
     let terrain_speed_config = sim.terrain_speed_config().clone();
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "Radar load", 3);
-    let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, "RADARLOAD.MAP")
-        .expect("validated current snapshot")
-        .sim;
-    restored
-        .restore_after_snapshot_load()
-        .expect("restored object graph");
     let resources = SimResources::empty();
-    restored.rebuild_caches_after_load(
-        terrain_template.clone(),
-        terrain_speed_config,
-        &resources.rules,
-    );
-    restored
-        .restore_map_authority_after_snapshot_load(
+    let restored = GameSnapshot::load_validated(&bytes, 1, 2, "RADARLOAD.MAP")
+        .expect("validated current snapshot")
+        .restore_checkpoint_map_for_test(
             &resources.rules,
-            &resources.overlay_registry,
-            None,
+            resources.rules.overlay_registry(),
+            terrain_template.clone(),
+            terrain_speed_config,
         )
         .expect("restored current map authority");
     SimRuntime {
         simulation: restored,
-        resources,
+        resources: resources.into(),
     }
 }
 
@@ -346,7 +338,7 @@ fn native_constructor_side_cells_use_structural_radar_without_own_sprite() {
 
             // 47C060 takes its structural color branch before testing +44.
             // No sprite of its own is required for this CellClass read.
-            let authority = CurrentRadarCellAuthority::new(Some(&resolved), None, None, None);
+            let authority = CurrentRadarCellAuthority::new(Some(&resolved), None, None);
             assert_eq!(
                 authority.source(cell.0, cell.1, BRIDGE_COLOR, &colors),
                 Some((BRIDGE_COLOR, OverlayClassification::Bridge)),
@@ -358,7 +350,7 @@ fn native_constructor_side_cells_use_structural_radar_without_own_sprite() {
                 .bridge_facts
                 .raw_flags &= !BRIDGE_FLAG_STRUCTURAL;
             assert_eq!(
-                CurrentRadarCellAuthority::new(Some(&resolved), None, None, None).source(
+                CurrentRadarCellAuthority::new(Some(&resolved), None, None).source(
                     cell.0,
                     cell.1,
                     BRIDGE_COLOR,
@@ -550,14 +542,14 @@ fn retail_bridge_end_headers_reach_full_and_dirty_radar_sources() {
     };
     crate::map::theater::load_theater(&mut assets, "TEMPERATE")
         .expect("physical temperate theater");
-    let registry = retail.rules.overlay_registry().clone();
+    let registry = retail.rules.overlay_registry();
     let names = std::collections::BTreeMap::from([(
         100,
         registry.name(100).expect("stock bridge end").to_string(),
     )]);
     let colors = crate::render::overlay_atlas::compute_overlay_radar_colors(
         &assets,
-        &registry,
+        registry,
         crate::render::overlay_atlas::OverlayRadarColorSource::Cell,
         &names,
         "tem",
@@ -568,7 +560,7 @@ fn retail_bridge_end_headers_reach_full_and_dirty_radar_sources() {
     let cell = central_cell(&grid, expanded_bounds());
     assert_eq!(colors.get(&(100, 1)), Some(&BRIDGE_END_COLOR));
     let mut runtime = runtime_with_overlay(resolved.clone(), cell, Some((100, 1)));
-    runtime.resources.overlay_registry = registry;
+    runtime.resources_mut().rules = retail.rules;
     let full = projection(&grid, &runtime, &[], expanded_bounds(), &colors);
     assert_eq!(raw_pair(&full, cell), [BRIDGE_END_COLOR; 2]);
 
@@ -745,6 +737,34 @@ fn gsi_04_01_full_and_incremental_paths_share_current_cell_source_precedence() {
         ),
         [[200, 200, 160]; 2],
     );
+}
+
+/// `ProcessDirtyCells @ 0x00655250` redraws only Cells inside the mode-one
+/// playfield (`0x00655285..0x00655298`): a raised Cell in the top row, which
+/// the full build paints, keeps that colour through a dirty update.
+#[test]
+fn dirty_cell_outside_the_mode_one_playfield_keeps_its_colour() {
+    let (grid, mut resolved) = fixture(None);
+    let bounds = expanded_bounds();
+    let cell = grid
+        .cells
+        .iter()
+        .map(|cell| (cell.rx, cell.ry))
+        .find(|&(rx, ry)| {
+            let (x, y) = (i32::from(rx), i32::from(ry));
+            bounds.contains_geometry_packed(x, y)
+                && !bounds.contains_height_aware_packed(x, y, 4, 0)
+        })
+        .expect("a top-row cell");
+    resolved.cell_mut_for_test(cell.0, cell.1).unwrap().level = 4;
+    let colors = colors();
+    let absent = runtime_with_overlay(resolved.clone(), cell, None);
+    let low = runtime_with_overlay(resolved, cell, Some((0x4A, 9)));
+    let full = projection(&grid, &low, &[], bounds, &colors);
+    assert_eq!(raw_pair(&full, cell), [LOW_BRIDGE_COLOR; 2]);
+    let mut incremental = projection(&grid, &absent, &[], bounds, &colors);
+    apply_incremental(&mut incremental, &low, &[cell], &colors);
+    assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
 }
 
 #[test]

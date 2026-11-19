@@ -1,7 +1,7 @@
 //! Secret Lab startup reward and House admission. Original gamemd.exe
 //! AssignSecretLabProduction68C050, GetSecretProduction459840 and
 //! CanBuild4F78E4..4F7925. Executed controls: tools/can_build_secret_lab.json.
-//! With `ares`, a lab also rolls its reward when it is placed (Ares 3.0
+//! When Ares plays, a lab also rolls its reward when it is placed (Ares 3.0
 //! UpdateSecretLab 10013700, hook 0x445F80): docs/ares-reverse-engineering.md.
 
 use crate::map::entities::EntityCategory;
@@ -96,7 +96,6 @@ impl Simulation {
     }
 }
 
-#[cfg(feature = "ares")]
 impl Simulation {
     /// Ares 3.0 `BuildingExt::ExtData::UpdateSecretLab @ 10013700`, which
     /// BuildingClass_Place (`100100B0`, hook `0x445F80`) calls for a
@@ -187,7 +186,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -282,6 +281,16 @@ mod tests {
                         .assign_secret_lab_fallback((ObjectCategory::Infantry, id));
                 }
             }
+            // The loader installs GameMode before post-map runs. A network mode
+            // reseeds MapGen from the match seed (VERA adaptation), so install
+            // it before the native cursors the gate must leave unchanged.
+            if let Some(gate) = row.get("startup_gate") {
+                sim.install_session_mode(
+                    crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                        gate["game_mode"].as_i64().unwrap() as i32,
+                    ),
+                );
+            }
             sim.scenario_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["scenario"].as_str().unwrap(),
             );
@@ -292,12 +301,7 @@ mod tests {
                 row["rng_before"]["mapgen"].as_str().unwrap(),
             );
             let (_, draws) = trace_draws(|| {
-                if let Some(gate) = row.get("startup_gate") {
-                    sim.install_session_mode(
-                        crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
-                            gate["game_mode"].as_i64().unwrap() as i32,
-                        ),
-                    );
+                if row.get("startup_gate").is_some() {
                     let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
                         &IniFile::empty(),
                         None,
@@ -476,14 +480,14 @@ mod tests {
     }
 
     /// Stock Grand_Opening rolls no reward and Post_Map_Init's draw
-    /// (68C050) assigns it in every build. Ares's Place roll (10013700)
+    /// (68C050) assigns it in every game. Ares's Place roll (10013700)
     /// comes on top, here from the Rules lists (PossibleBoons unset).
     #[test]
     fn placement_rolls_only_with_ares_and_the_startup_draw_remains() {
         let (mut sim, rules) =
             country_world("", "[General]\nSecretInfantry=OK\nSecretUnits=TANK\n");
         let lab = placed_limbo_lab(&mut sim, &rules);
-        let ares = cfg!(feature = "ares");
+        let ares = rules.ares_form();
         assert_eq!(open(&mut sim, &rules, lab, false), usize::from(ares));
         assert_eq!(boon(&sim, lab).is_some(), ares);
         let mut expected = sim.scenario_rng.clone();
@@ -505,9 +509,9 @@ mod tests {
     /// Incomplete (OK); a Complete type (BUILT), the house lists and an
     /// unknown name drop out, and the Rules lists are not asked. One
     /// Scenario RandomRanged(0, 1) picks.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_placement_rolls_among_possible_boons_the_owner_cannot_build() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (mut sim, rules) = country_world(
             "SecretLab.PossibleBoons=OK,BUILT,NOTC0,Missing,FORB,RH",
             "[General]\nSecretUnits=TANK\n",
@@ -534,9 +538,9 @@ mod tests {
     /// Grand_Opening(1) only with `SecretLab.GenerateOnCapture`. Its owner's
     /// lab list may grant the current boon (Overridden), so three options
     /// keep at least two and the roll draws.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_capture_rolls_again_only_with_generate_on_capture() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for regenerate in ["no", "yes"] {
             let (mut sim, rules) = country_world(
                 &format!(

@@ -167,7 +167,7 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
             ),
         );
         let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
-        sim.install_team_ai_registry(&teams, &rules).unwrap();
+        sim.install_team_ai_registry(&teams, &rules);
         // The shared simple-map fixture initially has no Team registry.
         // Re-enter the real definition reader with the authored Team inputs.
         sim.initialize_trigger_definitions(&map, &teams, None, None, None);
@@ -504,7 +504,8 @@ fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
             .flatten()
             .all(|trigger| !trigger.pending)
     );
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(rules.ares_form())
+        .unwrap();
 }
 
 #[test]
@@ -563,7 +564,8 @@ fn delete_tag_returns_safely_through_its_active_dispatcher() {
                 1,
                 true,
             );
-            sim.validate_restored_trigger_runtime().unwrap();
+            sim.validate_restored_trigger_runtime(rules.ares_form())
+                .unwrap();
         }
     }
 }
@@ -623,7 +625,8 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
             .iter()
             .all(|&id| sim.trigger_runtime.trigger(id).is_none())
     );
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(rules.ares_form())
+        .unwrap();
 }
 
 #[test]
@@ -1330,14 +1333,17 @@ fn action128_skips_only_passengers_with_a_transporter() {
         None,
         FrameEffects::default()
     ));
-    assert!(add_garrison_occupant(
-        &mut sim,
-        &rules,
-        occupant,
-        bunker,
-        None,
-        FrameEffects::default()
-    ));
+    assert!(
+        add_garrison_occupant(
+            &mut sim,
+            &rules,
+            occupant,
+            bunker,
+            None,
+            FrameEffects::default()
+        )
+        .unwrap()
+    );
     // Full reinforcements load through CargoClass::AddPassenger 0x4733A0,
     // which leaves +0x11C NULL.
     assert!(sim.add_cargo_passenger_chain(
@@ -1349,7 +1355,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
         .entities
         .get_mut(reinforcement)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .set_inside_transport(transport, false);
     let map = install_event_ingress_map(
         &mut sim,
@@ -1571,7 +1577,7 @@ fn retail_sov01_script_context() -> Option<(
             10,
         ));
     sim.session.set_current_house_for_test(Some(owner));
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     sim.initialize_trigger_definitions(&map, &registry, None, None, None);
     Some((sim, rules, overlay, map))
 }
@@ -1943,22 +1949,15 @@ fn unit_record_kill_dispatches_its_virtual_prefix_before_the_base_events() {
     //7F5C70+E0/E4). Repeating Tag keeps each callback observable. Ares
     // adds 85 with a destroyer: before Unit's 7 (hook 0x744745) and after
     // E4's 4 (hook 0x7032B0).
-    let ares = cfg!(feature = "ares");
-    for (techno, present, expected) in [
-        (
-            true,
-            true,
-            if ares {
-                vec![85, 7, 48, 29, 6, 4]
-            } else {
-                vec![7, 48, 29, 6, 4]
-            },
-        ),
-        (true, false, vec![48, 29]),
-        (false, true, if ares { vec![6, 4, 85] } else { vec![6, 4] }),
-        (false, false, vec![]),
+    for (techno, present, stock, with_ares) in [
+        (true, true, vec![7, 48, 29, 6, 4], vec![85, 7, 48, 29, 6, 4]),
+        (true, false, vec![48, 29], vec![48, 29]),
+        (false, true, vec![6, 4], vec![6, 4, 85]),
+        (false, false, vec![], vec![]),
     ] {
         let (mut sim, rules, overlays, houses) = event_ingress_fixture();
+        // RecordKill raises 85 on the game's Ares switch.
+        let expected = if rules.ares() { with_ares } else { stock };
         let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
         let killer = spawn_event_ingress_unit(&mut sim, &rules, houses[1], (17, 15));
         install_event_ingress_map(
@@ -2361,7 +2360,7 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
         (tag, 29),
         (tag, 44),
     ];
-    if cfg!(feature = "ares") {
+    if rules.ares() {
         expected.extend([(tag, 84), (tag, 83)]);
     }
     assert_eq!(sim.trigger_runtime.dispatch_trace, expected);
@@ -3009,7 +3008,6 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
                 .advance_app_frame(
                     &[],
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    None,
                     67,
                     TickLane::Ordinary,
                     crate::sim::world::FrameEffects::default(),
@@ -3147,7 +3145,6 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
             .advance_app_frame(
                 &[],
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                None,
                 67,
                 TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -4000,7 +3997,7 @@ fn retail_hills_forced_trigger_does_not_inherit_the_outer_bridge_cell() {
         },
         &mut Vec::new(),
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         FrameEffects::default(),
     );
     assert!(sim.global_variables()[7], "the forced Trigger ran");
@@ -4132,7 +4129,6 @@ fn techtype_exists_and_not_exists_query_simulation_world() {
 
 // Ares replaces 60/61 (TEventExt::TechTypeExists 1004FE60): the ares tests
 // cover its case-insensitive first match and owned counts.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn techtype_events_resolve_exact_registered_names_before_counting_entities() {
     let rules =
@@ -4181,7 +4177,6 @@ fn techtype_events_resolve_exact_registered_names_before_counting_entities() {
     assert_eq!(&sim.global_variables()[9..13], &[false; 4]);
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn techtype_events_count_the_last_registered_category_identity() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

@@ -1,4 +1,4 @@
-import init, { import_file, prepare_audio, restore_user_file, set_persistence_callbacks, start_game } from './pkg/vera20k.js';
+import init, { fonts_ready, import_file, prepare_audio, restore_user_file, set_persistence_callbacks, start_game } from './pkg/vera20k.js';
 // Only a --threads package exports initThreadPool.
 import * as engine from './pkg/vera20k.js';
 
@@ -405,6 +405,8 @@ async function launch() {
             done += file.size;
             bar.style.width = `${(100 * done / total).toFixed(1)}%`;
         }
+        // The engine began fetching its first fonts when it loaded.
+        await fonts_ready();
         start_game(canvas, show);
         started = true;
         launcher.classList.add('leaving');
@@ -419,9 +421,13 @@ async function launch() {
 try {
     await init();
     if (engine.initThreadPool) {
-        // The main thread spins while the pool works, so it counts as one of the CPU threads.
+        // The main thread draws, or spins while the pool works, so it counts as one of the CPU
+        // threads. The simulation worker waits while the pool runs its tick's work.
         workers = Math.max(1, (navigator.hardwareConcurrency ?? 2) - 1);
         await engine.initThreadPool(workers);
+        // `?simulation-thread=1` (or `always`) ticks on the simulation worker; it is off by default.
+        const simulationThread = new URLSearchParams(location.search).get('simulation-thread');
+        if (simulationThread) engine.set_simulation_thread(simulationThread);
     }
     try { await restore(); } catch (error) { storageError(error); }
     set_persistence_callbacks((path, bytes, modified) => {

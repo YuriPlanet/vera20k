@@ -3,11 +3,6 @@
 //! Combines cell-level A* with zone-aware hierarchical search for fast unreachability
 //! detection and hierarchy-marked pruning.
 //!
-//! TODO(RE): The current split is still only partially aligned with RA2/YR. Zone
-//! rebuilds use the recovered nodeIndex -> zoneId semantics, but bridge-layer remap,
-//! full hierarchical subzone support, and the exact regular-vs-hierarchical path entry
-//! behavior are still pending.
-//!
 //! ## Dependency rules
 //! - Part of sim/ — depends on map/ (terrain, resolved_terrain).
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
@@ -21,6 +16,7 @@ mod search_table;
 pub mod path_smooth;
 
 // Terrain and movement costs
+pub mod drive_distance;
 pub mod passability;
 pub mod terrain_speed;
 
@@ -34,8 +30,8 @@ pub mod zone_search;
 // Re-export core types so external code uses crate::sim::pathfinding::PathGrid etc.
 pub use self::core::*;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "zone_map_tests.rs"]
 mod zone_map_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod zone_threat_retail_tests;

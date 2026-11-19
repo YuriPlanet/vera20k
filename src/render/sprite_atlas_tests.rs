@@ -4,6 +4,25 @@ use super::*;
 use crate::assets::asset_manager::MediaArchiveMode;
 use crate::util::save_codec;
 
+/// Whether `atlas` covers every live anim's colour remap, asked as the atlas
+/// check asks it of the anims whose look changed.
+fn atlas_covers_anim_remaps(
+    atlas: Option<&SpriteAtlas>,
+    sim: &crate::sim::world::Simulation,
+    colors: &HouseColorMap,
+) -> bool {
+    let anims: Vec<_> = sim.anims().map(|(_, anim)| anim).collect();
+    atlas_covers_changes(
+        atlas,
+        &[],
+        &anims,
+        std::iter::empty(),
+        sim.interner(),
+        None,
+        colors,
+    )
+}
+
 #[test]
 #[ignore = "requires a wgpu adapter; asynchronous loading uploads"]
 fn loading_job_publishes_the_same_index_pages_after_gpu_retirement() {
@@ -114,7 +133,7 @@ fn a_growth_that_changes_no_atlas_is_not_published() {
     growth.grow_sprites_for_test(work, empty_upload(false));
     // Captures publish waiting and restart growths after each publish, so a
     // growth that changed nothing must not count or it restarts for ever.
-    assert!(!growth.publish(&gpu.device, &gpu.queue, &batch, &mut None, &mut None, true));
+    assert!(!growth.publish(&gpu.device, &gpu.queue, &batch, &mut None, true));
     assert_eq!(growth.published(), 0);
     assert!(!growth.running());
 }
@@ -264,7 +283,7 @@ fn loader_uses_stored_shp_rect_for_depth_but_retains_logical_canvas_for_picking(
         for frame in 0..2 {
             let key = ShpSpriteKey {
                 palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-                type_id: name.to_string(),
+                type_id: name.into(),
                 facing: 0,
                 frame,
                 house_color: crate::rules::house_colors::NO_REMAP,
@@ -331,7 +350,7 @@ fn loader_uses_stored_shp_rect_for_depth_but_retains_logical_canvas_for_picking(
 fn make_shp_key(type_id: &str, facing: u8) -> ShpSpriteKey {
     ShpSpriteKey {
         palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-        type_id: type_id.to_string(),
+        type_id: type_id.into(),
         facing,
         frame: 0,
         house_color: HouseColorIndex::default(),
@@ -454,7 +473,7 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
                 assert!(
                     needed.contains(&ShpSpriteKey {
                         palette_context: ShpPaletteContext::Legacy,
-                        type_id: type_id.to_owned(),
+                        type_id: type_id.into(),
                         facing: 0,
                         frame,
                         house_color: color,
@@ -480,7 +499,7 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
                         assert!(
                             needed.contains(&ShpSpriteKey {
                                 palette_context: ShpPaletteContext::Legacy,
-                                type_id: type_id.to_owned(),
+                                type_id: type_id.into(),
                                 facing: 0,
                                 frame: selected,
                                 house_color,
@@ -489,6 +508,76 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
                         );
                     }
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_turreted_shp_unit_registers_the_turret_frames_after_its_body_blocks() {
+    let directory = StoredFrameTestDirectory::new();
+    // Two walk frames over eight facings (0..15), then the thirty-two turret
+    // heading frames (16..47), then the embedded shadow half repeats it all.
+    std::fs::write(
+        directory.0.join("SHPWALKER.SHP"),
+        raw_shp(&[([2, 2], 1); 96]),
+    )
+    .expect("write the walker body");
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let art_ini = crate::rules::ini_parser::IniFile::from_str(
+        "[SHPWALKER]\nVoxel=no\nFacings=8\nWalkFrames=2\n\
+         [SHPPREFIX]\nVoxel=no\nFacings=8\nWalkFrames=2\n",
+    );
+    let art = ArtRegistry::from_ini(&art_ini);
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=SHPWALKER\n1=SHPPREFIX\n\n\
+             [SHPWALKER]\nTurret=yes\n\n[SHPPREFIX]\nTurret=no\n",
+        ),
+        &art_ini,
+    )
+    .expect("rules");
+    rules.install_art_data(art);
+    assert_eq!(
+        rules
+            .animation_sequence("SHPWALKER")
+            .and_then(|set| set.shp_vehicle_turret())
+            .map(|turret| turret.start_frame),
+        Some(16),
+        "the turret block follows the two-by-eight walk block"
+    );
+    let color = HouseColorIndex(2);
+    for (type_id, draws_turret) in [("SHPWALKER", true), ("SHPPREFIX", false)] {
+        let (world, interner) = one_object_world(type_id, EntityCategory::Unit);
+        let pairs: HashSet<(String, HouseColorIndex)> =
+            std::iter::once((type_id.to_string(), color)).collect();
+        let mut needed = HashSet::new();
+        insert_new_object_keys(
+            &mut needed,
+            &pairs,
+            &world,
+            Some(&interner),
+            &assets,
+            "tem",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+        );
+        for frame in 0..48u16 {
+            let key = ShpSpriteKey {
+                palette_context: ShpPaletteContext::Legacy,
+                type_id: type_id.into(),
+                facing: 0,
+                frame,
+                house_color: color,
+            };
+            if draws_turret || frame < 16 {
+                assert!(needed.contains(&key), "{type_id} is missing frame {frame}");
+            } else {
+                assert!(
+                    !needed.contains(&key),
+                    "{type_id} drew turret frame {frame} without Turret=yes"
+                );
             }
         }
     }
@@ -605,7 +694,7 @@ fn ordinary_building_atlas_retains_native_completed_health_frames() {
             assert!(
                 needed.contains(&ShpSpriteKey {
                     palette_context: ShpPaletteContext::Legacy,
-                    type_id: "GAPOWR".to_string(),
+                    type_id: "GAPOWR".into(),
                     facing: 0,
                     frame,
                     house_color: color,
@@ -662,7 +751,7 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
     let extra_building_types = ["GAPOWR"];
     let frozen_body = ShpSpriteKey {
         palette_context: ShpPaletteContext::SelectedScheme,
-        type_id: "GAPOWR".to_string(),
+        type_id: "GAPOWR".into(),
         facing: 0,
         frame: 1,
         house_color: HouseColorIndex(2),
@@ -693,7 +782,7 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
 
     let key = |frame| ShpSpriteKey {
         palette_context: ShpPaletteContext::Legacy,
-        type_id: "GAPOWR".to_string(),
+        type_id: "GAPOWR".into(),
         facing: 0,
         frame,
         house_color: HouseColorIndex(2),
@@ -825,7 +914,7 @@ fn registered_underscore_building_requests_make_frames_from_buildup_asset() {
     for frame in 0..20 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: ShpPaletteContext::Legacy,
-            type_id: "GAGATE_A_MAKE".to_string(),
+            type_id: "GAGATE_A_MAKE".into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(2),
@@ -906,6 +995,59 @@ fn gate_structure_keys_cover_every_stage_and_damaged_stage_frame() {
         .flat_map(|frame| [frame, frame + 21])
         .collect();
     assert_eq!(frames, expected);
+}
+
+/// Unit73C6AD..73C6D3: a still SHP Unit with a running death count draws
+/// StartDeathFrame plus the count over DeathFrameRate, held on the last of
+/// DeathFrames; a moving one keeps walking. The atlas holds the death images
+/// its SHP has (`DTH.SHP` here ends at frame 41).
+#[test]
+fn a_counting_shp_unit_draws_death_frames_the_atlas_holds() {
+    use crate::rules::ini_parser::IniFile;
+
+    let art_ini = IniFile::from_str(
+        "[DTH]\nWalkFrames=6\nDeathFrames=3\nDeathFrameRate=2\nStartDeathFrame=40\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[VehicleTypes]\n0=DTH\n[DTH]\nStrength=100\n"),
+        &art_ini,
+    )
+    .expect("death frame rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    let set = rules.animation_sequence("DTH").expect("SHP unit layout");
+    let frame = |death, moving| {
+        crate::sim::animation::resolve_shp_vehicle_body_frame(set, 0, 4, -1, death, moving, false)
+    };
+    assert_eq!(frame(3, false), Some(41));
+    assert_eq!(frame(9, false), Some(42), "held on the last death frame");
+    assert_eq!(frame(3, true), frame(-1, true), "a moving body walks");
+
+    let directory = StoredFrameTestDirectory::new();
+    let frames: Vec<_> = (0..42).map(|frame| ([2, 2], (frame + 1) as u8)).collect();
+    std::fs::write(directory.0.join("DTH.SHP"), raw_shp(&frames)).expect("write DTH.SHP");
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let (world, interner) = one_object_world("DTH", EntityCategory::Unit);
+    let mut needed = HashSet::new();
+    insert_new_object_keys(
+        &mut needed,
+        &HashSet::from([("DTH".to_string(), HouseColorIndex(2))]),
+        &world,
+        Some(&interner),
+        &assets,
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+    );
+    let has = |frame| {
+        needed
+            .iter()
+            .any(|key| key.type_id == "DTH" && key.frame == frame)
+    };
+    assert!(
+        has(40) && has(41) && !has(42),
+        "the death images DTH.SHP holds"
+    );
 }
 
 /// BuildingType45F230's final image pass, after the base ObjectType load.
@@ -1276,7 +1418,7 @@ fn infantry_nonempty_shadow_is_uploaded_and_selected_from_the_second_half() {
     .unwrap();
     let key = ShpSpriteKey {
         palette_context: ShpPaletteContext::Legacy,
-        type_id: "RAWGI".to_string(),
+        type_id: "RAWGI".into(),
         facing: 0,
         frame: 0,
         house_color: HouseColorIndex(0),
@@ -1285,7 +1427,7 @@ fn infantry_nonempty_shadow_is_uploaded_and_selected_from_the_second_half() {
     let selected = embedded_shp_shadow_piece(
         &atlas,
         rules.object("RAWGI"),
-        world.values().next().unwrap(),
+        &crate::app::presentation::frame::ObjectRecord::of_test(world.values().next().unwrap()),
         None,
         &key,
         body,
@@ -1324,10 +1466,8 @@ fn raw_infantry_atlas_covers_saved_native_signed_remainders() {
     // in-asset remainders must be included by cache membership; a narrow marker
     // asset never grows to the declared sequence count. This is not a complete
     // native frame-selection comparison.
-    let receipt: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/foot_missions.json",
-    ))
-    .unwrap();
+    let receipt =
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
     let rows = receipt["draw_stage_modulo_receipt"]["rows"]
         .as_array()
         .unwrap();
@@ -1414,7 +1554,7 @@ fn raw_infantry_render_does_not_substitute_an_out_of_asset_key() {
     );
     // Preserve the existing generic class adapter; this does not establish
     // original invalid-frame shape access or full Infantry drawing parity.
-    key.type_id = "LEGACY".to_string();
+    key.type_id = "LEGACY".into();
     assert!(
         render_shp_key(
             &source,
@@ -1696,7 +1836,7 @@ fn cell_anim_remap_registration_covers_every_bound_frame_for_its_color() {
     for frame in 0..3 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: ShpPaletteContext::AnimScheme,
-            type_id: "Crate_Spark".to_string(),
+            type_id: "Crate_Spark".into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(1),
@@ -1738,7 +1878,7 @@ fn gsi_13_08_warpout_keeps_all_frames_and_drives_the_progressive_alpha_ladder() 
     for frame in 0..=20 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: ShpPaletteContext::GlobalAnim,
-            type_id: "WARPOUT".to_string(),
+            type_id: "WARPOUT".into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(0),
@@ -1860,7 +2000,7 @@ fn gsi_13_04_tem_only_tile_root_uses_iso_palette_and_registers_every_frame() {
     for frame in 0..4 {
         assert!(needed.contains(&ShpSpriteKey {
             palette_context: ShpPaletteContext::GlobalAnim,
-            type_id: "CUSTOM_TILE_ANIM".to_string(),
+            type_id: "CUSTOM_TILE_ANIM".into(),
             facing: 0,
             frame,
             house_color: HouseColorIndex(0),
@@ -1982,7 +2122,14 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
         key.palette_context = context;
         keys.insert(key.clone());
         assert_eq!(
-            sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+            sprite_palette_for_key(
+                &key,
+                Some(&art),
+                &effects,
+                &cells,
+                None,
+                &AresCustomPalettes::default()
+            ),
             palette
         );
     }
@@ -1992,12 +2139,26 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
     key.type_id = "ALT".into();
     key.palette_context = ShpPaletteContext::AnimPalette;
     assert_eq!(
-        sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &effects,
+            &cells,
+            None,
+            &AresCustomPalettes::default()
+        ),
         SpritePaletteChoice::Anim
     );
     key.palette_context = ShpPaletteContext::GlobalAnim;
     assert_eq!(
-        sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &effects,
+            &cells,
+            None,
+            &AresCustomPalettes::default()
+        ),
         SpritePaletteChoice::Unit
     );
     let probe = native_palette_probe_page();
@@ -2016,7 +2177,14 @@ fn a_custom_palette_type_bakes_against_the_extra_building_palette() {
     let choose = |type_id: &str, context, cells: &HashSet<String>, extra| {
         let mut key = make_shp_key(type_id, 0);
         key.palette_context = context;
-        sprite_palette_for_key(&key, Some(&art), &none, cells, extra)
+        sprite_palette_for_key(
+            &key,
+            Some(&art),
+            &none,
+            cells,
+            extra,
+            &AresCustomPalettes::default(),
+        )
     };
     let legacy = ShpPaletteContext::Legacy;
     assert_eq!(
@@ -2092,7 +2260,7 @@ fn retail_statue_bakes_against_the_theater_lib_palette() {
     let unit = Palette::from_bytes(assets.get_ref("unitubn.pal").unwrap()).unwrap();
     let key = ShpSpriteKey {
         palette_context: ShpPaletteContext::Legacy,
-        type_id: "CANEWY04".to_string(),
+        type_id: "CANEWY04".into(),
         facing: 0,
         frame: 0,
         house_color: HouseColorIndex(3),
@@ -2103,6 +2271,7 @@ fn retail_statue_bakes_against_the_theater_lib_palette() {
         &HashSet::new(),
         &HashSet::new(),
         Some(&HashSet::from(["CANEWY04".to_string()])),
+        &AresCustomPalettes::default(),
     );
     assert_eq!(choice, SpritePaletteChoice::ExtraBuilding);
     let source = load_shp_source(
@@ -2167,6 +2336,10 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
     let cell = spawn(&mut sim);
     let wreck = spawn(&mut sim);
     assert!(atlas_covers_anim_remaps(Some(&atlas), &sim, &colors));
+    // The tick's atlas check has seen the anims before their palettes.
+    let mut check = crate::render::entity_atlas_growth::EntityAtlasCheck::default();
+    check.note(sim.take_looks());
+    check.checked(&sim, &colors);
     assert!(
         sim.anims_mut_for_test()
             .set_anim_house_remap(deployed, house)
@@ -2179,8 +2352,9 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         sim.anims_mut_for_test()
             .set_anim_remap(wreck, AnimRemap::ExtraBuildingScheme { house, palette })
     );
+    check.note(sim.take_looks());
     assert!(
-        !atlas_covers_anim_remaps(Some(&atlas), &sim, &colors),
+        check.finds_miss(&sim, Some(&rules), Some(&atlas), None, &colors),
         "producer palette assignment must request a refresh without an entity change"
     );
     assert!(!atlas_covers_anim_remaps(None, &sim, &colors));
@@ -2309,7 +2483,7 @@ fn object_and_remap_coverage_are_separate_and_follow_the_world() {
 fn a_collected_pair_is_covered_even_when_nothing_of_it_is_drawable() {
     // A type whose frame 0 is empty or whose SHP is missing has no atlas entry
     // at all. Coverage by collected pairs keeps it from forcing a refresh on
-    // every spawn, death or Limbo, as a frame-0 entry probe would.
+    // every check, as a frame-0 entry probe would.
     let (world, interner) = one_object_world("NOSHAPE", EntityCategory::Structure);
     let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(1))]);
     let mut atlas = SpriteAtlas::new(Vec::new(), HashMap::new(), ShpPalettes::default());
@@ -2426,7 +2600,7 @@ fn refreshed_sprites_upload_to_a_growth_page_and_leave_resident_ones_in_place() 
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },
@@ -2754,344 +2928,339 @@ fn building_palette_groups_survive_refresh_and_palette_texture_growth() {
     };
     use crate::rules::ini_parser::IniFile;
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-    let directory = StoredFrameTestDirectory::new();
-    let shp = raw_shp(&[([2, 2], 7), ([2, 2], 7)]);
-    for name in [
-        "A.SHP",
-        "B.SHP",
-        "MISS.SHP",
-        "CELL.SHP",
-        "AMK.SHP",
-        "BMK.SHP",
-        "WRECK.SHP",
-    ] {
-        std::fs::write(directory.0.join(name), &shp).unwrap();
-    }
-    for (name, rgb) in [
-        ("FIRSTTEM.PAL", [63u8, 0, 0]),
-        ("SECONDTEM.PAL", [0, 63, 0]),
-    ] {
-        let mut bytes = [0u8; 768];
-        bytes[21..24].copy_from_slice(&rgb);
-        std::fs::write(directory.0.join(name), bytes).unwrap();
-    }
-    let assets = AssetManager::from_loose_root_for_test(&directory.0);
-    let art = IniFile::from_str(
-        "[FIRST]\nPalette=first\nImage=A\nBuildup=AMK\n[EMPTY]\nImage=A\nBuildup=AMK\n\
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let directory = StoredFrameTestDirectory::new();
+        let shp = raw_shp(&[([2, 2], 7), ([2, 2], 7)]);
+        for name in [
+            "A.SHP",
+            "B.SHP",
+            "MISS.SHP",
+            "CELL.SHP",
+            "AMK.SHP",
+            "BMK.SHP",
+            "WRECK.SHP",
+        ] {
+            std::fs::write(directory.0.join(name), &shp).unwrap();
+        }
+        for (name, rgb) in [
+            ("FIRSTTEM.PAL", [63u8, 0, 0]),
+            ("SECONDTEM.PAL", [0, 63, 0]),
+        ] {
+            let mut bytes = [0u8; 768];
+            bytes[21..24].copy_from_slice(&rgb);
+            std::fs::write(directory.0.join(name), bytes).unwrap();
+        }
+        let assets = AssetManager::from_loose_root_for_test(&directory.0);
+        let art = IniFile::from_str(
+            "[FIRST]\nPalette=first\nImage=A\nBuildup=AMK\n[EMPTY]\nImage=A\nBuildup=AMK\n\
          [B]\nPalette=second\nBuildup=BMK\n[MISS]\nPalette=absent\n[CELL]\nPalette=second\nTerrainPalette=yes\n[WRECK]\nEnd=2\n",
-    );
-    let mut layers = RulesLayerStack::new(IniFile::from_str(
-        "[BuildingTypes]\n0=A\n1=B\n2=MISS\n3=CELL\n[A]\nImage=FIRST\nStrength=10\nDestroyAnim=WRECK\n[B]\nStrength=10\nDestroyAnim=WRECK\n[MISS]\nStrength=10\n[CELL]\nStrength=10\n[Animations]\n0=WRECK\n",
-    ));
-    layers.push(
-        RulesLayerKind::Scenario,
-        IniFile::from_str("[A]\nImage=EMPTY\n"),
-    );
-    let processed = layers.process_with_fixed_art(&art).unwrap();
-    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
-    let mut registry = ArtRegistry::from_ini(&art);
-    registry.bind_anim_frame_count_for_test("WRECK", 2);
-    rules.install_art_data(registry);
-    assert_eq!(
-        rules.object("A").unwrap().custom_palette_name(),
-        Some("first")
-    );
-    let unit = Palette::from_rgb(|_| [0, 0, 252]);
-    let cell = Palette::from_rgb(|_| [252, 252, 0]);
-    let gpu = Gpu::new();
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let entities = crate::sim::entity_store::EntityStore::new();
-    let colors =
-        HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
-    let no_remaps = HashSet::new();
-    let no_cell_drawers = HashSet::new();
-    let load = |types: &[&str], existing| {
-        build_sprite_atlas(
-            &gpu.device,
-            &gpu.queue,
-            &batch,
-            &entities,
-            &assets,
-            &unit,
-            "tem",
-            "TEMPERATE",
-            Some(&rules),
-            Some(rules.art()),
-            &colors,
-            types,
-            &no_remaps,
-            &no_cell_drawers,
-            &Default::default(),
-            Some(&cell),
-            existing,
-            None,
-        )
-        .unwrap()
-    };
-    let key = |name: &str| ShpSpriteKey {
-        house_color: crate::rules::house_colors::NO_REMAP,
-        ..make_shp_key(name, 0)
-    };
-    let mut first = load(&["A"], None);
-    let resident = *first.get(&key("A")).unwrap();
-    let resident_unit_row = first.palettes.rows.get(&unit.to_rgba_bytes()).copied();
-    let old_texture = first.palettes.texture.as_ref().unwrap().0.clone();
-    let old_binding = first.pages[resident.page as usize]
-        .texture
-        .bind_group
-        .clone();
-    // Fill real atlas row storage before the late types arrive. B's distinct
-    // Ares palette and CELL's terrain palette get high rows; OFF B correctly
-    // reuses the already-resident Unit fallback row.
-    let mut palettes = first.palettes.clone();
-    for n in 0..300u16 {
-        palettes
-            .row(&Palette::from_rgb(|i| [i, n as u8, (n >> 8) as u8]))
-            .unwrap();
-    }
-    first.append_sprites(&gpu.device, &gpu.queue, &batch, Vec::new(), palettes);
-    assert_ne!(first.palettes.texture.as_ref().unwrap().0, old_texture);
-    assert_ne!(
-        first.pages[resident.page as usize].texture.bind_group,
-        old_binding
-    );
-    let atlas = load(&["A", "B", "MISS", "CELL"], Some(first));
-    assert_eq!(
-        atlas.get(&key("A")).unwrap().source_palette,
-        resident.source_palette
-    );
-    let red = Palette::from_rgb(|i| if i == 7 { [252, 0, 0] } else { [0; 3] });
-    let green = Palette::from_rgb(|i| if i == 7 { [0, 252, 0] } else { [0; 3] });
-    let b = if cfg!(feature = "ares") {
-        &green
-    } else {
-        &unit
-    };
-    for (name, expected) in [
-        ("A", &red),
-        ("A_MAKE", &red),
-        ("B", b),
-        ("B_MAKE", b),
-        ("MISS", &unit),
-        ("CELL", &cell),
-    ] {
-        let row = atlas.get(&key(name)).unwrap().source_palette - 1;
-        assert_eq!(
-            atlas.palettes.colors[row as usize],
-            expected.to_rgba_bytes(),
-            "{name}"
         );
-    }
-    if !crate::rules::ARES_ENABLED {
-        assert_eq!(
-            atlas.get(&key("B")).unwrap().source_palette,
-            resident_unit_row.expect("the Unit fallback was already resident") + 1,
-            "OFF B reuses the existing Unit palette row"
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[BuildingTypes]\n0=A\n1=B\n2=MISS\n3=CELL\n[A]\nImage=FIRST\nStrength=10\nDestroyAnim=WRECK\n[B]\nStrength=10\nDestroyAnim=WRECK\n[MISS]\nStrength=10\n[CELL]\nStrength=10\n[Animations]\n0=WRECK\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[A]\nImage=EMPTY\n"),
         );
-    }
-    let high_type = if crate::rules::ARES_ENABLED {
-        "B"
-    } else {
-        "CELL"
-    };
-    let high = *atlas.get(&key(high_type)).unwrap();
-    assert!(
-        high.source_palette > 256,
-        "real sprite must reference a row beyond 255"
-    );
-    let reference = load(&[high_type], None);
-    let low = *reference.get(&key(high_type)).unwrap();
-    assert!(low.source_palette <= 256);
-    // Exercise the real SpriteInstance u32 attribute, Batch shader and indexed
-    // page binding, not just textureLoad at a manually selected high row.
-    let draw = |atlas: &SpriteAtlas, entry: &ShpSpriteEntry| {
-        let size = [2, 2];
-        batch.write_camera(&gpu.queue, camera(size));
-        let instance = SpriteInstance {
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            source_palette: entry.source_palette,
-            ..sprite([0.0; 2], entry.pixel_size, 0.0)
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let mut registry = ArtRegistry::from_ini(&art);
+        registry.bind_anim_frame_count_for_test("WRECK", 2);
+        rules.install_art_data(registry);
+        assert_eq!(
+            rules.object("A").unwrap().custom_palette_name(),
+            Some("first")
+        );
+        let unit = Palette::from_rgb(|_| [0, 0, 252]);
+        let cell = Palette::from_rgb(|_| [252, 252, 0]);
+        let gpu = Gpu::new();
+        let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let entities = crate::sim::entity_store::EntityStore::new();
+        let colors =
+            HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
+        let no_remaps = HashSet::new();
+        let no_cell_drawers = HashSet::new();
+        let load = |types: &[&str], existing| {
+            build_sprite_atlas(
+                &gpu.device,
+                &gpu.queue,
+                &batch,
+                &entities,
+                &assets,
+                &unit,
+                "tem",
+                "TEMPERATE",
+                Some(&rules),
+                Some(rules.art()),
+                &colors,
+                types,
+                &no_remaps,
+                &no_cell_drawers,
+                &Default::default(),
+                Some(&cell),
+                existing,
+                None,
+            )
+            .unwrap()
         };
-        let mut pool = InstanceBufferPool::new();
-        pool.upload_on_device(&gpu.device, &gpu.queue, "high_palette_row", &[instance]);
-        let (buffer, count) = pool.get("high_palette_row").unwrap();
-        let target = gpu.target(size, format);
-        let color = target.create_view(&Default::default());
-        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-        let depth_view = depth.create_view(&Default::default());
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        clear(
-            &mut encoder,
-            &color,
-            &depth_view,
-            65535,
-            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+        let key = |name: &str| ShpSpriteKey {
+            house_color: crate::rules::house_colors::NO_REMAP,
+            ..make_shp_key(name, 0)
+        };
+        let mut first = load(&["A"], None);
+        let resident = *first.get(&key("A")).unwrap();
+        let resident_unit_row = first.palettes.rows.get(&unit.to_rgba_bytes()).copied();
+        let old_texture = first.palettes.texture.as_ref().unwrap().0.clone();
+        let old_binding = first.pages[resident.page as usize]
+            .texture
+            .bind_group
+            .clone();
+        // Fill real atlas row storage before the late types arrive. B's distinct
+        // Ares palette and CELL's terrain palette get high rows; OFF B correctly
+        // reuses the already-resident Unit fallback row.
+        let mut palettes = first.palettes.clone();
+        for n in 0..300u16 {
+            palettes
+                .row(&Palette::from_rgb(|i| [i, n as u8, (n >> 8) as u8]))
+                .unwrap();
+        }
+        first.append_sprites(&gpu.device, &gpu.queue, &batch, Vec::new(), palettes);
+        assert_ne!(first.palettes.texture.as_ref().unwrap().0, old_texture);
+        assert_ne!(
+            first.pages[resident.page as usize].texture.bind_group,
+            old_binding
         );
-        {
-            let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+        let atlas = load(&["A", "B", "MISS", "CELL"], Some(first));
+        assert_eq!(
+            atlas.get(&key("A")).unwrap().source_palette,
+            resident.source_palette
+        );
+        let red = Palette::from_rgb(|i| if i == 7 { [252, 0, 0] } else { [0; 3] });
+        let green = Palette::from_rgb(|i| if i == 7 { [0, 252, 0] } else { [0; 3] });
+        let b = if ares_way { &green } else { &unit };
+        for (name, expected) in [
+            ("A", &red),
+            ("A_MAKE", &red),
+            ("B", b),
+            ("B_MAKE", b),
+            ("MISS", &unit),
+            ("CELL", &cell),
+        ] {
+            let row = atlas.get(&key(name)).unwrap().source_palette - 1;
+            assert_eq!(
+                atlas.palettes.colors[row as usize],
+                expected.to_rgba_bytes(),
+                "{name}"
+            );
+        }
+        if !ares_way {
+            assert_eq!(
+                atlas.get(&key("B")).unwrap().source_palette,
+                resident_unit_row.expect("the Unit fallback was already resident") + 1,
+                "OFF B reuses the existing Unit palette row"
+            );
+        }
+        let high_type = if ares_way { "B" } else { "CELL" };
+        let high = *atlas.get(&key(high_type)).unwrap();
+        assert!(
+            high.source_palette > 256,
+            "real sprite must reference a row beyond 255"
+        );
+        let reference = load(&[high_type], None);
+        let low = *reference.get(&key(high_type)).unwrap();
+        assert!(low.source_palette <= 256);
+        // Exercise the real SpriteInstance u32 attribute, Batch shader and indexed
+        // page binding, not just textureLoad at a manually selected high row.
+        let draw = |atlas: &SpriteAtlas, entry: &ShpSpriteEntry| {
+            let size = [2, 2];
+            batch.write_camera(&gpu.queue, camera(size));
+            let instance = SpriteInstance {
+                uv_origin: entry.uv_origin,
+                uv_size: entry.uv_size,
+                source_palette: entry.source_palette,
+                ..sprite([0.0; 2], entry.pixel_size, 0.0)
+            };
+            let mut pool = InstanceBufferPool::new();
+            pool.upload_on_device(&gpu.device, &gpu.queue, "high_palette_row", &[instance]);
+            let (buffer, count) = pool.get("high_palette_row").unwrap();
+            let target = gpu.target(size, format);
+            let color = target.create_view(&Default::default());
+            let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+            let depth_view = depth.create_view(&Default::default());
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            clear(
                 &mut encoder,
                 &color,
                 &depth_view,
+                65535,
+                wgpu::LoadOp::Clear(wgpu::Color::BLACK),
             );
-            batch.draw_with_buffer_no_depth(
-                &mut pass,
-                &atlas.page(entry.page as usize).unwrap().texture,
-                buffer,
-                count,
-            );
-        }
-        let read = gpu.read(&mut encoder, &target);
-        gpu.finish(encoder, &[read], size).remove(0)
-    };
-    let high_pixels = draw(&atlas, &high);
-    let b_pixels = draw(&atlas, atlas.get(&key("B")).unwrap());
-    assert_eq!(
-        high_pixels,
-        draw(&reference, &low),
-        "high row indexed draw must match the same sprite at a low row"
-    );
-    assert!(
-        high_pixels
-            .chunks_exact(4)
-            .any(|pixel| pixel[..3] != [0, 0, 0]),
-        "the draw must cover a nonblack pixel"
-    );
-    let resident_pixels = draw(&atlas, atlas.get(&key("A")).unwrap());
-    assert!(
-        resident_pixels
-            .chunks_exact(4)
-            .any(|pixel| pixel[..3] != [0, 0, 0])
-    );
-    let resident_reference = load(&["A"], None);
-    assert_eq!(
-        resident_pixels,
-        draw(
-            &resident_reference,
-            resident_reference.get(&key("A")).unwrap()
-        ),
-        "old resident page must still bind its colors after texture replacement"
-    );
-
-    // The same destroyed-building animation can need two palette groups for
-    // one house. Only the surviving animations drive these refreshes; no donor
-    // building or extra-building request remains in the world.
-    use crate::sim::anim_class::AnimRemap;
-    use crate::sim::components::AnimClassSpawnDescriptor;
-    use crate::sim::world::Simulation;
-    use crate::util::fixed_math::SimFixed;
-    let mut sim = Simulation::new();
-    let house = sim.intern("Americans");
-    let first_palette = sim.intern("FIRST");
-    let second_palette = sim.intern("second");
-    let wreck = sim.intern("WRECK");
-    let spawn = |sim: &mut Simulation| {
-        sim.spawn_anim_object(
-            &rules,
-            AnimClassSpawnDescriptor::new(
-                wreck,
-                10,
-                10,
-                SimFixed::from_num(0),
-                SimFixed::from_num(0),
-                0,
-            ),
-        )
-        .unwrap()
-    };
-    let first_anim = spawn(&mut sim);
-    sim.anims_mut_for_test().set_anim_remap(
-        first_anim,
-        AnimRemap::ExtraBuildingScheme {
-            house,
-            palette: first_palette,
-        },
-    );
-    let refresh = |sim: &Simulation, previous| {
-        let remaps = collect_anim_remap_base_keys(sim, &colors);
-        build_sprite_atlas(
-            &gpu.device,
-            &gpu.queue,
-            &batch,
-            sim.entities(),
-            &assets,
-            &unit,
-            "tem",
-            "TEMPERATE",
-            Some(&rules),
-            Some(rules.art()),
-            &colors,
-            &[],
-            &remaps,
-            &no_cell_drawers,
-            &Default::default(),
-            Some(&cell),
-            previous,
-            Some(sim.interner()),
-        )
-        .unwrap()
-    };
-    let first_remapped = refresh(&sim, Some(atlas));
-    assert!(atlas_covers_anim_remaps(
-        Some(&first_remapped),
-        &sim,
-        &colors
-    ));
-    let second_anim = spawn(&mut sim);
-    sim.anims_mut_for_test().set_anim_remap(
-        second_anim,
-        if crate::rules::ARES_ENABLED {
-            AnimRemap::ExtraBuildingScheme {
-                house,
-                palette: second_palette,
+            {
+                let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                    &mut encoder,
+                    &color,
+                    &depth_view,
+                );
+                batch.draw_with_buffer_no_depth(
+                    &mut pass,
+                    &atlas.page(entry.page as usize).unwrap().texture,
+                    buffer,
+                    count,
+                );
             }
-        } else {
-            AnimRemap::House(house)
-        },
-    );
-    assert!(!atlas_covers_anim_remaps(
-        Some(&first_remapped),
-        &sim,
-        &colors
-    ));
-    let saved = save_codec::serialize(&sim).unwrap();
-    let restored: Simulation = save_codec::deserialize(&saved).unwrap();
-    let remapped = refresh(&restored, Some(first_remapped));
-    assert!(atlas_covers_anim_remaps(
-        Some(&remapped),
-        &restored,
-        &colors
-    ));
-    for (id, expected, pixels) in [
-        (
-            first_anim,
-            &red,
+            let read = gpu.read(&mut encoder, &target);
+            gpu.finish(encoder, &[read], size).remove(0)
+        };
+        let high_pixels = draw(&atlas, &high);
+        let b_pixels = draw(&atlas, atlas.get(&key("B")).unwrap());
+        assert_eq!(
+            high_pixels,
+            draw(&reference, &low),
+            "high row indexed draw must match the same sprite at a low row"
+        );
+        assert!(
+            high_pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel[..3] != [0, 0, 0]),
+            "the draw must cover a nonblack pixel"
+        );
+        let resident_pixels = draw(&atlas, atlas.get(&key("A")).unwrap());
+        assert!(
+            resident_pixels
+                .chunks_exact(4)
+                .any(|pixel| pixel[..3] != [0, 0, 0])
+        );
+        let resident_reference = load(&["A"], None);
+        assert_eq!(
+            resident_pixels,
             draw(
                 &resident_reference,
-                resident_reference.get(&key("A")).unwrap(),
+                resident_reference.get(&key("A")).unwrap()
             ),
-        ),
-        (second_anim, b, b_pixels),
-    ] {
-        let anim = restored.anim(id).unwrap();
-        let anim_key = ShpSpriteKey {
-            palette_context: anim_remap_context(anim),
-            type_id: "WRECK".into(),
-            facing: 0,
-            frame: 0,
-            house_color: crate::rules::house_colors::NO_REMAP,
+            "old resident page must still bind its colors after texture replacement"
+        );
+
+        // The same destroyed-building animation can need two palette groups for
+        // one house. Only the surviving animations drive these refreshes; no donor
+        // building or extra-building request remains in the world.
+        use crate::sim::anim_class::AnimRemap;
+        use crate::sim::components::AnimClassSpawnDescriptor;
+        use crate::sim::world::Simulation;
+        use crate::util::fixed_math::SimFixed;
+        let mut sim = Simulation::new();
+        let house = sim.intern("Americans");
+        let first_palette = sim.intern("FIRST");
+        let second_palette = sim.intern("second");
+        let wreck = sim.intern("WRECK");
+        let spawn = |sim: &mut Simulation| {
+            sim.spawn_anim_object(
+                &rules,
+                AnimClassSpawnDescriptor::new(
+                    wreck,
+                    10,
+                    10,
+                    SimFixed::from_num(0),
+                    SimFixed::from_num(0),
+                    0,
+                ),
+            )
+            .unwrap()
         };
-        let entry = remapped.get(&anim_key).unwrap();
-        assert_eq!(
-            remapped.palettes.colors[(entry.source_palette - 1) as usize],
-            expected.to_rgba_bytes()
+        let first_anim = spawn(&mut sim);
+        sim.anims_mut_for_test().set_anim_remap(
+            first_anim,
+            AnimRemap::ExtraBuildingScheme {
+                house,
+                palette: first_palette,
+            },
         );
-        assert_eq!(
-            draw(&remapped, entry),
-            pixels,
-            "surviving animation keeps its own palette"
+        let refresh = |sim: &Simulation, previous| {
+            let remaps = collect_anim_remap_base_keys(sim, &colors);
+            build_sprite_atlas(
+                &gpu.device,
+                &gpu.queue,
+                &batch,
+                sim.entities(),
+                &assets,
+                &unit,
+                "tem",
+                "TEMPERATE",
+                Some(&rules),
+                Some(rules.art()),
+                &colors,
+                &[],
+                &remaps,
+                &no_cell_drawers,
+                &Default::default(),
+                Some(&cell),
+                previous,
+                Some(sim.interner()),
+            )
+            .unwrap()
+        };
+        let first_remapped = refresh(&sim, Some(atlas));
+        assert!(atlas_covers_anim_remaps(
+            Some(&first_remapped),
+            &sim,
+            &colors
+        ));
+        let second_anim = spawn(&mut sim);
+        sim.anims_mut_for_test().set_anim_remap(
+            second_anim,
+            if ares_way {
+                AnimRemap::ExtraBuildingScheme {
+                    house,
+                    palette: second_palette,
+                }
+            } else {
+                AnimRemap::House(house)
+            },
         );
+        assert!(!atlas_covers_anim_remaps(
+            Some(&first_remapped),
+            &sim,
+            &colors
+        ));
+        let saved = save_codec::serialize(&sim).unwrap();
+        let restored: Simulation = save_codec::deserialize(&saved).unwrap();
+        let remapped = refresh(&restored, Some(first_remapped));
+        assert!(atlas_covers_anim_remaps(
+            Some(&remapped),
+            &restored,
+            &colors
+        ));
+        for (id, expected, pixels) in [
+            (
+                first_anim,
+                &red,
+                draw(
+                    &resident_reference,
+                    resident_reference.get(&key("A")).unwrap(),
+                ),
+            ),
+            (second_anim, b, b_pixels),
+        ] {
+            let anim = restored.anim(id).unwrap();
+            let anim_key = ShpSpriteKey {
+                palette_context: anim_remap_context(anim),
+                type_id: "WRECK".into(),
+                facing: 0,
+                frame: 0,
+                house_color: crate::rules::house_colors::NO_REMAP,
+            };
+            let entry = remapped.get(&anim_key).unwrap();
+            assert_eq!(
+                remapped.palettes.colors[(entry.source_palette - 1) as usize],
+                expected.to_rgba_bytes()
+            );
+            assert_eq!(
+                draw(&remapped, entry),
+                pixels,
+                "surviving animation keeps its own palette"
+            );
+        }
     }
 }
 
@@ -3389,7 +3558,8 @@ fn custom_harvest_uses_bound_theater_shape_all_frames_and_own_placement() {
             Some(rules.art()),
             &HashSet::new(),
             &HashSet::new(),
-            None
+            None,
+            &AresCustomPalettes::default()
         ),
         SpritePaletteChoice::Anim,
         "AltPalette belongs to AnimClass drawing, not the gather hook",
@@ -3588,4 +3758,297 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
     assert_eq!(extended.building_type_bounds("CANEWY06"), Some(bounds));
     assert!(extended.building_type_bounds("CANEWY01").is_some());
     assert_eq!(extended.building_type_bounds.len(), 2);
+}
+
+/// Objects of one type and owner give one coverage pair between them;
+/// another owner's keeps its own.
+#[test]
+fn object_pairs_give_each_type_and_owner_once() {
+    let colors = HouseColorMap::from([
+        ("Americans".to_string(), HouseColorIndex(2)),
+        ("Russians".to_string(), HouseColorIndex(5)),
+    ]);
+    let mut world = crate::sim::entity_store::EntityStore::new();
+    for (id, owner) in [(1, "Americans"), (2, "Americans"), (3, "Russians")] {
+        let mut entity = crate::sim::game_entity::GameEntity::test_default(id, "E1", owner, 5, 5);
+        entity.set_is_voxel_for_test(false);
+        world.insert(entity);
+    }
+    let interner = crate::sim::intern::test_interner();
+    let pairs: Vec<_> = object_pairs(&world, &colors, &[], Some(&interner)).collect();
+    assert_eq!(
+        pairs,
+        [("E1", HouseColorIndex(2)), ("E1", HouseColorIndex(5))]
+    );
+}
+
+#[test]
+fn retail_spy_atlas_loads_its_default_disguise_without_a_real_infantryman() {
+    use crate::sim::{house_state::HouseState, world::Simulation};
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    let mut sim = Simulation::with_seed(3);
+    let owner = sim.intern("Americans");
+    sim.register_house(HouseState::new(owner, 0, None, false, 0, 10));
+    let spy = sim
+        .spawn_object_at_height("SPY", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let entity = sim.entities().get(spy).unwrap();
+    let disguise = entity.disguise.as_ref().unwrap();
+    let worn = sim.interner().resolve(disguise.type_id().unwrap());
+    assert_eq!(worn, "E1");
+    assert_eq!(sim.entities().len(), 1);
+    let colors = HouseColorMap::from([("Americans".to_owned(), HouseColorIndex(2))]);
+    let pairs = object_pairs(sim.entities(), &colors, &[], Some(sim.interner()))
+        .map(|(kind, color)| (kind.to_owned(), color))
+        .collect();
+    let mut needed = HashSet::new();
+    let sources = insert_new_object_keys(
+        &mut needed,
+        &pairs,
+        sim.entities(),
+        Some(sim.interner()),
+        &assets,
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+    );
+    let source = sources
+        .get(&(ShpImageKind::Object, worn.to_owned()))
+        .and_then(Option::as_ref)
+        .expect("the Spy's disguise must load without a real E1");
+    let record = rules
+        .animation_sequence_in_category(crate::rules::object_type::ObjectCategory::Infantry, worn)
+        .unwrap()
+        .infantry_action(0)
+        .unwrap();
+    let frame = crate::sim::animation::resolve_shp_frame(record, 0, 0) as u16;
+    let key = ShpSpriteKey {
+        type_id: worn.into(),
+        frame,
+        house_color: HouseColorIndex(2),
+        ..make_shp_key(worn, 0)
+    };
+    assert!(
+        needed.contains(&key),
+        "the draw-selected disguise frame must be resident"
+    );
+    let sprite = render_shp_key(
+        source,
+        &theater.unit_palette,
+        true,
+        &key,
+        Some(&rules),
+        &mut ShpPalettes::default(),
+    )
+    .expect("physical disguise frame");
+    assert!(sprite.indices().iter().any(|&index| index != 0));
+}
+
+#[test]
+fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
+    let (mut world, _) = one_object_world("SPY", EntityCategory::Infantry);
+    let owner = crate::sim::intern::test_intern("Americans");
+    let enemy = crate::sim::intern::test_intern("Russians");
+    let e1 = crate::sim::intern::test_intern("E1");
+    let e2 = crate::sim::intern::test_intern("E2");
+    world
+        .get_mut_for_test(1)
+        .unwrap()
+        .disguise
+        .as_mut()
+        .unwrap()
+        .acquire(0, Some(e1), Some(owner));
+    let mut second = crate::sim::game_entity::GameEntity::test_default_of_category(
+        2,
+        "SPY",
+        "Americans",
+        6,
+        5,
+        EntityCategory::Infantry,
+    );
+    second.set_is_voxel_for_test(false);
+    second
+        .disguise
+        .as_mut()
+        .unwrap()
+        .acquire(0, Some(e2), Some(enemy));
+    world.insert(second);
+    let interner = crate::sim::intern::test_interner();
+    let colors = HouseColorMap::from([
+        ("Americans".to_owned(), HouseColorIndex(2)),
+        ("Russians".to_owned(), HouseColorIndex(5)),
+    ]);
+    let mut atlas = SpriteAtlas::from_test_entries(Default::default());
+    for kind in ["SPY", "E1"] {
+        atlas
+            .covered_objects
+            .entry(kind.to_owned())
+            .or_default()
+            .insert(HouseColorIndex(2));
+    }
+    let covered = |atlas: &SpriteAtlas, world: &crate::sim::entity_store::EntityStore| {
+        atlas_covers_world(
+            Some(atlas),
+            world,
+            &colors,
+            &[],
+            &HashSet::new(),
+            Some(&interner),
+        )
+    };
+    assert!(
+        !covered(&atlas, &world),
+        "a second Spy's enemy-coloured disguise needs growth"
+    );
+    atlas
+        .covered_objects
+        .entry("E2".to_owned())
+        .or_default()
+        .insert(HouseColorIndex(5));
+    assert!(covered(&atlas, &world));
+    world
+        .get_mut_for_test(2)
+        .unwrap()
+        .disguise
+        .as_mut()
+        .unwrap()
+        .clear_unit();
+    atlas.covered_objects.remove("E2");
+    assert!(
+        covered(&atlas, &world),
+        "inactive disguises must not request growth"
+    );
+}
+
+/// The atlas check reads what a tick changed, not the world: another object of
+/// a covered type and a death ask for no full check, a new owner's colour
+/// does, and so do new colours.
+#[test]
+fn the_atlas_check_asks_for_the_full_check_only_for_an_uncovered_look() {
+    use crate::render::entity_atlas_growth::EntityAtlasCheck;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::{house_state::HouseState, world::Simulation};
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(3);
+    let [_, russians] = ["Americans", "Russians"].map(|name| {
+        let house = sim.intern(name);
+        sim.register_house(HouseState::new(house, 0, None, false, 0, 10));
+        house
+    });
+    let spawn = |sim: &mut Simulation, x| {
+        sim.spawn_object_at_height("E1", "Americans", x, 10, 0, 0, &rules)
+            .unwrap()
+    };
+    let rifleman = spawn(&mut sim, 10);
+    let colors = HouseColorMap::from([
+        ("Americans".to_owned(), HouseColorIndex(2)),
+        ("Russians".to_owned(), HouseColorIndex(5)),
+    ]);
+    let mut atlas = SpriteAtlas::from_test_entries(Default::default());
+    atlas
+        .covered_objects
+        .entry("E1".to_owned())
+        .or_default()
+        .insert(HouseColorIndex(2));
+    let finds_miss = |check: &EntityAtlasCheck, sim: &Simulation, colors: &HouseColorMap| {
+        check.finds_miss(sim, Some(&rules), Some(&atlas), None, colors)
+    };
+    let mut check = EntityAtlasCheck::default();
+    check.note(sim.take_looks());
+    assert!(
+        finds_miss(&check, &sim, &colors),
+        "a new world is checked whole"
+    );
+    check.checked(&sim, &colors);
+
+    let second = spawn(&mut sim, 11);
+    assert!(sim.entities_mut_for_test().remove(second).is_some());
+    check.note(sim.take_looks());
+    assert!(!finds_miss(&check, &sim, &colors));
+    check.checked(&sim, &colors);
+    let mut relation = colors.clone();
+    relation.insert("Russians".to_owned(), HouseColorIndex(2));
+    assert!(
+        finds_miss(&check, &sim, &relation),
+        "new colours are checked whole"
+    );
+
+    sim.change_owner(rifleman, russians);
+    check.note(sim.take_looks());
+    assert!(finds_miss(&check, &sim, &colors));
+}
+
+/// A type's SHP frame count is found whatever the case of the name asked,
+/// also for a name longer than the stack key.
+#[test]
+fn an_object_shp_frame_count_is_found_by_any_case_of_its_name() {
+    let long = "x".repeat(80);
+    let mut atlas = SpriteAtlas::from_test_entries(Default::default());
+    atlas.set_object_shp_frame_count_for_test("GaPowr", 8);
+    atlas.set_object_shp_frame_count_for_test(&long, 3);
+    assert_eq!(atlas.object_shp_frame_count("gapowr"), Some(8));
+    assert_eq!(atlas.object_shp_frame_count("GAPOWR"), Some(8));
+    assert_eq!(atlas.object_shp_frame_count(&long), Some(3));
+    assert_eq!(atlas.object_shp_frame_count("GAPILE"), None);
+}
+
+/// A fogged building's slot anim records `current_frame + Start` as it is,
+/// which an `End=`/`LoopEnd=` past the SHP can carry beyond the last frame.
+/// gamemd draws nothing for it (`CC_Draw_Shape`, `0x0069E7F3`); no key is
+/// requested, so the atlas cannot stand frame 0 in.
+#[test]
+fn a_fogged_anim_frame_past_its_shp_requests_no_sprite() {
+    use crate::sim::vision::{
+        FoggedDrawKind, FoggedDrawRecord, FoggedObjectFootprintRecord, FrozenBuilding,
+    };
+    let art_ini = crate::rules::ini_parser::IniFile::from_str("[OVER]\nLoopStart=10\nLoopEnd=19\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::rules::ini_parser::IniFile::from_str("[Animations]\n0=OVER\n"),
+        &art_ini,
+    )
+    .expect("rules");
+    let mut art = ArtRegistry::from_ini(&art_ini);
+    art.bind_anim_frame_count_for_test("OVER", 4);
+    rules.install_art_data(art);
+    let mut interner = crate::sim::intern::StringInterner::new();
+    let over = interner.intern("OVER");
+    let owner = interner.intern("HOUSE");
+    let record = |frame| FoggedDrawRecord {
+        kind: FoggedDrawKind::Animation,
+        type_ref: over,
+        frame,
+        no_zshape: false,
+        z_adjust: 0,
+    };
+    let fogged = FoggedObjectFootprintRecord {
+        id: 1,
+        viewer: owner,
+        source_entity_id: 1,
+        occupied_cells: vec![(10, 10)],
+        drawing: Some(FrozenBuilding {
+            owner,
+            location: crate::sim::components::DriveCoord { x: 0, y: 0, z: 0 },
+            level: 0,
+            visible: true,
+            records: vec![record(3), record(12)],
+        }),
+    };
+    let frames: Vec<u16> = fogged_sprite_keys(
+        std::iter::once(&fogged),
+        &interner,
+        &rules,
+        &HouseColorMap::new(),
+    )
+    .into_iter()
+    .map(|key| key.frame)
+    .collect();
+    assert_eq!(frames, [3]);
 }

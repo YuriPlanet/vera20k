@@ -128,7 +128,7 @@ pub(super) fn overfly(
     entity.mission_leaf.set_aircraft_action_latch(true);
     let target = entity.attack_target.target();
     let carrying = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .is_some_and(|cargo| cargo.count() > 0);
     let Some(target) = target.filter(|_| carrying) else {
@@ -212,7 +212,11 @@ fn end_delay(typed: Option<i32>, global: i32) -> i32 {
 fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission_leaf.set_aircraft_action_latch(false);
-        crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+        crate::sim::mission::concrete_effects::represented_assign_target(
+            entity,
+            None,
+            rules.ares_form(),
+        );
     }
     sim.assign_aircraft_destination(id, None, rules, frame_effects);
     super::queue_mission(&mut sim.substrate, id, MissionType::Retreat);

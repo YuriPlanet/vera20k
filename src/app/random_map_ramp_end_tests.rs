@@ -23,6 +23,8 @@ fn ordinary_recipe(seed: i32, map_type: i32) -> RmgOptions {
         tiberium: 35,
         vegetation: 30,
         urban_presence: 40,
+        urban_enabled: false,
+        fair_starts: false,
         seed,
         ..Default::default()
     }
@@ -154,12 +156,12 @@ fn generated_connector_uses_native_slope_piece_tileset() {
 
     let mut before_islands = None;
     let mut introduced_ends = Vec::new();
-    let generated = generate_map_observed(
+    let run = generate_map_observed(
         &options,
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &prepared.tech_types,
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
         &mut |view| match view.point() {
             GenerationPoint::After(Stage::Regions) => {
                 before_islands = Some(
@@ -204,6 +206,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
             _ => {}
         },
     );
+    let generated = run.map();
     assert!(before_islands.is_some(), "ordinary Regions observation");
     assert!(!introduced_ends.is_empty(), "ordinary Islands observation");
     // Continue through real emit and the existing preview consumer. No map
@@ -228,8 +231,8 @@ fn generated_connector_uses_native_slope_piece_tileset() {
             .contains_geometry_packed(i32::from(cell.rx), i32::from(cell.ry))
         })
         .expect("a generated native ramp end survives later stages into the emitted playable map");
-    let mut main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
-    let mut main = crate::app::state::process_main_draws(None, &mut main_rng);
+    let main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
+    let mut main = crate::app::state::process_main_draws(&main_rng);
     let mut selector = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let resolved = build_random_map_preview_grid(
         &generated.map_file,
@@ -263,7 +266,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     // identity belongs to the consumed buffer even if the file later changes.
     let seed_dir = crate::map::source::test_support::TestDirectory::new("ramp-end");
     let seed_name = "CellRamp11.SED";
-    let seed_bytes = options.to_sed_bytes();
+    let seed_bytes = options.to_sed_bytes(prepared.ares);
     seed_dir.write(seed_name, &seed_bytes);
     struct SilentProgress;
     impl crate::app::loading::pump::LoadingProgressSink for SilentProgress {
@@ -280,6 +283,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         None,
         crate::app::match_runtime::session::SessionMode::Skirmish,
         false,
+        None,
         &mut SilentProgress,
     )
     .expect("ordinary selected-.SED load");
@@ -357,12 +361,12 @@ fn generated_raised_ridge_materializes_native_cliff_faces() {
     }
     let mut ordinary_steps = 0;
     let mut materialized = Vec::new();
-    let generated = generate_map_observed(
+    let run = generate_map_observed(
         &options,
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &prepared.tech_types,
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
         &mut |view| {
             if view.point() == GenerationPoint::After(Stage::Regions) {
                 let cells = view.snapshot().map_file.cells;
@@ -403,7 +407,7 @@ fn generated_raised_ridge_materializes_native_cliff_faces() {
         "native type3/4 gate598D6E/598D7B/598D82 runs cliff materialization after connectors; ordinary raised ground must acquire physical CliffSet faces"
     );
     assert!(
-        generated.map_file.cells.iter().any(|cell| {
+        run.map().map_file.cells.iter().any(|cell| {
             materialized.iter().any(|face| {
                 (cell.rx, cell.ry, cell.tile_index, cell.sub_tile, cell.z)
                     == (face.rx, face.ry, face.tile_index, face.sub_tile, face.z)

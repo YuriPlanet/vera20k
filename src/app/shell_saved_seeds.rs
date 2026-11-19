@@ -120,9 +120,9 @@ impl App {
         // MapSeed Save 0x00597804 updates the working description before file I/O.
         // Its nonnull-filename path returns success even if the file could not open.
         modal.options.description = description;
-        if let Err(error) = crate::util::file_system::create_dir_all(&dir)
-            .and_then(|()| saved_seeds::write_browser_seed(&dir, &file_name, &modal.options))
-        {
+        if let Err(error) = crate::util::file_system::create_dir_all(&dir).and_then(|()| {
+            saved_seeds::write_browser_seed(&dir, &file_name, &modal.options, modal.ares)
+        }) {
             log::warn!(
                 "saved seed: native-style save acknowledgment despite I/O failure for {file_name}: {error}"
             );
@@ -211,14 +211,21 @@ impl App {
                 else {
                     return;
                 };
-                match saved_seeds::read_browser_seed(&dir, &file_name, &modal.options, &default) {
+                match saved_seeds::read_browser_seed(
+                    &dir,
+                    &file_name,
+                    &modal.options,
+                    &default,
+                    modal.ares,
+                ) {
                     Ok(mut options) => {
                         // Load 0x00596963 posts Generate with its reroll latch clear.
                         // Ordinary valid control readback preserves loaded derived
                         // values, couples height to width, and stamps the default.
                         options.height = options.width;
                         options.description = default.into();
-                        modal.options = options.clone();
+                        modal.adopt_saved_seed(options);
+                        let options = modal.options.clone();
                         modal.begin_generate();
                         Self::close_saved_seed_browser(state);
                         if !Self::start_random_map_generation(state, &options, false)

@@ -305,10 +305,6 @@ fn the_superweapon_script_actions_match_native() {
             continue;
         }
         replayed += 1;
-        // Ares replaces action 55 (hook 6EFC70); its own regression covers it.
-        if cfg!(feature = "ares") && int(&row["action"]) == 55 {
-            continue;
-        }
         let Replay {
             mut sim,
             rules,
@@ -316,6 +312,10 @@ fn the_superweapon_script_actions_match_native() {
             plant,
             ..
         } = replay(row, !row["target"].is_null());
+        // Ares replaces action 55 (hook 6EFC70); its own regression covers it.
+        if rules.ares_form() && int(&row["action"]) == 55 {
+            continue;
+        }
         if let Some(plant) = plant {
             assert_eq!(
                 sim.team_target_cell_of_coord(TeamTarget::Object(plant)),
@@ -451,8 +451,7 @@ fn retail_superweapon_scripts_run_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let scripts: Vec<_> = vm
         .scripts
@@ -467,12 +466,14 @@ fn retail_superweapon_scripts_run_ported_actions() {
     assert_eq!(scripts.len(), 4);
     for script in &scripts {
         for action in &script.actions {
-            assert!(
-                super::super::actions::action_is_ported(action.action_id),
-                "{} runs action {}",
-                sim.interner.resolve(script.id),
-                action.action_id
-            );
+            for ares_way in [false, true] {
+                assert!(
+                    super::super::actions::action_is_ported(action.action_id, ares_way),
+                    "{} runs action {}",
+                    sim.interner.resolve(script.id),
+                    action.action_id
+                );
+            }
         }
     }
     let running = vm
@@ -494,9 +495,9 @@ mod chronoshift_building_tests;
 /// `SW.AITargeting` is IronCurtain and whose `SW.Group` is the argument, and
 /// fires it by its own index; the native firing row's group-0 Iron Curtain
 /// does not match argument 9, so the step completes without a launch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_iron_curtain_action_matches_ai_mode_and_group() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let row = rows()
         .into_iter()
         .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())

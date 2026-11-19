@@ -175,7 +175,7 @@ fn scenario_accessors_route_to_the_scenario_stream() {
 
 // --- Test 6: authoritative hash boundary (design §7.6) ---
 #[test]
-fn only_the_scenario_stream_reaches_the_state_hash() {
+fn offline_only_the_scenario_stream_reaches_the_state_hash() {
     let sim = Simulation::with_seed(99);
     let before = sim.state_hash();
     sim.main_rng.next_u32();
@@ -213,6 +213,47 @@ fn only_the_scenario_stream_reaches_the_state_hash() {
         sim.state_hash(),
         before_hash,
         "advancing the scenario stream must change the world hash"
+    );
+}
+
+#[test]
+fn network_start_discards_local_mapgen_history() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    for mode in [ScenarioGameMode::Lan, ScenarioGameMode::Wol] {
+        let mut cold = Simulation::with_seed(42);
+        let mut warm = Simulation::with_seed(42);
+        warm.install_mapgen_continuation(SimRng::new(71).mapgen_continuation());
+        warm.mapgen_rng.next_high_two_bits();
+        cold.install_session_mode(mode);
+        warm.install_session_mode(mode);
+        assert_eq!(warm.rng_state(), cold.rng_state());
+        assert_eq!(warm.state_hash(), cold.state_hash());
+
+        // A repeated mode publication must not rewind a match already running.
+        warm.mapgen_rng.next_high_two_bits();
+        let continued = warm.rng_state().mapgen;
+        warm.install_session_mode(mode);
+        assert_eq!(warm.rng_state().mapgen, continued);
+    }
+}
+
+#[test]
+fn network_state_hash_includes_the_mapgen_cursor() {
+    let mut sim = Simulation::with_seed(42);
+    sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    let before = sim.state_hash();
+    sim.main_rng.next_u32();
+    assert_eq!(
+        sim.state_hash(),
+        before,
+        "local audio stays outside lockstep"
+    );
+    sim.mapgen_rng.next_high_two_bits();
+    assert_ne!(
+        sim.state_hash(),
+        before,
+        "bridge repair's cursor is shared state"
     );
 }
 
@@ -557,9 +598,12 @@ fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
     );
 
     // Commit moves them into the process cell, then drops the old Simulation
-    // while a playback capability remains.
+    // while a playback capability remains. The scenario continues from that
+    // cursor in a cell of its own (docs/sim-thread.md).
     prepared.install_fresh_process_main(&live.main_rng);
     assert_eq!(live.main_rng.logical_state(), reference.logical_state());
+    assert_eq!(prepared.main_rng.logical_state(), reference.logical_state());
+    let mut world = reference.clone();
     drop(live);
     let (callback, late_draw) = std::thread::spawn(move || {
         let draw = callback.ranged(0, 4);
@@ -568,13 +612,14 @@ fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
     .join()
     .unwrap();
     assert_eq!(late_draw, reference.next_range_i32_inclusive(0, 4));
-    assert_eq!(prepared.main_rng.logical_state(), reference.logical_state());
     assert_eq!(callback.next_u32(), reference.next_u32());
+    // The app's draws leave the scenario's cell where it was.
+    assert_eq!(prepared.main_rng.logical_state(), world.logical_state());
     assert_eq!(
         prepared.presentation_main_draws().next_u32(),
-        reference.next_u32()
+        world.next_u32()
     );
-    assert_eq!(prepared.main_rng.logical_state(), reference.logical_state());
+    assert_eq!(prepared.main_rng.logical_state(), world.logical_state());
     assert_eq!(prepared.scenario_rng.logical_state(), scenario);
     assert_eq!(prepared.mapgen_rng.logical_state(), mapgen);
 }

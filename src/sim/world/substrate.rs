@@ -393,7 +393,8 @@ macro_rules! object_kinds {
         }
 
         impl ObjectKind {
-            /// Every kind, in [`Simulation::classify_object`]'s probe order.
+            /// Every kind, in the order [`Simulation::classify_object`] probes
+            /// the stores it has not already asked.
             ///
             /// [`Simulation::classify_object`]: super::Simulation::classify_object
             pub(crate) const ALL: [Self; [$(ObjectKind::$kind),+].len()] = [$(Self::$kind),+];
@@ -477,7 +478,7 @@ pub struct ObjectSubstrate {
     pub(crate) base_reservations: CellReservationGrid,
     /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
-    pub(crate) entities: EntityStore,
+    pub(in crate::sim) entities: EntityStore,
     /// Synchronous Phobos limbo hook controls; stable saves restore enabled/idle.
     #[cfg(feature = "phobos")]
     #[serde(skip)]
@@ -505,6 +506,30 @@ pub struct ObjectSubstrate {
     /// the state hash folds queue identities in insertion order.
     #[serde(default)]
     pub(crate) pending_delete: DeferredDeleteQueue,
+    /// Buildings whose Temporal online latch changed since the last factory
+    /// sweep, in order, for the Ares factory queue refresh
+    /// (`Simulation::ares_refresh_temporal_factories`). Empty in a game
+    /// without Ares.
+    #[serde(default)]
+    ares_temporal_factory_refresh: Vec<u64>,
+}
+
+impl ObjectSubstrate {
+    /// The buildings waiting for the Ares factory queue refresh, in order.
+    pub(crate) fn ares_temporal_factory_refresh(&self) -> &[u64] {
+        &self.ares_temporal_factory_refresh
+    }
+
+    /// A building's Temporal online latch changed: queue it for the next
+    /// factory sweep.
+    pub(crate) fn queue_ares_temporal_factory_refresh(&mut self, id: u64) {
+        self.ares_temporal_factory_refresh.push(id);
+    }
+
+    /// The factory sweep takes the queued buildings and leaves none.
+    pub(crate) fn take_ares_temporal_factory_refresh(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.ares_temporal_factory_refresh)
+    }
 }
 
 impl ObjectSubstrate {
@@ -529,6 +554,7 @@ impl ObjectSubstrate {
             spotlights: Default::default(),
             particle_systems: ParticleSystemStore::default(),
             pending_delete: DeferredDeleteQueue::default(),
+            ares_temporal_factory_refresh: Vec::new(),
         }
     }
 }
@@ -663,14 +689,25 @@ impl ObjectSubstrate {
 
     pub(crate) fn fold_base_reservations(&self, hasher: &mut impl std::hash::Hasher) {
         b"building-base-reservation-v1".hash(hasher);
-        let entry_count = self.base_reservations.entries().count();
+        let entry_count = self.base_reservations.entries().len();
         entry_count.hash(hasher);
         for (rx, ry, mask) in self.base_reservations.entries() {
             rx.hash(hasher);
             ry.hash(hasher);
-            mask.hash(hasher);
+            (mask as u32).hash(hasher);
+            if mask > u128::from(u32::MAX) {
+                // An impossible cell coordinate distinguishes the upper words
+                // from the next real cell. Legacy cells keep their four bytes.
+                u16::MAX.hash(hasher);
+                (mask >> u32::BITS).hash(hasher);
+            }
         }
-        self.base_reservations.dummy_mask().hash(hasher);
+        let dummy = self.base_reservations.dummy_mask();
+        (dummy as u32).hash(hasher);
+        if dummy > u128::from(u32::MAX) {
+            b"extended-reservation-dummy".hash(hasher);
+            (dummy >> u32::BITS).hash(hasher);
+        }
     }
 }
 

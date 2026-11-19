@@ -377,7 +377,6 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     sim.add_entity_occupancy(AIRCRAFT);
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         AIRCRAFT,
@@ -658,7 +657,7 @@ fn fly_process_matches_native_frames() {
         // UpdateTarget (1004DA90, hook 0x4CD9C8), Horizontal_Step (1004DC30,
         // hook 0x4CF3D0) and the climb (1004D930/1004DA20, hooks 0x4CDE64/
         // 0x4CDF54), which `sim::hunter_seeker` and `fly_height` test.
-        if crate::rules::ARES_ENABLED && flag(input, "hunter_seeker", false) {
+        if crate::rules::ares_switch::ares_way() && flag(input, "hunter_seeker", false) {
             continue;
         }
         // Phobos `AircraftExt::GetLandingDir` (0x4CF31C) replaces the

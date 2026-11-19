@@ -11,6 +11,7 @@ pub mod launch;
 pub(crate) mod load_saved_game_render;
 pub(crate) mod main_menu_shell_render;
 pub(crate) mod menu_page_render;
+pub(crate) mod mods_render;
 pub(crate) mod movies_credits_render;
 pub(crate) mod preview_zoom;
 pub(crate) mod quit_cascade;

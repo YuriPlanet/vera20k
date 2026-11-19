@@ -5,6 +5,7 @@
 //! useful metadata now and leave the broader scenario semantics for later work.
 
 use crate::rules::ini_parser::IniFile;
+use crate::util::native_string::decode_widened_utf8;
 use crate::util::native_x87::NativeF64Bits;
 
 /// Owner of the active `SpecialFlags::DestroyableBridges` bit during load.
@@ -62,8 +63,7 @@ pub struct BasicSection {
     /// in `ScenarioClass::Read_INI_Basic @ 0x00689E90` between
     /// IceGrowthEnabled and FreeRadar; `Set_Defaults @ 0x00683610` resets it
     /// to true. Only Ares reads the byte (`TechnoExt::SpawnVisceroid @
-    /// 100468B0`), so other builds do not keep it.
-    #[cfg(feature = "ares")]
+    /// 100468B0`), so only a game Ares plays in stores it in the Scenario.
     pub tiberium_death_to_visceroid: Option<bool>,
     /// Scenario+34A5, current-default ReadBool68A235..68A24D; fresh false.
     pub train_crate: Option<bool>,
@@ -211,11 +211,12 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         return BasicSection::default();
     };
 
+    let map_text = |value: &str| decode_widened_utf8(value).into_owned();
     BasicSection {
         // The scenario list's ReadString 0x40 (`0x00699858`).
-        name: section.read_name("Name", 0x40).map(str::to_string),
+        name: section.read_name("Name", 0x40).map(map_text),
         // No gamemd reader; VERA's scenario menu shows it.
-        author: section.read_name("Author", 0x80).map(str::to_string),
+        author: section.read_name("Author", 0x80).map(map_text),
         // ReadMovie4757D0 uses ReadString128 then the fixed movie registry;
         // bare `none` is an ordinary movie name, not a ReadType sentinel.
         intro: section
@@ -250,7 +251,6 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         tiberium_growth_enabled: section.read_bool_value("TiberiumGrowthEnabled"),
         ice_growth_enabled: section.read_bool_value("IceGrowthEnabled"),
         vein_growth_enabled: section.read_bool_value("VeinGrowthEnabled"),
-        #[cfg(feature = "ares")]
         tiberium_death_to_visceroid: section.read_bool_value("TiberiumDeathToVisceroid"),
         train_crate: section.read_bool_value("TrainCrate"),
         truck_crate: section.read_bool_value("TruckCrate"),
@@ -329,6 +329,7 @@ const MAX_BRIEFING_CHARS: usize = 2000;
 pub fn briefing_text(map_bytes: &[u8]) -> Option<String> {
     let value = basic_briefing_value(map_bytes)?;
     let value = crate::util::native_string::widen_bytes(value);
+    let value = decode_widened_utf8(&value);
     if is_string_table_name(&value) {
         return None;
     }
@@ -396,7 +397,7 @@ fn is_string_table_name(value: &str) -> bool {
         .is_some_and(|(category, label)| name(category) && name(label))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

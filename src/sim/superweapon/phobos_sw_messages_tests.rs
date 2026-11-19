@@ -131,7 +131,6 @@ fn linked_announcement_needs_an_activated_link() {
 }
 
 /// Every EVA cue a sale emitted, whichever `PlayEVA` owner carried it.
-#[cfg(feature = "ares")]
 fn sold_eva(sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
@@ -149,7 +148,6 @@ fn sold_eva(sim: &Simulation) -> Vec<String> {
 /// reads as absent; the reader's explicit-none arm serves retained
 /// projections that keep empty values. Unit selling is an Ares capability
 /// (`production::foot_on_sold`), so this test needs both features.
-#[cfg(feature = "ares")]
 #[test]
 fn a_sold_unit_uses_the_types_eva_sold_override() {
     let named = rules_with("[E1]\nEVA.Sold=EVA_LinkedSW\n");
@@ -203,7 +201,7 @@ fn a_sold_unit_uses_the_types_eva_sold_override() {
 /// Phobos `FootClass`'s `DisplayIncome` label (`Hooks.Selling.cpp:26-27`):
 /// a sold Foot prints its refund at its Location when the global is on. Unit
 /// selling is the Ares capability (`production::foot_on_sold`).
-#[cfg(all(feature = "ares", feature = "phobos"))]
+#[cfg(feature = "phobos")]
 #[test]
 fn a_sold_unit_prints_the_display_income_label() {
     use crate::sim::flying_text::BountyText;

@@ -25,6 +25,7 @@ pub struct SelectionFlashGlobals {
 
 impl SelectionFlashGlobals {
     pub fn from_ini(ini: &IniFile) -> Self {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         Self {
             duration_frames: ini
                 .section_or_empty("AudioVisual")
@@ -33,7 +34,7 @@ impl SelectionFlashGlobals {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

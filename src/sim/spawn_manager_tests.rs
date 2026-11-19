@@ -1145,7 +1145,6 @@ fn a_v3s_fire_reaches_its_manager_at_the_next_pass() {
 /// docked missile and regenerates the slot at once; the next pass builds a
 /// new missile whose SpawnOwner is the V3. Ares skips that forward
 /// (1004A910, hook 0x707B19): `ares_own_detach_all_keeps_the_docked_missile`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
     let rules = make_spawner_rules();
@@ -3004,9 +3003,9 @@ fn retail_missiles_keep_their_launch_coordinate_from_unlimbo() {
 /// Ares 3.0 TechnoClass_PointerGotInvalid_SpawnCloakOwner (1004A910, hook
 /// 0x707B19): a live V3's own Detach_All no longer reaches its manager, so
 /// the docked missile stays.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_own_detach_all_keeps_the_docked_missile() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = make_spawner_rules();
     let mut sim = missile_sim();
     let v3 = sim

@@ -41,7 +41,8 @@ struct Instance {
     @location(1) size: vec2f,
     @location(2) uv_origin: vec2f,
     @location(3) uv_size: vec2f,
-    @location(4) depth: f32,
+    // No `depth` (location 4): fs_main writes frag_depth itself, and WebGL2
+    // has room for 15 inputs beside `vertex_index`.
     @location(5) tint: vec3f,
     @location(6) alpha: f32,
     @location(7) remap_row: u32,
@@ -155,6 +156,12 @@ fn native_candidate(in: VertexOutput) -> i32 {
                 gradient = 2u;
             }
         }
+    }
+    // Every voxel body blit (0x1000, split or not) is a Bit_Blit, which clips
+    // its rectangle to the tactical view before seeding (0x00437461, then
+    // 0x004374BB..0x004375A7). Its bottom-seeded walk follows the clipped bottom.
+    if ((in.z_gradient & 0x1400u) != 0u) {
+        rect_top = round(rect_top);
         // fx_params.w is this voxel body's tactical clip height in world
         // pixels, supplied from the actual scissor. Zero retains the whole
         // viewport for offscreen callers. Do not bake the sidebar/footer size
@@ -189,6 +196,7 @@ fn native_candidate(in: VertexOutput) -> i32 {
 // The global Convert (Init_Game52BFCE; VoxelAnim749E5A) reads UNITSNO
 // directly, including indices16..31. The ordinary and packed blitters share
 // this selection so representation cannot introduce a house substitution.
+// Both tables are Rgba8Unorm: the result is the encoded colour.
 fn voxel_source_rgb(index: u32, remap_row: u32, source_palette: u32) -> vec3f {
     if source_palette == 0u && index >= 16u && index < 32u {
         return textureLoad(house_ramp, vec2i(i32(index - 16u), i32(remap_row)), 0).rgb;

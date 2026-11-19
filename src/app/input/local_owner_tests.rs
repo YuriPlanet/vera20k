@@ -3,7 +3,6 @@ use super::schedule_command_in_sim;
 use crate::app::match_runtime::state::scenario_local_owner;
 use crate::app::persistence::{LoadPreparationView, PreparedLoad, SaveRepository};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::command::Command;
 use crate::sim::house_state::HouseState;
@@ -64,9 +63,9 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
         .simulation
         .session_mut_for_test()
         .set_current_house_for_test(Some(outgoing));
-    runtime.resources.rules = rules;
-    runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
-    runtime.resources.terrain_template = Some(ResolvedTerrainGrid::from_cells(8, 8, Vec::new()));
+    runtime.resources_mut().rules = rules;
+    runtime.resources_mut().terrain_template =
+        Some(ResolvedTerrainGrid::from_cells(8, 8, Vec::new()));
     assert_eq!(
         scenario_local_owner(&runtime.simulation),
         Some("New Player")

@@ -253,15 +253,25 @@ fn a_cargo_rider_is_not_bound_to_its_carrier_as_transporter() {
         .fire_error(true)
     };
     use crate::sim::combat::fire_error::FireError;
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        crate::sim::passenger::PassengerRole::inside_for_test(1, false);
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+            1, false,
+        ));
     assert_ne!(
         error(&sim),
         FireError::Illegal,
         "a garrison occupant or cargo rider stores no Transporter"
     );
-    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-        crate::sim::passenger::PassengerRole::boarded_for_test(1, false);
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::boarded_for_test(
+            1, false,
+        ));
     assert_eq!(
         error(&sim),
         FireError::Illegal,

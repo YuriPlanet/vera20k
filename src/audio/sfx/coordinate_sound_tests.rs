@@ -459,3 +459,39 @@ fn coordinate_stop_matches_full_xyz_and_intersecting_flags_without_hard_stop() {
         );
     });
 }
+
+/// `VocClass::SaveStaticSounds @ 0x00751620` writes every node;
+/// `LoadStaticSounds @ 0x00751710` brings back only the loopable ones, with
+/// flags 0, so a map's ambient loop survives a save and TAction 116's mask 1
+/// (`0x006E1A31`) no longer stops it.
+#[test]
+fn a_saved_ambient_loop_returns_after_load_and_a_one_shot_does_not() {
+    with_player(|player, registry, _assets, _index| {
+        let (looped, once) = ("OilDerrickLoop", "GIMove");
+        let at = coordinate();
+        let elsewhere = [at[0] + 256, at[1], at[2]];
+        assert!(player.play_sound_at_coord(looped, at, 1, source(), None, registry));
+        assert!(player.play_sound_at_coord(
+            once,
+            elsewhere,
+            1,
+            SoundSource::from_coordinate(elsewhere),
+            None,
+            registry,
+        ));
+        let saved = player.saved_static_sounds();
+        let nodes: Vec<_> = saved
+            .iter()
+            .map(|node| (node.sound_id.as_str(), node.coordinate))
+            .collect();
+        assert_eq!(nodes, [("OILDERRICKLOOP", at), ("GIMOVE", elsewhere)]);
+
+        player.stop_all();
+        player.restore_static_sounds(&saved, registry);
+        assert_eq!(player.saved_static_sounds(), saved[..1]);
+        assert_eq!(player.coordinate_requests[0].flags, 0);
+        player.stop_sound_at_coord(at, 1);
+        player.service_coordinate_sounds(registry);
+        assert_eq!(player.coordinate_requests.len(), 1, "flags 0 match no mask");
+    });
+}

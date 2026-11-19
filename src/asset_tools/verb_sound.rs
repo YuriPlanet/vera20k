@@ -120,7 +120,6 @@ struct OpenBag {
     /// How this pair was opened, e.g. `AUDIOMD.MIX -> audio.idx/audio.bag`.
     identity: String,
     sources: AudioIndexSources,
-    #[cfg(feature = "ares")]
     additional_sources: Vec<AudioIndexSources>,
 }
 
@@ -187,7 +186,6 @@ pub fn sound(
     Ok(SoundReport {
         bag: bag.identity,
         sources: Some(bag.sources),
-        #[cfg(feature = "ares")]
         additional_sources: bag.additional_sources,
         entry_count,
         matched: 1,
@@ -212,7 +210,6 @@ pub fn bag_ls(
         return Ok(SoundReport {
             bag: NO_BAG_IDENTITY.to_string(),
             sources: None,
-            #[cfg(feature = "ares")]
             additional_sources: Vec::new(),
             entry_count: 0,
             matched: 0,
@@ -252,7 +249,6 @@ pub fn bag_ls(
     Ok(SoundReport {
         bag: bag.identity,
         sources: Some(bag.sources),
-        #[cfg(feature = "ares")]
         additional_sources: bag.additional_sources,
         entry_count: reachable.len(),
         matched: matched.len(),
@@ -271,7 +267,7 @@ fn open_bag(asset_manager: &AssetManager, opts: &SoundOptions) -> (Option<OpenBa
             Ok(None) => (
                 None,
                 vec![
-                    if cfg!(feature = "ares") {
+                    if asset_manager.ships_ares() {
                         "startup Ares audio catalog has no valid pair"
                     } else {
                         "startup audio.idx/audio.bag pair is unavailable"
@@ -359,7 +355,6 @@ fn opened_pair(loaded: LoadedAudioIndex) -> OpenBag {
         "IDX from {}; BAG from {}",
         loaded.sources.idx.source_archive, loaded.sources.bag.source_archive
     );
-    #[cfg(feature = "ares")]
     let identity = if loaded.additional_sources.is_empty() {
         identity
     } else {
@@ -371,7 +366,6 @@ fn opened_pair(loaded: LoadedAudioIndex) -> OpenBag {
     OpenBag {
         index: loaded.index,
         sources: loaded.sources,
-        #[cfg(feature = "ares")]
         additional_sources: loaded.additional_sources,
         identity,
     }
@@ -569,7 +563,7 @@ fn prefix_hint(name: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

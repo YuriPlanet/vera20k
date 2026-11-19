@@ -15,10 +15,9 @@
 //! its page and the GPU voxel raster draws the rest
 //! ([`VxlPoseFrameCache::encode`], [`crate::render::voxel_gpu`]).
 //!
-//! It also keeps, on retained pages, the depth-tested image of each stable
-//! key drawn while 0xB43180 is set ([`VxlPoseFrameCache::render_depth_tested`],
-//! [`crate::render::voxel_image_cache`]). A key's image depends on nothing
-//! else, so one render serves the match.
+//! It also keeps stable keys' raster-style variants on retained pages
+//! ([`VxlPoseFrameCache::render_styled`], [`crate::render::voxel_image_cache`]).
+//! A key and style determine that clean image, so one render serves the match.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -52,12 +51,12 @@ pub struct VxlPoseFrameCache {
     /// `VOXELS.VPL`, parsed on the first pose.
     vpl: Option<Option<VplFile>>,
     /// Each posed type's voxel model, parsed on its first pose.
-    models: BTreeMap<String, Option<UnitModel>>,
+    models: BTreeMap<smol_str::SmolStr, Option<UnitModel>>,
     /// Image-file models shared by voxel debris and bullets. These keys are
     /// retained image-load attempts, unlike the rules type keys in `models`.
     image_models: BTreeMap<String, ImageModel>,
-    /// Depth-tested stable images on retained pages, with their pool bytes.
-    depth_tested: HashMap<UnitSpriteKey, Option<(UnitSpriteEntry, u32)>>,
+    /// Stable images in an explicit raster style, with their pool bytes.
+    stable_styles: HashMap<(UnitSpriteKey, bool), Option<(UnitSpriteEntry, u32)>>,
     /// The GPU raster that draws the images it admits.
     gpu: VoxelGpu,
 }
@@ -66,7 +65,7 @@ struct PosePage {
     shelf: ShelfCursor,
     /// Frame-local: used this frame. Retained: placed on since the last encode.
     dirty: bool,
-    /// Holds depth-tested stable images for the whole match.
+    /// Holds stable raster-style variants for the whole match.
     retained: bool,
     texture: Option<BatchTexture>,
     /// The images on the page: this frame's, or a retained page's.
@@ -106,6 +105,7 @@ enum PoseTiltKey {
     Rocket(u32),
     Ground {
         angles: [u32; 2],
+        tunnel_tilt: Option<u32>,
         body_facing: u8,
         slope_blend: Option<crate::map::voxel_pose::VxlSlopeBlend>,
         turret_offset: i32,
@@ -137,6 +137,7 @@ impl From<PoseTilt> for PoseTiltKey {
             PoseTilt::Rocket(pitch) => Self::Rocket(pitch.to_bits()),
             PoseTilt::Ground(pose) => Self::Ground {
                 angles: pose.angles.map(f32::to_bits),
+                tunnel_tilt: pose.tunnel_tilt.map(f32::to_bits),
                 body_facing: pose.body_facing,
                 slope_blend: pose.slope_blend,
                 turret_offset: pose.turret_offset,
@@ -400,7 +401,7 @@ impl VxlPoseFrameCache {
     }
 
     /// Invalidate all frame-local entries while retaining parsed models,
-    /// depth-tested images and page allocations. No live instance survives
+    /// raster-style variants and page allocations. No live instance survives
     /// this presentation boundary.
     pub fn begin_frame(&mut self) {
         self.unit_poses.clear();
@@ -449,16 +450,18 @@ impl VxlPoseFrameCache {
         Some(entry)
     }
 
-    /// The depth-tested image of a stable atlas key and its pool bytes,
-    /// rendered on its first request and kept on a retained page. None when
-    /// the model or key does not draw.
-    pub fn render_depth_tested(
+    /// A stable key in the style706F02/706640 selected for its actual
+    /// drawer or cached image. The model's own flag can differ after73B4D8.
+    /// Keep the image and its pool bytes on a retained page.
+    pub fn render_styled(
         &mut self,
         asset_manager: &AssetManager,
         rules: Option<&RuleSet>,
         key: &UnitSpriteKey,
+        depth_tested: bool,
     ) -> Option<(UnitSpriteEntry, u32)> {
-        if let Some(image) = self.depth_tested.get(key) {
+        let style_key = (key.clone(), depth_tested);
+        if let Some(image) = self.stable_styles.get(&style_key) {
             return *image;
         }
         let vpl = load_vpl(&mut self.vpl, asset_manager);
@@ -467,7 +470,7 @@ impl VxlPoseFrameCache {
             .entry(key.type_id.clone())
             .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules))
             .as_ref()
-            .and_then(|model| model.render_depth_tested(key, vpl, None))
+            .and_then(|model| model.render_styled(key, vpl, None, &mut None, depth_tested, None))
             .and_then(|(sprite, bounds)| {
                 let bytes = crate::render::voxel_image_cache::sprite_pool_bytes(
                     &sprite.palette_indices,
@@ -477,7 +480,7 @@ impl VxlPoseFrameCache {
                 );
                 Some((place_sprite(&mut self.pages, sprite, bounds, true)?, bytes))
             });
-        self.depth_tested.insert(key.clone(), image);
+        self.stable_styles.insert(style_key, image);
         image
     }
 
@@ -523,32 +526,30 @@ impl VxlPoseFrameCache {
     }
 
     /// Rasterize one `VoxelAnimClass` piece's body and ground shadow at its
-    /// bounce matrix and place both on this frame's page. `image` is the
-    /// type's `ImageFile`, which names its model (`%s.VXL`, `0x0074B56C`).
+    /// bounce matrix and place both on this frame's page. The rules asset
+    /// owner supplies the retained physical part (VoxelAnim74B4D0..74B5DB),
+    /// including a copied source model; this draw never reloads it by name.
     /// None when the model does not resolve, the piece is not drawable or the
     /// sprite exceeds the page size. `depth` is the shared depth map the body
     /// reads and writes; None draws it on a clear one.
     pub fn render_tumble(
         &mut self,
         asset_manager: &AssetManager,
-        image: &str,
+        model: &crate::rules::voxel_asset_catalog::VoxelPart,
         section: i32,
         matrix: glam::Mat4,
         use_buffer: bool,
         depth: Option<&mut crate::render::vxl_raster::DepthMap>,
     ) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)> {
         let vpl = load_vpl(&mut self.vpl, asset_manager);
-        let model = image_model(&mut self.image_models, asset_manager, image)
-            .model
-            .as_ref()?;
         if let Some(depth) = depth {
             let (body, shadow) =
-                model.render_tumble(section, matrix, vpl, use_buffer, Some(depth))?;
+                UnitModel::render_tumble(model, section, matrix, vpl, use_buffer, Some(depth))?;
             let shadow =
                 shadow.and_then(|sprite| place_sprite(&mut self.pages, sprite, None, false));
             return Some((place_sprite(&mut self.pages, body, None, false)?, shadow));
         }
-        let (body, shadow) = model.tumble_images(section, matrix, vpl, use_buffer)?;
+        let (body, shadow) = UnitModel::tumble_images(model, section, matrix, vpl, use_buffer)?;
         let shadow = shadow.and_then(|shadow| {
             place_image(&mut self.pages, &mut self.gpu, vpl, shadow, None, None)
         });
@@ -866,7 +867,7 @@ impl PosePage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::render::atlas_growth::SPRITE_PADDING;
@@ -886,6 +887,7 @@ mod tests {
     fn ground_pose(roll: f32) -> PoseTilt {
         PoseTilt::Ground(crate::render::vxl_raster::GroundPose {
             angles: [roll, 0.],
+            tunnel_tilt: None,
             body_facing: 64,
             slope_blend: None,
             turret_offset: 0,

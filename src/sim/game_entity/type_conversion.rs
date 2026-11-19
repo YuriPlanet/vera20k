@@ -5,7 +5,7 @@
 use super::GameEntity;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::object_type::ObjectCategory;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::DeliveryType;
 use crate::sim::components::DriveCoord;
@@ -15,14 +15,13 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::{FacingClass, ground_pose};
-use crate::sim::world::{FrameEffects, LifecycleOutput, Simulation, UninitContext};
+use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
 impl Simulation {
     /// Installed Ares TechnoClass_Update1004B320..1004B39C, hooked at6F9E50:
     /// sample Object+8C before GetCell5F6960 and Cell+EC, then reuse the one
     /// in-place conversion owner. A self pointer must not reset health,
     /// attachments, spotlight or tracking on every AI visit.
-    #[cfg(feature = "ares")]
     pub(crate) fn update_ares_surface_conversion(
         &mut self,
         id: u64,
@@ -61,6 +60,33 @@ impl Simulation {
         }
         let target = target.clone();
         self.convert_techno_type(id, &target, rules, effects);
+    }
+
+    /// A bare Type store (Unit `+0x6C4`), unlike [`Self::convert_techno_type`]:
+    /// team script actions 44 and 45 (`0x006E94AA`, `0x006E9511`) write
+    /// nothing else, and Ares' visceroid merge
+    /// (`UnitClass_UpdatePosition_Visceroid @ 1004C530`) only Health besides.
+    /// The Type facts VERA caches, which native reads from the Type, follow;
+    /// house tracking and Health are left as native leaves them.
+    pub(crate) fn store_techno_type(&mut self, id: u64, destination: &ObjectType, rules: &RuleSet) {
+        self.replace_live_type(id, destination, rules);
+    }
+
+    /// Publish a registered actor's new type and refresh the facts read from it.
+    fn replace_live_type(
+        &mut self,
+        id: u64,
+        destination: &ObjectType,
+        rules: &RuleSet,
+    ) -> Option<&mut GameEntity> {
+        let new_type = self.interner.intern(&destination.id);
+        // The new type is a new look for the presentation's atlas check.
+        self.substrate.entities.note_look(id);
+        let actor = self.substrate.entities.get_mut(id)?;
+        actor.type_ref = new_type;
+        actor.is_voxel = GameEntity::object_uses_voxel(&destination.id, destination, rules);
+        actor.refresh_type_projection(Some(destination), rules);
+        Some(actor)
     }
 
     pub(crate) fn convert_techno_type(
@@ -127,9 +153,7 @@ impl Simulation {
         let health = ConversionHealth::capture_in_place(actor, source, destination);
         let new_type = self.interner.intern(&destination.id);
         let actor = self
-            .substrate
-            .entities
-            .get_mut(id)
+            .replace_live_type(id, destination, rules)
             .expect("retained conversion actor");
         actor.type_ref = new_type;
         actor.is_voxel = GameEntity::object_uses_voxel(&destination.id, destination, rules);
@@ -204,9 +228,7 @@ impl Simulation {
 
         // Ext+9D is IsOperated's no-operator fast-path cache (10045440),
         // not Deactivated or DriverKilled. VERA has no such cache to clear.
-        #[cfg(feature = "ares")]
         self.reset_self_attach_effect_for_type_change(id, old_type, rules);
-        #[cfg(feature = "ares")]
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.recompute_ares_attached_stats(rules, &self.interner);
         }
@@ -265,7 +287,7 @@ impl Simulation {
             // VERA's derived atlas cache must observe the same change even
             // though the entity ID, count and Display membership stay fixed.
             self.lifecycle_outputs
-                .emit(LifecycleOutput::ObjectTypeChanged { stable_id: id });
+                .emit(crate::sim::world::LifecycleOutput::ObjectTypeChanged { stable_id: id });
         }
         // Phobos `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:722-793`), run
         // by `TechnoExt::ConvertToType` once the instance is rebound
@@ -765,10 +787,10 @@ impl Simulation {
                 }
             } else if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.capture_manager = Some(
-                    crate::sim::capture_manager::CaptureManagerState::constructed(
+                    Box::new(crate::sim::capture_manager::CaptureManagerState::constructed(
                         max_capture,
                         infinite,
-                    ),
+                    )),
                 );
             }
         } else if has_manager {

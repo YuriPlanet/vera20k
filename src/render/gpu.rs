@@ -35,9 +35,9 @@ mod web_present;
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
 /// True on the browser's WebGL2 fallback device, which has no storage buffers,
-/// compute, fragment atomics or reinterpreting texture views. Renderers that
-/// use those select render-target equivalents there; every other device keeps
-/// its ordinary path. Always false outside the browser build.
+/// compute or reinterpreting texture views. Renderers that use those select
+/// render-target equivalents there; every other device keeps its ordinary path.
+/// Always false outside the browser build.
 pub(crate) fn webgl_fallback(device: &wgpu::Device) -> bool {
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     {
@@ -166,6 +166,9 @@ impl<'a> From<&'a wgpu::AdapterInfo> for GpuAdapterObservation<'a> {
 /// Created once during app initialization when the window becomes available.
 /// Other render modules borrow `device` and `queue` from this struct.
 pub struct GpuContext {
+    /// The thread frames reach the driver on. First, so it finishes the frame
+    /// on its way and ends before the surface and device below drop.
+    handoff: super::frame_handoff::FrameHandoff,
     /// The GPU surface we render to (tied to the window).
     // Loading progress shares the GPU context with asset uploads. Only this
     // owner locks the surface, briefly, to acquire or replace a lost swapchain.
@@ -176,7 +179,7 @@ pub struct GpuContext {
     /// The logical GPU device — used to create buffers, textures, pipelines.
     pub device: wgpu::Device,
     /// The command queue — used to submit render commands to the GPU.
-    pub queue: wgpu::Queue,
+    pub queue: super::frame_handoff::HandoffQueue,
     /// Current surface configuration (format, size, present mode).
     pub config: wgpu::SurfaceConfiguration,
     /// The texture format the surface uses (needed when creating pipelines).
@@ -186,6 +189,9 @@ pub struct GpuContext {
     capture_target: Option<CaptureTarget>,
     /// The GPU time of each frame, while the Performance Stats panel shows.
     pub(crate) timer: super::gpu_timer::GpuTimer,
+    /// VERA's whole-viewport colour-vision filter. Every present path shares
+    /// it, including the synchronous loading repaints outside the frame loop.
+    pub(crate) color_vision: super::color_vision::ColorVisionFilter,
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     web_present: Arc<web_present::WebPresent>,
 }
@@ -377,16 +383,17 @@ impl GpuContext {
                 downlevel.flags
             );
         }
-        // TerrainDrawRenderer reduces ordered read-only Bullet destinations
-        // with fragment atomics. Reject an insufficient downlevel adapter here
-        // rather than panicking later during render-pipeline validation.
+        // The packed sprite resolve reads its compute results through a
+        // writable storage binding (terrain_packed.rs). Reject an insufficient
+        // downlevel adapter here rather than panicking later during bind group
+        // layout validation.
         if !webgl
             && !downlevel
                 .flags
                 .contains(wgpu::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE)
         {
             bail!(
-                "native projectile drawing requires fragment-writable storage, \
+                "native sprite drawing requires fragment-writable storage, \
                  adapter downlevel flags are {:?}",
                 downlevel.flags
             );
@@ -413,15 +420,18 @@ impl GpuContext {
 
         // Configure the surface with our chosen format and the window's current size.
         let window_size: winit::dpi::PhysicalSize<u32> = window.inner_size();
+        let (present_mode, desired_maximum_frame_latency) = present_settings(true);
         let config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
             usage: required_surface_usages,
             format: surface_format,
             width: window_size.width.max(1), // wgpu panics on 0-sized surfaces
             height: window_size.height.max(1),
-            present_mode: wgpu::PresentMode::Fifo,
+            // `App::sync_present_mode` applies the Options page's VSync box
+            // once the profile is loaded.
+            present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency,
             // wgpu 30 selects an HDR colour space per surface format; Auto keeps
             // the pre-30 sRGB behaviour for every desktop and WebGL2 backend.
             color_space: wgpu::SurfaceColorSpace::Auto,
@@ -448,7 +458,10 @@ impl GpuContext {
             surface_format
         );
 
+        let handoff = super::frame_handoff::FrameHandoff::new();
+        let queue = super::frame_handoff::HandoffQueue::new(queue, handoff.waiter());
         Ok(Self {
+            handoff,
             surface: Mutex::new(Some(surface)),
             instance,
             window,
@@ -459,14 +472,67 @@ impl GpuContext {
             adapter_info,
             capture_target,
             timer,
+            color_vision: super::color_vision::ColorVisionFilter::new(),
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present,
         })
     }
 
+    /// Publish this frame's colour-vision correction; `None` means `Off`.
+    /// The frame loop calls this once per frame, so the synchronous loading
+    /// repaints (which present outside the frame loop) use the same value.
+    pub(crate) fn set_color_vision_matrix(&self, matrix: Option<super::color_vision::Mat3>) {
+        self.color_vision.set_matrix(matrix);
+    }
+
+    /// Apply the published correction as the last draw before `present`.
+    pub(crate) fn encode_color_vision(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::Texture,
+    ) {
+        self.color_vision
+            .encode(&self.device, &self.queue, encoder, target);
+    }
+
+    /// Finish and submit `encoder`, then present `frame`, on the hand-off
+    /// thread (`frame_handoff`). Bounded submissions the frame already made
+    /// stay ahead of this one, as they went through the queue on this thread.
+    pub(crate) fn hand_off_frame(
+        &self,
+        encoder: wgpu::CommandEncoder,
+        frame: GpuFrame,
+    ) -> super::frame_handoff::FrameSubmission {
+        let queue = (*self.queue).clone();
+        let index = Arc::new(std::sync::OnceLock::new());
+        let submitted = Arc::clone(&index);
+        self.handoff.send(move || {
+            let _ = submitted.set(queue.submit(std::iter::once(encoder.finish())));
+            frame.present(&queue);
+        });
+        super::frame_handoff::FrameSubmission::new(index, self.handoff.waiter())
+    }
+
+    /// The time this thread spent blocked on a frame on its way to the driver
+    /// since the last call.
+    pub(crate) fn take_handoff_wait(&self) -> crate::util::time::Duration {
+        self.handoff.waiter().take_waited()
+    }
+
     /// Return a borrowed capture-only view of the selected adapter identity.
     pub(crate) fn capture_adapter_observation(&self) -> GpuAdapterObservation<'_> {
         GpuAdapterObservation::from(&self.adapter_info)
+    }
+
+    /// The adapter's name when it is the system's software renderer, which
+    /// draws with the processor: Windows' Microsoft Basic Render Driver or
+    /// Mesa's llvmpipe. wgpu keeps it as the last choice when no graphics card
+    /// and driver qualify (`request_adapter` sorts `DeviceType::Cpu` last
+    /// instead of leaving it out); Metal never offers one.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn software_renderer(&self) -> Option<&str> {
+        (self.adapter_info.device_type == wgpu::DeviceType::Cpu)
+            .then_some(self.adapter_info.name.as_str())
     }
 
     /// Whether the window currently owns a render surface.
@@ -484,6 +550,7 @@ impl GpuContext {
     /// https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
     #[cfg(target_os = "android")]
     pub(crate) fn suspend_surface(&mut self) {
+        self.handoff.waiter().wait();
         drop(
             self.surface
                 .get_mut()
@@ -503,6 +570,7 @@ impl GpuContext {
     /// updates the depth and offscreen targets together with the surface.
     #[cfg(target_os = "android")]
     pub(crate) fn restore_surface(&mut self) -> anyhow::Result<()> {
+        self.handoff.waiter().wait();
         let slot = self
             .surface
             .get_mut()
@@ -532,6 +600,8 @@ impl GpuContext {
         if width == 0 || height == 0 {
             return; // Minimized window — skip reconfigure
         }
+        // Configuring a surface needs its last frame presented.
+        self.handoff.waiter().wait();
         self.config.width = width;
         self.config.height = height;
         if let Some(surface) = self
@@ -555,6 +625,31 @@ impl GpuContext {
         log::debug!("Surface resized to {}x{}", width, height);
     }
 
+    /// Present in step with the display (`Fifo`), or as soon as a frame is
+    /// drawn: `AutoNoVsync` takes `Immediate`, else `Mailbox`, else `Fifo`, so
+    /// a surface without the first two keeps syncing. The Options page's
+    /// VSync box (`[VERA] VSync=`).
+    /// https://docs.rs/wgpu/30.0.1/wgpu/enum.PresentMode.html
+    pub fn set_vsync(&mut self, vsync: bool) {
+        let (mode, latency) = present_settings(vsync);
+        if self.config.present_mode == mode && self.config.desired_maximum_frame_latency == latency
+        {
+            return;
+        }
+        // Configuring a surface needs its last frame presented.
+        self.handoff.waiter().wait();
+        self.config.present_mode = mode;
+        self.config.desired_maximum_frame_latency = latency;
+        if let Some(surface) = self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
+            surface.configure(&self.device, &self.config);
+        }
+        log::info!("Surface present mode: {mode:?}");
+    }
+
     /// Take the window's next frame to draw into, or `None` when there is none
     /// this time and the next redraw should try again.
     ///
@@ -563,6 +658,9 @@ impl GpuContext {
     /// occlusion skip this redraw. Validation failures remain errors.
     /// https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfaceTexture.html
     pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
+        // A surface gives out one frame at a time, and drawing keeps plain
+        // queue clones that do not wait for themselves (`HandoffQueue`).
+        self.handoff.waiter().wait();
         let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(surface) = surface.as_mut() else {
             return Ok(None);
@@ -617,7 +715,10 @@ impl GpuContext {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         texture.create_view(&Default::default())
@@ -703,7 +804,26 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
-#[cfg(test)]
+/// The present mode and queued pictures for the VSync box: `Fifo` in step
+/// with the display, else `AutoNoVsync` (`Immediate`, else `Mailbox`, else
+/// `Fifo`).
+///
+/// VSync keeps wgpu's default two pictures queued, as every build before the
+/// box did. With one, the CPU and GPU no longer overlap: a picture whose work
+/// takes longer than one refresh waits for the next, and since a lent tick
+/// starts once per picture, the game itself slows to half speed. Without VSync
+/// a present never waits for the screen, so one queued picture only cuts the
+/// input delay.
+/// https://docs.rs/wgpu/30.0.1/wgpu/struct.SurfaceConfiguration.html#structfield.desired_maximum_frame_latency
+fn present_settings(vsync: bool) -> (wgpu::PresentMode, u32) {
+    if vsync {
+        (wgpu::PresentMode::Fifo, 2)
+    } else {
+        (wgpu::PresentMode::AutoNoVsync, 1)
+    }
+}
+
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -711,7 +831,17 @@ mod tests {
 
     use wgpu::CurrentSurfaceTexture::{Lost, Occluded, Outdated, Timeout, Validation};
 
-    use super::{CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on};
+    use super::{
+        CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, present_settings,
+    };
+
+    /// With VSync a picture over one refresh must not wait a whole refresh
+    /// more: two pictures stay queued. Without it, one keeps input delay low.
+    #[test]
+    fn vsync_keeps_two_pictures_queued() {
+        assert_eq!(present_settings(true), (wgpu::PresentMode::Fifo, 2));
+        assert_eq!(present_settings(false), (wgpu::PresentMode::AutoNoVsync, 1));
+    }
 
     /// Run one acquisition over `results`, the acquire answers in call order;
     /// returns its outcome and recovery requests. Real frame presentation is

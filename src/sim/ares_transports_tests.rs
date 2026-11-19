@@ -10,6 +10,7 @@ const RULES: &str = "\
 2=E2
 [VehicleTypes]
 0=TRNS
+1=OPENT
 [BuildingTypes]
 0=NABNKR
 1=ARMORY
@@ -33,6 +34,13 @@ Speed=6
 Passengers=3
 InitialPayload.Types=E1,E2
 InitialPayload.Nums=2
+Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}
+[OPENT]
+Strength=300
+Speed=6
+Passengers=1
+OpenTopped=yes
+InitialPayload.Types=E1
 Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}
 [NABNKR]
 Strength=500
@@ -95,6 +103,7 @@ fn kinds(sim: &Simulation, ids: &[u64]) -> Vec<String> {
 /// infantry.
 #[test]
 fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = arena(&rules);
     let transport = spawn(&mut sim, &rules, "TRNS", "Americans", 10, 10);
@@ -103,7 +112,7 @@ fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
             .entities
             .get(transport)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers()
@@ -114,7 +123,7 @@ fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
         let passenger = sim.substrate.entities.get(passenger).unwrap();
         assert!(passenger.lifecycle.in_limbo());
         assert_eq!(
-            passenger.passenger_role.inside_transport_id(),
+            passenger.passenger_role().inside_transport_id(),
             Some(transport)
         );
     }
@@ -127,11 +136,42 @@ fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
         .entities
         .get(bunker)
         .unwrap()
-        .passenger_role
+        .passenger_role()
         .occupants()
         .ids()
         .to_vec();
     assert_eq!(kinds(&sim, &occupants), ["E1"; 4]);
+    for id in occupants {
+        let rider = sim.entities().get(id).unwrap();
+        assert!(rider.lifecycle.in_limbo());
+        assert_eq!(rider.passenger_role().inside_transport_id(), Some(bunker));
+    }
+}
+
+/// CreateInitialPayload's Foot arm makes an `OpenTopped=` transport's
+/// payload a rider through EnteredOpenTopped (Ares.dll 10043E65 ->
+/// 10044880 -> 0x00710470), whose ResetOrdersToGuard (vt+0x3D0 at
+/// 0x00710484) gives it Guard before it boards.
+#[test]
+fn an_open_topped_transport_payload_rides_on_guard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules();
+    let mut sim = arena(&rules);
+    let transport = spawn(&mut sim, &rules, "OPENT", "Americans", 10, 10);
+    let rider = sim
+        .substrate
+        .entities
+        .get(transport)
+        .unwrap()
+        .passenger_role()
+        .cargo()
+        .unwrap()
+        .passengers()[0];
+    let mission = &sim.substrate.entities.get(rider).unwrap().mission;
+    assert_eq!(
+        mission.current().known(),
+        Some(crate::sim::mission::MissionType::Guard)
+    );
 }
 
 /// BuildingExt::KickOutHospitalArmory (10012920): a capture (ChangeOwner,
@@ -140,6 +180,7 @@ fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
 /// head of its cargo first.
 #[test]
 fn armory_capture_and_sale_each_kick_out_one_trainee() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = arena(&rules);
     let armory = spawn(&mut sim, &rules, "ARMORY", "Americans", 16, 10);
@@ -160,14 +201,14 @@ fn armory_capture_and_sale_each_kick_out_one_trainee() {
             .entities
             .get_mut(trainee)
             .unwrap()
-            .passenger_role = PassengerRole::inside_for_test(armory, false);
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(armory, false));
         trainee
     });
     sim.substrate
         .entities
         .get_mut(armory)
         .unwrap()
-        .passenger_role
+        .passenger_role_mut_for_test()
         .cargo_mut()
         .unwrap()
         .board_forced_chain(&[(trainees[0], 1.0), (trainees[1], 1.0)]);
@@ -190,7 +231,7 @@ fn armory_capture_and_sale_each_kick_out_one_trainee() {
             .entities
             .get(armory)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_none_or(|cargo| cargo.is_empty())
     );

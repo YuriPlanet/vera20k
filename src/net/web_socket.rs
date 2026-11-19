@@ -4,17 +4,22 @@
 
 use std::io;
 use std::net::{SocketAddr, SocketAddrV4};
+use std::time::Duration;
+
+use crate::util::time::Instant;
 
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(catch, js_namespace = globalThis, js_name = veraSocketOpen)]
-    fn open(origin: &str, channel: &str, max_datagram: usize) -> Result<u32, JsValue>;
+    fn open(origin: &str, channel: &str, relay: &str, max_datagram: usize) -> Result<u32, JsValue>;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraSocketSend)]
     fn send(id: u32, bytes: &[u8]) -> u32;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraSocketReceive)]
     fn receive(id: u32) -> JsValue;
+    #[wasm_bindgen(js_namespace = globalThis, js_name = veraSocketReceivedAgo)]
+    fn received_ago(id: u32) -> f64;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraSocketTakeRouteChange)]
     fn take_route_change(id: u32) -> bool;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraSocketClose)]
@@ -74,13 +79,18 @@ impl UdpSocket {
                 "a browser LAN socket cannot carry a relay session",
             ));
         }
-        let next = open(gateway, self.channel, vera20k_relay_protocol::MAX_DATAGRAM)
-            .map_err(|_| io::Error::other("browser proxy configuration is unavailable"))?;
+        // The gateway forwards to the grant's relay when its relay list holds it.
+        let next = open(
+            gateway,
+            self.channel,
+            &endpoint.to_string(),
+            vera20k_relay_protocol::MAX_DATAGRAM,
+        )
+        .map_err(|_| io::Error::other("browser proxy configuration is unavailable"))?;
         if let Some(previous) = self.id.replace(next) {
             close(previous);
         }
-        // This is the grant's logical source, not the last send destination.
-        // The gateway has one fixed UDP upstream and does not accept targets.
+        // Received datagrams come from the grant's relay, not the last send destination.
         self.relay = Some(endpoint);
         Ok(())
     }
@@ -148,6 +158,20 @@ impl UdpSocket {
                 "browser proxy socket is closed",
             )),
         }
+    }
+
+    /// A datagram with the moment it arrived (spec §6.5 receive time).
+    /// The game loop drains the queue only between frames, so for a relay
+    /// datagram that is the WebSocket message's arrival, which the bridge
+    /// records, not this read.
+    pub fn recv_from_at(&self, buffer: &mut [u8]) -> io::Result<(usize, SocketAddr, Instant)> {
+        let (length, source) = self.recv_from(buffer)?;
+        let now = Instant::now();
+        let Some(id) = self.id else {
+            return Ok((length, source, now));
+        };
+        let ago = Duration::from_secs_f64(received_ago(id).max(0.0) / 1000.0);
+        Ok((length, source, now.checked_sub(ago).unwrap_or(now)))
     }
 
     pub fn recv_from(&self, buffer: &mut [u8]) -> io::Result<(usize, SocketAddr)> {

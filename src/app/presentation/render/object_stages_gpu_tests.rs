@@ -24,6 +24,7 @@ use super::draw_plan_lowering::ObjectTexture;
 
 const SIZE: [u32; 2] = [1024, 768];
 const GROUPS: usize = 24;
+const CHAIN_LINKS: usize = 12;
 
 fn parent(id: u64, pieces: Vec<ObjectPieceInstance>) -> PlannedObjectInstance {
     PlannedObjectInstance::object(
@@ -183,16 +184,156 @@ fn animated_base_replays_in_fixed_passes_with_strict_order_pixels() {
     assert!(output[1] == expected[1], "Z equals strict parent order");
     // Ordinary buildings, packed bodies of every selector and Z policy (one
     // wave: 2 passes, 3 where WebGL2 snapshots apart), Z-tested shadows (a
-    // 4-pass read-only interval), no-Z shadows (packed), the last sprite: one
-    // transaction each, independent of the Anim count. The no-Z shadows'
-    // resolve joins the last sprite's pass.
-    let packed = if crate::render::gpu::webgl_fallback(&gpu.device) {
-        3
+    // read-only interval: 3 passes, 4 where WebGL2 reduces it), no-Z shadows
+    // (packed), the last sprite: one transaction each, independent of the Anim
+    // count. The no-Z shadows' resolve joins the last sprite's pass.
+    let (packed, read_only) = if crate::render::gpu::webgl_fallback(&gpu.device) {
+        (3, 4)
     } else {
-        2
+        (2, 3)
     };
     assert!(serial > GROUPS * 5, "strict order: {serial}");
-    assert_eq!(staged, 1 + packed + 4 + (packed - 1) + 1);
+    assert_eq!(staged, 1 + packed + read_only + (packed - 1) + 1);
+}
+
+/// A row of parents that each overlap the last: a shadow falling on the
+/// bodies before it, then a body over that shadow. Z differs per link, so some
+/// pieces are rejected; shadows overlap, so pixels halve twice; a page 3 body
+/// has a transparent half, which keeps what lies under it. Every third body
+/// only tests Z, and every fourth is a Z-writing edit, as a tree. Two adjacent
+/// bodies follow the second link, and one translucent body mid-row has to
+/// keep its own pass.
+fn overlap_chain_scene() -> Vec<PlannedObjectInstance> {
+    let mut parents = Vec::new();
+    let mut add = |pieces| parents.push(parent(parents.len() as u64, pieces));
+    for link in 0..CHAIN_LINKS {
+        let x = 20.0 + link as f32 * 36.0;
+        let z = [-10.0, 12.0, -30.0][link % 3];
+        let mut shadow = sprite([x - 40.0, 120.0], [96.0, 48.0], z + 4.0);
+        shadow.draw_state = DrawState::from_native_selector(0, 1);
+        let shadow = piece(
+            ObjectTexture::SpriteAtlasEdit(2, TerrainPiece::Shadow),
+            RenderZPolicy::ReadOnly,
+            shadow,
+        );
+        let instance = sprite([x, 100.0], [64.0, 64.0], z);
+        let body = if link % 4 == 3 {
+            let edit = ObjectTexture::SpriteAtlasEdit(3, TerrainPiece::Body);
+            piece(edit, RenderZPolicy::ReadWrite, instance)
+        } else if link % 3 == 2 {
+            piece(ObjectTexture::ShpPage(3), RenderZPolicy::ReadOnly, instance)
+        } else {
+            let page = ObjectTexture::ShpPage(link % 2 * 3);
+            piece(page, RenderZPolicy::ReadWrite, instance)
+        };
+        add(vec![shadow, body]);
+        if link == 1 {
+            for offset in [0.0, 20.0] {
+                let adjacent = sprite([x + offset, 90.0], [28.0, 28.0], -40.0);
+                add(vec![piece(
+                    ObjectTexture::ShpPage(1),
+                    RenderZPolicy::ReadWrite,
+                    adjacent,
+                )]);
+            }
+        }
+        if link == CHAIN_LINKS / 2 - 1 {
+            let mut translucent = sprite([x - 40.0, 96.0], [72.0, 72.0], -60.0);
+            translucent.alpha = 0.5;
+            add(vec![piece(
+                ObjectTexture::ShpPage(1),
+                RenderZPolicy::ReadOnly,
+                translucent,
+            )]);
+        }
+    }
+    parents
+}
+
+#[test]
+#[ignore = "requires GPU; production replay of overlapping bodies and shadows, overlap stages against strict order"]
+fn overlapping_bodies_and_shadows_share_passes_with_strict_order_pixels() {
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(&gpu.queue, camera(SIZE));
+    let color = gpu.target(SIZE, format);
+    let cv = color.create_view(&Default::default());
+    let depth = gpu.target(SIZE, wgpu::TextureFormat::Depth32Float);
+    let dv = depth.create_view(&Default::default());
+    let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+    let page = |rgba: &[u8], index: &[u8]| SpriteAtlasPage {
+        texture: batch.create_texture_on_device(&gpu.device, &gpu.queue, rgba, 2, 1, Some(index)),
+    };
+    let atlas = SpriteAtlas::from_test_pages(vec![
+        page(&[40, 90, 200, 255, 30, 160, 60, 255], &[1, 2]),
+        page(&[240, 200, 40, 255, 200, 40, 40, 255], &[3, 4]),
+        page(&[0, 0, 0, 255, 0, 0, 0, 255], &[1, 0]),
+        page(&[180, 120, 60, 255, 0, 0, 0, 0], &[5, 0]),
+    ]);
+    let layers = lower_object_instances(overlap_chain_scene());
+    let layer = &layers[2];
+    let mut pool = InstanceBufferPool::new();
+    pool.upload_on_device(&gpu.device, &gpu.queue, "chain", &layer.instances);
+    let mut replay = |serial: bool| -> (usize, Vec<Vec<u8>>) {
+        SERIAL.set(serial);
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            40000,
+            wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+        );
+        gpu.queue.submit([encoder.finish()]);
+        terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        draw_native_object_pass(
+            &mut encoder,
+            ObjectDrawPhase::Display,
+            &cv,
+            &dv,
+            &mut terrain,
+            [0, 0, SIZE[0], SIZE[1]],
+            &batch,
+            pool.get("chain"),
+            layer,
+            None,
+            None,
+            None,
+            Some(&atlas),
+            None,
+            batch.default_zshape_bind_group(),
+            None,
+            None,
+        );
+        SERIAL.set(false);
+        let reads = [
+            gpu.read(&mut encoder, &color),
+            gpu.read(&mut encoder, &depth),
+        ];
+        let passes = terrain.closed_passes();
+        (passes, gpu.finish(encoder, &reads, SIZE))
+    };
+    let (serial, expected) = replay(true);
+    let (staged, output) = replay(false);
+    eprintln!("serial: {serial} passes; staged: {staged} passes");
+    assert!(
+        expected[0] != vec![255; expected[0].len()],
+        "the scene draws"
+    );
+    assert!(
+        output[0] == expected[0],
+        "colour equals strict parent order"
+    );
+    assert!(output[1] == expected[1], "Z equals strict parent order");
+    assert!(serial > CHAIN_LINKS * 3, "strict order: {serial}");
+    // Both halves of the row are one interval each, the first's shadows
+    // resolving in the translucent body's ordinary pass, however long the row:
+    // bodies 2 passes, translucent 1, bodies 2, last resolve 1.
+    if terrain.depth_tested_edits() {
+        assert_eq!(staged, 2 + 1 + 2 + 1);
+    }
 }
 
 /// One light record whose quad centre projects to `center` under a zero

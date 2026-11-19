@@ -11,9 +11,7 @@ use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
-use crate::ui::wol_account::{
-    AccountDone, AccountFormAction, FORM_CANCEL, FORM_REMEMBER, WolAccountForm,
-};
+use crate::ui::wol_account::{AccountDone, AccountFormAction, FORM_CANCEL, WolAccountForm};
 use crate::ui::wol_login::*;
 use winit::keyboard::KeyCode;
 
@@ -61,7 +59,6 @@ pub(crate) fn account_form_layout(state: &AppState) -> Option<WolAccountFormLayo
     Some(crate::ui::shell::modal::wol_account_form_layout_on(
         POPUP_AREA,
         form.fields.len(),
-        form.remember.is_some(),
         login_layout(state).page.scale,
     ))
 }
@@ -159,17 +156,8 @@ fn form_action(state: &mut AppState, action: AccountFormAction) {
         AccountFormAction::Send(request) => {
             service::request(state, WolServiceRequest::Account(request));
         }
-        AccountFormAction::SignIn { sign_in, remember } => {
-            if let Some(action) = with_login(state, |login, globals, _| {
-                login.sign_in(sign_in, remember, globals)
-            }) {
-                dispatch(state, action);
-            }
-        }
-        AccountFormAction::ForgetSignIn => {
-            with_login(state, |login, _, _| login.forget_remembered());
-            dispatch(state, WolLoginAction::ForgetSignIn);
-        }
+        // Only the page's own form signs in or forgets a sign-in.
+        AccountFormAction::SignIn { .. } | AccountFormAction::ForgetSignIn => {}
         AccountFormAction::Close => {
             with_login(state, |login, _, _| login.account = None);
         }
@@ -237,6 +225,18 @@ pub(super) fn update_geometry(state: &mut AppState) {
         .scroll_to_caret((scale.base_rect(text).w - 3).max(0) as u32, |value| {
             font.text_width(value)
         });
+    // VERA online: the page's sign-in form.
+    if let Some(form) = login.form.as_mut()
+        && let Some(&(_, edit)) = layout
+            .online
+            .as_ref()
+            .and_then(|online| online.fields.get(form.focused))
+        && let Some(focused) = form.focused_edit_mut()
+    {
+        focused.scroll_to_caret((scale.base_rect(edit).w - 3).max(0) as u32, |value| {
+            font.text_width(value)
+        });
+    }
     login.password.scroll_to_caret(
         (scale.base_rect(layout.password).w - 3).max(0) as u32,
         |value| font.text_width(value),
@@ -355,7 +355,24 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         state.platform.window.request_redraw();
         return;
     }
+    // VERA online: a control of the page's sign-in form, not a button.
+    let form_control = over
+        .filter(|control| layout.online.is_some() && layout.page.button_rect(*control).is_none());
+    let on_box = layout.online.is_some_and(|online| {
+        crate::ui::skirmish_shell::checkbox_icon_rect(online.remember, scale).contains(x, y)
+    });
+    let mut forgot = None;
     let press = with_login(state, |login, globals, credentials| {
+        if let Some(control) = form_control {
+            login.buttons.press(None);
+            let (toggled, action) = login.press_form(control, on_box, globals);
+            forgot = action;
+            return if toggled {
+                Press::Cue(LauncherCue::Checkbox)
+            } else {
+                Press::Nothing
+            };
+        }
         if let Some(popup) = combo_popup(login, &layout) {
             let press = login.popup.press_list(popup, x, y, Instant::now());
             if let ComboPress::Pick(row) = press {
@@ -417,11 +434,14 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         Some(Press::Button) => App::play_main_menu_button_sound(state),
         _ => {}
     }
+    update_geometry(state);
+    if let Some(action) = forgot {
+        dispatch(state, action);
+    }
     state.platform.window.request_redraw();
 }
 
-/// The popup over the page takes the pointer. Remember password toggles on
-/// a press on its box, as the Create Game box's checkboxes.
+/// The popup over the page takes the pointer.
 fn account_mouse(
     state: &mut AppState,
     rects: &WolAccountFormLayout,
@@ -430,10 +450,6 @@ fn account_mouse(
     y: i32,
 ) {
     let over = WolAccountForm::control_at(rects, x, y);
-    let scale = login_layout(state).page.scale;
-    let on_box = rects.remember.is_some_and(|rect| {
-        crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)
-    });
     let (press, action) = with_login(state, |login, _, _| {
         let form = login.account.as_mut()?;
         Some(if !pressed {
@@ -442,16 +458,6 @@ fn account_mouse(
                 .release(over)
                 .and_then(|control| form.activate(control));
             (Press::Nothing, action)
-        } else if over == Some(FORM_REMEMBER) {
-            form.buttons.press(None);
-            if on_box {
-                (
-                    Press::Cue(LauncherCue::Checkbox),
-                    form.activate(FORM_REMEMBER),
-                )
-            } else {
-                (Press::Nothing, None)
-            }
         } else if form.press(over) {
             (Press::Button, None)
         } else {

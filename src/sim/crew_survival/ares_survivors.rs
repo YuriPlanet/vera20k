@@ -94,7 +94,7 @@ impl Simulation {
             return false;
         };
         entity.on_bridge.store(on_bridge);
-        let prior_carrier = entity.passenger_role.carrier_link();
+        let prior_carrier = entity.passenger_role().carrier_link();
         let infantry = entity.category() == EntityCategory::Infantry;
         let airborne = point.z.wrapping_sub(floor) > 0xd0;
         let placed = if airborne {
@@ -111,7 +111,7 @@ impl Simulation {
             // before class Unlimbo and restore it on refusal. Native clears+11C
             // immediately after success100447E7, before any callbacks below.
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.passenger_role.clear_carrier_relation();
+                entity.clear_carrier_relation();
             }
             let (sub_x, sub_y) = (
                 SimFixed::from_num(point.x & 255),
@@ -142,13 +142,13 @@ impl Simulation {
             if let Some(link) = prior_carrier
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
-                entity.passenger_role.set_carrier_link(link);
+                entity.set_carrier_link(link);
             }
             return false;
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.passenger_role.clear_carrier_relation();
-            entity.passenger_role.clear_transporter();
+            entity.clear_carrier_relation();
+            entity.clear_transporter();
         }
         // Phobos `FootClass_LeaveTransport` (0x4DE722): unlisted here.
         #[cfg(feature = "phobos")]
@@ -199,7 +199,6 @@ impl Simulation {
         if selected {
             self.techno_select(
                 id,
-                true,
                 UninitContext::new(rules, registry).with_effects(effects),
             );
         }
@@ -257,7 +256,8 @@ impl Simulation {
             .entities
             .get_mut(unit_id)
             .is_some_and(|unit| {
-                unit.vehicle_driver
+                unit.ares
+                    .vehicle_driver
                     .begin_survivor_release(dying.ignore_defenses)
             });
         if release_crew {
@@ -265,7 +265,7 @@ impl Simulation {
             let captor = self.substrate.entities.get(unit_id).map(|unit| {
                 (
                     unit.capture_infantry_type_index.get(),
-                    unit.vehicle_driver.captured(),
+                    unit.ares.vehicle_driver.captured(),
                 )
             });
             if let Some((index, saved)) = captor.filter(|(index, _)| *index >= 0) {
@@ -428,7 +428,7 @@ impl Simulation {
             .substrate
             .entities
             .get(unit_id)
-            .is_some_and(|unit| unit.passenger_role.passenger_count() != 0)
+            .is_some_and(|unit| unit.passenger_role().passenger_count() != 0)
         {
             let result = depart_cargo_head(
                 self,

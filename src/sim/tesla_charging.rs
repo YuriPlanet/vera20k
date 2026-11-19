@@ -28,7 +28,7 @@ use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "tesla_charging_tests.rs"]
 mod tests;
 
@@ -115,12 +115,10 @@ impl Simulation {
         // stock sample below and for every building: a `Battery.Overpower`
         // type of an active battery is overpowered. Nothing clears it again
         // for a type that is not Overpowerable.
-        #[cfg(feature = "ares")]
-        let battery = power_states
-            .get(&building.owner())
-            .is_some_and(|state| state.overpowers(&object.id));
-        #[cfg(not(feature = "ares"))]
-        let battery = false;
+        let battery = rules.ares_form()
+            && power_states
+                .get(&building.owner())
+                .is_some_and(|state| state.overpowers(&object.id));
         if object.overpowerable {
             Self::sample_tesla_charge(interner, substrate, power_states, id, rules);
         }
@@ -129,6 +127,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .building
                 .tesla_charge
                 .overpowered = true;
         }
@@ -149,12 +148,12 @@ impl Simulation {
         rules: &RuleSet,
     ) {
         let building = substrate.entities.get(id).unwrap();
-        let count = building.tesla_charge.chargers.len();
+        let count = building.building.tesla_charge.chargers.len();
         let mut over_power = 0_i32;
         // Reverse stable removal is native's order; no temporary list or
         // unconditional mutable store access is needed for unchanged chargers.
         for index in (0..count).rev() {
-            let charger = substrate.entities.get(id).unwrap().tesla_charge.chargers[index];
+            let charger = substrate.entities.get(id).unwrap().building.tesla_charge.chargers[index];
             let valid_target = substrate.entities.get(charger).is_some_and(|entity| {
                 entity.attack_target.target() == Some(TargetKind::Entity(id))
             });
@@ -174,6 +173,7 @@ impl Simulation {
                         .entities
                         .get_mut(id)
                         .unwrap()
+                        .building
                         .tesla_charge
                         .chargers
                         .remove(index);
@@ -205,11 +205,12 @@ impl Simulation {
                         ) == MaskedX87Ordering::Equal
                     }))
         };
-        if building.tesla_charge.overpowered != overpowered {
+        if building.building.tesla_charge.overpowered != overpowered {
             substrate
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .building
                 .tesla_charge
                 .overpowered = overpowered;
         }
@@ -362,12 +363,18 @@ impl Simulation {
 impl crate::sim::world::ObjectSubstrate {
     /// Bullet::Detonate46937A..4693CE. Only the two concrete object classes
     /// are checked here; alliance, range and Overpowerable are not impact gates.
-    pub(crate) fn electric_assault_detonation(&mut self, source: u64, target: Option<u64>) {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    pub(crate) fn electric_assault_detonation(
+        &mut self,
+        source: u64,
+        target: Option<u64>,
+        ares: bool,
+    ) {
         // Ares 3.0 BulletClass_Fire_Overpower (1005C650, hook 0x4693B0): a
         // Unit owner charges the building too.
         if !self.entities.get(source).is_some_and(|entity| {
             entity.category() == EntityCategory::Infantry
-                || crate::rules::ARES_ENABLED && entity.category() == EntityCategory::Unit
+                || ares && entity.category() == EntityCategory::Unit
         }) {
             return;
         }
@@ -381,6 +388,7 @@ impl crate::sim::world::ObjectSubstrate {
         self.entities
             .get_mut(target)
             .expect("the admitted building remains present")
+            .building
             .tesla_charge
             .refresh(source);
     }

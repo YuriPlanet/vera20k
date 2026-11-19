@@ -1,18 +1,19 @@
 # Ares sidebar, string-table and interface hooks
 
-Build with `--features ares`. These 72 Ares 3.0 hooks come from
+These 72 Ares 3.0 hooks come from
 `Ext/Rules/Hooks.CameoList.cpp`, `Ext/Rules/Hooks.Selects.cpp`, `Misc/Gadgets.cpp`,
 `Misc/CSFLoader.cpp`, `Misc/Interface.cpp` and `Misc/Interface.PlayerColors.cpp`.
 Most of them change how gamemd's own sidebar, gadgets and Win32 dialogs behave.
 VERA20K draws its own sidebar and shell, so each hook is listed with what it
-changes for a player and where the engine does that. Default builds keep the
-vanilla behaviour in every row marked Ported.
+changes for a player and where the engine does that. Every row marked Ported
+takes its Ares form, in every build, when Ares plays in the game
+(`RuleSet::ares`, [Ares](ares.md)); other games keep the vanilla behaviour.
 
 ## Ported
 
 - **No cameo limit and Ares' own cameo list** (`SidebarClass_AddCameo_SkipSizeCheck`
   0x6A63B7, `StripClass_AddCameo_ReplaceItAll` 0x6A8710, `SidebarClass_FlashCameo`
-  0x6AC6D9, `StripClass_RecheckCameos` 0x6AA600): an `ares` build never rejects a
+  0x6AC6D9, `StripClass_RecheckCameos` 0x6AA600): an Ares game never rejects a
   cameo for its strip's size (`strip_rejects_entry`), scans the whole strip when a
   trigger flashes a cameo (`flash_scan_limit`), inserts with `std::lower_bound`
   (an equal key enters after the existing cameo, `cameo_lower_bound`) and
@@ -42,11 +43,14 @@ vanilla behaviour in every row marked Ported.
   16), `Slot%d.ColorScheme`, `.Tooltip`, `.DisplayColor` and the `Observer.*` keys.
   Effect: the lobby offers `Count` colours chosen by scheme name, random colours are
   drawn from `Count`, the observer takes colour `Count`, and `SessionClass` maps a
-  colour slot to a `[Colors]` scheme by name. Why open: the engine fixes eight colours
-  (`HOUSE_COLOR_COUNT`, `src/skirmish_launch.rs`) through the skirmish shell, LAN and
-  WOL rows, session persistence and loading, and `SkirmishColorMode` maps a priority
-  to a scheme entry by table, not by name. With no uimd.ini `[Colors]` section Ares'
-  defaults equal the engine's eight colours and every colour row below holds.
+  colour slot to a `[Colors]` scheme by name. Why open: no uimd.ini reader exists, and
+  the engine's own list differs from Ares' numbering. VERA's lobbies list up to thirty
+  colours from the rules' `[SkirmishColors]` ([lobby player colours](skirmish-colors.md)):
+  the first eight keep priorities 0..=7, the observer keeps 8, the others take 9..=30,
+  and a random colour stays in the first eight while one is free. Ares numbers its
+  slots 0..`Count`-1, gives the observer `Count` and draws a random colour from all of
+  them. With no uimd.ini `[Colors]` section Ares' defaults equal the engine's first
+  eight colours and every colour row below holds for them.
 
 ## Dispositions
 

@@ -1,7 +1,7 @@
 # Ares GenericWarhead
 
-Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+A game that ships `ares.mix` reads and plays these keys in every build
+([Ares](ares.md)); other games keep the original superweapons.
 
 VERA supports an initial, INI-selected `Type=GenericWarhead` implementation.
 It detonates an existing warhead at the selected cell without creating a
@@ -78,8 +78,8 @@ Provide the normal art/cameo assets for your mod.
   constraints; a failed queued UseAI selector also warns its owning player.
 
 The shared parser recognizes the installed Ares table's 21 mode names. This
-is not a claim that every selector is implemented: Stealth, Self, Base,
-MultiMissile, EnemyBase, DropPod and LightningRandom still decline selection.
+is not a claim that every selector is implemented: Stealth, Base,
+MultiMissile, EnemyBase and LightningRandom still decline selection.
 The secondary defensive preferred-cell writer is also pending. Stock redirected
 superweapons retain their existing dispatch until their Ares dependencies are
 ported. The production path has focused coverage for PsychicDominator selection,

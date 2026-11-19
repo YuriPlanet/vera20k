@@ -119,7 +119,6 @@ fn a_limboed_auto_death_object_dies_only_when_allow_limboed_is_set() {
 /// uninits it, then empties the gunner slot and hands it to the **last**
 /// remaining passenger. The same arm's `Absorbed` step dirties the absorbing
 /// building's house power (House `+0x5778`).
-#[cfg(feature = "ares")]
 #[test]
 fn the_limbo_arm_settles_the_transporter_gunner_and_the_power_recheck() {
     let (mut sim, rules) = arena();

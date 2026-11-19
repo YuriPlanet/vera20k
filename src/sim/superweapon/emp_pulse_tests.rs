@@ -135,6 +135,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
 /// (an unknown cannon name is skipped), and Action none under TargetSelf.
 #[test]
 fn ares_emp_pulse_reads_its_handler_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Volley]\nEMPulse.TargetSelf=yes\nEMPulse.PulseBall=NOSUCHANIM\n");
     let pulse = rules.super_weapon("Pulse").unwrap();
     assert_eq!(pulse.kind, SuperWeaponKind::EMPulse);
@@ -164,6 +165,7 @@ fn ares_emp_pulse_reads_its_handler_keys() {
 /// and the cell; the House's EMPTarget is the cell.
 #[test]
 fn ares_emp_pulse_sends_the_cannons_in_range_up_to_its_count() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     let (mut sim, owner) = scene(&rules);
     let depot = building(&mut sim, &rules, "DEPOT", (24, 23));
@@ -198,6 +200,7 @@ fn ares_emp_pulse_sends_the_cannons_in_range_up_to_its_count() {
 /// goes back to Guard.
 #[test]
 fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Pulse]\nSW.MaxCount=1\n");
     let (mut sim, _) = scene(&rules);
     let cannon = building(&mut sim, &rules, "CANNON", (20, 20));
@@ -244,6 +247,7 @@ fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
 /// on itself instead.
 #[test]
 fn ares_emp_pulse_listed_cannons_fire_at_the_cell_or_at_themselves() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     let (mut sim, _) = scene(&rules);
     let gun = building(&mut sim, &rules, "GUN", (20, 20));
@@ -282,6 +286,7 @@ fn ares_emp_pulse_listed_cannons_fire_at_the_cell_or_at_themselves() {
 /// (an unknown name is skipped, a later list replaces).
 #[test]
 fn ares_drop_pod_reads_its_handler_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(
@@ -517,4 +522,122 @@ fn a_second_empulse_hold_appends_to_the_house_entry() {
     );
     assert_eq!(house.release_emp_pulse_sws(pulse), [first, second]);
     assert!(house.suspended_emp_pulse_sws().is_empty());
+    }
+/// Mental Omega's Iron Guard shape: an auto-firing, self-targeting EMPulse
+/// whose cannon's warhead curtains its House's nearby units.
+const IRON_GUARD: &str = "\
+[VehicleTypes]
+0=TANK
+[TANK]
+Strength=300
+[BuildingTypes]
+0=GUARD
+1=TOWER
+2=COIL
+[GUARD]
+Strength=700
+EMPulseCannon=yes
+Primary=GuardWeapon
+SuperWeapon=GuardSpecial
+[TOWER]
+Strength=700
+EMPulseCannon=yes
+Primary=GuardWeapon
+Upgrades=1
+[COIL]
+Strength=100
+PowersUpBuilding=TOWER
+PowersUpToLevel=1
+SuperWeapon=GuardSpecial
+[SuperWeaponTypes]
+0=GuardSpecial
+[GuardSpecial]
+Type=EMPulse
+IsPowered=no
+RechargeTime=1
+SW.InitialReady=yes
+SW.AutoFire=yes
+SW.ManualFire=no
+SW.AITargeting=Self
+EMPulse.TargetSelf=yes
+[WeaponTypes]
+0=GuardWeapon
+[GuardWeapon]
+Damage=-1
+Warhead=GuardWH
+[Warheads]
+0=GuardWH
+[GuardWH]
+CellSpread=3
+IronCurtain.Duration=125
+";
+
+/// `SW.AITargeting=Self` picks the providing building's own cell
+/// (PickTarget 100389C9), so the human House's automatic launch fires the
+/// Iron Guard and its warhead curtains the tank beside it.
+#[test]
+fn ares_self_targeting_auto_fire_curtains_the_tank_beside_its_building() {
+    assert_iron_guard_protects("GUARD", None);
+}
+
+/// HasSuperWeapon, the House grant pass and IsLaunchSite all admit the
+/// installed upgrade when the cannon's base type has no Super of its own.
+#[test]
+fn ares_self_targeting_auto_fire_uses_a_super_from_an_installed_upgrade() {
+    assert_iron_guard_protects("TOWER", Some("COIL"));
+}
+
+fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ini = crate::sim::arena_fixture::clear_ground_ini(IRON_GUARD);
+    let art = IniFile::from_str("[GUARD]\nFoundation=1x1\n[TOWER]\nFoundation=1x1\n");
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    super::construct_house_supers(&mut sim, &rules, owner, false);
+    let sw = sim.interner.intern("GuardSpecial");
+    let host = sim
+        .spawn_object_at_height(building, "Americans", 12, 15, 0, 0, &rules)
+        .unwrap();
+    let tank = sim
+        .spawn_object_at_height("TANK", "Americans", 14, 15, 0, 0, &rules)
+        .unwrap();
+    if let Some(upgrade) = upgrade {
+        assert!(!sim.super_weapons[&owner][&sw].is_active());
+        let temporary = sim
+            .construct_object_limbo_at_height(
+                upgrade,
+                "Americans",
+                12,
+                15,
+                0,
+                0,
+                &rules,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(sim.try_install_building_upgrade(
+            temporary,
+            host,
+            &rules,
+            crate::sim::world::UninitContext::with_rules(&rules),
+        ));
+    } else {
+        super::grant_provided_supers(&mut sim, &rules, owner);
+    }
+    assert!(sim.super_weapons[&owner][&sw].is_ready());
+    crate::sim::house_strategy::update_strategy(
+        &mut sim,
+        &rules,
+        owner,
+        None,
+        FrameEffects::default(),
+    );
+    let tank = sim.substrate.entities.get(tank).unwrap();
+    assert!(crate::sim::superweapon::invulnerability::is_invulnerable(
+        tank.invulnerability.as_ref(),
+        sim.session.binary_frame(),
+    ));
 }

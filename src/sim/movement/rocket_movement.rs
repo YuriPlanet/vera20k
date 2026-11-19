@@ -788,7 +788,7 @@ fn store_f64(value: X87Value) -> u64 {
         .bits()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::rules::missile_spawn::MissileSpawnRules;

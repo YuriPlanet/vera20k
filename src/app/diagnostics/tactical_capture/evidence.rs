@@ -428,7 +428,7 @@ pub(crate) fn build_evidence(stable: Value, run: Value) -> Result<Value> {
     Ok(Value::Object(evidence))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

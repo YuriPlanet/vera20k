@@ -10,7 +10,7 @@
 use super::ramp_repair::Family;
 use super::{Axis, Phase};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "publication_tests.rs"]
 mod tests;
 

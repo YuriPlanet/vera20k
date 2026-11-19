@@ -13,7 +13,7 @@ use crate::util::retail_trig::TrigTable;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(super) struct GrappleState {
     /// +44, cleared synchronously by the dedicated Anim expiry callback.
-    /// Only [`GrappleState::begin`] stores an Anim here.
+    /// Only [`FootParasite::begin_grapple`] stores an Anim here.
     anim: Option<u64>,
     /// +48: entry0, initial animation1, roll2/3, impact4.
     phase: i32,
@@ -28,15 +28,23 @@ impl GrappleState {
     pub(super) fn anim(&self) -> Option<u64> {
         self.anim
     }
+}
 
+impl FootParasite {
     /// UpdateSquidGrapple6297F0's entry phase publishes its Anim at +44
     /// (none when the type is absent) and starts phase 1, through
-    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
-    fn begin(&mut self, anim: Option<u64>, _: crate::sim::entity_store::AnimHolderAuthority) {
-        self.anim = anim;
-        self.phase = 1;
-        self.stage = 0;
-        self.delay = 0;
+    /// [`EntityStore::begin_parasite_grapple`](crate::sim::entity_store::EntityStore::begin_parasite_grapple).
+    pub(in crate::sim) fn begin_grapple(
+        &mut self,
+        anim: Option<u64>,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) -> Option<()> {
+        let grapple = &mut self.class_mut()?.grapple;
+        grapple.anim = anim;
+        grapple.phase = 1;
+        grapple.stage = 0;
+        grapple.delay = 0;
+        Some(())
     }
 }
 
@@ -273,14 +281,7 @@ impl Simulation {
                 };
                 self.substrate
                     .entities
-                    .write_held_anim(owner, |entity, authority| {
-                        entity
-                            .parasite
-                            .class_mut()
-                            .unwrap()
-                            .grapple
-                            .begin(anim, authority)
-                    })
+                    .begin_parasite_grapple(owner, anim)
                     .unwrap();
                 Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim);
             }
@@ -498,8 +499,7 @@ impl Simulation {
         };
         // Ares ParasiteClass_UpdateSquiddy_Culling (10053AC0, hook 0x629BC0)
         // replaces the red/elite-at-yellow test with CanCull 10052590.
-        #[cfg(feature = "ares")]
-        let admitted = {
+        let admitted = if rules.ares() {
             let (health, strength) = (target.health, kind.strength);
             let Some(veterancy) = self
                 .substrate
@@ -518,10 +518,7 @@ impl Simulation {
                 rules.general.condition_yellow,
                 &mut self.scenario_rng,
             )
-        };
-        #[cfg(not(feature = "ares"))]
-        let admitted = {
-            let _ = warhead;
+        } else {
             match crate::sim::combat::health_category(
                 target.health.current(),
                 kind.strength,
@@ -577,12 +574,10 @@ impl Simulation {
         // Ares 10053AC0 resumes past this experience block (0x629C5D) when
         // the victim's house counts the squid's house an ally (the owner
         // itself included), else at the block (0x629BF3).
-        #[cfg(feature = "ares")]
-        let gains = !self
-            .house_alliances
-            .is_allied(&self.interner, target.owner(), source.owner());
-        #[cfg(not(feature = "ares"))]
-        let gains = true;
+        let gains = !rules.ares()
+            || !self
+                .house_alliances
+                .is_allied(&self.interner, target.owner(), source.owner());
         if gains && source_type.trainable {
             self.substrate
                 .entities

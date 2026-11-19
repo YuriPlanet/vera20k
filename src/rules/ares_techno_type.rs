@@ -105,6 +105,7 @@ impl AresPrerequisiteRules {
             &[crate::rules::prerequisite::Prerequisite],
         ) -> Vec<crate::rules::prerequisite::Prerequisite>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // `INIClass::ReadInteger("Prerequisite.Lists", size - 1)`, at least
         // 0, plus one: the vector grows with empty lists or is truncated.
         // Initialize (1003DEC0) sized it to one at the first read.
@@ -220,6 +221,10 @@ pub(crate) type ResolvedTechno =
 /// unset) and +0x648 `RadialIndicatorRadius` (Nullable<int>, unset).
 #[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PresentationTypeRules {
+    /// TechnoTypeExt+0xF0, Valueable<AnimTypeClass*>; constructor 1003C884
+    /// initializes null. An omitted structured field uses that default.
+    #[serde(default)]
+    parachute_anim: Option<String>,
     /// Bound against the fixed sound catalog with the type's other sounds
     /// (`ObjectType::bind_scalar_sound_references`); `Some(None)` is an
     /// explicit silence.
@@ -230,12 +235,17 @@ pub(crate) struct PresentationTypeRules {
 }
 
 impl PresentationTypeRules {
+    /// ObjectClass_SpawnParachuted_Animation (Ares.dll 10047C60,
+    /// hook 0x5F5ADD): the type's canopy precedes its owner's country.
+    pub(crate) fn parachute_anim(&self) -> Option<&str> {
+        self.parachute_anim.as_deref()
+    }
+
     /// The voice an airstrike plays as it starts (`abort` false,
     /// AirstrikeClass_Fire_AirstrikeAttackVoice, Ares.dll 10048D60, hook
     /// 0x41D940) or is called off (`abort` true, AirstrikeClass_PointerGot
     /// Invalid_AirstrikeAbortSound 10048DE0, hook 0x41D5AE): `None` keeps
     /// the caller's value, `Some(None)` silences it.
-    #[cfg(feature = "ares")]
     pub(crate) fn airstrike_voice(&self, abort: bool) -> Option<Option<&str>> {
         self.airstrike_voices[usize::from(abort)]
             .as_ref()
@@ -245,7 +255,6 @@ impl PresentationTypeRules {
     /// `EnemyUIName`, the CSF label a non-allied player reads for a building
     /// of this type (BuildingClass_GetUIName, Ares.dll 10015DA0, hook
     /// 0x459ED0).
-    #[cfg(feature = "ares")]
     pub(crate) fn enemy_ui_name(&self) -> Option<&str> {
         self.enemy_ui_name.as_deref()
     }
@@ -253,7 +262,6 @@ impl PresentationTypeRules {
     /// `RadialIndicatorRadius`: a building's radial indicator range in cells
     /// in place of GetSensorRange's own answer (BuildingClass_GetRangeOf
     /// Radial_Radius, Ares.dll 10048E60, hook 0x4566B0).
-    #[cfg(feature = "ares")]
     pub(crate) fn radial_indicator_radius(&self) -> Option<i32> {
         self.radial_indicator_radius
     }
@@ -262,7 +270,6 @@ impl PresentationTypeRules {
 /// TechnoTypeExt `HunterSeeker.AscentSpeed`, `.DescentSpeed` and
 /// `.EmergeSpeed` (+0x3C4/+0x3CC/+0x3D4, Nullable<int>), each falling back
 /// to `[General] HunterSeekerAscentSpeed` .. (RulesExt +0x84/+0x88/+0x8C).
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HunterSeekerClimb {
     pub ascent: i32,
@@ -292,7 +299,8 @@ pub(crate) struct ResidualTypeRules {
     #[serde(default)]
     unsellable: Option<bool>,
     /// `Carryall.Allowed` (+0x2F8, Nullable<bool>) and `Carryall.SizeLimit`
-    /// (+0x2FC, Nullable<int>), unset.
+    /// (+0x2FC, Nullable<int>), unset; consumed by
+    /// `Simulation::ares_carryall_can_lift`.
     carryall_allowed: Option<bool>,
     carryall_size_limit: Option<i32>,
     /// `EVA.Lost` (+0x394, ValueableIdx<VoxClass>): Initialize seeds a
@@ -307,15 +315,17 @@ pub(crate) struct ResidualTypeRules {
     /// `.DescentSpeed` and `.EmergeSpeed` (+0x3B4..+0x3D4, Nullable<int>,
     /// unset; else the RulesExt values).
     hunter_seeker: [Option<i32>; 5],
-    /// `Assaulter.Level` (+0x42C, Valueable<int>, 0).
+    /// `Assaulter.Level` (+0x42C, Valueable<int>, 0), consumed through
+    /// [`AresTechnoTypeRules::assaulter_level`].
     assaulter_level: i32,
     /// `NoSelfGuardArea` (+0x4C8, false).
     no_self_guard_area: bool,
     /// `DigInSound`/`DigOutSound` (+0x550/+0x558, NullableIdx<VocClass>),
-    /// bound with the type's other sounds.
+    /// bound with the type's other sounds. Consumed by the Tunnel
+    /// locomotor's dig effects ([`AresTechnoTypeRules::dig_effects`]).
     dig_sounds: [Option<Option<String>>; 2],
     /// `DigIn`/`DigOut` (+0x560/+0x568, Nullable<AnimTypeClass*>, Find
-    /// only): `Some(None)` is an explicit none.
+    /// only): `Some(None)` is an explicit none. Consumed with the sounds.
     dig_anims: [Option<Option<String>>; 2],
     /// `FakeOf` (+0x600) and `Convert.Deploy` (+0x60C), Find-only
     /// Valueable<TechnoTypeClass*>, null; `Convert.Deploy` is consumed by
@@ -409,7 +419,6 @@ impl MovementTypeRules {
     /// (Unit `1004C270`, hook `0x73769E`; Building `100174E0`, hook
     /// `0x43C326`; Aircraft `10048D10`, hook `0x41949F`, whose hold VERA
     /// does not represent).
-    #[cfg(feature = "ares")]
     pub(crate) fn passenger_allowed(
         &self,
         category: crate::rules::object_type::ObjectCategory,
@@ -442,7 +451,6 @@ impl MovementTypeRules {
     /// deploys, else `[AudioVisual] DeployDir` (JumpjetLocomotionClass_State4
     /// _54C550_DeployDir 100499F0, hook 0x54C767; UnitClass_SimpleDeploy
     /// _Facing 1004C2D0, hook 0x739B8A).
-    #[cfg(feature = "ares")]
     pub(crate) fn deploy_dir(&self) -> Option<u8> {
         self.deploy_dir
     }
@@ -589,7 +597,6 @@ impl CombatTypeRules {
     /// (TechnoClass_CanFire_PsionicsImmune, Ares.dll 10049EF0, hook 0x6FC417)
     /// nor turns this type (TechnoClass_ReceiveDamage_Abilities, 1004A950,
     /// hook 0x701BFE).
-    #[cfg(feature = "ares")]
     pub(crate) fn immune_to_berserk(&self, psionics_immune: bool) -> bool {
         self.immune_to_berserk.unwrap_or(psionics_immune)
     }
@@ -649,6 +656,7 @@ impl Default for TechnoCombatGlobalRules {
 
 impl TechnoCombatGlobalRules {
     pub(crate) fn read_before_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let Some(section) = pass.section("CombatDamage") else {
             return;
         };
@@ -672,10 +680,14 @@ impl TechnoCombatGlobalRules {
     }
 }
 
-/// TechnoTypeExt+0x458..+0x468, the reload amounts and the out-of-ammo
-/// weapon.
+/// TechnoTypeExt+0x448..+0x468, the dock reload rate, the reload amounts and
+/// the out-of-ammo weapon.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AmmoTypeRules {
+    /// `ReloadRate` (Nullable<double> +0x448, minutes), unset: Rules
+    /// `ReloadRate`.
+    #[serde(default)]
+    reload_rate: Option<NativeF64Bits>,
     /// `ReloadAmount` (+0x458, 1).
     reload_amount: i32,
     /// `EmptyReloadAmount` (Nullable +0x45C/+0x460, unset).
@@ -689,6 +701,7 @@ pub(crate) struct AmmoTypeRules {
 impl Default for AmmoTypeRules {
     fn default() -> Self {
         Self {
+            reload_rate: None,
             reload_amount: 1,
             empty_reload_amount: None,
             no_ammo_amount: 0,
@@ -698,6 +711,14 @@ impl Default for AmmoTypeRules {
 }
 
 impl AmmoTypeRules {
+    /// The minutes between a docked aircraft's reloads at its airfield
+    /// (BuildingClass_MissionRepair_Reload, Ares.dll 10014190, hook
+    /// 0x44C844): `ReloadRate`, else `[General] ReloadRate`.
+    pub(crate) fn reload_rate(&self, general: f64) -> f64 {
+        self.reload_rate
+            .map_or(general, |rate| f64::from_bits(rate.bits()))
+    }
+
     /// The rounds one `TechnoClass::Reload` adds (TechnoClass_Reload_
     /// ReloadAmount, Ares.dll 10047A70, hook 0x6FB05B): `ReloadAmount`, or
     /// `EmptyReloadAmount` when set and the count is zero.
@@ -867,6 +888,16 @@ impl CustomMissileRules {
 }
 
 impl AresTechnoTypeRules {
+    /// LoadFromINIFile1003E385 -> Valueable::Read1000EB20 ->
+    /// detail::read<AnimType*>1000C9C0. This Find-only key also reads in a
+    /// stock-way pass, so its presence can enable the run-time Ares switch.
+    pub(crate) fn read_parachute_anim(&mut self, resolve: impl FnOnce(&str) -> Resolved) {
+        let _ares = crate::rules::ares_switch::ares_reads();
+        if let Some(anim) = resolve("Parachute.Anim") {
+            self.presentation.parachute_anim = anim;
+        }
+    }
+
     /// One reached `LoadFromINIFile` pass. `type_name` is the type's ID,
     /// `aircraft` whether it is an AircraftType, and `resolve` the Find-only
     /// pointer read of a key (called in read order), `resolve_techno` and
@@ -887,6 +918,7 @@ impl AresTechnoTypeRules {
         >,
         find: impl Fn(&str) -> Option<String>,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if !self.initialized {
             self.initialized = true;
             // 1003DEC0 strcmps the stored ID; it also seeds the EVA cues
@@ -927,6 +959,8 @@ impl AresTechnoTypeRules {
         roles.is_cow = section.read_ares_bool("IsCow", roles.is_cow);
         // After the Spotlight.* keys.
         roles.is_bomb = section.read_ares_bool("IsBomb", roles.is_bomb);
+        // After IsBomb and its sounds, in the DLL's read order.
+        self.read_parachute_anim(|key| resolve(key, TypeRef::Animation));
         // After Operator, InitialPayload.Types (1000EDD0) and .Nums
         // (ValueableVector<int> 1000ED00), then after the Chronoshift.* and
         // CameoPCX keys the reverse-engineering pair.
@@ -1038,8 +1072,8 @@ impl AresTechnoTypeRules {
         if let Some(warhead) = resolve("CrushDamage.Warhead", TypeRef::Warhead) {
             combat.crush_damage_warhead = Some(warhead);
         }
-        // After ReloadRate.
         let ammo = &mut self.ammo;
+        ammo.reload_rate = section.read_ares_nullable_double_bits("ReloadRate", ammo.reload_rate);
         ammo.reload_amount = section.read_ares_int("ReloadAmount", ammo.reload_amount);
         ammo.empty_reload_amount =
             section.read_ares_nullable_int("EmptyReloadAmount", ammo.empty_reload_amount);
@@ -1138,12 +1172,12 @@ impl AresTechnoTypeRules {
     /// against the fixed catalog, unknown names retain): the airstrike
     /// voices, read after VoiceIFVRepair, and the tunnel sounds, after
     /// FactoryPlant.Multiplier.
-    #[cfg(feature = "ares")]
     pub(crate) fn bind_sound_references(
         &mut self,
         section: Option<&IniSection>,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let read = |key| section.and_then(|section| sounds.read_ares_reference(section, key));
         self.presentation.airstrike_voices =
             ["VoiceAirstrikeAttack", "VoiceAirstrikeAbort"].map(read);
@@ -1152,7 +1186,6 @@ impl AresTechnoTypeRules {
 
     /// `EVA.Lost` (ValueableIdx<VoxClass>), read after SensorArray.Warn
     /// from the type's Initialize seed.
-    #[cfg(feature = "ares")]
     pub(crate) fn bind_unit_lost_eva(&mut self, eva: Option<String>) {
         self.residual.unit_lost_eva = eva;
         self.residual.unit_lost_eva_bound = true;
@@ -1162,14 +1195,29 @@ impl AresTechnoTypeRules {
     /// 0x4D98C0) and BuildingClass_Destroyed_UnitLost (10013F10, hook
     /// 0x44D760) play: `Some(None)` is the silent -1, `None` rules never
     /// bound against the EVA catalog.
-    #[cfg(feature = "ares")]
     pub(crate) fn unit_lost_eva(&self) -> Option<Option<&str>> {
         self.residual
             .unit_lost_eva_bound
             .then(|| self.residual.unit_lost_eva.as_deref())
     }
 
-    #[cfg(feature = "ares")]
+    /// `PlayDigEffects` (Ares.dll `0x100443E0`): the sound and anim of a
+    /// dig-in or dig-out, `DigInSound`/`DigIn` or `DigOutSound`/`DigOut`
+    /// (`+0x550 + (digIn ^ 1) * 8`, `+0x560 + (digIn ^ 1) * 8`). `None` is
+    /// unset, which plays the `[AudioVisual]` value; `Some(None)` is an
+    /// explicit none.
+    pub(crate) fn dig_effects(&self, dig_in: bool) -> [Option<Option<&str>>; 2] {
+        let slot = usize::from(!dig_in);
+        [
+            self.residual.dig_sounds[slot]
+                .as_ref()
+                .map(|sound| sound.as_deref()),
+            self.residual.dig_anims[slot]
+                .as_ref()
+                .map(|anim| anim.as_deref()),
+        ]
+    }
+
     pub(crate) fn presentation(&self) -> &PresentationTypeRules {
         &self.presentation
     }
@@ -1243,6 +1291,26 @@ impl AresTechnoTypeRules {
         )
     }
 
+    /// `Carryall.Allowed` (+0x2F8): whether a Carryall may lift a Unit of
+    /// this type, when set.
+    pub(crate) fn carryall_allowed(&self) -> Option<bool> {
+        self.residual.carryall_allowed
+    }
+
+    /// `Carryall.SizeLimit` (+0x2FC): the largest `Size=` this Carryall
+    /// lifts, when set.
+    pub(crate) fn carryall_size_limit(&self) -> Option<i32> {
+        self.residual.carryall_size_limit
+    }
+
+    /// `Assaulter.Level` (+0x42C): an assaulter takes a building whose type's
+    /// level is not negative and at most his own
+    /// (BuildingClass_CanBeOccupied_SpecificAssaulters, Ares.dll 10016FD0,
+    /// hook 0x457DB7; `passenger::can_dock_occupier_garrison`).
+    pub(crate) fn assaulter_level(&self) -> i32 {
+        self.residual.assaulter_level
+    }
+
     /// `Unsellable.Get(UnitsUnsellable)`: a unit of this type cannot be sold
     /// on a depot (FootClass_CanBeSold_SellUnit, Ares.dll 10048FD0, hook
     /// 0x4D9EBD).
@@ -1253,7 +1321,6 @@ impl AresTechnoTypeRules {
     /// `HunterSeeker.AscentSpeed`, `.DescentSpeed` and `.EmergeSpeed`,
     /// each `.Get(RulesExt)` (the Fly height step's hooks 0x4CDE64 and
     /// 0x4CDF54, Ares.dll 1004D930 and 1004DA20).
-    #[cfg(feature = "ares")]
     pub(crate) fn hunter_seeker_climb(
         &self,
         general: &crate::rules::native_processing::AresGeneralRules,
@@ -1269,7 +1336,6 @@ impl AresTechnoTypeRules {
 
     /// `HunterSeeker.DetonateProximity` and `.DescendProximity`, each
     /// `.Get(RulesExt)` (Horizontal_Step's hook 0x4CF3D0, Ares.dll 1004DC30).
-    #[cfg(feature = "ares")]
     pub(crate) fn hunter_seeker_proximities(
         &self,
         general: &crate::rules::native_processing::AresGeneralRules,
@@ -1288,7 +1354,6 @@ impl AresTechnoTypeRules {
     /// `InitialPayload.Types` and `InitialPayload.Nums`: the passengers or
     /// occupants an object of this type is created with
     /// (TechnoExt::ExtData::CreateInitialPayload, Ares.dll 10043C10).
-    #[cfg(feature = "ares")]
     pub(crate) fn initial_payload(
         &self,
     ) -> (
@@ -1304,7 +1369,6 @@ impl AresTechnoTypeRules {
     /// `Convert.Deploy`: the type a deployed simple deployer converts to
     /// (UnitClass_Mi_Unload_SimpleDeployer, Ares.dll 1004C070, hook
     /// 0x73DE90).
-    #[cfg(feature = "ares")]
     pub(crate) fn convert_deploy(
         &self,
     ) -> Option<&crate::rules::superweapon_type::TechnoTypeReference> {
@@ -1316,7 +1380,8 @@ fn non_empty(name: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
-#[cfg(test)]
+
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::native_processing::RulesLayerStack;
@@ -1339,6 +1404,7 @@ mod tests {
     /// unregistered V3TAKOFF leaves the takeoff puff null.
     #[test]
     fn aircraft_types_seed_their_puffs_and_keep_the_rules_block() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = rules("");
         let ext = rules.rocket_type_ext("PLAIN");
         assert_eq!(ext.trailer_anim, Some("V3TRAIL"));
@@ -1356,6 +1422,7 @@ mod tests {
     /// read Find-only: an unknown name keeps the null default.
     #[test]
     fn custom_missile_reads_its_block_warheads_and_weapons() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = rules(
             "Missile.Custom=yes\nMissile.PauseFrames=5\nMissile.TiltFrames=40\n\
              Missile.PitchInitial=0.25\nMissile.RaiseRate=2.9\nMissile.Damage=300\n\
@@ -1387,9 +1454,9 @@ mod tests {
     /// Initialize (1003DEC0) seeds IsDesolator and its RadDependant from the
     /// stored ID `DESO` and IsCow from `COW`; the keys then
     /// override, and the 1003C710 defaults hold the rest.
-    #[cfg(feature = "ares")]
     #[test]
     fn initialize_seeds_the_desolator_and_cow_roles_by_id() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::util::native_x87::NativeF64Bits;
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[InfantryTypes]\n0=DESO\n1=COW\n2=E1\n[DESO]\nStrength=1\n\
@@ -1418,9 +1485,9 @@ mod tests {
     /// none: pointers are Find only (an unknown name keeps null), the CSF
     /// label keeps 31 bytes, and the sounds and `EVA.Lost` bind against the
     /// fixed catalogs, a building keeping its unset `EVA.Lost`.
-    #[cfg(feature = "ares")]
     #[test]
     fn residual_and_presentation_keys_read_with_constructor_defaults() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
         let ini = IniFile::from_str(
             "[InfantryTypes]\n0=E1\n1=E2\n[BuildingTypes]\n0=POWR\n[Animations]\n0=DIG\n\

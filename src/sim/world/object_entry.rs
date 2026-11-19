@@ -25,15 +25,15 @@ mod entry_facts;
 pub(crate) use entry_facts::EntryFacts;
 use entry_facts::{BlockerFacts, CellFacts, PlainCell};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "unit_entry_tests.rs"]
 mod unit_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "infantry_entry_priority_tests.rs"]
 mod infantry_entry_priority_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "wall_entry_tests.rs"]
 mod wall_entry_tests;
 
@@ -42,6 +42,7 @@ mod wall_entry_tests;
 mod phobos_wall_weapon_tests;
 
 #[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "plain_entry_tests.rs"]
 mod plain_entry_tests;
 
@@ -56,8 +57,8 @@ struct EntryReadContext<'a> {
     sim: &'a Simulation,
     rules: &'a RuleSet,
     registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
-    /// A path batch's kept cell and blocker facts; `None` reads the world at
-    /// each ask.
+    /// A path search's kept cell and blocker facts ([`EntryFacts`]); `None`
+    /// reads the world at each ask.
     facts: Option<&'a EntryFacts>,
 }
 
@@ -80,7 +81,7 @@ impl<'a> EntryReadContext<'a> {
         }
     }
 
-    /// Real cell `index`'s [`PlainCell`], read through the batch's `facts`.
+    /// Real cell `index`'s [`PlainCell`], read through the kept `facts`.
     fn plain_cell(&self, facts: &EntryFacts, index: usize) -> PlainCell {
         facts.plain(index, || {
             facts.cell(
@@ -131,7 +132,7 @@ impl<'a> EntryReadContext<'a> {
     }
 }
 
-/// The cell one +1AC ask is about: a batch's kept facts of a real cell, or a
+/// The cell one +1AC ask is about: a search's kept facts of a real cell, or a
 /// cell read from the world at each use. The shared Dummy is always read at
 /// each use, because lookups off the map stamp it.
 #[derive(Clone, Copy)]
@@ -238,7 +239,7 @@ impl EntryCell {
     }
 }
 
-/// The Foot4D9C60 prelude's reads: a real cell's kept facts in a batch,
+/// The Foot4D9C60 prelude's reads: a real cell's kept facts in a search,
 /// otherwise the world, whose lookups off the map stamp the Dummy.
 struct PreludeReads<'a> {
     sim: &'a Simulation,
@@ -344,6 +345,39 @@ enum InfantryTargetAdmission {
     SkipCurrent,
 }
 
+/// 51C2E1..51C37D: the missions whose list walk compares each object with
+/// NavCom and Target. InfantryType EC2=C4 (52453D/825978), EC3=Engineer
+/// (524571/82596C). `ares` is [`RuleSet::ares`].
+fn infantry_mission_tests_targets(mover: &GameEntity, obj: &ObjectType, ares: bool) -> bool {
+    // Get_Mission (vt+0x184, 0x005B3040): current, else the queued mission.
+    match mover.mission.effective().known() {
+        Some(MissionType::Enter | MissionType::Capture | MissionType::Eaten) => true,
+        // Ares 3.0 InfantryClass_IsCellOccupied_C4Ability 10025580 (hook
+        // 0x0051C325) also admits a rank holding the C4 ability.
+        Some(MissionType::Sabotage) if ares => {
+            crate::sim::combat::veterancy::holds_c4(mover.veterancy.rank_kind(), obj)
+        }
+        Some(MissionType::Sabotage) => obj.c4,
+        Some(MissionType::AreaGuard | MissionType::Patrol | MissionType::Guard) => obj.engineer,
+        _ => false,
+    }
+}
+
+/// 51C3B1: NavCom is the Cell `cell`. It executes even with NULL or a
+/// nonmatching object NavCom. The retained Cell NavCom resolves by identity
+/// without another lookup/stamp.
+fn nav_com_is_cell(live: &EntryReadContext<'_>, mover: &GameEntity, cell: Cell) -> bool {
+    if let Some(NavTargetRef::Cell { rx, ry }) = mover.navigation.nav_com() {
+        live.terrain()
+            .native_fixed_cell_index(rx as i16, ry as i16)
+            .map(Cell::Real)
+            .unwrap_or(Cell::Dummy)
+            == cell
+    } else {
+        false
+    }
+}
+
 fn infantry_target_admission(
     live: &EntryReadContext<'_>,
     mover: &GameEntity,
@@ -352,48 +386,21 @@ fn infantry_target_admission(
     blocker: &BlockerFacts,
     selected_cell: Cell,
 ) -> Result<InfantryTargetAdmission, String> {
-    //51C2D3..51C37D: gate effects first. InfantryType EC2=C4 (52453D/
-    //825978), EC3=Engineer (524571/82596C). +1D4 is the warp latch.
+    //51C2D3: +1D4 is the warp latch.
     if blocker.warped_out {
         return Ok(InfantryTargetAdmission::Ordinary);
     }
-    // Get_Mission (vt+0x184, 0x005B3040): current, else the queued mission.
-    let eligible = match mover.mission.effective().known() {
-        Some(MissionType::Enter | MissionType::Capture | MissionType::Eaten) => true,
-        // Ares 3.0 InfantryClass_IsCellOccupied_C4Ability 10025580 (hook
-        // 0x0051C325) also admits a rank holding the C4 ability.
-        #[cfg(feature = "ares")]
-        Some(MissionType::Sabotage) => {
-            crate::sim::combat::veterancy::holds_c4(mover.veterancy.rank_kind(), obj)
-        }
-        #[cfg(not(feature = "ares"))]
-        Some(MissionType::Sabotage) => obj.c4,
-        Some(MissionType::AreaGuard | MissionType::Patrol | MissionType::Guard) => obj.engineer,
-        _ => false,
-    };
-    if !eligible {
+    if !infantry_mission_tests_targets(mover, obj, live.rules.ares()) {
         return Ok(InfantryTargetAdmission::Ordinary);
     }
     if object_target_is(mover, blocker_id) {
         return Ok(InfantryTargetAdmission::DirectTarget);
     }
-    //51C3B1 executes even with NULL or a nonmatching object NavCom. The
-    //retained Cell NavCom resolves by identity without another lookup/stamp.
     let current = blocker.position;
     let blocker_cell = live
         .terrain()
         .native_cell_identity(((current.x / 256) as i16, (current.y / 256) as i16));
-    let cell_target_is = |cell| {
-        if let Some(NavTargetRef::Cell { rx, ry }) = mover.navigation.nav_com() {
-            live.terrain()
-                .native_fixed_cell_index(rx as i16, ry as i16)
-                .map(Cell::Real)
-                .unwrap_or(Cell::Dummy)
-                == cell
-        } else {
-            false
-        }
-    };
+    let cell_target_is = |cell| nav_com_is_cell(live, mover, cell);
     let attack_target_is = |id| {
         mover.attack_target.target().is_some_and(
             |a| matches!(a, crate::sim::combat::TargetKind::Entity(target) if target == id),
@@ -654,8 +661,13 @@ impl Simulation {
     /// preferred/scan cells and0 for offered/table cells; Object5F4F3C's
     /// ordinary Unlimbo gate uses0. Foot4D9C10 forwards1 to the installed
     /// locomotor's +1C, whose eight active retail receivers are all the
-    /// side-effect-free constant-zero55ABF0 leaf. The class owner already
-    /// seeds its result0, so both modes have identical numeric behavior.
+    /// side-effect-free constant-zero55ABF0 leaf. Tunnel's (`0x0072A090`)
+    /// answers 7 for a cell that refuses burrowing
+    /// (CellClass `0x00486FF0`), and the Unit receiver returns
+    /// that 7 at once (`0x0073F3B3..0x0073F3CD`); Infantry's does not ask.
+    /// Every arm the Unit receiver leaves by before that call answers 7 too,
+    /// except direction 8's (`0x0073F218`), which never reaches it, so the
+    /// seed may be asked first for any other direction.
     /// Native48-call proof: tools/spatial_oracle/foot_locomotor_entry.*;
     /// bounded factory/depot modes: basic-factory-exit-geometry-research.
     ///
@@ -668,7 +680,7 @@ impl Simulation {
         id: u64,
         cell: (i16, i16),
         args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
-        _mode: crate::sim::movement::infantry_entry::EntryQueryMode,
+        mode: crate::sim::movement::infantry_entry::EntryQueryMode,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Result<u8, String> {
@@ -679,6 +691,17 @@ impl Simulation {
             .ok_or("Can_Enter_Cell of a retired mover")?;
         if mover.category() == EntityCategory::Aircraft {
             return Ok(self.aircraft_can_enter(id, cell));
+        }
+        if mode == crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor
+            && args.direction != 8
+            && mover.category() == EntityCategory::Unit
+            && mover
+                .locomotor
+                .as_ref()
+                .is_some_and(|locomotor| locomotor.tunnel_runtime().is_some())
+            && !self.tunnel_cell_allows_burrowing(cell)
+        {
+            return Ok(7);
         }
         let terrain = self
             .resolved_terrain
@@ -855,8 +878,8 @@ impl FootEntryReceiver<'_> {
 
 impl Simulation {
     /// The live Infantry or Unit receiver `id`, for repeated +1AC queries
-    /// against one unchanged world (a Find_Path search), reading a path
-    /// batch's kept `facts` when it has them.
+    /// against one unchanged world (a Find_Path search), reading kept
+    /// `facts` ([`EntryFacts`]) when it has them.
     pub(crate) fn foot_entry_receiver<'a>(
         &'a self,
         id: u64,
@@ -912,16 +935,16 @@ fn classify_foot_entry<'a>(
 }
 
 /// VERA-only: [`full_foot_entry`]'s answer to a compass step at a known
-/// height between two real cells of a path batch when neither cell has a
-/// structural bridge (`0x100`) or tube, the target holds no raw occupation,
-/// listed object, wall or crate, lies in the playfield and is at the path's
-/// height, and the mover is Infantry or an unrestricted Unit. Every test of
-/// the full body then passes the step through to the land row: the tube
-/// tests find no tube on the target or on the backstep (the source), the
-/// Foot4D9C60 prelude admits a level step from a flat cell and selects the
-/// ground list and ground raw byte, the object walk finds nothing, and both
-/// tails answer 0 for a clear raw byte. So the answer is 0, or 7 for a zero
-/// row (a tethered Infantry skips the row and answers 0), read from both
+/// height between two real cells of a search that keeps facts when neither
+/// cell has a structural bridge (`0x100`) or tube, the target holds no raw
+/// occupation, listed object, wall or crate, lies in the playfield and is at
+/// the path's height, and the mover is Infantry or an unrestricted Unit.
+/// Every test of the full body then passes the step through to the land row:
+/// the tube tests find no tube on the target or on the backstep (the source),
+/// the Foot4D9C60 prelude admits a level step from a flat cell and selects
+/// the ground list and ground raw byte, the object walk finds nothing, and
+/// both tails answer 0 for a clear raw byte. So the answer is 0, or 7 for a
+/// zero row (a tethered Infantry skips the row and answers 0), read from both
 /// cells' [`PlainCell`]s instead of their facts: a search's flood asks this
 /// of most cells it reaches. `None` for any other ask, which the full body
 /// answers.
@@ -1231,6 +1254,25 @@ fn full_foot_entry<'a>(
             if victim_cell == Some(p) {
                 return Ok(0);
             }
+            //51C37D..51C3B6 tests every listed object: NavCom on a tree's
+            //cell ends the walk at 51C71B (Terrain's +160 is false, 0x426490).
+            //Residual: the tree itself as NavCom or Target (51C3B6, 51C3C2)
+            //has no retail producer under these missions and no NavTargetRef.
+            if infantry
+                && infantry_mission_tests_targets(e, obj, live.rules.ares())
+                && nav_com_is_cell(live, e, cell)
+            {
+                return Ok(
+                    if layer == MovementLayer::Ground
+                        && e.tether.partner().is_none()
+                        && !target.row_nonzero(live, obj.speed_type)?
+                    {
+                        7
+                    } else {
+                        0
+                    },
+                );
+            }
             if !infantry {
                 // Unit73FBAC calls the target-sensitive +2E4 selector. Terrain
                 // has no Techno bit and is not a Cell (746CD0 ->6F3330).
@@ -1271,7 +1313,7 @@ fn full_foot_entry<'a>(
         }
         let (b, blocker) = live
             .blocker(blocker_id)
-            .ok_or("repair list has retired blocker")?;
+            .ok_or_else(|| format!("repair list has retired blocker {blocker_id} at cell {p:?}"))?;
         if victim_cell.is_some_and(|cell| cell == crate::sim::movement::coord_cell(b.position)) {
             return Ok(0);
         }
@@ -1328,6 +1370,17 @@ fn full_foot_entry<'a>(
                 return Ok(7);
             }
         }
+        //73F5B5..73F5DB: a small visceroid enters the cell of a small
+        //visceroid Unit (0), past the contacted-Building skip and before the
+        //Building branches. The two then share a cell; Ares merges them
+        //(`Simulation::ares_visceroid_merge`).
+        if !infantry
+            && obj.small_visceroid
+            && b.category() == EntityCategory::Unit
+            && bt.small_visceroid
+        {
+            return Ok(0);
+        }
         if b.category() == EntityCategory::Structure {
             if !infantry {
                 //73F57C..5A2: a contacted Building whose458A00 result is
@@ -1351,10 +1404,11 @@ fn full_foot_entry<'a>(
                 //73F5EF/73F628 have distinct type/mission pairs. +1D4 is
                 //the live warp latch. Ares 3.0 100177F0 (hook 0x73F606)
                 //sends a `Tunnel=` building down the UnitAbsorb path.
-                #[cfg(feature = "ares")]
-                let absorber = bt.unit_absorb || bt.building_type_ext().tunnel.is_some();
-                #[cfg(not(feature = "ares"))]
-                let absorber = bt.unit_absorb;
+                let absorber = if live.rules.ares() {
+                    bt.unit_absorb || bt.building_type_ext().tunnel.is_some()
+                } else {
+                    bt.unit_absorb
+                };
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && bt.grinding))
@@ -1395,12 +1449,10 @@ fn full_foot_entry<'a>(
             // is ignored; a `Firestorm.Wall` one takes the stock
             // FirestormWall branch (0x51C4D2): its owner's firestorm refuses
             // the cell, else the building is ignored.
-            #[cfg(feature = "ares")]
-            if infantry && bt.building_type_ext().is_passable {
+            if live.rules.ares() && infantry && bt.building_type_ext().is_passable {
                 continue;
             }
-            #[cfg(feature = "ares")]
-            if infantry && bt.building_type_ext().firestorm_wall {
+            if live.rules.ares() && infantry && bt.building_type_ext().firestorm_wall {
                 if live.sim.ares_firestorm.is_active(b.owner) {
                     return Ok(7);
                 }
@@ -1448,12 +1500,10 @@ fn full_foot_entry<'a>(
                 // Ares 3.0 10015100 (hook 0x73F7B0): an `IsPassable`
                 // building is ignored; a `Firestorm.Wall` one takes the stock
                 // FirestormWall branch (0x73F7BA) as for infantry.
-                #[cfg(feature = "ares")]
-                if bt.building_type_ext().is_passable {
+                if live.rules.ares() && bt.building_type_ext().is_passable {
                     continue;
                 }
-                #[cfg(feature = "ares")]
-                if bt.building_type_ext().firestorm_wall {
+                if live.rules.ares() && bt.building_type_ext().firestorm_wall {
                     if live.sim.ares_firestorm.is_active(b.owner) {
                         return Ok(7);
                     }
@@ -1463,7 +1513,7 @@ fn full_foot_entry<'a>(
                 // 0x73F7DD): only a building whose owner is allied with the
                 // unit's house has its bib passed over.
                 if bt.bib
-                    && (!crate::rules::ARES_ENABLED || mover.is_ally_of(live, b.owner))
+                    && (!live.rules.ares() || mover.is_ally_of(live, b.owner))
                     && live.sim.substrate.occupancy.first_building_on_layer(
                         (p.0 as u16).wrapping_add(1),
                         p.1 as u16,
@@ -1473,9 +1523,19 @@ fn full_foot_entry<'a>(
                     continue;
                 }
             }
-            if allied {
-                return Ok(7);
-            }
+        }
+        //51C553..51C573: an Enter mover tethered to its NavCom enters past
+        //the alliance arms. Only a warped-out NavCom gets here (51C2D9 skips
+        //51C37D, which ends the walk for any other).
+        if infantry
+            && mission == Some(MissionType::Enter)
+            && object_target_is(e, blocker_id)
+            && e.tether.partner().is_some()
+        {
+            return Ok(0);
+        }
+        if b.category() == EntityCategory::Structure && allied {
+            return Ok(7);
         }
         //73F823..844: this exact Unit target is admitted immediately. Other
         //transport capacity/radio requirements belong to the order/PerCell
@@ -1915,7 +1975,7 @@ fn building_impassable(
     Ok(!admitted)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
 
@@ -2239,13 +2299,13 @@ mod tests {
             crate::sim::slave_manager::SlaveLink::for_test(Some(hut), Vec::new());
         let slav = sim.intern("SLAV");
         let manager = |slaves: &[u64]| {
-            Some(crate::sim::slave_manager::SlaveManager::new(
+            Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
                 slav,
                 slaves.iter().copied().map(Some),
                 0,
                 0,
                 0,
-            ))
+            )))
         };
         sim.substrate.entities.get_mut(hut).unwrap().slave_manager = manager(&[slave]);
         sim.substrate.raw_cell_occupation.mark_ground(16, 15, 0x20);

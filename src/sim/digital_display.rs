@@ -83,7 +83,7 @@ pub fn values_for_display(
         }
         DigitalInfoType::Passengers => (
             entity
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .map_or(0, |cargo| cargo.count()) as i32,
             object.passengers,
@@ -116,7 +116,7 @@ pub fn values_for_display(
                 return None;
             }
             (
-                entity.passenger_role.occupants().count(),
+                entity.passenger_role().occupants().count(),
                 i32::try_from(object.max_number_occupants).unwrap_or(i32::MAX),
             )
         }
@@ -246,12 +246,13 @@ pub fn values_for_display(
             if entity.category() != crate::map::entities::EntityCategory::Structure {
                 return None;
             }
-            // `SuperWeapons=` is the Ares list; a Phobos-only build has the
-            // two stock slots and no additional entries.
-            #[cfg(feature = "ares")]
-            let additional = object.additional_super_weapons();
-            #[cfg(not(feature = "ares"))]
-            let additional: &[String] = &[];
+            // `SuperWeapons=` is the Ares list; a game Ares does not play
+            // has the two stock slots and no additional entries.
+            let additional: &[String] = if rules.ares_form() {
+                object.additional_super_weapons()
+            } else {
+                &[]
+            };
             // `getSuperTimer`: an index within `GetSuperWeaponCount()` (the two
             // stock slots plus the list) selects that slot, even an empty one;
             // zero or an index past the end falls back to the first set slot.
@@ -324,7 +325,7 @@ pub fn values_for_display(
     Some(value)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

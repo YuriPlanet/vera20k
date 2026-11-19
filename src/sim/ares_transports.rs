@@ -47,12 +47,13 @@ impl InitialPayloadState {
         !std::mem::replace(&mut self.created, true)
     }
 
-    /// Folded while still pending, so a placed object adds nothing. An
-    /// Infantry's state is never read (FootClass_Put skips Infantry and a
-    /// conversion keeps the class), so it is not folded.
+    /// Folded once created, so an object in a game without Ares (always
+    /// pending) adds nothing. An Infantry's state is never read
+    /// (FootClass_Put skips Infantry and a conversion keeps the class), so it
+    /// is not folded.
     pub(crate) fn hash_state(&self, category: EntityCategory, hasher: &mut impl std::hash::Hasher) {
-        if !self.created && category != EntityCategory::Infantry {
-            std::hash::Hash::hash(b"ares-initial-payload-pending-v1", hasher);
+        if self.created && category != EntityCategory::Infantry {
+            std::hash::Hash::hash(b"ares-initial-payload-created-v1", hasher);
         }
     }
 }
@@ -77,7 +78,7 @@ impl Simulation {
     ///     `ExtraPower=` is positive; any other first hears its HELLO
     ///     (RequestLink); then CargoClass AddPassenger and AbortMotion;
     ///   - a Foot takes the transport's Location (SetLocation vt+0x1B4), an
-    ///     `OpenTopped=` transport makes it a rider (EnteredOpenTopped
+    ///     `OpenTopped=` transport makes it a rider on Guard (EnteredOpenTopped
     ///     `0x00710470`), Transporter is the transport, and AddPassenger
     ///     (vt+0x394, a `Gunner=` transport's gunner included) runs with
     ///     VocClass::VoicesEnabled cleared, so no EnterTransportSound;
@@ -104,7 +105,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(id)
-            .is_some_and(|entity| entity.ares_initial_payload.take())
+            .is_some_and(|entity| entity.ares.ares_initial_payload.take())
         {
             return;
         }
@@ -119,11 +120,11 @@ impl Simulation {
         let occupiable = building && object.can_be_occupied;
         let mut free_slots = if occupiable {
             (object.max_number_occupants as i32)
-                .wrapping_sub(entity.passenger_role.occupants().count())
+                .wrapping_sub(entity.passenger_role().occupants().count())
         } else {
             object
                 .passengers
-                .wrapping_sub(entity.passenger_role.passenger_count() as i32)
+                .wrapping_sub(entity.passenger_role().passenger_count() as i32)
         };
         let infantry_absorb = object.infantry_absorb;
         let extra_power = object.extra_power.output() > 0;
@@ -169,14 +170,7 @@ impl Simulation {
                 #[cfg(feature = "phobos")]
                 self.register_auto_death(payload, rules);
                 if occupiable {
-                    if let Some(holder) = self.substrate.entities.get_mut(id) {
-                        holder.passenger_role.occupants_mut().add(payload);
-                    }
-                    if let Some(occupant) = self.substrate.entities.get_mut(payload) {
-                        // VERA's occupant relation, as AddGarrisonOccupant
-                        // gives it.
-                        occupant.passenger_role.set_inside_transport(id, false);
-                    }
+                    self.substrate.attach_garrison_occupant(id, payload);
                     self.refresh_spatial_threat(id, rules, None);
                 } else if building {
                     if infantry_absorb {
@@ -212,7 +206,7 @@ impl Simulation {
                     );
                     if let Some(passenger) = self.substrate.entities.get_mut(payload) {
                         // A building's cargo shares VERA's carrier relation.
-                        passenger.passenger_role.set_inside_transport(id, false);
+                        passenger.set_inside_transport(id, false);
                         // AbortMotion (`0x004DF0D0`).
                         passenger.navigation.stop_moving();
                     }
@@ -239,7 +233,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|holder| !holder.passenger_role.occupants().is_empty())
+                    .is_some_and(|holder| !holder.passenger_role().occupants().is_empty())
             {
                 self.refresh_spatial_threat(id, rules, None);
             }
@@ -291,6 +285,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ares_transports_tests.rs"]
 mod tests;

@@ -76,13 +76,14 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::{PlacementEvidence, RevealRequest, Simulation, UninitContext};
 use crate::util::direction::DIRECTION_DELTAS;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spawn_manager_oracle_tests.rs"]
 mod oracle_tests;
 #[cfg(all(test, feature = "phobos"))]
 #[path = "phobos_powered_kill_tests.rs"]
 mod powered_kill_tests;
 #[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spawn_manager_tests.rs"]
 mod tests;
 
@@ -267,7 +268,6 @@ pub struct SpawnManagerState {
 impl SpawnManagerState {
     /// Ares capture10045D76..10045D8B resumes the manager's +50 AI gate
     /// only from its -1 start sentinel, preserving the retained duration.
-    #[cfg(feature = "ares")]
     pub(crate) fn resume_update_timer(&mut self, frame: i32) {
         self.update_timer.resume(frame);
     }
@@ -276,7 +276,6 @@ impl SpawnManagerState {
     /// timers, the SpawnTimer (`+0x5C`) then the UpdateTimer (`+0x50`):
     /// `held` pauses each at its time left (0 at least), otherwise each
     /// resumes from its -1 start.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_hold_timers(&mut self, held: bool, frame: i32) {
         for timer in [&mut self.spawn_timer, &mut self.update_timer] {
             if held {
@@ -492,13 +491,14 @@ impl SpawnManagerState {
 /// created here; the world-owned constructor transaction materialises every
 /// child before the parent attempts Unlimbo. The constructor
 /// (`0x006B6C90`) writes every node timer and the SpawnTimer as
-/// `{Frame, 0}` and the UpdateTimer as `{Frame, 20}`.
+/// `{Frame, 0}` and the UpdateTimer as `{Frame, 20}`. Boxed as the entity
+/// keeps it (`GameEntity::spawn_manager`).
 pub fn init_spawn_manager(
     obj: &crate::rules::object_type::ObjectType,
     rules: &RuleSet,
     interner: &mut crate::sim::intern::StringInterner,
     frame: u32,
-) -> Option<SpawnManagerState> {
+) -> Option<Box<SpawnManagerState>> {
     let spawn_type_name = obj.spawns.as_deref()?;
     if obj.spawns_number <= 0 {
         return None;
@@ -529,7 +529,7 @@ pub fn init_spawn_manager(
     #[cfg(not(feature = "phobos"))]
     let spawn_queue: Vec<InternedId> = Vec::new();
     // The node flag and the post-launch wait: the three Rules families, and
-    // in Ares builds a `Missile.Custom` type ([`RuleSet::spawn_missile_wait_frames`]).
+    // in an Ares game a `Missile.Custom` type ([`RuleSet::spawn_missile_wait_frames`]).
     let kamikaze_wait_frames = rules.spawn_missile_wait_frames(spawn_type_name);
     let is_missile_spawn = kamikaze_wait_frames.is_some();
     let frame = frame as i32;
@@ -564,7 +564,7 @@ pub fn init_spawn_manager(
         })
         .collect();
 
-    Some(SpawnManagerState {
+    Some(Box::new(SpawnManagerState {
         spawn_type: interner.intern(spawn_type_name),
         spawn_queue,
         missile_family,
@@ -577,7 +577,7 @@ pub fn init_spawn_manager(
         current_target: None,
         queued_target: None,
         mode: SpawnManagerMode::Idle,
-    })
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -770,7 +770,7 @@ trait SpawnHost {
     /// The pool's type is Rules' `CMislType=` (`0x006B74BC`, `0x006B7513`).
     fn pool_is_cmisl(&self) -> bool;
     /// The pool's nodes are missiles: its type is one of the three Rules
-    /// families (`0x006B78F8..0x006B790E`), or in Ares builds a
+    /// families (`0x006B78F8..0x006B790E`), or in an Ares game a
     /// `Missile.Custom` type (SpawnManagerClass_Update_CustomMissile
     /// 100613A0).
     fn pool_is_spawn_missile(&self) -> bool;
@@ -1732,7 +1732,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
                 overlay_grid: sim.overlay_grid.as_ref(),
                 overlay_registry: self.context.registry(),
                 alliances: Some(&sim.house_alliances),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
         )

@@ -21,7 +21,8 @@
 //!
 //! ## Dependency rules
 //! - Part of render/ — depends on render/batch, render/gpu, map/terrain, sim/components.
-//! - Reads from sim/ via EntityStore iteration (GameEntity.position, .owner) but NEVER mutates sim state.
+//! - Reads the objects from the presentation frame (`app::presentation::frame`) and
+//!   the rest of the world from sim/, but NEVER mutates sim state.
 
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
@@ -29,6 +30,7 @@ use crate::map::playfield::PlayfieldBounds;
 use crate::map::terrain::TerrainGrid;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
+use crate::render::snapshot::SnapshotObject;
 use crate::rules::house_colors::HouseColorRamps;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
@@ -51,7 +53,9 @@ pub(crate) use super::helpers::{minimap_overlay_datum, overlay_classification};
 use super::projection::minimap_screen_point_to_camera_top_left;
 use super::projection::{MinimapPlayfieldProjection, aperture_pixel, generated_primary_copy_frame};
 use super::terrain::NativeRadarTerrainSurface;
-use super::terrain_updates::{RadarTerrainUpdateLayers, stage_radar_terrain_dirty_generation};
+use super::terrain_updates::{
+    RadarTerrainBacklog, RadarTerrainUpdateLayers, stage_radar_terrain_dirty_generation,
+};
 #[cfg(test)]
 use super::tracker::RadarTrackerEntry;
 use super::tracker::{
@@ -139,6 +143,11 @@ pub struct MinimapRenderer {
     /// Last local owner used for fog-aware refresh.
     last_visibility_owner: Option<InternedId>,
     last_radar_terrain_dirty_generation: u64,
+    /// Last relation-colours generation painted, so a toggle while paused still
+    /// forces a minimap repaint (see `MatchPresentationState::relation_color_generation`).
+    last_relation_color_generation: u64,
+    /// The drained simulation radar marks this minimap has not uploaded yet.
+    radar_terrain_backlog: RadarTerrainBacklog,
     pub(super) playfield_bounds: Option<PlayfieldBounds>,
     installed_playfield_authority: Option<PlayfieldAuthorityStamp>,
     /// Client-local +0x423/discovery cache; never snapshot/hash authority.
@@ -148,6 +157,12 @@ pub struct MinimapRenderer {
     radar_events: ClientRadarEvents,
     /// Client-local `RadarClass+0x14DC..0x14F8` current/previous rectangle.
     pub(super) viewport_state: NativeRadarViewportState,
+}
+
+impl AsMut<RadarTerrainBacklog> for MinimapRenderer {
+    fn as_mut(&mut self) -> &mut RadarTerrainBacklog {
+        &mut self.radar_terrain_backlog
+    }
 }
 
 impl MinimapRenderer {
@@ -225,6 +240,8 @@ impl MinimapRenderer {
             last_fog_generation: u64::MAX,
             last_visibility_owner: None,
             last_radar_terrain_dirty_generation: u64::MAX,
+            last_relation_color_generation: u64::MAX,
+            radar_terrain_backlog: RadarTerrainBacklog::default(),
             playfield_bounds,
             installed_playfield_authority: Some(PlayfieldAuthorityStamp {
                 bounds: playfield_bounds,
@@ -362,13 +379,20 @@ impl MinimapRenderer {
     /// counters (F10): after a load the fog view generation restarts and the
     /// restored tick may equal the pre-load tick, so equal counters no longer
     /// prove an unchanged view.
+    /// Queue radar terrain cells drained from the simulation for the next
+    /// update (see [`RadarTerrainBacklog`]).
+    pub fn queue_radar_terrain_cells(&mut self, cells: impl IntoIterator<Item = (u16, u16)>) {
+        self.radar_terrain_backlog.extend(cells);
+    }
+
     pub fn mark_stale(&mut self) {
         self.last_sim_tick = u64::MAX;
         self.last_fog_generation = u64::MAX;
-        // The restored sim's radar-terrain dirty generation restarts too. The
-        // next full reconcile derives from restored live CellClass authority;
-        // it never relies on a dirty replay from the abandoned timeline.
+        // The next full reconcile derives from restored live CellClass
+        // authority; it never relies on a dirty replay from the abandoned
+        // timeline, so that timeline's undrawn marks go too.
         self.last_radar_terrain_dirty_generation = u64::MAX;
+        self.radar_terrain_backlog.clear();
         self.uploaded_visibility = None;
         self.installed_playfield_authority = None;
         self.radar_tracker.reset_for_load_or_view();
@@ -394,11 +418,11 @@ impl MinimapRenderer {
     /// pixels, uploaded for [`Self::encode_composition`] to compose.
     /// Returns a dirty generation only after completion so the app can ack it;
     /// unchanged simulation/view inputs reuse the existing picture.
-    pub fn update_unit_dots(
+    pub(crate) fn update_unit_dots(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        entities: &crate::sim::entity_store::EntityStore,
+        frame: &impl crate::render::snapshot::SnapshotObjects,
         logic_order: &[u64],
         houses: &crate::sim::houses::Houses,
         house_colors: &HouseColorMap,
@@ -406,22 +430,29 @@ impl MinimapRenderer {
         binary_frame: u32,
         local_owner: Option<InternedId>,
         fog: &FogState,
-        alliances: &crate::map::houses::HouseAllianceMap,
+        alliances: &crate::sim::house_diplomacy::HouseAlliances,
         full_visibility: bool,
         game_mode_nonzero: bool,
         rules: Option<&RuleSet>,
         interner: Option<&crate::sim::intern::StringInterner>,
         overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         overlay_radar_colors: &HashMap<(u8, u8), [u8; 3]>,
         resolved_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-        radar_terrain_dirty_cells: &[(u16, u16)],
-        radar_terrain_dirty_generation: u64,
         beacons: Option<(
             &crate::render::beacon_art::BeaconArt,
             &[crate::render::beacon_art::BeaconDraw],
         )>,
+        relation_color_generation: u64,
     ) -> Option<u64> {
+        // RESIDUAL (dormant: retail rules set ShroudGrow=no and FogOfWar=no):
+        // gamemd repaints a radar cell only once it is marked
+        // (RadarClass::MarkCellPixelsDirty 0x006565A0, reached only through
+        // MapClass::NotifyCellVisibilityChanged 0x005865F0). Neither regrowth
+        // pass (RegrowShroud 0x004ACAC0, RegrowFog 0x004ACBC0) marks one;
+        // the 120-frame edge sweep 0x00578100 does only where a cell's shroud
+        // edge becomes -2. So its radar shows regrown cells late or, for fog,
+        // not at all. VERA composes shroud and fog from the live cell flags
+        // on every fog change and shows the regrowth at once.
         let fog_generation = if full_visibility {
             0
         } else {
@@ -431,7 +462,8 @@ impl MinimapRenderer {
         if sim_tick == self.last_sim_tick
             && fog_generation == self.last_fog_generation
             && visibility_owner == self.last_visibility_owner
-            && radar_terrain_dirty_generation == self.last_radar_terrain_dirty_generation
+            && self.radar_terrain_backlog.generation() == self.last_radar_terrain_dirty_generation
+            && relation_color_generation == self.last_relation_color_generation
         {
             return None;
         }
@@ -442,12 +474,13 @@ impl MinimapRenderer {
                 overlay_pixels: &mut self.overlay_pixels,
                 native_surface: self.native_radar_surface,
                 native_terrain: &mut self.native_radar_terrain,
+                playfield: self.playfield_bounds,
             },
-            CurrentRadarCellAuthority::new(resolved_terrain, overlay_grid, overlay_registry, rules),
+            CurrentRadarCellAuthority::new(resolved_terrain, overlay_grid, rules),
             self.structural_bridge_radar_color,
             overlay_radar_colors,
-            radar_terrain_dirty_cells,
-            radar_terrain_dirty_generation,
+            self.radar_terrain_backlog.cells(),
+            self.radar_terrain_backlog.generation(),
             self.last_radar_terrain_dirty_generation,
         );
         if visibility_owner != self.last_visibility_owner && self.last_sim_tick != u64::MAX {
@@ -469,16 +502,15 @@ impl MinimapRenderer {
         // One isolated query per pass: radar lookups stamp their own copy
         // of the fallback Cell, never the simulation's.
         let cells = resolved_terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
-        self.radar_tracker.remove_absent_or_ineligible(entities);
+        self.radar_tracker.remove_absent_or_ineligible(frame);
         if self.radar_tracker.take_action40_building_tail_pending() {
-            for stable_id in entities.keys_sorted().into_iter().rev() {
-                let Some(entity) = entities.get(stable_id) else {
-                    continue;
-                };
+            // The frame's records are in stable-id order.
+            let records: Vec<_> = frame.objects().collect();
+            for entity in records.into_iter().rev() {
                 if entity.category() != EntityCategory::Structure {
                     continue;
                 }
-                if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
+                if !entity.lifecycle().object_alive() || entity.lifecycle().in_limbo() {
                     continue;
                 }
                 let update = build_radar_object_update(
@@ -501,7 +533,7 @@ impl MinimapRenderer {
             }
         }
         for &stable_id in logic_order {
-            let Some(entity) = entities.get(stable_id) else {
+            let Some(entity) = frame.object(stable_id) else {
                 continue;
             };
             let update = build_radar_object_update(
@@ -546,7 +578,7 @@ impl MinimapRenderer {
             };
             radar_pixel_candidate_eligible(
                 entry,
-                entities,
+                frame,
                 houses,
                 local_owner,
                 fog,
@@ -560,29 +592,44 @@ impl MinimapRenderer {
             )
         });
         self.stores.clear();
+        // An undisguised object's pixel takes its owner's colour, the same
+        // for every pixel of that house in this update.
+        let mut owner_colors: Vec<(InternedId, [u8; 4])> = Vec::new();
         for entry in winners {
-            let Some(entity) = entities.get(entry.stable_id) else {
+            let Some(entity) = frame.object(entry.stable_id) else {
                 continue;
             };
-            let owner_allied_with_observer = local_owner.is_some_and(|observer| {
-                entity.owner() == observer
-                    || interner.is_some_and(|interner| {
-                        crate::map::houses::is_allied_with(
-                            alliances,
-                            interner.resolve(entity.owner()),
-                            interner.resolve(observer),
-                        )
-                    })
-            });
-            let color = radar_entity_owner_color(
-                entity,
-                interner,
-                house_colors,
-                ramps,
-                local_owner,
-                owner_allied_with_observer,
-            );
-            let color = if radar_combat_flash_inverts(entity, local_owner, binary_frame, rules) {
+            let disguised = entity.disguise().is_some_and(|d| d.is_disguised());
+            let color = match owner_colors
+                .iter()
+                .find(|(owner, _)| !disguised && *owner == entity.owner())
+            {
+                Some(&(_, color)) => color,
+                None => {
+                    // Radar655F48 asks the disguise's house, and with it
+                    // whether the owner allies the observer, only of a
+                    // disguised object.
+                    let owner_allied_with_observer = disguised
+                        && local_owner.is_some_and(|observer| {
+                            entity.owner() == observer
+                                || interner.is_some_and(|interner| {
+                                    alliances.is_allied(interner, entity.owner(), observer)
+                                })
+                        });
+                    let color = radar_entity_owner_color(
+                        entity,
+                        interner,
+                        house_colors,
+                        ramps,
+                        owner_allied_with_observer,
+                    );
+                    if !disguised {
+                        owner_colors.push((entity.owner(), color));
+                    }
+                    color
+                }
+            };
+            let color = if radar_combat_flash_inverts(entity, local_owner, rules) {
                 crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
                     .invert_rgba8(color)
             } else {
@@ -633,15 +680,37 @@ impl MinimapRenderer {
                 if let Some(terrain) = &self.native_radar_terrain {
                     self.compositor.refresh_terrain(queue, terrain);
                     if self.uploaded_visibility != Some(visibility) {
-                        let shown = match local_owner.filter(|_| !full_visibility) {
+                        // The plane's flags, gathered from its shared chunks.
+                        let plane = local_owner.filter(|_| !full_visibility).map(|owner| {
+                            fog.by_owner()
+                                .get(&owner)
+                                .map(|plane| (plane.cells_raw(), (plane.width(), plane.height())))
+                        });
+                        // The fallback Cell a raised pixel can land on: open
+                        // as the viewer's retained Dummy record says.
+                        let dummy =
+                            local_owner
+                                .zip(resolved_terrain)
+                                .is_some_and(|(owner, terrain)| {
+                                    crate::sim::vision::cell_ground_mapped(
+                                        fog,
+                                        terrain,
+                                        owner,
+                                        crate::map::cell_index::NativeCellIdentity::Dummy,
+                                    )
+                                });
+                        let shown = match &plane {
                             None => RadarVisibility::Revealed,
-                            Some(owner) => fog.by_owner().get(&owner).map_or(
-                                RadarVisibility::Shrouded,
-                                |plane| RadarVisibility::Plane {
-                                    flags: plane.cells_raw(),
-                                    size: (plane.width(), plane.height()),
+                            Some(None) => RadarVisibility::Shrouded,
+                            Some(Some((flags, size))) => RadarVisibility::Plane {
+                                flags,
+                                size: *size,
+                                dummy: if dummy {
+                                    crate::sim::vision::FLAG_REVEALED
+                                } else {
+                                    0
                                 },
-                            ),
+                            },
                         };
                         self.compositor.set_visibility(device, queue, shown);
                         self.uploaded_visibility = Some(visibility);
@@ -650,11 +719,11 @@ impl MinimapRenderer {
                     self.compositor.set_fallback_base(queue, &self.rgba_scratch);
                 }
                 self.compositor.set_stores(device, queue, &self.stores);
-                self.compositor.request();
             },
         );
         self.last_sim_tick = sim_tick;
         (self.last_fog_generation, self.last_visibility_owner) = (fog_generation, visibility_owner);
+        self.last_relation_color_generation = relation_color_generation;
         consumed_radar_terrain_generation
     }
 
@@ -830,6 +899,11 @@ impl MinimapRenderer {
         self.compositor.encode(device, encoder);
     }
 
+    /// A number that changes whenever [`Self::map_texture`]'s picture does.
+    pub fn picture_generation(&self) -> u64 {
+        self.compositor.generation()
+    }
+
     /// The minimap picture for drawing: the HD radar's while it is on. Both
     /// fill the same normalized copy frame.
     pub fn map_texture(&self) -> &BatchTexture {
@@ -886,10 +960,10 @@ fn create_white_texture(
     batch.create_texture_on_device(device, queue, &white_rgba, 2, 2, None)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "minimap_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "minimap_gpu_tests.rs"]
 mod gpu_tests;

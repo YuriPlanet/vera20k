@@ -47,11 +47,12 @@ fn on_fire(sim: &Simulation, id: u64) -> bool {
 
 /// Ares TerrainClass_ReceiveDamage_ForestFire (1004F4E0, hook 0x71B99E)
 /// and Catch_Fire (0x71C5B0, gate 1004F4B0): a `Sparky=` hit sets an
-/// `IsFlammable=` tree alight under one `TreeFire=` anim the tree owns; a
-/// plain tree refuses. When that anim leaves, Finish_Fire_Death (0x71C6B0,
+/// `IsFlammable=` tree alight under one `TreeFire=` anim the tree owns, 80
+/// leptons above it; a plain tree refuses. When that anim leaves, Finish_Fire_Death (0x71C6B0,
 /// the SetOwnerObject callback 0x424BB0) puts the fire out.
 #[test]
 fn ares_a_sparky_hit_sets_a_flammable_tree_alight_until_its_fire_anim_ends() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for sparky in [true, false] {
         let rules = fire_rules(sparky);
         let mut sim = Simulation::new();
@@ -91,6 +92,13 @@ fn ares_a_sparky_hit_sets_a_flammable_tree_alight_until_its_fire_anim_ends() {
         assert_eq!(fires.len(), 1);
         let fire = sim.anim(fires[0]).unwrap();
         assert!(["FIRE01", "FIRE02"].contains(&sim.interner.resolve(fire.type_id())));
+        let tree = sim.terrain_objects.get(700).unwrap().world_coord();
+        let at = fire.world_coord();
+        assert_eq!(
+            (at.x, at.y, at.z),
+            (tree.x, tree.y, tree.z + 80),
+            "Catch_Fire 0x0071C638 raises the fire 80 leptons"
+        );
         assert!(sim.substrate.anims.owned_by_terrain(701).is_empty());
 
         sim.destroy_anim_with_context(fires[0], &rules);
@@ -238,6 +246,7 @@ fn a_burning_tree_with_crumbling_frames_crumbles_instead_of_vanishing() {
 /// neighbour refuses.
 #[test]
 fn ares_a_burning_tree_spreads_to_its_flammable_neighbours() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = fire_rules(true);
     let mut sim = Simulation::new();
     sim.resolve_type_handles(&rules);

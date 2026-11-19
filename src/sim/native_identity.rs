@@ -15,18 +15,23 @@ use crate::sim::world::Simulation;
 pub(crate) const FRESH_SCENARIO_NATIVE_ID_SEED: u32 = 1_000_000;
 pub(crate) const MAP_READ_NATIVE_ID_RESERVATION: u32 = 0x2710;
 
-/// VERA modern online startup policy: original multi-human WOL admissions
-/// share one pre-map checkpoint, independent of each process's Rules history.
-/// Native LAN and original solo AI retain their actual Full_Init checkpoint.
+/// VERA network startup policy: LAN and online games originally admitted with
+/// more than one human share one pre-map checkpoint. The Full_Init checkpoint
+/// follows each process's Rules history (the host's Create Random Map dialog,
+/// an earlier Skirmish), so players would otherwise build worlds whose native
+/// IDs differ, and the startup agreement hashes those IDs. Native LAN never
+/// compared them (Receive64A0C0 checks only the seed at 64A5DD..64A5E8).
+/// Solo games keep their actual Full_Init checkpoint.
 /// This intentionally changes native-history phases: guided bullets use
 /// UID-dependent modulo15 timing, powered-unit modulo30 sparks consume two Scenario draws, and gas/
 /// particle UID cadence affects lifetime. Those algorithms remain unchanged;
 /// the shared startup input makes the resulting trajectory deterministic.
-pub fn modern_online_native_id_prefix(
+pub fn network_native_id_prefix(
     mode: crate::sim::scenario_session::ScenarioGameMode,
     original_humans: usize,
 ) -> Option<u32> {
-    (mode == crate::sim::scenario_session::ScenarioGameMode::Wol && original_humans > 1)
+    use crate::sim::scenario_session::ScenarioGameMode;
+    (matches!(mode, ScenarioGameMode::Lan | ScenarioGameMode::Wol) && original_humans > 1)
         .then_some(0)
 }
 
@@ -41,7 +46,7 @@ enum NativeFreshIdPhase {
 /// One Scenario's wrapping numeric-ID cursor. Original689310/689470 save/load
 /// +214 as part of the raw Scenario block;683560 preserves it while resetting
 /// the adjacent RNG. Evidence: tools/spatial_oracle/native_id_snapshot.
-#[derive(Debug, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, serde::Serialize, serde::Deserialize)]
 pub struct NativeUniqueIdCursor {
     value: u32,
     saved_after_fresh_prefix: u32,
@@ -193,7 +198,7 @@ pub enum NativeMapTubeConstructionError {
 impl Simulation {
     /// Effective saved pre-map checkpoint used by this world, independent of
     /// later allocations. It may be Full_Init's process-history result or an
-    /// accepted modern online policy; replay records the actual chosen input.
+    /// accepted network startup policy; replay records the actual chosen input.
     pub fn native_identity_prefix_checkpoint(&self) -> Option<u32> {
         self.native_unique_ids.as_ref().and_then(|cursor| {
             (cursor.phase == NativeFreshIdPhase::MapReadReserved)
@@ -202,7 +207,7 @@ impl Simulation {
     }
 
     /// An immutable startup supplies its checkpoint: the actual recorded
-    /// prefix for replay, or the modern online shared policy above. Install
+    /// prefix for replay, or the network startup policy above. Install
     /// it at the same pre-map fence;
     /// mapreader4AD026 still performs the one saved+0x2710 reservation and all
     /// subsequent constructors allocate normally through this cursor.
@@ -398,7 +403,7 @@ fn resize_constructor_count(map_width: u32, map_height: u32) -> u32 {
         .wrapping_add(1)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::{
         MAP_READ_NATIVE_ID_RESERVATION, NativeFreshIdPrefixCheckpoints,

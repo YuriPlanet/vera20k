@@ -303,16 +303,12 @@ pub(crate) fn area_damage_enters(
     damage: i32,
     warhead: &WarheadType,
     scenario_no_damage: bool,
+    ares: bool,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    let zero_admitted = warhead
-        .ares_combat()
-        .is_some_and(|combat| combat.allow_zero_damage());
-    #[cfg(not(feature = "ares"))]
-    let zero_admitted = {
-        let _ = warhead;
-        false
-    };
+    let zero_admitted = ares
+        && warhead
+            .ares_combat()
+            .is_some_and(|combat| combat.allow_zero_damage());
     !scenario_no_damage && (damage != 0 || zero_admitted)
 }
 
@@ -497,6 +493,9 @@ pub(crate) struct AoECollector {
     spread_leptons: i64,
     exact_impact: AoEAirImpact,
     native_occupancy: bool,
+    /// Whether Ares plays in this game, read once at the entry: the cells
+    /// walked and the record limit must not change under the collector.
+    ares: bool,
     /// [`crate::sim::scenario_session::ScenarioSession::truce_harvester_types`]:
     /// the `HarvesterUnit=` types while ScenarioFlags bit 0x800 is set.
     truce_harvesters: Vec<crate::sim::intern::InternedId>,
@@ -573,7 +572,7 @@ impl AoECollector {
         // Apply_area_damage returns at entry for signed zero. Nothing downstream
         // observes CellSpread, wall routing, object lists, target detach, or RNG.
         // Native ScenarioFlags bit 0x20 shares that transaction-wide early-out.
-        if !area_damage_enters(base_damage, warhead, scenario_no_damage) {
+        if !area_damage_enters(base_damage, warhead, scenario_no_damage, rules.ares()) {
             return None;
         }
         let mut origin = origin;
@@ -706,6 +705,7 @@ impl AoECollector {
             spread_leptons,
             exact_impact,
             native_occupancy: native_occupancy.is_some(),
+            ares: rules.ares(),
             truce_harvesters,
             #[cfg(feature = "phobos")]
             merge_building_damage: warhead
@@ -901,7 +901,7 @@ impl AoECollector {
         warhead: &WarheadType,
     ) -> AoEDamageResult {
         if self.native_occupancy {
-            limit_records_per_object(&mut self.result, warhead);
+            limit_records_per_object(&mut self.result, warhead, self.ares);
             #[cfg(feature = "phobos")]
             if self.merge_building_damage {
                 merge_building_records(
@@ -912,6 +912,7 @@ impl AoECollector {
                     self.base_damage,
                 );
             }
+            limit_records_per_object(&mut self.result, warhead, self.ares);
             return finalize_receiver_isolation_metadata(self.result, warhead);
         }
 
@@ -964,7 +965,7 @@ impl AoECollector {
             );
         }
 
-        limit_records_per_object(&mut self.result, warhead);
+        limit_records_per_object(&mut self.result, warhead, self.ares);
         #[cfg(feature = "phobos")]
         if self.merge_building_damage {
             merge_building_records(
@@ -975,6 +976,7 @@ impl AoECollector {
                 self.base_damage,
             );
         }
+        limit_records_per_object(&mut self.result, warhead, self.ares);
         finalize_receiver_isolation_metadata(self.result, warhead)
     }
 }
@@ -991,9 +993,12 @@ impl AoECollector {
 /// records, while native arms it during collection. Only a dropped record
 /// nearer than 85 leptons that arms while every kept one cannot differs,
 /// which a building's equal-distance records never produce.
-pub(super) fn limit_records_per_object(result: &mut AoEDamageResult, warhead: &WarheadType) {
-    #[cfg(feature = "ares")]
-    {
+pub(super) fn limit_records_per_object(
+    result: &mut AoEDamageResult,
+    warhead: &WarheadType,
+    ares: bool,
+) {
+    if ares {
         let Some(max_affect) = warhead
             .ares_combat()
             .map(|combat| combat.cell_spread_max_affect())
@@ -1051,8 +1056,6 @@ pub(super) fn limit_records_per_object(result: &mut AoEDamageResult, warhead: &W
                 .collect();
         }
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = (result, warhead);
 }
 
 /// Phobos `MergeBuildingDamage` (`Ext/WarheadType/Hooks.cpp:410-487`): one
@@ -1199,7 +1202,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
     ) else {
         return AoEDamageResult::default();
     };
-    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64).iter() {
+    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
         let cell = collector.prepare_cell(dx, dy, warhead, &mut layer_context, &mut cell_prelude);
         collector.capture_cell(&cell, entities, &layer_context, terrain_objects);
     }
@@ -1298,8 +1301,9 @@ fn impact_is_above_ground(
     // the floor must exceed DamageAirThreshold (default 0, the native
     // `floor < Z`); with `[General] DamageAirConsiderBridges=yes` a bridge
     // cell (flag 0x100) measures from its 416-lepton deck once reached.
-    #[cfg(feature = "ares")]
-    if let Some(combat) = warhead.ares_combat() {
+    if rules.ares()
+        && let Some(combat) = warhead.ares_combat()
+    {
         const BRIDGE_HEIGHT_LEPTONS: i32 = 416;
         let mut height = impact.z_leptons.wrapping_sub(floor);
         if height >= BRIDGE_HEIGHT_LEPTONS
@@ -1314,8 +1318,6 @@ fn impact_is_above_ground(
         }
         return height > combat.damage_air_threshold();
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = (warhead, rules);
     floor < impact.z_leptons
 }
 
@@ -1570,7 +1572,7 @@ fn push_terrain_aoe_damage(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
 
@@ -2974,7 +2976,6 @@ mod tests {
 
     /// Stock table only: Ares walks the CellSpreadEnumerator instead
     /// (`cell_spread::area_damage_cells`, hooks `0x4895B8`..`0x4899BE`).
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_04_07_damage_band11_repeated_cell_dispatches_receiver_twice() {
         let ini = IniFile::from_str(
@@ -3085,9 +3086,9 @@ mod tests {
     /// hooks `0x4895B8`/`0x4895C7`/`0x4899BE`): the CellSpreadEnumerator's
     /// first ring visits `(-1,-1)` before `(1,-1)`; the stock table visits
     /// `(1,-1)` first.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_area_damage_walks_the_cell_spread_enumerator_ring_order() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[InfantryTypes]\n\
              [VehicleTypes]\n0=TESTUNIT\n\
@@ -3735,7 +3736,6 @@ mod tests {
     // Stock house admission only. Ares replaces the ally gate with
     // WarheadExt 10051B70 on the live attacker's owner (receiver_call.rs, with
     // its own tests), where a same-owner target follows AffectsAllies.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_04_07_damage_receiver_pipeline_source_admission_and_house_snapshot() {
         fn run(
@@ -4802,8 +4802,9 @@ mod tests {
                     )));
                 }
                 if case["open_transport"] == true {
-                    victim.passenger_role =
-                        crate::sim::passenger::PassengerRole::inside_for_test(1, true);
+                    victim.set_passenger_role_for_test(
+                        crate::sim::passenger::PassengerRole::inside_for_test(1, true),
+                    );
                 }
             }
             entities.insert(victim);

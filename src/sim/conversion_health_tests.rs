@@ -192,6 +192,41 @@ fn undeploy(sim: &mut Simulation, rules: &RuleSet, building: u64, into: &str) ->
         .stable_id()
 }
 
+/// `BuildingClass::Mission_Selling @ 0x00449FED..0x0044A002`: the repacked
+/// unit's Unlimbo direction is the building type's DeployFacing, 0x80 when
+/// the key is missing, as on the retail construction yards.
+#[test]
+fn undeployed_unit_faces_the_building_types_deploy_facing() {
+    for (key, expected) in [("", 0x80), ("DeployFacing=2\n", 0x40)] {
+        let rules = with_buildup(
+            RuleSet::from_ini_with_fixed_art_for_test(
+                &IniFile::from_str(&format!(
+                    "[VehicleTypes]\n0=MCV\n[BuildingTypes]\n0=YARD\n1=YAREFN\n\
+                     [MCV]\nStrength=100\nSpeed=5\nDeploysInto=YARD\n\
+                     [YARD]\nStrength=1000\n{key}UndeploysInto=MCV\n\
+                     [YAREFN]\nStrength=1000\n[Clear]\nBuildable=yes\n"
+                )),
+                &IniFile::from_str(CONVERSION_ART),
+            )
+            .unwrap(),
+        );
+        let mut sim = Simulation::with_seed(123);
+        let yard = sim
+            .spawn_object_at_height("YARD", "Neutral", 10, 10, 0, 0, &rules)
+            .unwrap();
+        let unit = undeploy(&mut sim, &rules, yard, "MCV");
+        let frame = sim.session.binary_frame();
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(unit)
+                .unwrap()
+                .body_facing_byte(frame),
+            expected
+        );
+    }
+}
+
 #[test]
 fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
     let rules = rules();

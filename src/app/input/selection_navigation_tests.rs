@@ -179,7 +179,6 @@ struct CommandStep {
     modes: Modes,
     placement: bool,
     selection_mode: u32,
-    selection_across_map: bool,
     center_coord: Option<[i32; 3]>,
     redraw: Vec<u32>,
     call_order: Vec<String>,
@@ -264,13 +263,11 @@ fn veterancy_navigation_keeps_shared_snapshot_without_pointer_expiry() {
         .type_select
         .finish_category_navigation(CategoryNavigationKind::Health, true);
     input.type_select.across_map = true;
-    sim.entities_mut_for_test()
-        .get_mut(20)
+    sim.entity_mut_for_test(20)
         .unwrap()
         .lifecycle
         .set_object_alive_for_test(false);
-    sim.entities_mut_for_test()
-        .get_mut(40)
+    sim.entity_mut_for_test(40)
         .unwrap()
         .selection
         .set_selected_for_test(false);
@@ -799,8 +796,7 @@ fn replay_category_history(
                 .category_navigation
                 .pointer_expired(step["id"].as_u64().unwrap()),
             "supply_veterancy_raw_bits" => {
-                sim.entities_mut_for_test()
-                    .get_mut(step["id"].as_u64().unwrap())
+                sim.entity_mut_for_test(step["id"].as_u64().unwrap())
                     .unwrap()
                     .veterancy
                     .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
@@ -809,8 +805,7 @@ fn replay_category_history(
             }
             "supply_actor_state" => {
                 let entity = sim
-                    .entities_mut_for_test()
-                    .get_mut(step["id"].as_u64().unwrap())
+                    .entity_mut_for_test(step["id"].as_u64().unwrap())
                     .unwrap();
                 for (field, value) in step["fields"].as_object().unwrap() {
                     match field.as_str() {
@@ -843,8 +838,7 @@ fn replay_category_history(
                 assert_eq!(step["entry"], "0x6b0b6d", "{label}: original writer");
                 assert_eq!(step["stop"], "0x6b0b98", "{label}: writer boundary");
                 let entity = sim
-                    .entities_mut_for_test()
-                    .get_mut(step["id"].as_u64().unwrap())
+                    .entity_mut_for_test(step["id"].as_u64().unwrap())
                     .unwrap();
                 entity.slave = crate::sim::slave_manager::SlaveLink::for_test(
                     None,
@@ -870,7 +864,7 @@ fn replay_category_history(
                     step,
                     &label,
                 );
-                let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+                let entity = sim.entity_mut_for_test(id).unwrap();
                 entity.lifecycle.set_object_alive_for_test(
                     step["actor_state"][id.to_string()]["alive"]
                         .as_bool()
@@ -898,8 +892,7 @@ fn replay_category_history(
                 input.follow_target = serde_json::from_value(step["follow"].clone()).unwrap();
                 input.type_select = boundary_mode(step);
                 for actor in &history.inputs.actors {
-                    sim.entities_mut_for_test()
-                        .get_mut(actor.id)
+                    sim.entity_mut_for_test(actor.id)
                         .unwrap()
                         .selection
                         .set_selected_for_test(
@@ -1077,7 +1070,7 @@ fn veterancy_navigation_samples_original_raw_rank_without_cached_rank_writes() {
     for row in &corpus.veterancy_rank_cases {
         let (mut sim, rules) = fixture(&history.inputs, &[]);
         let id = history.inputs.actors[0].id;
-        let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+        let entity = sim.entity_mut_for_test(id).unwrap();
         entity
             .veterancy
             .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
@@ -1136,7 +1129,7 @@ fn combatant_native_cleanup_boundaries_reconcile_without_resetting_map_scope() {
                     continue;
                 }
                 let boundary = &cleanup["actor_state"][actor.id.to_string()];
-                let entity = sim.entities_mut_for_test().get_mut(actor.id).unwrap();
+                let entity = sim.entity_mut_for_test(actor.id).unwrap();
                 entity
                     .lifecycle
                     .set_object_alive_for_test(boundary["alive"].as_bool().unwrap());
@@ -1254,7 +1247,7 @@ fn combatant_pending_transport_uses_selection_queue_and_keeps_native_cleanup_sco
         input.type_select = boundary_mode(&history.steps[0]["before"]);
         input.selection_order = history.selected.clone();
         input.selection_order_pending = true;
-        let actor = sim.entities_mut_for_test().get_mut(20).unwrap();
+        let actor = sim.entity_mut_for_test(20).unwrap();
         actor.lifecycle.set_in_limbo_for_test(true);
         let owner = sim.session().current_house().unwrap();
         let command = if queued_selection {
@@ -2014,7 +2007,8 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
             unrepresented_modes.insert(row.id.as_str());
         }
         // Native fixture input B0FE54=3, B0FE58=1. Reach that state through
-        // the existing mode owner, then use its ordinary-selection reset.
+        // the existing mode owner, then use its ordinary-selection reset:
+        // 731D00 writes mode B0FE54 and submode B0FE58 but keeps scope B0FE64.
         let mut type_select = TypeSelectInputState::default();
         type_select.finish_category_navigation(CategoryNavigationKind::Health, true);
         type_select.across_map = true;
@@ -2053,7 +2047,7 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
                 ordered = effects.ordered;
                 follow = effects.follow_target;
                 pending = true;
-                type_select.reset_scope();
+                type_select.note_successful_selection_mutation(false);
                 let coords: Vec<_> = ordered
                     .iter()
                     .map(|id| {
@@ -2105,8 +2099,10 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
                 "{} step {index}: selection mode",
                 row.id
             );
-            assert_eq!(
-                type_select.across_map, expected.selection_across_map,
+            // The fixture's `selection_across_map` is the B0FE58 submode, not
+            // the scope byte; Select leaves B0FE64 as it was.
+            assert!(
+                type_select.across_map,
                 "{} step {index}: selection scope",
                 row.id
             );
@@ -2260,11 +2256,9 @@ fn snapshot_restores_singleton_anchor_and_retained_layer_order_for_next_key() {
     ));
 
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "N/M continuation", 0);
-    let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, &row.id)
+    let restored = GameSnapshot::load_validated(&bytes, 1, 2, &row.id)
         .expect("current VERA snapshot and matching content identity")
-        .sim;
-    restored
-        .restore_after_snapshot_load()
+        .restore_references_for_test()
         .expect("ordinary fixture references and retained membership");
     for index in 0..5 {
         let layer = DisplayLayer::from_index(index).unwrap();

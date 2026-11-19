@@ -119,14 +119,14 @@ fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
         let mut callbacks = Vec::new();
         let strength = Cell::new(input["strength"].as_i64().unwrap() as i32);
         let callback = |entity: &mut GameEntity, callback: HealthCallback| {
-            observe_virtual(
-                entity,
-                callback,
-                input["callback"].as_str().unwrap(),
-                0,
-                &mut callbacks,
-            );
-        };
+                    observe_virtual(
+                        entity,
+                        callback,
+                        input["callback"].as_str().unwrap(),
+                        0,
+                        &mut callbacks,
+                    );
+                };
         let mut host = LocalHealthHost {
             entity: &mut entity,
             strength: &strength,
@@ -220,6 +220,10 @@ fn receiver_commit_keeps_negative_heal_on_exact_zero_techno_tail_and_wide_hits()
         };
         let receipt = super::super::receiver_health::commit_receiver_health(
             &event,
+            &mut crate::sim::combat::receiver_call::ReceiverDamage::new(
+                event.damage,
+                event.damage_writeback,
+            ),
             &mut world,
             &rules,
             None,

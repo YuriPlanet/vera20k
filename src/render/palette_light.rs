@@ -64,6 +64,10 @@ fn normalized_house_laser_rgb(rgb: [u8; 3]) -> [u8; 3] {
     if nonzero {
         channels = channels.map(|channel| if channel < 96.0 { 0.0 } else { channel });
     }
+    // RESIDUAL (invisible): a campaign map's laser colour takes this second
+    // pass through Normalize_Color_To_240 @ 0x0050B920 (0x00501058), which
+    // sums (r²+b²)+g². The house_color oracle matches every retail colour; a
+    // mod colour could land one step off in one channel.
     normalize(channels).0.map(|channel| channel as u8)
 }
 
@@ -214,17 +218,24 @@ pub fn native_row(brightness: i32, a: u8, rows: u32) -> u32 {
 /// https://docs.rs/wgpu/27.0.1/wgpu/enum.TextureFormat.html
 pub(crate) fn shader_source(body: &str) -> String {
     let profile = super::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
-    let words = |bytes: &[u8]| {
+    // Decoded here, once, so no pixel pays for the conversion.
+    let linear = |bytes: &[u8]| {
         bytes
             .iter()
-            .map(|b| b.to_string())
+            .map(|&byte| {
+                format!(
+                    "{:?}",
+                    super::area_scale::srgb_to_linear(f32::from(byte) / 255.0)
+                )
+            })
             .collect::<Vec<_>>()
             .join(",")
     };
     format!(
-        "const RETAIL_FIVE = array<u32,32>({});\nconst RETAIL_SIX = array<u32,64>({});\n{}\n{}",
-        words(&profile.five_bit),
-        words(&profile.six_bit),
+        "const RETAIL_FIVE_LINEAR = array<f32,32>({});\n\
+         const RETAIL_SIX_LINEAR = array<f32,64>({});\n{}\n{}",
+        linear(&profile.five_bit),
+        linear(&profile.six_bit),
         include_str!("palette_light.wgsl"),
         body
     )
@@ -287,7 +298,7 @@ pub(crate) fn native_fixtures() -> [NativePaletteFixture; 9] {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 
@@ -304,7 +315,11 @@ mod tests {
         assert_eq!(native["constructor_palette_index"], 16);
         let colors = native["colors"].as_array().unwrap();
         assert_eq!(colors.len(), 21);
-        assert_eq!(rules.color_schemes.len(), colors.len());
+        // VERA's built-in extra lobby colours follow the rules' own entries.
+        assert_eq!(
+            rules.color_schemes.len(),
+            colors.len() + crate::rules::skirmish_colors::MAX_EXTRA_COLORS
+        );
         for (index, row) in colors.iter().enumerate() {
             let scheme = &rules.color_schemes[index];
             assert_eq!(scheme.name, row["name"].as_str().unwrap());

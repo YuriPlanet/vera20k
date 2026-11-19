@@ -328,7 +328,6 @@ pub(super) fn emit(
             // logic pass, whose voice latch is set.
             world.techno_select(
                 owner_id,
-                true,
                 UninitContext::new(rules, overlay_registry).with_effects(run.effects()),
             );
         }
@@ -404,6 +403,7 @@ fn search_landing_cell(
     world.nearby_passable_cell(
         (i32::from(seed.0), i32::from(seed.1)),
         NearbyArgs {
+            require_burrowable: false,
             passability: PassabilityArgs {
                 speed_type,
                 required_zone_id: zone,

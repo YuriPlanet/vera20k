@@ -126,14 +126,13 @@ impl SlotScene {
                 scene
                     .runtime
                     .simulation
-                    .spawn_object_with_overlay_registry(
+                    .spawn_object_with_map_overlays(
                         "GAPOWR",
                         PLANT_OWNER,
                         x,
                         y,
                         0,
                         &scene.runtime.resources.rules,
-                        &scene.runtime.resources.overlay_registry,
                     )
                     .map(|id| (id, attacker_cells))
             })
@@ -295,7 +294,7 @@ impl SlotScene {
             plant.building_ready_latch(),
             plant.building_online(),
             sim.building_operational_state(self.plant, &self.scene.runtime.resources.rules),
-            plant.building_last_operational,
+            plant.building.building_last_operational,
             slot.and_then(|id| sim.anim(id)).map(|anim| anim.runtime())
         );
     }
@@ -319,7 +318,7 @@ impl SlotScene {
                 actor.lifecycle.object_alive(),
                 actor.lifecycle.in_limbo(),
                 &actor.position,
-                actor.mission,
+                actor.mission.clone(),
                 actor.temporal.warp_target()
             ))
         );
@@ -329,7 +328,7 @@ impl SlotScene {
                 id,
                 crate::sim::combat::TargetKind::Entity(self.plant),
                 true,
-                Some(&self.scene.runtime.resources.overlay_registry),
+                Some(self.scene.runtime.resources.rules.overlay_registry()),
             );
             eprintln!(
                 "{boundary}: attack_target={:?} navigation={:?} locomotor={:?} rearm={:?} last_fire={} facing={} pose={:?} GetFireError={error:?}",
@@ -397,9 +396,8 @@ impl SlotScene {
             Some(sim.house_alliances()),
             &crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: sim.overlay_grid(),
-                overlay_registry: Some(&self.scene.runtime.resources.overlay_registry),
+                overlay_registry: Some(self.scene.runtime.resources.rules.overlay_registry()),
                 alliances: Some(sim.house_alliances()),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
         );
@@ -497,7 +495,7 @@ impl SlotScene {
         assert_eq!(plant.temporal.chain_head(), None);
         // The sample is a transparent saved bool; its accessor is core-private.
         assert_eq!(
-            serde_json::to_value(plant.building_last_operational).unwrap(),
+            serde_json::to_value(plant.building.building_last_operational).unwrap(),
             serde_json::Value::Bool(false)
         );
         assert_eq!(
@@ -520,6 +518,7 @@ impl SlotScene {
                 sim.entities()
                     .get(self.plant)
                     .unwrap()
+                    .building
                     .building_last_operational
             )
             .unwrap(),
@@ -554,14 +553,13 @@ impl SlotScene {
                 self.scene
                     .runtime
                     .simulation
-                    .spawn_object_with_overlay_registry(
+                    .spawn_object_with_map_overlays(
                         "CLEG",
                         ATTACKER_OWNER,
                         x,
                         y,
                         64,
                         &self.scene.runtime.resources.rules,
-                        &self.scene.runtime.resources.overlay_registry,
                     )
             })
             .expect("the same clear patch admits an in-range CLEG");
@@ -610,6 +608,11 @@ impl SlotScene {
         let sim = self.scene.sim();
         let rules = &self.scene.runtime.resources.rules;
         let building = sim.entities().get(self.plant).unwrap();
+        let frame = crate::app::presentation::frame::PresentationFrame::capture(
+            &self.scene.runtime,
+            &Default::default(),
+        );
+        let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();
         let viewer = viewer_id.map(|id| sim.interner().resolve(id));
         let mut observer = super::super::helpers::observer_draw_context(
@@ -622,7 +625,7 @@ impl SlotScene {
         observer.drawn_voxel = Some(false);
         let color = HouseColorIndex(0); // add_human_house's launch color.
         let material = DrawState::for_building_slot_anims(
-            building,
+            record,
             sim.session().binary_frame(),
             super::super::units::house_color_to_remap_row(color),
             observer,
@@ -644,7 +647,7 @@ impl SlotScene {
         let mut output = Vec::new();
         emit_building_anims(
             &mut output,
-            &NativeDisplayOrder::from_display(sim.display_layers()),
+            &NativeDisplayOrder::from_world(&sim, None),
             atlas,
             rules.art(),
             Some(rules),
@@ -655,9 +658,11 @@ impl SlotScene {
             light,
             cell,
             sim,
+            &frame,
             viewer_id,
-            building,
-            &|_| true,
+            record,
+            &super::every_slot_anim(sim, record),
+            &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
             anim_word,
             crate::render::batch::DepthAxis::NONE.origin_y,
             crate::render::batch::DepthAxis::NONE.world_height,

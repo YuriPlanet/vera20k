@@ -101,7 +101,7 @@ pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool
 /// hold this thread's `&mut` borrows and read its thread-locals. A panic in
 /// either resumes on the caller.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+pub fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
     rayon::in_place_scope(|scope| {
         scope.spawn(move |_| pooled());
         here();
@@ -113,12 +113,31 @@ pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
 /// on the pool) finishes before `here` starts. The two share only reads, so
 /// their order changes no result.
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+pub fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
     pooled();
     here();
 }
 
-#[cfg(test)]
+/// Drop `value` on the worker pool, so the caller does not wait for it to be
+/// freed. The browser drops it here: its pool may not run.
+pub fn drop_on_pool<T: Send + 'static>(value: T) {
+    #[cfg(not(target_arch = "wasm32"))]
+    rayon::spawn(move || drop(value));
+    #[cfg(target_arch = "wasm32")]
+    drop(value);
+}
+
+/// Run a fixture on the pool's only worker so deferred drops stay queued until it yields.
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-support")))]
+pub fn on_single_worker_for_test(work: impl FnOnce() + Send) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .expect("a worker pool")
+        .install(work);
+}
+
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     #[test]
     fn results_keep_item_order() {

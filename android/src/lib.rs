@@ -63,6 +63,69 @@ fn cancel_import() -> bool {
     .unwrap_or(false)
 }
 
+/// Launcher and app-switcher icon hook for `vera20k::util::app_icon`.
+///
+/// The choice lives in the two activity aliases, which only `PackageManager`
+/// can flip; the activity keeps that knowledge in [`VeraActivity.applyAppIcon`].
+fn apply_app_icon(vera_icon: bool) {
+    let applied = with_activity(|env, activity| {
+        env.call_method(
+            activity,
+            "applyAppIcon",
+            "(Z)V",
+            &[jni::objects::JValue::Bool(u8::from(vera_icon))],
+        )
+        .is_ok()
+    });
+    if applied != Some(true) {
+        log::warn!("Could not apply the app icon");
+    }
+}
+
+/// LAN network hooks for `vera20k::util::lan_network`.
+///
+/// Android routes a datagram by the process's default network, so the LAN visit
+/// runs bound to Wi-Fi while the lobby is open; the activity reports changes
+/// back through [`Java_org_vera20k_VeraActivity_nativeOnLanNetworkChanged`].
+fn bind_lan_network() {
+    let bound = with_activity(|env, activity| {
+        env.call_method(activity, "bindLanNetwork", "()V", &[]).is_ok()
+    });
+    if bound != Some(true) {
+        log::warn!("Could not bind the LAN visit to the Wi-Fi network");
+    }
+}
+
+fn release_lan_network() {
+    let _ = with_activity(|env, activity| {
+        env.call_method(activity, "releaseLanNetwork", "()V", &[])
+            .is_ok()
+    });
+}
+
+/// Default-handle suffix for `vera20k::util::device_identity`.
+///
+/// A LAN visit drops advertisements whose name matches the local one, and the
+/// stock default is `[New Player]` on every install. Android has no text input
+/// yet, so the engine appends the activity's Android ID suffix to the default
+/// and two fresh installs no longer hide each other's games.
+fn handle_suffix() -> Option<String> {
+    let suffix = with_activity(|env, activity| {
+        let value = env
+            .call_method(activity, "defaultHandleSuffix", "()Ljava/lang/String;", &[])
+            .ok()?
+            .l()
+            .ok()?;
+        if value.is_null() {
+            return None;
+        }
+        env.get_string(&JString::from(value))
+            .ok()
+            .map(|text| text.to_string_lossy().into_owned())
+    })?;
+    suffix.filter(|text| !text.is_empty())
+}
+
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
 /// or an empty string when the player cancelled.
 #[unsafe(no_mangle)]
@@ -172,6 +235,15 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeImportProgress(
     import_status::note(ImportEvent::Progress(copied_bytes.max(0) as u64));
 }
 
+/// The activity reports that its Wi-Fi network appeared, left or changed.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeOnLanNetworkChanged(
+    _env: jni::JNIEnv,
+    _activity: JObject,
+) {
+    vera20k::util::lan_network::note_changed();
+}
+
 /// Bind `nativeOnFolderPicked` to this activity's class.
 ///
 /// Registered from `android_main`, not `JNI_OnLoad`: `FindClass` on the loading
@@ -211,6 +283,12 @@ fn register_folder_picker_native() -> bool {
                 fn_ptr: Java_org_vera20k_VeraActivity_nativeConfigForImport
                     as *mut std::ffi::c_void,
             },
+            jni::NativeMethod {
+                name: "nativeOnLanNetworkChanged".into(),
+                sig: "()V".into(),
+                fn_ptr: Java_org_vera20k_VeraActivity_nativeOnLanNetworkChanged
+                    as *mut std::ffi::c_void,
+            },
         ];
         let registered = env.register_native_methods(class, &methods).is_ok();
         if !registered {
@@ -248,6 +326,21 @@ fn keep_screen_on(app: &AndroidApp) {
 fn android_main(app: AndroidApp) {
     keep_screen_on(&app);
     vera20k::util::folder_picker::install(request_folder_picker, cancel_import);
+    // The launcher icon is a compiled resource, so the VERA Icon box's choice
+    // reaches the two activity aliases only through PackageManager.
+    vera20k::util::app_icon::install(apply_app_icon);
+    // LAN discovery rides the Wi-Fi network: the lobby binds this process to it
+    // and the activity reports network changes back through the JNI callback.
+    vera20k::util::lan_network::install(vera20k::util::lan_network::Hooks {
+        acquire: bind_lan_network,
+        release: release_lan_network,
+    });
+    // The stock LAN default name is the same on every install and two peers left
+    // at it never see each other, so the activity supplies an Android ID suffix
+    // for the handle until text input lands on this platform.
+    vera20k::util::device_identity::install(vera20k::util::device_identity::Hooks {
+        handle_suffix,
+    });
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,

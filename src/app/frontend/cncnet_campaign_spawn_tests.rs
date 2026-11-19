@@ -66,12 +66,10 @@ fn cncnet_campaign_spawn_explicit_scenario_keeps_first_record_and_physical_ident
             client.write("spawn.ini", format!(
                 "[Settings]\nIsSinglePlayer=Yes\nScenario={scenario}\nSide={side}\nCampaignID=1\nGameSpeed=2\nDifficultyModeHuman=2\nDifficultyModeComputer=0\n"
             ).as_bytes());
-            let request = SpawnRequest::read(&client.path().join("spawn.ini"));
-            if !crate::rules::ARES_ENABLED && side > 1 {
-                assert!(request.is_err());
-                continue;
-            }
-            let request = request.unwrap();
+            let request = SpawnRequest::read(&client.path().join("spawn.ini")).unwrap();
+            // Only a game read the Ares way reads a campaign Side above 1.
+            assert_eq!(request.check_country_limits(false).is_ok(), side <= 1);
+            request.check_country_limits(true).unwrap();
             let SpawnGame::Campaign(campaign) = request.game else {
                 panic!("campaign request");
             };
@@ -179,11 +177,11 @@ fn cncnet_campaign_spawn_empty_catalog_fails_before_seed() {
         let parsed = SpawnRequest::parse(&format!(
             "[Settings]\nIsSinglePlayer=Yes\nScenario=UNKNOWN.MAP\nSide={side}\nCampaignID=1\n"
         ));
-        if !crate::rules::ARES_ENABLED && side > 1 {
-            assert!(parsed.is_err());
-            continue;
-        }
-        let SpawnGame::Campaign(campaign) = parsed.unwrap().game else {
+        let parsed = parsed.unwrap();
+        // Only a game read the Ares way reads a campaign Side above 1.
+        assert_eq!(parsed.check_country_limits(false).is_ok(), side <= 1);
+        parsed.check_country_limits(true).unwrap();
+        let SpawnGame::Campaign(campaign) = parsed.game else {
             panic!("campaign request");
         };
         let mut clock = CountingClock::default();

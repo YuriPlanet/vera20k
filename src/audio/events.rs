@@ -41,6 +41,17 @@ impl SoundSource {
         }
     }
 
+    /// The spatial-audio projection of a native Coord in leptons.
+    /// `VocClass::CalcVolumeAndPan` (`0x00750B32`) takes the shroud cell by
+    /// arithmetic `coord >> 8`; the XYZ is projected as it is, not recentred.
+    pub fn from_coordinate(coordinate: [i32; 3]) -> Self {
+        let [x, y, z] = coordinate;
+        Self::new(
+            crate::util::lepton::absolute_leptons_to_screen(x, y, z),
+            ((x >> 8) as u16, (y >> 8) as u16),
+        )
+    }
+
     pub fn screen_pos(&self) -> (f32, f32) {
         (self.screen_x, self.screen_y)
     }
@@ -53,6 +64,11 @@ impl SoundSource {
 /// A sound event produced by the game simulation or UI.
 #[derive(Debug, Clone)]
 pub enum GameSoundEvent {
+    /// A network trigger's authored operand, resolved only by local playback.
+    TriggerAudio {
+        reference: crate::rules::sound_ini::SoundReference,
+        target: crate::sim::world::TriggerSoundTarget,
+    },
     /// One `VoxClass::PlayEVA @ 0x00752700` call: the `[DialogList]` event
     /// name and the call site's type override (`-1` = the entry's own
     /// `Type=`). `SelectClass::Action` passes `-1` at all eight of its sites
@@ -136,6 +152,12 @@ pub enum GameSoundEvent {
     /// ordered with visits; final-world membership cannot recover the order.
     UnitVoiceDestroyed { owner: u64 },
 
+    /// A deploy conversion moved the speaker's voice handle and latch to the
+    /// object replacing it (`UnitClass::Deploy @ 0x00739971`,
+    /// `BuildingClass::Mission_Selling @ 0x0044A0D4`), ahead of the old
+    /// object's `UnitVoiceDestroyed`.
+    UnitVoiceMoved { from: u64, to: u64 },
+
     /// An entity was destroyed — play DieSound.
     EntityDestroyed {
         /// sound.ini ID from the entity's DieSound= field.
@@ -160,15 +182,6 @@ pub enum GameSoundEvent {
     /// DeploySound on infantry stance entry or successful unit-to-building conversion.
     EntityDeployed {
         /// sound.ini ID from the entity's DeploySound= field.
-        sound_id: String,
-        /// Screen position of the sound source (for spatial audio).
-        source: Option<SoundSource>,
-    },
-
-    /// A transport placed an ejected passenger — play the transport type's
-    /// LeaveTransportSound at the transport's screen position.
-    LeaveTransport {
-        /// sound.ini ID from the transport type's LeaveTransportSound= field.
         sound_id: String,
         /// Screen position of the sound source (for spatial audio).
         source: Option<SoundSource>,
@@ -342,6 +355,59 @@ pub enum GameSoundEvent {
 }
 
 impl GameSoundEvent {
+    /// Resolve without changing the simulation or consuming RNG. Missing local
+    /// audio is silent; the authored request still lives in the shared world.
+    pub(crate) fn resolve_trigger_audio(
+        &self,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+        eva: &crate::rules::sound_ini::EvaRegistry,
+    ) -> Option<Self> {
+        let Self::TriggerAudio { reference, target } = self else {
+            return None;
+        };
+        use crate::sim::world::TriggerSoundTarget;
+        if matches!(target, TriggerSoundTarget::Eva) {
+            return Some(Self::TriggerEva {
+                index: reference.eva_index(eva)?,
+            });
+        }
+        let Some(sound_id) = reference.sound(sounds).map(str::to_owned) else {
+            // VocClass::PlayAt7509E0 leaves the requested Voc null for an
+            // invalid index (7509F5..750A0F), stops a different live handle
+            // (750A24..750A36), then rewrites that handle (750AA5..750AAE).
+            // Keep this local stop even though the shared request is retained.
+            return match target {
+                TriggerSoundTarget::Object { owner, .. } => Some(Self::AnimationStopped {
+                    anim_id: *owner,
+                    stop_sound_id: None,
+                    source: None,
+                }),
+                _ => None,
+            };
+        };
+        Some(match target {
+            TriggerSoundTarget::Centered => Self::VocAt {
+                sound_id,
+                source: None,
+            },
+            TriggerSoundTarget::Coordinate { coordinate, flags } => {
+                let coordinate = [coordinate.x, coordinate.y, coordinate.z];
+                Self::VocAtCoord {
+                    sound_id,
+                    coordinate,
+                    flags: *flags,
+                    source: SoundSource::from_coordinate(coordinate),
+                }
+            }
+            TriggerSoundTarget::Object { owner, world } => Self::AnimationStarted {
+                anim_id: *owner,
+                sound_id,
+                source: Some(SoundSource::from_coordinate([world.x, world.y, world.z])),
+            },
+            TriggerSoundTarget::Eva => return None,
+        })
+    }
+
     /// Get the sound ID for this event.
     pub fn sound_id(&self) -> &str {
         match self {
@@ -354,7 +420,6 @@ impl GameSoundEvent {
             | Self::EntityCrushed { sound_id, .. }
             | Self::AircraftPhase { sound_id, .. }
             | Self::EntityDeployed { sound_id, .. }
-            | Self::LeaveTransport { sound_id, .. }
             | Self::EntityUndeployed { sound_id, .. }
             | Self::ChronoTeleport { sound_id, .. }
             | Self::UnitPromoted { sound_id, .. }
@@ -376,8 +441,10 @@ impl GameSoundEvent {
             | Self::VocStopAtCoord { .. }
             | Self::UnitVoiceVisit { .. }
             | Self::UnitVoiceDestroyed { .. }
+            | Self::UnitVoiceMoved { .. }
             | Self::TriggerEva { .. }
-            | Self::VocIndex { .. } => "",
+            | Self::VocIndex { .. }
+            | Self::TriggerAudio { .. } => "",
             // The event name, not a sample: the sample is a per-side column
             // the `VoxClass` consumer resolves.
             Self::Eva { event, .. } | Self::EvaRemove { event } => event,
@@ -393,7 +460,6 @@ impl GameSoundEvent {
             | Self::EntityCrushed { source, .. }
             | Self::AircraftPhase { source, .. }
             | Self::EntityDeployed { source, .. }
-            | Self::LeaveTransport { source, .. }
             | Self::EntityUndeployed { source, .. }
             | Self::ChronoTeleport { source, .. }
             | Self::UnitPromoted { source, .. }
@@ -521,10 +587,13 @@ impl GameSoundEvent {
 /// effect is common when shooting scenery. These requests survive actor
 /// Stop/destruction, use the common audio pump, and retire via750EC0/750FA0.
 ///
-/// Residual: other750E20 families, including global BuildingDie and mixed
-/// superweapon callers, still use their existing direct presentation paths.
-/// This can affect camera movement/retry/cleanup at those triggers; their
-/// own caller migrations are separate chains, not blanket source-based routing.
+/// The other750E20 callers use the same retained request: BuildingDie
+/// (441779), the passenger sounds (7106D0, Unit Mission_Unload 73DC67), the
+/// trigger actions (6DE831, 6DE8A3) and the SuperClass::Launch cues (6CCE28,
+/// 6CD7BF, 6CD8D3, 6CDCAE, 6CDDE9).
+///
+/// Residual: `CreateUnitSound=` (Factory_AI 450198, Place_Production
+/// 4FB50D) is not ported; see `sim::production::factory_ai`.
 ///
 /// **Partly closed.** `TurretRotateSound=` is landed: the building update's
 /// rotation sample and the `TechnoClass::AI_Update` block drive the type's own
@@ -612,5 +681,75 @@ impl SoundEventQueue {
     /// Whether there are pending events.
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
+    }
+}
+
+#[cfg(all(test, tests_audio))]
+mod trigger_audio_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::sound_ini::{EvaRegistry, SoundReference, SoundRegistry};
+    use crate::sim::world::TriggerSoundTarget;
+
+    #[test]
+    fn trigger_references_resolve_only_against_the_listeners_catalog() {
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Other\n1=Alert\n"));
+        let eva = EvaRegistry::from_ini(&IniFile::from_str("[DialogList]\n0=Other\n1=Alert\n"));
+        let named = GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Name("ALERT".into()),
+            target: TriggerSoundTarget::Eva,
+        };
+        assert!(matches!(
+            named.resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::TriggerEva { index: 1 })
+        ));
+        assert!(
+            named
+                .resolve_trigger_audio(&sounds, &EvaRegistry::default())
+                .is_none()
+        );
+        let indexed = GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Index(1),
+            target: TriggerSoundTarget::Coordinate {
+                coordinate: crate::sim::components::DriveCoord {
+                    x: 256,
+                    y: 512,
+                    z: 0,
+                },
+                flags: 1,
+            },
+        };
+        assert!(
+            matches!(indexed.resolve_trigger_audio(&sounds, &eva), Some(GameSoundEvent::VocAtCoord { sound_id, coordinate: [256, 512, 0], flags: 1, .. }) if sound_id == "Alert")
+        );
+        assert!(
+            indexed
+                .resolve_trigger_audio(&SoundRegistry::default(), &eva)
+                .is_none()
+        );
+
+        // A valid custom cue followed by an unavailable slot must reach the
+        // existing stop owner, rather than leave the old loop playing.
+        let custom = |index| GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Index(index),
+            target: TriggerSoundTarget::Object {
+                owner: 44,
+                world: crate::sim::anim_class::AnimWorldCoord {
+                    x: 256,
+                    y: 512,
+                    z: 0,
+                },
+            },
+        };
+        assert!(matches!(custom(1).resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::AnimationStarted { anim_id: 44, sound_id, .. }) if sound_id == "Alert"));
+        assert!(matches!(
+            custom(99).resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::AnimationStopped {
+                anim_id: 44,
+                stop_sound_id: None,
+                source: None
+            })
+        ));
     }
 }

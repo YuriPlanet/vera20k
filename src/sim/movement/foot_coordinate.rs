@@ -79,6 +79,7 @@ pub(super) fn navigation_coordinate(
         }
         // Fly/Rocket/Teleport/Tunnel share +18/55ACA0: copy linked Object+9C
         // (Tunnel's slot 6 is the base 0x0055ACA0).
+        // Fly/Rocket/Teleport/Tunnel share +18/55ACA0: copy linked Object+9C.
         LocomotorKind::Teleport
         | LocomotorKind::Fly
         | LocomotorKind::Rocket
@@ -93,6 +94,36 @@ pub(super) fn navigation_coordinate(
 }
 
 impl Simulation {
+    /// `FootClass::ShouldBeOnBridge @ 0x004DDC40` with false: in a Tube the
+    /// Location itself, otherwise the navigation coordinate (vt+0x4C)
+    /// against the Location ([`super::ground_pose::navigation_should_be_on_bridge`]).
+    pub(crate) fn foot_should_be_on_bridge(&self, id: u64) -> Result<bool, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("Foot bridge owner disappeared")?;
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("ShouldBeOnBridge requires map cells")?;
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let current = super::ground_pose::position_world_coord(&entity.position);
+        let in_tube = entity.low_bridge_tube_state.is_some();
+        let navigation = if in_tube {
+            current
+        } else {
+            self.foot_navigation_coordinate(id)?
+        };
+        super::ground_pose::navigation_should_be_on_bridge(
+            &cells,
+            navigation,
+            current,
+            entity.on_bridge(),
+            in_tube,
+        )
+    }
+
     pub fn foot_navigation_coordinate(&self, id: u64) -> Result<DriveCoord, String> {
         let entity = self
             .substrate
@@ -114,6 +145,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_coordinate_tests.rs"]
 mod tests;

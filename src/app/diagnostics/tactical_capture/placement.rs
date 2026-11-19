@@ -203,7 +203,7 @@ pub(crate) fn first_valid_placement(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod placement_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

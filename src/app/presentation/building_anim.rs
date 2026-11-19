@@ -14,11 +14,14 @@ use crate::sim::production;
 pub(crate) fn sound_listener(state: &AppState) -> crate::audio::sfx::SpatialListener {
     let (tactical_width, tactical_height) =
         crate::app::input::camera::tactical_viewport_size(state);
+    // The listener sits at the battlefield's corner, which a layout may set
+    // in from the frame's corner, where the camera is.
+    let origin = crate::app::input::camera::tactical_origin_world(state);
     crate::audio::sfx::SpatialListener {
         tactical_width: tactical_width as i32,
         tactical_height: tactical_height as i32,
-        origin_x: state.match_state.input.camera_x,
-        origin_y: state.match_state.input.camera_y,
+        origin_x: state.match_state.input.camera_x + origin.0,
+        origin_y: state.match_state.input.camera_y + origin.1,
         zoom: state.match_state.input.zoom_level,
     }
 }
@@ -30,7 +33,7 @@ pub(crate) fn refresh_coordinate_sound_gains(state: &mut AppState) {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation);
     let local_owner = preferred_local_owner_name(state);
     let Some(catalog) = state.process_assets.audio_catalog() else {
@@ -146,7 +149,7 @@ impl SoundPlaybackInputs<'_> {
         let source = crate::app::match_runtime::sound_dispatch::anim_world_sound_source(world);
         let gain = self
             .spatial_context(Some(sim), local_owner)
-            .gain_for(&sound, Some(source));
+            .gain_for(sound, Some(source));
         sfx.update_looping_sound(owner, gain, self.catalog.sounds());
     }
 
@@ -183,9 +186,21 @@ impl SoundPlaybackInputs<'_> {
             }
         };
         for event in events {
+            let resolved;
+            let event = if matches!(event, GameSoundEvent::TriggerAudio { .. }) {
+                let Some(value) = event.resolve_trigger_audio(registry, eva_registry) else {
+                    continue;
+                };
+                resolved = value;
+                &resolved
+            } else {
+                event
+            };
             match event {
+                GameSoundEvent::TriggerAudio { .. } => continue,
                 GameSoundEvent::UnitVoiceVisit { owner } => sfx.visit_unit_voice(*owner, registry),
                 GameSoundEvent::UnitVoiceDestroyed { owner } => sfx.destroy_unit_voice(*owner),
+                GameSoundEvent::UnitVoiceMoved { from, to } => sfx.move_unit_voice(*from, *to),
                 // Unit acknowledgement lines — always full volume (non-positional).
                 // `TechnoClass::Queue_Voice @ 0x00708D90` only latches the line on
                 // the speaking object. Only an actual reached Techno6F9EBB
@@ -319,8 +334,9 @@ impl SoundPlaybackInputs<'_> {
                     // not reach the raw audio-bag fallback.
                     if !sound_id.is_empty() && registry.get(sound_id).is_some() {
                         match source {
-                            // `VocClass::PlayAtCoord @ 0x00750E20` /
-                            // `PlayAt @ 0x007509E0` at the target coordinate.
+                            // A one-shot `VocClass::PlayAt @ 0x007509E0` at
+                            // the target coordinate. Launch's 750E20 cues
+                            // arrive as `VocAtCoord`.
                             Some(source) => {
                                 if let Some(gain) = gain_for(sound_id, Some(*source)) {
                                     let _ =
@@ -371,27 +387,41 @@ impl SoundPlaybackInputs<'_> {
     }
 }
 
-/// Tick the sidebar power bar animation (segment-by-segment transition).
-pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
+/// Run the power bar's AnimationTick 63FEA0 for each of this pass's Sidebar
+/// Action `visits` ([`super::sidebar_gadgets::sidebar_action_visits`]).
+pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64, visits: u64) {
     let owner_name = preferred_local_owner_name(state);
     let bar_height_px = power_bar_budget_px(state);
+    // The theoretical total walks the house's buildings: the frame's answer.
+    state.match_state.sim_runtime.ensure_frame();
 
     let anim = &mut state.match_state.match_presentation.power_bar_anim;
     match (
-        state.match_state.sim_runtime.as_ref(),
+        state.match_state.sim_runtime.presentation(),
+        state.match_state.sim_runtime.frame(),
         owner_name.as_deref(),
     ) {
-        (Some(runtime), Some(owner)) => {
+        (Some(runtime), Some(frame), Some(owner)) => {
             let sim = &runtime.simulation;
             let rules = &runtime.resources.rules;
-            let theoretical_total = || sim.theoretical_power_for_owner(rules, owner);
+            let theoretical_total = || frame.scene.ui.theoretical_power();
             anim.fit_strip(bar_height_px, theoretical_total);
             let (produced, drained) = production::power_balance_for_owner(sim, rules, owner);
-            anim.update(produced, drained, theoretical_total, wall_ms);
+            for _ in 0..visits {
+                anim.update(produced, drained, theoretical_total, wall_ms);
+                if !anim.in_motion() {
+                    break;
+                }
+            }
         }
         _ => {
             anim.fit_strip(bar_height_px, || 0);
-            anim.update(0, 0, || 0, wall_ms);
+            for _ in 0..visits {
+                anim.update(0, 0, || 0, wall_ms);
+                if !anim.in_motion() {
+                    break;
+                }
+            }
         }
     }
 }
@@ -426,14 +456,13 @@ pub(crate) fn radar_availability_sound(
         })
 }
 
-/// Reconcile view/tool changes with the same radar owner the reached House
-/// boundaries update. Its equality guard suppresses already-delivered edges.
-pub(crate) fn update_radar_state(state: &mut AppState) {
-    let new_has_radar: bool = match (
+/// Whether the local player's House has the tactical radar.
+pub(crate) fn local_has_radar(state: &AppState) -> bool {
+    match (
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .presentation()
             .map(|rt| &rt.simulation),
         state.rules(),
         preferred_local_owner_name(state).as_deref(),
@@ -442,7 +471,13 @@ pub(crate) fn update_radar_state(state: &mut AppState) {
             crate::sim::radar::has_radar_for_owner(sim, rules, owner)
         }
         _ => false,
-    };
+    }
+}
+
+/// Reconcile view/tool changes with the same radar owner the reached House
+/// boundaries update. Its equality guard suppresses already-delivered edges.
+pub(crate) fn update_radar_state(state: &mut AppState) {
+    let new_has_radar = local_has_radar(state);
     state.match_state.match_presentation.has_radar = new_has_radar;
 
     let cue = state
@@ -498,11 +533,15 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     let events = state.match_state.match_audio.sound_events.drain();
     let listener = sound_listener(state);
     let local_owner = preferred_local_owner_name(state);
+    // The bombs' and owners' coordinates are the frame's
+    // (`presentation::frame`).
+    state.match_state.sim_runtime.ensure_frame();
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|rt| &rt.simulation);
+    let frame = state.match_state.sim_runtime.frame();
     let (Some(sfx), Some(assets), Some(catalog)) = (
         &mut state.audio.sfx_player,
         state.process_assets.manager(),
@@ -536,19 +575,20 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     // the owner loop below re-drives it through `bomb_ticking_coord`.
     // `BombClass::Load @ 0x00438B40` retains that cue. The ticking pass reads
     // it at 0x00438C7C and skips -1 at 0x00438C7F.
-    if let Some(sim) = sim {
-        for &carrier in sim.bomb_carriers() {
-            let owner = crate::sim::bomb::ticking_sound_owner(carrier);
+    if let Some(frame) = frame {
+        for tick in frame.scene.ui.bomb_ticks() {
+            let owner = tick.owner;
             if sfx.loop_handle_sound_id(owner).is_some() {
                 continue;
             }
-            let Some(sound_id) = sim
-                .bomb_ticking_sound(carrier)
+            let Some(sound_id) = tick
+                .sound
+                .as_deref()
                 .filter(|sound_id| registry.get(sound_id).is_some())
             else {
                 continue;
             };
-            let Some(world) = sim.bomb_ticking_coord(carrier) else {
+            let Some(world) = tick.coord else {
                 continue;
             };
             let (rx, ry, sub_x, sub_y, _) = world.to_cell_sub_z();
@@ -579,7 +619,7 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     // `SoundEvent::UpdateState @ 0x004057DC` reaps a stopped event on its next
     // pass because the owner no longer names it.
     for owner in sfx.looping_owners() {
-        let Some(sim) = sim else {
+        let Some(frame) = frame else {
             sfx.stop_animation_sound(owner);
             continue;
         };
@@ -591,8 +631,8 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         // `ObjectClass::AI` replays an object's `+0x3C`/`+0x50` handles with
         // `VocClass::PlayAt` on each visit (the sim's `AnimationStarted`);
         // 750D40 never runs on them.
-        if let Some(alive) = sim.object_sound_owner_alive(owner) {
-            if !alive {
+        if let Some(object) = crate::sim::world::object_sound_object(owner) {
+            if !frame.sound_object_stands(object) {
                 sfx.stop_animation_sound(owner);
             }
             continue;
@@ -607,14 +647,19 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         // AI visit. A tail poll could overwrite that position or restart a
         // loop after a later callback. Turret and Anim stay separate.
         if crate::sim::combat::gattling::gattling_sound_techno(owner).is_some()
-            || sim.entities().get(owner).is_some_and(|entity| {
+            || frame.object(owner).is_some_and(|entity| {
                 use crate::map::entities::EntityCategory::{Aircraft, Infantry, Unit};
                 matches!(entity.category(), Unit | Infantry | Aircraft)
             })
         {
             continue;
         }
-        let Some(world) = sim.looping_sound_owner_coord(owner) else {
+        let Some(world) = frame
+            .scene
+            .ui
+            .sound_owner_coord(owner)
+            .or_else(|| frame.anim_coord(owner))
+        else {
             // The owner object is gone. Native's `ObjectClass` uninit path
             // releases or stops its handle before the pointer can dangle.
             // Anim Destroy emits release, removing the owner handle while
@@ -641,13 +686,13 @@ fn registry_facts_for_owner(
     owner: u64,
 ) -> Option<crate::audio::sfx::SpatialSource> {
     let key = sfx.handle_sound_id(owner)?;
-    Some(registry.get(&key).map_or_else(
+    Some(registry.get(key).map_or_else(
         || crate::audio::sfx::SpatialSource::from_registry_defaults(registry),
         crate::audio::sfx::SpatialSource::from_entry,
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

@@ -166,7 +166,7 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
         .substrate
         .entities
         .get_mut(building_id)
-        .and_then(|b| b.bunker_runtime.as_mut())
+        .and_then(|b| b.building.bunker_runtime.as_mut())
     {
         rt.occupy();
     }
@@ -313,12 +313,16 @@ pub(crate) fn release_normal(
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "unit-link");
     power_and_force_release(sim, building_id, unit_id, rules, effects);
+    //4597FA: the class setter (vt+0x480) with its queue flag set, so the Foot
+    //setter's tail runs too.
     if let Some(cell) = bunker_exit_cell(sim, building_id, unit_id, rules) {
-        let terrain = sim.resolved_terrain.as_ref();
-        let frame = sim.session.binary_frame();
-        if let Some(unit) = sim.substrate.entities.get_mut(unit_id) {
-            crate::sim::movement::set_destination_internal_cell(unit, cell, terrain, frame);
-        }
+        sim.set_unit_destination(
+            unit_id,
+            crate::sim::components::NavTargetRef::cell(cell.0, cell.1),
+            rules,
+            true,
+            effects,
+        );
     }
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "destination");
@@ -535,7 +539,7 @@ pub fn break_links_on_despawn(substrate: &mut ObjectSubstrate, id: u64) {
         && let Some(b) = substrate.entities.get_mut(building_id)
     {
         b.bunker.occupant = None;
-        if let Some(rt) = b.bunker_runtime.as_mut() {
+        if let Some(rt) = b.building.bunker_runtime.as_mut() {
             *rt = BunkerRuntime::idle();
         }
     }
@@ -546,7 +550,7 @@ pub fn break_links_on_despawn(substrate: &mut ObjectSubstrate, id: u64) {
 /// (`0x0045959C`) and UpdateBunker's no-object arm (`0x00458E85`).
 pub(super) fn reset_bunker_idle(substrate: &mut ObjectSubstrate, building_id: u64) {
     if let Some(b) = substrate.entities.get_mut(building_id)
-        && let Some(rt) = b.bunker_runtime.as_mut()
+        && let Some(rt) = b.building.bunker_runtime.as_mut()
     {
         *rt = BunkerRuntime::idle();
     }
@@ -632,7 +636,7 @@ fn at_or_below_condition_yellow(current: i32, strength: i32, condition_yellow: f
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -690,7 +694,7 @@ mod tests {
             5,
             false,
         );
-        ge.bunker_runtime = Some(BunkerRuntime::idle());
+        ge.building.bunker_runtime = Some(BunkerRuntime::idle());
         sim.substrate.entities.insert(ge);
     }
 
@@ -893,7 +897,7 @@ mod tests {
         let bunker = sim.substrate.entities.get(2).unwrap();
         assert_eq!(bunker.bunker.occupant(), Some(1));
         assert_eq!(
-            bunker.bunker_runtime.unwrap().state(),
+            bunker.building.bunker_runtime.unwrap().state(),
             BunkerState::Occupied
         );
 
@@ -1200,6 +1204,7 @@ mod tests {
                 .entities
                 .get(bunker)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .as_ref()
                 .unwrap()
@@ -1214,6 +1219,7 @@ mod tests {
                 .entities
                 .get(bunker)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .as_ref()
                 .unwrap()
@@ -1432,7 +1438,10 @@ mod tests {
             let held = stored(&sim, 3, &rules);
             let receiver = sim.substrate.entities.get_mut(3).unwrap();
             crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-                receiver, tank, held,
+                receiver,
+                tank,
+                held,
+                rules.ares_form(),
             );
             assert_eq!(receiver.attack_target.target(), Some(TargetKind::Entity(2)));
         }
@@ -1736,6 +1745,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "bunker_release_tests.rs"]
 mod release_tests;

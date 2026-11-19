@@ -746,7 +746,7 @@ pub enum FlyStopOrder {
     Destination(Option<NavTargetRef>),
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use crate::rules::{
         ini_parser::IniFile,

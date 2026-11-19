@@ -15,7 +15,6 @@ use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{
     DisplayEffectInputs, ShpInputs, build_display_effect_instances, build_shp_instances_from_inputs,
 };
-use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::assets::shp_file::ShpFile;
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::{CellLightGrid, LightingConfig, build_cell_light_grid_from_heights};
@@ -42,9 +41,6 @@ use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::world::{FrameEffects, Simulation};
 use serde_json::{Value, json};
 use std::cell::RefCell;
-
-#[path = "parachute_interpolation_tests.rs"]
-mod interpolation_tests;
 
 const SIZE: [u32; 2] = [160, 160];
 const CLIP: [u32; 4] = [0, 0, 160, 160];
@@ -104,8 +100,7 @@ impl Scene {
         // than measuring Infantry Unlimbo's subcell choice. Match that input
         // boundary through the Location owner; the complete ordinary producer
         // and its subcell admission remain covered by the lifecycle test.
-        sim.entities_mut_for_test()
-            .get_mut(body)
+        sim.entity_mut_for_test(body)
             .unwrap()
             .position
             .put_location(DriveCoord {
@@ -160,7 +155,7 @@ impl Scene {
         Self {
             runtime: SimRuntime {
                 simulation: sim,
-                resources,
+                resources: resources.into(),
             },
             body,
             canopy,
@@ -220,19 +215,22 @@ impl Scene {
         frame: u16,
     ) -> PlannedObjectInstance {
         let sim = &self.runtime.simulation;
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
-        let interpolation = RenderInterpolation::new(false);
+        let presented = crate::app::presentation::frame::PresentationFrame::capture(
+            &self.runtime,
+            &Default::default(),
+        );
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let voxel_images = RefCell::new(VoxelImageCache::default());
         let mut parents = Vec::new();
         build_shp_instances_from_inputs(
             &ShpInputs {
                 runtime: &self.runtime,
+                frame: &presented,
                 atlas: Some(atlas),
                 overlay_atlas: None,
                 unit_atlas: None,
                 voxel_images: &voxel_images,
                 depth_tested_images: None,
-                interpolation: &interpolation,
                 camera: vera_camera(),
                 render_size: SIZE,
                 zoom: 1.,
@@ -265,8 +263,8 @@ impl Scene {
         let detail = RefCell::new(detail);
         let hidden = Default::default();
         let input = DisplayEffectInputs {
-            interpolation: Some(&interpolation),
             sim,
+            frame: &presented,
             rules: &self.runtime.resources.rules,
             camera: vera_camera(),
             render_size: SIZE,

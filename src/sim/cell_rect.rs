@@ -551,13 +551,78 @@ pub(crate) fn scan_cell_rect(rect: CellRect, mut visit: impl FnMut(i32, i32) -> 
 /// Sparse authority for CellClass `+0xDC`. A fixed-stride coordinate selects a
 /// real entry only when the active terrain has an allocated CellClass pointer;
 /// every invalid or valid-but-unallocated lookup shares `dummy_mask`.
+///
+/// One bit per House id. Native allocates a 32-bit word per cell, and the
+/// retail game never holds more than thirty-two Houses; VERA's offline
+/// Skirmish seats up to one hundred twenty players beside Neutral and Special, so the
+/// word widens to 128 bits ([`crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CellReservationGrid {
-    masks: BTreeMap<(u16, u16), u32>,
+    #[serde(with = "saved_reservations")]
+    masks: BTreeMap<(u16, u16), u128>,
     /// Native save iterates allocated CellClass pointers only. The process-global
     /// fallback CellClass is reconstructed cleared during load/Resize.
     #[serde(skip)]
-    dummy_mask: u32,
+    dummy_mask: u128,
+}
+
+// Saves have always held a map from (u16, u16) to a 32-bit reservation word.
+// A real cell uses at most ten coordinate bits. The top two bits of the saved
+// x select the group of 32 houses; group zero keeps the original key and word.
+// This changes neither the save layout nor the bytes for an ordinary game.
+mod saved_reservations {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Deserializer, Serializer, ser::SerializeMap};
+
+    const GROUP_SHIFT: u32 = u16::BITS - 2;
+    const _: () = assert!(crate::map::cell_index::MAX_CELL_SIDE <= 1 << GROUP_SHIFT);
+
+    fn words(cells: &BTreeMap<(u16, u16), u128>) -> impl Iterator<Item = ((u16, u16), u32)> + '_ {
+        cells.iter().flat_map(|(&(x, y), &mask)| {
+            let mut remaining = mask;
+            std::iter::from_fn(move || {
+                if remaining == 0 {
+                    return None;
+                }
+                let group = remaining.trailing_zeros() / u32::BITS;
+                let shift = group * u32::BITS;
+                let word = (remaining >> shift) as u32;
+                remaining &= !(u128::from(u32::MAX) << shift);
+                Some(((x | ((group as u16) << GROUP_SHIFT), y), word))
+            })
+        })
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        cells: &BTreeMap<(u16, u16), u128>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(words(cells).count()))?;
+        for (key, word) in words(cells) {
+            map.serialize_entry(&key, &word)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeMap<(u16, u16), u128>, D::Error> {
+        let mut cells = BTreeMap::new();
+        for ((saved_x, y), word) in BTreeMap::<(u16, u16), u32>::deserialize(deserializer)? {
+            let x = saved_x & (u16::MAX >> 2);
+            let group = u32::from(saved_x >> GROUP_SHIFT);
+            if x >= crate::map::cell_index::MAX_CELL_SIDE
+                || y >= crate::map::cell_index::MAX_CELL_SIDE
+            {
+                return Err(serde::de::Error::custom("invalid reservation cell"));
+            }
+            if word != 0 {
+                *cells.entry((x, y)).or_default() |= u128::from(word) << (group * u32::BITS);
+            }
+        }
+        Ok(cells)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -663,11 +728,11 @@ impl CellReservationGrid {
         }
     }
 
-    pub fn raw_mask(&self, terrain: Option<&ResolvedTerrainGrid>, x: i32, y: i32) -> u32 {
+    pub fn raw_mask(&self, terrain: Option<&ResolvedTerrainGrid>, x: i32, y: i32) -> u128 {
         self.raw_mask_for_selection(&resolve_reservation_cell(terrain, x, y))
     }
 
-    fn raw_mask_for_selection(&self, cell: &ReservationCellSelection) -> u32 {
+    fn raw_mask_for_selection(&self, cell: &ReservationCellSelection) -> u128 {
         match cell {
             ReservationCellSelection::Real(rx, ry) => {
                 self.masks.get(&(*rx, *ry)).copied().unwrap_or(0)
@@ -677,7 +742,7 @@ impl CellReservationGrid {
         }
     }
 
-    pub(crate) fn raw_mask_for_cell_ref(&self, cell: &CellRef<'_>) -> u32 {
+    pub(crate) fn raw_mask_for_cell_ref(&self, cell: &CellRef<'_>) -> u128 {
         match cell {
             CellRef::Real(cell) => self.masks.get(&(cell.rx, cell.ry)).copied().unwrap_or(0),
             CellRef::Dummy { .. } => self.dummy_mask,
@@ -752,11 +817,11 @@ impl CellReservationGrid {
         result
     }
 
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (u16, u16, u32)> + '_ {
+    pub(crate) fn entries(&self) -> impl ExactSizeIterator<Item = (u16, u16, u128)> + '_ {
         self.masks.iter().map(|(&(rx, ry), &mask)| (rx, ry, mask))
     }
 
-    pub fn dummy_mask(&self) -> u32 {
+    pub fn dummy_mask(&self) -> u128 {
         self.dummy_mask
     }
 
@@ -863,7 +928,7 @@ fn occupancy_blocker_at(
     ctx: &CellRectOccupancyContext<'_>,
     x: i32,
     y: i32,
-    reservation_mask: u32,
+    reservation_mask: u128,
 ) -> Option<OccupancyBlocker> {
     // Native `CellRect::CheckOccupancy @ 0x00586780` resolves the never-null
     // CellClass first. All following columns therefore observe the lookup's
@@ -1042,6 +1107,50 @@ pub fn retained_cell_is_in_playfield(
     bounds.contains_height_aware_packed(i32::from(coord.0), i32::from(coord.1), level as i8, slope)
 }
 
+/// The native ground lists while GameActive(A8E9A0) is set. An absent
+/// projection means the caller is in the inactive loading/teardown phase;
+/// ScenarioSession.started is a different native byte.
+#[derive(Clone, Copy)]
+pub(crate) struct BurrowingContents<'a> {
+    pub occupancy: &'a OccupancyGrid,
+    pub terrain_objects: &'a BTreeMap<(u16, u16), u64>,
+}
+
+/// CellClass::PassesTileAndOccupancyChecks486FF0. The incoming Cell pointer
+/// survives nested queries: this leaf never resolves its coordinate again.
+/// Outside the playfield succeeds immediately; invalid signed tile indices
+/// skip only the tile permission, not slope, bridge or active ground lists.
+pub(crate) fn cell_allows_burrowing(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    cell: crate::map::cell_index::NativeCellIdentity,
+    bounds: Option<PlayfieldBounds>,
+    contents: Option<BurrowingContents<'_>>,
+) -> bool {
+    if !retained_cell_is_in_playfield(cell, bounds, cells) {
+        return true;
+    }
+    let terrain = cells.terrain();
+    if !terrain.tile_allows_burrowing(terrain.native_cell_tile_index(cell))
+        || cells.ground_fields(cell).1 != 0
+        || cells.flags(cell) & 0x500 != 0
+    {
+        return false;
+    }
+    if let Some(contents) = contents {
+        let coord = cells.coord(cell);
+        let coord = (coord.0 as u16, coord.1 as u16);
+        if contents
+            .occupancy
+            .first_building_on_layer(coord.0, coord.1, MovementLayer::Ground)
+            .is_some()
+            || contents.terrain_objects.contains_key(&coord)
+        {
+            return false;
+        }
+    }
+    true
+}
+
 pub(crate) fn cell_is_in_playfield_height_aware_in_query(
     cell: (i32, i32),
     bounds: Option<PlayfieldBounds>,
@@ -1157,15 +1266,21 @@ pub fn cell_is_in_playfield_leptons(
     cell_is_in_playfield_height_aware(cell, bounds, terrain)
 }
 
-fn reservation_mask(reservation_arg: i32) -> u32 {
-    if reservation_arg == -1 {
-        0
-    } else {
-        1u32 << ((reservation_arg as u32) & 0x1F)
+/// One bit per House id, the low seven bits of a non-negative argument, where
+/// native takes the low five of its 32-bit word. `-1` reserves nothing; the
+/// other negative arguments are native's own sentinels and keep the native
+/// five-bit alias (`-2` is bit 30), so they never reach a widened bit.
+fn reservation_mask(reservation_arg: i32) -> u128 {
+    // Players + Neutral/Special + reserved slots fill the 128-bit word.
+    const _: () = assert!(crate::skirmish_launch::SKIRMISH_HOUSE_SLOT_COUNT <= u128::BITS as usize);
+    match reservation_arg {
+        -1 => 0,
+        arg if arg < 0 => 1u128 << ((arg as u32) & 0x1F),
+        arg => 1u128 << (arg as u32 & 0x7F),
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "cell_rect_clamp_tests.rs"]
 mod clamp_tests;
 
@@ -1229,7 +1344,7 @@ pub fn cell_spread_offsets(spread: usize) -> Vec<(i16, i16)> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use std::collections::BTreeMap;
 
@@ -2198,12 +2313,14 @@ mod tests {
     fn gsi_04_05_reservation_masks_aliases_dummy_and_neighbors_are_native_shaped() {
         assert_eq!(reservation_mask(-1), 0);
         assert_eq!(reservation_mask(-2), 1 << 30);
-        assert_eq!(reservation_mask(32), 1);
-        assert_eq!(reservation_mask(63), 1 << 31);
+        // VERA: House ids past the native word keep their own bit instead of
+        // aliasing bit 0/31.
+        assert_eq!(reservation_mask(32), 1u128 << 32);
+        assert_eq!(reservation_mask(63), 1u128 << 63);
 
         let mut grid = CellReservationGrid::new();
         grid.reserve(None, -1, 1, 32);
-        assert_eq!(grid.raw_mask(None, 511, 0), 1);
+        assert_eq!(grid.raw_mask(None, 511, 0), 1u128 << 32);
         grid.reserve(None, 512, 0, 1);
         assert_eq!(grid.raw_mask(None, 0, 1), 2);
 

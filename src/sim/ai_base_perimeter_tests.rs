@@ -63,15 +63,8 @@ fn campaign_perimeter(
 }
 
 fn frame(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_app_frame(
-        &[],
-        rules,
-        Some(rules.overlay_registry()),
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
 }
 
 /// Original ChooseBuilding4FE4B0..4FE518 removes -3, expands through5082C0,

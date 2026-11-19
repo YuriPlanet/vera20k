@@ -48,11 +48,13 @@
 //! Unlimbo/PerCell/Limbo rather than the lists.
 //!
 //! RESIDUAL: a Jumpjet's hold and cruise leave its lists alone
-//! (`0x0054D0FF..0x0054D134`), so one that sinks below two levels there counts
-//! as listed by that derivation before its next Mark lists it, and
-//! `Simulation::debug_assert_lifecycle_consistent` reports it. Trigger: a
-//! Jumpjet below two levels while it holds or cruises; at a cruise height of
-//! 500 that needs ground three levels higher beneath it before it climbs.
+//! (`0x0054D0FF..0x0054D134`), so one below two levels there counts as listed
+//! by that derivation before its next Mark lists it;
+//! `Simulation::debug_assert_lifecycle_consistent` passes over those two
+//! states. Trigger: a Jumpjet below two levels while it holds or cruises:
+//! ground three levels higher beneath a cruise at 500, a take-off over its
+//! own destination cell (`0x0054BD10`), or a `LandNearby=` re-aim low in its
+//! descent, each until it climbs.
 //! Effect: in a world without an overlay grid, its cell counts toward the
 //! blocker plane before native lists it. Frequency: unmeasured. Risk: a
 //! different hierarchy-gate verdict there, no other state.
@@ -285,6 +287,7 @@ impl Simulation {
             &self.resolved_terrain,
             id,
             false,
+            rules.ares_form(),
         ) {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
@@ -368,6 +371,7 @@ impl Simulation {
             &self.resolved_terrain,
             id,
             true,
+            rules.ares_form(),
         ) {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
@@ -395,26 +399,43 @@ impl Simulation {
         Some((cell, layer))
     }
 
-    /// The raw (Cell, plane) whose vehicle bit Mark(UP) clears for the Unit
-    /// `id` ([`Self::foot_mark_remove`]), read without clearing it: once
-    /// Mark(UP) admits it and [`Self::foot_pick_up`] finds its Cell,
-    /// [`Self::foot_mark_raw`] clears the plane its Location picks.
-    pub(crate) fn unit_mark_up_raw_cleared(&self, id: u64) -> Option<((u16, u16), MovementLayer)> {
-        let entity = self.substrate.entities.get(id)?;
+    /// The raw (Cell, plane) pairs whose vehicle bit Mark(UP) clears for the
+    /// Unit `id` ([`Self::foot_mark_remove`]), read without clearing them:
+    /// once Mark(UP) admits it and [`Self::foot_pick_up`] finds its Cell,
+    /// [`Self::foot_mark_raw`] clears the plane its Location picks, and the
+    /// plane its last mark chose where Ares recorded one
+    /// ([`Self::track_raw_mark_at`]).
+    pub(crate) fn unit_mark_up_raw_cleared(&self, id: u64) -> Vec<((u16, u16), MovementLayer)> {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Vec::new();
+        };
         if entity.category() != EntityCategory::Unit
             || entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
             || !entity.foot_occupation_enabled()
+            || self.foot_mark_cell(id).is_none()
         {
-            return None;
+            return Vec::new();
         }
-        self.foot_mark_cell(id)?;
-        Some(raw_occupation_plane(
+        let (at, layer) = raw_occupation_plane(
             ground_pose::position_world_coord(&entity.position),
             false,
             self.resolved_terrain.as_ref(),
             self.path_grid.as_deref(),
-        ))
+        );
+        let mut cleared = vec![(at, layer)];
+        // Only Ares' raw mark records a plane; `None` leaves the stock list.
+        if let Some(deck) = entity.ares_alt_occupation() {
+            let last = if deck {
+                MovementLayer::Bridge
+            } else {
+                MovementLayer::Ground
+            };
+            if last != layer {
+                cleared.push((at, last));
+            }
+        }
+        cleared
     }
 
     /// Remove/AddContent's receiver tail: Infantry returns first
@@ -426,6 +447,7 @@ impl Simulation {
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         put: bool,
+        ares: bool,
     ) -> bool {
         let Some(entity) = substrate.entities.get(id) else {
             return false;
@@ -434,7 +456,7 @@ impl Simulation {
             return false;
         }
         let coord = ground_pose::position_world_coord(&entity.position);
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, put)
+        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, put, ares)
     }
 
     /// The object's own raw occupation receiver on `coord`, vt+0xF0 (PUT) or
@@ -443,6 +465,8 @@ impl Simulation {
     /// `0x005F60A0`/`0x005F6120` (0x40). Mark reaches it through
     /// [`Self::foot_mark_raw`]; a direct call (the Jumpjet grounded reset,
     /// `0x0054D42F`) has no Foot enable gate. Whether a receiver ran.
+    /// `ares` is the game's `RuleSet::ares_form`, for the Unit receiver
+    /// ([`Self::track_raw_mark_at`]).
     pub(crate) fn object_raw_receiver_at(
         substrate: &mut ObjectSubstrate,
         path_grid: &Option<Arc<PathGrid>>,
@@ -450,13 +474,22 @@ impl Simulation {
         id: u64,
         coord: DriveCoord,
         put: bool,
+        ares: bool,
     ) -> bool {
         let Some(entity) = substrate.entities.get(id) else {
             return false;
         };
         match entity.category() {
             EntityCategory::Unit => {
-                Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
+                Self::track_raw_mark_at(
+                    substrate,
+                    path_grid,
+                    resolved_terrain,
+                    id,
+                    coord,
+                    put,
+                    ares,
+                );
             }
             EntityCategory::Infantry => {
                 let owner = entity.owner();
@@ -512,6 +545,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_mark_tests.rs"]
 mod tests;

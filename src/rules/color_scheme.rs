@@ -159,7 +159,7 @@ pub fn backing_rgb_for_priority(schemes: &[ColorSchemeEntry], priority: i32) -> 
     scheme_for_priority(schemes, priority).map(|scheme| hsv_to_rgb(scheme.hsv))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
 

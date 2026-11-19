@@ -81,7 +81,7 @@ fn mean(samples: impl Iterator<Item = ([f32; 4], f32)>) -> [f32; 4] {
     })
 }
 
-fn srgb_to_linear(value: f32) -> f32 {
+pub(super) fn srgb_to_linear(value: f32) -> f32 {
     if value <= 0.040_45 {
         value / 12.92
     } else {
@@ -97,7 +97,7 @@ fn linear_to_srgb(value: f32) -> f32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

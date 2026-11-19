@@ -67,7 +67,6 @@ fn corpus() -> &'static Value {
 /// House, typed country/resource readers, construction and dispatch stay real.
 // Ares replaces the stock payment (DepositTiberium 10044230, hooks
 // 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
-#[cfg(not(feature = "ares"))]
 fn income_scene(row: &Value) -> Scene {
     use crate::util::native_x87::NativeF32Bits;
     let input = &row["input"];
@@ -149,7 +148,6 @@ fn income_scene(row: &Value) -> Scene {
 
 // Ares replaces the stock payment (DepositTiberium 10044230, hooks
 // 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn native_income_controls_reach_unit_and_slave_payment_callers() {
     let native = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
@@ -228,7 +226,6 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
 
 // Ares replaces the stock payment (DepositTiberium 10044230, hooks
 // 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn virtual_purifier_wrap_and_saved_payment_use_native_inputs() {
     let native = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
@@ -378,7 +375,7 @@ pub(super) fn world_with(
     sim.session.set_map_height_for_test(33);
     sim.overlay_grid = Some(OverlayGrid::new(33, 33));
     sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     sim
@@ -854,14 +851,13 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
         "{context}: balance"
     );
     // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
-    #[cfg(feature = "ares")]
-    let _ = score;
-    #[cfg(not(feature = "ares"))]
-    assert_eq!(
-        score,
-        expected["score"].as_i64().unwrap(),
-        "{context}: score"
-    );
+    if !s.rules.ares() {
+        assert_eq!(
+            score,
+            expected["score"].as_i64().unwrap(),
+            "{context}: score"
+        );
+    }
 }
 
 /// Assert the dispatch delay: the native delay minus its draw is the Rate
@@ -1088,11 +1084,12 @@ fn mission_unload_matches_the_original_harvester_branch() {
         let context = input["name"].as_str().unwrap().to_string();
         // Ares hook 0x0073DF66 replaces the East window these two rows
         // probe (`ares_mission_unload_faces_the_dock_exactly`).
-        #[cfg(feature = "ares")]
-        if matches!(
-            context.as_str(),
-            "unload_window_low_edge" | "unload_facing_west_latch"
-        ) {
+        if crate::rules::ares_switch::ares_way()
+            && matches!(
+                context.as_str(),
+                "unload_window_low_edge" | "unload_facing_west_latch"
+            )
+        {
             continue;
         }
         let mut s = scene(input);
@@ -1116,9 +1113,9 @@ fn mission_unload_matches_the_original_harvester_branch() {
 /// stock window's low edge turns and waits as the outside row does, and a
 /// mid-swing turret counts as facing it, so the latched west row arms the
 /// unload as the first pass does.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_mission_unload_faces_the_dock_exactly() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rows = corpus()["mission_unload"].as_array().unwrap();
     for (name, waits) in [
         ("unload_window_low_edge", true),

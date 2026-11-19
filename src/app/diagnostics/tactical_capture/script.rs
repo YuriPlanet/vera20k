@@ -1844,7 +1844,7 @@ fn placement_budget_stage(role: StructureRole) -> BudgetStage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod script_tests {
     use super::*;
 

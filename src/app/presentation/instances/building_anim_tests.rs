@@ -54,7 +54,7 @@ fn fixture_with_anim_keys(
             entries.insert(
                 ShpSpriteKey {
                     palette_context: ShpPaletteContext::AnimScheme,
-                    type_id: name.to_string(),
+                    type_id: name.into(),
                     facing: 0,
                     frame: 3,
                     house_color: HouseColorIndex(1),
@@ -74,7 +74,7 @@ fn fixture_with_anim_keys(
             if !anim_keys.is_empty() {
                 let mut shadow_key = ShpSpriteKey {
                     palette_context: ShpPaletteContext::AnimScheme,
-                    type_id: name.to_string(),
+                    type_id: name.into(),
                     facing: 0,
                     frame: 3,
                     house_color: HouseColorIndex(1),
@@ -148,16 +148,7 @@ fn emit_with_material(
     palette: PaletteLight,
     material: DrawState,
 ) -> Vec<PlannedObjectInstance> {
-    emit_admitted(
-        sim,
-        rules,
-        building,
-        atlas,
-        order,
-        palette,
-        material,
-        &|_| true,
-    )
+    emit_admitted(sim, rules, building, atlas, order, palette, material, None)
 }
 
 fn emit_admitted(
@@ -168,10 +159,21 @@ fn emit_admitted(
     order: &NativeDisplayOrder,
     palette: PaletteLight,
     material: DrawState,
-    slot_admitted: &dyn Fn(u64) -> bool,
+    admission: Option<([f32; 2], [f32; 2])>,
 ) -> Vec<PlannedObjectInstance> {
     let mut out = Vec::new();
-    let building = sim.entities().get(building).unwrap();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
+    let building = frame.object(building).unwrap();
+    // Every slot, or those a Display walk with this camera and viewport admits.
+    let slot_anims = match admission {
+        None => super::every_slot_anim(sim, building),
+        Some((corner, size)) => super::admitted_slot_anims(
+            sim,
+            &frame,
+            building,
+            crate::app::presentation::instances::TacticalAdmission { corner, size },
+        ),
+    };
     let grid = crate::map::lighting::CellLightGrid::new();
     emit_building_anims(
         &mut out,
@@ -186,9 +188,11 @@ fn emit_admitted(
         &grid,
         (building.position.rx(), building.position.ry()),
         sim,
+        &frame,
         Some(building.owner()),
         building,
-        slot_admitted,
+        &slot_anims,
+        &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
         &|_| 0,
         0.0,
         10000.0,
@@ -236,7 +240,7 @@ fn material_fixture(name: &str, keys: &str) -> (Simulation, RuleSet, u64, u64, S
     let atlas = SpriteAtlas::from_test_entries(HashMap::from([(
         ShpSpriteKey {
             palette_context: ShpPaletteContext::AnimScheme,
-            type_id: name.to_string(),
+            type_id: name.into(),
             facing: 0,
             frame: 0,
             house_color: HouseColorIndex(1),
@@ -267,10 +271,10 @@ fn force_slot_translucency(sim: &mut Simulation, anim: u64) {
 #[test]
 fn high_terrain_building_slots_keep_their_offsets_and_depth() {
     let (mut sim, rules, building, atlas) = fixture("NATBNK", false);
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let flat = emit(&sim, &rules, building, &atlas, &order);
     assert!(!flat.is_empty());
-    let entity = sim.entities_mut_for_test().get_mut(building).unwrap();
+    let entity = sim.entity_mut_for_test(building).unwrap();
     entity.position.set_z_for_test(36);
     entity.position.set_exact_z_leptons_for_test(Some(3744));
     let slots = *entity.building_art.anim_slots();
@@ -283,14 +287,16 @@ fn high_terrain_building_slots_keep_their_offsets_and_depth() {
     }
     let raised = emit(&sim, &rules, building, &atlas, &order);
     assert_eq!(flat.len(), raised.len());
+    // gamemd lifts the building and its slots by AdjustForZ alone.
+    let lift = crate::util::native_x87::adjust_for_z_standard(3744) as f32;
     for (flat, raised) in flat.iter().zip(&raised) {
         for (flat, raised) in flat.pieces.iter().zip(&raised.pieces) {
             assert_eq!(raised.instance.position[0], flat.instance.position[0]);
             assert_eq!(
                 raised.instance.position[1],
-                flat.instance.position[1] - 540.0
+                flat.instance.position[1] - lift
             );
-            assert_eq!(raised.instance.z_adjust, flat.instance.z_adjust - 540.0);
+            assert_eq!(raised.instance.z_adjust, flat.instance.z_adjust - lift);
             assert_eq!(raised.instance.depth, flat.instance.depth);
         }
     }
@@ -339,7 +345,7 @@ fn indexed_slot_translucency_preserves_selector_remap_and_replay() {
         if forced {
             force_slot_translucency(&mut sim, anim);
         }
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let palette = PaletteLight::color_scheme([900, 1000, 800], 1000);
         assert_eq!(palette.rows(), 53);
         let inherited = DrawState {
@@ -369,7 +375,6 @@ fn slot_translucency_preserves_unresolved_inherited_materials() {
             cloak: Some(CloakDrawInput {
                 character: 1,
                 progress: 0,
-                native_offset_words: -3,
                 voxel: false,
             }),
             ..DrawStateInput::default()
@@ -388,10 +393,6 @@ fn slot_translucency_preserves_unresolved_inherited_materials() {
     for inherited in [
         cloak.state,
         DrawState {
-            native_offset_words: 5,
-            ..base
-        },
-        DrawState {
             fx_flags: FX_EMP,
             ..base
         },
@@ -403,7 +404,7 @@ fn slot_translucency_preserves_unresolved_inherited_materials() {
         let (mut sim, rules, building, anim, atlas) = material_fixture("ORDINARY", "");
         force_slot_translucency(&mut sim, anim);
         let palette = PaletteLight::color_scheme([1000; 3], 1000);
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let planned =
             emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
         // In particular inherited cloak25 must not be replaced or ORed with
@@ -426,7 +427,7 @@ fn bouncing_slot_anims_take_the_ordinary_material_after_their_ground_shadow() {
             remap_row: 7,
             ..DrawState::default()
         };
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let order = NativeDisplayOrder::from_world(&sim, None);
         let mut planned =
             emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
         assert_eq!(planned.len(), 1, "{name}");
@@ -461,7 +462,7 @@ fn metadata_free_slot_keeps_alpha_and_compatibility_replay() {
     // indexed metadata. Zero rows must not acquire a packed replay path.
     let palette = PaletteLight::default().with_brightness(1000);
     assert_eq!(palette.rows(), 0);
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let planned = emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
     assert_slot_replay(planned, anim, 0.5, inherited, palette);
 }
@@ -492,7 +493,7 @@ fn rgba_slot_with_palette_metadata_keeps_compatibility_replay() {
     };
     let palette = PaletteLight::color_scheme([1000; 3], 1000);
     assert_eq!(palette.rows(), 53);
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let planned = emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
     assert_eq!(planned.len(), 1);
     assert_eq!(planned[0].parent.id, anim);
@@ -588,7 +589,7 @@ fn building_slot_draws_a_nonempty_shadow_when_the_body_has_no_atlas_entry() {
         type_id: sim
             .interner()
             .resolve(sim.anim(anim).unwrap().type_id())
-            .to_string(),
+            .into(),
         facing: 0,
         frame: 23,
         house_color: HouseColorIndex(1),
@@ -686,7 +687,7 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
                 &rules,
                 building,
                 &atlas,
-                &NativeDisplayOrder::from_display(sim.display_layers())
+                &NativeDisplayOrder::from_world(&sim, None)
             )
             .is_empty()
         );
@@ -701,7 +702,7 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
             &rules,
             building,
             &atlas,
-            &NativeDisplayOrder::from_display(sim.display_layers()),
+            &NativeDisplayOrder::from_world(&sim, None),
         );
         assert_eq!(
             visible
@@ -733,8 +734,7 @@ fn bunker_migration_keeps_active_anim_offsets_start_and_independent_membership()
         assert_eq!(before[0].pieces[0].instance.source_palette, 1);
         // The retained Anim coordinate is the owner. A changed body coordinate
         // cannot silently recalculate its child's location in presentation.
-        sim.entities_mut_for_test()
-            .get_mut(building)
+        sim.entity_mut_for_test(building)
             .unwrap()
             .position
             .set_rx_for_test(2);
@@ -784,7 +784,7 @@ fn slot_preparation_keeps_only_slots_display_can_admit() {
             &order,
             PaletteLight::default(),
             DrawState::default(),
-            &|anim| super::super::overlays::slot_anim_admissible(sim, anim, camera, viewport),
+            Some((camera, viewport)),
         )
         .len()
     };

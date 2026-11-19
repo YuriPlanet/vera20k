@@ -55,7 +55,7 @@ byte for that reason.
 - `rules/skirmish_colors.rs` — `SkirmishColorMode`, the key read and the
   priority conversion; the vanilla answer stays in `rules/color_scheme.rs`.
 - `rules/ruleset.rs` — the immutable mode and its config hash;
-  `RuleSet::skirmish_colors()` answers the vanilla table in a build without the
+  `RuleSet::skirmish_colors()` never answers this mode in a build without the
   feature, so callers carry no `cfg`.
 - `app/frontend/skirmish.rs` — the launch `HouseColorMap`.
 - `app/frontend/cncnet_spawn.rs` — the spawn.ini colour admission width.
@@ -65,8 +65,10 @@ byte for that reason.
 
 ## Residuals
 
-- The skirmish shell keeps listing YR's eight dropdown colours; the feature only
-  changes how a received index resolves, as Phobos documents.
+- The skirmish shell lists YR's eight dropdown colours under this mode; the
+  feature only changes how a received index resolves, as Phobos documents.
+  VERA's [extra lobby colours](skirmish-colors.md) are not listed with the key
+  on, because the hook gives every index its own meaning.
 - A save records player priorities, not the mode. Loading a save made with the
   feature under the other setting re-resolves the priorities, which is the same
   behaviour as editing the key between sessions.
@@ -75,9 +77,9 @@ byte for that reason.
   the untouched launcher path would leave the observer on the default scheme.
 - An index past the end of `[Colors]` falls back to the default scheme ramp
   instead of reading past the list as the native array would.
-- A stock (non-`phobos`) build keeps the spawn.ini colour cap at YR's eight
-  priorities, so it rejects a spawner index of 8 or more rather than resolving
-  it through the vanilla table.
+- A stock (non-`phobos`) build takes YR's eight priorities and VERA's extra
+  lobby colours 9 to 30 from spawn.ini ([skirmish colours](skirmish-colors.md)),
+  and rejects 8, the observer's, and anything past 30.
 - VERA reads the key from each scenario's layered rules; Phobos reads it once
   from RULESMD.INI at startup (`0x0052D21F`), so only in VERA can a mode or map
   INI change it.

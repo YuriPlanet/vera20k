@@ -119,6 +119,10 @@ pub struct ParticleType {
     /// Delete the particle when its animation state hits the limit.
     pub delete_on_state_limit: bool,
     /// Final animation state — particle is marked for deletion at this state.
+    ///
+    /// RESIDUAL: gamemd keeps this and the next three state bytes signed (a
+    /// value of 128 or more reads negative through `MOVSX`); VERA holds them
+    /// unsigned. Only mod data sets a state that high.
     pub end_state_ai: u8,
     /// Initial animation state (start of state machine).
     pub start_state_ai: u8,
@@ -162,8 +166,8 @@ pub struct ParticleType {
     pub z_velocity_range: i32,
     /// Ares ParticleTypeExt+0x18 `DamageRange` (Valueable<double>, constructor
     /// 0; LoadFromINIFile 100291A0, hook 0x645405), in cells: above zero a Gas
-    /// particle damages every object within it (`particles::gas`).
-    #[cfg(feature = "ares")]
+    /// particle damages every object within it (`particles::gas`). Read in
+    /// every Rules mode; only Ares' gas damage consumes it.
     pub(crate) ares_damage_range: NativeF64Bits,
 }
 
@@ -270,14 +274,13 @@ impl ParticleType {
             y_velocity: section.read_int("YVelocity", 1),
             min_z_velocity: section.read_int("MinZVelocity", 0),
             z_velocity_range: section.read_int("ZVelocityRange", 1),
-            #[cfg(feature = "ares")]
             ares_damage_range: section
                 .read_ares_double_bits("DamageRange", NativeF64Bits::POSITIVE_ZERO),
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

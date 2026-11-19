@@ -19,6 +19,7 @@ const COUNTRIES: &str = "\
 /// (`0x1001C107..0x1001C135`), not by registry position.
 #[test]
 fn ares_country_defaults_match_the_installed_initializer() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed("[Countries]\n0=YuriCountry\n1=C1\n2=Americans\n3=Custom\n[Custom]\n");
     assert_eq!(rules.country_flag("Americans"), Some("usai.pcx"));
     assert_eq!(
@@ -51,6 +52,7 @@ fn ares_country_defaults_match_the_installed_initializer() {
 
 #[test]
 fn ares_country_reads_flags_status_taunts_order_and_weights() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(&format!(
         "{COUNTRIES}\
          [Custom]\n\
@@ -88,6 +90,7 @@ fn ares_country_reads_flags_status_taunts_order_and_weights() {
 /// AI weight is not copied.
 #[test]
 fn ares_country_parent_copy_overwrites_primary_keys_and_common_keys_override() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(
         "[Countries]\n0=Parent\n1=Child\n\
          [Parent]\n\
@@ -119,6 +122,7 @@ fn ares_country_parent_copy_overwrites_primary_keys_and_common_keys_override() {
 /// `rani.pcx` branch (`0x4E3567`).
 #[test]
 fn ares_country_empty_flag_retains_and_none_clears_to_rani() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let parsed = IniFile::from_str(COUNTRIES);
     let countries = parsed.section("Countries").unwrap().clone();
     let mut americans = IniSection::new("Americans".into());
@@ -140,6 +144,7 @@ fn ares_country_empty_flag_retains_and_none_clears_to_rani() {
 
 #[test]
 fn ares_custom_country_insignia_replaces_the_stock_loading_chain() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(&format!("{COUNTRIES}[Custom]\nFile.Flag=MyFlag.PCX\n"));
     assert_eq!(
         rules.country_insignia_pcx(10).as_deref(),

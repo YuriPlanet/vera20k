@@ -57,10 +57,19 @@ pub(crate) fn request_gate_open_for_cell(
     let Some(occ) = sim.substrate.occupancy.get(cell.0, cell.1) else {
         return true;
     };
-    let candidates: Vec<u64> = occ
-        .iter_layer(MovementLayer::Ground)
-        .filter_map(|occupant| (occupant.entity_id != mover_id).then_some(occupant.entity_id))
-        .collect();
+    let others = || {
+        occ.iter_layer(MovementLayer::Ground)
+            .filter_map(|occupant| (occupant.entity_id != mover_id).then_some(occupant.entity_id))
+    };
+    // Only a Structure can be a Gate. With none among the others the walk
+    // below skips every candidate, so its list is not built (VERA-only,
+    // results unchanged).
+    if !others().any(|id| {
+        sim.substrate.entities.category_of(id) == Some(EntityCategory::Structure)
+    }) {
+        return true;
+    }
+    let candidates: Vec<u64> = others().collect();
     for candidate_id in candidates {
         let Some(candidate) = sim.substrate.entities.get(candidate_id) else {
             continue;
@@ -156,6 +165,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
         return 0;
     };
     let now = sim.session.binary_frame();
+    let ares = rules.ares_form();
     if !object.gate {
         //44E77C..44E794: non-Gate Open queues Guard without commencing.
         let readiness = LiveReadyInputProvider { rules };
@@ -180,6 +190,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             if phase == DoorPhase::OpenStable {
                 entity.mission.set_handler_state(2);
                 entity
+                    .building
                     .building_gate
                     .get_or_insert_with(Default::default)
                     .hold_timer
@@ -203,18 +214,16 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             };
             entity.mission.set_handler_state(1);
             entity
+                .building
                 .building_gate
                 .get_or_insert_with(Default::default)
                 .hold_timer
                 .arm(now, hold_ticks);
-            //44E550 plays GateDown after starting the door; default builds
-            // leave that stock sound and its redraw a residual.
-            #[cfg(feature = "ares")]
-            if opened {
+            //44E550 plays GateDown after starting the door; a game without
+            // Ares leaves that stock sound and its redraw a residual.
+            if ares && opened {
                 play_gate_sound(sim, id, object, false, rules);
             }
-            #[cfg(not(feature = "ares"))]
-            let _ = opened;
             0
         }
         1 | 4 => {
@@ -241,7 +250,10 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
         2 => {
             let obstructed = footprint_has_other_object(sim, id, &object.foundation);
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            let gate = entity.building_gate.get_or_insert_with(Default::default);
+            let gate = entity
+                .building
+                .building_gate
+                .get_or_insert_with(Default::default);
             if obstructed {
                 //44E69F: reseed; never decrement/reanchor on a read.
                 gate.hold_timer.arm(now, hold_ticks);
@@ -261,8 +273,9 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.close_door(deploy_ticks, now);
             entity.mission.set_handler_state(4);
-            #[cfg(feature = "ares")]
-            play_gate_sound(sim, id, object, true, rules);
+            if ares {
+                play_gate_sound(sim, id, object, true, rules);
+            }
             0
         }
         //44E464: states above4 share the cadence exit44E4BA.
@@ -280,7 +293,6 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
 /// closes (`up`) or GateDown as it opens. Ares BuildingClass_Mi_Open_GateUp
 /// (100156B0, hook 0x44E61E) and _GateDown (10015670, hook 0x44E550) take
 /// the type's `GateUpSound`/`GateDownSound` before `[AudioVisual]`'s.
-#[cfg(feature = "ares")]
 fn play_gate_sound(
     sim: &mut Simulation,
     id: u64,
@@ -303,7 +315,7 @@ fn play_gate_sound(
     sim.sound_events.emit(event);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::test_flat_ground_grid;
@@ -390,7 +402,7 @@ mod tests {
             other => panic!("unknown native phase {other}"),
         }
         let hold = &row["initial"]["hold"];
-        gate.building_gate = Some(BuildingGateRuntime {
+        gate.building.building_gate = Some(BuildingGateRuntime {
             hold_timer: MissionTimer::armed(
                 hold[0].as_i64().unwrap() as u32,
                 hold[1].as_i64().unwrap() as u32,
@@ -506,7 +518,7 @@ mod tests {
             native["door"],
             "{context}: Door timer"
         );
-        let hold = entity.building_gate.unwrap().hold_timer;
+        let hold = entity.building.building_gate.unwrap().hold_timer;
         // Native+610 is a separate nominal value, but every Gate writer
         // seeds it identically with60C and no retained read mutates either.
         assert_eq!(
@@ -669,11 +681,14 @@ mod tests {
                 entity.door_timer_fields(),
                 "{name}: Door clock"
             );
-            assert_eq!(restored.building_gate, entity.building_gate, "{name}: hold");
-            let initial_hold = entity.building_gate;
+            assert_eq!(
+                restored.building.building_gate, entity.building.building_gate,
+                "{name}: hold"
+            );
+            let initial_hold = entity.building.building_gate;
             let serialized = serde_json::to_value(entity).unwrap();
             assert_eq!(
-                serialized["building_gate"]
+                serialized["building"]["building_gate"]
                     .as_object()
                     .unwrap()
                     .keys()
@@ -688,13 +703,19 @@ mod tests {
                 .entities
                 .get_mut(GATE)
                 .unwrap()
+                .building
                 .building_gate
                 .as_mut()
                 .unwrap()
                 .hold_timer;
             timer.set_start_frame_for_test(timer.start_frame().wrapping_add(1));
             assert_ne!(sim.state_hash(), hash, "{name}: hold anchor in world hash");
-            sim.substrate.entities.get_mut(GATE).unwrap().building_gate = initial_hold;
+            sim.substrate
+                .entities
+                .get_mut(GATE)
+                .unwrap()
+                .building
+                .building_gate = initial_hold;
             assert_eq!(sim.state_hash(), hash, "{name}: restored hold");
             let frame = sim.session.binary_frame();
             sim.substrate
@@ -725,7 +746,7 @@ mod tests {
             10,
             EntityCategory::Structure,
         );
-        gate.building_gate = Some(BuildingGateRuntime::default());
+        gate.building.building_gate = Some(BuildingGateRuntime::default());
         sim.substrate.entities.insert(gate);
         sim.interner = test_interner();
         sim.substrate.occupancy.add(
@@ -849,9 +870,9 @@ mod tests {
     /// _GateUp (100156B0, hook 0x44E61E): starting to open plays the type's
     /// GateDownSound, else `[AudioVisual] GateDown`; state 3's close plays
     /// GateUpSound, else GateUp.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_gate_sounds_take_the_type_sound_before_the_rules_one() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[AudioVisual]\nGateDown=Rules\nGateUp=Rules\n[BuildingTypes]\n0=GATE\n\
              [GATE]\nStrength=1000\nFoundation=2x2\nGate=yes\nDeployTime=.044\n\

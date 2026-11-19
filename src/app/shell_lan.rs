@@ -30,12 +30,13 @@ const REJOIN_WINDOW: Duration = Duration::from_secs(120);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LanRematch {
     Host,
-    Guest { host: String },
+    Guest { host: String, game_id: u64 },
 }
 
-/// A returning guest's host and how long it is watched for.
+/// The returning guest's original room, its display name and the wait deadline.
 struct Rejoin {
     host: String,
+    game_id: u64,
     until: Instant,
 }
 const RESERVED_LABELS: [&str; 7] = [
@@ -62,11 +63,21 @@ const RESERVED_LITERALS: [&str; 7] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LanServiceRequest {
     Refresh,
-    SelectGame { game_id: Option<u64>, changed: bool },
-    NameChanged(String),
-    Chat { text: Vec<u16>, color: u32 },
-    Join { game_id: u64, observe: bool },
-    CancelJoin { game_id: u64 },
+    SelectGame {
+        game_id: Option<u64>,
+        change: LanSelectionChange,
+    },
+    NameChanged,
+    Chat {
+        text: Vec<u16>,
+    },
+    Join {
+        game_id: u64,
+        observe: bool,
+    },
+    CancelJoin {
+        game_id: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,7 +95,6 @@ pub(crate) enum LanServiceEvent {
         game_id: Option<u64>,
         players: Vec<LanPlayerRow>,
     },
-    Chat(LanChatLine),
     JoinDenied {
         game_id: u64,
         reason: u32,
@@ -107,6 +117,11 @@ pub(crate) struct LanShellRuntime {
     pub(crate) lobby: LanLobbyState,
     /// The single-OK box's label, a CSF or `VERA:` one ([`crate::i18n::label`]).
     pub(crate) modal: Option<&'static str>,
+    /// VERA: the box's text when it says more than its label: why the host
+    /// refused a join whose rules differ ([`agreement::rules_differ_text`]).
+    ///
+    /// [`agreement::rules_differ_text`]: crate::app::shell_network_setup::agreement::rules_differ_text
+    pub(crate) modal_body: Option<String>,
     /// VERA's Create Game box while it is up: the room's limits.
     pub(crate) create: Option<RoomLimitsPicker>,
     pending_join: Option<PendingJoin>,
@@ -119,6 +134,7 @@ impl LanShellRuntime {
         Self {
             lobby: LanLobbyState::new(name, observer),
             modal: None,
+            modal_body: None,
             create: None,
             pending_join: None,
             rejoin: None,
@@ -144,7 +160,7 @@ impl LanShellRuntime {
             .lobby
             .games
             .iter()
-            .find(|game| game.open && game.name.eq_ignore_ascii_case(&rejoin.host))
+            .find(|game| game.open && game.id == rejoin.game_id)
             .map(|game| game.id)
         else {
             return None;
@@ -188,7 +204,12 @@ impl App {
     /// The retained preference owner supplies the edit; admission stays empty.
     pub(crate) fn open_lan_lobby(state: &mut AppState) {
         crate::app::shell_main_menu::clear_typed_codes_for_network_session(state);
-        Self::prepare_multiplayer_settings(state);
+        if !Self::prepare_multiplayer_settings(
+            state,
+            crate::app::match_runtime::session::SessionMode::Lan,
+        ) {
+            return;
+        }
         if !Self::ensure_skirmish_shell_chrome(state) {
             return;
         }
@@ -196,13 +217,21 @@ impl App {
             .match_state
             .session
             .enter_network(NetworkReturnContext::LanLobby);
-        let local = state.frontend.multiplayer_shell_runtime.local_participant();
-        let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-        let mut runtime = LanShellRuntime::new(&local.name, observer);
+        let owner = &mut state.frontend.multiplayer_shell_runtime;
+        let local = owner.local_participant();
+        // The name box shows the name as typed; the lobby row shows it as
+        // every other player sees it.
+        let name = owner.open_lan_name_box();
+        let mut runtime = LanShellRuntime::new(&name, owner.lan_observer());
         runtime
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
         state.frontend.lan = Some(runtime);
+        // Android routes a socket by the process's network when the socket is
+        // made: bind the process to Wi-Fi before the visit opens its sockets,
+        // and watch that network while the lobby is open.
+        #[cfg(target_os = "android")]
+        crate::util::lan_network::acquire();
         crate::app::lan_service::open(state);
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         shell_transition::invalidate_main_menu_dialog_instance(state);
@@ -220,6 +249,8 @@ impl App {
             .persist_lan_preferences();
         state.frontend.lan = None;
         crate::app::lan_service::close(state);
+        #[cfg(target_os = "android")]
+        crate::util::lan_network::release();
         state.match_state.session.leave_network();
         Self::close_single_player_shell(state);
         state
@@ -247,11 +278,12 @@ impl App {
                     .lan_create_observer();
                 Self::commit_lan_create(state, observe);
             }
-            Some(LanRematch::Guest { host }) => {
+            Some(LanRematch::Guest { host, game_id }) => {
                 let text = crate::i18n::tr_fill("VERA:LanWaitingForHost", &[("host", &host)]);
                 if let Some(runtime) = state.frontend.lan.as_mut() {
                     runtime.rejoin = Some(Rejoin {
                         host,
+                        game_id,
                         until: Instant::now() + REJOIN_WINDOW,
                     });
                 }
@@ -360,6 +392,7 @@ fn denial_modal(reason: u32, observer: bool) -> Option<&'static str> {
 fn show_modal(state: &mut AppState, key: &'static str) {
     let runtime = state.frontend.lan.as_mut().expect("active BB");
     runtime.modal = Some(key);
+    runtime.modal_body = None;
     runtime.lobby.cancel_pointer();
     state.frontend.shell_controller.push(MODAL, true);
 }
@@ -383,10 +416,31 @@ pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_
     append_chat_to(state, setup, !setup && route.wol_lobby(), line, sent_at);
 }
 
+/// [`append_chat`] for a line of the game room's: VERA keeps a lobby
+/// visitor's room going hidden (docs/lobby-protocol.md "Visiting the lobby"),
+/// and the line goes to its transcript, not to the lobby page on screen.
+pub(crate) fn append_room_chat(state: &mut AppState, line: LanChatLine) {
+    append_room_chat_sent_at(state, line, None);
+}
+
+/// [`append_room_chat`] for a line the WOL service sent at `sent_at`.
+pub(crate) fn append_room_chat_sent_at(
+    state: &mut AppState,
+    line: LanChatLine,
+    sent_at: Option<u64>,
+) {
+    if crate::app::shell_wol::lobby::visiting(state) {
+        append_chat_to(state, true, false, line, sent_at);
+    } else {
+        append_chat_sent_at(state, line, sent_at);
+    }
+}
+
 /// The WOL lobby `0x113`'s transcript even while C2/C9 cover it: native
 /// keeps it in the shell stack, hidden, and its sinks still write to it.
-pub(crate) fn append_wol_lobby_chat(state: &mut AppState, line: LanChatLine) {
-    append_chat_to(state, false, true, line, None);
+/// `sent_at` as for [`append_chat_sent_at`].
+pub(crate) fn append_wol_lobby_chat(state: &mut AppState, line: LanChatLine, sent_at: Option<u64>) {
+    append_chat_to(state, false, true, line, sent_at);
 }
 
 fn append_chat_to(
@@ -411,15 +465,15 @@ fn append_chat_to(
             .as_secs();
         line.text = crate::ui::wol_chat::timed_line(line.text, sent_at, now);
     }
-    let (rect, scale) = if setup {
+    let (rect, scale, text) = if setup {
         let layout = crate::app::input::multiplayer_setup::layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, layout.chat_text_scale())
     } else if wol_lobby {
         let layout = crate::app::shell_wol::lobby::layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, 1.0)
     } else {
         let layout = layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, 1.0)
     };
     let chat = if setup {
         state
@@ -444,9 +498,10 @@ fn append_chat_to(
     if let Some(chat) = chat {
         let visible = chat
             .list
-            .geometry(rect, chat.lines.len(), scale)
+            .geometry_for_text(rect, chat.lines.len(), scale, text)
             .visible_rows;
-        chat.append_message(line, scale.base_rect(rect).w, visible, |units| {
+        let width = crate::ui::lan_shell::chat_wrap_width(rect, scale, text);
+        chat.append_message(line, width, visible, |units| {
             state
                 .renderer
                 .bit_font
@@ -548,11 +603,18 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             .multiplayer_shell_runtime
             .set_lan_observer(value),
         LanLobbyAction::NameChanged(value) => {
-            state.frontend.multiplayer_shell_runtime.set_handle(&value);
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .set_lan_name(&value);
+            // The row shows the name as sent, as the service's rebuild does.
+            let name = state
+                .frontend
+                .multiplayer_shell_runtime
+                .local_participant()
+                .name;
             let runtime = state.frontend.lan.as_mut().unwrap();
-            runtime
-                .requests
-                .push(LanServiceRequest::NameChanged(value.clone()));
+            runtime.requests.push(LanServiceRequest::NameChanged);
             // Local discovery row is a projection. It is always first only
             // when looking at the Lobby sentinel, never a selected game's roster.
             // 0x541's handler rebuilds the roster (0x005DAFE0), so a selected
@@ -560,8 +622,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             if runtime.lobby.game_list.selected == Some(0) {
                 let mut players = runtime.lobby.players.clone();
                 match players.first_mut() {
-                    Some(local) => local.name = value,
-                    None => players.push(local_lobby_row(&value)),
+                    Some(local) => local.name = name,
+                    None => players.push(local_lobby_row(&name)),
                 }
                 runtime.lobby.replace_players(players);
             }
@@ -573,7 +635,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 state,
                 LanChatLine {
                     text: display,
-                    //5DDEB9..5DDECA: echo uses7EEF44, outgoing uses7EEF2C.
+                    // `0x005DDEB9..0x005DDECA`: the echo uses `[0x7EEF44]`;
+                    // the packet's `[0x7EEF2C]` is `lan_service::chat_packet`'s.
                     color: 0x0040_FFFF,
                 },
             );
@@ -583,19 +646,16 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .as_mut()
                 .unwrap()
                 .requests
-                .push(LanServiceRequest::Chat {
-                    text: message,
-                    color: 0x0000_F0F0,
-                });
+                .push(LanServiceRequest::Chat { text: message });
         }
-        LanLobbyAction::SelectGame { game_id, changed } => {
+        LanLobbyAction::SelectGame { game_id, change } => {
             let runtime = state.frontend.lan.as_mut().unwrap();
             if game_id.is_none() {
                 runtime.lobby.replace_players(vec![local_lobby_row(&name)]);
             }
             runtime
                 .requests
-                .push(LanServiceRequest::SelectGame { game_id, changed });
+                .push(LanServiceRequest::SelectGame { game_id, change });
         }
     }
     state.platform.window.request_redraw();
@@ -628,7 +688,6 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
                 runtime.lobby.replace_players(players);
             }
         }
-        LanServiceEvent::Chat(line) => append_chat(state, line),
         LanServiceEvent::JoinDenied { game_id, reason } => {
             let Some(pending) = runtime
                 .pending_join
@@ -642,6 +701,14 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             report_error(state, "TXT_REQUEST_DENIED");
             if let Some(message) = message {
                 show_modal(state, message);
+            }
+            // VERA: the host compared the rules hash, and retail's text for
+            // it sends the player to Westwood. Say what this game changes.
+            if reason == 6 {
+                let body = crate::app::shell_network_setup::agreement::rules_differ_text(state);
+                if let Some(runtime) = state.frontend.lan.as_mut() {
+                    runtime.modal_body = Some(body);
+                }
             }
         }
         LanServiceEvent::JoinAccepted(accepted) => {
@@ -798,6 +865,7 @@ fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGame
 fn acknowledge(state: &mut AppState) {
     if let Some(runtime) = state.frontend.lan.as_mut() {
         runtime.modal = None;
+        runtime.modal_body = None;
         runtime.lobby.cancel_pointer();
     }
     state.frontend.shell_controller.pop();
@@ -1189,7 +1257,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     deadline
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -1263,6 +1331,7 @@ mod tests {
         runtime.take_service_requests();
         runtime.rejoin = Some(Rejoin {
             host: "Host".into(),
+            game_id: 7,
             until: now + REJOIN_WINDOW,
         });
         let game = |id, name: &str, open| LanGameRow {
@@ -1272,10 +1341,12 @@ mod tests {
         };
         runtime
             .lobby
-            .replace_games(vec![game(8, "Other", true), game(7, "host", false)]);
+            .replace_games(vec![game(8, "Host", true), game(7, "host", false)]);
         assert_eq!(runtime.rejoin_host(false, now), None);
         assert_eq!(runtime.pending_game(), None);
-        runtime.lobby.replace_games(vec![game(7, "host", true)]);
+        runtime
+            .lobby
+            .replace_games(vec![game(8, "Host", true), game(7, "host", true)]);
         runtime.rejoin_host(true, now);
         assert_eq!(runtime.pending_game(), Some(7));
         assert!(matches!(
@@ -1290,6 +1361,7 @@ mod tests {
         let mut late = LanShellRuntime::new("Guest", false);
         late.rejoin = Some(Rejoin {
             host: "Host".into(),
+            game_id: 7,
             until: now,
         });
         late.lobby.replace_games(vec![game(7, "Host", true)]);

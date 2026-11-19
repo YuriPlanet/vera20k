@@ -120,7 +120,7 @@ The CRT-corrected historical conditional packet is
 `paid_world_drive_crt.json.gz`, and `huts/hut_joined_drive_crt.json.gz`; their
 literal projections are `paid_conditional_v26_vectors.json`,
 `paid_drive_crt_vectors.json`, and `huts/hut_drive_crt_vectors.json`. The old
-packets, projections and promotion digests remain immutable historical evidence.
+projections are no longer in the repository; `promotion.json` keeps their digests.
 The pre-CRT packets used the superseded image-zero fixture; the corrected
 conditional packet retains its valid historical outside-input boundary. Existing generator modules and shared
 publication owners target the corrected versions; there is no compatibility
@@ -165,8 +165,8 @@ as goldens.
 and outside-call receipts. Its source catalog and capture receipt are sealed to
 retained build `bridge-fv-current-v26`, commit `10c01f0e` and executable
 SHA256 `9f61c3df261986cb9798c1ed094b891ffd4090ce958eec5de0ba0725b72f407d`.
-The previous `paid_conditional.input.json` and its `bridge-fv-mission-v11a`
-receipts are retained. All six declarations, seeds and frame horizons are
+The previous `bridge-fv-mission-v11a` input is no longer in the repository;
+`paid_conditional.meta.json` keeps its digest. All six declarations, seeds and frame horizons are
 preserved; only the newly observed outside inputs define this new comparison.
 
 Current main moved Infantry idle calls from a global suffix to the mission's

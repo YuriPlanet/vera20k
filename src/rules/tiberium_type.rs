@@ -131,6 +131,15 @@ impl TiberiumImageState {
             self.slope_count = 8;
         }
     }
+    /// What every runtime read of the type needs: a bound Image
+    /// (`TiberiumClass+0xE0`), which `OverlayToTiberiumIndex @ 0x005FDD20`
+    /// dereferences unchecked at `+0x294`, and the nonzero primary and
+    /// density counts (`+0xE8`, `+0xE4`) gamemd divides by
+    /// (`DrawOverlay 0x0047F860..0x0047F8FD`, `SpreadCellGerminate
+    /// 0x004819CA`).
+    fn usable(self) -> bool {
+        self.base_overlay.is_some() && self.density_levels > 0 && self.primary_count > 0
+    }
 
     /// PointerExpired722191..72219C clears E0 while leaving E4/E8/EC.
     pub(crate) fn clear_overlay(&mut self) {
@@ -161,6 +170,10 @@ pub struct TiberiumType {
     /// AnimType428B80 answers, used by AnimStart424DCC.
     debris: Vec<String>,
     image: TiberiumImageState,
+    /// Set once by `TiberiumTypeRegistry::from_processed_rules` for an entry
+    /// whose retained Image state no runtime read can use: the type keeps its
+    /// `[Tiberiums]` position, matches no overlay and is never placed.
+    inert: bool,
     /// Credit value per harvested density unit.
     pub value: i32,
     /// `Power=` (`TiberiumClass+0xBC`): constructor 0, ReadInt over the
@@ -182,8 +195,8 @@ pub struct TiberiumType {
     pub spread: i32,
     /// `SpreadPercentage=` as the native `TiberiumClass+0xA0` double.
     pub spread_percentage_bits: u64,
-    /// Ares TiberiumExt (`rules::ares_tiberium`).
-    #[cfg(feature = "ares")]
+    /// Ares TiberiumExt (`rules::ares_tiberium`); its default unless the
+    /// Rules are read the Ares way.
     ares: crate::rules::ares_tiberium::TiberiumExtRules,
 }
 
@@ -227,11 +240,25 @@ impl TiberiumTypeRegistry {
             if ty.allow_ramps {
                 ty.image.force_ramp_slopes();
             }
+            // `TiberiumClass::ReadINI @ 0x00721C3F..0x00721C55` reads `Image=`
+            // with default -1 and then leaves `+0xE0..+0xEC` at the
+            // constructor's zeros (`0x0072173A..0x0072174C`). gamemd faults on
+            // that null when the walk in `OverlayToTiberiumIndex @ 0x005FDD20`
+            // reaches the entry (it returns at the first match); here the
+            // entry stays in place (later indices do not move) and is inert.
+            ty.inert = !image.usable();
+            if ty.inert {
+                log::warn!(
+                    "[Tiberiums] entry {index} ({name}) has no usable Image=; \
+                     it is kept in place but never matches or places an overlay"
+                );
+            }
             types.push(ty);
         }
-        #[cfg(feature = "ares")]
-        for (ty, ext) in types.iter_mut().zip(processed.tiberium_ext_states()) {
-            ty.ares = ext.clone();
+        if crate::rules::ares_switch::ares_way() {
+            for (ty, ext) in types.iter_mut().zip(processed.tiberium_ext_states()) {
+                ty.ares = ext.clone();
+            }
         }
         Self { types }
     }
@@ -250,6 +277,12 @@ impl TiberiumTypeRegistry {
 
     pub fn get(&self, id: TiberiumTypeId) -> Option<&TiberiumType> {
         self.types.get(id.0 as usize)
+    }
+
+    /// The type runtime code may read an image or a divisor from: `None` for
+    /// an absent index and for an inert entry (see `TiberiumType::is_inert`).
+    pub fn live(&self, id: TiberiumTypeId) -> Option<&TiberiumType> {
+        self.get(id).filter(|ty| !ty.inert)
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -276,8 +309,13 @@ impl TiberiumType {
         self.image
     }
 
+    /// True for an entry without a usable `Image=`: it holds its array index
+    /// but no overlay belongs to it and nothing places it.
+    pub fn is_inert(&self) -> bool {
+        self.inert
+    }
+
     /// The Ares TiberiumExt keys of this type.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares(&self) -> &crate::rules::ares_tiberium::TiberiumExtRules {
         &self.ares
     }
@@ -294,6 +332,7 @@ impl TiberiumType {
             color_scheme: 0,
             debris: Vec::new(),
             image: TiberiumImageState::default(),
+            inert: true,
             value: section.read_int("Value", 0),
             power: section.read_int("Power", 0),
             #[cfg(feature = "phobos")]
@@ -311,13 +350,12 @@ impl TiberiumType {
             spread_percentage_bits: section
                 .read_double("SpreadPercentage", CTOR_PERCENTAGE)
                 .to_bits(),
-            #[cfg(feature = "ares")]
             ares: Default::default(),
         }
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

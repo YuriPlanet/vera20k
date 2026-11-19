@@ -137,7 +137,8 @@ fn fixture_clip(name: &str) -> Option<DecodedAudio> {
             let value = f32::from(i16::from_le_bytes(*pair)) / 32768.0;
             [value, value]
         })
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
     Some(DecodedAudio {
         samples,
         sample_rate: clip["rate"].as_u64().unwrap() as u32,
@@ -971,6 +972,18 @@ impl crate::sim::world::SoundBoundary for RecordingBoundary<'_> {
 
 #[test]
 fn production_gattling_stop_and_release_reach_retained_source_at_native_boundaries() {
+    assert_gattling_stop_and_release_at_native_boundaries(false);
+}
+
+/// [`production_gattling_stop_and_release_reach_retained_source_at_native_boundaries`]
+/// in a game read the Ares way.
+#[test]
+fn production_gattling_stop_and_release_reach_retained_source_read_the_ares_way() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    assert_gattling_stop_and_release_at_native_boundaries(true);
+}
+
+fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
     use crate::sim::combat::gattling::{GattlingState, gattling_sound_owner};
     use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
@@ -989,8 +1002,7 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
     let initial = recorded_boundary(row, "original_admitted_Unit_fire_tail");
     *sim.main_rng_mut_for_test() =
         SimRng::from_native_state_hex_for_test(main_hex(row, &initial["before"])).into();
-    sim.entities_mut_for_test().get_mut(id).unwrap().gattling =
-        GattlingState::from_fields(0, 0, false);
+    sim.entity_mut_for_test(id).unwrap().gattling = GattlingState::from_fields(0, 0, false);
     let (_, raw) = trace_draws(|| sim.gattling_increase(id, rules, 1, FrameEffects::default()));
     assert_eq!(raw.len(), 1);
     assert_eq!(raw[0]["value"], initial["requests"][0]["result"]);
@@ -1034,8 +1046,7 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
     // Stop/Stop/Loop2, from the same Main state: the native threshold
     // Increase draws nothing. The native transition Increase then only
     // charges.
-    #[cfg(not(feature = "ares"))]
-    {
+    if !ares_way {
         let (_, raw) =
             trace_draws(|| sim.gattling_increase(id, rules, 199, FrameEffects::default()));
         assert!(
@@ -1049,7 +1060,7 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
             "threshold component",
         );
     }
-    let transition_ticks = if cfg!(feature = "ares") { 199 } else { 1 };
+    let transition_ticks = if ares_way { 199 } else { 1 };
     let transition = recorded_boundary(row, "original_Unit_tail_hard_stage_transition");
     let native_transition_facts = native_gattling_sound_facts(row, transition);
     let transition_prefix = sim.sound_events().len();
@@ -1105,8 +1116,7 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
         native_transition_facts,
         "native Stop/Stop/Loop2 order after the retained prefix"
     );
-    #[cfg(feature = "ares")]
-    {
+    if ares_way {
         let state = sim.entities().get(id).unwrap().gattling;
         assert_eq!(
             i64::from(state.value()),
@@ -1194,7 +1204,7 @@ fn production_limbo_preserves_frame_sound_scope_in_a_nested_context() {
         .spawn_object("YTNK", "Americans", 13, 14, 0, rules)
         .unwrap();
     let before = &release["before"]["gattling"];
-    sim.entities_mut_for_test().get_mut(id).unwrap().gattling = GattlingState::from_fields(
+    sim.entity_mut_for_test(id).unwrap().gattling = GattlingState::from_fields(
         before["stage"].as_i64().unwrap() as i32,
         before["value"].as_i64().unwrap() as i32,
         before["latch"].as_i64().unwrap() != 0,
@@ -1807,7 +1817,7 @@ fn retail_gattling_registry_and_all_executed_pcm_clips_match_native() {
             (2, 1, 2)
         );
         assert_eq!(
-            mono_bytes(decoded.samples.into_iter()),
+            mono_bytes(decoded.samples.iter().copied()),
             bytes_from_hex(clip["pcm_hex"].as_str().unwrap()),
             "{name}: every original decoded PCM byte"
         );

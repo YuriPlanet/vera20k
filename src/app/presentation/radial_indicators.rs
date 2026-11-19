@@ -2,6 +2,7 @@
 //! Reads the existing selection, online, current-house, coordinate, color and
 //! clock and presentation-pulse owners. No RNG draws, timer writes or detach calls.
 
+use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
 use crate::render::radial_indicator::{RadialIndicatorDraw, radius_pixels};
@@ -68,6 +69,7 @@ pub(crate) struct RadialIndicators {
 
 pub(crate) fn build(
     sim: Option<&Simulation>,
+    frame: Option<&PresentationFrame>,
     rules: Option<&RuleSet>,
     selected: &[u64],
     armed_super_weapon: Option<&str>,
@@ -83,7 +85,7 @@ pub(crate) fn build(
     time_ms: u64,
     steps: u32,
 ) -> RadialIndicators {
-    let (Some(sim), Some(rules)) = (sim, rules) else {
+    let (Some(sim), Some(frame), Some(rules)) = (sim, frame, rules) else {
         return RadialIndicators { draws: Vec::new() };
     };
     #[cfg(not(feature = "phobos"))]
@@ -92,7 +94,7 @@ pub(crate) fn build(
     //6DBE39..72 walks CurrentObjects FORWARD. Overlapping destination edits
     //must retain this order, independently of EntityStore allocation order.
     for &id in selected {
-        let Some(entity) = sim.entities().get(id) else {
+        let Some(entity) = frame.object(id) else {
             continue;
         };
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
@@ -139,7 +141,7 @@ pub(crate) fn build(
     // `SW.Designators`/`SW.Inhibitors` and `DesignatorRange`/`InhibitorRange`
     // are Ares' SWTypeExt keys in VERA's rules; a phobos-only build carries no
     // influence data, so the rings need both capabilities compiled in.
-    #[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
     if show_designator_range
         && let Some(section) = armed_super_weapon
         && let Some(super_weapon) = rules.super_weapon(section)
@@ -164,7 +166,7 @@ pub(crate) fn build(
         && let Some(player) = sim.session().current_house()
     {
         let center = (i32::from(center_cell.0), i32::from(center_cell.1));
-        for (_, entity) in sim.entities().iter_sorted() {
+        for entity in frame.objects() {
             if entity.category() != EntityCategory::Structure || entity.owner() != player {
                 continue;
             }
@@ -179,10 +181,7 @@ pub(crate) fn build(
             if range <= 0 || !entity.is_power_plant_enhancer_active() {
                 continue;
             }
-            let coords = crate::sim::movement::ground_pose::object_get_coords(
-                entity,
-                sim.resolved_terrain(),
-            );
+            let coords = entity.hud.get_coords;
             let enhancer_cell = (
                 coords.x / crate::util::lepton::LEPTONS_PER_CELL_I32,
                 coords.y / crate::util::lepton::LEPTONS_PER_CELL_I32,
@@ -226,6 +225,7 @@ pub(crate) fn build(
             push_placement_rings(
                 &mut draws,
                 sim,
+                frame,
                 rules,
                 armed,
                 cell,
@@ -343,7 +343,7 @@ pub(crate) fn build(
 /// only the explicit lists, ignoring `SW.AnyDesignator`/`SW.AnyInhibitor` and
 /// the health/deactivated/building-power predicates. Radius is the techno's
 /// `DesignatorRange`/`InhibitorRange` falling back to `Sight`.
-#[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
 fn push_designator_rings(
     draws: &mut Vec<RadialIndicatorDraw>,
     sim: &Simulation,
@@ -384,7 +384,6 @@ fn push_designator_rings(
         if !designator && !inhibitor {
             continue;
         }
-        #[cfg(feature = "ares")]
         let range = if designator {
             ty.designator_range().unwrap_or(ty.sight)
         } else {
@@ -392,8 +391,6 @@ fn push_designator_rings(
         };
         // Without Ares the nullable range keys are unread, so Sight is the
         // only source, matching the hook's `.Get(Sight)` on an unset range.
-        #[cfg(not(feature = "ares"))]
-        let range = ty.sight;
         let coords =
             crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
         // The hook overwrites coords.Z with GetCellFloorHeight @ 0x00578080.
@@ -439,31 +436,22 @@ fn push_building_indicator(
     draws: &mut Vec<RadialIndicatorDraw>,
     sim: &Simulation,
     rules: &RuleSet,
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &ObjectRecord,
     object: &crate::rules::object_type::ObjectType,
     rays: bool,
     colors: &HouseColorMap,
     viewport: SurfaceLineViewport,
     time_ms: u64,
 ) {
-    let weapon = crate::sim::combat::combat_weapon::current_weapon(
-        entity,
-        object,
-        sim.entities(),
-        rules,
-        sim.interner(),
-    );
-    let range = object.building_sensor_range(
-        entity.gap_supercharged(),
-        weapon.map(|weapon| weapon.range_leptons),
-    );
+    // GetSensorRange 0x004566B0 with its current weapon, captured for its
+    // own type, which every caller passes as `object`.
+    let range = entity.hud.sensor_range();
     //456768 reads+660, the existing temporal online query;
     //it does NOT sample4555D0 operational/power or a fog predicate.
     if range <= 0 || !entity.building_online() || !sim.house_is_human_player(entity.owner()) {
         return;
     }
-    let position =
-        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
+    let position = entity.hud.get_coords;
     let center = screen_center(viewport, position.x, position.y, position.z);
     let index = colors
         .get(sim.interner().resolve(entity.owner()))
@@ -521,6 +509,7 @@ fn push_building_indicator(
 fn push_placement_rings(
     draws: &mut Vec<RadialIndicatorDraw>,
     sim: &Simulation,
+    frame: &PresentationFrame,
     rules: &RuleSet,
     armed: &str,
     (cell_x, cell_y): (u16, u16),
@@ -539,6 +528,7 @@ fn push_placement_rings(
         false,
         crate::sim::combat::combat_weapon::fresh_object_current_weapon(object, rules)
             .map(|weapon| weapon.range_leptons),
+        rules.ares(),
     );
     if range <= 0 {
         return;
@@ -571,9 +561,8 @@ fn push_placement_rings(
         return;
     };
     let center = (cell_x as i16, cell_y as i16);
-    let nearby: Vec<_> = sim
-        .entities()
-        .values_of_category(EntityCategory::Structure)
+    let nearby: Vec<_> = frame
+        .structures()
         .filter_map(|entity| {
             if entity.owner() != player || !entity.lifecycle.object_alive() {
                 return None;
@@ -582,10 +571,7 @@ fn push_placement_rings(
             if !std::ptr::eq(kind, object) {
                 return None;
             }
-            let coords = crate::sim::movement::ground_pose::object_get_coords(
-                entity,
-                sim.resolved_terrain(),
-            );
+            let coords = entity.hud.get_coords;
             let dx = center.0.wrapping_sub((coords.x / 256) as i16);
             let dy = center.1.wrapping_sub((coords.y / 256) as i16);
             let distance =
@@ -646,10 +632,10 @@ fn screen_center(viewport: SurfaceLineViewport, x: i32, y: i32, z: i32) -> [i32;
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "radial_indicator_app_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "radial_indicator_gpu_tests.rs"]
 mod gpu_tests;

@@ -1,12 +1,14 @@
 [package]
 name = "vera20k-core"
-version = "0.2.8"
+version = "0.3.6"
 edition = "2024"
 description = "VERA20k's GPU-free engine: assets, rules, map, simulation, lockstep and the headless scenario"
 publish = false
 # This manifest sits in `src/` so rustc names every file `src/...`, as it did
 # before the workspace split (backtraces, saved RNG traces and panic locations
 # keep their paths). Targets are listed explicitly.
+# The test group cfgs (tools/README.md, "Test groups").
+build = "core_build.rs"
 autobins = false
 autotests = false
 autoexamples = false
@@ -24,22 +26,63 @@ path = "bin/parity-digest.rs"
 name = "sim-bench"
 path = "bin/sim-bench.rs"
 
+# The saved-game layout id the browser build compiles in (tools/wasm/build.py).
+[[bin]]
+name = "snapshot-layout"
+path = "bin/snapshot-layout.rs"
+
 # External two-client LAN fault proof; absent from normal game builds.
 [[bin]]
 name = "lan-fault-proxy"
 path = "bin/lan-fault-proxy.rs"
 required-features = ["test-support"]
 
+# Test groups: the module path prefixes each one owns; the longest prefix
+# decides. `python -m tools.group_tests check` holds the test modules to it.
+[package.metadata.test-groups]
+assets = ["assets"]
+map = ["map"]
+net = ["net"]
+rules-a-n = [
+    "rules::a", "rules::b", "rules::c", "rules::d", "rules::e", "rules::f", "rules::g",
+    "rules::h", "rules::i", "rules::j", "rules::k", "rules::l", "rules::m", "rules::n",
+]
+rules-o-z = ["rules"]
+scenario = ["headless_scenario", "skirmish_", "rng_continuation", "test_fixture"]
+sim-a-b = ["sim::a", "sim::b"]
+sim-c-g = ["sim::c", "sim::d", "sim::e", "sim::f", "sim::g"]
+sim-combat-a-c = ["sim::combat::a", "sim::combat::b", "sim::combat::c"]
+sim-combat-d-z = ["sim::combat"]
+sim-h-o = [
+    "sim::h", "sim::i", "sim::j", "sim::k", "sim::l", "sim::m", "sim::n", "sim::o",
+]
+sim-movement = ["sim::movement"]
+sim-p-s = ["sim::p", "sim::q", "sim::r", "sim::s"]
+sim-pathfinding = ["sim::pathfinding"]
+sim-production = ["sim::production"]
+sim-superweapon = ["sim::superweapon"]
+sim-t-z = ["sim"]
+sim-trigger = ["sim::trigger"]
+sim-world-a-b = ["sim::world::a", "sim::world::b"]
+sim-world-c-o = [
+    "sim::world::c", "sim::world::d", "sim::world::e", "sim::world::f", "sim::world::g",
+    "sim::world::h", "sim::world::i", "sim::world::j", "sim::world::k", "sim::world::l",
+    "sim::world::m", "sim::world::n", "sim::world::o",
+]
+sim-world-p-s = ["sim::world::p", "sim::world::q", "sim::world::r", "sim::world::s"]
+sim-world-t-z = ["sim::world"]
+sim-world-techno = ["sim::world::techno"]
+util = ["util"]
+
 [features]
 # Forwarded by the client only for an explicitly requested browser build.
 wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
 wasm-net = ["wasm", "dep:wasm-bindgen"]
 wasm-lan = ["wasm-net"]
-wasm-threads = ["wasm", "dep:rayon"]
-# Compile the supported Ares behavior; INIs cannot enable an absent capability.
-ares = []
+wasm-threads = ["wasm", "dep:rayon", "dep:wasm_sync"]
 # Compile the supported Phobos behavior; INIs cannot enable an absent capability.
-# Independent of `ares`: Phobos itself does not require Ares.
+# Ares needs no feature: it switches on from a game's data in every build
+# (`rules::ares_switch`).
 phobos = []
 # Placeholder: NPatch-specific readers land with their first chain.
 npatch = []
@@ -57,6 +100,34 @@ debug-tools = ["telemetry"]
 # Test fixtures and helpers that client tests share; the client enables it
 # through its dev-dependency.
 test-support = []
+# A focused test build (tools/README.md, "Test groups"): with `test-focus` only
+# the test groups whose `tests-*` feature is on compile. Without it every test
+# compiles, so a plain `cargo test` is always the full suite.
+test-focus = []
+tests-assets = []
+tests-map = []
+tests-net = []
+tests-rules-a-n = []
+tests-rules-o-z = []
+tests-scenario = []
+tests-sim-a-b = []
+tests-sim-c-g = []
+tests-sim-combat-a-c = []
+tests-sim-combat-d-z = []
+tests-sim-h-o = []
+tests-sim-movement = []
+tests-sim-p-s = []
+tests-sim-pathfinding = []
+tests-sim-production = []
+tests-sim-superweapon = []
+tests-sim-t-z = []
+tests-sim-trigger = []
+tests-sim-world-a-b = []
+tests-sim-world-c-o = []
+tests-sim-world-p-s = []
+tests-sim-world-t-z = []
+tests-sim-world-techno = []
+tests-util = []
 
 [dependencies]
 # Shared authenticated datagram codec used by the standalone relay.
@@ -109,6 +180,8 @@ rayon = "1.11"
 web-time = { version = "1", optional = true }
 # The browser's main thread may not block, so rayon's own locks spin there.
 rayon = { version = "1.11", optional = true, features = ["web_spin_lock"] }
+# The same for the locks a tick and the draw share (`util::sync`).
+wasm_sync = { version = "0.1.2", optional = true }
 getrandom = { version = "=0.3.4", optional = true, features = ["wasm_js"] }
 js-sys = { version = "0.3", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }

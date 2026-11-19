@@ -604,8 +604,7 @@ pub(crate) fn reinforcement_world(
         &IniFile::from_str(""),
         true,
     );
-    sim.install_team_ai_registry(&registry, rules)
-        .expect("resolved native Team inputs install");
+    sim.install_team_ai_registry(&registry, rules);
     let mut waypoints = HashMap::from([(
         4,
         Waypoint {
@@ -1171,9 +1170,9 @@ fn droppod_reinforcements_bypass_a_nearby_refinery() {
 /// Ares 3.0 TeamTypeClass_CreateInstance_Plane (1003A340, hook 0x65DBB3):
 /// the carrier is the head owner's GetParadropPlane, here its Country's
 /// `ParaDrop.Aircraft=`, not the PDPLANE literal.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_droppod_reinforcement_carrier_is_the_countrys_paradrop_plane() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/team_paradrop_transport.json",
     ))
@@ -1393,7 +1392,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         );
         assert_eq!(
             plane
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers()
@@ -1572,7 +1571,7 @@ fn all01_full_transport_inputs_fit_the_selected_retail_cargo_chain() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     // Literal identities/counts below come from the bound physical map,
     // not from a replicated native transport-selection implementation.
     for (name, expected) in [
@@ -1731,7 +1730,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
             .entities()
             .get(head)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         assert_eq!(
@@ -2333,20 +2332,13 @@ fn place_full_team(
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
     let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
-    sim.install_team_ai_registry(&teams, rules).unwrap();
+    sim.install_team_ai_registry(&teams, rules);
     sim.session.install_waypoints(&map.waypoints);
     sim.classify_map_triggers(rules);
     let team_type = sim.interner.get("FULL_MINER").unwrap();
     for _ in 0..32 {
         let result = sim
-            .advance_app_frame(
-                &[],
-                rules,
-                Some(rules.overlay_registry()),
-                67,
-                TickLane::Ordinary,
-                FrameEffects::default(),
-            )
+            .advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
             .expect("ordinary frame");
         assert!(result.tick.frame_committed);
         if let Some(team) = sim.team_script_vm.first_team_of_type(team_type) {
@@ -2426,4 +2418,71 @@ fn full_slave_miner_reinforcement_fills_the_miner_and_slave_holds() {
             );
         }
     }
+}
+
+/// 65E010's Tunnel arm (`0x0065E2D3`): a team of Tunnel units arrives under
+/// its cell at -256, burrowed and off the cell, and digs out there instead
+/// of appearing on the surface.
+#[test]
+fn a_tunnel_team_arrives_underground_and_digs_out_at_its_cell() {
+    use crate::sim::movement::tunnel_movement::{TUNNEL_DEPTH_Z, TunnelState};
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=DRIL\n[DRIL]\nStrength=240\nSpeed=4\nROT=4\nSpeedType=Track\n\
+         MovementZone=Subterannean\nLocomotor={4A582743-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let member = sim
+        .construct_object_limbo_at_height(
+            "DRIL",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    let owner = sim.interner.intern("Americans");
+    assert!(sim.place_reinforcement_members(
+        &[member],
+        owner,
+        (15, 15),
+        false,
+        &rules,
+        Some(&registry),
+        FrameEffects::default(),
+    ));
+    let state = |sim: &Simulation| {
+        sim.entities()
+            .get(member)
+            .and_then(|actor| actor.locomotor.as_ref()?.tunnel_runtime())
+            .map(|runtime| runtime.state())
+    };
+    let location = |sim: &Simulation| {
+        crate::sim::movement::ground_pose::object_location(
+            sim.entities().get(member).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        )
+    };
+    let actor = sim.entities().get(member).unwrap();
+    assert_eq!(state(&sim), Some(TunnelState::Digging));
+    assert_eq!(location(&sim).z, TUNNEL_DEPTH_Z);
+    assert!(!actor.lifecycle.in_limbo() && !actor.lifecycle.cell_marked());
+    let mut rose = false;
+    for frame in 1..600 {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.process_tunnel_locomotor(member, &rules, Some(&registry), FrameEffects::default());
+        rose |= state(&sim) == Some(TunnelState::PreDigOut);
+        if state(&sim) == Some(TunnelState::Idle) {
+            break;
+        }
+    }
+    assert!(rose, "it digs out rather than appearing");
+    assert_eq!(state(&sim), Some(TunnelState::Idle));
+    assert!(sim.entities().get(member).unwrap().lifecycle.cell_marked());
+    let location = location(&sim);
+    assert_eq!(
+        (location.x / 256, location.y / 256, location.z),
+        (15, 15, 0)
+    );
 }

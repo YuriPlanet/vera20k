@@ -22,6 +22,8 @@ use crate::sim::world::Simulation;
 /// `TreeFire=` anims are constructed with flags 0x600 and 255 loops
 /// (`0x0071C61A..0x0071C637`); ZAdjust then drops by 20 (`0x0071C682`).
 const TREE_FIRE_FLAGS: u32 = 0x600;
+/// The fire is built 80 leptons above the tree's GetCoords (`0x0071C638`).
+const TREE_FIRE_RAISE: i32 = 0x50;
 const TREE_FIRE_LOOPS: i32 = 0xFF;
 const TREE_FIRE_Z_DROP: i32 = 20;
 /// `RandomRanged(1, 0x7FFFFFFF) * 2^-31`, the 1004F530 roll; the product is
@@ -33,8 +35,8 @@ impl Simulation {
     /// TerrainClass_Ignite_IsFlammable (1004F4B0, hook 0x71C5D2): a burning
     /// tree, or a `SpawnsTiberium=` or not `IsFlammable=` type, refuses (the
     /// Ares test replaces stock's Wood armor one). Otherwise one Scenario
-    /// `Random::Next` picks `TreeFire[r & 1]`, built at the tree's GetCoords
-    /// and attached to it, and IsOnFire is set. IsCrumbling is not retained
+    /// `Random::Next` picks `TreeFire[r & 1]`, built 80 leptons above the
+    /// tree's GetCoords and attached to it, and IsOnFire is set. IsCrumbling is not retained
     /// (a lethal hit UnInits the tree in the same call). Native indexes
     /// `TreeFire=` unchecked; a missing entry builds no anim.
     pub(crate) fn terrain_catch_fire(&mut self, terrain_id: u64, rules: &RuleSet) -> bool {
@@ -58,7 +60,7 @@ impl Simulation {
             let world = crate::sim::anim_class::AnimWorldCoord {
                 x: centre.x,
                 y: centre.y,
-                z: centre.z,
+                z: centre.z + TREE_FIRE_RAISE,
             };
             let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
             let descriptor = AnimClassSpawnDescriptor {
@@ -176,6 +178,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "terrain_fire_tests.rs"]
 mod tests;

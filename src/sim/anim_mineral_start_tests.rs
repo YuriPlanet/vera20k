@@ -49,9 +49,7 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
     let (_, mut assets) = retail_assets().unwrap();
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
     let roots = crate::map::actions::trigger_anim_class_roots(&rules, &map.actions);
-    rules
-        .bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE")
-        .unwrap();
+    rules.bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE");
     let effect_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
     rules.bind_anim_class_assets(&effect_roots, &assets, "TEM", "TEMPERATE");
     let config = rules.art().anim_runtime_config("TWLT070T").unwrap();
@@ -80,17 +78,16 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
             .unwrap()
             .unwrap();
     assert_eq!(view.overlay_data, 11);
+    *sim.overlay_grid_mut_for_test() = Some(grid);
     crate::sim::runtime::initialize_native_tiberium_queues(
         &mut sim,
         &map.basic,
         &map.special_flags,
         &rules,
         &overlays,
-        Some(&grid),
         (32, 32),
     )
     .unwrap();
-    sim.install_overlay_grid_for_load(grid);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     sim.install_waypoints(&map.waypoints);
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
@@ -105,17 +102,9 @@ fn elapsed_trigger_anim_removes_ore_before_action41_sets_no_effects() {
     let Some((mut sim, rules)) = scene("TIB01", "") else {
         return;
     };
-    let overlays = rules.overlay_registry();
     assert_eq!(rules.combat_damage.tiberium_explosion_damage, 0);
-    sim.advance_app_frame(
-        &[],
-        &rules,
-        Some(overlays),
-        67,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
 
     let parent = sim
         .anims()
@@ -138,11 +127,20 @@ fn elapsed_trigger_anim_removes_ore_before_action41_sets_no_effects() {
 
 #[test]
 fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() {
-    // An Ares build draws RandomRanged(0, 99) < Debris.Chance instead; the
-    // map's Cruentus ReadINI makes that certain.
+    // When Ares plays the Start draws RandomRanged(0, 99) < Debris.Chance
+    // instead; the map's Cruentus ReadINI makes that certain. The scene's
+    // rules are read the way these unpatched ones are.
     let patch = "[CombatDamage]\nTiberiumExplosionDamage=40\nC4Warhead=HE\n[HE]\nCellSpread=2.5\n";
-    #[cfg(feature = "ares")]
-    let patch = format!("{patch}[Tiberiums]\n1=Cruentus\n[Cruentus]\nDebris.Chance=100\n");
+    let Some(unpatched) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let patch = if unpatched.rules.ares_form() {
+        format!("{patch}[Tiberiums]\n1=Cruentus\n[Cruentus]\nDebris.Chance=100\n")
+    } else {
+        patch.to_owned()
+    };
     let Some((mut sim, rules)) = scene("GEM01", &patch) else {
         return;
     };
@@ -191,15 +189,8 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
     let target = sim.terrain_objects().id_at((16, 16)).unwrap();
     let health = sim.terrain_objects().get(target).unwrap().health();
     let (output, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(overlays),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap()
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap()
     });
     assert_eq!(visits.len(), 1);
     assert_eq!(visits[0]["damage"], 40);
@@ -254,15 +245,8 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
     let child = *child;
     let mut landed = false;
     for _ in 0..160 {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(overlays),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
         landed |= sim
             .anims()
             .any(|(_, anim)| sim.interner.resolve(anim.type_id()) == "TWLT026");
@@ -280,9 +264,9 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
 /// Ares 3.0 10050D50 (hook 0x424DD3) and 10050DA0 (hook 0x424EC5): a zero
 /// `Debris.Chance` never throws Debris, and the area damage takes the
 /// mineral's `ExplosionDamage`/`ExplosionWarhead` over the Rules pair.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_mineral_start_uses_debris_chance_and_explosion_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((mut sim, rules)) = scene(
         "GEM01",
         "[CombatDamage]\nTiberiumExplosionDamage=40\nC4Warhead=Super\n[HE]\nCellSpread=2.5\n\
@@ -291,17 +275,9 @@ fn ares_mineral_start_uses_debris_chance_and_explosion_keys() {
     ) else {
         return;
     };
-    let overlays = rules.overlay_registry();
     let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(overlays),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap()
+        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap()
     });
     assert_eq!(visits.len(), 1);
     assert_eq!(visits[0]["damage"], 25);

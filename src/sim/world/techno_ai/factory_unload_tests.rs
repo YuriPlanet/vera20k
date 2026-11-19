@@ -792,14 +792,12 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
     };
     let mut rules = retail.rules;
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
-    rules
-        .bind_scheduler_anim_assets(
-            &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
-            &assets,
-            "tem",
-            "TEMPERATE",
-        )
-        .expect("native-read slot names need their physical retail SHP bounds");
+    rules.bind_scheduler_anim_assets(
+        &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
+        &assets,
+        "tem",
+        "TEMPERATE",
+    );
 
     let assert_boundary = |sim: &Simulation, yard: u64, expected: &Value| {
         let entity = sim.substrate.entities.get(yard).unwrap();
@@ -1024,7 +1022,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             let anim = sim.substrate.anims.get_mut(id).unwrap();
             anim.runtime_mut_for_test().current_frame = int(&runtime["current_frame"]);
             anim.runtime_mut_for_test().frame_step = int(&runtime["frame_step"]);
-            anim.runtime_mut_for_test().delay_remaining = int(&runtime["delay_remaining"]) as u16;
+            anim.runtime_mut_for_test().delay_remaining = int(&runtime["delay_remaining"]);
             anim.runtime_mut_for_test().rate_reload = int(&runtime["rate_reload"]) as u16;
             anim.runtime_mut_for_test().frame_timer = CdTimer::from_raw(
                 int(&runtime["frame_timer"][0]),
@@ -1525,7 +1523,6 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
                     .advance_app_frame(
                         &[],
                         &rules,
-                        Some(rules.overlay_registry()),
                         33,
                         crate::sim::world::TickLane::Ordinary,
                         crate::sim::world::FrameEffects::empty(),
@@ -1742,7 +1739,6 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
             .advance_app_frame(
                 &commands,
                 &rules,
-                Some(rules.overlay_registry()),
                 33,
                 TickLane::Ordinary,
                 FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1899,7 +1895,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
             .entities
             .get(product)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport()
             .is_some()
         {
@@ -1908,7 +1904,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
     }
     let unit = sim.substrate.entities.get(product).unwrap();
     assert_eq!(
-        unit.passenger_role.inside_transport(),
+        unit.passenger_role().inside_transport(),
         Some((transport, false))
     );
     assert!(
@@ -1920,7 +1916,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
             .entities
             .get(transport)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap()
             .passengers(),

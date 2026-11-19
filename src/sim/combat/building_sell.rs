@@ -234,6 +234,7 @@ pub(super) fn relocation_cell(
     let snapped = world.nearby_passable_cell(
         seed,
         NearbyArgs {
+            require_burrowable: false,
             passability: PassabilityArgs {
                 speed_type: undeploy_type.speed_type,
                 required_zone_id: zone,

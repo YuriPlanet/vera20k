@@ -53,7 +53,6 @@ fn in_range_with(
         overlay_grid: sim.overlay_grid.as_ref(),
         overlay_registry: registry,
         alliances: Some(&sim.house_alliances),
-        #[cfg(feature = "ares")]
         buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
     };
     in_range::in_range_with_weapon_extra(

@@ -4,6 +4,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::house_state::HouseState;
+use crate::sim::mission::MissionType;
 use crate::sim::world::{FrameEffects, Simulation};
 
 const RULES: &str = "\
@@ -12,6 +13,7 @@ const RULES: &str = "\
 1=E2
 [VehicleTypes]
 0=CATCHER
+1=OPENCATCH
 [AircraftTypes]
 [BuildingTypes]
 [Warheads]
@@ -33,6 +35,15 @@ Speed=4
 ROT=5
 Passengers=2
 SizeLimit=2
+Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}
+Primary=Grab
+[OPENCATCH]
+Strength=400
+Speed=4
+ROT=5
+Passengers=2
+SizeLimit=2
+OpenTopped=yes
 Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}
 Primary=Grab
 [Grab]
@@ -78,7 +89,7 @@ fn carried(sim: &Simulation, carrier: u64) -> Vec<u64> {
     sim.substrate
         .entities
         .get(carrier)
-        .and_then(|entity| entity.passenger_role.cargo())
+        .and_then(|entity| entity.passenger_role().cargo())
         .map_or_else(Vec::new, |cargo| cargo.passengers().to_vec())
 }
 
@@ -87,6 +98,7 @@ fn carried(sim: &Simulation, carrier: u64) -> Vec<u64> {
 /// it nothing; one above it takes the hit.
 #[test]
 fn an_abductor_shot_takes_a_weakened_target_into_its_hold() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, grid) = arena(&rules);
     let catcher = spawn(&mut sim, &rules, "CATCHER", "Russians", 10, 10);
@@ -134,13 +146,14 @@ fn an_abductor_shot_takes_a_weakened_target_into_its_hold() {
         50,
         "the neutered bullet deals nothing"
     );
-    assert_eq!(abductee.passenger_role.transporter(), Some(catcher));
+    assert_eq!(abductee.passenger_role().transporter(), Some(catcher));
 }
 
 /// conductAbduction's refusals: `ImmuneToAbduction` (TechnoTypeExt +0x304)
 /// and a full hold (CanHoldPassenger by size, `Passengers.BySize`).
 #[test]
 fn immune_types_and_full_holds_refuse_an_abduction() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, _grid) = arena(&rules);
     let catcher = spawn(&mut sim, &rules, "CATCHER", "Russians", 10, 10);
@@ -165,4 +178,47 @@ fn immune_types_and_full_holds_refuse_an_abduction() {
     assert!(abduct(&mut sim, second));
     assert!(!abduct(&mut sim, third), "Passengers=2 by size");
     assert_eq!(carried(&sim, catcher), [second, first]);
+}
+
+/// conductAbduction (10054A80) queues Sleep on its target, then an
+/// `OpenTopped=` abductor's allied rider goes through EnteredOpenTopped
+/// (Ares.dll 10054FB1 -> 10044880 -> 0x00710470), whose ResetOrdersToGuard
+/// (vt+0x3D0 at 0x00710484) puts it on Guard. An enemy abductee is no rider
+/// and keeps Sleep.
+#[test]
+fn an_open_topped_abductor_puts_only_an_allied_rider_on_guard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules();
+    let (mut sim, _grid) = arena(&rules);
+    let catcher = spawn(&mut sim, &rules, "OPENCATCH", "Russians", 10, 10);
+    let ally = spawn(&mut sim, &rules, "E1", "Russians", 12, 10);
+    let enemy = spawn(&mut sim, &rules, "E1", "Americans", 12, 12);
+    let grab = rules.weapon("Grab").unwrap();
+    for id in [ally, enemy] {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(10);
+        assert!(sim.ares_conduct_abduction(
+            catcher,
+            id,
+            grab,
+            &rules,
+            None,
+            FrameEffects::default()
+        ));
+    }
+    let mission = |id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission
+            .current()
+            .known()
+    };
+    assert_eq!(mission(ally), Some(MissionType::Guard));
+    assert_eq!(mission(enemy), Some(MissionType::Sleep));
 }

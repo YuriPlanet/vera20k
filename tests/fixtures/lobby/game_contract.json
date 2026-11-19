@@ -1,0 +1,38 @@
+{
+  "about": "Each Game Speed a room can select (`launch.options.game_speed`) with the rate a match at that speed runs at, which the lobby signs as the ordering certificate's `tick_hz`, and the map transfer's chunk size (docs/lobby-protocol.md). The game's test in src/app/shell_wol/live_service/maps.rs writes this file.",
+  "game_speeds": [
+    {
+      "game_speed": 0,
+      "tick_hz": 60
+    },
+    {
+      "game_speed": 1,
+      "tick_hz": 45
+    },
+    {
+      "game_speed": 2,
+      "tick_hz": 30
+    },
+    {
+      "game_speed": 3,
+      "tick_hz": 20
+    },
+    {
+      "game_speed": 4,
+      "tick_hz": 15
+    },
+    {
+      "game_speed": 5,
+      "tick_hz": 12
+    },
+    {
+      "game_speed": 6,
+      "tick_hz": 10
+    },
+    {
+      "game_speed": 8,
+      "tick_hz": 90
+    }
+  ],
+  "map_chunk_bytes": 32768
+}

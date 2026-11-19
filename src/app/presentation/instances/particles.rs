@@ -21,21 +21,8 @@ use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::particle_type::ParticleBehavesLike;
 use crate::util::lepton::absolute_leptons_to_screen;
 
-use super::helpers::{compute_sprite_depth_params_lifted, projection_admitted};
+use super::helpers::{TacticalAdmission, compute_sprite_depth_params_lifted, projection_admitted};
 use super::overlays::DisplayEffectInputs;
-use crate::app::presentation::interpolation::{PointKind, PointPose, PointSample};
-
-fn sample(
-    input: &DisplayEffectInputs<'_>,
-    kind: PointKind,
-    id: u64,
-    pose: PointPose,
-) -> PointSample {
-    input.interpolation.map_or_else(
-        || pose.current(),
-        |cache| cache.sample_point(kind, id, pose, input.sim.session().binary_frame()),
-    )
-}
 
 /// Read-only projection of the actual piece submitted by this builder. It is
 /// collected only under the existing map diagnostic presentation policy.
@@ -80,24 +67,27 @@ fn particle_draw_flags(detail_level: u32, translucency: u8) -> u32 {
 /// Frame-local geometry shared by concrete Particle and System body builders.
 /// No retained simulation state or alternate projection authority lives here.
 pub(super) struct ParticleDrawContext {
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    admission: TacticalAdmission,
+    /// The surface-line owners' camera, the battlefield corner's.
+    line_camera: [i32; 2],
     axis: crate::render::batch::DepthAxis,
     point_viewport: crate::render::tactical_compat::TacticalPointViewport,
 }
 
 impl ParticleDrawContext {
-    pub(super) fn new(
-        camera: [f32; 2],
-        zoom: f32,
-        tactical: [u32; 4],
-        axis: crate::render::batch::DepthAxis,
-    ) -> Self {
+    /// The context of `input`'s draw. Its builders admit in the battlefield
+    /// every Display member is admitted in
+    /// ([`DisplayEffectInputs::tactical_admission`]).
+    pub(super) fn new(input: &DisplayEffectInputs<'_>) -> Self {
+        let (camera, zoom, axis) = (input.camera, input.zoom, input.axis);
+        let tactical = input.tactical;
         let [x, y, width, height] = tactical;
         let logical = |value: u32| (value as f32 / zoom) as i32;
         Self {
-            camera,
-            viewport: [width as f32 / zoom, height as f32 / zoom],
+            admission: input.tactical_admission(),
+            line_camera: crate::app::presentation::render::surface_line_camera(
+                camera, tactical, zoom,
+            ),
             axis,
             point_viewport: crate::render::tactical_compat::TacticalPointViewport {
                 clip: crate::render::tactical_compat::TacticalRect {
@@ -131,20 +121,9 @@ pub(super) fn build_particle_system_instance(
     let Some(parent) = order.object_draw(system.stable_id(), SpriteEncoding::Plain) else {
         return;
     };
-    let painted = sample(
-        input,
-        PointKind::System,
-        system.stable_id(),
-        PointPose::new(
-            system.coords().to_array(),
-            system.type_id().0,
-            system.owner_entity(),
-        ),
-    );
-    let point = (painted.screen[0], painted.screen[1]);
-    if system.in_limbo()
-        || !projection_admitted([point.0, point.1], context.camera, context.viewport)
-    {
+    let coord = system.coords();
+    let point = absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+    if system.in_limbo() || !projection_admitted([point.0, point.1], context.admission) {
         return;
     }
     let kind = input.rules.particle_system_type(system.type_id());
@@ -152,9 +131,10 @@ pub(super) fn build_particle_system_instance(
         system,
         kind,
         &mut input.detail.borrow_mut(),
+        input.rules.ares(),
     );
     if let Some(mut record) = record {
-        record.coord = painted.projectile_coord();
+        record.coord = crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
         let mut planned = PlannedObjectInstance::object(parent, Vec::new());
         planned.body_draw = Some(ObjectBodyDraw::CombatLight(record));
         objects.push(planned);
@@ -166,41 +146,17 @@ pub(super) fn build_particle_system_instance(
 pub(super) fn build_spotlight_instance(
     input: &DisplayEffectInputs<'_>,
     id: u64,
-    mut light: crate::sim::world::BuildingSpotlight,
+    light: crate::sim::world::BuildingSpotlight,
     context: &ParticleDrawContext,
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,
 ) {
-    if let Some(cache) = input.interpolation {
-        let original = light;
-        let mut next = 0;
-        let mut sample = |c| {
-            let kind = PointKind::Spotlight(next);
-            next += 1;
-            cache
-                .sample_draw_point(
-                    kind,
-                    id,
-                    PointPose::new(c, 0, None),
-                    input.sim.session().binary_frame(),
-                )
-                .coord
-        };
-        light.coord = sample(light.coord);
-        light.beam_origin = sample(light.beam_origin);
-        light.beam_edges = light.beam_edges.map(|edges| edges.map(&mut sample));
-        let lift = crate::util::native_x87::adjust_for_z_standard;
-        light.beam_z_adjust[0] -= lift(light.beam_origin[2]) - lift(original.beam_origin[2]);
-        if let Some((edge, old_edge)) = light.beam_edges.zip(original.beam_edges) {
-            light.beam_z_adjust[1] -= lift(edge[0][2]) - lift(old_edge[0][2]);
-        }
-    }
     let Some(parent) = order.object_draw(id, SpriteEncoding::Plain) else {
         return;
     };
     let p = light.coord;
     let point = absolute_leptons_to_screen(p[0], p[1], p[2]);
-    if !projection_admitted([point.0, point.1], context.camera, context.viewport) {
+    if !projection_admitted([point.0, point.1], context.admission) {
         return;
     }
     let glow = crate::app::presentation::combat_lights::CombatLight {
@@ -213,8 +169,8 @@ pub(super) fn build_spotlight_instance(
     let project = |p: [i32; 3]| {
         let xy = absolute_leptons_to_screen(p[0], p[1], p[2]);
         [
-            xy.0 as i32 - context.camera[0].floor() as i32,
-            xy.1 as i32 - context.camera[1].floor() as i32,
+            xy.0 as i32 - context.line_camera[0],
+            xy.1 as i32 - context.line_camera[1],
         ]
     };
     let beams = light
@@ -256,17 +212,10 @@ pub(super) fn build_particle_instance(
     };
     let rules = input.rules;
     let detail_level = input.detail_level;
-    let camera = context.camera;
-    let viewport = context.viewport;
     let axis = context.axis;
-    let painted = sample(
-        input,
-        PointKind::Particle,
-        particle.stable_id(),
-        PointPose::new(particle.coords().to_array(), particle.type_id().0, None),
-    );
-    let point = (painted.screen[0], painted.screen[1]);
-    if !projection_admitted([point.0, point.1], camera, viewport) {
+    let coord = particle.coords();
+    let point = absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+    if !projection_admitted([point.0, point.1], context.admission) {
         return;
     }
     let kind = rules.particle_type(particle.type_id());
@@ -298,7 +247,7 @@ pub(super) fn build_particle_instance(
             let color_index = particle.color_index();
             let color_accumulator = particle.color_accumulator();
             let command = crate::render::tactical_compat::SparkPointCommand {
-                world: painted.ivec3(),
+                world: coord,
                 start_rgb,
                 color_index,
                 color_accumulator,
@@ -337,47 +286,11 @@ pub(super) fn build_particle_instance(
     let Ok(frame) = u16::try_from(native_frame) else {
         return;
     };
-    let key = ShpSpriteKey {
-        palette_context: ShpPaletteContext::Particle,
-        type_id: image.to_owned(),
-        facing: 0,
-        frame,
-        house_color: HouseColorIndex(0),
-    };
-    let Some(entry) = atlas.get(&key) else {
-        return;
-    };
     let flags = particle_draw_flags(detail_level, particle.translucency());
-    if flags & 6 != 0 {
-        parent.policy = BlitPolicy::translucent(SpriteEncoding::Plain, RenderZPolicy::ReadOnly);
-    }
-    let lift = painted.lift;
-    let piece = ObjectPieceInstance {
-        target: ObjectTexture::ShpPage(entry.page as usize),
-        render_z: parent.policy.render_z,
-        instance: SpriteInstance {
-            position: [point.0 + entry.offset_x, point.1 + entry.offset_y],
-            size: entry.pixel_size,
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            source_palette: entry.source_palette,
-            depth: compute_sprite_depth_params_lifted(
-                axis.origin_y,
-                axis.world_height,
-                point.1,
-                lift.round() as i32,
-            ),
-            tint: crate::map::lighting::DEFAULT_TINT,
-            alpha: 1.0,
-            draw_state: DrawState::from_native_selector(0, (flags & 6) as u8),
-            // Particle62CFF9 passes decimal1000 (PUSH0x3E8) and
-            // global ANIM87F6C0, independently of cell lighting.
-            palette_light: PaletteLight::plain(53, 1000),
-            // 62D01D: this is the depth argument, not a screen-Y lift.
-            z_adjust: -15. - lift,
-            z_gradient: ZGradient::Vertical as u32,
-            ..Default::default()
-        },
+    let Some((piece, page)) =
+        particle_shp_piece(atlas, image, frame, coord, point, flags, &mut parent, axis)
+    else {
+        return;
     };
     if let (Some(rows), Some(system)) = (observations.as_mut(), system) {
         rows.push(ParticleDrawObservation {
@@ -388,7 +301,7 @@ pub(super) fn build_particle_instance(
             display_order: parent.display_order,
             image: image.to_owned(),
             frame,
-            atlas_page: entry.page as usize,
+            atlas_page: page,
             source_palette: piece.instance.source_palette,
             position: piece.instance.position,
             size: piece.instance.size,
@@ -407,7 +320,220 @@ pub(super) fn build_particle_instance(
     objects.push(PlannedObjectInstance::object(parent, vec![piece]));
 }
 
-#[cfg(test)]
+/// Particle62CFF9's DrawSHP of one frame at `coord` (screen `point`): global
+/// ANIM87F6C0 at brightness 1000 (PUSH0x3E8), independently of cell lighting,
+/// depth `-15 - AdjustForZ` and the vertical Z gradient, with the `flags`
+/// translucency selector. Ares' ExtData::Draw (`10026430`) passes the same for
+/// its smoke records. Returns the piece and its atlas page.
+#[allow(clippy::too_many_arguments)]
+fn particle_shp_piece(
+    atlas: &crate::render::sprite_atlas::SpriteAtlas,
+    image: &str,
+    frame: u16,
+    coord: glam::IVec3,
+    point: (f32, f32),
+    flags: u32,
+    parent: &mut crate::render::tactical_draw_plan::ObjectDraw,
+    axis: crate::render::batch::DepthAxis,
+) -> Option<(ObjectPieceInstance, usize)> {
+    let key = ShpSpriteKey {
+        palette_context: ShpPaletteContext::Particle,
+        type_id: image.into(),
+        facing: 0,
+        frame,
+        house_color: HouseColorIndex(0),
+    };
+    let entry = atlas.get(&key)?;
+    if flags & 6 != 0 {
+        parent.policy = BlitPolicy::translucent(SpriteEncoding::Plain, RenderZPolicy::ReadOnly);
+    }
+    let lift = crate::util::native_x87::adjust_for_z_standard(coord.z) as f32;
+    let piece = ObjectPieceInstance {
+        target: ObjectTexture::ShpPage(entry.page as usize),
+        render_z: parent.policy.render_z,
+        instance: SpriteInstance {
+            position: [point.0 + entry.offset_x, point.1 + entry.offset_y],
+            size: entry.pixel_size,
+            uv_origin: entry.uv_origin,
+            uv_size: entry.uv_size,
+            source_palette: entry.source_palette,
+            depth: compute_sprite_depth_params_lifted(
+                axis.origin_y,
+                axis.world_height,
+                point.1,
+                lift.round() as i32,
+            ),
+            tint: crate::map::lighting::DEFAULT_TINT,
+            alpha: 1.0,
+            draw_state: DrawState::from_native_selector(0, (flags & 6) as u8),
+            palette_light: PaletteLight::plain(53, 1000),
+            // 62D01D: this is the depth argument, not a screen-Y lift.
+            z_adjust: -15. - lift,
+            z_gradient: ZGradient::Vertical as u32,
+            ..Default::default()
+        },
+    };
+    Some((piece, entry.page as usize))
+}
+
+/// Frame-local parents for the Ares draw: past every simulation id and after
+/// every retained Air member, in the order the draw visits them.
+const ARES_DRAW_ID_BASE: u64 = 0xA4E5_0000_0000_0000;
+const ARES_DRAW_ORDER_BASE: u64 = 1 << 62;
+
+/// Ares 3.0 DrawParticleSystems (Ares.dll `10026760`), which the hook at
+/// `0x6D9427` (`10029100`) runs after the Air layer: every system's Ares
+/// records (`ExtData::Draw @ 10026430`), in ParticleSystemClass::Array order,
+/// when the detail level is above 0 and `RulesExt::DetailsCurrentlyEnabled`
+/// holds (the frame rate reaches `60 / GameSpeed` or the minimum). Spark and
+/// railgun records are single points with the stock point's A and Z tests;
+/// those on shrouded cells are skipped under FogOfWar. Smoke records draw
+/// their type's frame `State`.
+///
+/// RESIDUAL (presentation): the smoke draws through ANIM.PAL, not the
+/// particle type's Ares `Palette=` (`ParticleTypeExt`, not ported), and a
+/// point whose colour index has no next entry is skipped where Ares reads past
+/// the list.
+pub(super) fn build_ares_particle_draws(
+    input: &DisplayEffectInputs<'_>,
+    context: &ParticleDrawContext,
+    objects: &mut Vec<PlannedObjectInstance>,
+) {
+    use crate::render::tactical_compat::{
+        PreparedSparkPoint, adjust_for_z, project_spark_point, z_candidate,
+    };
+    use crate::render::tactical_draw_plan::{ObjectDraw, TacticalLayer};
+
+    // Without the game's Ares switch no system has records, and the hook's
+    // Detail query below must not touch the stock Detail latch.
+    if !input.rules.ares() {
+        return;
+    }
+    let sim = input.sim;
+    let systems = sim.particle_systems();
+    if systems.is_empty() || input.detail_level == 0 {
+        return;
+    }
+    let enabled = {
+        let mut detail = input.detail.borrow_mut();
+        let current = detail.frame_rate();
+        let speed = sim.session().game_options().game_speed.clamp(1, 6) as u32;
+        current >= 60 / speed || current >= detail.minimum_frame_rate()
+    };
+    if !enabled {
+        return;
+    }
+    // ignoreShroud unless FogOfWar (SpecialFlags 0x1000) is on.
+    let fog_viewer = input
+        .local_owner
+        .filter(|_| sim.session().game_options().fog_of_war);
+    let cells = sim
+        .resolved_terrain()
+        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    let viewport = context.point_viewport;
+    let mut sequence = 0;
+    let mut next_parent = |policy: BlitPolicy| {
+        let parent = ObjectDraw {
+            id: ARES_DRAW_ID_BASE + sequence,
+            layer: TacticalLayer(3),
+            display_order: ARES_DRAW_ORDER_BASE + sequence,
+            policy,
+        };
+        sequence += 1;
+        parent
+    };
+    for (_, system) in systems.iter() {
+        let Some(ext) = system.ares() else {
+            continue;
+        };
+        let held = input.rules.particle_type(ext.held_type());
+        for record in ext.particles() {
+            let coord = record.coords();
+            // The screen clip before the shroud test: both only read, so a
+            // point off the view skips the fog lookup.
+            let Ok(screen) = project_spark_point(coord, viewport) else {
+                continue;
+            };
+            if !viewport.clip.contains(screen) {
+                continue;
+            }
+            if let (Some(viewer), Some(cells)) = (fog_viewer, cells.as_ref())
+                && crate::sim::vision::point_is_shrouded(
+                    sim.fog(),
+                    cells,
+                    viewer,
+                    crate::sim::components::DriveCoord {
+                        x: coord.x,
+                        y: coord.y,
+                        z: coord.z,
+                    },
+                )
+            {
+                continue;
+            }
+            let Ok(adjust) = adjust_for_z(coord.z, viewport.adjust_for_z_multiplier) else {
+                continue;
+            };
+            let Some(rgb) = record.draw_color(&held.color_list) else {
+                continue;
+            };
+            let point = PreparedSparkPoint {
+                screen,
+                candidate_z: z_candidate(
+                    viewport.z_origin_term,
+                    viewport.z_bottom_term,
+                    screen.y,
+                    adjust,
+                ),
+                rgb: rgb.map(i32::from),
+            };
+            let mut planned = PlannedObjectInstance::object(
+                next_parent(BlitPolicy::z_read(SpriteEncoding::Plain)),
+                Vec::new(),
+            );
+            planned.body_draw = Some(ObjectBodyDraw::Surface(SurfaceDraw::Point(point)));
+            objects.push(planned);
+        }
+        let Some(atlas) = input.atlas else {
+            continue;
+        };
+        for smoke in ext.smoke() {
+            let kind = input.rules.particle_type(smoke.type_id());
+            let Ok(frame) = u16::try_from(smoke.state()) else {
+                continue;
+            };
+            let coord = smoke.location();
+            let point = absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+            if !projection_admitted([point.0, point.1], context.admission) {
+                continue;
+            }
+            // 100266CE..100266F7: 25, 50 and (unsigned) 75 or more select
+            // the translucent leaves at the highest detail level.
+            let selector = match smoke.translucency() {
+                _ if input.detail_level != 2 => 0,
+                25 => 2,
+                50 => 4,
+                75.. => 6,
+                _ => 0,
+            };
+            let mut parent = next_parent(BlitPolicy::z_read(SpriteEncoding::Plain));
+            if let Some((piece, _)) = particle_shp_piece(
+                atlas,
+                kind.image.as_str(),
+                frame,
+                coord,
+                point,
+                0x2E00 | selector,
+                &mut parent,
+                context.axis,
+            ) {
+                objects.push(PlannedObjectInstance::object(parent, vec![piece]));
+            }
+        }
+    }
+}
+
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::particle_draw_flags;
 
@@ -430,5 +556,77 @@ mod tests {
                 assert_eq!(particle_draw_flags(detail, byte), 0x2E00);
             }
         }
+    }
+
+    /// Tactical6D2140 admits every Display member in one rect, so a
+    /// spotlight is admitted in the Anims' view (`tactical_admission`): out
+    /// to 360 px past either edge of an 800 px battlefield set in 100 px,
+    /// measured from the battlefield's corner, not the frame's.
+    #[test]
+    fn a_spotlight_is_admitted_in_the_view_anims_are() {
+        use crate::app::presentation::instances::{
+            DisplayEffectInputs, build_display_effect_instances,
+        };
+        use crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder;
+        use crate::sim::world::{BuildingSpotlight, Simulation, display_layers::DisplayLayer};
+
+        let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+        let mut sim = Simulation::new();
+        let id = 7;
+        sim.submit_object_display_for_test(id, DisplayLayer::AIR);
+        let coord = [2560, 2560, 0];
+        let light = BuildingSpotlight {
+            coord,
+            glow_stage: 0,
+            glow_flags: 0,
+            beam_origin: coord,
+            beam_edges: None,
+            beam_z_adjust: [0, 0],
+            beam_amount: 0,
+        };
+        let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord[0], coord[1], coord[2]);
+        let order = NativeDisplayOrder::from_world(&sim, None);
+        // `across` is the spotlight's offset from the battlefield's corner.
+        let drawn = |across: f32| {
+            let mut frame =
+                crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules);
+            frame.scene.spotlights.insert(id, light);
+            let detail =
+                std::cell::RefCell::new(crate::app::presentation::detail::DetailState::new());
+            let lighting = Default::default();
+            let house_colors = Default::default();
+            let hidden = Default::default();
+            let mut planned = Vec::new();
+            build_display_effect_instances(
+                &DisplayEffectInputs {
+                    sim: &sim,
+                    frame: &frame,
+                    rules,
+                    camera: [x - across - 100.0, y - 300.0],
+                    render_size: [1000, 600],
+                    tactical: [100, 0, 800, 600],
+                    zoom: 1.0,
+                    axis: crate::render::batch::DepthAxis::NONE,
+                    atlas: None,
+                    detail: &detail,
+                    detail_level: 2,
+                    lighting: &lighting,
+                    retained_anim_intensities: None,
+                    house_colors: &house_colors,
+                    hidden_super_anims: &hidden,
+                    show_hidden: false,
+                    local_owner: None,
+                    observe_particles: false,
+                },
+                &mut planned,
+                &order,
+                Default::default(),
+            );
+            planned.len()
+        };
+        assert_eq!(drawn(800.0 + 360.0), 1);
+        assert_eq!(drawn(800.0 + 361.0), 0);
+        assert_eq!(drawn(-360.0), 1);
+        assert_eq!(drawn(-361.0), 0);
     }
 }

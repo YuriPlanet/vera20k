@@ -127,7 +127,7 @@ impl Simulation {
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return false;
         };
-        let powered = (Self::anim_power_policy(object, entity)
+        let powered = (Self::anim_power_policy(object, entity, rules)
             && crate::sim::power_system::native_building_power_drain(object.power) > 0
             && (flags.powered || flags.powered_light || flags.powered_effect))
             || (object.powered_special && flags.powered_special);
@@ -155,12 +155,16 @@ impl Simulation {
     pub(crate) fn anim_power_policy(
         object: &crate::rules::object_type::ObjectType,
         entity: &crate::sim::game_entity::GameEntity,
+        rules: &RuleSet,
     ) -> bool {
-        #[cfg(feature = "ares")]
-        if object.needs_engineer && !entity.building_has_engineer.is_set() {
+        if rules.ares_form()
+            && object.needs_engineer
+            && !entity.building.building_has_engineer.is_set()
+        {
             return true;
         }
-        let _ = entity;
+
+
         object.powered
     }
 
@@ -178,7 +182,7 @@ impl Simulation {
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if Self::anim_power_policy(object, entity)
+        if Self::anim_power_policy(object, entity, rules)
             && crate::sim::power_system::native_building_power_drain(object.power) > 0
         {
             self.apply_building_anim_power(id, operational, rules);
@@ -210,7 +214,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
@@ -253,7 +257,7 @@ mod tests {
         let ini = IniFile::from_str(&text);
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str(&format!(
-                "[BuildingTypes]\n0=B\n[B]\nStrength={strength}\nUpgrades=3\n{extra}\n[Animations]\n0=N\n1=D\n"
+                "[BuildingTypes]\n0=B\n[B]\nStrength={strength}\nUpgrades=3\nTurretAnim=N\nTurretAnimDamaged=D\n{extra}\n[Animations]\n0=N\n1=D\n"
             )),
             &ini,
         )
@@ -457,10 +461,7 @@ mod tests {
             crate::sim::world::FrameEffects::default(),
         );
         let anim = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        assert_eq!(
-            sim.anim(anim).unwrap().runtime().paused,
-            cfg!(feature = "ares")
-        );
+        assert_eq!(sim.anim(anim).unwrap().runtime().paused, rules.ares_form());
     }
 
     #[test]
@@ -761,6 +762,7 @@ mod tests {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.building_art.actually_placed = true;
             entity
+                .building
                 .building_last_operational
                 .set_for_test(i["old"].as_bool().unwrap());
             let owner = entity.owner();
@@ -784,7 +786,7 @@ mod tests {
             );
             let entity = sim.entities().get(id).unwrap();
             assert_eq!(
-                entity.building_last_operational.is_operational(),
+                entity.building.building_last_operational.is_operational(),
                 o["operational"].as_bool().unwrap(),
                 "sample row {index}"
             );

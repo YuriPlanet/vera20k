@@ -3,8 +3,8 @@
 //!
 //! Entry: the sidebar Diplomacy gadget in campaign, and in LAN/WOL when the
 //! mode is Cooperative (`0x006538FE`, input 0x80F2, [`super::diplomacy`]).
-//! `ScenarioClass::ShowMissionRestateBriefing` 0x0065F520 re-reads
-//! `MISSIONMD.INI` on every open and resolves the text once
+//! `ScenarioClass::ShowMissionRestateBriefing` 0x0065F520 re-reads the
+//! MISSIONMD file the INI roots name on every open and resolves the text once
 //! (`[0xB04CA0]`); a missing file opens nothing. The dialog sends no event:
 //! in co-op the other peers are not told, and the local game keeps running
 //! under it through the modal pump, as under Diplomacy.
@@ -26,7 +26,7 @@ use winit::event::MouseButton;
 /// case, so a Cooperative launch must name its map as MISSIONMD spells it
 /// (`[C1A01MD.MAP]`); that spelling is unverified until Cooperative launches.
 fn scenario_file_name(state: &AppState) -> Option<String> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let runtime = state.match_state.sim_runtime.runtime()?;
     Some(runtime.simulation.session().map_name().to_owned())
 }
 
@@ -39,7 +39,9 @@ pub(crate) fn open(state: &mut AppState) {
     let Some(assets) = state.process_assets.manager() else {
         return;
     };
-    let Ok(selected) = crate::rules::retail_sources::select_ini(assets, "MISSIONMD.INI") else {
+    let Ok(selected) =
+        crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mission())
+    else {
         // The CCINIClass finds no file: no dialog and no redraw.
         return;
     };

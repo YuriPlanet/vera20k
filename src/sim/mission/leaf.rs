@@ -108,6 +108,12 @@ pub struct BuildingMissionLeaf {
     /// `Type=`. Constructor -1 (`0x0043B7B9`).
     #[serde(default = "no_firing_super_weapon")]
     firing_super_weapon: i32,
+    /// VERA's Superweapon Limit (`SuperWeaponPerBuilding=`): the cell the last
+    /// launch gave this silo, so silos opening together each strike their own
+    /// target. gamemd's silos all read the house's one NukeTarget, which a
+    /// silo without the key still does (None).
+    #[serde(default)]
+    own_nuke_target: Option<(u16, u16)>,
 }
 
 const fn no_firing_super_weapon() -> i32 {
@@ -157,6 +163,7 @@ impl MissionLeafState {
                 ready_latch: 0,
                 repair_progress: crate::sim::stage::StageClass::constructed(now),
                 firing_super_weapon: no_firing_super_weapon(),
+                own_nuke_target: None,
             }),
         }
     }
@@ -374,6 +381,12 @@ impl MissionLeafState {
         self.expect_building_mut().firing_super_weapon = super_weapon_type;
     }
 
+    /// VERA's own nuke target ([`BuildingMissionLeaf::own_nuke_target`]),
+    /// written by a launch from a `SuperWeaponPerBuilding=` silo.
+    pub(crate) fn set_building_own_nuke_target(&mut self, cell: (u16, u16)) {
+        self.expect_building_mut().own_nuke_target = Some(cell);
+    }
+
     #[track_caller]
     fn expect_unit_mut(&mut self) -> &mut UnitMissionLeaf {
         match self {
@@ -575,9 +588,14 @@ impl BuildingMissionLeaf {
     pub(crate) const fn firing_super_weapon(&self) -> i32 {
         self.firing_super_weapon
     }
+
+    /// See the field.
+    pub(crate) const fn own_nuke_target(&self) -> Option<(u16, u16)> {
+        self.own_nuke_target
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
 

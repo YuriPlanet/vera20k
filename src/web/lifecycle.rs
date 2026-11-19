@@ -123,7 +123,7 @@ impl Lifecycle {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::*;
 

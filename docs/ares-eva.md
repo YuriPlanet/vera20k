@@ -1,8 +1,8 @@
 # Optional Ares EVA voices
 
-Build with `--features ares` to enable extra EVA voice tags. Omit that feature
-for the original three voice columns and original Side binding behavior. An
-INI setting cannot enable this code in a retail build.
+A game that ships `ares.mix` reads extra EVA voice tags in every build
+([Ares](ares.md)). Other games keep the original three voice columns and
+original Side binding behavior.
 
 Register extra tags in the fixed `EVAMD.INI`, alongside its ordinary events:
 

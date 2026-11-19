@@ -2,9 +2,10 @@
 //! close once a second, so the rows hold still long enough to read;
 //! `PerformanceOverlay` lays the rows out and draws them.
 
-use crate::app::diagnostics::core_load::CoreLoadSampler;
+use crate::app::diagnostics::core_load::{self, CoreLoadSampler};
 use crate::app::diagnostics::state::RenderTimingMeter;
-use crate::app::presentation::interpolation::SimulationReadout;
+use crate::app::diagnostics::thread_load::{ThreadLoadSampler, ThreadLoads};
+use crate::app::match_runtime::frame_pacer::LoopCounts;
 use crate::app::presentation::render::RenderPhases;
 use crate::i18n::{tr, tr_fill};
 use crate::sim::frame_profile::PHASE_COUNT;
@@ -22,7 +23,8 @@ const WINDOW: Duration = Duration::from_secs(1);
 pub(super) const DOT: &str = "  ·  ";
 /// Areas under this share of the window stay off the Most CPU row.
 const MIN_AREA_PERCENT: f32 = 1.0;
-const MOST_AREAS: usize = 5;
+/// Room for the object pass's parts beside the costliest drawing.
+const MOST_AREAS: usize = 8;
 
 /// The labels of the simulation's frame-profile phases, by
 /// `frame_profile::phase` slot.
@@ -37,17 +39,20 @@ const SIM_AREAS: [&str; PHASE_COUNT] = [
     "VERA:CpuSuperweapons",
     "VERA:CpuRadiation",
     "VERA:CpuTeamAI",
-    "VERA:CpuObjects",
-    "VERA:CpuWallCrush",
+    "VERA:CpuUnitAI",
+    "VERA:CpuPathfinding",
+    "VERA:CpuTargeting",
+    "VERA:CpuMovement",
+    "VERA:CpuFiring",
+    "VERA:CpuBuildings",
+    "VERA:CpuBullets",
+    "VERA:CpuEffects",
     "VERA:CpuWakes",
     "VERA:CpuVision",
     "VERA:CpuCombat",
-    "VERA:CpuPassengers",
     "VERA:CpuIonBlasts",
     "VERA:CpuCrates",
     "VERA:CpuProduction",
-    "VERA:CpuDocks",
-    "VERA:CpuSpawnFog",
     "VERA:CpuLateAI",
     "VERA:CpuOverlays",
     "VERA:CpuDebugChecks",
@@ -77,18 +82,35 @@ pub(super) struct MatchSample {
     pub(super) units: usize,
     /// `FrameProfile::totals_ns`: frames and nanoseconds per phase.
     pub(super) profile: (u64, [u128; PHASE_COUNT]),
+    /// The frame pacer's running counts.
+    pub(super) loop_counts: LoopCounts,
+}
+
+/// A match's rates over the last window, per second: the simulation frames
+/// ticked on the main thread and on the simulation thread, and the event
+/// loop's turns.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct LoopRates {
+    pub(super) main_ticks: f32,
+    pub(super) simulation_ticks: f32,
+    pub(super) turns: f32,
 }
 
 /// The last closed window's figures.
 #[derive(Default)]
 pub(super) struct Shown {
     pub(super) frame_ms: f32,
-    pub(super) simulation: Option<SimulationReadout>,
+    pub(super) tps: Option<f32>,
     pub(super) units: Option<usize>,
     /// The costliest areas first: their labels and percent of the window's
     /// wall time.
     pub(super) areas: Vec<(&'static str, f32)>,
     pub(super) core_loads: Option<Vec<f32>>,
+    /// The cores the process may use and the system's
+    /// (`core_load::allowed_cores`).
+    pub(super) allowed_cores: Option<(u32, u32)>,
+    pub(super) threads: Option<ThreadLoads>,
+    pub(super) loop_rates: Option<LoopRates>,
     /// The GPU's mean time on each of VERA's frames, in milliseconds.
     pub(super) gpu_ms: Option<f32>,
 }
@@ -100,7 +122,9 @@ pub(super) struct PanelStats {
     window_start: Option<Instant>,
     render: RenderTimingMeter,
     sim_baseline: Option<(u64, [u128; PHASE_COUNT])>,
+    loop_baseline: Option<LoopCounts>,
     cores: CoreLoadSampler,
+    threads: ThreadLoadSampler,
     pub(super) shown: Shown,
 }
 
@@ -120,7 +144,7 @@ impl PanelStats {
         &mut self,
         now: Instant,
         frame_ms: f32,
-        simulation: Option<SimulationReadout>,
+        tps: Option<f32>,
         sample: Option<MatchSample>,
         gpu_ms: Option<f32>,
     ) {
@@ -133,12 +157,21 @@ impl PanelStats {
             .zip(self.sim_baseline)
             .and_then(|(sample, before)| profile_delta(before, sample.profile));
         self.sim_baseline = sample.map(|sample| sample.profile);
+        let loop_counts = sample
+            .zip(self.loop_baseline)
+            .and_then(|(sample, before)| sample.loop_counts.since(before));
+        self.loop_baseline = sample.map(|sample| sample.loop_counts);
         self.shown = Shown {
             frame_ms,
-            simulation,
+            tps,
             units: sample.map(|sample| sample.units),
             areas: wall.map_or_else(Vec::new, |wall| most_cpu(wall, sim_spans.as_ref(), &render)),
             core_loads: self.cores.sample(),
+            allowed_cores: core_load::allowed_cores(),
+            threads: self.threads.sample(now),
+            loop_rates: wall
+                .zip(loop_counts)
+                .and_then(|(wall, counts)| loop_rates(wall, counts)),
             gpu_ms,
         };
     }
@@ -158,6 +191,17 @@ fn profile_delta(
         *span = now.checked_sub(before)?;
     }
     Some(spans)
+}
+
+/// `counts` over `wall`, per second.
+fn loop_rates(wall: Duration, counts: LoopCounts) -> Option<LoopRates> {
+    let seconds = wall.as_secs_f64();
+    let rate = |count: u64| (count as f64 / seconds) as f32;
+    (seconds > 0.0).then(|| LoopRates {
+        main_ticks: rate(counts.inline_frames),
+        simulation_ticks: rate(counts.lent_frames),
+        turns: rate(counts.turns),
+    })
 }
 
 /// The simulation and render areas that took the most of `wall`.
@@ -191,8 +235,10 @@ pub(super) enum Part {
 }
 
 /// The panel's rows in the language in use ([`crate::i18n`]): rates and
-/// units, Most CPU and Cores, each row only once it has something to say.
-pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
+/// units, Most CPU, Cores and the GPU, each row only once it has something
+/// to say, and with `thread_rows` (the Thread Stats key) Threads and a
+/// match's Ticks.
+pub(super) fn rows(shown: &Shown, thread_rows: bool) -> Vec<Vec<Part>> {
     let mut rows = vec![vec![Part::Text(first_row(shown), GREEN)]];
     if let Some((first, rest)) = shown.areas.split_first() {
         let mut row = vec![
@@ -208,10 +254,58 @@ pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
     if let Some(loads) = shown.core_loads.as_ref().filter(|loads| !loads.is_empty()) {
         let average = format!("{:.0}", loads.iter().sum::<f32>() / loads.len() as f32);
         let average = tr_fill("VERA:FpsPanelAverage", &[("percent", &average)]);
-        rows.push(vec![
+        let mut row = vec![
             Part::Text(format!("{}  ", tr("VERA:FpsPanelCores")), GREEN),
             Part::Bars(loads.clone()),
             Part::Text(format!("   {average}"), GREEN),
+        ];
+        // Only when the system holds the game to fewer cores than it has.
+        if let Some((allowed, total)) = shown
+            .allowed_cores
+            .filter(|(allowed, total)| allowed < total)
+        {
+            let allowed = tr_fill(
+                "VERA:FpsPanelCoresAllowed",
+                &[
+                    ("allowed", &allowed.to_string()),
+                    ("total", &total.to_string()),
+                ],
+            );
+            row.push(Part::Text(format!("{DOT}{allowed}"), WARM));
+        }
+        rows.push(row);
+    }
+    // Which of the game's threads the cores' load is: a share of one core
+    // each, so the rest of the threads together can pass 100.
+    if let Some(threads) = shown.threads.filter(|_| thread_rows) {
+        let load = |key, percent: f32| tr_fill(key, &[("percent", &format!("{percent:.0}"))]);
+        rows.push(vec![
+            Part::Text(format!("{}  ", tr("VERA:FpsPanelThreads")), GREEN),
+            Part::Text(
+                format!(
+                    "{}{DOT}{}{DOT}{}",
+                    load("VERA:FpsPanelMainThread", threads.main),
+                    load("VERA:FpsPanelSimThread", threads.simulation),
+                    load("VERA:FpsPanelOtherThreads", threads.others),
+                ),
+                GREEN,
+            ),
+        ]);
+    }
+    // Where a match's ticks ran, and how often the event loop turned.
+    if let Some(rates) = shown.loop_rates.filter(|_| thread_rows) {
+        let count = |key, rate: f32| tr_fill(key, &[("count", &thousands(rate.round() as usize))]);
+        rows.push(vec![
+            Part::Text(format!("{}  ", tr("VERA:FpsPanelTicks")), GREEN),
+            Part::Text(
+                format!(
+                    "{}{DOT}{}{DOT}{}",
+                    count("VERA:FpsPanelTicksMain", rates.main_ticks),
+                    count("VERA:FpsPanelTicksSim", rates.simulation_ticks),
+                    count("VERA:FpsPanelLoopTurns", rates.turns),
+                ),
+                GREEN,
+            ),
         ]);
     }
     // The GPU's busy share of the time between frames, under one bar like a
@@ -254,8 +348,8 @@ fn first_row(shown: &Shown) -> String {
     } else {
         tr_fill("VERA:FpsPanelFps", &[("fps", &"--")])
     };
-    if let Some(simulation) = shown.simulation {
-        let tps = format!("{:.0}", simulation.tps);
+    if let Some(tps) = shown.tps {
+        let tps = format!("{tps:.0}");
         let sim = tr_fill("VERA:FpsPanelSim", &[("tps", &tps)]);
         row.push_str(&format!("{DOT}{sim}"));
     }
@@ -286,14 +380,9 @@ fn thousands(value: usize) -> String {
     grouped
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
-
-    const READOUT: SimulationReadout = SimulationReadout {
-        tps: 30.0,
-        sampling: true,
-    };
 
     fn text(part: &Part) -> &str {
         match part {
@@ -306,22 +395,22 @@ mod tests {
     fn panel_rows_read_rates_costliest_areas_and_cores() {
         let shown = Shown {
             frame_ms: 1000.0 / 60.0,
-            simulation: Some(READOUT),
+            tps: Some(30.0),
             units: Some(12_345),
             areas: vec![
-                ("VERA:CpuObjects", 38.4),
+                ("VERA:CpuMovement", 38.4),
                 ("VERA:CpuDrawWorld", 27.0),
                 ("VERA:CpuVision", 11.0),
             ],
             core_loads: Some(vec![90.0, 10.0]),
-            gpu_ms: None,
+            ..Shown::default()
         };
-        let rows = rows(&shown);
+        let rows = rows(&shown, false);
         assert_eq!(
             text(&rows[0][0]),
             "FPS 60  ·  17 ms  ·  Sim 30 TPS  ·  Units 12,345"
         );
-        assert_eq!(rows[1][1], Part::Text("Objects 38%".to_owned(), WARM));
+        assert_eq!(rows[1][1], Part::Text("Movement 38%".to_owned(), WARM));
         assert_eq!(text(&rows[1][2]), "  ·  Draw world 27%  ·  Vision 11%");
         assert_eq!(rows[2][1], Part::Bars(vec![90.0, 10.0]));
         assert_eq!(text(&rows[2][2]), "   avg 50%");
@@ -337,11 +426,14 @@ mod tests {
     #[test]
     fn the_gpu_row_reads_the_gpus_share_of_the_time_between_frames() {
         let gpu = |gpu_ms, frame_ms| {
-            rows(&Shown {
-                frame_ms,
-                gpu_ms: Some(gpu_ms),
-                ..Shown::default()
-            })
+            rows(
+                &Shown {
+                    frame_ms,
+                    gpu_ms: Some(gpu_ms),
+                    ..Shown::default()
+                },
+                false,
+            )
             .pop()
             .expect("a first row")
         };
@@ -354,8 +446,9 @@ mod tests {
         assert_eq!(gpu(5.0, f32::NAN).len(), 1);
     }
 
+    /// The rows' text with the thread rows on.
     fn rows_of(shown: Shown) -> Vec<String> {
-        rows(&shown)
+        rows(&shown, true)
             .iter()
             .map(|row| row.iter().map(text).collect())
             .collect()
@@ -365,27 +458,90 @@ mod tests {
     fn every_panel_label_has_english_text() {
         let rows = rows_of(Shown {
             frame_ms: f32::NAN,
-            simulation: Some(READOUT),
+            tps: Some(30.0),
             areas: SIM_AREAS
                 .iter()
                 .chain(&RENDER_AREAS)
                 .map(|&key| (key, 1.0))
                 .collect(),
             core_loads: Some(vec![40.0]),
+            allowed_cores: Some((1, 2)),
+            threads: Some(ThreadLoads {
+                main: 1.0,
+                simulation: 1.0,
+                others: 1.0,
+            }),
+            loop_rates: Some(LoopRates {
+                main_ticks: 1.0,
+                simulation_ticks: 1.0,
+                turns: 1.0,
+            }),
             ..Shown::default()
         });
         assert_eq!(rows[0], "FPS --  ·  Sim 30 TPS");
         assert!(rows[1].starts_with("Most CPU:  Commands in 1%  ·  Commands 1%"));
-        assert_eq!(rows[2], "Cores     avg 40%");
+        assert_eq!(rows[2], "Cores     avg 40%  ·  1 of 2 allowed");
+        assert_eq!(rows.len(), 5);
         for text in &rows {
             assert!(!text.contains("MISSING:"), "{text}");
         }
     }
 
+    /// The rows that say which thread a full core is: each thread's share
+    /// of one core, where a match's ticks ran, and the cores the system
+    /// allows when it holds some back. The thread rows show only while
+    /// their own key has them on.
+    #[test]
+    fn thread_and_tick_rows_say_which_thread_does_the_work() {
+        let counts = |inline_frames, lent_frames, turns| LoopCounts {
+            inline_frames,
+            lent_frames,
+            turns,
+        };
+        // 1.5 seconds: 21 ticks here, none lent, 1,860 loop turns.
+        let rates = counts(121, 40, 2_860)
+            .since(counts(100, 40, 1_000))
+            .and_then(|counts| loop_rates(Duration::from_millis(1_500), counts));
+        let shown = Shown {
+            frame_ms: 50.0,
+            core_loads: Some(vec![100.0, 10.0]),
+            allowed_cores: Some((1, 8)),
+            threads: Some(ThreadLoads {
+                main: 96.6,
+                simulation: 0.0,
+                others: 112.0,
+            }),
+            loop_rates: rates,
+            ..Shown::default()
+        };
+        assert_eq!(super::rows(&shown, false).len(), 2);
+        let rows = rows_of(shown);
+        assert_eq!(rows[1], "Cores     avg 55%  ·  1 of 8 allowed");
+        assert_eq!(
+            rows[2],
+            "Threads  Main 97%  ·  Simulation 0%  ·  Others 112%"
+        );
+        assert_eq!(
+            rows[3],
+            "Ticks  14 on main  ·  0 on simulation  ·  1,240 loop turns"
+        );
+        // Every core allowed: nothing to say. A pacer that started over: no row.
+        let rows = rows_of(Shown {
+            frame_ms: 50.0,
+            core_loads: Some(vec![100.0, 10.0]),
+            allowed_cores: Some((8, 8)),
+            loop_rates: counts(0, 0, 0)
+                .since(counts(100, 40, 1_000))
+                .and_then(|counts| loop_rates(Duration::from_secs(1), counts)),
+            ..Shown::default()
+        });
+        assert_eq!(rows, ["FPS 20  ·  50 ms", "Cores     avg 55%"]);
+    }
+
     #[test]
     fn most_cpu_ranks_sim_and_render_areas_and_skips_a_restarted_profile() {
         let mut sim = [0u128; PHASE_COUNT];
-        sim[crate::sim::frame_profile::phase::OBJECTS] = 300_000_000;
+        sim[crate::sim::frame_profile::phase::MOVEMENT] = 300_000_000;
         sim[crate::sim::frame_profile::phase::VISION] = 5_000_000;
         let mut render = [Duration::ZERO; RenderPhases::COUNT];
         render[0] = Duration::from_millis(200);
@@ -395,7 +551,7 @@ mod tests {
             most_cpu(Duration::from_secs(1), Some(&sim), &render),
             [
                 ("VERA:CpuDriverHandoff", 40.0),
-                ("VERA:CpuObjects", 30.0),
+                ("VERA:CpuMovement", 30.0),
                 ("VERA:CpuDrawWorld", 20.0)
             ]
         );

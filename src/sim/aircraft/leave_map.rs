@@ -9,12 +9,9 @@
 //! shared dummy cell (`0x00414FDF..0x00415046`), before Ready/Commence.
 //! A Spy Plane's next Overfly visit can then choose another exit cell.
 //!
-//! Not ported, dormant: the step just before (`0x00414EF6..0x00414F47`)
-//! plays the type's art `Trailer=` anim (TechnoType `+0xE00`) at the
-//! aircraft every `SpawnDelay=` (`+0xE04`) frames. No retail aircraft image
-//! sets `Trailer=`: artmd has it only on YURBLANK, DREDMISS, SUBT, MISLCHEM,
-//! MISLMLTI, NKMSLUP and NKMSLDN, and V3ROCKET, DMISL and BSUBMISL set
-//! `SpawnDelay=` alone.
+//! The preceding Trailer/SpawnDelay step (`0x00414ED0..0x00414F42`) is
+//! owned by [`Simulation::emit_aircraft_trailer`]. No retail aircraft image
+//! supplies Trailer, but authored fixed-ART values reach that producer.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;

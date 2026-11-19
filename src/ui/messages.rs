@@ -45,6 +45,32 @@ const MESSAGE_INIT_WIDTH_INSET: i32 = 6 + 8;
 /// SetWidth `0x005D4AD0` keeps its argument − 8; Set_View_Dimensions
 /// passes the whole tactical width (`0x004A8BBD..0x004A8BC9`).
 const MESSAGE_SET_WIDTH_INSET: i32 = 8;
+/// VERA: how long a status notice's state must hold before the list shows
+/// the change ([`MessageList::show_notice`]), so a state that comes and goes
+/// within it adds or removes no row.
+pub const NOTICE_SETTLE_MS: u64 = 1_000;
+
+/// VERA: where a status notice belongs. gamemd has no such rows: they say
+/// what VERA's online play and replays are doing, among the other messages.
+/// Each place shows at most one notice at a time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeSlot {
+    /// The game server connection: reconnecting, catching up, rejoining.
+    Network,
+    /// The shared pause.
+    Pause,
+    /// Replay playback.
+    Replay,
+}
+
+/// One [`NoticeSlot`]: the text the list shows, or showed until its rows
+/// expired, and the text its state asks for, since when.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct NoticeState {
+    shown: Option<String>,
+    wanted: Option<String>,
+    wanted_since_ms: u64,
+}
 
 /// One live message row.
 #[derive(Debug, Clone, PartialEq)]
@@ -58,6 +84,8 @@ pub struct Message {
     /// TextLabel+41/+44/+48. The list owns this state through insertion,
     /// painting, eviction and expiry; renderers only read the current count.
     reveal: Option<MessageReveal>,
+    /// VERA: the status notice this row shows.
+    notice: Option<NoticeSlot>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +103,13 @@ impl Message {
             deadline_ms: None,
             y: edit.y,
             reveal: None,
+            notice: None,
         }
+    }
+
+    /// VERA: a status notice without a deadline stays while its state lasts.
+    fn held(&self) -> bool {
+        self.notice.is_some() && self.deadline_ms.is_none()
     }
 
     /// Original434500: zero draws the whole string; a positive count draws
@@ -123,6 +157,9 @@ struct MessageEdit {
     rgb: [f32; 3],
     /// `+0x18`: split an overfull line instead of refusing the unit.
     overflow: bool,
+    /// The edit label's `+0x40`, which TextLabel vt+0x6C (`0x0072A4A8`)
+    /// reads as "draw nothing".
+    hidden: bool,
 }
 
 /// One key as Input `0x005D4510` decodes it.
@@ -165,6 +202,8 @@ pub struct EditLine {
     pub text: String,
     pub rgb: [f32; 3],
     pub y: i32,
+    /// Open but not drawn: the beacon label edit.
+    pub hidden: bool,
 }
 
 /// MessageListClass, the session's one list at `0x00A8BC60`. Its rows are
@@ -199,6 +238,8 @@ pub struct MessageList {
     /// Add_Message's per-mode reveal gate: LANScrollText `[0xA8D1F8]` in
     /// GameMode 3, WOLScrollText `[0xA8D1F9]` in 4, always on otherwise.
     typing: bool,
+    /// VERA: one per [`NoticeSlot`], in its order.
+    notices: [NoticeState; 3],
 }
 
 impl MessageList {
@@ -213,6 +254,7 @@ impl MessageList {
             messages: Vec::with_capacity(MESSAGE_SLOTS),
             edit: None,
             typing: true,
+            notices: Default::default(),
         }
     }
 
@@ -273,7 +315,22 @@ impl MessageList {
             text: String::from_utf16_lossy(&edit.buffer),
             rgb: edit.rgb,
             y: self.y,
+            hidden: edit.hidden,
         })
+    }
+
+    /// The open edit's typed units, past the prefix: what GetEditBuffer
+    /// `0x005D4400` points at while the edit is open.
+    pub fn edit_typed(&self) -> Option<&[u16]> {
+        self.edit.as_ref().map(|edit| &edit.buffer[edit.start..])
+    }
+
+    /// The beacon branch's `[label + 0x40] = 1` after AddEdit
+    /// (`0x0055E5C1`): the edit stays open and takes keys, unseen.
+    pub fn hide_edit(&mut self) {
+        if let Some(edit) = self.edit.as_mut() {
+            edit.hidden = true;
+        }
     }
 
     /// AddEdit `0x005D4210`: refused while an edit is open. Evicts the
@@ -285,7 +342,7 @@ impl MessageList {
             return false;
         }
         if self.max_visible < self.messages.len() + 1 && !self.messages.is_empty() {
-            self.messages.remove(0);
+            self.evict_oldest();
         }
         let buffer: Vec<u16> = prefix.encode_utf16().collect();
         self.edit = Some(MessageEdit {
@@ -293,6 +350,7 @@ impl MessageList {
             buffer,
             rgb,
             overflow,
+            hidden: false,
         });
         self.restack();
         self.max_visible = self.max_visible.saturating_sub(1);
@@ -396,17 +454,84 @@ impl MessageList {
             added: 0,
             play_sound: false,
         };
-        self.add_inner(post, post.text, post.silent, now_ms, measure, &mut outcome);
+        self.add_inner(
+            post,
+            post.text,
+            post.silent,
+            None,
+            now_ms,
+            measure,
+            &mut outcome,
+        );
         outcome
+    }
+
+    /// VERA: bring `slot`'s status notice in step with its state. `post` is
+    /// what the state asks the list to show now, `None` nothing. A change
+    /// reaches the list once it has held for [`NOTICE_SETTLE_MS`]: the old
+    /// notice's rows go and the new one is added as Add_Message adds a row.
+    /// A notice without a timeout stays while its state lasts: it never
+    /// expires, and eviction passes over it. One with a timeout expires as
+    /// any row does and does not come back while its state lasts.
+    pub fn show_notice(
+        &mut self,
+        slot: NoticeSlot,
+        post: Option<&MessagePost>,
+        now_ms: u64,
+        measure: &dyn Fn(&str) -> i32,
+    ) {
+        let notice = &mut self.notices[slot as usize];
+        let wanted = post.map(|post| post.text);
+        if notice.wanted.as_deref() != wanted {
+            notice.wanted = wanted.map(str::to_owned);
+            notice.wanted_since_ms = now_ms;
+        }
+        if notice.shown.as_deref() == wanted
+            || now_ms.saturating_sub(notice.wanted_since_ms) < NOTICE_SETTLE_MS
+        {
+            return;
+        }
+        notice.shown = notice.wanted.clone();
+        self.messages.retain(|message| message.notice != Some(slot));
+        self.restack();
+        if let Some(post) = post {
+            let mut outcome = AddOutcome {
+                added: 0,
+                play_sound: false,
+            };
+            self.add_inner(
+                post,
+                post.text,
+                post.silent,
+                Some(slot),
+                now_ms,
+                measure,
+                &mut outcome,
+            );
+        }
+    }
+
+    /// Add_Message's and AddEdit's eviction of the head row. VERA passes
+    /// over a status notice that stays while its state lasts; a list of
+    /// nothing else still loses its head.
+    fn evict_oldest(&mut self) {
+        let oldest = self
+            .messages
+            .iter()
+            .position(|message| !message.held())
+            .unwrap_or(0);
+        self.messages.remove(oldest);
     }
 
     /// `text`/`silent` override the `post` fields: the wrap recursion re-adds
     /// the remainder with the SAME prefix/color/timeout but always silently.
+    #[allow(clippy::too_many_arguments)]
     fn add_inner(
         &mut self,
         post: &MessagePost,
         text: &str,
         silent: bool,
+        notice: Option<NoticeSlot>,
         now_ms: u64,
         measure: &dyn Fn(&str) -> i32,
         outcome: &mut AddOutcome,
@@ -440,7 +565,7 @@ impl MessageList {
             && self.max_visible < self.messages.len() + usize::from(self.edit.is_some()) + 1
             && !self.messages.is_empty()
         {
-            self.messages.remove(0);
+            self.evict_oldest();
         }
         // Slot-pool guard (unreachable with retail max_visible ≤ 14).
         // Phobos' `RecordsCount` narrows this cap when the centre column is on.
@@ -454,6 +579,7 @@ impl MessageList {
             deadline_ms: post.timeout_ms.map(|t| now_ms + t),
             y: 0,
             reveal: (!silent && self.typing).then(MessageReveal::default),
+            notice,
         });
         self.restack();
         outcome.added += 1;
@@ -465,7 +591,7 @@ impl MessageList {
         if fit_bytes < text.len() {
             let remainder = text[fit_bytes..].trim_start_matches(|c: char| (c as u32) < 0x20);
             if !remainder.is_empty() {
-                self.add_inner(post, remainder, true, now_ms, measure, outcome);
+                self.add_inner(post, remainder, true, notice, now_ms, measure, outcome);
             }
         }
     }
@@ -591,7 +717,7 @@ fn count_fitting_units(
     fitted
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -1027,5 +1153,112 @@ mod tests {
             3 * MESSAGE_LINE_HEIGHT_PX,
             "the open edit is one more label"
         );
+    }
+    /// `slot`'s state asks for `text` at `now`, as a silent row.
+    fn want(
+        l: &mut MessageList,
+        slot: NoticeSlot,
+        text: Option<&str>,
+        timeout: Option<u64>,
+        now: u64,
+    ) {
+        let notice = text.map(|text| post(None, text, timeout, true));
+        l.show_notice(slot, notice.as_ref(), now, &mono);
+    }
+
+    const SETTLE: u64 = NOTICE_SETTLE_MS;
+
+    /// VERA status notices: a held notice shows once its state has lasted
+    /// the settle time, outlives every deadline and eviction, and goes once
+    /// its state has been over as long.
+    #[test]
+    fn a_status_notice_stays_while_its_state_lasts() {
+        let mut l = list(3, 500);
+        want(&mut l, NoticeSlot::Network, Some("Reconnecting"), None, 0);
+        assert!(l.messages().is_empty(), "not yet a settle time");
+        want(
+            &mut l,
+            NoticeSlot::Network,
+            Some("Reconnecting"),
+            None,
+            SETTLE,
+        );
+        for i in 0..3 {
+            l.add_message(&post(None, &format!("m{i}"), Some(10), true), SETTLE, &mono);
+        }
+        assert_eq!(row_texts(&l), ["Reconnecting", "m1", "m2"]);
+        l.manage(u64::MAX);
+        assert_eq!(row_texts(&l), ["Reconnecting"]);
+        want(&mut l, NoticeSlot::Network, None, None, 5 * SETTLE);
+        assert_eq!(row_texts(&l), ["Reconnecting"]);
+        want(&mut l, NoticeSlot::Network, None, None, 6 * SETTLE);
+        assert!(l.messages().is_empty());
+    }
+
+    /// A state that comes and goes within the settle time adds no row, and a
+    /// dip that short neither removes the row nor moves it below later rows.
+    #[test]
+    fn a_status_notice_ignores_shorter_changes() {
+        let mut l = list(6, 500);
+        let behind = Some("Catching up");
+        want(&mut l, NoticeSlot::Network, behind, None, 0);
+        want(&mut l, NoticeSlot::Network, behind, None, SETTLE - 1);
+        assert!(l.messages().is_empty(), "a blip adds no row");
+        for (text, now) in [
+            (None, SETTLE - 1),
+            (behind, 3 * SETTLE),
+            (behind, 4 * SETTLE),
+        ] {
+            want(&mut l, NoticeSlot::Network, text, None, now);
+        }
+        l.add_message(&post(None, "m", Some(10 * SETTLE), true), 4 * SETTLE, &mono);
+        for (text, now) in [
+            (None, 4 * SETTLE + 1),
+            (behind, 5 * SETTLE - 1),
+            (behind, 6 * SETTLE),
+        ] {
+            want(&mut l, NoticeSlot::Network, text, None, now);
+        }
+        assert_eq!(row_texts(&l), ["Catching up", "m"], "a dip keeps the row");
+    }
+
+    /// A notice with a timeout expires as any row does and stays gone while
+    /// its state lasts; the next state's notice replaces it.
+    #[test]
+    fn a_timed_status_notice_expires_once() {
+        let mut l = list(6, 500);
+        want(&mut l, NoticeSlot::Replay, Some("Replay"), Some(100), 0);
+        want(
+            &mut l,
+            NoticeSlot::Replay,
+            Some("Replay"),
+            Some(100),
+            SETTLE,
+        );
+        assert_eq!(row_texts(&l), ["Replay"]);
+        l.manage(SETTLE + 101);
+        want(
+            &mut l,
+            NoticeSlot::Replay,
+            Some("Replay"),
+            Some(100),
+            5 * SETTLE,
+        );
+        assert!(l.messages().is_empty(), "an expired notice stays gone");
+        want(
+            &mut l,
+            NoticeSlot::Replay,
+            Some("Replay ended"),
+            None,
+            5 * SETTLE,
+        );
+        want(
+            &mut l,
+            NoticeSlot::Replay,
+            Some("Replay ended"),
+            None,
+            6 * SETTLE,
+        );
+        assert_eq!(row_texts(&l), ["Replay ended"]);
     }
 }

@@ -173,7 +173,7 @@ pub(super) fn build_miner_snapshot(sim: &Simulation, id: u64) -> Option<MinerSna
         type_id: entity.type_ref(),
         rx: entity.position.rx(),
         ry: entity.position.ry(),
-        miner: miner.clone(),
+        miner: Miner::clone(miner),
         state: cursor.unwrap_or(MinerState::SearchOre),
         dispatch_delay: DISPATCH_NEXT_FRAME,
     })
@@ -182,12 +182,17 @@ pub(super) fn build_miner_snapshot(sim: &Simulation, id: u64) -> Option<MinerSna
 /// Commit one dispatched snapshot back to the entity: miner mutations and the
 /// FSM cursor of record (`MissionCom::handler_state`, which
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` stores at
-/// `0x0073E714..0x0073EE68`).
-pub(super) fn commit_miner_snapshot(substrate: &mut ObjectSubstrate, snap: &MinerSnapshot) {
+/// `0x0073E714..0x0073EE68`). The snapshot's working copy of the miner moves
+/// back; its dispatch ends here.
+pub(super) fn commit_miner_snapshot(substrate: &mut ObjectSubstrate, snap: MinerSnapshot) {
     let Some(entity) = substrate.entities.get_mut(snap.entity_id) else {
         return;
     };
-    entity.miner = Some(snap.miner.clone());
+    // The record's own box takes the working copy back; no allocation.
+    match entity.miner.as_deref_mut() {
+        Some(miner) => *miner = snap.miner,
+        None => entity.miner = Some(Box::new(snap.miner)),
+    }
     entity.mission.set_handler_state(snap.state.cursor());
 }
 
@@ -204,17 +209,18 @@ pub(crate) fn native_mission_is_harvest(entity: &crate::sim::game_entity::GameEn
 /// (`0x00740A99`, `0x00740B1A`, `0x00740F10`); they run inside FootClass::AI
 /// and nothing reads the byte in between, so this clear covers them.
 pub(crate) fn unit_ai_clear_harvesting(substrate: &mut ObjectSubstrate, id: u64) {
-    let Some(entity) = substrate.entities.get_mut(id) else {
-        return;
-    };
-    if entity.death.is_dying()
-        || entity.category() != EntityCategory::Unit
-        || native_mission_is_harvest(entity)
-        || !entity.miner.as_ref().is_some_and(|miner| miner.harvesting)
+    // A quiet unit is not harvesting (`world::quiet_units`).
+    if !substrate.entities.is_quiet(id)
+        && let Some(miner) = substrate
+            .entities
+            .get_mut_if(id, |entity| {
+                !entity.death.is_dying()
+                    && entity.category() == EntityCategory::Unit
+                    && !native_mission_is_harvest(entity)
+                    && entity.miner.as_ref().is_some_and(|miner| miner.harvesting)
+            })
+            .and_then(|entity| entity.miner.as_mut())
     {
-        return;
-    }
-    if let Some(miner) = entity.miner.as_mut() {
         miner.harvesting = false;
     }
 }
@@ -326,25 +332,25 @@ pub(super) fn process_miner(
     // Ares 3.0 1004D6C0 (hook 0x73E66D) jumps over the Dock= loop to
     // 0x73E6CF: only a computer house's harvester with no Dock= at all
     // (0x73E638..0x73E660) still queues Guard.
-    #[cfg(feature = "ares")]
-    let sleeps = sim
-        .interner
-        .object_type(snap.type_id, rules)
-        .is_some_and(|object| {
-            object.dock.is_empty()
-                && !sim.houses.get(&snap.owner).is_some_and(|house| {
-                    house.is_controlled_by_human(sim.session.game_mode_nonzero())
-                })
-        });
-    #[cfg(not(feature = "ares"))]
-    let sleeps = !house_owns_dock_instance(sim, rules, snap);
+    let sleeps = if rules.ares_form() {
+        sim.interner
+            .object_type(snap.type_id, rules)
+            .is_some_and(|object| {
+                object.dock.is_empty()
+                    && !sim.houses.get(&snap.owner).is_some_and(|house| {
+                        house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                    })
+            })
+    } else {
+        !house_owns_dock_instance(sim, rules, snap)
+    };
     if sleeps {
         queue_guard_from_harvest(sim, snap, rules);
         snap.dispatch_delay = DISPATCH_NEXT_FRAME;
         return Ok(());
     }
 
-    let state_before = format!("{:?}", snap.state);
+    let state_before = snap.state;
     match snap.state {
         MinerState::SearchOre => {
             harvest_looking(sim, rules, overlay_registry, snap, frame_effects)?
@@ -364,13 +370,12 @@ pub(super) fn process_miner(
             arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
         }
     }
-    let state_after = format!("{:?}", snap.state);
-    if state_before != state_after {
-        log::info!(
-            "MINER {} state: {} → {} pos=({},{}) cargo={} stage={}",
+    if state_before != snap.state {
+        log::debug!(
+            "MINER {} state: {:?} → {:?} pos=({},{}) cargo={} stage={}",
             snap.entity_id,
             state_before,
-            state_after,
+            snap.state,
             snap.rx,
             snap.ry,
             snap.miner.cargo.len(),
@@ -679,7 +684,11 @@ pub(crate) fn harvest_ore_tick_for_test(
     let mut snap = build_miner_snapshot(sim, id).expect("a dispatchable miner");
     let result = harvest_ore_tick(sim, rules, overlay_registry, &mut snap);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.miner = Some(snap.miner);
+        // The record's own box takes the working copy back; no allocation.
+        match entity.miner.as_deref_mut() {
+            Some(miner) => *miner = snap.miner,
+            None => entity.miner = Some(Box::new(snap.miner)),
+        }
     }
     result.expect("valid Tiberium image in harvest fixture")
 }
@@ -1048,7 +1057,6 @@ fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot, rules: &
 /// rules entry).
 ///
 /// [`HouseTracking::owns_any_building`]: crate::sim::house_tracking::HouseTracking::owns_any_building
-#[cfg(not(feature = "ares"))]
 fn house_owns_dock_instance(sim: &Simulation, rules: &RuleSet, snap: &MinerSnapshot) -> bool {
     let Some(harvester) = sim.interner.object_type(snap.type_id, rules) else {
         return true;
@@ -1269,8 +1277,11 @@ fn scan_docking_type(
         {
             continue;
         }
-        let distance =
-            crate::util::native_coord::squared_xy_distance([own_x, own_y], [centre.x, centre.y]);
+        let distance = crate::util::native_coord::squared_xy_distance(
+            [own_x, own_y],
+            [centre.x, centre.y],
+            rules.ares(),
+        );
         if nearest == -1 || distance < nearest || sim.production.is_primary_factory(sid) {
             found = Some(sid);
             nearest = distance;

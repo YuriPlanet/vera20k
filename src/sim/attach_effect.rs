@@ -1061,7 +1061,7 @@ pub(crate) fn range_modifier_source<'a>(
     let Some(entities) = entities else {
         return entity;
     };
-    let Some(transport_id) = entity.passenger_role.inside_transport_id() else {
+    let Some(transport_id) = entity.passenger_role().inside_transport_id() else {
         return entity;
     };
     let Some(transport) = entities.get(transport_id) else {
@@ -1953,7 +1953,7 @@ impl Simulation {
             .get(&new_owner)
             .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
         let human_and_computer = old_human != new_human;
-        let has_transporter = entity.passenger_role.inside_transport_id().is_some();
+        let has_transporter = entity.passenger_role().inside_transport_id().is_some();
         let effects = rules.attach_effect_types().types();
         let mut list = std::mem::take(
             self.substrate
@@ -2388,7 +2388,7 @@ impl Simulation {
         // the native immobilised states VERA models.
         if entity.lifecycle.in_limbo()
             || entity.chrono_warp_latch()
-            || entity.passenger_role.inside_transport_id().is_some()
+            || entity.passenger_role().inside_transport_id().is_some()
             || entity.phobos_attach_effects().is_empty()
         {
             return;
@@ -2970,7 +2970,10 @@ impl Simulation {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return false;
         };
-        let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
+        if !target.phobos_unkillable() || target.health.current() <= 0 || input == 0 {
+            return false;
+        }
+        let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
             return false;
         };
         // `:141` guards the whole shield block this arm lives in.
@@ -3324,7 +3327,7 @@ impl Simulation {
         if damage <= 0 || self.reflected_warhead == Some(warhead_ref) {
             return;
         }
-        let Some(warhead) = rules.warhead(self.interner.resolve(warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
             return;
         };
         let info = warhead.attach_effect.clone();
@@ -3727,7 +3730,7 @@ impl Simulation {
         effects: crate::sim::world::FrameEffects<'_>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
-        let Some(warhead) = rules.warhead(self.interner.resolve(warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
             return;
         };
         let info = warhead.attach_effect.clone();
@@ -3855,7 +3858,7 @@ fn affects_house(
     crate::sim::combat::can_target_house(flags, source, target, houses, alliances, interner)
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
 mod tests {
     use super::*;
 
@@ -4846,7 +4849,9 @@ mod tests {
             .entities
             .get_mut(rider)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(truck, true);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                truck, true,
+            ));
         assert_eq!(
             range(&sim),
             5 * 256 * 2,
@@ -4858,7 +4863,9 @@ mod tests {
             .entities
             .get_mut(rider)
             .unwrap()
-            .passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(truck, true);
+            .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                truck, true,
+            ));
         assert_eq!(
             range(&sim),
             5 * 256 * 3,

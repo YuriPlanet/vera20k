@@ -148,23 +148,29 @@ fn enumerate_seed_files(dir: &Path) -> Vec<(NativeFileName, u32, u64)> {
         .collect()
 }
 
+/// `ares`: Ares.dll is loaded (the game is read the Ares way); see
+/// [`RmgOptions::apply_sed`].
 pub fn read_browser_seed(
     dir: &Path,
     name: &NativeFileName,
     current: &RmgOptions,
     default: &str,
+    ares: bool,
 ) -> std::io::Result<RmgOptions> {
     let mut bytes = Vec::new();
     native_file_name::open(dir, name, false)?.read_to_end(&mut bytes)?;
-    Ok(options_from_bytes(&bytes, current, default))
+    Ok(options_from_bytes(&bytes, current, default, ares))
 }
 
+/// `ares`: Ares.dll is loaded (the game is read the Ares way); see
+/// [`RmgOptions::to_sed_bytes`].
 pub fn write_browser_seed(
     dir: &Path,
     name: &NativeFileName,
     options: &RmgOptions,
+    ares: bool,
 ) -> std::io::Result<()> {
-    native_file_name::open(dir, name, true)?.write_all(&options.to_sed_bytes())
+    native_file_name::open(dir, name, true)?.write_all(&options.to_sed_bytes(ares))
 }
 
 pub fn system_time_to_file_time(time: crate::util::time::SystemTime) -> u64 {
@@ -214,18 +220,29 @@ pub fn load_saved_seed(
     path: &Path,
     current: &RmgOptions,
     default_description: &str,
+    ares: bool,
 ) -> std::io::Result<RmgOptions> {
     let bytes = std::fs::read(path)?;
-    Ok(options_from_bytes(&bytes, current, default_description))
+    Ok(options_from_bytes(
+        &bytes,
+        current,
+        default_description,
+        ares,
+    ))
 }
 
-fn options_from_bytes(bytes: &[u8], current: &RmgOptions, default_description: &str) -> RmgOptions {
+fn options_from_bytes(
+    bytes: &[u8],
+    current: &RmgOptions,
+    default_description: &str,
+    ares: bool,
+) -> RmgOptions {
     let mut options = current.clone();
     // Unlike the integer keys, Description uses the localized default passed
     // at 0x00597AFD to INIClass__ReadCommaHexUTF16, not the current description.
     options.description = default_description.into();
     if let Ok(ini) = crate::rules::ini_parser::IniFile::from_bytes(bytes) {
-        options.apply_sed(&ini);
+        options.apply_sed(&ini, ares);
     }
     options.normalize();
     options
@@ -233,8 +250,8 @@ fn options_from_bytes(bytes: &[u8], current: &RmgOptions, default_description: &
 
 /// Write a saved seed.
 #[cfg(any(test, feature = "test-support"))]
-pub fn save_saved_seed(path: &Path, options: &RmgOptions) -> std::io::Result<()> {
-    std::fs::write(path, options.to_sed_bytes())
+pub fn save_saved_seed(path: &Path, options: &RmgOptions, ares: bool) -> std::io::Result<()> {
+    std::fs::write(path, options.to_sed_bytes(ares))
 }
 
 /// Delete a saved seed.
@@ -243,7 +260,7 @@ pub fn delete_saved_seed(path: &Path) -> std::io::Result<()> {
     std::fs::remove_file(path)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -288,7 +305,7 @@ mod tests {
                 ini.push_str(&format!("Description={encoded}\n"));
             }
             std::fs::write(&path, &ini).unwrap();
-            let loaded = load_saved_seed(&path, &current, "Zufallskarte").unwrap();
+            let loaded = load_saved_seed(&path, &current, "Zufallskarte", false).unwrap();
             assert_eq!(loaded.description, expected, "{encoded:?}");
             assert_eq!(loaded.seed, 42);
             assert_eq!(loaded.width, current.width);
@@ -296,7 +313,7 @@ mod tests {
             // and applies it to constructor defaults directly. Its current
             // empty Description fallback is preserved by this increment.
             let mut direct = RmgOptions::default();
-            direct.apply_sed(&crate::rules::ini_parser::IniFile::from_str(&ini));
+            direct.apply_sed(&crate::rules::ini_parser::IniFile::from_str(&ini), false);
             direct.normalize();
             let direct_expected = if expected == "Zufallskarte" {
                 ""
@@ -337,18 +354,28 @@ mod tests {
             tiberium_layout: 19,
             vegetation: 29,
             urban_presence: 13,
+            urban_enabled: false,
+            fair_starts: false,
+            extras: Default::default(),
             width: 2,
             height: 1,
             accessibility: 89,
             region_size: 83,
             seed: 42,
             description: "Prior map".into(),
+            urban_areas: true,
+            tech_building_amount: 0,
+            derelict_amount: 0,
+            damage_amount: 0,
+            civilian_amount: 0,
+            animal_amount: 0,
+            wild_amount: 0,
         };
-        let loaded = load_saved_seed(&path, &current, "Localized random map").unwrap();
+        let loaded = load_saved_seed(&path, &current, "Localized random map", true).unwrap();
         let expected = RmgOptions {
             seed: 4660,
             water_amount: 73,
-            num_players: 30,
+            num_players: 99,
             description: "Localized random map".into(),
             ..current.clone()
         };
@@ -356,13 +383,13 @@ mod tests {
         // Description has its own comma-hex reader/default contract.
         std::fs::write(&path, b"[RandomMap]\nDescription=53,61,76,65,64,\n").unwrap();
         assert_eq!(
-            load_saved_seed(&path, &current, "fallback")
+            load_saved_seed(&path, &current, "fallback", true)
                 .unwrap()
                 .description,
             "Saved"
         );
         std::fs::remove_file(&path).unwrap();
-        assert!(load_saved_seed(&path, &current, "fallback").is_err());
+        assert!(load_saved_seed(&path, &current, "fallback", true).is_err());
         assert_eq!(
             current.seed, 42,
             "loading never mutates the supplied record"
@@ -407,13 +434,14 @@ mod tests {
             ..Default::default()
         };
         let path = dir.join("SAVE1234.SED");
-        save_saved_seed(&path, &options).expect("save");
+        save_saved_seed(&path, &options, false).expect("save");
 
         let listed = list_saved_seeds(&dir);
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].description, "Desert Duel");
 
-        let loaded = load_saved_seed(&path, &RmgOptions::default(), "Random Map").expect("load");
+        let loaded =
+            load_saved_seed(&path, &RmgOptions::default(), "Random Map", false).expect("load");
         assert_eq!(loaded.seed, 4242);
         assert_eq!(loaded.num_players, 6);
         assert_eq!(loaded.map_type, 3);

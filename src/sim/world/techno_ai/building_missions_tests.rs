@@ -405,7 +405,7 @@ fn mission_attack_matches_the_original() {
         entity.body_facing.snap(away, FRAME);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(FRAME as i32);
         cloak.set_state_for_test(2);
-        entity.cloak = Some(cloak);
+        entity.cloak = Some(Box::new(cloak));
 
         let (returns, fire_calls) = with_building_fire_stub(None, || {
             with_draws(&mut sim, row, |sim| {
@@ -456,7 +456,7 @@ fn mission_attack_matches_the_original() {
         );
         let delayed = &row["delayed_fire"];
         assert_eq!(
-            entity.pending_building_fire.pending(),
+            entity.building.pending_building_fire.pending(),
             (delayed[0] == 1).then(|| PendingBuildingFire::new(
                 delayed[2].as_i64().unwrap() as i32,
                 DelayedFire::Weapon(WeaponSlot::Primary)
@@ -562,7 +562,13 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
         let building = sim
             .spawn_object_limbo_at_height("DEF", "Americans", 7, 7, 0, 0, &rules)
             .unwrap();
-        let before = sim.substrate.entities.get(building).unwrap().mission;
+        let before = sim
+            .substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .mission
+            .clone();
         assert_eq!(before.current(), MissionId::NONE, "{name}");
         assert_eq!(before.queued(), MissionId::NONE, "{name}");
         let initial = input["args"][0] != 0;
@@ -1459,7 +1465,7 @@ pub(super) fn retail_dustbowl_defence(
                 y,
                 0,
                 rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )?;
             let defence = sim
                 .spawn_object_with_overlay_registry(
@@ -1469,7 +1475,7 @@ pub(super) fn retail_dustbowl_defence(
                     y,
                     0,
                     rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
                 .expect("the defence stands where the MCV does");
             Some((defence, truck, x, y))
@@ -1487,7 +1493,7 @@ pub(super) fn retail_dustbowl_defence(
                     py,
                     0,
                     rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
             })
             .unwrap_or_else(|| panic!("room for {plant}"));
@@ -1543,7 +1549,7 @@ fn retail_spawn(
             cell.1,
             0,
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .expect("spawns");
     sim.resolve_type_handles(&resources.rules);
@@ -1751,7 +1757,7 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
     };
     let armed = |scenario: &crate::headless_scenario::HeadlessScenario| {
         let entity = scenario.sim().substrate.entities.get(coil).unwrap();
-        entity.pending_building_fire.pending().is_some()
+        entity.building.pending_building_fire.pending().is_some()
     };
     // The coil's drain reaches its House at Added_To_Game (`0x00502B48` ->
     // `0x0044E880` -> `0x005018C0`), the plant's output only at the House's
@@ -1820,9 +1826,8 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
 ///   `PrismSupportDelay=45` on its rearm timer.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
-// The stock PrismType support; Ares builds replace it
+// The stock PrismType support; an Ares game replaces it
 // (`techno_ai::ares_prism_forwarding`).
-#[cfg(not(feature = "ares"))]
 fn retail_dustbowl_prism_towers_forward_their_charge() {
     use crate::sim::world::DelayedFire;
     let (mut scenario, master, mcv, (x, y)) =
@@ -1846,7 +1851,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                     py,
                     0,
                     &resources.rules,
-                    &resources.overlay_registry,
+                    resources.rules.overlay_registry(),
                 )
             })
             .expect("room for a second GAPOWR");
@@ -1883,6 +1888,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             .entities
             .get(id)
             .unwrap()
+            .building
             .pending_building_fire
             .pending()
             .map(|pending| pending.fire)
@@ -1932,7 +1938,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
                         crate::sim::timer::CdTimer::started(binary_frame, 45),
                         "the downtime starts on the beam's frame"
                     );
-                    assert_eq!(entity.prism_support_count.count(), 0);
+                    assert_eq!(entity.building.prism_support_count.count(), 0);
                     beams.push((frame, id));
                 }
                 _ => {}
@@ -1962,7 +1968,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             shot = Some((frame, health - after));
             let entity = scenario.sim().substrate.entities.get(master).unwrap();
             assert_eq!(
-                entity.prism_support_count.count(),
+                entity.building.prism_support_count.count(),
                 0,
                 "the bonus restarts the count"
             );
@@ -2030,60 +2036,28 @@ fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
 
     // A defence refuses the ore cell through the live overlay table.
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "GAPILL",
-            "Americans",
-            69,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_none(),
+        sim.spawn_object_with_map_overlays("GAPILL", "Americans", 69, 40, 0, rules)
+            .is_none(),
         "Is_Clear_To_Build refuses a building on an ore overlay"
     );
 
     // Through the live table the ore cell admits infantry and vehicles, and
     // the infantryman stands on his requested cell.
     let engineer = sim
-        .spawn_object_with_overlay_registry(
-            "E2",
-            "Americans",
-            69,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
+        .spawn_object_with_map_overlays("E2", "Americans", 69, 40, 0, rules)
         .expect("ore admits infantry through the live overlay table");
     let placed = sim.substrate.entities.get(engineer).unwrap();
     assert_eq!((placed.position.rx(), placed.position.ry()), (69, 40));
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "SMCV",
-            "Russians",
-            69,
-            41,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_some(),
+        sim.spawn_object_with_map_overlays("SMCV", "Russians", 69, 41, 0, rules)
+            .is_some(),
         "ore admits vehicles through the live overlay table"
     );
 
     // On the overlay-free ground both classes stand.
     assert!(
-        sim.spawn_object_with_overlay_registry(
-            "GAPILL",
-            "Americans",
-            76,
-            40,
-            0,
-            rules,
-            &resources.overlay_registry,
-        )
-        .is_some(),
+        sim.spawn_object_with_map_overlays("GAPILL", "Americans", 76, 40, 0, rules)
+            .is_some(),
         "overlay-free Rough ground admits a building"
     );
 }
@@ -2272,4 +2246,31 @@ fn an_anim_delayed_burst_only_holds_the_first_shot() {
             .is_some();
         assert_eq!(pending, armed, "burst index {index} with {key:?}");
     }
+}
+
+/// Grand_Opening `0x00446662..0x004466CB` builds the rules `TurretAnim` in
+/// slot 9 and aims it; UpdateAnimation's tail (`0x00451234..0x0045128C`) aims
+/// it again every frame. The aim writes the `0x007F4890` frame of the heading
+/// and a zero frame step.
+#[test]
+fn turret_building_opens_slot_9_and_holds_the_frame_of_its_heading() {
+    let (mut sim, rules, id) =
+        crate::sim::building_art::slot_test_fixture_with("Turret=yes\nTurretAnim=N\n");
+    sim.grand_opening(id, false, true, &rules, None, Default::default());
+    let turret = sim.entities().get(id).unwrap().building_art.anim_slots()[9].unwrap();
+    let held = |sim: &Simulation| {
+        let runtime = sim.anim(turret).unwrap().runtime();
+        (runtime.current_frame, runtime.frame_step)
+    };
+    // North is bucket 0, east bucket 8: table entries 28 and 20.
+    assert_eq!(held(&sim), (28, 0));
+    let frame = sim.session.binary_frame();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .body_facing
+        .snap(0x4000, frame);
+    update_animation(&mut sim, id, &rules);
+    assert_eq!(held(&sim), (20, 0));
 }

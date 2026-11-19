@@ -16,7 +16,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "infantry_target_tests.rs"]
 mod infantry_target_tests;
 
@@ -25,6 +25,7 @@ mod infantry_target_tests;
 mod fire_up_reset_tests;
 
 #[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "building_destination_tests.rs"]
 mod building_destination_tests;
 
@@ -395,7 +396,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             //51B2A2: a same-target assignment still invalidates Foot+5E0.
             entity.clear_live_path_head();
         }
-        if represented_assign_target_admitted(entity, requested, stored) {
+        if represented_assign_target_admitted(entity, requested, stored, self.rules.ares_form()) {
             sim.assign_target_fire_teardown(prepared.receiver, self.rules, self.overlay_registry);
         }
         //51B2B1..51B33F: an Infiltrate= infantryman with no NavCom heads for
@@ -684,12 +685,13 @@ pub(crate) fn assign_target_stored(
 pub(crate) fn represented_assign_target(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
+    ares: bool,
 ) {
     debug_assert!(
         !matches!(requested, Some(TargetKind::Entity(_))),
         "an object target needs assign_target_stored"
     );
-    represented_assign_target_admitted(entity, requested, requested);
+    represented_assign_target_admitted(entity, requested, requested, ares);
 }
 
 /// The represented `Assign_Target` write set, entity-local; `stored` is
@@ -709,10 +711,14 @@ pub(crate) fn represented_assign_target(
 /// A NULL target is never in range, so that release happens here; for an
 /// object or cell, the returned `true` (the store was reached) tells a caller
 /// with the world to run [`crate::sim::world::Simulation::assign_target_fire_teardown`].
+///
+/// `ares` is the game's `RuleSet::ares_form`: Ares keeps the burst index on a
+/// NULL target.
 pub(crate) fn represented_assign_target_admitted(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
     stored: Option<TargetKind>,
+    ares: bool,
 ) -> bool {
     // The original's target assignment clears the passive-acquire flag as
     // its first statement, ahead of any same-target short-circuit, so a
@@ -752,8 +758,9 @@ pub(crate) fn represented_assign_target_admitted(
         }
         // `0x006FCF53..0x006FCF5B` resets CurrentBurstIndex; Ares 3.0
         // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
-        #[cfg(not(feature = "ares"))]
-        entity.weapon_burst.reset();
+        if !ares {
+            entity.weapon_burst.reset();
+        }
     }
     // The store (`0x006FCF3E`).
     entity.attack_target.set(requested);

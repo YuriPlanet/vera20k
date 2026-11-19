@@ -3,7 +3,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
-use crate::rules::{ARES_ENABLED, PHOBOS_ENABLED, VERAX_ENABLED};
+use crate::rules::{PHOBOS_ENABLED, VERAX_ENABLED};
 
 fn processed() -> ProcessedRulesLayers {
     RulesLayerStack::new(IniFile::from_str(
@@ -21,43 +21,46 @@ fn processed() -> ProcessedRulesLayers {
 
 #[test]
 fn compiled_capability_controls_real_readers_and_roundtrip() {
-    let original = processed();
-    let bytes = crate::util::save_codec::serialize(&original).unwrap();
-    let restored: ProcessedRulesLayers = crate::util::save_codec::deserialize(&bytes).unwrap();
-    let rules = RuleSet::from_processed_rules(&restored).unwrap();
-    let reveal = rules.super_weapon("REVEAL").unwrap();
-    assert_eq!(reveal.kind, SuperWeaponKind::PsychicReveal);
-    assert_eq!(reveal.aux_building.as_deref(), Some("GATE"));
-    assert_eq!(reveal.recharge_time_frames, 1800);
-    if ARES_ENABLED {
-        assert_eq!(reveal.money_amount, -500);
-        assert_eq!(
-            reveal.building_requirements.as_ref().unwrap().negative,
-            ["GATE"]
-        );
-        let strike = rules.super_weapon("STRIKE").unwrap();
-        assert_eq!(strike.generic_warhead.as_ref().unwrap().damage, 75);
-        assert!(rules.warhead("PAYLOAD").is_some());
-        let delivery = rules.super_weapon("DELIVERY").unwrap();
-        assert_eq!(delivery.unit_delivery.as_ref().unwrap().deferment, 7);
-        assert_eq!(delivery.unit_delivery.as_ref().unwrap().types.len(), 1);
-    } else {
-        assert_eq!(reveal.money_amount, 0);
-        assert!(reveal.building_requirements.is_none());
-        for id in ["STRIKE", "DELIVERY"] {
-            let sw = rules.super_weapon(id).unwrap();
-            assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
-            assert!(sw.generic_warhead.is_none() && sw.unit_delivery.is_none());
-            assert_eq!(sw.money_amount, 0);
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let original = processed();
+        let bytes = crate::util::save_codec::serialize(&original).unwrap();
+        let restored: ProcessedRulesLayers = crate::util::save_codec::deserialize(&bytes).unwrap();
+        let rules = RuleSet::from_processed_rules(&restored).unwrap();
+        let reveal = rules.super_weapon("REVEAL").unwrap();
+        assert_eq!(reveal.kind, SuperWeaponKind::PsychicReveal);
+        assert_eq!(reveal.aux_building.as_deref(), Some("GATE"));
+        assert_eq!(reveal.recharge_time_frames, 1800);
+        if ares_way {
+            assert_eq!(reveal.money_amount, -500);
+            assert_eq!(
+                reveal.building_requirements.as_ref().unwrap().negative,
+                ["GATE"]
+            );
+            let strike = rules.super_weapon("STRIKE").unwrap();
+            assert_eq!(strike.generic_warhead.as_ref().unwrap().damage, 75);
+            assert!(rules.warhead("PAYLOAD").is_some());
+            let delivery = rules.super_weapon("DELIVERY").unwrap();
+            assert_eq!(delivery.unit_delivery.as_ref().unwrap().deferment, 7);
+            assert_eq!(delivery.unit_delivery.as_ref().unwrap().types.len(), 1);
+        } else {
+            assert_eq!(reveal.money_amount, 0);
+            assert!(reveal.building_requirements.is_none());
+            for id in ["STRIKE", "DELIVERY"] {
+                let sw = rules.super_weapon(id).unwrap();
+                assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
+                assert!(sw.generic_warhead.is_none() && sw.unit_delivery.is_none());
+                assert_eq!(sw.money_amount, 0);
+            }
+            assert!(rules.warhead("PAYLOAD").is_none());
         }
-        assert!(rules.warhead("PAYLOAD").is_none());
+        assert_eq!(
+            rules.simulation_config_hash(),
+            RuleSet::from_processed_rules(&original)
+                .unwrap()
+                .simulation_config_hash()
+        );
     }
-    assert_eq!(
-        rules.simulation_config_hash(),
-        RuleSet::from_processed_rules(&original)
-            .unwrap()
-            .simulation_config_hash()
-    );
 }
 
 #[test]
@@ -88,7 +91,7 @@ fn stock_rules_hash_records_the_compiled_capability() {
     // Each build configuration's validation receipts compare this actual
     // production hash for identical stock input. No extension tags decide the mode.
     println!(
-        "BUILD_CAPABILITY_HASH ares={ARES_ENABLED} phobos={PHOBOS_ENABLED} verax={VERAX_ENABLED} hash={}",
+        "BUILD_CAPABILITY_HASH phobos={PHOBOS_ENABLED} verax={VERAX_ENABLED} hash={}",
         rules.simulation_config_hash()
     );
 }
@@ -145,8 +148,12 @@ fn all_capability_combinations_round_trip_and_describe_themselves() {
         RulesCompatibility::default().matches_build(),
         "the compiled build matches its own mode"
     );
+    assert!(
+        !RulesCompatibility::default().has_ares(),
+        "no build records Ares any more"
+    );
     let other = RulesCompatibility::from_capabilities(
-        !ARES_ENABLED,
+        true,
         !PHOBOS_ENABLED,
         !crate::rules::NPATCH_ENABLED,
         !VERAX_ENABLED,

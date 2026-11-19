@@ -130,7 +130,6 @@ impl RocketHost for RocketProcessHost<'_> {
     fn submit_display(&mut self) {
         Simulation::submit_entity_display(
             &self.sim.interner,
-            &self.sim.terrain_objects,
             &mut self.sim.substrate,
             &self.sim.resolved_terrain,
             self.id,
@@ -399,7 +398,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(super) mod retail_tests {
     //! Production composition witnesses: a stock V3 Launcher on retail Hills
     //! and a Dreadnought on retail Lost Lake force-attack a target through an

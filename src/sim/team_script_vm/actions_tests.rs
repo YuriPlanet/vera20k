@@ -54,7 +54,7 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     sim.session
         .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
         .unwrap();
-    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let roster = crate::map::houses::parse_house_roster(&map, &rules.color_schemes, Some(&rules));
     bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map));
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map);
@@ -71,14 +71,14 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
         .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
         .unwrap();
     let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Russians").unwrap();
     let ty = sim.interner.get("TREE-TEAM").unwrap();
     let team = sim.create_team(ty, Some(owner), &rules).unwrap();
     sim.session.publish_started();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     // Formation, recruitment and dispatch use the ordinary Team AI caller.
     for _ in 0..30 {
@@ -109,7 +109,7 @@ fn script1_tree_identity_survives_reload_then_expiry_advances_the_script() {
     };
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Object(tree))
@@ -170,7 +170,7 @@ fn coordinate_attack_resolves_a_cell_focus_to_its_terrain_object() {
     };
     let sim = &mut runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     sim.team_assign_mission_target(
         team,
         Some(TeamTarget::Cell { x: 25, y: 20 }),
@@ -734,7 +734,9 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
             .count(),
         27
     );
-    assert!(action_is_ported(16));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(16, ares_way));
+    }
 }
 
 const RULES: &str = "\
@@ -868,7 +870,9 @@ fn script17_replacement_and_next_visit_match_original_controls() {
             save_codec::deserialize(&save_codec::serialize(&sim.team_script_vm).unwrap()).unwrap();
         assert_eq!(restored.team(team), sim.team_script_vm.team(team));
     }
-    assert!(action_is_ported(17));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(17, ares_way));
+    }
 }
 
 #[test]
@@ -902,7 +906,7 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let mut switches = Vec::new();
     for (name, ordinal) in [
@@ -1359,7 +1363,7 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let programs: Vec<_> = sim
         .team_script_vm
         .scripts
@@ -1394,7 +1398,9 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
             );
         }
     }
-    assert!(action_is_ported(59));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(59, ares_way));
+    }
 }
 
 /// Advance until `done` holds for the team, at most `frames` frames.
@@ -1501,8 +1507,7 @@ fn the_retail_scatter_script_runs_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let scripts: Vec<_> = vm
         .scripts
@@ -1516,7 +1521,13 @@ fn the_retail_scatter_script_runs_ported_actions() {
         .map(|action| action.action_id)
         .collect();
     assert_eq!(actions, [58, 21, 11]);
-    assert!(actions.iter().all(|&action| action_is_ported(action)));
+    for ares_way in [false, true] {
+        assert!(
+            actions
+                .iter()
+                .all(|&action| action_is_ported(action, ares_way))
+        );
+    }
     let running = vm
         .team_types
         .values()
@@ -1646,6 +1657,10 @@ fn attack_building_target(
 /// (1, 5) and 400 at (7, 5) spill 500 onto A's Location block and 200 onto
 /// B's GetCoords block, so mode 1 (most threat) takes B and mode 0 (least)
 /// takes A, where Location reads would pick the other.
+///
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) moves the row 21 writes away from the blocks these reads
+/// take ([`ares_threat_index_moves_a_pillbox_s_threat_off_its_cell`]).
 #[test]
 fn the_threat_modes_read_each_building_s_getcoords_cell() {
     let rules = rules();
@@ -1663,8 +1678,12 @@ fn the_threat_modes_read_each_building_s_getcoords_cell() {
         let house = sim.houses.get_mut(&russians).unwrap();
         house.clear_spatial_threat();
         if threat {
-            house.adjust_spatial_threat((5, 21), 1000).unwrap();
-            house.adjust_spatial_threat((29, 21), 400).unwrap();
+            house
+                .adjust_spatial_threat((5, 21), 1000, rules.ares_form())
+                .unwrap();
+            house
+                .adjust_spatial_threat((29, 21), 400, rules.ares_form())
+                .unwrap();
         }
         let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
         assert_eq!(
@@ -1673,6 +1692,35 @@ fn the_threat_modes_read_each_building_s_getcoords_cell() {
             "threat {threat}, mode {mode}"
         );
     }
+}
+
+/// Retail GAPILLs threaten the computer Russians, whose team picks the
+/// least-threatened (mode 0) of them to attack. Each pillbox's Unlimbo writes
+/// its `ThreatPosed=` through Cell UpdateThreat (`0x00481884`, which calls
+/// `0x0056BC50`); the pick reads it at the pillbox's cell (`0x0056BCD0`,
+/// inline). In stock both read the same threat and the first built wins.
+/// Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook `0x0056BC54`)
+/// scales the row before dividing it, so the write for row 22 lands 65
+/// slots on and the second pillbox reads none; row 12's write stays put.
+#[test]
+fn ares_threat_index_moves_a_pillbox_s_threat_off_its_cell() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = Simulation::with_seed(0x56BC54);
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let pillbox = rules.building_type_index("GAPILL").unwrap();
+    let (team, _, _) = building_team(&mut sim, &rules, &[(24, 0), (46, pillbox), (5, 100)], &[]);
+    let pillboxes = [(20, 12), (20, 22)].map(|(rx, ry)| {
+        sim.spawn_object_at_height("GAPILL", "Americans", rx, ry, 0, 0, &rules)
+            .expect("GAPILL spawns")
+    });
+    let russians = sim.interner.get("Russians").unwrap();
+    assert!(sim.house_threat_at_cell(russians, (20, 12)).unwrap() > 0);
+    let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
+    let pick = if rules.ares_form() { 1 } else { 0 };
+    assert_eq!(target, Some(TeamTarget::Object(pillboxes[pick])));
 }
 
 /// The search's admission inputs (`0x006EEC27..0x006EEC6A`, `0x006EE32B`):
@@ -1776,8 +1824,7 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let capture: Vec<_> = vm
         .scripts
@@ -1792,12 +1839,14 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
         .collect();
     assert!(!capture.is_empty());
     for script in &capture {
-        assert!(
-            script
-                .actions
-                .iter()
-                .all(|action| action_is_ported(action.action_id))
-        );
+        for ares_way in [false, true] {
+            assert!(
+                script
+                    .actions
+                    .iter()
+                    .all(|action| action_is_ported(action.action_id, ares_way))
+            );
+        }
     }
     let running = vm
         .team_types
@@ -2124,9 +2173,10 @@ fn script_action_51_binds_the_art_of_an_anim_only_a_script_names() {
 }
 
 #[test]
-fn script_action_51_naming_unbindable_art_still_loads_the_map() {
-    // Retail GAWEAP_3's LoopEnd passes its frames, so VERA cannot bind it;
-    // natively the scenario still loads. The step completes without an Anim.
+fn script_action_51_plays_art_whose_loop_passes_its_frames() {
+    // Retail GAWEAP_3's LoopEnd=9 passes its 4 frames. Native stores it as
+    // written (`0x0042801C`) and action 51 (`0x006EF610`) builds the Anim on
+    // the member; its frames past the SHP draw nothing.
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
         return;
@@ -2147,7 +2197,7 @@ fn script_action_51_naming_unbindable_art_still_loads_the_map() {
     let sim = scene.sim();
     assert!(sim.team_script_vm.team(team).unwrap().cursor() >= 1);
     assert!(
-        !sim.anims()
+        sim.anims()
             .any(|(_, anim)| anim.owner_entity() == Some(member)
                 && sim.interner.resolve(anim.type_id()) == "GAWEAP_3")
     );

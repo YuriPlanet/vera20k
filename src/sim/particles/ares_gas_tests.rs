@@ -52,6 +52,7 @@ fn gas_particles(sim: &Simulation) -> Vec<IVec3> {
 /// original loop reaches only the particle's own cell.
 #[test]
 fn ares_gas_damage_range_reaches_the_next_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("DamageRange=1.5\n");
     let mut sim = world(&rules);
     let target = sim
@@ -77,6 +78,7 @@ fn ares_gas_damage_range_reaches_the_next_cell() {
 /// the anim, where the original puts every one on the anim.
 #[test]
 fn ares_spawns_particle_range_spreads_the_particles() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     let mut sim = world(&rules);
     let center = IVec3::new(20 * 256 + 128, 20 * 256 + 128, 0);

@@ -317,7 +317,7 @@ pub(crate) fn wall_bucket(wall_ms: u64) -> u64 {
     wall_ms >> 4
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

@@ -69,7 +69,7 @@ fn scene(yard: bool, blocked: bool) -> Option<(SimRuntime, MatchInputState, u64,
         .unwrap();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: SimResources::new(rules).into(),
     };
     let mut input = MatchInputState::new(Default::default());
     frame(
@@ -300,7 +300,7 @@ fn repack(runtime: &mut SimRuntime, input: &mut MatchInputState, original: u64) 
     let (commands, _) = crate::app::input::context_order::building_cell_orders(
         &runtime.simulation,
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         &input.selection_order,
         owner,
         (26, 20),

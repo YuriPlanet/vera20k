@@ -42,14 +42,15 @@ pub(crate) enum HarvesterKey {
     KickDelay,
 }
 
-/// `rules_value`, or in Ares builds `object`'s `Harvester.*` override of it
-/// when set (Nullable `.Get(rules_value)`).
+/// `rules_value`, or in a game read the Ares way `object`'s `Harvester.*`
+/// override of it when set (Nullable `.Get(rules_value)`).
 pub(crate) fn harvester_value(
     object: Option<&crate::rules::object_type::ObjectType>,
     key: HarvesterKey,
     rules_value: i32,
 ) -> i32 {
-    #[cfg(feature = "ares")]
+    // Runs in every game: only Rules read the Ares way set a `Harvester.*`
+    // key (TechnoTypeExt `1003DFB0`), and an unset one answers `rules_value`.
     if let Some(object) = object {
         let ext = object.techno_combat().tiberium();
         return match key {
@@ -60,8 +61,6 @@ pub(crate) fn harvester_value(
             HarvesterKey::KickDelay => ext.harvester_kick_delay(rules_value),
         };
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = (object, key);
     rules_value
 }
 
@@ -261,6 +260,24 @@ fn best_in_rings(
     let (x, y) = (i32::from(own.0), i32::from(own.1));
     let mut best_value = -1;
     let mut best = None;
+    // Ordinary scans keep their visits (including native Dummy lookups).
+    // A radius larger than any supported grid cannot find additional ore.
+    let range = if range > i32::from(crate::map::cell_index::MAX_CELL_SIDE) {
+        let (width, height) = sim.resolved_terrain.as_ref().map_or_else(
+            || {
+                sim.overlay_grid
+                    .as_ref()
+                    .map_or((0, 0), |grid| (grid.width(), grid.height()))
+            },
+            |terrain| (terrain.width(), terrain.height()),
+        );
+        range.min(crate::map::cell_index::square_rings_covering_rect(
+            (x, y),
+            [0, 0, i32::from(width), i32::from(height)],
+        ))
+    } else {
+        range
+    };
     for r in 1..range {
         for i in -r..=r {
             for candidate in [
@@ -434,7 +451,7 @@ fn is_cell_harvestable(
     (code == 0).then_some(cell)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
 
@@ -456,7 +473,7 @@ mod tests {
             let input = &row["input"];
             let terrain = native::terrain(input);
             let mut sim = Simulation::new();
-            sim.zone_grid = Some(native::zones(&terrain, row));
+            sim.zone_grid = Some(native::zones(&terrain, row).into());
             sim.resolved_terrain = Some(terrain);
             sim.substrate
                 .entities

@@ -57,7 +57,7 @@ pub(super) const MAX_CHAIN_DEPTH: u32 = 16;
 /// `Simulation`'s `SW.Next`/`SW.Link` nesting counter. Transient owner: it
 /// only stops a cyclic chain (native would recurse to stack exhaustion) and is
 /// zero outside a launch.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct ChainDepth {
     depth: u32,
 }
@@ -216,14 +216,8 @@ fn launch_next(
 /// inline. Without the Ares capability the key is unread (0), which always
 /// passes.
 pub(super) fn affordable(sim: &Simulation, owner: InternedId, next_sw: &SuperWeaponType) -> bool {
-    #[cfg(feature = "ares")]
     {
         super::money::can_transact(&sim.houses, owner, next_sw.money_amount)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = (sim, owner, next_sw);
-        true
     }
 }
 
@@ -260,7 +254,6 @@ pub(super) fn influence_gates_pass(
     ignore_inhibitors: bool,
     ignore_designators: bool,
 ) -> bool {
-    #[cfg(feature = "ares")]
     {
         let influence = rules
             .super_weapon_metadata(&sw.id)
@@ -270,21 +263,6 @@ pub(super) fn influence_gates_pass(
         (ignore_inhibitors || !super::targeting::has_inhibitor(sim, rules, owner, &influence, cell))
             && (ignore_designators
                 || super::targeting::has_designator(sim, rules, owner, &influence, cell))
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        // The lists are unread without Ares: no inhibitor exists and no
-        // designator is required.
-        let _ = (
-            sim,
-            rules,
-            owner,
-            sw,
-            cell,
-            ignore_inhibitors,
-            ignore_designators,
-        );
-        true
     }
 }
 
@@ -414,16 +392,10 @@ fn reset(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, name: &str) {
 /// `AresSuperWeaponCharge::initial_ready`, the `SW.InitialReady` arm of
 /// `SW.Link.Ready` for a granted Super. Without Ares the key is unread.
 fn initial_ready(rules: &RuleSet, next_sw: &SuperWeaponType) -> bool {
-    #[cfg(feature = "ares")]
     {
         rules
             .super_weapon_metadata(&next_sw.id)
             .is_some_and(|metadata| metadata.charge().initial_ready)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = (rules, next_sw);
-        false
     }
 }
 

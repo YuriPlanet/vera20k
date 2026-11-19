@@ -1,6 +1,6 @@
 # Ares hooks skipped on purpose
 
-Build with `--features ares`. These Ares 3.0 hooks have no Rust port on
+These Ares 3.0 hooks have no Rust port on
 purpose. Each one is
 either equivalent to what VERA20K already does or has no counterpart in the
 engine. Hooks that a

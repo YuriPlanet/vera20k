@@ -1,7 +1,6 @@
 //! Retained ordinary Ares EMP configuration. Installed Ares3.0 Bullet46920B
 //! and Techno6FAF0D consumers; Type suffix716132 and WH suffix75DEA0 own
 //! the actual reads. This module owns no gameplay timer or offline latch.
-#[cfg(feature = "ares")]
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF64Bits;
 
@@ -11,11 +10,9 @@ pub(crate) struct EmpTypeRules {
     threshold: i32,
     immune: Option<bool>,
     sparkles: Option<Option<String>>,
-    // These inactive bytes retain the existing default-build save layout.
-    // Ares builds keep rank flags only in PromotionAbilities.
-    #[cfg(not(feature = "ares"))]
+    // These inactive bytes retain the released games' save layout; Ares keeps
+    // rank flags only in PromotionAbilities.
     veteran_immune: bool,
-    #[cfg(not(feature = "ares"))]
     elite_immune: bool,
 }
 impl Default for EmpTypeRules {
@@ -25,9 +22,7 @@ impl Default for EmpTypeRules {
             threshold: -1,
             immune: None,
             sparkles: None,
-            #[cfg(not(feature = "ares"))]
             veteran_immune: false,
-            #[cfg(not(feature = "ares"))]
             elite_immune: false,
         }
     }
@@ -45,8 +40,8 @@ impl EmpTypeRules {
     pub(crate) fn sparkles(&self) -> Option<Option<&str>> {
         self.sparkles.as_ref().map(|name| name.as_deref())
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: &IniSection, sparkle: Option<Option<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.immune = section.read_ares_nullable_bool("ImmuneToEMP", self.immune);
         self.modifier = section.read_ares_double_bits("EMP.Modifier", self.modifier);
         if let Some(sparkle) = sparkle {
@@ -56,7 +51,7 @@ impl EmpTypeRules {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::{
@@ -111,9 +106,9 @@ mod tests {
             }
         }
     }
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_emp_native_bool_and_ability_readers() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for row in corpus()["flag_readers"].as_array().unwrap() {
             let kind = row["kind"].as_str().unwrap();
             let key = match kind {
@@ -159,52 +154,57 @@ mod tests {
     }
     #[test]
     fn ares_emp_production_layers_retain_existing_anim_and_nullable_settings() {
-        let root = IniFile::from_str(
-            "[VehicleTypes]\n0=TANK\n[Warheads]\n0=EMPWH\n[Animations]\n0=SPARK\n[General]\nEMPulseSparkles=SPARK\n[TANK]\nImmuneToEMP=no\nEMP.Modifier=50%\nEMP.Threshold=inair\nEMP.Sparkles=SPARK\nVeteranAbilities=EMPIMMUNE\n[EMPWH]\nEMP.Duration=121\nEMP.Cap=120\nEMP.Sparkles=SPARK\nAffectsOwner=yes\n",
-        );
-        let scenario = "[TANK]\nEMP.Modifier=junk\nEMP.Sparkles=UNKNOWN\nVeteranAbilities=RADIMMUNE\nEliteAbilities=empimmune\n[EMPWH]\nEMP.Duration=\nEMP.Cap=0\n";
-        let mut layers = RulesLayerStack::new(root.clone());
-        layers.push(RulesLayerKind::Scenario, IniFile::from_str(scenario));
-        let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
-        let object = rules.object("TANK").unwrap();
-        if crate::rules::ARES_ENABLED {
-            let config = object.emp_rules().unwrap();
-            assert_eq!(
-                config.modifier(),
-                NativeF64Bits::from_bits(0.5f64.to_bits())
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let root = IniFile::from_str(
+                "[VehicleTypes]\n0=TANK\n[Warheads]\n0=EMPWH\n[Animations]\n0=SPARK\n[General]\nEMPulseSparkles=SPARK\n[TANK]\nImmuneToEMP=no\nEMP.Modifier=50%\nEMP.Threshold=inair\nEMP.Sparkles=SPARK\nVeteranAbilities=EMPIMMUNE\n[EMPWH]\nEMP.Duration=121\nEMP.Cap=120\nEMP.Sparkles=SPARK\nAffectsOwner=yes\n",
             );
-            assert_eq!(config.immune(), Some(false));
-            assert_eq!(config.threshold(), -1);
-            assert_eq!(config.sparkles(), Some(Some("SPARK")));
-            let abilities = object.promotion_abilities().unwrap();
-            assert!(!abilities.emp_immune(100));
-            assert!(abilities.emp_immune(200));
-            let wh = rules.warhead("EMPWH").unwrap().ares_rules().unwrap();
-            assert_eq!(wh.duration(), 121);
-            assert_eq!(wh.cap(), 0);
-            assert!(wh.can_affect_house(true, true, true, false));
-            assert_eq!(rules.emp_sparkles(), Some("SPARK"));
-            let hash = rules.simulation_config_hash();
-            let mut null_layers = RulesLayerStack::new(root);
-            null_layers.push(
-                RulesLayerKind::Scenario,
-                IniFile::from_str(&scenario.replace("EMP.Sparkles=UNKNOWN", "EMP.Sparkles=<none>")),
-            );
-            let null_rules =
-                RuleSet::from_processed_rules(&null_layers.process().unwrap()).unwrap();
-            assert_eq!(
-                null_rules
-                    .object("TANK")
-                    .unwrap()
-                    .emp_rules()
-                    .unwrap()
-                    .sparkles(),
-                Some(None)
-            );
-            assert_ne!(null_rules.simulation_config_hash(), hash);
-        } else {
-            assert!(object.emp_rules().is_none());
-            assert!(rules.warhead("EMPWH").unwrap().ares_rules().is_none());
+            let scenario = "[TANK]\nEMP.Modifier=junk\nEMP.Sparkles=UNKNOWN\nVeteranAbilities=RADIMMUNE\nEliteAbilities=empimmune\n[EMPWH]\nEMP.Duration=\nEMP.Cap=0\n";
+            let mut layers = RulesLayerStack::new(root.clone());
+            layers.push(RulesLayerKind::Scenario, IniFile::from_str(scenario));
+            let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+            let object = rules.object("TANK").unwrap();
+            if ares_way {
+                let config = object.emp_rules().unwrap();
+                assert_eq!(
+                    config.modifier(),
+                    NativeF64Bits::from_bits(0.5f64.to_bits())
+                );
+                assert_eq!(config.immune(), Some(false));
+                assert_eq!(config.threshold(), -1);
+                assert_eq!(config.sparkles(), Some(Some("SPARK")));
+                let abilities = object.promotion_abilities().unwrap();
+                assert!(!abilities.emp_immune(100));
+                assert!(abilities.emp_immune(200));
+                let wh = rules.warhead("EMPWH").unwrap().ares_rules().unwrap();
+                assert_eq!(wh.duration(), 121);
+                assert_eq!(wh.cap(), 0);
+                assert!(wh.can_affect_house(true, true, true, false));
+                assert_eq!(rules.emp_sparkles(), Some("SPARK"));
+                let hash = rules.simulation_config_hash();
+                let mut null_layers = RulesLayerStack::new(root);
+                null_layers.push(
+                    RulesLayerKind::Scenario,
+                    IniFile::from_str(
+                        &scenario.replace("EMP.Sparkles=UNKNOWN", "EMP.Sparkles=<none>"),
+                    ),
+                );
+                let null_rules =
+                    RuleSet::from_processed_rules(&null_layers.process().unwrap()).unwrap();
+                assert_eq!(
+                    null_rules
+                        .object("TANK")
+                        .unwrap()
+                        .emp_rules()
+                        .unwrap()
+                        .sparkles(),
+                    Some(None)
+                );
+                assert_ne!(null_rules.simulation_config_hash(), hash);
+            } else {
+                assert!(object.emp_rules().is_none());
+                assert!(rules.warhead("EMPWH").unwrap().ares_rules().is_none());
+            }
         }
     }
 }

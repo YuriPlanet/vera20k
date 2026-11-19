@@ -23,6 +23,8 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         tiberium: 35,
         vegetation: 30,
         urban_presence: 40,
+        urban_enabled: false,
+        fair_starts: false,
         seed: 4242,
         ..Default::default()
     };
@@ -41,22 +43,23 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        prepared.tech_types,
+        RandomMapObjects::tech(prepared.tech_types, prepared.ares),
         crate::map::resolved_terrain::SharedCellDummy::fresh(),
         decision,
     )
     .unwrap();
     let mut snapshots = Vec::new();
-    let generated = loop {
+    let run = loop {
         match receiver
             .recv_timeout(std::time::Duration::from_secs(60))
             .unwrap()
         {
             RandomMapUpdate::Started => {}
             RandomMapUpdate::Progress(snapshot) => snapshots.push(snapshot),
-            RandomMapUpdate::Finished(map) => break map,
+            RandomMapUpdate::Finished(run) => break run,
         }
     };
+    let generated = run.map();
     let last = snapshots.pop().expect("native95-percent preview");
     assert!(
         snapshots.iter().all(|snapshot| snapshot
@@ -86,8 +89,8 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
     let format = crate::render::native_surface_format::RGB565;
-    let mut rng = crate::sim::rng::MainRng::new(0x0401_599d);
-    let mut main = crate::app::state::process_main_draws(None, &mut rng);
+    let rng = crate::sim::rng::MainRng::new(0x0401_599d);
+    let mut main = crate::app::state::process_main_draws(&rng);
     let mut selectors = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let mut selected = None;
     let mut final_colors = Vec::new();
@@ -180,7 +183,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     let preview = crate::map::rmg::preview::render_preview(&final_colors, &[]).unwrap();
     let directory = crate::map::source::test_support::TestDirectory::new("terrain-preview");
     let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-        options, None, false, true,
+        options, None, false,
     ));
     modal
         .as_mut()
@@ -192,7 +195,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         Some(directory.path()),
     );
     let pcx = crate::assets::pcx_file::PcxFile::from_bytes(
-        &std::fs::read(directory.path().join(RANDMAP_PREVIEW_FILE)).unwrap(),
+        &std::fs::read(directory.path().join(RANDMAP_PREVIEW)).unwrap(),
     )
     .unwrap();
     let rgb: Vec<_> = preview

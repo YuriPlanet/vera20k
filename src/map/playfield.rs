@@ -152,16 +152,40 @@ impl PlayfieldBounds {
     }
 }
 
-/// `MapClass::In_Bounds @ 0x00568300`: the diamond of the map `Size=` width
-/// (`MapClass+0xF4`) and height (`+0xF8`), in wrapping signed arithmetic.
+/// The allocated Size diamond (`MapClass::In_Bounds @ 0x00568300`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SizeDiamond {
+    near: i32,
+    far: i32,
+}
+
+impl SizeDiamond {
+    pub(super) const fn from_size(width: i32, height: i32) -> Self {
+        Self {
+            near: width,
+            far: width.wrapping_add(height.wrapping_mul(2)),
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) const fn from_bounds(near: i32, far: i32) -> Self {
+        Self { near, far }
+    }
+
+    pub(super) const fn bounds(self) -> (i32, i32) {
+        (self.near, self.far)
+    }
+
+    pub(super) const fn contains(self, x: i32, y: i32) -> bool {
+        let sum = x + y;
+        self.near < sum && x - y < self.near && y - x < self.near && sum <= self.far
+    }
+}
+
+/// Live `MapClass::In_Bounds @ 0x00568300` widens signed cell words. Their
+/// sum and differences fit i32 even at the packed coordinate limits.
 pub const fn size_diamond_contains(width: i32, height: i32, cell: (i16, i16)) -> bool {
-    let x = cell.0 as i32;
-    let y = cell.1 as i32;
-    let sum = x.wrapping_add(y);
-    width < sum
-        && x.wrapping_sub(y) < width
-        && y.wrapping_sub(x) < width
-        && sum <= width.wrapping_add(height.wrapping_mul(2))
+    SizeDiamond::from_size(width, height).contains(cell.0 as i32, cell.1 as i32)
 }
 
 /// `MapClass @ 0x00565660`, the inverse of [`local_to_packed_cell`]: a
@@ -269,7 +293,7 @@ pub(crate) const fn lepton_to_packed_cell_component(value: i32) -> i32 {
     (value / 256) as i16 as i32
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

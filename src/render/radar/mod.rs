@@ -19,6 +19,8 @@ pub mod minimap;
 pub(super) mod projection;
 mod terrain;
 mod terrain_updates;
+pub use terrain_updates::RadarTerrainBacklog;
 mod tracker;
 mod viewport;
 mod visibility;
+pub(crate) use visibility::RadarFacts;

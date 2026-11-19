@@ -252,7 +252,7 @@ impl CaptureManagerState {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
+    pub fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
         let mut state = Self::constructed(max_control, infinite);
         state.nodes = victims
             .iter()
@@ -452,7 +452,6 @@ impl MindControlLink {
 
     /// Installed Ares KillDriver10045892 clears Techno+2CC explicitly;
     /// ordinary ChangeOwner deliberately preserves this separate controller.
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_house_controller(&mut self) {
         self.house_controller = None;
     }
@@ -468,7 +467,7 @@ impl MindControlLink {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn controlled_by_for_test(controller: u64) -> Self {
+    pub fn controlled_by_for_test(controller: u64) -> Self {
         Self {
             controller: Some(controller),
             ..Self::default()
@@ -510,8 +509,8 @@ pub(crate) struct CaptureVictimFacts {
 
 impl CaptureVictimFacts {
     /// `frame` evaluates gate 7 (vt+0x160, an active Iron Curtain or Force
-    /// Shield).
-    pub(crate) fn of(target: &GameEntity, target_obj: &ObjectType, frame: u32) -> Self {
+    /// Shield). `ares` is the game's `RuleSet::ares_form`.
+    pub(crate) fn of(target: &GameEntity, target_obj: &ObjectType, frame: u32, ares: bool) -> Self {
         // 3: `ImmuneToPsionics=` (`+0xD35`); 4: a Unit in a tank bunker
         // (`+0x2E4`); 5: already controlled; 6: a trigger transfer (+0x2CC,
         // 471CF0); 7: the Iron Curtain; 9: Selling or Construction.
@@ -532,8 +531,7 @@ impl CaptureVictimFacts {
                 Some(MissionType::Construction | MissionType::Selling)
             );
         // Ares CanCapture10048FB8 refuses a killed driver for every consumer.
-        #[cfg(feature = "ares")]
-        let refused = refused || target.driver_killed();
+        let refused = refused || (ares && target.driver_killed());
         #[cfg(feature = "phobos")]
         let mind_control_size = target_obj.mind_control_size;
         #[cfg(not(feature = "phobos"))]
@@ -742,7 +740,7 @@ impl Simulation {
             .entities
             .get(controller_id)?
             .capture_manager
-            .as_ref()
+            .as_deref()
             .map(CaptureManagerState::count)
     }
 
@@ -818,7 +816,12 @@ impl Simulation {
         };
         can_capture(
             controller,
-            CaptureVictimFacts::of(target, target_obj, self.session.binary_frame()),
+            CaptureVictimFacts::of(
+                target,
+                target_obj,
+                self.session.binary_frame(),
+                rules.ares_form(),
+            ),
         )
     }
 
@@ -864,6 +867,27 @@ impl Simulation {
             return true;
         }
         controlled.phobos_be_controlled_threat_frame <= self.session.binary_frame() as i32
+    }
+
+    /// The announce=1 that CaptureUnit (`0x00471DAE`) and FreeUnit
+    /// (`0x004720D5`) pass to the target's ChangeOwner (vt+0x3D4). Only
+    /// `BuildingClass::ChangeOwner @ 0x00448260` reads it: radar event 10 and
+    /// `EVA_BuildingCaptured` for the player on either side. Run before the
+    /// owner swap, as that block reads the old owner.
+    fn announce_controlled_building(
+        &mut self,
+        target_id: u64,
+        new_owner: InternedId,
+        rules: &RuleSet,
+    ) {
+        if self
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| target.category() == EntityCategory::Structure)
+        {
+            self.announce_building_capture(target_id, new_owner, rules);
+        }
     }
 
     /// `CaptureManagerClass::CaptureUnit @ 0x00471D40`.
@@ -1011,6 +1035,7 @@ impl Simulation {
         };
         // 0x00471DB8: ChangeOwner(controller's house, 1). It refuses only an
         // unchanged house, which CanCapture already excluded.
+        self.announce_controlled_building(target_id, controller_owner, rules);
         self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
         if let Some(manager) = self
             .substrate
@@ -1055,8 +1080,7 @@ impl Simulation {
             return false;
         };
         // Ares CanBePermaMindControlled10049E54 shares the driverless refusal.
-        #[cfg(feature = "ares")]
-        if object.driver_killed() {
+        if rules.ares_form() && object.driver_killed() {
             return false;
         }
         if object.category() == EntityCategory::Structure {
@@ -1117,7 +1141,6 @@ impl Simulation {
     /// (vt+0xF8) and `PermaControlledAnimationType=` rings it
     /// (CreateMindControlRingAnim 10043F90 inlined: a building's ring at its
     /// height with ZAdjust -1024). Buildings are not refused.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_apply_perma_mc(
         &mut self,
         id: u64,
@@ -1172,7 +1195,6 @@ impl Simulation {
     /// UnInit and `ring` (`Dominator.ControlAnim`, else
     /// `PermaControlledAnimationType=`) rings it through
     /// CreateMindControlRingAnim. Unlike ApplyPermaMC it queues nothing.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_dominate(
         &mut self,
         id: u64,
@@ -1206,7 +1228,6 @@ impl Simulation {
 
     /// Installed Ares capture10045C03..10045C1C clears permanent control
     /// and UnInit's the ring after any controller's FreeUnit has finished.
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_permanent_control_and_ring(&mut self, id: u64, rules: &RuleSet) {
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
             object.mind_control.permanent = false;
@@ -1297,8 +1318,9 @@ impl Simulation {
         // Phobos `BulletClass_Detonate` uses
         // `pWHExt->MindControl_Anim.Get(ControlledAnimationType)`.
         #[cfg(feature = "phobos")]
-        let ring_anim = rules
-            .warhead(self.interner.resolve(current.payload.warhead))
+        let ring_anim = self
+            .interner
+            .warhead_type(current.payload.warhead, rules)
             .and_then(|warhead| warhead.mind_control_anim.as_deref());
         #[cfg(not(feature = "phobos"))]
         let ring_anim: Option<&str> = None;
@@ -1664,6 +1686,7 @@ impl Simulation {
             &mut self.houses,
             &mut self.power_states,
             unit_id,
+            rules.ares_form(),
         );
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -1690,8 +1713,7 @@ impl Simulation {
         // Ares 3.0 CaptureManagerClass_DecideUnitFate_BuildingFate
         // (1005C680, hook 0x47243F): a building queues Guard, with no roll;
         // the other fates do nothing for a building.
-        #[cfg(feature = "ares")]
-        if !unit_is_foot {
+        if rules.ares_form() && !unit_is_foot {
             let now = self.session.binary_frame();
             let _ = self.mission_queue_exact(
                 unit_id,
@@ -2075,6 +2097,6 @@ fn capture_decision(table: &[i32], roll: i32) -> Option<u8> {
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "capture_manager_tests.rs"]
 mod tests;

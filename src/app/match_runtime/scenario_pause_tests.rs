@@ -66,7 +66,7 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
                     && sim.session().scenario_paused()
                 {
                     assert!(
-                        !decision.scroll_input,
+                        !decision.scroll_input && !decision.camera_scroll,
                         "native pause bypasses55D8AB input poll"
                     );
                 }
@@ -101,8 +101,8 @@ fn saved_timed_hold_rearms_zero_without_losing_an_untimed_hold() {
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
-        .sim;
-    restored.restore_after_snapshot_load().unwrap();
+        .restore_references_for_test()
+        .unwrap();
     assert!(restored.session().scenario_paused());
     assert!(restored.session().scenario_pause_timed());
     let clock = ScenarioPauseClock::after_load(999_000); // PostRead starts now, duration0.

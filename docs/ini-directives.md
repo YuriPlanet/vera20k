@@ -1,9 +1,10 @@
 # INI file directives
 
 VERA expands includes in its existing INI source-selection path. Ares
-`[#include]` is compiled in with `--features ares`; Phobos `[$Include]` is
-compiled in with `--features phobos`. The default build treats both as ordinary,
-unused INI content. These are extension directives, not native YR syntax. Files
+`[#include]` runs in every build in a game read the Ares way ([Ares](ares.md)),
+as a selected mod that ships `ares.mix` makes it; Phobos `[$Include]` is
+compiled in with `--features phobos`. Other games and builds treat them as
+ordinary, unused INI content. These are extension directives, not native YR syntax. Files
 without directives keep their native parsed representation, duplicate-section
 behavior, content hash and saved encoding. The raw `IniFile` byte parser and
 deserializer never load other files.
@@ -26,8 +27,8 @@ Strength=250
 
 - With `--features phobos`, a document's `[$Include]` runs and takes over from
   its `[#include]`, as Phobos `-Include` does by restoring the vanilla bytes at
-  the Ares hooks (gamemd `0x474200`/`0x474314`). With `--features ares`, a
-  document without `[$Include]` expands its `[#include]`, in a combined build
+  the Ares hooks (gamemd `0x474200`/`0x474314`). In a game read the Ares way, a
+  document without `[$Include]` expands its `[#include]`, in a `phobos` build
   too: VERA has no `-Include` launch switch, while natively one launch runs one
   dialect.
 - Include lists are read in stored entry order, as Ares walks them with
@@ -46,13 +47,22 @@ Strength=250
   (case-insensitive `_stricmp`) and clears the record only when the outermost
   read returns; Phobos keeps `SavedIncludes`. A missing listed file is skipped
   by Ares and fatal under Phobos (`Debug::FatalErrorAndExit`).
-- Residual: nested lists are expanded depth-first per document. Natively each
-  included file merges into the same INI, so its list joins one shared include
-  section: Ares walks it with one index shared by every nesting level, and
-  Phobos re-walks it skipping saved names. A parent's remaining entries are
-  therefore read before a child's own list, and a child entry that reuses a
-  parent's key name resolves through the shared section. Matching that needs
-  the native same-INI `ReadCCFile` merge, which `IniFile::merge` does not model.
+- Natively each included file loads into the INI that lists it, through
+  `LoadFromStraw`'s merge arm. A game read the Ares way does the same, with Ares's
+  parser hooks ([Ares INI syntax](ares-ini-syntax.md)); other games compose with
+  `IniFile::merge`.
+- An included file's `[#include]` list joins the root's. Ares walks that one
+  list with an index every nesting level shares (`CCINIClass_ReadCCFile2`
+  `10064660`), so a parent's remaining entries are read before the entries its
+  child adds. A child entry that reuses a key replaces the earlier entry. The
+  walk continues from the entry it last read (Ares's `GetKeyName` hook
+  `100651D0`), and VERA reads the first entry it has not yet read.
+  Residual: if a child replaces the entry being walked, native continues from
+  freed memory. VERA reads the replacing entry and the entries after it.
+- Residual: Phobos re-walks its shared `$Include` section after each file,
+  skipping saved names. VERA follows each file's own `$Include` list
+  depth-first instead, so for nested Phobos lists a parent's remaining
+  entries are read after the child's list.
 - Inheritance runs after the complete Include expansion. `$Inherits=A,B` copies
   only missing keys: child-authored values win, then the first supplying parent.
   Parent section names remain case-sensitive. Directive keys are not inherited.
@@ -90,13 +100,15 @@ Optional layers retain their existing error policy: an unavailable or failed
 `langrule.ini`, `soundmd.ini` or `evamd.ini` is skipped with a warning, so a
 fatal Phobos include error inside one of those optional files does not abort
 startup. Required Rules, ART, AI and map selections propagate it.
+Original/No mod skips `langrule.ini` entirely; its optional selection and
+expansion apply only to selected mods.
 
 ## Production integration
 
-With `ares` or `phobos` enabled, `rules::retail_sources::select_ini` expands
-directives before transferring the selected physical snapshots to the existing
-ordered Rules owner. `DirectiveOptions::production` enables the compiled
-dialects, and a document's `[$Include]` takes over from its `[#include]` when the
+In a game read the Ares way or a `phobos` build, `rules::retail_sources::select_ini`
+expands directives before transferring the selected physical snapshots to the existing
+ordered Rules owner. `DirectiveOptions::production` enables Ares' dialect in a game
+read the Ares way and Phobos' in a `phobos` build, and a document's `[$Include]` takes over from its `[#include]` when the
 Phobos capability is present. That shared entry serves Rules, fixed Art, AI,
 mode/campaign definitions, sound and EVA. The theme catalog uses the same entry
 while retaining its separate YR/RA2 playlist handling. Asset-backed map gameplay
@@ -151,7 +163,7 @@ commit. This contribution is under VERA's GPLv3; no Ares/Phobos C++ is imported.
 
 | native source | VERA adaptation |
 | --- | --- |
-| Ares.dll `CCINIClass_ReadCCFile1`/`2` hooks (gamemd `0x474200`/`0x474314`, `ReadCCFile` `0x4741F0`) | Ares dialect in `rules/ini_directives.rs`: stored-order list read, once-per-root-load skip, missing file skipped, merge after load |
+| Ares.dll `CCINIClass_ReadCCFile1`/`2` hooks (gamemd `0x474200`/`0x474314`, `ReadCCFile` `0x4741F0`) | Ares dialect in `rules/ini_directives.rs`: one walk over the shared stored-order list, once-per-root-load skip, missing file skipped, merge after load |
 | Ares `INIClass::GetKeyCount` `0x526960`, `GetKeyName` `0x526CC0`, `ReadString` `0x528A10` | `IniSection::physical_entries` walk plus `read_name` with the native `0x80` buffer capacity |
 | Phobos `src/Misc/Hooks.INIInheritance.cpp` (`CCINIClass_Load_Inheritance` `0x474230`) | Phobos dialect: `$Include`, `SavedIncludes` once-per-file, fatal missing file, merge after load |
 | Phobos `src/Phobos.cpp` `-Include` (`0x474200`/`0x474314` restored) | A document's `$Include` takes over from its `[#include]`; selected by `DirectiveOptions::production` |

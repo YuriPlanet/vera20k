@@ -13,7 +13,6 @@
 //! hash. The reads themselves stay with the Rules owner in
 //! `native_processing.rs`, which already owns the Ares value readers.
 
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct AresCountryParadrop {
     /// `Parachute.Anim=` resolved identity (`HouseTypeExt +0x158`); `None`
@@ -29,7 +28,6 @@ pub struct AresCountryParadrop {
     pub counts: Vec<i32>,
 }
 
-#[cfg(feature = "ares")]
 impl AresCountryParadrop {
     /// `HouseTypeExt::InheritSettings @ 0x1001BDC0` copies the four resolved
     /// fields (`+0x154`, `+0x158`, `+0x13C`, `+0x148`).

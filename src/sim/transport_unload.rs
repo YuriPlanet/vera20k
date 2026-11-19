@@ -523,7 +523,7 @@ fn eject_head_passenger(
                         sim.object_type(transport.type_ref(), rules)
                             .is_some_and(|object| object.amphibious_unload(rules))
                     });
-            let (base, facing16, transport_z, height) = {
+            let (base, facing16, transport_z, height, leave_sound) = {
                 let transport = sim
                     .substrate
                     .entities
@@ -531,6 +531,7 @@ fn eject_head_passenger(
                     .expect("transport resolved before the head pop");
                 // The scan's `+0x1AC` height: the transport's Object
                 // `0x005F5F00` (`0x0073D97B`, `0x0073D9A9`).
+                let obj = sim.object_type(transport.type_ref(), rules);
                 let height = object_cell_height(sim, transport);
                 (
                     (transport.position.rx(), transport.position.ry()),
@@ -538,6 +539,7 @@ fn eject_head_passenger(
                     transport.body_facing_current(now),
                     transport.position.z(),
                     height,
+                    obj.and_then(|o| o.leave_transport_sound.clone()),
                 )
             };
             let Some(passenger_snapshot) = sim.substrate.entities.get(pax_id) else {
@@ -715,7 +717,7 @@ fn eject_head_passenger(
             // queues the passenger's Move directly, before class
             // destination73DC06; it does not execute a player event.
             if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
-                passenger.passenger_role.clear_transporter();
+                passenger.clear_transporter();
             }
             // Phobos `FootClass_LeaveTransport` (0x4DE722): the ejected
             // passenger leaves the scenario reloader list.
@@ -725,8 +727,7 @@ fn eject_head_passenger(
             // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
             // Deactivated passenger's locomotor is powered off, and an
             // unpowered one only reaches its placement cell.
-            #[cfg(feature = "ares")]
-            let dest = {
+            let dest = if rules.ares_form() {
                 if sim
                     .substrate
                     .entities
@@ -752,6 +753,8 @@ fn eject_head_passenger(
                 } else {
                     dest
                 }
+            } else {
+                dest
             };
             if let Err(cause) = sim.assign_destination_represented(
                 pax_id,
@@ -769,12 +772,22 @@ fn eject_head_passenger(
                 sim.team_add_member(team, pax_id, false, rules, overlay_registry, effects);
             }
 
-            // `0x0073DC35..0x0073DC67` (PlayAtCoord `0x00750E20`): at the
-            // transport's Location, after the passenger's Unlimbo. Phobos'
-            // `NoQueueUpToUnload` one-frame arm suppresses it for the
-            // intermediate passengers and plays it once at the end.
-            if play_leave_sound {
-                emit_leave_transport_sound(sim, rules, transport_id);
+            // `0x0073DC35..0x0073DC67` (PlayAtCoord `0x00750E20`, flags 0):
+            // a retained request at the transport's Location, after the
+            // passenger's Unlimbo, once per placed passenger.
+            if let Some(sound_id) = leave_sound {
+                let coordinate = crate::sim::movement::ground_pose::object_location(
+                    sim.substrate
+                        .entities
+                        .get(transport_id)
+                        .expect("transport resolved before the head pop"),
+                    sim.resolved_terrain.as_ref(),
+                );
+                sim.sound_events.emit(SimSoundEvent::VocAtCoord {
+                    sound_id,
+                    coordinate,
+                    flags: 0,
+                });
             }
             Ok(())
         },
@@ -1027,7 +1040,6 @@ pub(crate) fn building_mission_unload_absorber(
 /// owner's network of its type holds a Foot unloads one
 /// ([`ares_tunnel_unload_one`]) and returns the Unload epilogue
 /// (`0x0044DC84`), whatever the unload did. `None` takes the stock arms.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_tunnel_mission_unload(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1070,7 +1082,6 @@ pub(crate) fn ares_tunnel_mission_unload(
 /// search fails, and drops a member whose Put fails; VERA keeps that
 /// member in the network. Trigger: no free cell for its SpeedType, or a
 /// refused Unlimbo. Frequency: rare.
-#[cfg(feature = "ares")]
 #[allow(clippy::too_many_arguments)]
 fn ares_tunnel_unload_one(
     sim: &mut Simulation,
@@ -1309,7 +1320,7 @@ pub(crate) fn unit_mission_unload(
                 }
                 return WAIT_MOVING_FRAMES;
             }
-            let cargo = entity.passenger_role.passenger_count();
+            let cargo = entity.passenger_role().passenger_count();
             let pick = pick_exit_octant(sim, rules, entity);
             if let (true, Some((_exit_cell, face_octant))) = (cargo != 0, pick) {
                 // `FUN_0070DC60` → `Type+0x808 TurretCount > 0` (`0x00717880`):
@@ -1320,22 +1331,31 @@ pub(crate) fn unit_mission_unload(
                 let turreted = sim
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|obj| {
-                        if crate::rules::ARES_ENABLED {
+                        if rules.ares() {
                             obj.gunner
                         } else {
                             obj.turret_count > 0
                         }
+                    });
+                let smooth_jumpjet_turn = rules.general.jumpjet_smooth_facing
+                    && entity.locomotor.as_ref().is_some_and(|locomotor| {
+                        locomotor.active_kind()
+                            == crate::rules::locomotor_type::LocomotorKind::Jumpjet
                     });
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     if turreted {
                         entity.transport_unload_keep_count.count = if cargo == 1 { 0 } else { 1 };
                     }
                     //73D86C dispatches the active ILocomotion+4C owner.
-                    crate::sim::movement::locomotor_do_turn(
-                        entity,
-                        (face_octant as u16) << 13,
-                        now,
-                    );
+                    // Jumpjet's (`0x0054B6E0`) snaps the body. VERA
+                    // `[JumpjetControls] SmoothFacing=` (off by default)
+                    // turns it at its ROT instead.
+                    let desired = (face_octant as u16) << 13;
+                    if smooth_jumpjet_turn {
+                        entity.body_facing.set(desired, now);
+                    } else {
+                        crate::sim::movement::locomotor_do_turn(entity, desired, now);
+                    }
                     entity.mission.set_handler_state(STATE_TURNING);
                 }
                 return 1;
@@ -1360,110 +1380,10 @@ pub(crate) fn unit_mission_unload(
             unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         STATE_EJECT => {
-            let keep = entity.transport_unload_keep_count.count();
-            let count = entity.passenger_role.passenger_count();
-            // Phobos `NoQueueUpToUnload` (`0x73DC1E`,
-            // `Ext/Techno/Hooks.Transport.cpp:427-466`): the transport
-            // type's nullable, else `[General] NoQueueUpToUnload`.
-            #[cfg(feature = "phobos")]
-            let no_queue_up_to_unload =
-                sim.object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| {
-                        object
-                            .phobos_techno_extras
-                            .no_queue_up_to_unload(rules.phobos_globals.no_queue_up_to_unload)
-                    });
-            #[cfg(not(feature = "phobos"))]
-            let no_queue_up_to_unload = false;
-
-            if count > keep {
-                // Stock plays its LeaveTransportSound inside a placed
-                // passenger; the Phobos one-frame arm holds it for the end.
-                let outcome = eject_head_passenger(
-                    sim,
-                    rules,
-                    id,
-                    overlay_registry,
-                    effects,
-                    !no_queue_up_to_unload,
-                );
-                #[cfg(not(feature = "phobos"))]
-                let _ = outcome;
-                // Phobos `NoQueueUpToUnloadBreak` (`0x73DC9C`): a failed
-                // placement scatters the allied neighbours on every build.
-                #[cfg(feature = "phobos")]
-                if outcome == EjectOutcome::Failed {
-                    scatter_unload_neighbours(sim, rules, id, overlay_registry, effects);
-                }
-                #[cfg(feature = "phobos")]
-                if no_queue_up_to_unload {
-                    if outcome == EjectOutcome::Placed {
-                        // Within a single frame: eject until the keep count
-                        // remains or a placement fails (`R->EBX(0)` ->
-                        // `0x73D8CB`).
-                        loop {
-                            let count =
-                                sim.substrate.entities.get(id).map_or(0, |transport| {
-                                    transport.passenger_role.passenger_count()
-                                });
-                            if count <= keep {
-                                emit_leave_transport_sound(sim, rules, id);
-                                break;
-                            }
-                            let can_unload =
-                                sim.substrate.entities.get(id).is_some_and(|transport| {
-                                    transport_can_unload_now(sim, rules, transport)
-                                });
-                            if !can_unload {
-                                emit_leave_transport_sound(sim, rules, id);
-                                if let Some(transport) = sim.substrate.entities.get_mut(id) {
-                                    transport.mission.clear_movement_bypass_latch();
-                                }
-                                // `MissionStatus = 0` retry: no epilogue draw.
-                                return 1;
-                            }
-                            match eject_head_passenger(
-                                sim,
-                                rules,
-                                id,
-                                overlay_registry,
-                                effects,
-                                false,
-                            ) {
-                                EjectOutcome::Placed => {}
-                                EjectOutcome::Failed => {
-                                    scatter_unload_neighbours(
-                                        sim,
-                                        rules,
-                                        id,
-                                        overlay_registry,
-                                        effects,
-                                    );
-                                    emit_leave_transport_sound(sim, rules, id);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // The stock key-off tail (`0x73DC1E`) retries while a
-                    // passenger remains and the cell cannot unload.
-                    let count = sim
-                        .substrate
-                        .entities
-                        .get(id)
-                        .map_or(0, |transport| transport.passenger_role.passenger_count());
-                    let can_unload =
-                        sim.substrate.entities.get(id).is_some_and(|transport| {
-                            transport_can_unload_now(sim, rules, transport)
-                        });
-                    if count > keep && !can_unload {
-                        if let Some(transport) = sim.substrate.entities.get_mut(id) {
-                            transport.mission.clear_movement_bypass_latch();
-                        }
-                        return 1;
-                    }
-                }
+            if entity.passenger_role().passenger_count()
+                > entity.transport_unload_keep_count.count()
+            {
+                let _ = eject_head_passenger(sim, rules, id, overlay_registry, effects, true);
             } else if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_handler_state(STATE_DONE);
             }
@@ -1511,16 +1431,16 @@ fn aircraft_landed(
 ///   rulesmd.ini type sets `IsDropship`, so it takes state 2 (`0x0041530C`).
 ///   Both arms fall into the epilogue at `0x0041525A` (one
 ///   `RandomRanged(0, 2)` draw).
-/// - State 3 early-out: `+0x418 != 0` returns before the hold test
-///   (`0x004154BB`..`0x004154C3`); its writer and meaning are UNCHECKED and
-///   VERA does not represent it.
+/// - State 3 early-out: tethered (`+0x418`, [`crate::sim::radio::tether`]) it
+///   returns the epilogue before the hold test (`0x004154BB`..`0x004154C3`).
 /// - States 1 and 4 are written at `0x0041541F`, inside the NavCom arm
 ///   (residual below).
 /// - State 2 (`0x00415480`): locomotor `Is_Moving` (`+0x10`, `0x0041549D`)
 ///   false → state 3 (`0x004154A4`); `return 1` either way (`0x004154B1`),
 ///   NO epilogue draw while it polls.
 /// - State 3 (`0x004154BB`..): cargo empty → `Enter_Idle_Mode` (vtable
-///   `+0x484` = `0x004176F0`); a non-carryall pops the cargo head
+///   `+0x484` = `0x004176F0`); a Carryall drops its cargo; any other pops the
+///   cargo head
 ///   (`RemoveFirstPassenger @ 0x00473430`), leaves its own cell list, ejects
 ///   through vtable `+0x100` = `0x00415B10` (see [`eject_from_aircraft`]),
 ///   re-enters, and — when that emptied the hold — goes idle in the same
@@ -1531,16 +1451,15 @@ fn aircraft_landed(
 /// already empty on state-3 entry, and `0x004155A2`, the ejection just
 /// emptied it) is `aircraft::idle_entry`'s.
 ///
-/// RESIDUAL: the transport tether. The last ejection leaves the aircraft in
-/// radio contact with the passenger (`Transmit_Message(HELLO)` `0x00415C2E`,
-/// then `UNLOADED` `0x00415C3F`, which `TechnoClass::Receive_Radio @
-/// 0x006F4AB0` answers with TETHER `0x18`), so `In_Radio_Contact` steers the
-/// first idle pass to Enter (7); `AircraftClass::Mission_Enter @ 0x00419C80`
-/// then idles in states 6/7 until the passenger's first cell step breaks the
-/// tether (UNLOAD `8` -> UNTETHER + OVER_OUT), after which Enter_Idle_Mode
-/// re-runs without contact and lands on Guard. VERA keeps no tether, so the
-/// aircraft takes Guard at once. Dormant in retail (no aircraft carries
-/// passengers, above).
+/// The transport tether: each ejection leaves the aircraft in radio contact
+/// with the passenger (`Transmit_Message(HELLO)` `0x00415C2E`, then UNLOAD
+/// `0x00415C3F`, which `TechnoClass::Receive_Radio @ 0x006F4AB0` answers with
+/// TETHER `0x18`), so state 3 waits until the passenger's first cell step
+/// breaks the tether (radio 8 -> UNTETHER + OVER_OUT) before the next one
+/// leaves. After the last one `In_Radio_Contact` steers the idle pass to
+/// Enter (7); `AircraftClass::Mission_Enter @ 0x00419C80` idles in states 6/7
+/// until that break, after which Enter_Idle_Mode re-runs without contact and
+/// lands on Guard.
 ///
 /// RESIDUAL: the NavCom arms are not ported. A landed aircraft compares its
 /// NavCom with its own coordinate (`0x0041522A..0x0041524E`) and takes state
@@ -1550,14 +1469,15 @@ fn aircraft_landed(
 /// transport ordered to unload while it has a NavCom. Dormant in retail
 /// (above).
 ///
-/// RESIDUAL: the team join of each passenger ejected here
-/// (`0x0041556A..0x00415587`) is not ported; the vehicle arm's
-/// (`0x0073DC0C..0x0073DC19`) is. Unlike that arm it is gated on the
-/// passenger's own team (`+0x5D4` at `0x00415574`) and its `+0x424` byte
-/// before the aircraft's team adds it (`TeamClass::Add_Member`), so a
-/// passenger that left its team as it boarded is not added either. Trigger:
-/// an aircraft transport unloads a passenger that kept a team. Effect: it
-/// is not added to the aircraft's team. Dormant in retail (above).
+/// Each passenger ejected here joins the aircraft's team
+/// (`0x0041556A..0x00415587`, `TeamClass::Add_Member`). Unlike the vehicle
+/// arm (`0x0073DC0C..0x0073DC19`) it is gated on the passenger's own team
+/// (`+0x5D4` at `0x00415574`), so a passenger that left its team as it
+/// boarded (a reinforcement's keeps it) is not added, and on its
+/// IsOnCarryall byte (`+0x424`), which the ejection's success has cleared.
+///
+/// A `Carryall=` type takes the drop instead of the ejection
+/// (`0x004154E7..0x00415506`, `aircraft::carryall`).
 pub(crate) fn mission_unload(
     sim: &mut Simulation,
     id: u64,
@@ -1588,17 +1508,25 @@ pub(crate) fn mission_unload(
             // `eject_from_aircraft` reveals each passenger at the aircraft's
             // own height (the landed-aircraft route), so a still aircraft at
             // altitude would leave its cargo in the air. Dormant in retail
-            // (see the doc above).
+            // (see the doc above). A Carryall, which rests at its loaded
+            // landing base and sets its cargo on the ground itself
+            // (`aircraft::carryall`), takes the native test alone.
             if crate::sim::movement::motion_query::is_moving(entity) != Some(true)
-                && aircraft_landed(entity, sim.resolved_terrain.as_ref())
+                && (aircraft_landed(entity, sim.resolved_terrain.as_ref())
+                    || sim.is_carryall(id, rules))
                 && let Some(entity) = sim.substrate.entities.get_mut(id)
             {
                 entity.mission.set_handler_state(AIR_STATE_EJECT);
             }
             1
         }
+        // `0x004154BB..0x004154C3`: tethered to the last passenger out, it
+        // waits for that passenger's first cell step (radio 8) to release it.
+        AIR_STATE_EJECT if entity.tether.partner().is_some() => {
+            unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
+        }
         AIR_STATE_EJECT => {
-            if entity.passenger_role.passenger_count() == 0 {
+            if entity.passenger_role().passenger_count() == 0 {
                 crate::sim::aircraft::enter_idle_mode_for(
                     sim,
                     id,
@@ -1606,19 +1534,53 @@ pub(crate) fn mission_unload(
                     overlay_registry,
                     effects,
                 );
+            } else if sim.is_carryall(id, rules) {
+                // `0x004154E7..0x00415500`: a Carryall sets its cargo down
+                // between its Mark(UP) and Mark(DOWN).
+                sim.foot_mark_remove(id, rules, overlay_registry, effects);
+                sim.carryall_unload(id, rules, overlay_registry, effects);
+                sim.foot_mark_put(id, rules, overlay_registry, effects);
             } else {
                 let ejected = eject_from_aircraft(sim, rules, overlay_registry, id, effects);
+                // `0x00415544..0x00415548`: one that left is no Carryall's
+                // cargo (IsOnCarryall `+0x424`).
+                if let Some(pax) = ejected.and_then(|pax| sim.substrate.entities.get_mut(pax)) {
+                    pax.on_carryall.set(false);
+                    // Ares 3.0 AircraftClass_Mi_Unload_Blocked (10048B30,
+                    // hook 0x415544) clears Transporter (`+0x11C`) too. Its
+                    // refusal arm re-adds the passenger and enters idle mode,
+                    // as VERA's escape below does in every game.
+                    if rules.ares_form() {
+                        pax.clear_transporter();
+                    }
+                }
+                // `0x0041556A..0x00415587`: a passenger that kept a team joins
+                // the aircraft's (`TeamClass::Add_Member(passenger, 0)`).
+                // Natively that Add_Member runs on the aircraft's team even
+                // when it has none; VERA skips it then.
+                if let Some(pax_id) = ejected
+                    && sim
+                        .substrate
+                        .entities
+                        .get(pax_id)
+                        .is_some_and(|pax| !pax.is_on_carryall())
+                    && sim.team_script_vm.team_for_member(pax_id).is_some()
+                    && let Some((team, _)) = sim.team_script_vm.team_for_member(id)
+                {
+                    sim.team_add_member(team, pax_id, false, rules, overlay_registry, effects);
+                }
                 let hold_empty = sim
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|entity| entity.passenger_role.passenger_count() == 0);
-                // `!ejected`: VERA's bounded escape from a refused ejection
-                // (native loses the passenger and keeps ejecting the rest;
-                // see [`eject_from_aircraft`]). The hold keeps the passenger
-                // and the mission leaves through the same empty-hold exit, so
-                // this dispatch's epilogue draw is the last one.
-                if hold_empty || !ejected {
+                    .is_some_and(|entity| entity.passenger_role().passenger_count() == 0);
+                // `ejected` empty: VERA's bounded escape from a refused
+                // ejection (native loses the passenger and keeps ejecting the
+                // rest; see [`eject_from_aircraft`]). The hold keeps the
+                // passenger and the mission leaves through the same
+                // empty-hold exit, so this dispatch's epilogue draw is the
+                // last one.
+                if hold_empty || ejected.is_none() {
                     crate::sim::aircraft::enter_idle_mode_for(
                         sim,
                         id,
@@ -1676,19 +1638,20 @@ const AIRCRAFT_EXIT_SCAN: [usize; 9] = [4, 5, 3, 7, 1, 0, 6, 2, 4];
 /// `[AircraftTypes]` entry carries passengers; DRIFT — native loses the unit): the passenger goes back to the cargo head
 /// (cargo departure restoration), this returns `false`, and the caller leaves Unload for
 /// Guard through the empty-hold exit, so nothing retries and no further
-/// epilogue draws happen. Returns `true` when the passenger left the hold. On
+/// epilogue draws happen. Returns the passenger that left the hold. On
 /// success: `Queue_Mission(Move)` (`0x00415C05`), `Set_Destination(scan
-/// cell, 1)` (`0x00415C21`), then the radio handshake described on
-/// tether residual on [`mission_unload`]'s idle mode. No `LeaveTransportSound`
-/// on this path.
+/// cell, 1)` (`0x00415C21`), then HELLO and UNLOAD (9), which tether the
+/// aircraft to it ([`mission_unload`]). No `LeaveTransportSound` on this
+/// path.
 fn eject_from_aircraft(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     aircraft_id: u64,
     effects: FrameEffects<'_>,
-) -> bool {
+) -> Option<u64> {
     let mut picked_up = false;
+    let mut passenger = None;
     let ejected = depart_cargo_head(
         sim,
         rules,
@@ -1708,6 +1671,7 @@ fn eject_from_aircraft(
             if sim.substrate.entities.get(pax_id).is_none() {
                 return Err(DepartureFailure::MissingPassenger);
             }
+            passenger = Some(pax_id);
 
             let mut index = 8usize;
             let mut scan_cell: Option<(u16, u16)> = None;
@@ -1772,6 +1736,27 @@ fn eject_from_aircraft(
             {
                 log::warn!("Unload destination {pax_id}: {cause}");
             }
+            // `0x00415C27..0x00415C3F`: HELLO to the passenger, and on ROGER
+            // UNLOAD (9) to the first contact, whose Techno arm (`0x006F4C6F`)
+            // tethers both ends until the passenger's first cell step.
+            if crate::sim::radio::transmit(
+                sim,
+                aircraft_id,
+                pax_id,
+                crate::sim::radio::RadioMessage::Hello,
+                crate::sim::radio::RadioPayload::default(),
+                rules,
+                effects,
+            ) == crate::sim::radio::RadioResponse::Roger
+            {
+                crate::sim::radio::transmit_to_contact(
+                    sim,
+                    aircraft_id,
+                    crate::sim::radio::RadioMessage::TetherBack,
+                    rules,
+                    effects,
+                );
+            }
             Ok(())
         },
         effects,
@@ -1787,8 +1772,8 @@ fn eject_from_aircraft(
             effects,
         );
     }
-    ejected
+    passenger.filter(|_| ejected)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests;

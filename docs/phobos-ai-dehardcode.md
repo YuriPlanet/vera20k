@@ -1,7 +1,10 @@
 # Optional Phobos skirmish AI dehardcoding
 
-Build with `--features phobos` to tune the hardcoded last-legs behavior of a
-skirmish computer house and its regrouping after an MCV deploy.
+These keys tune the hardcoded last-legs behavior of a skirmish computer house
+and its regrouping after an MCV deploy. They work in every build: any of them
+in the rules, mode or map turns Phobos on for the game
+([the Phobos switch](phobos.md#the-phobos-switch)), and without Phobos on the
+house sells off, hunts and regroups as in the original.
 
 ```ini
 [General]
@@ -35,6 +38,8 @@ timer uses the same current-frame anchor and `start + delay` expiry as YRpp's
 
 - `rules/ruleset.rs` — the four `[General]` reads and their configuration
   hash.
+- `rules/phobos_switch.rs` — whether Phobos plays (`RuleSet::phobos`), which
+  every consumer below checks first.
 - `sim/house_strategy.rs` — gates the no-factory block's Fire_Sale and
   All_To_Hunt calls; the timer lives with the strategy state.
 - `sim/house_state.rs` — the persisted per-house sale-delay timer.

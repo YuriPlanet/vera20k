@@ -26,7 +26,6 @@
 
 pub mod aim_coord;
 mod airburst;
-#[cfg(feature = "ares")]
 mod ares_warhead_effects;
 mod attack_target;
 pub(crate) mod base_defense_response;
@@ -43,7 +42,7 @@ pub(crate) mod combat_targeting;
 pub mod combat_weapon;
 #[cfg(feature = "phobos")]
 pub(crate) mod crit;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod crit_tests;
 pub(crate) mod damage;
 #[cfg(feature = "phobos")]
@@ -99,53 +98,56 @@ pub mod veterancy;
 pub mod world_fire;
 pub(crate) mod world_receiver;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod receiver_fixture;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod aegis_launch_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod airstrike_target_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_armor_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_cliff_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_warhead_combat_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_warhead_effects_tests;
 #[cfg(test)]
 mod berzerk_alliance_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod berzerk_mission_tests;
 #[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_cluster_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_launch_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_live_chain_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod burst_no_delay_tests;
 #[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_cloak_damage_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_cloak_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_combat_a_c, tests_sim_combat_d_z)))]
 mod combat_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_turret_facing_tests;
 #[cfg(all(test, feature = "phobos"))]
 #[path = "electric_bolt_bolt_keys_tests.rs"]
 mod electric_bolt_bolt_keys_tests;
 #[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod electric_bolt_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod fire_particles_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod fireat_launch_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod garrison_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod homing_shipyard_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod phobos_au_underground_tests;
@@ -183,12 +185,12 @@ mod phobos_unlimbo_detonate_tests;
 mod phobos_visual_scatter_tests;
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(all(test, not(feature = "phobos")))]
+#[cfg(all(test, tests_sim_combat_d_z, not(feature = "phobos")))]
 mod ifv_fireat_tests;
 /// Ordinary launch-height, resolved impact presentation and damage-effect
 /// wiring. Bridge Cell+58 launch and +48/+58 impact comparisons use the native
 /// oracle cases in `bridge_launch_tests` and `world::projectile_collision`.
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_combat_d_z, tests_sim_combat_a_c)))]
 mod impact_height_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod infantry_flh_tests;
@@ -197,26 +199,30 @@ mod laser_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod laser_tracking_tests;
 #[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod laser_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod mirage_disguise_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod open_topped_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod prone_damage_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod radiation_beam_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod railgun_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod screen_shake_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod shrapnel_chain_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod unit_damage_response_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod walk_attack_tests;
 
 pub use attack_target::{TarCom, TargetKind};
-pub(crate) use attack_target::{object_distance_to, resolve_target_coords, target_present};
+pub use attack_target::object_distance_to;
+pub(crate) use attack_target::{resolve_target_coords, target_present};
 pub(crate) use combat_targeting::build_attacker_snapshot;
 pub(crate) use detonation_anim::projectile_impact_cell;
 pub(crate) use effects::DeathEffects;
@@ -224,8 +230,8 @@ pub(crate) use effects::DeathEffects;
 pub use effects::NO_COLOR_SPOTLIGHT_FLAGS;
 pub(crate) use effects::combat_light_chance_admits;
 pub use effects::{
-    CombatLightRequest, ExplosionEffect, ScreenShakeUpdate, SmudgeSpawnRequest,
-    TiberiumReductionRequest, UnderAttackEvent, UnitLostEvent,
+    AresUnitLost, CombatLightRequest, ExplosionEffect, ScreenShakeUpdate, SmudgeSpawnRequest,
+    TiberiumReductionRequest, UnderAttackEvent, UnderAttackLine, UnitLostEvent,
 };
 pub use in_range::can_fire_at_target;
 pub use in_range::{MaplessTarget, can_fire_at_target_in_query, mapless_in_range};
@@ -237,14 +243,12 @@ pub(crate) use phobos_airburst::cell_spread_technos_with_air;
 pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet, admit_techno_fired_bullet};
 pub(crate) use receiver_call::{
     BaseDefenseResponseCallSite, EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags,
-    receiver_divisors, wave_post_object_damage,
+    receiver_divisors,
 };
 pub use receiver_call::{DamageWriteback, TerrainDamageEvent};
 pub(crate) use receiver_health::BerserkState;
 pub(crate) use record_kill::{KillCallback, KillRecord, KillSource};
 pub use techno_death::FatalLifecycleStage;
-#[cfg(feature = "ares")]
-pub(crate) use techno_death::ares_building_lost_event;
 pub(crate) use techno_death::{
     death_announcement_event, death_arm_explodes, death_weapon_detonation, select_death_sound,
 };

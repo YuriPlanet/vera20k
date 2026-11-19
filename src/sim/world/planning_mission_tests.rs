@@ -146,19 +146,10 @@ fn commit(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet, owner: I
 }
 
 fn step(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet) {
-    step_with_overlays(sim, rules, None);
-}
-
-fn step_with_overlays(
-    sim: &mut Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
-    overlays: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-) {
     let commands = sim.take_due_commands();
     sim.advance_app_frame(
         &commands,
         rules,
-        overlays,
         33,
         super::super::TickLane::Ordinary,
         Default::default(),
@@ -235,7 +226,6 @@ fn retail_plan_publication_uses_final_timing_and_yields_to_an_existing_player_mo
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 33,
                 super::super::TickLane::Ordinary,
                 Default::default(),
@@ -308,7 +298,7 @@ fn retail_rate_one_plans_replay_with_the_same_publication_order_and_state() {
         Some((
             SimRuntime {
                 simulation: sim,
-                resources,
+                resources: std::sync::Arc::new(resources),
             },
             owner,
         ))
@@ -453,6 +443,7 @@ fn retail_planned_tanya_plants_c4_and_continues_to_the_next_waypoint() {
         sim.entities()
             .get(target)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending()
             .is_none()
@@ -476,7 +467,7 @@ fn retail_planned_tanya_plants_c4_and_continues_to_the_next_waypoint() {
         if let Some(charge) = sim
             .entities()
             .get(target)
-            .and_then(|entity| entity.pending_c4_detonation.pending())
+            .and_then(|entity| entity.building.pending_c4_detonation.pending())
         {
             assert_eq!(charge.source_entity_id(), Some(tanya));
             planted = true;
@@ -580,7 +571,7 @@ fn retail_planned_enter_reaches_transport_and_bunker_adapters() {
                     .is_some_and(|entity| entity.bunker.occupant() == Some(actor))
             } else {
                 sim.entities().get(actor).is_some_and(|entity| {
-                    entity.passenger_role.inside_transport_id() == Some(target)
+                    entity.passenger_role().inside_transport_id() == Some(target)
                 })
             };
             if entered {
@@ -764,7 +755,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                 Some(&rules)
             ));
             for _ in 0..3 {
-                step_with_overlays(&mut sim, &rules, Some(&overlays));
+                step(&mut sim, &rules);
             }
             assert_eq!(
                 sim.entities()
@@ -806,7 +797,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                     .effective()
                     .known()
                     == Some(crate::sim::mission::MissionType::Harvest);
-                step_with_overlays(&mut sim, &rules, Some(&overlays));
+                step(&mut sim, &rules);
                 let mission = &sim.entities().get(actor).unwrap().mission;
                 guard_after_harvest |= harvest_dispatched
                     && (mission.current().known() == Some(crate::sim::mission::MissionType::Guard)
@@ -830,7 +821,7 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                 harvest_dispatched,
                 "Harvest must reach the mission owner, planning={planning}"
             );
-            let harvests = dock_owner == Some("Americans") || crate::rules::ARES_ENABLED;
+            let harvests = dock_owner == Some("Americans") || rules.ares();
             assert_eq!(
                 !actor.miner.as_ref().unwrap().cargo().is_empty(),
                 harvests,
@@ -875,7 +866,7 @@ fn retail_planned_garrison_capture_and_self_unload_reach_passenger_owners() {
         if sim
             .entities()
             .get(actor)
-            .is_some_and(|e| e.passenger_role.inside_transport_id() == Some(building))
+            .is_some_and(|e| e.passenger_role().inside_transport_id() == Some(building))
         {
             break;
         }
@@ -884,7 +875,7 @@ fn retail_planned_garrison_capture_and_self_unload_reach_passenger_owners() {
         sim.entities()
             .get(actor)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(building)
     );
@@ -902,7 +893,7 @@ fn retail_planned_garrison_capture_and_self_unload_reach_passenger_owners() {
         if sim
             .entities()
             .get(actor)
-            .is_some_and(|e| !e.passenger_role.is_inside_transport())
+            .is_some_and(|e| !e.passenger_role().is_inside_transport())
         {
             assert!(!sim.entities().get(actor).unwrap().lifecycle.in_limbo());
             return;

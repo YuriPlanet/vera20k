@@ -3,7 +3,7 @@ use super::RuleSet;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::SimSoundEvent;
 use std::sync::Arc;
 
 const SOUNDS: &str =
@@ -83,7 +83,7 @@ fn global_promotion_cues_reach_normal_ai_without_general() {
             .any(|event| matches!(event, SimSoundEvent::UnitPromoted { .. }))
     );
     for (elite, expected) in [(false, "VeteranCue"), (true, "EliteCue")] {
-        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        let actor = sim.entity_mut_for_test(id).unwrap();
         if elite {
             actor.veterancy.set_elite();
         } else {

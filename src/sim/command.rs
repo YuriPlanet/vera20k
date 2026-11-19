@@ -50,9 +50,9 @@ pub const MEGAMISSION_STAGE_CAPACITY: usize = 0x100;
 /// only the first 256 opcode-4 events into its secondary ring. Overflow is
 /// consumed by the caller without execution (`0x0064CAA8`); it is not deferred
 /// to another frame. Each House drains its stage before the next House starts
-/// (`0x0064CBF4..0x0064CC3D`). This admission owner serves both the production
-/// semantic dispatcher and the synchronized byte queue. Local OutList admission
-/// is a separate boundary. Source: original gamemd.exe instructions.
+/// (`0x0064CBF4..0x0064CC3D`). `DoList::dispatch` stages native and semantic
+/// entries alike through this owner. Local OutList admission is a separate
+/// boundary. Source: original gamemd.exe instructions.
 pub(crate) fn stage_megamission<T: Clone>(
     stage: &mut Vec<T>,
     command: &T,
@@ -67,6 +67,9 @@ pub(crate) fn stage_megamission<T: Clone>(
 
 /// Native selected-object Scatter event.
 pub const SCATTER_OPCODE: u8 = 0x07;
+/// DETONATE, a player's click on its own bomb's lone selected carrier
+/// (`FootClass::ClickedAction_Object` action 0x37, `0x004D7616`).
+pub const DETONATE_OPCODE: u8 = 0x0a;
 /// IDLE6, issued by StopCommand730EA0 through ClickedEvent6FFE00.
 pub const IDLE_OPCODE: u8 = 0x06;
 /// Selected-object DEPLOY, issued by the D key through ClickedEvent6FFE00.
@@ -91,6 +94,14 @@ pub const LATENCY_FUDGE_OPCODE: u8 = 0x24;
 pub const TIMING_OPCODE: u8 = 0x20;
 /// ProcessNetwork647767 / EventClass4C80B1: a source's mean frame cost.
 pub const PROCESS_TIME_OPCODE: u8 = 0x21;
+// Native names from EventClass's name table at `0x0082091C`. FRAMEINFO
+// (0x1C) is `command_queue::FRAMEINFO_EVENT_OPCODE`, beside its layout.
+pub const EMPTY_OPCODE: u8 = 0x00;
+pub const FRAME_SYNC_OPCODE: u8 = 0x19;
+pub const MESSAGE_OPCODE: u8 = 0x1a;
+pub const RESPONSE_TIME_OPCODE: u8 = 0x1b;
+pub const ADD_PLAYER_OPCODE: u8 = 0x1f;
+pub const PAGE_USER_OPCODE: u8 = 0x22;
 
 /// The five-byte EVENT_TIMING payload. A zero send rate cannot be produced by
 /// ProcessNetwork and would divide by zero in native; reject it on decode.
@@ -248,21 +259,24 @@ impl BuildingOnLineRecord {
     }
 }
 
-const MEGAMISSION_SOURCE_VALUE_OFFSET: usize = 0;
-const MEGAMISSION_SOURCE_KIND_OFFSET: usize = 4;
-const MEGAMISSION_ACTION_OFFSET: usize = 5;
-const MEGAMISSION_SECONDARY_VALUE_OFFSET: usize = 7;
-const MEGAMISSION_SECONDARY_KIND_OFFSET: usize = 11;
-const MEGAMISSION_DESTINATION_VALUE_OFFSET: usize = 12;
-const MEGAMISSION_DESTINATION_KIND_OFFSET: usize = 16;
-const MEGAMISSION_AUXILIARY_VALUE_OFFSET: usize = 17;
-const MEGAMISSION_AUXILIARY_KIND_OFFSET: usize = 21;
-const MEGAMISSION_PLANNING_OFFSET: usize = 22;
-const MEGAMISSION_OWNED_PAYLOAD_LEN: usize = 23;
+// MEGAMISSION payload layout. Each TargetClass token is a value DWORD and
+// then its kind byte.
+pub(crate) const MEGAMISSION_SOURCE_VALUE_OFFSET: usize = 0;
+pub(crate) const MEGAMISSION_SOURCE_KIND_OFFSET: usize = 4;
+pub(crate) const MEGAMISSION_ACTION_OFFSET: usize = 5;
+pub(crate) const MEGAMISSION_SECONDARY_VALUE_OFFSET: usize = 7;
+pub(crate) const MEGAMISSION_SECONDARY_KIND_OFFSET: usize = 11;
+pub(crate) const MEGAMISSION_DESTINATION_VALUE_OFFSET: usize = 12;
+pub(crate) const MEGAMISSION_DESTINATION_KIND_OFFSET: usize = 16;
+pub(crate) const MEGAMISSION_AUXILIARY_VALUE_OFFSET: usize = 17;
+pub(crate) const MEGAMISSION_AUXILIARY_KIND_OFFSET: usize = 21;
+/// PlanMgr's flag: 0 an ordinary order, 1 a plan append, 2 a plan dispatch.
+pub(crate) const MEGAMISSION_PLANNING_OFFSET: usize = 22;
+pub(crate) const MEGAMISSION_OWNED_PAYLOAD_LEN: usize = 23;
 
-const ABSTRACT_OBJECT_TARGET_KIND: u8 = 0x34;
-const CELL_TARGET_KIND: u8 = 0x0b;
-const NULL_TARGET_KIND: u8 = 0;
+pub(crate) const ABSTRACT_OBJECT_TARGET_KIND: u8 = 0x34;
+pub(crate) const CELL_TARGET_KIND: u8 = 0x0b;
+pub(crate) const NULL_TARGET_KIND: u8 = 0;
 const MOVE_ACTION: u8 = 2;
 const AREA_GUARD_ACTION: u8 = 11;
 const CELL_TOKEN_ROW_STRIDE: i32 = 1000;
@@ -764,17 +778,14 @@ impl PlayerAutoRepairRecord {
 
 /// Ares 3.0 `AresNetEvent::Events::TrenchRedirectClick`: a selected
 /// trench's occupants move into the trench on the clicked Cell.
-#[cfg(feature = "ares")]
 pub const ARES_TRENCH_REDIRECT_OPCODE: u8 = 0x60;
 /// Its payload length (Ares.dll `1006A130` answers 10 for 0x60).
-#[cfg(feature = "ares")]
 pub const ARES_TRENCH_REDIRECT_PAYLOAD_LEN: u8 = 10;
 
 /// Typed view of the Ares TrenchRedirectClick event (0x60): the target
 /// Cell's five-byte TargetClass token, then the source Building's
 /// (RaiseTrenchRedirectClick `1006A170`). The Cell token is
 /// `x + y * 1000`, kind `0x0B` unless the value is 0, which leaves kind 0.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AresTrenchRedirectRecord {
     pub house_id: i8,
@@ -783,7 +794,6 @@ pub struct AresTrenchRedirectRecord {
     pub source: MegaMissionTarget,
 }
 
-#[cfg(feature = "ares")]
 impl AresTrenchRedirectRecord {
     /// `cell` is the clicked building's Cell, `source_id` the selected
     /// building's ID.
@@ -910,6 +920,33 @@ impl ScatterRecord {
 
     pub fn decode(record: &CommandRecord) -> Option<Self> {
         if record.opcode() != SCATTER_OPCODE {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// DETONATE10 carries the carrier's object token, as SCATTER7
+/// (`EventClass` constructor `0x004C65E0`, called at `0x004D762E`). Its
+/// house byte is the bomb's house (`+0x28`), not the clicking player's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DetonateRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl DetonateRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(DETONATE_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != DETONATE_OPCODE {
             return None;
         }
         Some(Self {
@@ -1308,6 +1345,20 @@ impl MegaMissionRecord {
     /// Decode represented ordinary movement, combat and special mission
     /// forms. Planning flags are dispatched by the PlanMgr owner.
     pub fn decode(record: &CommandRecord) -> Option<Self> {
+        Self::decode_planned(record)
+            .filter(|(_, flag)| *flag == 0)
+            .map(|(order, _)| order)
+    }
+
+    /// A MEGAMISSION record's planning flag.
+    pub(crate) fn planning_flag(record: &CommandRecord) -> Option<u8> {
+        (record.opcode() == MEGAMISSION_OPCODE)
+            .then(|| record.payload()[MEGAMISSION_PLANNING_OFFSET])
+    }
+
+    /// [`Self::decode`] that also reads a PlanMgr order, beside the record's
+    /// planning flag.
+    pub fn decode_planned(record: &CommandRecord) -> Option<(Self, u8)> {
         if record.opcode() != MEGAMISSION_OPCODE || record.house_id() < 0 {
             return None;
         }
@@ -1328,9 +1379,7 @@ impl MegaMissionRecord {
                 .try_into()
                 .ok()?,
         );
-        if payload[MEGAMISSION_SOURCE_KIND_OFFSET] != ABSTRACT_OBJECT_TARGET_KIND
-            || payload[MEGAMISSION_PLANNING_OFFSET] != 0
-        {
+        if payload[MEGAMISSION_SOURCE_KIND_OFFSET] != ABSTRACT_OBJECT_TARGET_KIND {
             return None;
         }
         let target =
@@ -1346,7 +1395,11 @@ impl MegaMissionRecord {
             MegaMissionTarget::Null
         } else {
             MegaMissionTarget::from_token(
-                i32::from_le_bytes(payload[17..21].try_into().ok()?),
+                i32::from_le_bytes(
+                    payload[MEGAMISSION_AUXILIARY_VALUE_OFFSET..MEGAMISSION_AUXILIARY_KIND_OFFSET]
+                        .try_into()
+                        .ok()?,
+                ),
                 payload[MEGAMISSION_AUXILIARY_KIND_OFFSET],
             )?
         };
@@ -1379,13 +1432,16 @@ impl MegaMissionRecord {
             }
             _ => return None,
         };
-        Some(Self {
-            house_id: record.house_id(),
-            frame: record.frame_stamp(),
-            source_id,
-            order,
-            auxiliary,
-        })
+        Some((
+            Self {
+                house_id: record.house_id(),
+                frame: record.frame_stamp(),
+                source_id,
+                order,
+                auxiliary,
+            },
+            payload[MEGAMISSION_PLANNING_OFFSET],
+        ))
     }
 }
 
@@ -1572,7 +1628,7 @@ pub enum Command {
     /// Execute the local player's native EXIT event and end the active scenario.
     ExitMatch,
     /// Apply an offline in-game Options speed transition before the next logic
-    /// frame. The dialog emits only the stored range 0..=6; live network opcode
+    /// frame. The dialog emits 0..=6 or VERA's 90-tick preset 8; live network opcode
     /// 0x0D keeps its separate EventClass-tail timing when networking is added.
     SetGameSpeed { speed: u8 },
     /// Strip6A8EB8's mobile PLACE event. House4FB0E0 resolves the category's
@@ -1825,11 +1881,11 @@ impl CommandEnvelope {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "command_battle_opening_tests.rs"]
 mod battle_opening_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::{
         ABSTRACT_OBJECT_TARGET_KIND, ArchiveRecord, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN,

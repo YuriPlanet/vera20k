@@ -33,7 +33,6 @@ pub(crate) struct MatchDiagnosticsState {
     pub(crate) replay_log: Option<ReplayLog>,
     command_executions: Option<CommandExecutionLog>,
     actor_presentation: std::cell::RefCell<Option<ActorPresentationProbe>>,
-    loading_cancel: Option<Vec<LoadingCancelObservation>>,
     replay_playback: Option<ReplayPlaybackState>,
     replay_capture_output: Option<PathBuf>,
     replay_artifact_sha256: Option<String>,
@@ -77,26 +76,58 @@ impl ActorMotionObservation {
         sim: &crate::sim::world::Simulation,
         entity: &crate::sim::game_entity::GameEntity,
     ) -> Self {
-        use crate::sim::movement::track_process::TrackFamily;
-        let drive = entity.locomotor.as_ref().filter(|loco| {
-            loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-        });
-        let bits = entity.foot_speed.native_applied_fraction().bits();
-        Self {
-            actor_type: sim.interner().resolve(entity.type_ref()).to_owned(),
-            locomotor: entity
+        Self::of_parts(
+            sim.interner().resolve(entity.type_ref()),
+            entity
                 .locomotor
                 .as_ref()
-                .map(|loco| format!("{:?}", loco.active_kind())),
-            applied_fraction: f64::from_bits(bits),
-            applied_fraction_bits: bits,
-            moving: crate::sim::movement::motion_query::is_moving(entity),
-            drive_destination: drive.and_then(|loco| loco.track_destination(TrackFamily::Drive)),
-            drive_head: drive.and_then(|loco| loco.track_head(TrackFamily::Drive)),
-            mission: (
+                .map(|locomotor| {
+                    crate::app::presentation::frame::LocomotorView::of(locomotor, || None)
+                })
+                .as_ref(),
+            entity.foot_speed.native_applied_fraction().bits(),
+            crate::sim::movement::motion_query::is_moving(entity),
+            (
                 entity.mission.current().raw(),
                 entity.mission.queued().raw(),
             ),
+        )
+    }
+
+    /// [`Self::read`] of an object's presentation record.
+    pub(crate) fn of_record(
+        sim: &crate::sim::world::Simulation,
+        entity: &crate::app::presentation::frame::ObjectRecord,
+    ) -> Self {
+        Self::of_parts(
+            sim.interner().resolve(entity.type_ref()),
+            entity.locomotor.as_ref(),
+            entity.applied_fraction.bits(),
+            entity.place.moving,
+            (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
+        )
+    }
+
+    fn of_parts(
+        actor_type: &str,
+        locomotor: Option<&crate::app::presentation::frame::LocomotorView>,
+        bits: u64,
+        moving: Option<bool>,
+        mission: (i32, i32),
+    ) -> Self {
+        let drive = locomotor.and_then(|loco| loco.drive_track());
+        Self {
+            actor_type: actor_type.to_owned(),
+            locomotor: locomotor.map(|loco| format!("{:?}", loco.active_kind())),
+            applied_fraction: f64::from_bits(bits),
+            applied_fraction_bits: bits,
+            moving,
+            drive_destination: drive.and_then(|[destination, _]| destination),
+            drive_head: drive.and_then(|[_, head]| head),
+            mission,
         }
     }
 }
@@ -128,7 +159,6 @@ pub(crate) struct ActorPresentation {
     pub screen: [f32; 2],
     pub body: u16,
     pub motion: ActorMotionObservation,
-    pub sampled_from_frame: u32,
     pub gpu_done: GpuCompletion,
 }
 impl ActorPresentation {
@@ -141,11 +171,10 @@ impl ActorPresentation {
 }
 struct ActorPresentationProbe {
     actor: u64,
-    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation, u32)>,
+    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation)>,
     submitted: Option<ActorPresentation>,
 }
 pub(crate) struct CommandTimingObservation {
-    pub publisher: Option<i8>,
     pub fps: Option<u16>,
     pub frame_send_rate: Option<u8>,
     pub max_ahead: Option<i32>,
@@ -190,7 +219,6 @@ impl CommandExecutionLog {
                 .session()
                 .network_command_timing()
                 .map(|timing| CommandTimingObservation {
-                    publisher: sim.network_timing_host_house(),
                     fps: Some(timing.frames_per_second()),
                     frame_send_rate: Some(timing.frame_send_rate().get()),
                     max_ahead: sim.session().network_max_ahead_frames(),
@@ -200,15 +228,6 @@ impl CommandExecutionLog {
             mission: entity.map(|e| (e.mission.current().raw(), e.mission.queued().raw())),
         });
     }
-}
-
-#[derive(Clone, serde::Serialize)]
-pub(crate) struct LoadingCancelObservation {
-    pub event: &'static str,
-    pub match_id: Option<String>,
-    pub source: Option<usize>,
-    pub worker_owner_taken: bool,
-    pub loading_active: bool,
 }
 
 pub(crate) struct ReplayLogFlush {
@@ -237,11 +256,10 @@ impl MatchDiagnosticsState {
     pub(crate) fn record_actor_draw(
         &self,
         sim: &crate::sim::world::Simulation,
-        entity: &crate::sim::game_entity::GameEntity,
+        entity: &crate::app::presentation::frame::ObjectRecord,
         frame: u32,
         screen: [f32; 2],
         body: u16,
-        interpolation: &crate::app::presentation::interpolation::RenderInterpolation,
     ) {
         if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
             && probe.actor == entity.stable_id()
@@ -250,8 +268,7 @@ impl MatchDiagnosticsState {
                 frame,
                 screen,
                 body,
-                ActorMotionObservation::read(sim, entity),
-                interpolation.sampled_from_frame(entity, frame),
+                ActorMotionObservation::of_record(sim, entity),
             ));
         }
     }
@@ -261,17 +278,14 @@ impl MatchDiagnosticsState {
                 probe
                     .pending
                     .take()
-                    .map(
-                        |(frame, screen, body, motion, sampled_from_frame)| ActorPresentation {
-                            at: ObservationTime::now(),
-                            frame,
-                            screen,
-                            body,
-                            motion,
-                            sampled_from_frame,
-                            gpu_done: Default::default(),
-                        },
-                    );
+                    .map(|(frame, screen, body, motion)| ActorPresentation {
+                        at: ObservationTime::now(),
+                        frame,
+                        screen,
+                        body,
+                        motion,
+                        gpu_done: Default::default(),
+                    });
             return probe.submitted.as_ref().map(|frame| frame.gpu_done.clone());
         }
         None
@@ -326,6 +340,15 @@ impl MatchDiagnosticsState {
         matches!(&self.replay_playback, Some(ReplayPlaybackState::Playing(playback)) if playback.can_advance())
     }
 
+    /// The replay plays on: installed, not failed and not at its end.
+    pub(crate) fn playback_playing(&self) -> bool {
+        matches!(
+            &self.replay_playback,
+            Some(ReplayPlaybackState::Playing(playback))
+                if !playback.is_finished() && playback.failure().is_none()
+        )
+    }
+
     pub(crate) fn playback_status(&self) -> Option<String> {
         Some(match self.replay_playback.as_ref()? {
             ReplayPlaybackState::Loading(_) => crate::i18n::tr("VERA:LoadingReplay"),
@@ -342,6 +365,11 @@ impl MatchDiagnosticsState {
 
     /// Disjoint borrows keep the recorder/observation owner beside playback;
     /// no caller moves the cursor out or temporarily disables the input gate.
+    /// Whether a command execution log observes each applied command.
+    pub(crate) fn observes_commands(&self) -> bool {
+        self.command_executions.is_some()
+    }
+
     pub(crate) fn playback_and_observations_mut(
         &mut self,
     ) -> (
@@ -437,41 +465,8 @@ impl MatchDiagnosticsState {
         Ok(())
     }
 
-    pub(crate) fn begin_loading_cancel_observation(&mut self) {
-        self.loading_cancel.get_or_insert_with(Vec::new);
-    }
-    pub(crate) fn observe_loading_cancel(
-        &mut self,
-        event: &'static str,
-        match_id: Option<String>,
-        source: Option<usize>,
-        worker_owner_taken: bool,
-        loading_active: bool,
-    ) {
-        if let Some(log) = self.loading_cancel.as_mut() {
-            if log.len() < 16 {
-                log.push(LoadingCancelObservation {
-                    event,
-                    match_id,
-                    source,
-                    worker_owner_taken,
-                    loading_active,
-                });
-            }
-        }
-    }
-    pub(crate) fn loading_cancel_observations(&self) -> Option<&[LoadingCancelObservation]> {
-        self.loading_cancel.as_deref()
-    }
-    pub(crate) fn end_loading_cancel_observation(&mut self) {
-        self.loading_cancel = None;
-    }
-
     pub(crate) fn begin_command_observation(&mut self) {
         self.command_executions = Some(CommandExecutionLog::default());
-    }
-    pub(crate) fn command_observations_mut(&mut self) -> Option<&mut CommandExecutionLog> {
-        self.command_executions.as_mut()
     }
     pub(crate) fn take_command_observations(
         &mut self,
@@ -547,7 +542,7 @@ impl MatchDiagnosticsState {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;
                 log.startup = Some(Box::new(startup));
             }
-            Err(error) => log::debug!("Standalone replay startup unavailable: {error}"),
+            Err(error) => log::warn!("This match's replay cannot be replayed: {error:#}"),
         }
     }
 
@@ -742,7 +737,7 @@ fn reserve_segment_path(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::{MatchDiagnosticsState, prune_old_segments};
     use crate::sim::replay::{ReplayHeader, ReplayLog};

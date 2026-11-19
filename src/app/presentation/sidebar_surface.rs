@@ -5,8 +5,10 @@
 //! into a surface 168 pixels wide, the bar into one 32 pixels tall.
 //! `SidebarClass::BlitToScreen` (`6A70E0`) puts the finished sidebar in the
 //! frame's right-hand column; here that copy, and the bar's into the bottom
-//! strip, also scale by the player's Sidebar size, sharp at the whole sizes.
-//! At Normal they are 1:1.
+//! strip, also scale by the player's Sidebar size. Normal and Extra Large
+//! copy 1:1 or in whole blocks; Large draws at its frame's 1.5 pixels and
+//! copies 1:1, so a cameo its columns shrank is rasterized at the size it
+//! shows rather than in a smaller cell scaled up afterwards.
 //!
 //! Drawing into the surfaces also keeps the sidebar's depth there: the frame's
 //! column keeps the cleared depth, so the tooltips and the software cursor
@@ -28,7 +30,7 @@
 use crate::app::AppState;
 use crate::render::batch::{BatchRenderer, CameraUniform};
 use crate::render::bit_font::TextRaster;
-use crate::render::scaled_copy::{MaskedCopy, ScaledSurface};
+use crate::render::scaled_copy::{MaskSource, MaskedCopy, ScaledSurface, WindowMask};
 use crate::render::terrain_draw::{
     PackedCompositePiece, PackedSpriteKind, PackedSurface, TerrainDrawRenderer,
 };
@@ -38,9 +40,10 @@ use crate::ui::sidebar::SidebarFrame;
 /// A part of the sidebar with a surface of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SidebarPart {
-    /// The right-hand column.
+    /// The sidebar itself: a column, or a band on the top or the bottom
+    /// edge.
     Column,
-    /// The command bar on the bottom strip.
+    /// The command bar on its strip.
     Bar,
 }
 
@@ -55,6 +58,63 @@ pub(crate) struct SidebarSurface {
     text_camera_buffer: wgpu::Buffer,
     text_camera: wgpu::BindGroup,
     window: MaskedCopy,
+    /// The UI camera [`Self::write_cameras`] last wrote.
+    written_ui: Option<CameraUniform>,
+    /// What the surfaces were last drawn from ([`Self::redraw_for`]).
+    drawn: Option<(SidebarPicture, SidebarFrame, CameraUniform)>,
+}
+
+/// Every instance stream the sidebar's surfaces draw (`draw_passes`).
+pub(crate) const SIDEBAR_STREAMS: [&str; 16] = [
+    "sidebar_chrome",
+    "sidebar_cameo",
+    "sidebar_cameo_hover",
+    "sidebar_unavailable",
+    "sidebar_flash",
+    "sidebar_queue_overlay",
+    "sidebar_queue_text",
+    "sidebar_label_overlay",
+    "sidebar_label_text",
+    "sidebar_gclock",
+    "sidebar_cameo_overlay",
+    "sidebar_text",
+    "radar_anim",
+    "minimap",
+    "radar_content_boundary",
+    "command_bar",
+];
+
+/// The stream of the radar's viewport outline, the one that moves with the
+/// camera on the sidebar.
+pub(crate) const VIEWPORT_OUTLINE: &str = "viewport_rect";
+
+/// Every input of the sidebar's draw besides its frame and camera. Equal
+/// inputs draw equal pixels, so the surfaces already hold them.
+#[derive(PartialEq)]
+pub(crate) struct SidebarPicture {
+    /// The generation of each instance stream it draws.
+    pub(crate) streams: Vec<u64>,
+    /// The texture of each layer that has one.
+    pub(crate) textures: Vec<Option<wgpu::BindGroup>>,
+    /// The generations of the minimap's and the housing's pictures.
+    pub(crate) radar: [u64; 2],
+    /// The generation of the [`VIEWPORT_OUTLINE`], and whether it lies
+    /// wholly on the minimap's quad.
+    pub(crate) outline: u64,
+    pub(crate) outline_on_minimap: bool,
+    pub(crate) text_in_surface: bool,
+}
+
+/// How much of the surfaces a frame draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SidebarRedraw {
+    /// They already hold the picture.
+    Nothing,
+    /// Only the minimap's composition, or an outline that stays on it,
+    /// changed. The quad is opaque, so only its pixels change, whatever the
+    /// surface held there.
+    Minimap,
+    Whole,
 }
 
 /// One part's surface, and the camera the batch pipelines draw into it with.
@@ -76,7 +136,7 @@ impl SidebarSurface {
         batch: &BatchRenderer,
         frame: SidebarFrame,
     ) -> Self {
-        let window = MaskedCopy::new(device, "Sidebar Window Copy", format);
+        let window = MaskedCopy::new(device, "Sidebar Window Copy", format, WindowMask::Depth);
         let part = |label, size| {
             let (camera_buffer, camera) = batch.create_ui_camera(device);
             PartSurface {
@@ -102,6 +162,8 @@ impl SidebarSurface {
             text_camera_buffer,
             text_camera,
             window,
+            written_ui: None,
+            drawn: None,
         };
         surface.place(queue);
         surface
@@ -125,7 +187,74 @@ impl SidebarSurface {
             .resize(device, frame.surface_draw_size());
         self.bar.surface.resize(device, frame.bar_draw_size());
         self.frame = frame;
+        self.written_ui = None;
         self.place(queue);
+    }
+
+    /// What this frame must draw for `picture`, recording it as the one the
+    /// surfaces will hold.
+    pub(crate) fn redraw_for(&mut self, picture: SidebarPicture) -> SidebarRedraw {
+        // Scrolling moves the streams and their camera together.
+        let camera = CameraUniform {
+            camera_pos: [0.0; 2],
+            ..self.column_camera
+        };
+        let inputs = (picture, self.frame, camera);
+        let redraw = match self.drawn.as_mut() {
+            Some(drawn) if *drawn == inputs => SidebarRedraw::Nothing,
+            Some(drawn) => {
+                drawn.0.radar[0] = inputs.0.radar[0];
+                // The quad repaints an outline that was and stays on it.
+                if drawn.0.outline_on_minimap && inputs.0.outline_on_minimap {
+                    drawn.0.outline = inputs.0.outline;
+                }
+                if *drawn == inputs {
+                    SidebarRedraw::Minimap
+                } else {
+                    SidebarRedraw::Whole
+                }
+            }
+            None => SidebarRedraw::Whole,
+        };
+        self.drawn = Some(inputs);
+        redraw
+    }
+
+    /// The column's pixels under `quad`, as a scissor rect; None if it is off
+    /// the surface.
+    pub(crate) fn column_area(
+        &self,
+        quad: &crate::render::batch::SpriteInstance,
+    ) -> Option<[u32; 4]> {
+        let origin = self.column_camera.camera_pos;
+        let scale = self.frame.draw_scale();
+        let left = (quad.position[0] - origin[0]) * scale;
+        let top = (quad.position[1] - origin[1]) * scale;
+        let (width, height) = self.frame.surface_draw_size();
+        // Float casts saturate, so a quad past the corner clamps to it.
+        let right = ((left + quad.size[0] * scale).ceil() as u32).min(width);
+        let bottom = ((top + quad.size[1] * scale).ceil() as u32).min(height);
+        let (left, top) = (
+            (left.floor() as u32).min(width),
+            (top.floor() as u32).min(height),
+        );
+        (right > left && bottom > top).then_some([left, top, right - left, bottom - top])
+    }
+
+    /// Whether all of `quads` lie within the column pixels `area`.
+    pub(crate) fn quads_within(
+        &self,
+        area: [u32; 4],
+        quads: &[crate::render::batch::SpriteInstance],
+    ) -> bool {
+        quads.iter().all(|quad| {
+            self.column_area(quad).is_some_and(|[x, y, width, height]| {
+                x >= area[0]
+                    && y >= area[1]
+                    && x + width <= area[0] + area[2]
+                    && y + height <= area[1] + area[3]
+            })
+        })
     }
 
     fn place(&self, queue: &wgpu::Queue) {
@@ -133,7 +262,7 @@ impl SidebarSurface {
         let (scale, sharp) = (frame.copy_scale(), frame.copy_is_sharp());
         self.column
             .surface
-            .place(queue, (frame.frame_left(), 0.0), scale, sharp);
+            .place(queue, frame.side_origin(), scale, sharp);
         self.bar
             .surface
             .place(queue, frame.bar_origin(), scale, sharp);
@@ -145,6 +274,10 @@ impl SidebarSurface {
     /// origin. The bar's corner also shifts the camera row `vs_depth` reads;
     /// that moves all of the bar's layers alike, so their order stands.
     pub(crate) fn write_cameras(&mut self, queue: &wgpu::Queue, ui: CameraUniform) {
+        if self.written_ui == Some(ui) {
+            return;
+        }
+        self.written_ui = Some(ui);
         let frame = self.frame;
         for (part, size, corner) in [
             (
@@ -155,7 +288,7 @@ impl SidebarSurface {
             (
                 &self.bar,
                 frame.bar_surface_size(),
-                [0.0, frame.strip_layout_top()],
+                [frame.bar_layout_left(), frame.strip_layout_top()],
             ),
         ] {
             let uniform = CameraUniform {
@@ -188,7 +321,7 @@ impl SidebarSurface {
     /// [`Self::camera`], or one at the surface's own pixels while they are
     /// finer than the sidebar's ([`column_text`]).
     pub(crate) fn text_camera(&self) -> &wgpu::BindGroup {
-        if self.frame.draw_scale() > 1 {
+        if self.frame.draw_scale() > 1.0 {
             &self.text_camera
         } else {
             &self.column.camera
@@ -264,7 +397,12 @@ impl SidebarSurface {
         encoder: &'e mut wgpu::CommandEncoder,
         clear: wgpu::Color,
     ) -> wgpu::RenderPass<'e> {
-        self.begin_surface_pass(part, encoder, Some(clear))
+        self.begin_surface_pass(
+            part,
+            encoder,
+            wgpu::LoadOp::Clear(clear),
+            wgpu::LoadOp::Clear(crate::render::native_z::STORED_DEPTH_CLEAR),
+        )
     }
 
     pub(crate) fn begin_load_pass<'e>(
@@ -272,14 +410,32 @@ impl SidebarSurface {
         part: SidebarPart,
         encoder: &'e mut wgpu::CommandEncoder,
     ) -> wgpu::RenderPass<'e> {
-        self.begin_surface_pass(part, encoder, None)
+        self.begin_surface_pass(part, encoder, wgpu::LoadOp::Load, wgpu::LoadOp::Load)
+    }
+
+    /// Begin the pass that redraws `area` of the column in place: the rest of
+    /// its colour stays, and depth restarts for the layers drawn there.
+    pub(crate) fn begin_area_pass<'e>(
+        &self,
+        encoder: &'e mut wgpu::CommandEncoder,
+        [x, y, width, height]: [u32; 4],
+    ) -> wgpu::RenderPass<'e> {
+        let mut pass = self.begin_surface_pass(
+            SidebarPart::Column,
+            encoder,
+            wgpu::LoadOp::Load,
+            wgpu::LoadOp::Clear(crate::render::native_z::STORED_DEPTH_CLEAR),
+        );
+        pass.set_scissor_rect(x, y, width, height);
+        pass
     }
 
     fn begin_surface_pass<'e>(
         &self,
         part: SidebarPart,
         encoder: &'e mut wgpu::CommandEncoder,
-        clear: Option<wgpu::Color>,
+        color: wgpu::LoadOp<wgpu::Color>,
+        depth: wgpu::LoadOp<f32>,
     ) -> wgpu::RenderPass<'e> {
         let surface = &self.part(part).surface;
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -289,16 +445,14 @@ impl SidebarSurface {
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
-                    load: clear.map_or(wgpu::LoadOp::Load, wgpu::LoadOp::Clear),
+                    load: color,
                     store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: surface.depth_view(),
                 depth_ops: Some(wgpu::Operations {
-                    load: clear.map_or(wgpu::LoadOp::Load, |_| {
-                        wgpu::LoadOp::Clear(crate::render::native_z::STORED_DEPTH_CLEAR)
-                    }),
+                    load: depth,
                     // Depth orders the part's own layers only.
                     store: wgpu::StoreOp::Store,
                 }),
@@ -315,8 +469,11 @@ impl SidebarSurface {
     pub(crate) fn composite(&self, pass: &mut wgpu::RenderPass<'_>) {
         let (x, y, width, height) = self.frame.column();
         self.column.surface.draw(pass, None, [x, y, width, height]);
-        let (x, y, width, height) = self.frame.strip();
-        self.bar.surface.draw(pass, None, [x, y, width, height]);
+        // A layout without a bar has no strip to copy into.
+        if self.frame.has_bar() {
+            let (x, y, width, height) = self.frame.strip();
+            self.bar.surface.draw(pass, None, [x, y, width, height]);
+        }
     }
 
     /// Copy both surfaces into the window `view` at its own pixels, over the
@@ -358,9 +515,12 @@ impl SidebarSurface {
             multiview_mask: None,
         });
         for (part, (x, y), rect) in [
-            (&self.column, (frame.frame_left(), 0.0), frame.column()),
+            (&self.column, frame.side_origin(), frame.column()),
             (&self.bar, frame.bar_origin(), frame.strip()),
-        ] {
+        ]
+        .into_iter()
+        .filter(|(_, _, rect)| rect.3 > 0)
+        {
             self.window.place(
                 queue,
                 &part.window_placement,
@@ -371,10 +531,10 @@ impl SidebarSurface {
             self.window.draw(
                 device,
                 &mut pass,
-                &part.surface,
+                part.surface.color_view(),
                 &part.window_placement,
-                frame_depth,
-                window_rect(zoom, rect),
+                MaskSource::Depth(frame_depth),
+                zoom.window_rect(rect),
             );
         }
     }
@@ -440,8 +600,8 @@ fn place_column_text(
     let camera = [camera_x + frame.layout_left(), camera_y];
     if frame.draws_window_pixels() {
         let scale = frame.draw_scale();
-        return ColumnText::Surface((scale > 1).then_some(TextRaster {
-            scale: scale as f32,
+        return ColumnText::Surface((scale > 1.0).then_some(TextRaster {
+            scale,
             origin: [0.0; 2],
             camera,
         }));
@@ -451,34 +611,16 @@ fn place_column_text(
             scale: frame.scale() * window.scale,
             origin: [
                 window.origin[0] + frame.frame_left() * window.scale,
-                window.origin[1],
+                window.origin[1] + frame.frame_top() * window.scale,
             ],
             camera,
         }),
         None => ColumnText::Frame(TextRaster {
             scale: frame.scale(),
-            origin: [camera_x + frame.frame_left(), camera_y],
+            origin: [camera_x + frame.frame_left(), camera_y + frame.frame_top()],
             camera,
         }),
     }
-}
-
-/// The window pixels wholly inside frame rect `(x, y, width, height)` once
-/// `zoom` scales it: one it shares with a neighbour keeps the zoom's blend.
-fn window_rect(zoom: ZoomGeometry, (x, y, width, height): (u32, u32, u32, u32)) -> [u32; 4] {
-    let (left, top) = zoom.source_to_window(x as f32, y as f32);
-    let (right, bottom) = zoom.source_to_window((x + width) as f32, (y + height) as f32);
-    let (frame_width, frame_height) = zoom.frame_size();
-    let left = left.ceil() as u32;
-    let top = top.ceil() as u32;
-    let right = (right.floor() as u32).min(zoom.origin.0 + frame_width);
-    let bottom = (bottom.floor() as u32).min(zoom.origin.1 + frame_height);
-    [
-        left,
-        top,
-        right.saturating_sub(left),
-        bottom.saturating_sub(top),
-    ]
 }
 
 /// The window copy for this frame, after the zoom pass scaled the match frame
@@ -520,7 +662,7 @@ pub(crate) fn draw_window_copy(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::render::gpu::block_on;
@@ -662,24 +804,22 @@ mod tests {
         pixels[at..at + 4].try_into().unwrap()
     }
 
-    /// The column's text goes over the copy where the copy would resample
-    /// it, landing where the copy puts the column; whole steps keep it in
-    /// the surface.
+    /// The column's text draws in the surface where the surface pixels are the
+    /// shown pixels (Large's 1:1 copy, the whole steps), and over the copy
+    /// where it would be resampled.
     #[test]
-    fn column_text_goes_over_a_resampling_copy() {
+    fn column_text_goes_where_its_pixels_are_shown() {
         let camera = [64.0, 32.0];
-        // Large unzoomed at 1080p: over the frame's copy, 1.5 frame pixels
-        // per sidebar pixel from the column's corner (1668, 0).
+        // Large unzoomed at 1080p copies 1:1, so the surface holds the text
+        // at its 1.5x pixels.
         let large = SidebarFrame::new(1920, 1080, 150).in_window(100, true);
-        let ColumnText::Frame(raster) = place_column_text(large, camera, None) else {
-            panic!("Large keeps its text in the surface");
+        let ColumnText::Surface(Some(raster)) = place_column_text(large, camera, None) else {
+            panic!("Large's 1:1 copy keeps its text in the surface");
         };
+        assert_eq!(raster.scale, 1.5);
         let corner = [camera[0] + large.layout_left(), camera[1]];
-        assert_eq!(raster.point(corner), [64.0 + 1668.0, 32.0]);
-        assert_eq!(
-            raster.point([corner[0] + 10.0, 36.0]),
-            [64.0 + 1683.0, 38.0]
-        );
+        assert_eq!(raster.point(corner), [0.0, 0.0]);
+        assert_eq!(raster.point([corner[0] + 10.0, 36.0]), [15.0, 6.0]);
         // Normal zoomed 150%: over the window copy, where the zoom puts it.
         let window = TextRaster {
             scale: 1.5,
@@ -936,12 +1076,12 @@ mod tests {
             (zoom.src_width, zoom.src_height, zoom.origin),
             (400, 300, (0, 0))
         );
-        assert_eq!(window_rect(zoom, (233, 0, 167, 300)), [583, 0, 417, 750]);
-        assert_eq!(window_rect(zoom, (0, 268, 233, 32)), [0, 670, 582, 80]);
+        assert_eq!(zoom.window_rect((233, 0, 167, 300)), [583, 0, 417, 750]);
+        assert_eq!(zoom.window_rect((0, 268, 233, 32)), [0, 670, 582, 80]);
         // At a whole zoom it is the frame rect's blocks, inside the border.
         let whole = ZoomGeometry::new(1202, 901, 300, FrameShape::Window);
         assert_eq!(whole.origin, (1, 0));
-        assert_eq!(window_rect(whole, (232, 0, 168, 300)), [697, 0, 504, 900]);
+        assert_eq!(whole.window_rect((232, 0, 168, 300)), [697, 0, 504, 900]);
     }
 
     #[test]
@@ -1200,5 +1340,148 @@ mod tests {
             surface.prepare_packed(&gpu.device, &renderer);
             assert!(surface.packed.is_some());
         }
+    }
+
+    /// At Large the column surface holds 1.5 pixels per sidebar pixel, so a
+    /// packed mask must cover the 1.5x pixels its cell shows, through the 1:1
+    /// copy. A whole-scale packed rectangle would leave the mask's right and
+    /// bottom thirds unmasked.
+    #[test]
+    #[ignore = "requires a wgpu adapter; executes the production sidebar packed drawing at Large"]
+    fn a_large_packed_mask_covers_its_shown_cell() {
+        use crate::app::presentation::sidebar_build::build_darken_instance;
+        use crate::render::sidebar_chrome::SidebarDarkenMask;
+        use crate::ui::sidebar::Rect;
+        const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let gpu = gpu();
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, FORMAT);
+        let frame = SidebarFrame::new(400, 300, 150).in_window(100, false);
+        assert_eq!(frame.surface_draw_size(), (252, 300));
+        let mut renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, FORMAT, &batch);
+        let mut surface = SidebarSurface::new(&gpu.device, &gpu.queue, FORMAT, &batch, frame);
+        surface.write_cameras(&gpu.queue, batch.ui_camera_uniform());
+        surface.prepare_packed(&gpu.device, &renderer);
+        let indices = vec![3u8; 60 * 48];
+        let mask = SidebarDarkenMask {
+            texture: batch.create_texture_on_device(
+                &gpu.device,
+                &gpu.queue,
+                &vec![255; 60 * 48 * 4],
+                60,
+                48,
+                Some(&indices),
+            ),
+            frame_origin: [0.0; 2],
+        };
+        let slot = Rect {
+            x: frame.layout_left() + 24.0,
+            y: 100.0,
+            w: 60.0,
+            h: 48.0,
+        };
+        let instance = build_darken_instance(&mask, slot, [0.0; 2], 1).unwrap();
+        let buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::bytes_of(&instance),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let pixels = composite(&gpu, &surface, FORMAT, (400, 300), |encoder| {
+            drop(surface.begin_pass(SidebarPart::Column, encoder, wgpu::Color::WHITE));
+            surface.draw_packed_layer(
+                &mut renderer,
+                encoder,
+                &batch,
+                &buffer,
+                &[instance],
+                &mask.texture,
+                PackedSpriteKind::IndexMask,
+            );
+        });
+        // The cell (24, 100)-(84, 148) in sidebar pixels covers
+        // (36, 150)-(126, 222) on the 1.5x surface, copied 1:1 at the column.
+        let column_x = frame.column().0;
+        let white = [255u8; 4];
+        assert_ne!(
+            pixel(&pixels, 400, column_x + 36 + 45, 150 + 36),
+            white,
+            "the cell's middle is masked"
+        );
+        for (x, y) in [
+            (column_x + 35, 150 + 36),
+            (column_x + 36 + 90, 150 + 36),
+            (column_x + 36 + 45, 149),
+            (column_x + 36 + 45, 150 + 72),
+        ] {
+            assert_eq!(pixel(&pixels, 400, x, y), white, "({x}, {y}) is outside");
+        }
+    }
+
+    /// Only the minimap's composition changing redraws only its quad, in the
+    /// surface's own pixels.
+    #[test]
+    #[ignore = "requires a wgpu adapter; makes the production sidebar surface"]
+    fn a_minimap_composition_change_redraws_only_its_quad() {
+        const SRGB: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let gpu = gpu();
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, SRGB);
+        let frame = SidebarFrame::native(400, 300);
+        let mut surface = SidebarSurface::new(&gpu.device, &gpu.queue, SRGB, &batch, frame);
+        let picture = |stream, minimap, housing, outline, outline_on_minimap| SidebarPicture {
+            streams: vec![stream],
+            textures: Vec::new(),
+            radar: [minimap, housing],
+            outline,
+            outline_on_minimap,
+            text_in_surface: true,
+        };
+        surface.write_cameras(&gpu.queue, batch.ui_camera_uniform());
+        for (stream, minimap, housing, outline, on_minimap, redraw) in [
+            (1, 1, 1, 1, true, SidebarRedraw::Whole),
+            (1, 1, 1, 1, true, SidebarRedraw::Nothing),
+            (1, 2, 1, 1, true, SidebarRedraw::Minimap),
+            (1, 2, 1, 2, true, SidebarRedraw::Minimap),
+            (1, 2, 1, 3, false, SidebarRedraw::Whole),
+            (1, 2, 1, 4, false, SidebarRedraw::Whole),
+            (1, 2, 2, 4, false, SidebarRedraw::Whole),
+            (2, 3, 2, 4, false, SidebarRedraw::Whole),
+        ] {
+            assert_eq!(
+                surface.redraw_for(picture(stream, minimap, housing, outline, on_minimap)),
+                redraw
+            );
+        }
+        // The camera's own scroll moves nothing on the surface.
+        let scrolled = CameraUniform {
+            camera_pos: [50.0, 25.0],
+            ..batch.ui_camera_uniform()
+        };
+        surface.write_cameras(&gpu.queue, scrolled);
+        assert_eq!(
+            surface.redraw_for(picture(2, 3, 2, 4, false)),
+            SidebarRedraw::Nothing
+        );
+
+        let origin = surface.column_camera.camera_pos;
+        let quad = |x, y| crate::render::batch::SpriteInstance {
+            position: [origin[0] + x, origin[1] + y],
+            size: [140.0, 108.0],
+            ..Default::default()
+        };
+        assert_eq!(
+            surface.column_area(&quad(16.0, 49.0)),
+            Some([16, 49, 140, 108])
+        );
+        assert_eq!(
+            surface.column_area(&quad(16.0, 250.0)),
+            Some([16, 250, 140, 50])
+        );
+        assert_eq!(surface.column_area(&quad(16.0, 300.0)), None);
+        surface.set_frame(&gpu.device, &gpu.queue, frame.in_window(300, false));
+        assert_eq!(
+            surface.column_area(&quad(16.0, 49.0)),
+            Some([48, 147, 420, 324])
+        );
     }
 }

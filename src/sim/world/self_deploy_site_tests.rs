@@ -72,7 +72,7 @@ fn a_loaded_transport_on_a_beach_offers_no_deploy() {
     sim.entities_mut_for_test()
         .get_mut(transport)
         .unwrap()
-        .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
     let land = |sim: &mut Simulation, land: LandType| {
         sim.resolved_terrain_mut_for_test()
             .as_mut()
@@ -145,11 +145,11 @@ fn a_driving_mcv_reads_its_lift_as_the_deploy_performs_it() {
         let read = !sim.unit_self_deploy_site_refused(mcv, rules, None);
         let effects = crate::sim::world::FrameEffects::default;
         assert!(sim.foot_mark_remove(mcv, rules, None, effects()));
-        sim.locomotor_mark_all_occupation_bits(mcv, false);
+        sim.locomotor_mark_all_occupation_bits(mcv, false, rules.ares_form());
         let lifted = crate::sim::build_site::can_place_building_at(
             &sim, rules, None, yard, origin, None, None, None,
         );
-        sim.locomotor_mark_all_occupation_bits(mcv, true);
+        sim.locomotor_mark_all_occupation_bits(mcv, true, rules.ares_form());
         assert!(sim.foot_mark_put(mcv, rules, None, effects()));
         assert_eq!(read, lifted, "frame {frame}");
         assert!(lifted, "frame {frame}: the arena admits the yard");

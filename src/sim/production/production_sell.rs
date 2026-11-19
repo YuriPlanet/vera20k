@@ -58,8 +58,8 @@
 //! - A unit's sale on a repair depot (the SELL event's unit arm,
 //!   `0x004C6F5A..0x004C6F96`, `foot_can_be_sold`, [`foot_on_sold`]) runs
 //!   only with Ares, whose SellUnit cursor reaches it; stock DetermineAction
-//!   answers NoSell for every Foot, so default builds keep the receiver
-//!   building-only.
+//!   answers NoSell for every Foot, so a game without Ares keeps the
+//!   receiver building-only.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -69,23 +69,23 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "pack_voice_tests.rs"]
 mod pack_voice_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "building_upgrade_sale_tests.rs"]
 mod building_upgrade_sale_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "captured_building_sale_tests.rs"]
 mod captured_building_sale_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "building_sale_trigger_tests.rs"]
 mod building_sale_trigger_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_production))]
 #[path = "unit_sale_tests.rs"]
 mod unit_sale_tests;
 
@@ -122,11 +122,12 @@ pub(crate) fn type_refund(
     };
     let slot = object.factor_slot();
     let m1 = factors.country[slot];
-    #[cfg(not(feature = "ares"))]
-    let m2 = factors.plant_factor(slot);
     // Ares HouseClass_GetCostMult10041780 replaces 0x0050BEB0 here too.
-    #[cfg(feature = "ares")]
-    let m2 = factors.ares_factory_plant(slot, object.ares_production().factory_plant_multiplier());
+    let m2 = if rules.ares_form() {
+        factors.ares_factory_plant(slot, object.ares_production().factory_plant_multiplier())
+    } else {
+        factors.factory_plant[slot]
+    };
     if object.soylent != 0 {
         return X87::ftol_i32_low_masked(X87::mul(
             X87::load_i32(object.soylent),
@@ -211,9 +212,11 @@ pub(crate) fn foot_on_sold(
 ) -> bool {
     // Ares FootClass_Sell_Detonate (hook 0x4D9F7B), On_Sold's first step.
     // RESIDUAL: a blast that destroys the unit ends the sale here; native
-    // runs the rest of On_Sold on the destroyed unit.
-    #[cfg(feature = "ares")]
-    if !sim.bomb_detonate_on_sell(id, rules, context.registry(), context.effects()) {
+    // runs the rest of On_Sold on the destroyed unit. Only Ares sells a
+    // Foot, so this whole function runs only while Ares plays.
+    if rules.ares_form()
+        && !sim.bomb_detonate_on_sell(id, rules, context.registry(), context.effects())
+    {
         return true;
     }
     let Some(owner) = sim.substrate.entities.get(id).map(|entity| entity.owner()) else {
@@ -300,8 +303,8 @@ pub(crate) fn foot_on_sold(
 /// 10048FD0, hook 0x4D9EBD), and measures to the building's dock coordinate
 /// for this object (GetDockCoords vt+0xA8) in place of its centre
 /// (FootClass_CanBeSold_Dock 1005CA30, hook 0x4D9EE1). Only Ares asks it:
-/// stock DetermineAction answers NoSell for every Foot (`0x00692AFE`).
-#[cfg(feature = "ares")]
+/// stock DetermineAction answers NoSell for every Foot (`0x00692AFE`), so
+/// its callers ask it only while Ares plays.
 pub fn foot_can_be_sold(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
@@ -439,7 +442,11 @@ pub(crate) fn sell_after_owner_change(
         // Unlike Selling stage0, this constructs no temporary upgrade object.
         let refund = type_refund(rules, upgrade, house, &factors, true, true);
         crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
-        let _ = sim.power_down_building_upgrade(id, rules);
+        let _ = sim.power_down_building_upgrade(
+            id,
+            rules,
+            frame_effects.with_overlay_registry(registry),
+        );
         Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
     }
     // Literal1 keeps Sell_Back's existing Selling/C4 and Buildup gates.
@@ -481,7 +488,7 @@ pub(crate) fn sell_back(
                 // Get_Mission (`vt+0x184`): the current mission, else the
                 // queued one.
                 entity.mission.effective().known() == Some(MissionType::Selling),
-                entity.pending_c4_detonation.pending().is_some(),
+                entity.building.pending_c4_detonation.pending().is_some(),
             ))
         })
     else {
@@ -491,15 +498,17 @@ pub(crate) fn sell_back(
     // kicks out a Hospital's or Armory's first passenger
     // (BuildingExt::KickOutHospitalArmory 10012920), then takes the
     // building out of its Prism network, on every order.
-    #[cfg(feature = "ares")]
-    sim.ares_kick_out_hospital_armory(id, rules, registry, frame_effects);
-    #[cfg(feature = "ares")]
-    sim.substrate.ares_prism_remove_from_network(id, true);
+    if rules.ares_form() {
+        sim.ares_kick_out_hospital_armory(id, rules, registry, frame_effects);
+        sim.substrate.ares_prism_remove_from_network(id, true);
+    }
     if !buildup {
         // Ares BuildingClass_Sell_DetonateNoBuildup (hook 0x4471D5) before
         // the wall's removal; a wall its blast destroys is not removed twice.
-        #[cfg(feature = "ares")]
-        if firestorm_wall && !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects) {
+        if rules.ares_form()
+            && firestorm_wall
+            && !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects)
+        {
             return true;
         }
         if firestorm_wall {
@@ -549,8 +558,7 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, unde
         return;
     };
     let control = rules.buildup_control(type_id);
-    #[cfg(feature = "ares")]
-    let sell_rate = rules.buildup_sell_rate(type_id);
+    let sell_rate = rules.ares_form().then(|| rules.buildup_sell_rate(type_id));
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
@@ -558,8 +566,9 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, unde
         return;
     }
     entity.bind_building_construction_control(control);
-    #[cfg(feature = "ares")]
-    entity.bind_building_sell_rate(sell_rate);
+    if let Some(sell_rate) = sell_rate {
+        entity.bind_building_sell_rate(sell_rate);
+    }
     entity.install_building_down(BuildingDown::commenced(now as i32, undeploy_order));
 }
 
@@ -585,20 +594,20 @@ pub fn can_sell_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
             entity.mission.effective().known(),
             Some(MissionType::Selling | MissionType::Construction)
         );
+    let ares = rules.ares_form();
     // Ares 3.0 10017200 (hook 0x4494D2): a raided building cannot be sold.
-    #[cfg(feature = "ares")]
-    if entity.ares_raid.raided() {
+    if ares && entity.ares.ares_raid.raided() {
         return false;
     }
     // Ares 3.0 BuildingClass_IsSellable_FirestormWall (10014A20, hook
     // 0x449518) tests `Firestorm.Wall` in place of `FirestormWall=`, then
     // the stock owner test (`0x00449522`): only while its House's firestorm
     // is down.
-    #[cfg(feature = "ares")]
-    let wall_sale =
-        object.building_type_ext().firestorm_wall && !sim.ares_firestorm.is_active(entity.owner());
-    #[cfg(not(feature = "ares"))]
-    let wall_sale = object.firestorm_wall;
+    let wall_sale = if ares {
+        object.building_type_ext().firestorm_wall && !sim.ares_firestorm.is_active(entity.owner())
+    } else {
+        object.firestorm_wall
+    };
     entity.category() == EntityCategory::Structure
         && entity.drain.draining_me().is_none()
         && !object.unsellable
@@ -790,7 +799,7 @@ pub fn sell_stage_zero(
         if refund.is_none() {
             return;
         }
-        sim.power_down_building_upgrade(id, rules);
+        sim.power_down_building_upgrade(id, rules, frame_effects);
         //44AB0E/44AB1B: only the upgrade arm sets both dirty bytes here.
         Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
         //44AB22..44AB36: the existing app receiver applies +41A's local-owner
@@ -855,8 +864,9 @@ pub(crate) fn sell_stage_one(
             // Ares 3.0 BuildingClass_Mi_Selling_Crew (1005C530, hook
             // 0x44A8A2): the building remembers that its survivors are out
             // (NoSurvivor), so its death during the pack-up spawns none.
-            #[cfg(feature = "ares")]
-            building.no_survivor.mark();
+            if rules.ares_form() {
+                building.building.no_survivor.mark();
+            }
             building.begin_building_pack_up_stage_two(&mut status, now);
         }
         building.mission.set_handler_state(status);
@@ -900,8 +910,9 @@ fn sale_survivors(
     // Ares 3.0 100173E0 (hook 0x44A37F), before the absorbed passengers: a
     // sold last tunnel entrance puts its owner's network out
     // (`sim::ares_tunnel`).
-    #[cfg(feature = "ares")]
-    sim.ares_sell_tunnel(id, rules, registry, frame_effects);
+    if rules.ares_form() {
+        sim.ares_sell_tunnel(id, rules, registry, frame_effects);
+    }
     let passengers =
         sim.eject_absorbed_passengers(rules, registry, id, None, &cells, frame_effects);
     let garrison = crate::sim::passenger::garrison_eject::sell_building_occupants(
@@ -1017,8 +1028,7 @@ pub(crate) fn sell_complete(
     // Ares BuildingClass_Mi_Selling_DetonatePostBuildup (hook 0x44A1FF),
     // after vt+0xE0. RESIDUAL: a blast that destroys the building ends the
     // sale with no refund; native runs the refund and UnInit on it.
-    #[cfg(feature = "ares")]
-    if !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects) {
+    if rules.ares_form() && !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects) {
         return false;
     }
     sim.lighting_sources.set_building_light_active(id, false);
@@ -1035,10 +1045,11 @@ pub(crate) fn sell_complete(
     // Detach/HouseAbandon and post-Limbo queue callback must observe this
     // phase, before UnInit's earlier PointerExpired/Alive cleanup.
     sim.techno_limbo_with_context(id, context);
-    // Ares builds: the store payout `0x0044A232..0x0044A285` through Ares'
-    // GiveTiberium (`10024290`, `sim::ares_tiberium_storage`).
-    #[cfg(feature = "ares")]
-    sim.ares_sale_storage_payout(id, rules);
+    // When Ares plays: the store payout `0x0044A232..0x0044A285` through
+    // Ares' GiveTiberium (`10024290`, `sim::ares_tiberium_storage`).
+    if rules.ares_form() {
+        sim.ares_sale_storage_payout(id, rules);
+    }
     sim.uninit_with_context(id, context);
     false
 }

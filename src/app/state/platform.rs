@@ -5,6 +5,7 @@ use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::{UserAttentionType, Window};
 
+use crate::app::frontend::startup_options::ScreenSize;
 use crate::app::match_runtime::frame_pacer::LocalFramePacer;
 use crate::ui::game_screen::GameScreen;
 
@@ -98,6 +99,11 @@ pub(crate) struct PlatformState {
     /// Whether the next visible pass must draw, or may only service the
     /// match because the presented picture still stands. Presentation-only.
     pub(crate) redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate,
+    /// Window events wait for a tick still on the simulation thread
+    /// (`App::release_held_events`). While they do, the keys they would
+    /// release still read as held, so passes beside the tick queue no
+    /// keyboard scroll. Presentation-only.
+    pub(crate) window_events_held: bool,
     /// Loaded GameConfig — missing config.toml falls back to the executable
     /// root; `None` only when config loading or executable-root discovery
     /// fails. Set once at process start from `GameConfig::load()`; not
@@ -115,9 +121,15 @@ pub(crate) struct PlatformState {
     /// thread, so the choice is re-asserted over the next passes until the
     /// window is really there. Presentation-only, never serialized.
     pub(crate) recenter_windowed: bool,
-    /// Whether `options_profile.window_placement` moved since VERA.INI was
-    /// last written, so leaving the game writes it once. Presentation-only.
-    pub(crate) window_placement_unsaved: bool,
+    /// The size a launch opens the player's window at, in logical units:
+    /// `player_launch_window_size` of gamemd's startup size
+    /// (`RetailOptionsLoad::startup_shell_screen`), 1024x768 by default. The
+    /// Esc menu's Set Window Size button and Full Screen going off go back to
+    /// it. Presentation-only.
+    pub(crate) launch_window_size: ScreenSize,
+    /// Whether that button is still waiting for the window to come out of full
+    /// screen. Presentation-only, never serialized.
+    pub(crate) launch_window_owed: bool,
 }
 
 /// The Options presentation choices a capture runs its battle at. A sealed
@@ -153,6 +165,7 @@ impl PlatformState {
         window: Arc<Window>,
         game_config: Option<crate::util::config::GameConfig>,
         capture_client_size: Option<PhysicalSize<u32>>,
+        launch_window_size: ScreenSize,
     ) -> Self {
         let pause_on_focus_loss = game_config
             .as_ref()
@@ -173,11 +186,13 @@ impl PlatformState {
             attention_requested: false,
             frame_pacer: LocalFramePacer::new(),
             redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate::from_environment(),
+            window_events_held: false,
             game_config,
             capture_client_size,
             capture_presentation: CapturePresentation::default(),
             recenter_windowed: false,
-            window_placement_unsaved: false,
+            launch_window_size,
+            launch_window_owed: false,
         }
     }
 

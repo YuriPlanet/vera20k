@@ -7,7 +7,8 @@
 # The AppImage keeps its files in ~/.local/share/VERA20k and finds or asks for
 # the Yuri's Revenge folder on its first launch (src/app/app_bundle.rs). It holds
 # only the program, which uses the system's ALSA, Vulkan and window libraries.
-# README.txt and the licenses are in usr/share/doc/vera20k.
+# README.txt and the licenses are in usr/share/doc/vera20k, the languages folder
+# in usr/share/vera20k.
 set -euo pipefail
 package="$1"
 output="$2"
@@ -28,10 +29,11 @@ fetch https://github.com/AppImage/type2-runtime/releases/download/20251108/runti
 chmod +x "$stage/appimagetool"
 
 app="$stage/VERA20K.AppDir"
-mkdir -p "$app/usr/bin" "$app/usr/share/doc/vera20k"
+mkdir -p "$app/usr/bin" "$app/usr/share/doc/vera20k" "$app/usr/share/vera20k"
 cp "$package/vera20k" "$app/usr/bin/"
 cp "$package/README.txt" "$package/LICENSE-GPL" "$package/THIRD_PARTY_LICENSES.html" \
   "$app/usr/share/doc/vera20k/"
+cp -R "$package/languages" "$app/usr/share/vera20k/"
 ln -s usr/bin/vera20k "$app/AppRun"
 cp "$here/vera20k.desktop" "$app/"
 # Red Alert 2's red star, as the icon desktops show and as the .DirIcon file

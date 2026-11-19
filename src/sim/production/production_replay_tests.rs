@@ -169,7 +169,6 @@ fn record(
             .advance_app_frame(
                 &due,
                 rules,
-                None,
                 TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),

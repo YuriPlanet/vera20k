@@ -65,6 +65,94 @@ and add `-t x86_64` when you need it. Drop it for releases. On macOS/Linux, use
 for `CARGO_PROFILE_SHIPPING_STRIP`, and
 `./android/gradlew -p android :app:assembleDebug`.
 
+## Launcher icon
+
+The desktop picks its window icon at run time (`src/app/window_icon.rs`): the
+retail red star read out of the player's `GAME.EXE`, or VERA's artwork when the
+Options page's VERA Icon box is ticked. A launcher icon has to be a resource
+compiled into the package, so Android carries both instead:
+
+- `res/mipmap-*/ic_launcher_retail.png` from `.github/release/icon.png`, the red
+  star the release packages already ship — the default, matching
+  `[VERA] VeraIcon=false`.
+- `res/mipmap-*/ic_launcher_vera.png` from `src/app/vera_icon.png`, the artwork
+  the VERA Icon box selects.
+
+The red star is game art, not ours: Command & Conquer, Red Alert and Yuri's
+Revenge are trademarks of Electronic Arts Inc., and the program icon is Red
+Alert 2's red star, owned by Electronic Arts. VERA20k is not affiliated with or
+endorsed by Electronic Arts. `.github/release/README.txt.in` and the Windows
+version resource say the same for the release packages.
+
+Each density also has a `*_foreground.png` on a 108 dp canvas with the artwork
+inside the 72 dp safe zone, and `res/mipmap-anydpi-v26/ic_launcher_<name>.xml`
+pairs it with a median-colour background, so every launcher mask crops the icon
+correctly. `res/values/ic_launcher_backgrounds.xml` holds those colours.
+
+The same artwork is the Android 12+ splash icon: each entry's theme
+(`Theme.Vera20k.RetailSplash` / `Theme.Vera20k.VeraSplash`, declared per alias)
+names its own foreground, so the launch window matches the icon the player
+tapped. Before Android 12 the launch window is the shared `splash_background`
+artwork, which both entries use.
+
+Regenerate after either source image changes:
+
+```powershell
+python android/tools/make_launcher_icons.py
+```
+
+The Options page's VERA Icon box (`[VERA] VeraIcon`) selects between them at run
+time. A launcher icon is a compiled resource, so the manifest declares two
+`activity-alias` entries — `org.vera20k.LauncherRetail` (enabled) and
+`org.vera20k.LauncherVera` — and `VeraActivity.applyAppIcon` enables one and
+disables the other through `PackageManager` with `DONT_KILL_APP`. Rust calls it
+at start-up and on every toggle through `vera20k::util::app_icon`, which the
+Android crate hooks in `android_main`.
+
+Two behaviours to expect. First, changing the box **closes the game**: disabling the
+alias that launched the task removes that task, and one process cannot serve a
+second one (winit builds a single event loop per process), so the activity ends
+deliberately rather than leaving a headless process behind. Reopen the game from
+its new icon. Relaunching it automatically was tried and abandoned: it needs a
+background activity start, which Android refuses once the process is no longer in
+front. Second, the home screen picks the new icon up when the launcher next
+reloads its list, and a shortcut pinned before the switch keeps the old
+component's icon (the launcher owns pinned shortcuts, not the app). The app
+switcher's entry updates at once from the task description.
+
+## LAN play on Android
+
+LAN play between devices needs all of the following, and a missing one looks
+exactly like a discovery bug:
+
+- both peers on one subnet and one access point, with the access point's client
+  isolation off;
+- both on the same band when the router gives 2.4 and 5 GHz different subnets;
+- a desktop peer's firewall allowing UDP 1234 inbound.
+
+The LAN lobby binds the app to Wi-Fi while it is open
+(`ConnectivityManager.bindProcessToNetwork`, `util::lan_network`), so its
+broadcasts leave by Wi-Fi even when cellular is up or the Wi-Fi has no
+internet. A Wi-Fi change while the lobby list shows reopens the lobby's sockets
+on the new network; a change during a room or a match waits for the lobby.
+
+Two more conditions come from the game:
+
+- **One build, one feature set** ([build check](Networking.md#build-check)). The
+  APK is built with `--no-default-features`, so a desktop peer must be too. The
+  host's game shows in the list, but the host refuses the join: the guest sees
+  Request denied and "VERA20k build or enabled gameplay features differ."
+- **Player names are the LAN identity**, and a clash looks like "the other
+  player does not exist". A player discards advertisements whose name matches
+  its own, so two peers left at the default `[New Player]` never see each
+  other's games. Android has no text input yet, so the activity
+  appends the last three hex digits of the Android ID: a fresh install enters
+  the lobby as `[New Player]-1A2` (`util::device_identity`). The ID survives
+  reinstall and an app-data clear and changes only on a factory reset. Every
+  other platform keeps the stock name.
+
+A guest also needs the host's map in its own map library.
+
 ## Deliberate choices
 
 - **`NativeActivity`, not `GameActivity`.** Smallest M0. It has no IME, so text

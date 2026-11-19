@@ -276,7 +276,11 @@ fn fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
         e.set_gunner_selection_for_test(passenger["current"].as_i64().unwrap_or(0) as i32, -1);
         cargo.board_forced_chain(&[(id, 1.0)]);
     }
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
     // The original global Cell flags belong to CurrentHouse, even when the
     // searching aircraft belongs to a different house. No UI cache is built.
     let viewer = sim.interner.intern("CURRENT_HOUSE");
@@ -381,7 +385,7 @@ pub(super) fn reengagement_fixture_with_art(input: &Value, art: &IniFile) -> (Si
         .lift
         .set_swap_active_for_test(input["swap"].as_bool().unwrap_or(false));
     if input["open_transport"].as_bool().unwrap_or(false) {
-        entity.passenger_role = PassengerRole::inside_for_test(4, true);
+        entity.set_passenger_role_for_test(PassengerRole::inside_for_test(4, true));
     }
     if input["bunker"].as_bool().unwrap_or(false) {
         entity

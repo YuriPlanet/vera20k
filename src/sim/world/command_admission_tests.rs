@@ -74,7 +74,7 @@ fn campaign_large_move_batch_reaches_every_actor_after_snapshot() {
         sim.resolve_type_handles(&rules);
         // This test covers delivery, not the formation algorithm: ask its
         // production owner for the destinations the entire batch should get.
-        sim.adjust_staged_megamission_destinations(&mut expected, &rules, Some(&registry));
+        sim.adjust_staged_megamission_destinations(&mut expected, &rules, Some(&registry), None);
         let destinations: Vec<_> = expected
             .iter()
             .map(|command| {
@@ -461,6 +461,91 @@ fn native_frame_and_house_override_carrier_metadata() {
 }
 
 #[test]
+fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
+    use crate::sim::command::CommandRecord;
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::world::TickLane;
+    use std::cell::RefCell;
+
+    let run = |transfer_second| {
+        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=MOVER\n[MOVER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        );
+        let owner = sim.interner.intern("Americans");
+        let other = sim.interner.intern("British");
+        for (index, house) in [(0, owner), (1, other)] {
+            sim.houses
+                .register(HouseState::new(house, index, None, true, 0, 10));
+        }
+        sim.session.set_game_mode(ScenarioGameMode::Lan);
+        sim.session.set_current_house_for_test(Some(other));
+        let units = [16, 15].map(|x| {
+            sim.spawn_object_with_overlay_registry(
+                "MOVER",
+                "Americans",
+                x,
+                15,
+                0,
+                &rules,
+                &registry,
+            )
+            .unwrap()
+        });
+        for entity_id in units {
+            let record = sim
+                .encode_megamission_record(
+                    owner,
+                    &Command::Move {
+                        entity_id,
+                        target_rx: 19,
+                        target_ry: 17,
+                    },
+                )
+                .unwrap();
+            assert!(sim.network_command_queues().admit_received(record));
+        }
+        if transfer_second {
+            sim.change_owner_with_rules(
+                units[1],
+                other,
+                &rules,
+                Some(&registry),
+                FrameEffects::default(),
+            );
+        }
+        let observed = RefCell::new(Vec::new());
+        let observe =
+            |_: &Simulation, _: &CommandRecord, applied| observed.borrow_mut().push(applied);
+        sim.advance_master_frame(
+            &[],
+            &rules,
+            Some(&registry),
+            33,
+            TickLane::Ordinary,
+            false,
+            FrameEffects::default().with_command_applied(&observe),
+        )
+        .unwrap();
+        assert_eq!(observed.into_inner(), [true, !transfer_second]);
+        units.map(|id| sim.entities().get(id).unwrap().navigation.nav_com())
+    };
+
+    assert_eq!(
+        run(false),
+        [
+            Some(NavTargetRef::cell(20, 17)),
+            Some(NavTargetRef::cell(19, 17))
+        ],
+        "both owned units get distinct group destinations",
+    );
+    assert_eq!(
+        run(true),
+        [Some(NavTargetRef::cell(19, 17)), None],
+        "the remaining unit keeps the clicked destination",
+    );
+}
+
+#[test]
 fn native_speed_projection_uses_the_record_frame_instead_of_diagnostic_tick() {
     for (frame, diagnostic_tick, expected) in [(0, u64::MAX, 6), (2, 0, 3), (-1, 0, 3)] {
         let mut sim = native_dolist_world();
@@ -613,7 +698,6 @@ fn future_native_admission_is_recorded_once_and_replays_at_its_raw_frame() {
             .advance_app_frame(
                 &[],
                 RuleSet::empty_for_test(),
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),
@@ -626,7 +710,6 @@ fn future_native_admission_is_recorded_once_and_replays_at_its_raw_frame() {
             .advance_app_frame(
                 &replayed,
                 RuleSet::empty_for_test(),
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),
@@ -721,7 +804,6 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
             .advance_app_frame(
                 &[],
                 RuleSet::empty_for_test(),
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default().with_network_commands(&boundary),
@@ -762,7 +844,6 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
                 .advance_app_frame(
                     &[],
                     RuleSet::empty_for_test(),
-                    None,
                     33,
                     crate::sim::world::TickLane::Ordinary,
                     FrameEffects::default()
@@ -770,7 +851,7 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
                 .is_err()
         );
         let resumed = restored
-            .resume_after_network_failure(RuleSet::empty_for_test(), None, FrameEffects::default())
+            .resume_after_network_failure(RuleSet::empty_for_test(), FrameEffects::default())
             .unwrap();
         assert!(resumed.network_failure.is_none());
         assert_eq!(resumed.tick.frame_committed, !terminal);
@@ -791,11 +872,7 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
         );
         assert!(
             restored
-                .resume_after_network_failure(
-                    RuleSet::empty_for_test(),
-                    None,
-                    FrameEffects::default()
-                )
+                .resume_after_network_failure(RuleSet::empty_for_test(), FrameEffects::default())
                 .is_err()
         );
     }
@@ -811,7 +888,6 @@ fn frame_info_without_its_process_owner_is_not_silently_acknowledged() {
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),
@@ -912,7 +988,6 @@ fn options_opens_only_after_accepted_local_dispatch_and_never_during_replay() {
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),
@@ -936,7 +1011,6 @@ fn options_opens_only_after_accepted_local_dispatch_and_never_during_replay() {
         .advance_app_frame(
             &[peer_event],
             RuleSet::empty_for_test(),
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),
@@ -958,7 +1032,6 @@ fn options_opens_only_after_accepted_local_dispatch_and_never_during_replay() {
         .advance_app_frame(
             &due,
             RuleSet::empty_for_test(),
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),
@@ -994,7 +1067,6 @@ fn latency_event_occupies_a_slot_and_publishes_its_unclamped_session_write() {
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),
@@ -1077,7 +1149,6 @@ fn replay_keeps_future_local_work_on_the_admitted_scheduler() {
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),
@@ -1091,7 +1162,6 @@ fn replay_keeps_future_local_work_on_the_admitted_scheduler() {
         .advance_app_frame(
             &due,
             RuleSet::empty_for_test(),
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),
@@ -1104,7 +1174,6 @@ fn replay_keeps_future_local_work_on_the_admitted_scheduler() {
         .advance_app_frame(
             &due,
             RuleSet::empty_for_test(),
-            None,
             33,
             crate::sim::world::TickLane::Ordinary,
             FrameEffects::default(),

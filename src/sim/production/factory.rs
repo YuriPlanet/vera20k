@@ -20,6 +20,9 @@
 //! build-time factors), and `sim/world::Simulation` (read-only) for the inputs.
 //! NEVER on render/ui/audio/net (sim invariant #1).
 
+mod state;
+pub use state::ProductionState;
+
 use std::collections::{BTreeMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
@@ -531,7 +534,6 @@ pub fn type_base_build_time(cost: i32, build_speed: NativeF64Bits) -> i32 {
 /// `BuildTime.Speed` (else `[General] BuildSpeed=`) times `BuildTime.Cost`
 /// (else `Cost=`), over 1000.0 (`1009E580`), times 900.0 (`10095ED0`),
 /// truncated by ftol `100772B0` under the process's 53-bit chop word.
-#[cfg(feature = "ares")]
 pub fn ares_type_build_time(cost: i32, build_speed: NativeF64Bits) -> i32 {
     use crate::util::native_x87::MaskedX87Chop53 as X87;
 
@@ -544,20 +546,19 @@ pub fn ares_type_build_time(cost: i32, build_speed: NativeF64Bits) -> i32 {
     ))
 }
 
-/// TechnoType vt+0x88 for `obj`: [`type_base_build_time`], or with Ares
+/// TechnoType vt+0x88 for `obj`: [`type_base_build_time`], or when Ares plays
 /// [`ares_type_build_time`] over its `BuildTime.Cost`/`BuildTime.Speed`.
 pub fn type_build_time(obj: &ObjectType, rules: &RuleSet) -> i32 {
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares_form() {
         let ext = obj.ares_production();
         ares_type_build_time(
             ext.build_time_cost().unwrap_or(obj.cost),
             ext.build_time_speed()
                 .unwrap_or(rules.production.build_speed),
         )
+    } else {
+        type_base_build_time(obj.cost, rules.production.build_speed)
     }
-    #[cfg(not(feature = "ares"))]
-    type_base_build_time(obj.cost, rules.production.build_speed)
 }
 
 /// Resume4C9EEF and GetRate4C9FC0 share the signed total/54 clamp.
@@ -652,7 +653,6 @@ pub fn time_to_build(inputs: &TimeToBuildInputs) -> i32 {
 /// - `BuildTime.MultipleFactory` replaces `MultipleFactory=`;
 /// - the wall coefficient applies only while `BuildTime.Speed` is unset,
 ///   which `inputs.wall` already holds ([`ObjectType::wall_build_speed_applies`]).
-#[cfg(feature = "ares")]
 pub fn ares_time_to_build(
     inputs: &TimeToBuildInputs,
     ext: &crate::rules::ares_production::ProductionTypeRules,
@@ -728,7 +728,7 @@ pub fn tooltip_build_time(
 }
 
 /// `TechnoClass::Time_To_Build @ 0x006F47A0` for `owner` building `obj`:
-/// [`time_to_build`], or with Ares its replacement [`ares_time_to_build`].
+/// [`time_to_build`], or when Ares plays its replacement [`ares_time_to_build`].
 pub(super) fn object_time_to_build(
     sim: &crate::sim::world::Simulation,
     rules: &RuleSet,
@@ -736,12 +736,11 @@ pub(super) fn object_time_to_build(
     obj: &ObjectType,
 ) -> i32 {
     let inputs = time_to_build_inputs(sim, rules, owner, obj);
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares_form() {
         ares_time_to_build(&inputs, obj.ares_production())
+    } else {
+        time_to_build(&inputs)
     }
-    #[cfg(not(feature = "ares"))]
-    time_to_build(&inputs)
 }
 
 /// Resolve [`time_to_build`]'s inputs for `owner` building `obj`: the rules
@@ -847,7 +846,7 @@ fn seeded_balance(cost: i32) -> i32 {
     cost.max(0)
 }
 
-/// Outcome of a `FactoryRegistry::cancel_one`. Serde-free — the same no-hash
+/// Outcome of a `FactoryEdit::cancel_one`. Serde-free — the same no-hash
 /// discipline as `StepOutcome`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)] // NO serde
 pub enum CancelOutcome {
@@ -867,7 +866,7 @@ pub enum CancelOutcome {
     AbandonedActive(AbandonedObject),
 }
 
-/// Outcome of a `FactoryRegistry::enqueue`.
+/// Outcome of a House production admission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EnqueueOutcome {
     /// A new active object was armed; its Techno still has to be constructed.
@@ -965,7 +964,41 @@ pub struct FactoryRegistry {
     factories: BTreeMap<FactoryHolder, Factory>,
 }
 
+/// An edit of existing factories cannot replace the registry or create a
+/// factory with a caller-supplied construction order.
+pub(super) struct FactoryEdit<'a> {
+    registry: &'a mut FactoryRegistry,
+}
+
 impl FactoryRegistry {
+    fn edit(&mut self) -> FactoryEdit<'_> {
+        FactoryEdit { registry: self }
+    }
+
+    /// `FactoryClass::RemoveFromQueue @ 0x004CA620` through the registry owner.
+    pub(super) fn remove_one_queued(
+        &mut self,
+        owner: InternedId,
+        category: ProductionCategory,
+        type_id: InternedId,
+    ) -> bool {
+        self.edit().remove_one_queued(owner, category, type_id)
+    }
+
+    /// Supply a specific construction order to attachment and placement fixtures.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn create_building_factory_for_test(
+        &mut self,
+        building: u64,
+        owner: InternedId,
+        category: ProductionCategory,
+        type_id: InternedId,
+        order: u64,
+        cost: i32,
+    ) {
+        self.create_building_factory(building, owner, category, type_id, order, cost);
+    }
+
     /// Saved keys participate in factory identity; restoration must validate
     /// them against the embedded values before accepting world relationships.
     pub(super) fn keyed_factories(&self) -> impl Iterator<Item = (&FactoryHolder, &Factory)> {
@@ -1006,16 +1039,20 @@ impl FactoryRegistry {
     /// either expiry control: only a matching held product (+58) is cleared.
     /// The factory, queue, stage, balance, rates and timers remain intact.
     /// Source: cameo_order.md current/saved product-expiry histories.
-    pub(crate) fn pointer_expired(&mut self, entity_id: u64) {
+    /// Answers whether any factory held `entity_id`.
+    fn pointer_expired(&mut self, entity_id: u64) -> bool {
+        let mut held = false;
         for factory in self.factories.values_mut() {
             if factory
                 .object
                 .as_ref()
                 .is_some_and(|object| object.entity_id == Some(entity_id))
             {
+                held = true;
                 factory.object = None;
             }
         }
+        held
     }
 
     /// `FactoryClass::CountTotal @ 0x004CA670` on `owner`'s factory for
@@ -1119,30 +1156,13 @@ impl FactoryRegistry {
         self.factories.get(&FactoryHolder::Building(building))
     }
 
-    /// Move the existing Building+524 attachment to an empty building slot.
-    /// ExitObject44451F..444552 temporarily lends the selected factory to its
-    /// alternate receiver, then restores it after that receiver's ExitObject.
-    /// The Factory itself, its insertion order, held object and accounting do
-    /// not change. An absent source or occupied destination leaves both intact.
-    pub(super) fn transfer_building_factory_attachment(&mut self, from: u64, to: u64) -> bool {
-        let destination = FactoryHolder::Building(to);
-        if self.factories.contains_key(&destination) {
-            return false;
-        }
-        let Some(factory) = self.factories.remove(&FactoryHolder::Building(from)) else {
-            return false;
-        };
-        self.factories.insert(destination, factory);
-        true
-    }
-
     /// `new FactoryClass` for building `building` (`0x0045036C..0x00450387`,
     /// ctor `0x004C98B0` appending it to the factory vector) and the create
     /// path of `FactoryClass::StartProduction @ 0x004C9C70` for `type_id`
     /// (`0x004C9D6E..0x004C9DEA`): the object is held with no rate yet and
     /// the Balance seeded from `cost`, the owner's Cost_Of. The caller
     /// constructs the object and starts its rate.
-    pub(super) fn create_building_factory(
+    fn create_building_factory(
         &mut self,
         building: u64,
         owner: InternedId,
@@ -1170,38 +1190,8 @@ impl FactoryRegistry {
         );
     }
 
-    /// Delete building `building`'s factory without abandoning it: the
-    /// failed StartProduction (`0x004503A7 -> 0x004502DC`, no object held)
-    /// and the placed object's release (`FactoryClass::CompletedProduction
-    /// @ 0x004CA1A0` lets the object go before the delete at `0x004501C6`).
-    pub(super) fn remove_building_factory(&mut self, building: u64) -> Option<Factory> {
-        self.factories.remove(&FactoryHolder::Building(building))
-    }
-
     pub(super) fn pending_abandonment(&self, holder: FactoryHolder) -> Option<AbandonedObject> {
         self.factories.get(&holder)?.pending_abandonment()
-    }
-
-    pub(super) fn reset_for_abandon(&mut self, holder: FactoryHolder, frame: u32) {
-        if let Some(factory) = self.factories.get_mut(&holder) {
-            let _ = factory.abandon_production(frame);
-        }
-    }
-
-    /// Explicit held=NULL4CA0FF follows the product destructor, within the
-    /// caller's ScenarioInit depth. PointerExpired may already have cleared it.
-    pub(super) fn finish_abandon(&mut self, holder: FactoryHolder) {
-        if let Some(factory) = self.factories.get_mut(&holder) {
-            factory.object = None;
-        }
-    }
-
-    /// The Factory delete (`vt+0x20`, `FactoryClass::ScalarDeletingDestructor
-    /// @ 0x004CA770` around `FactoryClass::Destructor @ 0x004C9A10`). Its
-    /// in-game AbandonProduction (`0x004C9A8A`) finds no object here: every
-    /// caller has already abandoned or released the held product.
-    pub(super) fn remove_factory(&mut self, holder: FactoryHolder) {
-        self.factories.remove(&holder);
     }
 
     /// The holders of the factories house `owner` owns (`Factory+0x6C`),
@@ -1292,7 +1282,7 @@ impl FactoryRegistry {
     /// and [`Factory::resume`] arms it. `cost` is resolved by the caller
     /// (which holds `&rules`) so this stays `&sim`-free.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn enqueue(
+    fn enqueue(
         &mut self,
         owner: InternedId,
         category: ProductionCategory,
@@ -1359,38 +1349,6 @@ impl FactoryRegistry {
         EnqueueOutcome::Started
     }
 
-    /// The SUSPEND event: `HouseClass::Suspend_Production @ 0x004FA910` holds
-    /// whatever the category's factory is building (`Suspend(1)` at
-    /// `0x004FA9A5`; the event's type is not checked). Returns whether a
-    /// running build was put on hold.
-    pub(super) fn suspend(
-        &mut self,
-        owner: InternedId,
-        category: ProductionCategory,
-        frame: u32,
-        user: bool,
-    ) -> bool {
-        self.factories
-            .get_mut(&FactoryHolder::House(owner, category))
-            .is_some_and(|f| f.suspend(user, frame))
-    }
-
-    /// The sole registry entry to FactoryResume4C9EA0 for both House and
-    /// Building holders. Callers supply the existing TimeToBuild and
-    /// AvailableMoney owners; the Factory owns admission and every write.
-    pub(super) fn resume(
-        &mut self,
-        holder: FactoryHolder,
-        time_to_build: i32,
-        frame: u32,
-        held_start: bool,
-        available_money: i32,
-    ) -> bool {
-        self.factories.get_mut(&holder).is_some_and(|factory| {
-            factory.resume(time_to_build, frame, held_start, available_money)
-        })
-    }
-
     /// House509275..509287 only recovers a system-held head. A user hold,
     /// completion or poor-wallet resume keeps its own native latch history.
     pub(super) fn automatic_resume_pending(
@@ -1415,6 +1373,125 @@ impl FactoryRegistry {
         Some((object.type_id, f.suspended))
     }
 
+    /// Headless fixtures explicitly supply a strip; ordinary frame effects
+    /// never infer one from Factory state. Fixture ordering is category order.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn strip_visits_for_test(&self, owner: InternedId) -> Vec<super::ProductionFactoryVisit> {
+        let mut visits: Vec<_> = self
+            .factories
+            .iter()
+            .filter_map(|(holder, factory)| {
+                if !matches!(holder, FactoryHolder::House(house, _) if *house == owner) {
+                    return None;
+                }
+                Some(super::ProductionFactoryVisit {
+                    type_id: factory.object.as_ref()?.type_id,
+                    category: factory.category,
+                    construction_order: factory.insertion_seq,
+                })
+            })
+            .collect();
+        visits.sort_by_key(|visit| visit.category);
+        visits
+    }
+}
+
+impl FactoryEdit<'_> {
+    pub(super) fn set_build_rate(&mut self, holder: FactoryHolder, time_to_build: i32) {
+        if let Some(factory) = self.registry.factories.get_mut(&holder) {
+            factory.set_rate(time_to_build);
+        }
+    }
+
+    /// Move the existing Building+524 attachment to an empty building slot.
+    /// ExitObject44451F..444552 temporarily lends the selected factory to its
+    /// alternate receiver, then restores it after that receiver's ExitObject.
+    /// The Factory itself, its insertion order, held object and accounting do
+    /// not change. An absent source or occupied destination leaves both intact.
+    pub(super) fn transfer_building_factory_attachment(&mut self, from: u64, to: u64) -> bool {
+        let destination = FactoryHolder::Building(to);
+        if self.registry.factories.contains_key(&destination) {
+            return false;
+        }
+        let Some(factory) = self
+            .registry
+            .factories
+            .remove(&FactoryHolder::Building(from))
+        else {
+            return false;
+        };
+        self.registry.factories.insert(destination, factory);
+        true
+    }
+
+    /// Delete building `building`'s factory without abandoning it: the
+    /// failed StartProduction (`0x004503A7 -> 0x004502DC`, no object held)
+    /// and the placed object's release (`FactoryClass::CompletedProduction
+    /// @ 0x004CA1A0` lets the object go before the delete at `0x004501C6`).
+    pub(super) fn remove_building_factory(&mut self, building: u64) -> Option<Factory> {
+        self.registry
+            .factories
+            .remove(&FactoryHolder::Building(building))
+    }
+
+    pub(super) fn reset_for_abandon(&mut self, holder: FactoryHolder, frame: u32) {
+        if let Some(factory) = self.registry.factories.get_mut(&holder) {
+            let _ = factory.abandon_production(frame);
+        }
+    }
+
+    /// Explicit held=NULL4CA0FF follows the product destructor, within the
+    /// caller's ScenarioInit depth. PointerExpired may already have cleared it.
+    pub(super) fn finish_abandon(&mut self, holder: FactoryHolder) {
+        if let Some(factory) = self.registry.factories.get_mut(&holder) {
+            factory.object = None;
+        }
+    }
+
+    /// The Factory delete (`vt+0x20`, `FactoryClass::ScalarDeletingDestructor
+    /// @ 0x004CA770` around `FactoryClass::Destructor @ 0x004C9A10`). Its
+    /// in-game AbandonProduction (`0x004C9A8A`) finds no object here: every
+    /// caller has already abandoned or released the held product.
+    pub(super) fn remove_factory(&mut self, holder: FactoryHolder) {
+        self.registry.factories.remove(&holder);
+    }
+
+    /// The SUSPEND event: `HouseClass::Suspend_Production @ 0x004FA910` holds
+    /// whatever the category's factory is building (`Suspend(1)` at
+    /// `0x004FA9A5`; the event's type is not checked). Returns whether a
+    /// running build was put on hold.
+    pub(super) fn suspend(
+        &mut self,
+        owner: InternedId,
+        category: ProductionCategory,
+        frame: u32,
+        user: bool,
+    ) -> bool {
+        self.registry
+            .factories
+            .get_mut(&FactoryHolder::House(owner, category))
+            .is_some_and(|f| f.suspend(user, frame))
+    }
+
+    /// The sole registry entry to FactoryResume4C9EA0 for both House and
+    /// Building holders. Callers supply the existing TimeToBuild and
+    /// AvailableMoney owners; the Factory owns admission and every write.
+    pub(super) fn resume(
+        &mut self,
+        holder: FactoryHolder,
+        time_to_build: i32,
+        frame: u32,
+        held_start: bool,
+        available_money: i32,
+    ) -> bool {
+        self.registry
+            .factories
+            .get_mut(&holder)
+            .is_some_and(|factory| {
+                factory.resume(time_to_build, frame, held_start, available_money)
+            })
+    }
+
     /// CompletedProduction4CA1A0 releases a stage54 product without
     /// removing its House slot or queue. Balance retains its value;
     /// stage/rate/timer/suspension follow4CA1BA..4CA1DB. The +71 latch is
@@ -1426,6 +1503,7 @@ impl FactoryRegistry {
         frame: u32,
     ) -> bool {
         let Some(factory) = self
+            .registry
             .factories
             .get_mut(&FactoryHolder::House(owner, category))
         else {
@@ -1448,7 +1526,8 @@ impl FactoryRegistry {
         owner: InternedId,
         category: ProductionCategory,
     ) -> Option<InternedId> {
-        self.factories
+        self.registry
+            .factories
             .get_mut(&FactoryHolder::House(owner, category))?
             .start_next_queued()
     }
@@ -1460,6 +1539,7 @@ impl FactoryRegistry {
         index: usize,
     ) {
         if let Some(factory) = self
+            .registry
             .factories
             .get_mut(&FactoryHolder::House(owner, category))
         {
@@ -1478,6 +1558,7 @@ impl FactoryRegistry {
         type_id: InternedId,
     ) -> bool {
         let Some(factory) = self
+            .registry
             .factories
             .get_mut(&FactoryHolder::House(owner, category))
         else {
@@ -1503,7 +1584,7 @@ impl FactoryRegistry {
         entity_id: u64,
         start_price: i32,
     ) -> Option<u64> {
-        let factory = self.factories.get_mut(&holder)?;
+        let factory = self.registry.factories.get_mut(&holder)?;
         let object = factory.object.as_mut()?;
         if object.entity_id.is_none() {
             object.entity_id = Some(entity_id);
@@ -1524,6 +1605,7 @@ impl FactoryRegistry {
         category: ProductionCategory,
     ) -> bool {
         let Some(factory) = self
+            .registry
             .factories
             .get_mut(&FactoryHolder::House(owner, category))
         else {
@@ -1545,12 +1627,13 @@ impl FactoryRegistry {
     /// Strip6A8DD3 calls HasChanged4C9C60 before IsComplete4CA130. Validate
     /// the borrowed foreign identity before consuming +5D, even for an
     /// unfinished head. Repeated/stale cameo links cannot consume a new Factory.
-    pub(crate) fn take_changed_complete(
+    pub(super) fn take_changed_complete(
         &mut self,
         owner: InternedId,
         visit: super::ProductionFactoryVisit,
     ) -> bool {
         let Some(factory) = self
+            .registry
             .factories
             .get_mut(&FactoryHolder::House(owner, visit.category))
         else {
@@ -1560,60 +1643,6 @@ impl FactoryRegistry {
             && std::mem::take(&mut factory.changed)
             && factory.progress >= PRODUCTION_STEPS
             && factory.object.is_some()
-    }
-
-    /// Headless fixtures explicitly supply a strip; ordinary frame effects
-    /// never infer one from Factory state. Fixture ordering is category order.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn strip_visits_for_test(&self, owner: InternedId) -> Vec<super::ProductionFactoryVisit> {
-        let mut visits: Vec<_> = self
-            .factories
-            .iter()
-            .filter_map(|(holder, factory)| {
-                if !matches!(holder, FactoryHolder::House(house, _) if *house == owner) {
-                    return None;
-                }
-                Some(super::ProductionFactoryVisit {
-                    type_id: factory.object.as_ref()?.type_id,
-                    category: factory.category,
-                    construction_order: factory.insertion_seq,
-                })
-            })
-            .collect();
-        visits.sort_by_key(|visit| visit.category);
-        visits
-    }
-
-    /// `HouseClass::RecalcFactoryRates @ 0x004CA6E0`, called by the
-    /// reached House power assessment at508D88. The whole global Factory
-    /// array is walked in construction order, filtering only Owner. Held,
-    /// suspended and completed objects still receive SetRate; a null object
-    /// receives1. SetRate never restarts the already armed timer.
-    /// Native comparisons: engineer-repair power/rate consumer packet.
-    pub(super) fn refresh_rates_for_house(
-        &mut self,
-        sim: &crate::sim::world::Simulation,
-        rules: &RuleSet,
-        owner: InternedId,
-    ) {
-        let order: Vec<FactoryHolder> = self
-            .holders_insertion_ordered()
-            .into_iter()
-            .map(|(holder, _)| holder)
-            .collect();
-        for holder in order {
-            let Some(factory) = self.factories.get_mut(&holder) else {
-                continue;
-            };
-            if factory.owner != owner {
-                continue;
-            }
-            let rate = factory
-                .object
-                .as_ref()
-                .map_or(0, |held| held_time_to_build(sim, rules, held));
-            factory.set_rate(rate);
-        }
     }
 
     /// The authoritative per-tick factory sweep (the charge flip). Walks the registry in
@@ -1630,13 +1659,14 @@ impl FactoryRegistry {
         // Sweep order = construction order (a strictly monotonic enqueue stamp at each
         // creation -> no ties -> total order -> deterministic).
         let order: Vec<FactoryHolder> = self
+            .registry
             .holders_insertion_ordered()
             .into_iter()
             .map(|(holder, _)| holder)
             .collect();
 
         for holder in order {
-            let Some(f) = self.factories.get_mut(&holder) else {
+            let Some(f) = self.registry.factories.get_mut(&holder) else {
                 continue;
             };
             let owner = f.owner;
@@ -1690,12 +1720,13 @@ impl FactoryRegistry {
         owner: InternedId,
     ) {
         let order: Vec<_> = self
+            .registry
             .holders_insertion_ordered()
             .into_iter()
             .map(|(holder, _)| holder)
             .collect();
         for holder in order {
-            let Some(factory) = self.factories.get_mut(&holder) else {
+            let Some(factory) = self.registry.factories.get_mut(&holder) else {
                 continue;
             };
             if factory.owner != owner || factory.object.is_none() || factory.suspended {
@@ -1741,6 +1772,7 @@ impl FactoryRegistry {
         build_cat: Option<BuildCategory>,
     ) -> CancelOutcome {
         let Some(f) = self
+            .registry
             .factories
             .get_mut(&FactoryHolder::House(owner, category))
         else {
@@ -1883,15 +1915,15 @@ fn native_e2_head(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "factory_system_hold_tests.rs"]
 mod system_hold_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_production))]
 #[path = "ares_build_time_tests.rs"]
 mod ares_build_time_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod tests {
     use super::*;
 
@@ -1983,7 +2015,9 @@ mod tests {
                 let frame = phase["after"]["frame"].as_u64().unwrap() as u32;
                 let label = format!("{} {name}", row["name"]);
                 let ((), draws) = trace_draws(|| match name {
-                    "system_suspend_kernel" => assert!(reg.suspend(owner, category, frame, false)),
+                    "system_suspend_kernel" => {
+                        assert!(reg.edit().suspend(owner, category, frame, false))
+                    }
                     "external_spend_wallet" => {
                         let economy = houses.get_mut(&owner).unwrap().economy_mut();
                         economy.spend_money(economy.credits());
@@ -2003,7 +2037,7 @@ mod tests {
                             .as_u64()
                             .unwrap()
                             != 0;
-                        let actual = reg.resume(
+                        let actual = reg.edit().resume(
                             holder,
                             time_to_build,
                             frame,
@@ -2013,7 +2047,7 @@ mod tests {
                         assert_eq!(actual, native_return, "{label}");
                     }
                     "same_frame_factory_ai" | "next_frame_factory_ai" => {
-                        reg.step_all(&mut houses, frame)
+                        reg.edit().step_all(&mut houses, frame)
                     }
                     other => panic!("unconsumed native phase {other}"),
                 });
@@ -2273,7 +2307,11 @@ mod tests {
                 );
             }
             let prior = registry.clone();
-            registry.refresh_rates_for_house(&sim, &rules, owner);
+            *sim.production.factories_mut_for_test() = registry;
+            super::super::factory_lifecycle::refresh_factory_rates_for_house(
+                &mut sim, &rules, owner,
+            );
+            let registry = sim.production.factories();
             for (index, actual) in registry.iter_insertion_ordered().iter().enumerate() {
                 assert_eq!(
                     i64::from(actual.step_rate_frames),
@@ -2384,11 +2422,11 @@ mod tests {
                 };
                 match phase["name"].as_str().unwrap() {
                     "suspend_receive" => {
-                        assert!(reg.suspend(owner, category, frame, true));
+                        assert!(reg.edit().suspend(owner, category, frame, true));
                     }
                     "rate_refresh" => reg.factories.get_mut(&holder).unwrap().set_rate(ttb()),
                     "resume_receive" => {
-                        reg.resume(
+                        reg.edit().resume(
                             holder,
                             ttb(),
                             frame,
@@ -2398,14 +2436,20 @@ mod tests {
                     }
                     "completed_same_type_begin" => {
                         // Native Resume refuses before reading Time_To_Build.
-                        reg.resume(holder, 0, frame, false, houses[&owner].economy().credits());
+                        reg.edit().resume(
+                            holder,
+                            0,
+                            frame,
+                            false,
+                            houses[&owner].economy().credits(),
+                        );
                     }
                     "spend_wallet" => {
                         let economy = houses.get_mut(&owner).unwrap().economy_mut();
                         economy.spend_money(economy.credits());
                     }
                     "paused_ai" | "refreshed_paused_ai" | "same_frame_ai" | "next_frame_ai" => {
-                        reg.step_all(&mut houses, frame)
+                        reg.edit().step_all(&mut houses, frame)
                     }
                     "right_select" | "left_select" => {}
                     name => panic!("unconsumed native phase {name}"),
@@ -2445,7 +2489,7 @@ mod tests {
             let mut initial = armed_factory(inputs.cost);
             initial.suspended = true;
             let mut reg = reg_with(owner, category, initial);
-            reg.resume(
+            reg.edit().resume(
                 FactoryHolder::House(owner, category),
                 time_to_build(&inputs),
                 start_frame,
@@ -2483,9 +2527,9 @@ mod tests {
                 // same-type build start, which VERA takes only for a user hold.
                 for &(_, kind) in orders.iter().filter(|(at, _)| *at == frame) {
                     let accepted = if kind == "suspend" {
-                        reg.suspend(owner, category, frame, true)
+                        reg.edit().suspend(owner, category, frame, true)
                     } else {
-                        reg.resume(
+                        reg.edit().resume(
                             FactoryHolder::House(owner, category),
                             time_to_build(&inputs),
                             frame,
@@ -2508,7 +2552,7 @@ mod tests {
                 let before = reg.factories[&FactoryHolder::House(owner, category)]
                     .step_timer
                     .start_frame();
-                reg.step_all(&mut houses, frame);
+                reg.edit().step_all(&mut houses, frame);
                 let f = &reg.factories[&FactoryHolder::House(owner, category)];
                 if f.step_timer.start_frame() != before {
                     let credits = houses[&owner].economy().credits();
@@ -2737,7 +2781,9 @@ mod tests {
             ..Factory::default()
         };
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
-        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, Some(a), false, None);
+        let outcome =
+            reg.edit()
+                .cancel_one(owner, ProductionCategory::Vehicle, Some(a), false, None);
         assert_eq!(outcome, CancelOutcome::QueuedRemoved);
         let q: Vec<InternedId> = reg
             .view(owner, ProductionCategory::Vehicle)
@@ -2769,7 +2815,9 @@ mod tests {
             ..Factory::default()
         };
         let mut reg = reg_with(owner, ProductionCategory::Vehicle, f);
-        let outcome = reg.cancel_one(owner, ProductionCategory::Vehicle, Some(a), false, None);
+        let outcome =
+            reg.edit()
+                .cancel_one(owner, ProductionCategory::Vehicle, Some(a), false, None);
         assert_eq!(
             outcome,
             CancelOutcome::QueuedRemoved,
@@ -2806,7 +2854,7 @@ mod tests {
             ..Factory::default()
         };
         let mut reg = reg_with(owner, ProductionCategory::Building, f);
-        let outcome = reg.cancel_one(
+        let outcome = reg.edit().cancel_one(
             owner,
             ProductionCategory::Building,
             Some(a),
@@ -2853,7 +2901,7 @@ mod tests {
                 ..Factory::default()
             };
             let mut reg = reg_with(owner, ProductionCategory::Building, f);
-            let outcome = reg.cancel_one(
+            let outcome = reg.edit().cancel_one(
                 owner,
                 ProductionCategory::Building,
                 Some(a),
@@ -2901,7 +2949,7 @@ mod tests {
             ..Factory::default()
         };
         let mut reg = reg_with(owner, ProductionCategory::Building, f);
-        let outcome = reg.cancel_one(
+        let outcome = reg.edit().cancel_one(
             owner,
             ProductionCategory::Building,
             Some(a),
@@ -2956,7 +3004,8 @@ mod tests {
 
         let mut reg = reg_with(owner, ProductionCategory::Infantry, factory(a));
         assert_eq!(
-            reg.cancel_one(owner, ProductionCategory::Infantry, Some(a), true, None),
+            reg.edit()
+                .cancel_one(owner, ProductionCategory::Infantry, Some(a), true, None),
             CancelOutcome::AbandonedActive(AbandonedObject {
                 type_id: a,
                 balance: 150,
@@ -2973,7 +3022,8 @@ mod tests {
 
         let mut reg = reg_with(owner, ProductionCategory::Infantry, factory(b));
         assert_eq!(
-            reg.cancel_one(owner, ProductionCategory::Infantry, Some(a), true, None),
+            reg.edit()
+                .cancel_one(owner, ProductionCategory::Infantry, Some(a), true, None),
             CancelOutcome::QueuedRemoved,
             "another type's active build stays"
         );
@@ -3080,22 +3130,26 @@ mod tests {
             reg.enqueue(owner, vehicle, tank, 2, 700, 5, false, false),
             EnqueueOutcome::Queued
         );
-        reg.reset_for_abandon(FactoryHolder::House(owner, vehicle), 0);
-        reg.finish_abandon(FactoryHolder::House(owner, vehicle));
-        assert_eq!(reg.start_next_queued(owner, vehicle), Some(tank));
+        reg.edit()
+            .reset_for_abandon(FactoryHolder::House(owner, vehicle), 0);
+        reg.edit()
+            .finish_abandon(FactoryHolder::House(owner, vehicle));
+        assert_eq!(reg.edit().start_next_queued(owner, vehicle), Some(tank));
         assert_eq!(
             reg.enqueue(owner, vehicle, tank, 2, 700, 5, false, true),
             EnqueueOutcome::Started
         );
-        reg.resume(FactoryHolder::House(owner, vehicle), 540, 100, false, 13);
-        reg.resume(FactoryHolder::House(owner, infantry), 540, 100, false, 13);
+        reg.edit()
+            .resume(FactoryHolder::House(owner, vehicle), 540, 100, false, 13);
+        reg.edit()
+            .resume(FactoryHolder::House(owner, infantry), 540, 100, false, 13);
         // The first steps charge 700 / 53 = 13 and 200 / 53 = 3; the house has 13.
         let mut houses = [crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 13, 10,
         )]
         .into_iter()
         .collect::<crate::sim::houses::Houses>();
-        reg.step_all(&mut houses, 110);
+        reg.edit().step_all(&mut houses, 110);
         let (tank_factory, soldier_factory) = (
             &reg.factories[&FactoryHolder::House(owner, vehicle)],
             &reg.factories[&FactoryHolder::House(owner, infantry)],
@@ -3208,7 +3262,7 @@ mod tests {
             .get_mut(&FactoryHolder::House(owner, ProductionCategory::Infantry))
             .unwrap()
             .suspended = false;
-        reg.debug_complete(&mut houses, 10, owner);
+        reg.edit().debug_complete(&mut houses, 10, owner);
         assert_eq!(
             reg.view(owner, ProductionCategory::Infantry)
                 .unwrap()
@@ -3226,7 +3280,7 @@ mod tests {
         let mut held = armed_factory(540);
         held.suspended = true;
         let mut reg = reg_with(owner, ProductionCategory::Infantry, held);
-        reg.debug_complete(&mut houses, 10, owner);
+        reg.edit().debug_complete(&mut houses, 10, owner);
         assert_eq!(
             reg.view(owner, ProductionCategory::Infantry)
                 .unwrap()
@@ -3235,3 +3289,4 @@ mod tests {
         );
     }
 }
+

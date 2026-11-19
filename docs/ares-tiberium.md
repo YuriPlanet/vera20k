@@ -1,14 +1,13 @@
 # Optional Ares tiberium, ore and harvesters
 
-Build with `--features ares` to let each `[Tiberiums]` type choose its
+When a game plays Ares ([Ares](ares.md)), every build lets each `[Tiberiums]` type choose its
 damage, healing and chain-reaction blast, to make objects take damage from,
 heal in, spill and leave tiberium (and die into visceroids), to make
 `ChainReaction=yes` ore explode, to tune harvester scans per type, and to
 let refineries store ore in silos (`Refinery.UseStorage`).
-Default builds keep the stock mineral Anim.Start (`0x00424CE0`),
+Other games keep the stock mineral Anim.Start (`0x00424CE0`),
 Apply_area_damage Explodes tail (`0x0048A2D9`), UnitClass::Death_Explosion
-(`0x00738680`), Mission_Harvest and slave-miner scans; INI keys cannot
-enable the extension there.
+(`0x00738680`), Mission_Harvest and slave-miner scans.
 
 ```ini
 [General]
@@ -17,9 +16,10 @@ TiberiumHealEnabled=yes        ; TiberiumHeal= types heal in tiberium (no)
 OverlayExplodeThreshold=50     ; Explodes= overlays need this damage (0)
 RepairStopOnInsufficientFunds=no ; a broke human repair stays on (yes)
 SmallVisceroid=VISC_SML        ; stock key: what a tiberium death becomes
+LargeVisceroid=VISC_LRG        ; stock key: what two small ones merge into
 TiberiumTransmogrify=40        ; stock key: its percent chance
 [CombatDamage]
-TiberiumExplosive=yes          ; stock key, now a harvester blast
+TiberiumExplosive=yes          ; stock key, now a harvester blast (needs Explosion=)
 TiberiumExplosiveWarhead=HE    ; the blast's warhead (none)
 [AudioVisual]
 TiberiumExplosiveAnim=TWLT070  ; played at the blast (none)
@@ -62,7 +62,7 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   (`1003DFB0`); warheads and anims are Find-only reads. The stock
   `Power=`, `[General]TiberiumHeal`, `TiberiumTransmogrify` (zeroed by
   `1002C990`), `[CombatDamage]TiberiumExplosive` and TechnoType
-  `TiberiumHeal=` are read in Ares builds only. `RandomCrateMoney` and
+  `TiberiumHeal=` are read only in a game read the Ares way. `RandomCrateMoney` and
   `RepairStopOnInsufficientFunds` sit with the other RulesExt controls in
   `rules/native_processing.rs`.
 - `sim/anim_class.rs`: the mineral Start's `Debris.Chance` draw
@@ -75,7 +75,8 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
 - `sim/ares_tiberium.rs`: the Foot damage (`10049280`, hook `4D85E4`, from
   `FootClass::Per_Cell_Process`), the Foot heal (`10014BA0`, hook `4DA53E`,
   from the Foot AI after TechnoAI) and the TiberiumExplosive blast
-  (`1004BD90`, hook `738749`, from `Death_Explosion`). Tiberium is placed
+  (`1004BD90`, hook `738749`, inside `Death_Explosion`'s `Explosion=` block:
+  a unit with no `Explosion=` entry never blasts). Tiberium is placed
   through `Simulation::increase_tiberium_cells`, the live map's
   `CellClass::IncreaseTiberium @ 0x00487190` the Tiberium crate also uses.
 - `sim/miner/`: `Harvester.*` replace the Rules scans in Mission_Harvest
@@ -93,9 +94,17 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   the cell. It needs the map's `[Basic] TiberiumDeathToVisceroid`
   (Scenario+0x34B3, `Read_INI_Basic @ 0x00689E90`), which
   `Set_Defaults @ 0x00683610` resets to **true**; `ScenarioSession` keeps
-  it (Ares builds only, saved and hashed when false). Retail's
+  it (saved and hashed when false). Retail's
   `TiberiumTransmogrify=40` and `SmallVisceroid=VISC_SML` make this live
   once a mod sets `TiberiumDamageEnabled=yes`.
+- `sim/visceroid.rs`: the merge (`UnitClass_UpdatePosition_Visceroid @
+  1004C530`, hook `0x739F21`, in Per_Cell_Process's arrival arm). gamemd's
+  UpdateVisceroid sends one small visceroid to another and lets it into
+  that one's cell ([dormant-stock-rules.md](dormant-stock-rules.md#visceroids));
+  arriving there, the seeker leaves the game and the other becomes
+  `[General] LargeVisceroid` (published by `RulesTypeReferences`) at full
+  Strength, by a bare Type store: as in Ares, its house's type counts are
+  not moved to the new type.
 - `sim/ares_tiberium.rs`: `CellChainReact` (`10050DD0`), Ares' body for
   the stock RET at `CellChainReaction__Request @ 0x00489270`. A
   `ChainReaction=yes` tiberium cell at density 2+ reacts with
@@ -125,9 +134,9 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   `GiveTiberium`, which Ares' `10024290` (hook `4F9610`) makes: score
   `ftol(amount * 5)`; a campaign or human House fills its on-map `Storage=`
   buildings in House+68 order up to the free capacity (`+0x310` minus the
-  stored total; the rest is lost), any other House takes cash. Ares builds
-  also port the stock arms reading the stores, absent from default builds
-  whose stores stay empty: Spend_Money's drain (`0x004F97DD..0x004F9925`,
+  stored total; the rest is lost), any other House takes cash. Every build
+  also ports the stock arms reading the stores, which change nothing in a
+  game whose stores stay empty: Spend_Money's drain (`0x004F97DD..0x004F9925`,
   single units at `ftol(Value * IncomeMult)` each, the excess back as the
   balance), Available_Money's `GetTotalAsInt(+0x2FC) * IncomeMult`
   (`0x004F6990`, `0x006C9600`), the Added_To_Game merge (`0x00502B83`), the
@@ -182,7 +191,7 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
   event carrying a message line in the House's colour (MessageDelay) to
   the client's message list; only the EVA line plays.
 - `[Basic] FillSilos=` (`Fill_In_Data 0x00684F02`) still pays cash in
-  Ares builds; natively its Add_Tiberium_Credits is Ares' `10024290`,
+  a game that plays Ares; natively its Add_Tiberium_Credits is Ares' `10024290`,
   which stores each unit for a campaign or human House, and its loop's
   Available_Storage (`0x004F69D0`) then sees the fill. No stock map sets
   the key.

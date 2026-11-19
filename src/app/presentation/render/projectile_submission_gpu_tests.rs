@@ -141,9 +141,17 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
             None,
         );
         assert_eq!(stats.pieces, ROUNDS * 2);
-        // Each read-only interval's resolve joins the next ordinary pass;
-        // only the last one draws in a pass of its own.
-        assert_eq!(stats.passes, (ROUNDS + 1) * 3 + 1);
+        // A resolve joins the next ordinary pass; only the last draws in one
+        // of its own. WebGL2 reduces each of the ROUNDS + 1 read-only intervals
+        // in three passes. Against the live depth test the first, a lone body,
+        // takes one pass and each interval holding a shadow two.
+        let webgl = crate::render::gpu::webgl_fallback(&gpu.device);
+        let intervals = if webgl {
+            (ROUNDS + 1) * 3
+        } else {
+            1 + ROUNDS * 2
+        };
+        assert_eq!(stats.passes, intervals + 1);
         assert_eq!(stats.tile_dependencies, 0);
         assert!(
             terrain.submissions() > 0,

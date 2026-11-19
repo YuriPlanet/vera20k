@@ -1,15 +1,26 @@
-//! VERA-only: the facts a path batch's Can_Enter_Cell asks share, copied once
-//! per batch. A batch's searches ([`crate::sim::movement::path_batch`]) all
-//! read one unchanged world, and in a jam each real cell is asked about ~36
-//! times a batch and each blocker read ~42 times, every time from scattered
-//! terrain, occupancy and entity records. The first ask copies what Infantry
-//! `0x0051BF90` / Unit `0x0073F0A0` read of the cell or blocker into a dense
-//! table and later asks read the copy; searches asking at once never wait
-//! for one another ([`EntryFacts::cell`]). The world stays the source of truth:
-//! the tables are emptied before each batch, never saved or hashed, and debug
-//! builds compare every reuse with a fresh read. Asks outside a batch read
-//! the world directly. A batch asks about a few thousand of the map's cells,
-//! so the tables mark what they keep and the reset empties only those.
+//! VERA-only: the facts a path search's Can_Enter_Cell asks share, copied once
+//! per batch of searches. A batch's searches
+//! ([`crate::sim::movement::path_batch`]) all read one unchanged world, and in
+//! a jam each real cell is asked about ~36 times a batch and each blocker read
+//! ~42 times, every time from scattered terrain, occupancy and entity records.
+//! The first ask copies what Infantry `0x0051BF90` / Unit `0x0073F0A0` read of
+//! the cell or blocker into a dense table and later asks read the copy;
+//! searches asking at once never wait for one another ([`EntryFacts::cell`]).
+//! The searches through a jam also price its moving friendlies by the same
+//! urgency-0 code-2 chains (`AStar_compute_edge_cost @ 0x00429830`,
+//! `0x00429886..0x00429984`), each a walk along up to ten Foots, so a cell's
+//! chain is kept too ([`EntryFacts::code2_chain`]). A walk skips its own
+//! search's mover, so one is kept only when it skipped none, with a bit for
+//! each Foot it followed; a search whose mover's bit is set walks its own.
+//! A core search a Foot runs at its own turn, after its Mark0, reads one
+//! unchanged world too, so it keeps facts in the same tables, a batch of one;
+//! it walks its chains itself, since no other search shares its world.
+//! The world stays the source of truth: the tables are emptied before each
+//! batch and each such search (the chains before each batch only), never
+//! saved or hashed, and debug builds compare
+//! every reuse with a fresh read. Other asks read the world directly. A batch
+//! asks about a few thousand of the map's cells, so the tables mark what they
+//! keep and the reset empties only those.
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -21,14 +32,22 @@ use crate::rules::terrain_rules::SpeedCostProfile;
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
+use crate::sim::movement::Code2Chain;
 use crate::sim::movement::bump_crush::CrushTarget;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::RawCellKey;
 use crate::sim::overlay_grid::OverlayCell;
 use crate::sim::world::Simulation;
 
-/// One batch's [`CellFacts`] and [`PlainCell`] by real cell index and
-/// [`BlockerFacts`] by entity slot, each kept from its first ask.
+/// Set in every kept [`EntryFacts::code2_chain`] word, so 0 is "not walked
+/// yet". Below the two flags the word holds the walk's
+/// [`Code2Chain::named`] bits.
+const CHAIN_KEPT: u64 = 1 << 63;
+/// The kept chain jams.
+const CHAIN_JAMS: u64 = 1 << 62;
+
+/// One batch's [`CellFacts`], [`PlainCell`] and code-2 chains by real cell
+/// index and [`BlockerFacts`] by entity slot, each kept from its first ask.
 #[derive(Default)]
 pub(crate) struct EntryFacts {
     cells: Vec<OnceLock<CellFacts>>,
@@ -42,6 +61,20 @@ pub(crate) struct EntryFacts {
     blockers: Vec<OnceLock<BlockerFacts>>,
     /// The slots whose `blockers` entry a search claimed this batch.
     blockers_claimed: KeptBits,
+    /// Each real cell's ground (`2 * index`) and deck (`2 * index + 1`)
+    /// code-2 chain ([`EntryFacts::code2_chain`]), 0 until kept.
+    chains: Vec<AtomicU64>,
+    /// The entries of `chains` this batch kept.
+    chains_kept: KeptBits,
+}
+
+/// A copy starts empty. The facts belong to the batch in flight, and the one
+/// copy of a world, the presentation frame (docs/sim-thread.md), never
+/// searches; a batch rebuilds them from its first ask.
+impl Clone for EntryFacts {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 /// One bit per table entry, set when an ask fills it, so a reset empties only
@@ -105,6 +138,16 @@ impl EntryFacts {
         self.blockers.resize_with(slots, OnceLock::new);
     }
 
+    /// Forget every kept code-2 chain and fit the table to `cells` real
+    /// cells, before a batch: only a batch's searches share chains.
+    pub(crate) fn reset_chains(&mut self, cells: usize) {
+        let chains = &mut self.chains;
+        self.chains_kept.empty_marked(2 * cells, |note| {
+            *chains[note].get_mut() = 0;
+        });
+        self.chains.resize_with(2 * cells, AtomicU64::default);
+    }
+
     /// Real cell `index`'s facts, kept from this batch's first ask
     /// ([`Self::keep`]), lent to `see`: most asks read a few fields of them.
     pub(super) fn cell<R>(
@@ -121,7 +164,7 @@ impl EntryFacts {
             |facts| {
                 debug_assert!(
                     !crate::sim::touch_log::live_read_check_enabled() || *facts == read(),
-                    "real cell {index} changed during a path batch"
+                    "real cell {index} changed during a path search"
                 );
                 see(facts)
             },
@@ -144,7 +187,7 @@ impl EntryFacts {
         };
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled() || cell == read(),
-            "real cell {index} changed during a path batch"
+            "real cell {index} changed during a path search"
         );
         cell
     }
@@ -160,11 +203,55 @@ impl EntryFacts {
             |&facts| {
                 debug_assert!(
                     !crate::sim::touch_log::live_read_check_enabled() || facts == read(),
-                    "the entity in slot {slot} changed during a path batch"
+                    "the entity in slot {slot} changed during a path search"
                 );
                 facts
             },
         )
+    }
+
+    /// Whether the code-2 chain from real cell `index`'s `layer` list jams
+    /// for a search whose mover is `unlisted`
+    /// (`Simulation::astar_code2_chain`, which `walk` runs): the batch's
+    /// kept answer unless that chain followed the mover. A walk is kept when
+    /// every search whose mover it did not follow walks the same
+    /// ([`Code2Chain::shared`]). Searches walking one chain at once may each
+    /// store it: every walk sees the one unchanged world, so the words are
+    /// equal.
+    pub(crate) fn code2_chain(
+        &self,
+        index: usize,
+        layer: MovementLayer,
+        unlisted: Option<u64>,
+        walk: impl Fn() -> Result<Code2Chain, String>,
+    ) -> Result<bool, String> {
+        let note = match layer {
+            MovementLayer::Ground => 2 * index,
+            MovementLayer::Bridge => 2 * index + 1,
+            MovementLayer::Air | MovementLayer::Underground => {
+                return walk().map(|chain| chain.jams);
+            }
+        };
+        let kept = &self.chains[note];
+        let word = kept.load(Ordering::Relaxed);
+        if word & CHAIN_KEPT != 0
+            && unlisted.is_none_or(|mover| word & Code2Chain::name_bit(mover) == 0)
+        {
+            let jams = word & CHAIN_JAMS != 0;
+            debug_assert!(
+                !crate::sim::touch_log::live_read_check_enabled()
+                    || walk().map(|chain| chain.jams) == Ok(jams),
+                "the code-2 chain from real cell {index} changed during a path search"
+            );
+            return Ok(jams);
+        }
+        let chain = walk()?;
+        if chain.shared && word & CHAIN_KEPT == 0 {
+            self.chains_kept.mark(note);
+            let jams = if chain.jams { CHAIN_JAMS } else { 0 };
+            kept.store(CHAIN_KEPT | jams | chain.named, Ordering::Relaxed);
+        }
+        Ok(chain.jams)
     }
 
     /// `see` of entry `index`'s kept facts, else of a search's own `read`,
@@ -425,17 +512,32 @@ impl EntryFacts {
     /// An empty table fitted to `sim`, as a batch starts.
     pub(crate) fn fitted(sim: &Simulation) -> Self {
         let mut facts = Self::default();
-        facts.reset(
-            sim.resolved_terrain
-                .as_ref()
-                .map_or(0, |terrain| terrain.cells().len()),
-            sim.substrate.entities.slot_count(),
-        );
+        let cells = sim
+            .resolved_terrain
+            .as_ref()
+            .map_or(0, |terrain| terrain.cells().len());
+        facts.reset(cells, sim.substrate.entities.slot_count());
+        facts.reset_chains(cells);
         facts
     }
 }
 
 #[cfg(test)]
+impl EntryFacts {
+    /// Whether no ask has kept a fact since the last reset.
+    pub(crate) fn is_empty(&self) -> bool {
+        [
+            &self.cells_claimed,
+            &self.plain_kept,
+            &self.blockers_claimed,
+            &self.chains_kept,
+        ]
+        .iter()
+        .all(|kept| kept.0.iter().all(|word| word.load(Ordering::Relaxed) == 0))
+    }
+}
+
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
 
@@ -460,27 +562,49 @@ mod tests {
         BlockerFacts::of(&GameEntity::test_default(id, "MTNK", "Americans", rx, 0), 0)
     }
 
+    /// A code-2 chain walk every search may share.
+    fn shared_walk(jams: bool) -> Code2Chain {
+        Code2Chain {
+            jams,
+            named: 0,
+            shared: true,
+        }
+    }
+
     /// A reset empties what the last batch kept on both sides of a mark-word
     /// boundary, and a slot kept before the table shrinks comes back empty
     /// when it regrows. It forgets the claims too, so the next batch's first
-    /// asks keep their facts again.
+    /// asks keep their facts again. A chain reset empties the kept chains the
+    /// same way.
     #[test]
     fn a_reset_forgets_every_fact_the_last_batch_kept() {
         let mut facts = EntryFacts::default();
         facts.reset(130, 70);
+        facts.reset_chains(130);
         for index in [0, 63, 64, 129] {
             facts.cell(index, || cell_facts(1), |_| ());
             facts.plain(index, || PlainCell(PlainCell::KNOWN | 1));
+            let jams = || Ok(shared_walk(true));
+            assert_eq!(
+                facts.code2_chain(index, MovementLayer::Bridge, None, jams),
+                Ok(true)
+            );
         }
         facts.blocker(69, || blocker(1, 5));
         facts.reset(130, 10);
         facts.reset(130, 70);
+        facts.reset_chains(130);
         for index in [0, 63, 64, 129] {
             assert_eq!(facts.cell(index, || cell_facts(2), |kept| kept.level), 2);
             assert_eq!(facts.cells[index].get(), Some(&cell_facts(2)));
             assert_eq!(
                 facts.plain(index, || PlainCell(PlainCell::KNOWN | 2)),
                 PlainCell(PlainCell::KNOWN | 2)
+            );
+            let clears = || Ok(shared_walk(false));
+            assert_eq!(
+                facts.code2_chain(index, MovementLayer::Bridge, None, clears),
+                Ok(false)
             );
         }
         assert_eq!(facts.blocker(69, || blocker(2, 9)).rx, 9);

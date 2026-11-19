@@ -3,16 +3,18 @@
 //! `0x0048D9BD`, and the TauntsOn switch they share. Taunts are out of band:
 //! not EventClass records and not part of lockstep.
 //!
-//! The transport is the controlled network service: a send queues
-//! [`NetworkLoadingRequest::Taunt`](crate::app::match_runtime::session::NetworkLoadingRequest)
-//! and a received packet arrives as `NetworkMatchEvent::Taunt`. Playback is
-//! the taunt stream, `SfxPlayer::play_taunt`.
+//! A send queues
+//! [`NetworkSendRequest::Taunt`](crate::app::match_runtime::session::NetworkSendRequest),
+//! which `lan_service`'s match-request drain sends as packet `0x1D` with the
+//! sender's name, colour (`+0x31`) and game-name hash (`+0x35`); a received
+//! `0x1D` comes through `lan_service`'s global demux to [`receive`]. Playback
+//! is the taunt stream, `SfxPlayer::play_taunt`.
 //!
-//! RESIDUAL: the packet's name, colour and `-MESSAGES` hash fields are not
-//! carried; only the hash filter (`[0xA8D60D]`, off by default) reads one of
-//! them. WOL's relay mask (`0x00536532..0x00536570`) is WOL backend. The
-//! second receive arm `0x0064A739` (packet dword `0x78`) has no sender in
-//! the binary and is not ported.
+//! RESIDUAL: the receiver reads only the taunt byte. The `-MESSAGES` hash
+//! filter (`[0xA8D60D]`, off by default) is not ported; the switch is
+//! accepted and ignored. WOL's relay mask (`0x00536532..0x00536570`) is WOL
+//! backend. The second receive arm `0x0064A739` (packet dword `0x78`) has no
+//! sender in the binary and is not ported.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -63,7 +65,7 @@ pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
     if !mode.is_network() {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -114,7 +116,7 @@ pub(crate) fn receive(state: &mut AppState, byte: u8) {
         let pattern = state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .and_then(|runtime| {
                 runtime
                     .resources
@@ -135,7 +137,7 @@ fn play(state: &mut AppState, byte: u8, pattern: Option<&str>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

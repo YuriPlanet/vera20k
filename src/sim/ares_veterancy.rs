@@ -54,7 +54,7 @@ impl Simulation {
             if ext.include_passengers() {
                 let raw = entity.veterancy.raw();
                 let passengers = entity
-                    .passenger_role
+                    .passenger_role()
                     .cargo()
                     .map(|cargo| cargo.passengers().to_vec())
                     .unwrap_or_default();
@@ -135,7 +135,7 @@ impl Simulation {
         let owner = entity.owner();
         let type_id = entity.type_ref();
         let source = entity
-            .passenger_role
+            .passenger_role()
             .transporter()
             .and_then(|transporter| self.substrate.entities.get(transporter))
             .unwrap_or(entity);
@@ -240,6 +240,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ares_veterancy_tests.rs"]
 mod tests;

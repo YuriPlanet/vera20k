@@ -20,7 +20,7 @@ fn select_abort_secondary(state: &AppState) -> AbortSecondary {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|runtime| &runtime.simulation),
     )
 }
@@ -124,7 +124,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
     use crate::sim::house_state::HouseState;

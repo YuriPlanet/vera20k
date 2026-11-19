@@ -1,16 +1,17 @@
 name: Relay compatibility
 
 # A released game reads the relay's records with its own copy of
-# vera20k-relay-protocol, and a relay deploy reaches players who have not
-# updated. `tools/relay_compat.py` plays the latest stable release's and the
-# newest dev build's client code against the relay this change builds, so a
-# record they cannot read fails here instead of after a deploy (#3322's
-# silence departure stalled v0.2.2 that way). It also plays the change's own
-# client as a control.
+# vera20k-relay-protocol, and a relay deploy reaches every version the lobby
+# admits. `tools/relay_compat.py` builds this change's compat client against the
+# protocol crate of each stable release from OLDEST_ADMITTED (the lobby's floor)
+# on and of the newest dev build, and plays each against the relay this change
+# builds, so a record they cannot read fails here instead of after a deploy
+# (#3322's silence departure stalled v0.2.2 that way). It also plays the
+# change's own client as a control.
 #
-# Label a PR `relay-compat-break` when it changes the records on purpose, after
-# a client that reads them has shipped; client failures then only warn, and a
-# release the change's example no longer builds against plays its own.
+# A change that breaks admitted releases on purpose raises OLDEST_ADMITTED past
+# them and carries the `relay-compat-break` label: the client failures that
+# remain, such as an earlier dev build of the new floor's version, then only warn.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -22,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       clients:
-        description: 'Release tags or full commit hashes, space-separated (default: latest stable and newest dev build)'
+        description: 'Release tags or full commit hashes, space-separated (default: every build the lobby admits)'
         type: string
         required: false
 

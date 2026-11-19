@@ -210,7 +210,7 @@ fn defense_rules(wall_tower: Option<&str>) -> RuleSet {
     // PrerequisitePower rather than the stock [AI] BuildPower family; name the
     // same member so BUNK's POWER meets the native run's answer. Ares coverage:
     // `base_plan_generation::ares_tests::generic_stock_groups_replace_ai_families_and_ignore_alternates`.
-    if cfg!(feature = "ares") {
+    if crate::rules::ares_switch::ares_way() {
         text += "PrerequisitePower=POWR\n";
     }
     text += &format!(

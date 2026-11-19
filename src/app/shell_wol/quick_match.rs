@@ -358,7 +358,6 @@ pub(super) fn run(state: &mut AppState) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    visit.in_game = false;
     let globals = &mut visit.quick_match;
     globals.failure = 0;
     globals.set(stage::IDLE, None);
@@ -367,7 +366,33 @@ pub(super) fn run(state: &mut AppState) {
     globals.opponent = None;
     globals.lobby = None;
     globals.search = None;
-    lobby::open_quick_match_runner(state);
+    lobby::open_runner(state, lobby::Runner::QuickMatch);
+}
+
+/// The refusal that names the changed game files (`{files}`).
+const CHANGED_FILES: &str = "VERA:QuickMatchChangedFiles";
+
+use crate::app::shell_network_setup::agreement::{
+    OriginalGameChange, changed_files_text, original_game_changes,
+};
+
+/// VERA: Quick Match pairs players who agreed on nothing, so it plays the
+/// original game. A mod fails the pre-match check; other INI roots or
+/// changed game files fail the join's rules hash (`0x0079BA60`, silently in
+/// Quick Match), against any opponent without the same, and an Ares setting
+/// other than Auto fails the start's rules digest. The box says what to
+/// turn off for the first change ([`original_game_changes`]), and the
+/// runner ends before it queues.
+fn original_game_refusal(
+    mod_title: Option<&str>,
+    assets: &crate::app::process_assets::ProcessAssets,
+) -> Option<&'static str> {
+    Some(match original_game_changes(mod_title, assets).first()? {
+        OriginalGameChange::Mod(_) => "VERA:QuickMatchNoMod",
+        OriginalGameChange::IniRoots => "VERA:QuickMatchIniProfile",
+        OriginalGameChange::Ares(_) => "VERA:QuickMatchAresSetting",
+        OriginalGameChange::ChangedFiles(_) => CHANGED_FILES,
+    })
 }
 
 /// The lobby list arrived (`0x0079FD37..0x0079FE44`): the first lobby whose
@@ -376,6 +401,14 @@ pub(super) fn run(state: &mut AppState) {
 /// `WOL:MatchingServerUnavailable`. Both boxes end the runner with 0; only
 /// the first clears the away text (`0x0079FD66`).
 pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
+    if let Some(key) = original_game_refusal(state.frontend.mods.title(), &state.process_assets) {
+        lobby::quick_match_box(state, key, lobby::QuickMatchBoxThen::Return);
+        if key == CHANGED_FILES {
+            let files = changed_files_text(state.process_assets.changed_game_files());
+            lobby::replace_box_body(state, &crate::i18n::tr_fill(key, &[("files", &files)]));
+        }
+        return;
+    }
     let prefix = if quick_coop(state) {
         QUICK_COOP_PREFIX
     } else {
@@ -575,6 +608,13 @@ fn request(state: &mut AppState) -> bool {
                 .local_participant()
                 .slot,
         ),
+    };
+    // Quick Match plays in YR's eight colours: one of VERA's extra lobby
+    // colours goes as Random, which the paired games draw from the eight.
+    let color = if (0..crate::skirmish_launch::HOUSE_COLOR_COUNT as i32).contains(&color) {
+        color
+    } else {
+        crate::app::frontend::skirmish_session::RANDOM_ITEM_DATA
     };
     csf_line(state, "WOL:RequestingMatch", REQUEST_COLOR);
     service::request(
@@ -924,10 +964,10 @@ fn build_host_options(
         slot,
         role: Default::default(),
     };
-    let mut launch = crate::skirmish_launch::SkirmishLaunchSession {
-        mode: crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
-        selected_map_file: Some(file.clone()),
-        humans: vec![
+    let mut launch = crate::skirmish_launch::SkirmishLaunchSession::from_rows(
+        crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
+        Some(file.clone()),
+        vec![
             human(0, &pairing.host.name, host_seat),
             human(
                 1,
@@ -935,12 +975,10 @@ fn build_host_options(
                 persona_seat(RANDOM_ITEM_DATA, RANDOM_ITEM_DATA),
             ),
         ],
-        local_player_index: 0,
-        opponents: Vec::new(),
-        ai_player_count: 0,
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
+        0,
+        Vec::new(),
         options,
-    };
+    );
     // 0x0069B600: the guest's picks join as a peer's do, so a colour the
     // host holds turns Random.
     crate::app::match_runtime::session::apply_peer_choices(
@@ -949,7 +987,11 @@ fn build_host_options(
         1,
         guest_seat,
         false,
-        PeerChoicePolicy::Wol { countries: None },
+        PeerChoicePolicy::Wol {
+            countries: None,
+            teams: None,
+        },
+        crate::skirmish_launch::HOUSE_COLOR_COUNT,
     );
     draw_random_picks(&mut launch.humans, countries, pairing.seed)?;
     Ok(crate::app::shell_network_setup::HostOptions {
@@ -1130,6 +1172,25 @@ pub(super) fn game_joined(state: &mut AppState, ok: bool) {
         set_stage(state, stage::WAITING, Some(90));
     } else {
         csf_line(state, "WOL:MatchErrorJoiningGame", ERROR_COLOR);
+    }
+}
+
+/// The admission `0x0079BA60` refused the host's game, so `0x00789960`
+/// sends no join and the join answers false ([`game_joined`]).
+/// VERA: gamemd's Quick Match says no more; the refusal's line follows.
+/// A rules difference is worded as the pre-match check words it:
+/// `TXT_MISMATCH` sends players to Westwood's site for a newer version.
+pub(super) fn game_refused(state: &mut AppState, reason: Option<&'static str>) {
+    game_joined(state, false);
+    if let Some(key) = refusal_line(reason) {
+        csf_line(state, key, ERROR_COLOR);
+    }
+}
+
+fn refusal_line(reason: Option<&'static str>) -> Option<&'static str> {
+    match reason? {
+        "TXT_MISMATCH" => Some("VERA:MatchStartMismatch"),
+        key => Some(key),
     }
 }
 
@@ -1517,9 +1578,29 @@ pub(crate) fn add_buddy_answered(state: &mut AppState, yes: bool, ask_again: boo
     welcome(state);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_changed_files_box_names_three_and_counts_the_rest() {
+        let files = [
+            "rulesmd.ini",
+            "clear01.sno",
+            "clear02.sno",
+            "clear03.sno",
+            "clear04.sno",
+        ]
+        .map(String::from);
+        assert_eq!(
+            changed_files_text(&files[..3]),
+            "rulesmd.ini, clear01.sno, clear02.sno"
+        );
+        assert_eq!(
+            changed_files_text(&files),
+            "rulesmd.ini, clear01.sno, clear02.sno (+2)"
+        );
+    }
 
     #[test]
     fn the_request_names_its_fields_and_omits_an_unknown_locale() {
@@ -1683,6 +1764,114 @@ mod tests {
             (globals.stage, globals.timeout),
             (stage::IN_LOBBY, Some(20))
         );
+    }
+
+    #[test]
+    fn changes_to_the_original_end_quick_match_before_it_queues() {
+        use crate::app::process_assets::ProcessAssets;
+        use crate::assets::asset_manager::MediaArchiveMode;
+        use crate::rules::personal_rules::PersonalRules;
+        use crate::util::ares_launch::AresSetting;
+        // The Options switches stay home: Quick Match's room shares none,
+        // so its match plays without them.
+        let mut changes = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+            .with_personal_rules(PersonalRules::default());
+        changes.set_terrain_deformation(true);
+        assert_eq!(original_game_refusal(None, &changes), None);
+        // A loose rulesmd.ini the retail archives don't hold, found at startup.
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("qm-files");
+        std::fs::write(dir.path().join("rulesmd.ini"), b"[General]\n").unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
+        assert_eq!(original_game_refusal(None, &changes), Some(CHANGED_FILES));
+        // Ares On as well: the rules-differ text names both, and Quick Match
+        // the setting, as On can mount the `ares.mix` a files box would name.
+        changes = changes.with_ares_setting(AresSetting::On);
+        assert_eq!(
+            original_game_changes(None, &changes),
+            [
+                OriginalGameChange::Ares(AresSetting::On),
+                OriginalGameChange::ChangedFiles(&["rulesmd.ini".to_owned()]),
+            ]
+        );
+        assert_eq!(
+            original_game_refusal(None, &changes),
+            Some("VERA:QuickMatchAresSetting")
+        );
+        changes = changes.with_ares_setting(AresSetting::Auto);
+        // With no mod selected, an installed `ares.mix` is ignored. The
+        // changed rules still refuse Quick Match; removing them permits it.
+        dir.write_mix("ares.mix", "ares.txt", b"ares");
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
+        assert_eq!(original_game_refusal(None, &changes), Some(CHANGED_FILES));
+        std::fs::remove_file(dir.path().join("rulesmd.ini")).unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert!(changes.changed_game_files().is_empty());
+        assert_eq!(original_game_refusal(None, &changes), None);
+        // Original mode also skips an installed LANGRULE, even without a
+        // valid Digest; it must not prevent Quick Match from queuing.
+        std::fs::write(
+            dir.path().join("langrule.ini"),
+            b"[General]\nBuildSpeed=9\n",
+        )
+        .unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert!(changes.changed_game_files().is_empty());
+        assert_eq!(original_game_refusal(None, &changes), None);
+        // A selected mod remains ineligible for Quick Match.
+        assert_eq!(
+            original_game_refusal(Some("My Mod"), &changes),
+            Some("VERA:QuickMatchNoMod")
+        );
+    }
+
+    #[test]
+    fn a_refused_join_says_the_games_differ() {
+        use crate::ui::wol_lobby::{AdmissionContext, GAME_QUICK_MATCH, admit};
+        let host = WolChannel {
+            kind: GAME_CHANNEL,
+            max_users: 2,
+            users: 1,
+            game_flags: GAME_QUICK_MATCH,
+            name: "Host's_game".into(),
+            ex_info: "25,7,0,0,0,x".into(),
+            ..Default::default()
+        };
+        let same = AdmissionContext {
+            quick_match: true,
+            clan_id: 0,
+            local_hash: Some(7),
+            vera_rooms: true,
+        };
+        assert_eq!(admit(&host, false, same), Ok(()));
+        let changed = AdmissionContext {
+            local_hash: Some(8),
+            ..same
+        };
+        let reason = admit(&host, false, changed).unwrap_err();
+        assert_eq!(refusal_line(reason), Some("VERA:MatchStartMismatch"));
+        assert_eq!(refusal_line(None), None);
     }
 
     #[test]

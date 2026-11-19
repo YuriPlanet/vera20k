@@ -431,7 +431,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dlph, 0, 7, -1, false, false),
+        resolve_shp_vehicle_body_frame(&dlph, 0, 7, -1, -1, false, false),
         Some(7),
         "idle Dolphin uses walk/swim slot 1 and counter 7 % 6"
     );
@@ -445,19 +445,19 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&sqd, 0, 3, -1, false, false),
+        resolve_shp_vehicle_body_frame(&sqd, 0, 3, -1, -1, false, false),
         Some(23),
         "idle Squid uses walk/swim slot 1 and counter 3"
     );
 
     let dron = gsi_13_06_shp_set(6, 48, FootBodyCadence::native_defaults());
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 99, -1, false, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 99, -1, -1, false, false),
         Some(49),
         "idle Terror Drone with IdleRate=0 uses standing slot 1"
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 7, -1, true, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 7, -1, -1, true, false),
         Some(7),
         "moving Terror Drone uses counter 7 % 6"
     );
@@ -508,7 +508,7 @@ fn retail_drone_firing_counter_and_frames_match_original() {
         .enumerate()
     {
         assert_eq!(
-            resolve_shp_vehicle_body_frame(set, facing as u8, 0, 7, false, false),
+            resolve_shp_vehicle_body_frame(set, facing as u8, 0, 7, -1, false, false),
             Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
             "native DRON first firing image, facing {facing}"
         );
@@ -517,12 +517,57 @@ fn retail_drone_firing_counter_and_frames_match_original() {
         let facing = u8::try_from(row["facing"].as_u64().unwrap()).unwrap();
         for (step, expected) in row["frames"].as_array().unwrap().iter().enumerate() {
             assert_eq!(
-                resolve_shp_vehicle_body_frame(set, facing, 99, 7 - step as i32, true, false),
+                resolve_shp_vehicle_body_frame(set, facing, 99, 7 - step as i32, -1, true, false),
                 Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
                 "firing precedes moving body: facing {facing}, step {step}"
             );
         }
     }
+}
+
+/// The frame-end step looks up only the classes built with an Animation: the
+/// infantry and buildings beside an SHP unit are never read, and the unit's
+/// sequence steps as before.
+#[test]
+fn the_frame_end_step_reads_only_units_and_aircraft() {
+    use crate::map::entities::EntityCategory;
+    let mut interner = StringInterner::new();
+    let kind = interner.intern("DRON");
+    let mut store = crate::sim::entity_store::EntityStore::new();
+    let mut add = |id: u64, category| {
+        let mut entity =
+            GameEntity::test_default_of_category(id, "DRON", "Americans", 4, 4, category);
+        entity.set_type_ref_for_test(kind);
+        if category == EntityCategory::Unit {
+            entity.animation = Some(Animation::new(SequenceKind::Walk));
+        }
+        store.insert(entity);
+    };
+    for id in 1..=6 {
+        add(id, EntityCategory::Infantry);
+    }
+    for id in 7..=9 {
+        add(id, EntityCategory::Structure);
+    }
+    add(10, EntityCategory::Unit);
+    let mut set = SequenceSet::new();
+    set.insert(SequenceKind::Walk, test_def(0, 6, 8, 1, LoopMode::Loop));
+    let sequences = std::collections::BTreeMap::from([("DRON".to_string(), set)]);
+
+    let (before, _) = store.lookups();
+    tick_non_dying_animations(
+        &mut store,
+        &sequences,
+        RuleSet::empty_for_test(),
+        &GameOptions::default(),
+        &interner,
+        1,
+    );
+    let (after, _) = store.lookups();
+
+    assert_eq!(after - before, 2, "the unit is read, then borrowed");
+    let unit = store.get(10).unwrap();
+    assert_eq!(unit.animation.as_ref().unwrap().frame_index(), 1);
 }
 
 // --- advance_animation tests ---
@@ -1469,10 +1514,8 @@ fn raw_infantry_frames_match_whole_original_selector_rows() {
         return;
     };
     let set = rules.animation_sequence("E1").unwrap();
-    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/foot_missions.json",
-    ))
-    .unwrap();
+    let corpus =
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
     let receipt = &corpus["infantry_frame_selection_receipt"];
     assert_eq!(receipt["native_span"]["address"], "0x00518D80");
     assert_eq!(receipt["native_span"]["stop"], "0x00518F89");
@@ -1767,9 +1810,9 @@ fn foot_body_counter_matches_original_concrete_classes() {
 /// Ares 3.0 FootClass_Update_AnimRate (100493D0, hook 0x4DA8B2): an airborne
 /// Foot with an `AirRate` steps only on the frames it divides, whatever its
 /// IdleRate; on the ground the stock cadence decides again.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_air_rate_alone_steps_an_airborne_foot() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let cadence = FootBodyCadence {
         walk_rate: 1,
         idle_rate: 1,

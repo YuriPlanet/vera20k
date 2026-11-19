@@ -121,32 +121,19 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     return shade(input, tactical_a_at(input.position.xy));
 }
 
-// DSurface4C0750's dashed stores (rally passes, psychic detection dashes)
-// keep or skip each pixel by the live tactical A: FX_SURFACE_A_NONZERO
-// (256) stores where it is nonzero, FX_SURFACE_A_ZERO (512) where it is zero,
-// and neither stores everywhere. The stored color reads no palette row.
+// Surface stores at neutral A (the ground marks). The stored color reads no
+// palette row. The line strokes draw through `surface_strokes.wgsl`.
 @fragment
 fn fs_surface_store(input: VertexOutput) -> @location(0) vec4f {
-    var store = input;
-    store.fx_flags = input.fx_flags & ~768u;
-    let color = shade(store, 127u);
-    let a = tactical_a_at(input.position.xy);
-    if ((input.fx_flags & 256u) != 0u && a == 0u) || ((input.fx_flags & 512u) != 0u && a != 0u) {
-        discard;
-    }
-    return color;
+    return shade(input, 127u);
 }
 
 fn shade(input: VertexOutput, a: u32) -> vec4f {
     let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
-    var color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
-    if (input.source_palette != 0u) {
-        color = indexed_color(index, input.source_palette);
-    }
-    return shade_color(input, color, index, a);
+    return shade_color(input, sampled_source_color(input.uv, index, input.source_palette), index, a);
 }
 
-// What a source colour stores: the shared end of every colour path here.
+// What an encoded source colour stores: the shared end of every colour path here.
 fn shade_color(input: VertexOutput, color: vec4f, index: u32, a: u32) -> vec4f {
     // Discard fully transparent pixels so they don't write to the depth buffer.
     // Without this, transparent regions of sprite quads would occlude objects behind them.
@@ -257,8 +244,8 @@ fn smooth_corner(
     let sum = at.x + at.y;
     corner.blend = saturate((sum + pixel - 1.75) / (2.0 * pixel));
     let sharp = e < i
-        && (!smooth_eq(pf, pb) && !smooth_eq(ph, pd)
-            || smooth_eq(pe, pi) && !smooth_eq(pf, i4) && !smooth_eq(ph, i5)
+        && ((!smooth_eq(pf, pb) && !smooth_eq(ph, pd))
+            || (smooth_eq(pe, pi) && !smooth_eq(pf, i4) && !smooth_eq(ph, i5))
             || smooth_eq(pe, pg)
             || smooth_eq(pe, pc));
     if sharp {
@@ -374,5 +361,6 @@ fn fs_shell_smooth(input: VertexOutput) -> @location(0) vec4f {
         );
     }
     let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
-    return shade_color(input, color, index, tactical_a_at(input.position.xy));
+    let encoded = vec4f(srgb_encode(color.rgb), color.a);
+    return shade_color(input, encoded, index, tactical_a_at(input.position.xy));
 }

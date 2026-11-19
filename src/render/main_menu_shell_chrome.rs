@@ -787,7 +787,7 @@ fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiec
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

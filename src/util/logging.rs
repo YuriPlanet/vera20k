@@ -48,10 +48,7 @@ pub fn init_file_logger(name: &str) -> io::Result<PathBuf> {
     log_path.push(format!("{name}.log"));
     roll_over_large_log(&log_path, LOG_ROLL_OVER_BYTES);
 
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)?;
+    let file = RollingFile::open(log_path.clone(), LOG_ROLL_OVER_BYTES)?;
 
     // Suppress wgpu_hal's per-frame "Suboptimal present" warnings which
     // flood the log (~100K+ lines per session on AMD Vulkan).
@@ -62,9 +59,52 @@ pub fn init_file_logger(name: &str) -> io::Result<PathBuf> {
     Ok(log_path)
 }
 
-/// A log past this size at start-up becomes `<name>.log.1` and a new one
-/// starts, so the folder holds at most about twice this.
+/// A log past this size, at start-up or while the game runs, becomes
+/// `<name>.log.1` and a new one starts, so the folder holds at most about
+/// twice this however much one session writes.
 const LOG_ROLL_OVER_BYTES: u64 = 10 * 1024 * 1024;
+
+/// The open log, rolled over once a write takes it past `limit`.
+struct RollingFile {
+    file: File,
+    path: PathBuf,
+    len: u64,
+    limit: u64,
+}
+
+impl RollingFile {
+    fn open(path: PathBuf, limit: u64) -> io::Result<Self> {
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
+        let len = file.metadata().map_or(0, |meta| meta.len());
+        Ok(Self {
+            file,
+            path,
+            len,
+            limit,
+        })
+    }
+
+    fn write_line(&mut self, line: &[u8]) -> io::Result<()> {
+        self.file.write_all(line)?;
+        self.len += line.len() as u64;
+        if self.len > self.limit {
+            let _ = self.file.flush();
+            roll_over_large_log(&self.path, self.limit);
+            // A failed reopen keeps appending to the file already open. The
+            // count restarts either way, so a refused rename is retried after
+            // another `limit` bytes, not on every line.
+            if let Ok(file) = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.path)
+            {
+                self.file = file;
+            }
+            self.len = 0;
+        }
+        Ok(())
+    }
+}
 
 /// Move a log larger than `limit` to `<file>.1`, replacing the older copy.
 /// A failure keeps appending to the old file rather than stopping start-up.
@@ -101,7 +141,7 @@ fn install(default_filter: &str, destination: Destination) -> Result<(), log::Se
 
 enum Destination {
     Stderr,
-    File(Mutex<File>),
+    File(Mutex<RollingFile>),
 }
 
 struct Logger {
@@ -136,7 +176,7 @@ impl Log for Logger {
         let _ = match &self.destination {
             Destination::Stderr => io::stderr().lock().write_all(line.as_bytes()),
             Destination::File(file) => match file.lock() {
-                Ok(mut file) => file.write_all(line.as_bytes()),
+                Ok(mut file) => file.write_line(line.as_bytes()),
                 Err(_) => Ok(()),
             },
         };
@@ -145,7 +185,7 @@ impl Log for Logger {
     fn flush(&self) {
         let _ = match &self.destination {
             Destination::Stderr => io::stderr().flush(),
-            Destination::File(file) => file.lock().map_or(Ok(()), |mut file| file.flush()),
+            Destination::File(file) => file.lock().map_or(Ok(()), |mut file| file.file.flush()),
         };
     }
 }
@@ -352,14 +392,14 @@ fn normalize_crlf(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\n', "\r\n")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use std::sync::atomic::AtomicBool;
     use std::time::{Duration, UNIX_EPOCH};
 
     use log::LevelFilter;
 
-    use super::{Filter, claim_exception_dump, roll_over_large_log, utc_timestamp};
+    use super::{Filter, RollingFile, claim_exception_dump, roll_over_large_log, utc_timestamp};
 
     #[test]
     fn a_log_past_the_limit_moves_aside_and_a_small_one_stays() {
@@ -377,6 +417,25 @@ mod tests {
         roll_over_large_log(&log, 8);
         assert!(!log.exists());
         assert_eq!(std::fs::read(&previous).unwrap().len(), 9);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_session_that_writes_past_the_limit_rolls_over_while_running() {
+        let dir = std::env::temp_dir().join(format!("vera20k-log-live-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("ra2.log");
+        let mut file = RollingFile::open(log.clone(), 8).unwrap();
+        file.write_line(b"12345678").unwrap();
+        assert!(
+            !dir.join("ra2.log.1").exists(),
+            "a log at the limit keeps growing"
+        );
+
+        file.write_line(b"9").unwrap();
+        file.write_line(b"next").unwrap();
+        assert_eq!(std::fs::read(dir.join("ra2.log.1")).unwrap(), b"123456789");
+        assert_eq!(std::fs::read(&log).unwrap(), b"next");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

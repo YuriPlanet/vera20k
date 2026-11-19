@@ -269,6 +269,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "turret_rotate_sound_tests.rs"]
 mod tests;

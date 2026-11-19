@@ -482,9 +482,9 @@ fn tilts_when_crushes_overlays_gates_the_overlay_recoil() {
 /// Ares UnitClass_CrushCell_CrushDamage (hook 0x7418AA): crushing a type
 /// with `CrushDamage=` damages the crusher with its `CrushDamage.Warhead`;
 /// an explicit `none` warhead deals nothing.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_crush_damage_hurts_the_crusher() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let crush = |warhead: &str| {
         let rules = crate::rules::ruleset::RuleSet::from_ini(
             &crate::rules::ini_parser::IniFile::from_str(&format!(

@@ -130,22 +130,22 @@ pub(crate) enum SuperWeaponEvaStage {
 }
 
 /// Ares Ready hooks10035070/100350D0, detection100349D0 and common
-/// Launch10032FC3 select the retained EVA ordinal. New handlers suppress
-/// stock fallbacks even for -1; unported stock redirects keep their old owner.
+/// Launch10032FC3 select the retained EVA ordinal, when the Rules were read
+/// the Ares way (`ares`, `RuleSet::ares_form`). New handlers suppress stock
+/// fallbacks even for -1; unported stock redirects keep their old owner.
 pub(crate) fn resolved_superweapon_eva<'a>(
     sw: &'a crate::rules::superweapon_type::SuperWeaponType,
     stage: SuperWeaponEvaStage,
     stock: Option<&'static str>,
+    ares: bool,
 ) -> Option<&'a str> {
-    #[cfg(feature = "ares")]
-    if let Some(eva) = sw.ares_eva() {
+    if ares && let Some(eva) = sw.ares_eva() {
         return match stage {
             SuperWeaponEvaStage::Ready => eva.ready(),
             SuperWeaponEvaStage::Activated => eva.activated(),
             SuperWeaponEvaStage::Detected => eva.detected(),
         };
     }
-    let _ = (sw, stage);
     stock
 }
 
@@ -184,8 +184,7 @@ pub(crate) const EVA_STRUCTURE_SOLD: &str = "EVA_StructureSold";
 pub(crate) const EVA_REPAIRING: &str = "EVA_Repairing";
 /// String `0x00818FAC`.
 pub(crate) const EVA_BUILDING_CAPTURED: &str = "EVA_BuildingCaptured";
-/// String `0x00818FC4` (Ares builds play the type's `LostEvaEvent`).
-#[cfg(any(test, not(feature = "ares")))]
+/// String `0x00818FC4` (a game Ares plays in plays the type's `LostEvaEvent`).
 pub(crate) const EVA_TECH_BUILDING_LOST: &str = "EVA_TechBuildingLost";
 /// String `0x00824B70`.
 pub(crate) const EVA_PLAYER_DEFEATED: &str = "EVA_PlayerDefeated";
@@ -302,7 +301,7 @@ pub(crate) fn super_weapon_detected_allowed(
 /// The lines the capture block speaks on the local machine
 /// (`BuildingClass::ChangeOwner 0x004483FB..0x0044848F`), in native order:
 /// a `NeedsEngineer=` building says `tech_lost_event` (`EVA_TechBuildingLost`,
-/// in Ares builds the type's `LostEvaEvent`, hook `0x0044840B`) when the OLD
+/// when Ares plays the type's `LostEvaEvent`, hook `0x0044840B`) when the OLD
 /// owner is local (`0x00448415`) and then queues the type's
 /// `CaptureEvaEvent=` when the NEW owner is local (`0x0044842F..0x00448459`);
 /// any other building says `EVA_BuildingCaptured` once the radar event was
@@ -389,7 +388,6 @@ pub(crate) fn infiltration_eva_events(
         InfiltrationEffect::None => {}
         // Ares 3.0 10012000 (hook 0x004571E0): each arm's lines in its
         // order, every one behind the radar event.
-        #[cfg(feature = "ares")]
         InfiltrationEffect::Ares(arms) => {
             let either = owner || infiltrator;
             if let Some(owner_spy_sat) = arms.radar_reset
@@ -466,7 +464,7 @@ pub(crate) fn rally_point_announces(obj: &ObjectType) -> bool {
     !obj.construction_yard && !obj.resource_destination
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 
@@ -791,15 +789,12 @@ mod tests {
         u64,
         u64,
     )> {
-        use crate::rules::overlay_types::OverlayTypeRegistry;
         use crate::sim::house_state::HouseState;
         use crate::sim::overlay_grid::OverlayGrid;
         use crate::sim::runtime::{SimResources, SimRuntime};
         use crate::sim::world::Simulation;
 
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
-        let overlays =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = Simulation::with_seed(0x4F93_E000);
         sim.intern_rule_type_ids(&rules);
@@ -828,7 +823,10 @@ mod tests {
         // no ore (SlaveManager6B0062). Supply map-like ore east of the
         // target's 2x2 foundation, through the shared overlay/recalc owner,
         // so ordinary slaves work while the real attacker closes in.
-        let ore_id = overlays.id_for_name("TIB01").expect("stock ore overlay");
+        let ore_id = rules
+            .overlay_registry()
+            .id_for_name("TIB01")
+            .expect("stock ore overlay");
         let mut ore = OverlayGrid::new(32, 32);
         for ry in 19..=21 {
             for rx in 23..=25 {
@@ -837,7 +835,7 @@ mod tests {
                     sim.resolved_terrain_mut_for_test()
                         .as_mut()
                         .expect("arena terrain"),
-                    &overlays,
+                    rules.overlay_registry(),
                     (rx, ry),
                 );
             }
@@ -857,13 +855,11 @@ mod tests {
         let attacker = sim
             .spawn_object_at_height("CLEG", "Americans", 6, 20, 0, 0, &rules)
             .expect("stock hostile Chrono Legionnaire");
-        let mut resources = SimResources::empty();
-        resources.rules = rules;
-        resources.overlay_registry = overlays;
+        let resources = SimResources::new(rules);
         Some((
             SimRuntime {
                 simulation: sim,
-                resources,
+                resources: resources.into(),
             },
             local,
             enemy,
@@ -1093,9 +1089,9 @@ mod tests {
 
     /// Ares `InfiltratedBy @ 10012000`: each applied arm speaks its lines in
     /// order, all behind the radar event.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_infiltration_lines_follow_each_applied_arm() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
         let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
             radar_reset: Some(false),
@@ -1124,9 +1120,9 @@ mod tests {
 
     /// The StolenTech arm (`10012000`) plays the owner's
     /// `EVA_TechnologyStolen` and the spy's two lines, after the outage's.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_stolen_tech_lines_follow_the_power_outage() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
         let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
             power_outage: true,

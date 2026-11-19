@@ -163,6 +163,6 @@ impl ElectricBolts {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "electric_bolt_lifetime_tests.rs"]
 mod tests;

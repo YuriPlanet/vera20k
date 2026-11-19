@@ -459,7 +459,7 @@ impl Simulation {
             }
             return;
         }
-        self.locomotor_mark_all_occupation_bits(target, false);
+        self.locomotor_mark_all_occupation_bits(target, false, rules.ares_form());
         let _ = self.force_track(
             target,
             -1,
@@ -480,6 +480,7 @@ impl Simulation {
                 target,
                 coords,
                 false,
+                rules.ares_form(),
             );
         }
         if let Some(entity) = self.substrate.entities.get_mut(target) {
@@ -1019,10 +1020,10 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "locomotor_lift_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "locomotor_lift_native_tests.rs"]
 mod native_tests;

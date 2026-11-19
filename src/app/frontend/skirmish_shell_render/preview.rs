@@ -18,10 +18,7 @@ use crate::ui::shell::geom::ShellScale;
 use crate::ui::skirmish_shell::RectPx;
 
 use super::chrome::push_entry_grown;
-use super::{
-    RANDMAP_PREVIEW_FILE_NAME, RANDMAP_SENTINEL_FILE_NAME, SHELL_PREVIEW_SURFACE_DEPTH,
-    START_MARKER_OFFSET_X, START_MARKER_OFFSET_Y,
-};
+use super::{SHELL_PREVIEW_SURFACE_DEPTH, START_MARKER_OFFSET_X, START_MARKER_OFFSET_Y};
 
 pub(crate) struct SkirmishPreviewTexture {
     pub selected_map_idx: usize,
@@ -235,13 +232,14 @@ pub(super) fn project_preview_start_positions(
         return Vec::new();
     }
 
-    // VERA authored maps can expose thirty admitted starts. The projection
-    // remains the same for native maps. Reject a malformed header as a whole
-    // rather than dropping one point and renumbering every later start label.
+    // VERA authored maps can expose SKIRMISH_MAX_SLOT_COUNT admitted starts.
+    // The projection remains the same for native maps. Reject a malformed
+    // header as a whole rather than dropping one point and renumbering every
+    // later start label.
     bounds
         .start_points
         .iter()
-        .take(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT)
+        .take(crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT)
         .map(|point| {
             let x_per_mille = ((i64::from(point.x) - i64::from(bounds.origin_x)) * 1000)
                 / i64::from(bounds.width);
@@ -294,18 +292,18 @@ pub(super) fn is_random_map_sentinel_file_name(file_name: &str) -> bool {
     // Map names can carry the game's own `\` separators, so split on both `\`
     // and `/` on every host (`Path::file_name` only knows the host's).
     let name = file_name.rsplit(['\\', '/']).next().unwrap_or(file_name);
-    name.eq_ignore_ascii_case(RANDMAP_SENTINEL_FILE_NAME)
+    name.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
 }
 
-pub(super) fn is_random_map_sentinel_entry(entry: &MapMenuEntry) -> bool {
+pub(crate) fn is_random_map_sentinel_entry(entry: &MapMenuEntry) -> bool {
     is_random_map_sentinel_file_name(&entry.file_name)
 }
 
 pub(super) fn decode_randmap_preview_from_runtime_file()
 -> Option<crate::map::preview::DecodedPreview> {
     let config = crate::util::config::GameConfig::load().ok()?;
-    let preview_path =
-        crate::map::source::random_map_dir(&config.paths.ra2_dir).join(RANDMAP_PREVIEW_FILE_NAME);
+    let preview_path = crate::map::source::random_map_dir(&config.paths.ra2_dir)
+        .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW);
     let bytes = match crate::util::file_system::read(&preview_path) {
         Ok(bytes) => bytes,
         Err(err) => {
@@ -1016,7 +1014,7 @@ pub(super) fn build_preview_surface_instance(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

@@ -359,7 +359,13 @@ fn stamp_end(
     alternate: (i32, (i32, i32)),
     default: (i32, (i32, i32)),
 ) {
-    let use_alternate = end_area_is_placeable(ctx.grid, ctx.scratch, ctx.ids, validator)
+    // Ares RMG_FixPavedRoadEnd_Bridges_East/West/North/South (Ares.dll
+    // 1006AD50/1006AD80/1006AD60/1006AD70, hooks 0x58FBDD/0x58FCC6/0x59000E/
+    // 0x5900F7) replace the coin loop with a jump to the default road end
+    // when Ares.dll is loaded (the game is read the Ares way): the probe's
+    // verdict goes unused and the coin is never drawn.
+    let use_alternate = !ctx.ares
+        && end_area_is_placeable(ctx.grid, ctx.scratch, ctx.ids, validator)
         && ctx.rng.uniform(0, 1) != 0;
     let (tile, origin) = if use_alternate { alternate } else { default };
     // Native passes scratch id -1 and level base -1 to the unconditional
@@ -410,14 +416,42 @@ fn place_hut(
     }
 }
 
+/// Ares' bridge placement fix. RMG_PlaceWEBridge (Ares.dll 1006ADB0, hook
+/// 0x58FA51) sends any rect wider than tall straight to the east-west stamp
+/// (0x58FA73), past both the axis test and ValidateLowBridgeDeckArea.
+/// RMG_PlaceNSBridge (1006AD90, hook 0x58FE7B) sends a north-south rect
+/// taller than wide to its stamp (0x58FE91), also unvalidated. Every other
+/// rect takes the stock validated path. Only when Ares.dll is loaded (the game
+/// is read the Ares way).
+fn unvalidated_axis(candidate: DeckCandidate) -> Option<DeckAxis> {
+    let (_, _, w, h) = candidate.rect;
+    if w > h {
+        Some(DeckAxis::EastWest)
+    } else if candidate.axis == DeckAxis::NorthSouth && h > w {
+        Some(DeckAxis::NorthSouth)
+    } else {
+        None
+    }
+}
+
 fn commit_candidate(
     ctx: &mut CarveCtx<'_>,
-    candidate: DeckCandidate,
+    mut candidate: DeckCandidate,
     structures: &mut Vec<(String, i16, i16)>,
     trace: &mut RmgConstructionTrace,
 ) -> bool {
-    if !deck_area_is_clear(ctx.grid, ctx.scratch, ctx.ids, candidate.rect) {
-        return false;
+    let unvalidated = if ctx.ares {
+        unvalidated_axis(candidate)
+    } else {
+        None
+    };
+    match unvalidated {
+        Some(axis) => candidate.axis = axis,
+        None => {
+            if !deck_area_is_clear(ctx.grid, ctx.scratch, ctx.ids, candidate.rect) {
+                return false;
+            }
+        }
     }
     stamp_deck(ctx, candidate);
     let (x, y, w, h) = candidate.rect;
@@ -569,7 +603,7 @@ pub fn end_area_is_placeable(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::playfield::PlayfieldBounds;
@@ -892,6 +926,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         find_candidate(&ctx, (50, 50), 1, 2).expect("cross has a valid axis")
     }
@@ -991,6 +1026,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             carve_connectors_for_region(&mut ctx, regions, flood, 0, &mut structures, &mut trace)
         };
@@ -1096,7 +1132,7 @@ mod tests {
         let mut rng = RmgRng::new(9);
         let mut probe = RmgRng::new(9);
         let rejections = walk_accepted_seeds(&mut probe, &scratch, 0, 26);
-        let west_alternate = probe.uniform(0, 1) != 0;
+        let west_alternate = expected_end_coin(&mut probe, false);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();
         {
@@ -1107,6 +1143,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(place_low_bridge_deck(
                 &mut ctx,
@@ -1171,7 +1208,7 @@ mod tests {
         let mut rng = RmgRng::new(17);
         let mut probe = RmgRng::new(17);
         let rejections = walk_accepted_seeds(&mut probe, &scratch, 0, 1);
-        let south_alternate = probe.uniform(0, 1) != 0;
+        let south_alternate = expected_end_coin(&mut probe, false);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();
         {
@@ -1182,6 +1219,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(place_low_bridge_deck(
                 &mut ctx,
@@ -1250,6 +1288,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             place_low_bridge_deck(&mut ctx, 0, 1, 2, &mut structures, &mut trace)
         };
@@ -1393,6 +1432,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             // This validator hangs outside the diamond, forcing the default
             // end without a coin while still exercising the production owner.
@@ -1431,8 +1471,22 @@ mod tests {
         );
     }
 
+    /// The end-piece coin the production owner draws for a placeable end:
+    /// none when Ares.dll is loaded (RMG_FixPavedRoadEnd_Bridges_*, hooks
+    /// 0x58FBDD/0x58FCC6/0x59000E/0x5900F7), which always takes the default.
+    fn expected_end_coin(rng: &mut RmgRng, ares: bool) -> bool {
+        !ares && rng.uniform(0, 1) != 0
+    }
+
+    /// The stock coin matrix. With Ares.dll loaded no coin is drawn and the
+    /// default end is stamped on every path (hooks 0x58FBDD..0x5900F7).
     #[test]
     fn four_end_coin_and_stamp_matrix_matches_native_production_owner() {
+        end_coin_and_stamp_matrix(false);
+        end_coin_and_stamp_matrix(true);
+    }
+
+    fn end_coin_and_stamp_matrix(ares: bool) {
         for end in [
             MatrixEnd::East,
             MatrixEnd::West,
@@ -1445,7 +1499,7 @@ mod tests {
                 MatrixPath::CoinTrue,
             ] {
                 let spec = matrix_end_spec(end);
-                let target_alternate = matches!(path, MatrixPath::CoinTrue);
+                let target_alternate = !ares && matches!(path, MatrixPath::CoinTrue);
                 let seed = match path {
                     MatrixPath::AreaFalse => match end {
                         MatrixEnd::East => 0xE101,
@@ -1453,11 +1507,12 @@ mod tests {
                         MatrixEnd::North => 0xE103,
                         MatrixEnd::South => 0xE104,
                     },
-                    MatrixPath::CoinFalse | MatrixPath::CoinTrue => {
-                        seed_for_ordered_end_coins(spec.coin_index, target_alternate)
-                    }
+                    MatrixPath::CoinFalse | MatrixPath::CoinTrue => seed_for_ordered_end_coins(
+                        spec.coin_index,
+                        matches!(path, MatrixPath::CoinTrue),
+                    ),
                 };
-                let label = format!("{end:?}/{path:?}");
+                let label = format!("{end:?}/{path:?}/ares={ares}");
                 let (mut grid, mut scratch) = harness();
                 for (x, y) in grid.native_cells().collect::<Vec<_>>() {
                     grid.get_mut(x, y).expect("native matrix cell").occupied = true;
@@ -1477,6 +1532,7 @@ mod tests {
                 let mut rng = RmgRng::new(seed);
                 let mut expected_rng = RmgRng::new(seed);
                 match path {
+                    _ if ares => {}
                     MatrixPath::AreaFalse => {
                         let _other_end_coin = expected_rng.uniform(0, 1);
                     }
@@ -1509,6 +1565,7 @@ mod tests {
                         blocks: &blocks,
                         rng: &mut rng,
                         playfield: &playfield,
+                        ares,
                     };
                     assert!(
                         commit_candidate(
@@ -1612,6 +1669,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert_eq!(
             find_candidate(&ctx, (50, 50), 1, 2),
@@ -1653,6 +1711,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(!outer_cells_are_usable(&ctx, (40, 48), (41, 48)));
         assert!(!outer_cells_are_usable(&ctx, (0, 0), (41, 48)));
@@ -1676,6 +1735,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(outer_cells_are_usable(&ctx, (42, 44), (43, 44)));
         // Sum 88 is inside the level-0 band but not at level 4.
@@ -1706,8 +1766,8 @@ mod tests {
         let identity = ids();
         let mut rng = RmgRng::new(123);
         let mut expected_rng = RmgRng::new(123);
-        let east_alternate = expected_rng.uniform(0, 1) != 0;
-        let west_alternate = expected_rng.uniform(0, 1) != 0;
+        let east_alternate = expected_end_coin(&mut expected_rng, false);
+        let west_alternate = expected_end_coin(&mut expected_rng, false);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();
         {
@@ -1718,6 +1778,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -1804,8 +1865,8 @@ mod tests {
         let identity = ids();
         let mut rng = RmgRng::new(321);
         let mut expected_rng = RmgRng::new(321);
-        let north_alternate = expected_rng.uniform(0, 1) != 0;
-        let south_alternate = expected_rng.uniform(0, 1) != 0;
+        let north_alternate = expected_end_coin(&mut expected_rng, false);
+        let south_alternate = expected_end_coin(&mut expected_rng, false);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();
         {
@@ -1816,6 +1877,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -1878,6 +1940,42 @@ mod tests {
         assert_eq!(trace.events.len(), 2);
     }
 
+    /// Ares RMG_PlaceWEBridge / RMG_PlaceNSBridge (Ares.dll 1006ADB0 /
+    /// 1006AD90, hooks 0x58FA51 / 0x58FE7B): a deck longer than it is wide
+    /// commits past ValidateLowBridgeDeckArea; a square deck is validated.
+    #[test]
+    fn elongated_decks_skip_the_deck_validator_only_with_ares_loaded() {
+        let commits = |axis: DeckAxis, rect: (i32, i32, i32, i32), ares: bool| {
+            let (mut grid, mut scratch) = harness();
+            // An overlay in the validator's one-past margin refuses the deck.
+            let (x, y, w, h) = rect;
+            grid.get_mut(x + w, y + h).unwrap().overlay = 1;
+            let blocks = OneByOne::new();
+            let playfield = playfield();
+            let identity = ids();
+            let mut rng = RmgRng::new(5);
+            let mut structures = Vec::new();
+            let mut trace = RmgConstructionTrace::default();
+            let mut ctx = CarveCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                blocks: &blocks,
+                rng: &mut rng,
+                playfield: &playfield,
+                ares,
+            };
+            let span = w.max(h) - 1;
+            let candidate = DeckCandidate { axis, rect, span };
+            commit_candidate(&mut ctx, candidate, &mut structures, &mut trace)
+        };
+        for ares in [false, true] {
+            assert_eq!(commits(DeckAxis::EastWest, (40, 48, 6, 3), ares), ares);
+            assert_eq!(commits(DeckAxis::NorthSouth, (40, 48, 3, 6), ares), ares);
+            assert!(!commits(DeckAxis::EastWest, (40, 48, 3, 3), ares));
+        }
+    }
+
     #[test]
     fn a_committed_deck_survives_when_both_hut_searches_fail() {
         let (mut grid, mut scratch) = harness();
@@ -1899,6 +1997,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(commit_candidate(
             &mut ctx,
@@ -1928,8 +2027,8 @@ mod tests {
         let identity = ids();
         let mut rng = RmgRng::new(0xC131);
         let mut expected_rng = RmgRng::new(0xC131);
-        let _east_end_coin = expected_rng.uniform(0, 1);
-        let _west_end_coin = expected_rng.uniform(0, 1);
+        let _east_end_coin = expected_end_coin(&mut expected_rng, false);
+        let _west_end_coin = expected_end_coin(&mut expected_rng, false);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();
         {
@@ -1940,6 +2039,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -1982,8 +2082,8 @@ mod tests {
         let identity = ids();
         let mut rng = RmgRng::new(0xC134);
         let mut expected_rng = RmgRng::new(0xC134);
-        let _east_end_coin = expected_rng.uniform(0, 1);
-        let _west_end_coin = expected_rng.uniform(0, 1);
+        let _east_end_coin = expected_end_coin(&mut expected_rng, false);
+        let _west_end_coin = expected_end_coin(&mut expected_rng, false);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();
         {
@@ -1994,6 +2094,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -2041,8 +2142,8 @@ mod tests {
         let identity = ids();
         let mut rng = RmgRng::new(0xC132);
         let mut expected_rng = RmgRng::new(0xC132);
-        let _east_end_coin = expected_rng.uniform(0, 1);
-        let _west_end_coin = expected_rng.uniform(0, 1);
+        let _east_end_coin = expected_end_coin(&mut expected_rng, false);
+        let _west_end_coin = expected_end_coin(&mut expected_rng, false);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();
         {
@@ -2053,6 +2154,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -2091,8 +2193,8 @@ mod tests {
         let identity = ids();
         let mut rng = RmgRng::new(0xC133);
         let mut expected_rng = RmgRng::new(0xC133);
-        let _east_end_coin = expected_rng.uniform(0, 1);
-        let _west_end_coin = expected_rng.uniform(0, 1);
+        let _east_end_coin = expected_end_coin(&mut expected_rng, false);
+        let _west_end_coin = expected_end_coin(&mut expected_rng, false);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();
         {
@@ -2103,6 +2205,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -2416,6 +2519,7 @@ mod tests {
                         blocks: &blocks,
                         rng: &mut rng,
                         playfield: &playfield,
+                        ares: false,
                     };
                     stamp_end(&mut ctx, (16, 16, 6, 6), (tile, origin), (tile, origin));
                 }

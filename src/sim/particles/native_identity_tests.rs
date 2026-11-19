@@ -1,5 +1,7 @@
 //! Original constructor/Logic continuation, bounded to the flat Spark controls
 //! in `procedural_drawing_oracle/electric_bolt` and the retained save envelope.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60), so the
+// stock control holds in a stock game only.
 
 use super::{Particle, ParticleSystem};
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};

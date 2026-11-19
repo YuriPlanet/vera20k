@@ -83,7 +83,6 @@ fn techno_post_object_anger_delta_matches_original_executed_fragment() {
 
 // Stock gamemd's tag tail; Ares replaces it (hook 0x5F57B5,
 // trigger_runtime_ares_tests).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn object_threshold_and_first_damage_order_matches_original_eighteen_controls() {
     let native = damage_corpus();
@@ -139,6 +138,7 @@ fn object_threshold_and_first_damage_order_matches_original_eighteen_controls() 
                 false,
                 0.25,
                 source,
+                false,
             )
         });
         drop(host);
@@ -176,7 +176,6 @@ fn object_threshold_and_first_damage_order_matches_original_eighteen_controls() 
 
 // Stock gamemd's tag tail; Ares replaces it (hook 0x5F57B5,
 // trigger_runtime_ares_tests).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn object_live_reads_and_callback_returns_match_original_twenty_three_mutations() {
     let native = damage_corpus();
@@ -267,6 +266,7 @@ fn object_live_reads_and_callback_returns_match_original_twenty_three_mutations(
                 false,
                 0.25,
                 source,
+                false,
             )
         });
         drop(host);

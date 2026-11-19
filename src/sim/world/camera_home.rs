@@ -158,6 +158,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "camera_home_tests.rs"]
 mod tests;

@@ -124,6 +124,17 @@ fn native_candidate(input: VertexOutput) -> i32 {
     var rect_top: i32 = i32(round(input.rect_top_height.x));
     var rect_bottom: i32 = rect_top + max(i32(round(input.rect_top_height.y)), 1);
     let extended_shape: bool = (input.z_gradient & 0x100u) != 0u;
+    // RESIDUALS, none visible in play:
+    // - Raw frames. An uncompressed SHP frame reaches Bit_Blit (0x004AF126 ->
+    //   0x004373B0), which seeds from the rect clipped to the view
+    //   (0x00437461), while the RLE walker seeds unclipped (0x00437C39). This
+    //   seed is unclipped for both, so a raw gradient-2 frame cut off by the
+    //   view's bottom edge sits up to 4/3 Z per hidden row nearer than native.
+    // - Zero row. Without a z-shape the RLE walker reads its per-pixel adjust
+    //   from the 0x100-byte zero row at 0x0089C568 and advances along x; past
+    //   256 px it reads the next globals (0x0089C668 on) as small signed
+    //   adjustments. Here shape_delta stays 0, so frames wider than 256 px
+    //   drawn with Z and no z-shape differ by a few Z units at x >= 256.
     var shape_delta: i32 = 0;
     if ((input.z_gradient & 0x800u) != 0u) {
         let stride = i32(input.z_gradient >> 16u);
@@ -151,6 +162,14 @@ fn native_candidate(input: VertexOutput) -> i32 {
         }
         rect_top = max(rect_top, origin.y);
         rect_bottom = min(rect_bottom, origin.y + dims.y);
+        // RESIDUALS: the z-shape canvas starts at its frame origin, as every
+        // retail BUILDNGZ frame does; a mod frame with a nonzero origin enters
+        // the intersection (0x004AF08E..0x004AF0CF) offset against this. And
+        // when a body clipped at the view's left edge ends its skip inside a
+        // transparent run, the RLE ZReadWrite leaf advances dest, Z and A past
+        // the overshoot but not the z-shape pointer (0x0049915D..0x0049918F),
+        // so gamemd reads that row's z-shape up to one run to the left. Seen
+        // only on buildings cut by the left edge, as a slight depth shift.
         if (extended_shape) {
             shape_delta = i32(textureLoad(t_zshape, canvas, 0).r * 255.0 + 0.5) - 128;
         }
@@ -193,19 +212,10 @@ struct FragOutput {
 
 // Palette and stored-depth mechanisms are supplied by tactical_shader::source.
 
-@fragment
-fn fs_main(input: VertexOutput) -> FragOutput {
-    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
-    var color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
-    if (input.source_palette != 0u) {
-        color = indexed_color(index, input.source_palette);
-    }
-    if (color.a < 0.01) {
-        discard;
-    }
-
-    let z = native_candidate(input);
-
+// What an admitted source pixel stores. Both discards stay at the depth they
+// have here: one more call level around them makes optimizing FXC stop with an
+// internal error (terrain_depth.wgsl).
+fn zsprite_store(input: VertexOutput, color: vec4f, index: u32, z: i32) -> FragOutput {
     // The shared attachment stores the low16 native word, independent of map bounds.
     let frag_depth: f32 = stored_native_depth(z);
 
@@ -219,5 +229,38 @@ fn fs_main(input: VertexOutput) -> FragOutput {
     if (camera.pad1 > 0.5) {
         output.color = debug_depth_color(frag_depth);
     }
+    return output;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> FragOutput {
+    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
+    let color = sampled_source_color(input.uv, index, input.source_palette);
+    if (color.a < 0.01) {
+        discard;
+    }
+    return zsprite_store(input, color, index, native_candidate(input));
+}
+
+// An opaque body inside a depth-tested edit interval (terrain_depth.wgsl): the
+// same store, which also restarts the pixel's shadow count. VERA scheduling
+// only (terrain_draw.rs `draw_interval_tail`).
+struct CountedFragOutput {
+    @location(0) color: vec4f,
+    @location(1) shadows: vec4f,
+    @builtin(frag_depth) depth: f32,
+};
+
+@fragment
+fn fs_counted(input: VertexOutput) -> CountedFragOutput {
+    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
+    let color = sampled_source_color(input.uv, index, input.source_palette);
+    if (color.a < 0.01) {
+        discard;
+    }
+    let pixel = zsprite_store(input, color, index, native_candidate(input));
+    var output: CountedFragOutput;
+    output.color = pixel.color;
+    output.depth = pixel.depth;
     return output;
 }

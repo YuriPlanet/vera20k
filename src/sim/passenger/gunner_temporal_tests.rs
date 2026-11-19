@@ -45,13 +45,16 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
         ));
         for _ in 0..180 {
             sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-            if !entity(&sim, passenger).passenger_role.is_inside_transport() {
+            if !entity(&sim, passenger)
+                .passenger_role()
+                .is_inside_transport()
+            {
                 break;
             }
         }
         let gunner = entity(&sim, passenger);
         assert!(
-            gunner.passenger_role.is_none(),
+            gunner.passenger_role().is_none(),
             "ordinary unload must finish"
         );
         assert!(!gunner.lifecycle.in_limbo());

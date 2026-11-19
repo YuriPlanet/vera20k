@@ -687,9 +687,6 @@ lifting, interrupted fade and Wave cleanup through ordinary commands. For a
 shot-in-progress image, copy the profile with `ticks = 20` and remove commands
 at or after step 20. Run the same map/profile/config bytes before and after the
 change, then use `tools.map_observation compare` on the completed captures.
-These exact-step captures disable render interpolation: they check ordinary
-output and cleanup, while the production interpolation regression covers an
-interpolated foldback that reproduces the scanline overflow.
 
 The [Dolphin Sonic profile](map_observation.sonic-wave.example.json) uses a
 stock DLPH, enemy CARRIER and a distant enemy survivor. Extract the physical
@@ -1137,9 +1134,10 @@ remains exact: no radar masks, channel tolerances or skipped pixels are applied.
 
 The [retail opening profile](map_observation.sidebar-opening.example.json)
 uses stock AnyTown and ordinary MCV deployment/production before clicking the GI.
-Numeric command handles belong to that seeded launch; rediscover them with a
-zero-step observation after population changes. Pass absolute profile/contract
-paths to the wrapper.
+Its commands name the MCV and the building types (profile v3), so they do not
+depend on that launch's numeric handles, and its cursor rests over the sidebar,
+where no unit can pass under it. Pass absolute profile/contract paths to the
+wrapper.
 
 A v2 profile may opt in to `observe_sidebar_steps: [0, 1, 100]`. Each listed
 capture completed step records the local retained sidebar view: tabs, ordered
@@ -2628,15 +2626,18 @@ and native/GPU checks do not replace that production coverage.
 The final rendered frame records `render.unit_atlas` in the v6 child manifest;
 the validated wrapper retains it as `capture.unit_atlas` in `run.json`. The
 `UnitAtlas` owner reads actual wgpu texture descriptors and resident entries.
-It reports resident sprite count, the last actual build's rasterized sprite count,
-and each page's extent, format, dimensions, mip/sample counts and texel payload
-bytes, plus their total. Page count is the length of `pages`.
+It reports resident sprite count, the count of sprites rasterized since the atlas
+was made (`last_build_rasterized_sprite_count`), and each page's extent, format,
+dimensions, mip/sample counts and texel payload bytes, plus their total. Page
+count is the length of `pages`. Pictures are drawn the first time a frame asks for
+them, so both counts cover what the captured frames drew, not every picture the
+map's voxel models could draw.
 
 Pages are currently single-layer, single-mip, single-sample D2 `R8Uint`, so the
 payload is width × height bytes, including unused page space. Unsupported
 descriptors fail observation rather than retaining stale byte arithmetic. The
-last-build count includes rasterized shadow sprites, can differ from admitted
-resident entries, and stays unchanged on a no-op refresh.
+rasterized count includes shadow sprites and can differ from resident entries,
+since a sprite too large for a page is counted but not kept.
 
 This is resident UnitAtlas texture payload for the captured scenario. It excludes
 CPU caches, `VxlPoseFrameCache`, other atlases, palettes,

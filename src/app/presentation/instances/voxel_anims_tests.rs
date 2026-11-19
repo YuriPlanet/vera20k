@@ -34,12 +34,13 @@ fn a_piece_at_a_bridge_deck_shadows_one_lepton_above_it() {
 /// skipped without them.
 #[test]
 fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
-    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+    let Some(mut battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
+    battle.rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     let rules = &battle.rules;
     let mut sim = Simulation::with_seed(17);
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
@@ -83,14 +84,16 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         }
     }
 
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let air = sim.display_layers().members(DisplayLayer::AIR).to_vec();
     let first = sim.voxel_anims().get(ids[0]).unwrap().world_coord();
     let [x, y] = screen(first.x, first.y, first.z);
     let view = DebrisView {
         terrain: sim.resolved_terrain().unwrap(),
-        camera: [x - 400.0, y - 300.0],
-        viewport: [800.0, 600.0],
+        admission: TacticalAdmission {
+            corner: [x - 400.0, y - 300.0],
+            size: [800.0, 600.0],
+        },
         axis: DepthAxis::NONE,
     };
     let tire =
@@ -134,19 +137,19 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             "a scheme Convert"
         );
         let mut rendered = None;
-        let object = voxel_anim_draw_instance(
-            id,
-            piece,
-            kind,
-            palette,
-            &view,
-            &order,
-            |image, section, m| {
+        let object =
+            voxel_anim_draw_instance(id, piece, kind, palette, &view, &order, |section, m| {
                 rendered = Some(m);
-                cache.render_tumble(&assets, image, section, m, false, None)
-            },
-        )
-        .expect("an admitted piece in view draws");
+                cache.render_tumble(
+                    &assets,
+                    rules.voxel_anim_model(piece.type_id())?,
+                    section,
+                    m,
+                    false,
+                    None,
+                )
+            })
+            .expect("an admitted piece in view draws");
         assert_eq!(object.parent.layer.0, DisplayLayer::AIR.index());
         assert_eq!(
             object.parent.display_order,
@@ -160,6 +163,11 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         for drawn in [shadow, body] {
             assert_eq!(drawn.target, ObjectTexture::UnitPosePage(0));
             assert_eq!(drawn.render_z, RenderZPolicy::ReadOnly);
+            // Both blits walk gradient 0 (0x00749D24, 0x00749E9C).
+            assert_eq!(
+                crate::render::native_z::ZGradient::from_index(drawn.instance.z_gradient),
+                crate::render::native_z::ZGradient::Flat
+            );
         }
         assert_eq!(shadow.instance.draw_state.fx_flags, FX_SHADOW);
         assert_eq!(shadow.instance.z_adjust, -4.0, "flat level-zero ground");
@@ -208,7 +216,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         }
     }
     assert!(sim.voxel_anims().is_empty());
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     assert!(
         ids.iter()
             .all(|&id| order.object_draw(id, SpriteEncoding::Voxel).is_none())
@@ -220,12 +228,13 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
 /// this presentation fixture supplies the impact coordinate, not combat.
 #[test]
 fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
-    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+    let Some(mut battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
+    battle.rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     let rules = &battle.rules;
     let tire_id = rules.voxel_anim_type_id_by_name("TIRE").unwrap();
     let kind = rules.voxel_anim_type(tire_id);
@@ -241,6 +250,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         IVec3::new(12 * 256 + 128, 12 * 256 + 128, 0),
         true,
         &mut Vec::new(),
+        rules,
     )
     .unwrap();
     let ids = sim.voxel_anims().ids();
@@ -290,12 +300,14 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         piece_palette(piece, &tiberium, &sim, &HouseColorMap::new(), &light),
         (0, 1, PaletteLight::plain(53, 425)),
     );
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let [x, y] = screen(location.x, location.y, location.z);
     let view = DebrisView {
         terrain: sim.resolved_terrain().unwrap(),
-        camera: [x - 400., y - 300.],
-        viewport: [800., 600.],
+        admission: TacticalAdmission {
+            corner: [x - 400., y - 300.],
+            size: [800., 600.],
+        },
         axis: DepthAxis::NONE,
     };
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
@@ -307,7 +319,16 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         palette,
         &view,
         &order,
-        |image, section, matrix| cache.render_tumble(&assets, image, section, matrix, false, None),
+        |section, matrix| {
+            cache.render_tumble(
+                &assets,
+                rules.voxel_anim_model(piece.type_id())?,
+                section,
+                matrix,
+                false,
+                None,
+            )
+        },
     )
     .expect("an unowned admitted tyre reaches the physical TIRE pose page");
     assert_eq!(object.parent.layer.0, DisplayLayer::AIR.index());

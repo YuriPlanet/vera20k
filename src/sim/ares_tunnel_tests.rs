@@ -58,6 +58,7 @@ fn enter(sim: &mut Simulation, rules: &RuleSet, foot: u64, tunnel: u64) -> bool 
 /// building (hook `0x44D8A7`, UnloadOne `100098A0`).
 #[test]
 fn a_foot_enters_one_tunnel_and_leaves_from_another() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let owner = americans(&sim);
     assert_eq!(rules.ares_building_globals().tunnel_max_cap(0), Some(2));
@@ -109,6 +110,7 @@ fn a_foot_enters_one_tunnel_and_leaves_from_another() {
 /// `0x73A23F`).
 #[test]
 fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let owner = americans(&sim);
     let tunnel = spawn(&mut sim, &rules, "TUNA", 16, 10);
@@ -161,6 +163,7 @@ fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
 /// last entrance kills every member (KillFootsIfLastTunnel `100093C0`).
 #[test]
 fn only_the_last_entrance_kills_its_network() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let owner = americans(&sim);
     let west = spawn(&mut sim, &rules, "TUNA", 10, 10);
@@ -191,6 +194,7 @@ fn only_the_last_entrance_kills_its_network() {
 /// (PlaceOne `10009810`).
 #[test]
 fn a_sold_last_entrance_puts_its_network_out() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let owner = americans(&sim);
     let tunnel = spawn(&mut sim, &rules, "TUNA", 10, 10);
@@ -209,6 +213,7 @@ fn a_sold_last_entrance_puts_its_network_out() {
 /// `0x73769E`), which answer NEGATORY where the stock receiver says ROGER.
 #[test]
 fn passenger_lists_gate_building_and_transport_can_load() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     const LISTS: &str = "[Countries]\n0=Americans\n1=Russians\n\
          [TunnelTypes]\n0=Net\n\
          [Net]\nPassengers=4\n\

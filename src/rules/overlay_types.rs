@@ -26,10 +26,11 @@ const STOCK_FLAT_RIPARIUS_VARIANT_COUNT: usize = 12;
 /// overlays; every other overlay type gets 0.
 const OVERLAY_TYPE_Y_DRAW_BIAS_PX: f32 = -12.0;
 
-/// A reached native null dereference, array access or division cannot be
-/// interpreted as an empty resource. Loading/runtime owners stop that operation;
-/// presentation owners report it and omit the draw. An unused cold-null Image
-/// remains valid stored state and is not rejected by speculative atlas loading.
+/// A reached native array access or division that has no defined result.
+/// A `[Tiberiums]` entry without a usable `Image=` is not one of these: the
+/// rules owner marks it inert (`TiberiumType::is_inert`) and the lookups below
+/// find no Tiberium there, so rules data alone cannot raise these in a frame.
+/// Presentation owners report an error and omit the draw.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TiberiumImageError {
     #[error("Tiberium slot {0:?} does not exist")]
@@ -161,8 +162,6 @@ pub struct OverlayTypeFlags {
     /// packed value exceeds5. Other overlay previews prefer the SHP header;
     /// in-match Cell radar has its own Tiberium/CellAnim selection.
     pub radar_color: Option<[u8; 3]>,
-    /// Railroad track overlay (TRACKS01..TRACKS16). FA2 renders these +15px lower.
-    pub track: bool,
     /// Canonical Land= value. Constructor default is Clear.
     pub land: LandType,
     /// Whether CellClass retains the overlay's land instead of restoring tile land.
@@ -215,7 +214,6 @@ impl Default for OverlayTypeFlags {
             is_a_rock: false,
             land_wheel_speed_zero: false,
             bridge_deck: false,
-            track: false,
             land: LandType::Clear,
             no_use_tile_land_type: true,
             land_speed_costs: None,
@@ -230,22 +228,27 @@ impl Default for OverlayTypeFlags {
 impl OverlayTypeFlags {
     /// Y pixel offset applied before the sprite is centred on its cell.
     ///
-    /// The active YR overlay draw path biases Tiberium, Wall and Crate overlays
-    /// by -12px and leaves everything else at 0. It is NOT the 15px half-cell
-    /// height: the half-cell shift is already carried by the cell-centre term
-    /// the caller adds, and both engines apply it identically, so this constant
-    /// is the whole remaining vertical delta. `IsVeins=` is deliberately absent
-    /// — it is not in the binary's predicate (and is TS-legacy dead data in YR).
+    /// `OverlayIndex__GetDrawOffset @ 0x005FDCC0`, the only offset
+    /// `CellClass__Get_Draw_Offset @ 0x00480110` adds for the body and the
+    /// shadow: -12px for Tiberium, Wall and Crate overlays (`0x005FDCD2..
+    /// 0x005FDCF9`), then -1px for `Land=Railroad` (`0x005FDCFE..0x005FDD07`),
+    /// which every retail TRACKS overlay sets. It is NOT the 15px half-cell
+    /// height: the caller's cell-centre term carries that, the same in both
+    /// engines, and gamemd adds no track-specific shift. `IsVeins=` is
+    /// deliberately absent — it is not in the binary's predicate.
     ///
-    /// Not modelled: the `-1` the binary adds for `Land=Railroad` overlays and
-    /// for one specific overlay slot. The railroad case is entangled with a
-    /// separate FA2-sourced track offset in the instance builder; see the
-    /// GSI-13.05 report.
+    /// Not modelled: the ordinal-0x7E test (`0x005FDCE6` -12, `0x005FDD08` -1),
+    /// which in retail names only `DUMMYOLD`, an overlay no map places.
     pub fn y_draw_offset(&self) -> f32 {
-        if self.tiberium || self.wall || self.crate_type {
+        let bias = if self.tiberium || self.wall || self.crate_type {
             OVERLAY_TYPE_Y_DRAW_BIAS_PX
         } else {
             0.0
+        };
+        if self.land == LandType::Railroad {
+            bias - 1.0
+        } else {
+            bias
         }
     }
 }
@@ -282,6 +285,13 @@ pub struct OverlayTypeRegistry {
     alpha_images: Vec<String>,
     /// Immutable projection; ProcessedType remains the mutable reader owner.
     images: Vec<ObjectImageState>,
+    /// The scenario's `[General] CliffBackImpassability=` byte
+    /// (`read_cliff_back_impassability`): `CellClass::RecalcAttributes`
+    /// (`0x0047D2B0`) reads a cell's CliffBack neighbours unless it is 0.
+    cliff_back_impassability: u8,
+    /// The Rock row when that byte is 2, which the Recalc then writes on an
+    /// overlay cell behind a cliff (`0x0047D53E`).
+    cliff_back_rock: Option<crate::rules::terrain_rules::LandTypeSemantics>,
 }
 
 impl OverlayTypeRegistry {
@@ -320,51 +330,37 @@ impl OverlayTypeRegistry {
     pub fn from_processed_rules(
         processed: &crate::rules::native_processing::ProcessedRulesLayers,
     ) -> Self {
-        let mut registry = Self::from_projected_ini(processed.ini(), processed.terrain_rules());
-        for (index, (_, damage_levels, explodes, cell_anim, image, crush_sound)) in
-            processed.overlay_type_states().enumerate()
+        let states = processed.overlay_type_states().collect::<Vec<_>>();
+        let names = states.iter().map(|state| state.0.to_owned()).collect();
+        let mut registry =
+            Self::from_projected_ini(processed.ini(), processed.terrain_rules(), names);
+        for (flags, (_, damage_levels, explodes, cell_anim, image, crush_sound)) in
+            registry.flags.iter_mut().zip(states)
         {
-            registry.flags[index].damage_levels = damage_levels;
-            registry.flags[index].explodes = explodes;
-            registry.flags[index].cell_anim = cell_anim.map(str::to_ascii_uppercase);
-            registry.flags[index].crush_sound = crush_sound.map(str::to_owned);
+            flags.damage_levels = damage_levels;
+            flags.explodes = explodes;
+            flags.cell_anim = cell_anim.map(str::to_ascii_uppercase);
+            flags.crush_sound = crush_sound.map(str::to_owned);
             registry.images.push(image.clone());
         }
-        assert_eq!(registry.names.len(), registry.images.len());
         registry
     }
 
-    fn from_projected_ini(ini: &IniFile, terrain_rules: &TerrainRules) -> Self {
-        let section = match ini.section("OverlayTypes") {
-            Some(s) => s,
-            None => {
-                log::warn!("[OverlayTypes] section not found in rules.ini");
-                return OverlayTypeRegistry {
-                    names: Vec::new(),
-                    flags: Vec::new(),
-                    alpha_images: Vec::new(),
-                    images: Vec::new(),
-                };
-            }
-        };
-
-        let names: Vec<String> = section
-            .registry_ids()
-            .into_iter()
-            .map(str::to_string)
-            .collect();
+    /// `names` are the processed Overlay family in allocation order, the
+    /// array a map's overlay byte indexes. The raw `[OverlayTypes]` entries
+    /// are not that list: a repeated name, or a map pass, allocates
+    /// differently from the merged text.
+    fn from_projected_ini(ini: &IniFile, terrain_rules: &TerrainRules, names: Vec<String>) -> Self {
+        let cliff_back_impassability =
+            crate::rules::ruleset::read_cliff_back_impassability(ini.section("General"));
         if names.is_empty() {
-            log::warn!("[OverlayTypes] present but empty");
+            log::warn!("[OverlayTypes] lists no overlay types");
             return OverlayTypeRegistry {
-                names: Vec::new(),
-                flags: Vec::new(),
-                alpha_images: Vec::new(),
-                images: Vec::new(),
+                cliff_back_impassability,
+                ..Self::empty()
             };
         }
 
-        // Native registry allocation follows declaration order; numeric key
-        // text is not a sorting authority.
         // Land is a retained global table, not a re-read of merged INI keys.
         // RecalcAttributes47D2B0 and RecalcZoneType483C80 use that same table.
         let clear_semantics = terrain_rules.semantics_for_land_type(LandType::Clear.as_index());
@@ -374,11 +370,9 @@ impl OverlayTypeRegistry {
         let mut flags: Vec<OverlayTypeFlags> = Vec::with_capacity(names.len());
         let mut alpha_images: Vec<String> = Vec::with_capacity(names.len());
         for (idx, name) in names.iter().enumerate() {
-            let upper_name = name.to_ascii_uppercase();
             // Bridge overlays are identified by hardcoded index position in
             // [OverlayTypes], matching the original engine's direct index checks.
             let bridge_deck = is_bridge_overlay_index(idx as u8);
-            let track = upper_name.starts_with("TRACKS");
             if let Some(type_section) = ini.section(name) {
                 alpha_images.push(type_section.read_object_alpha_image(""));
                 let tiberium = type_section.read_bool("Tiberium", false);
@@ -433,7 +427,6 @@ impl OverlayTypeRegistry {
                     is_a_rock: type_section.read_bool("IsARock", false),
                     land_wheel_speed_zero,
                     bridge_deck,
-                    track,
                     land,
                     no_use_tile_land_type: type_section.read_bool("NoUseTileLandType", true),
                     land_speed_costs,
@@ -447,7 +440,6 @@ impl OverlayTypeRegistry {
                 flags.push(OverlayTypeFlags {
                     tiberium_allows_ramps: false,
                     bridge_deck,
-                    track,
                     land_speed_costs: clear_speed_costs,
                     land_ground_blocked: clear_ground_blocked,
                     land_wheel_speed_zero: clear_speed_costs.is_some_and(|speed_costs| {
@@ -469,6 +461,9 @@ impl OverlayTypeRegistry {
             flags,
             alpha_images,
             images: Vec::new(),
+            cliff_back_impassability,
+            cliff_back_rock: (cliff_back_impassability == 2)
+                .then(|| *terrain_rules.row(LandType::Rock)),
         }
     }
 
@@ -515,7 +510,23 @@ impl OverlayTypeRegistry {
             flags: Vec::new(),
             alpha_images: Vec::new(),
             images: Vec::new(),
+            cliff_back_impassability: 0,
+            cliff_back_rock: None,
         }
+    }
+
+    /// The scenario's `CliffBackImpassability=` byte, which gates the
+    /// CliffBack neighbour reads of every RecalcAttributes.
+    pub(crate) fn cliff_back_impassability(&self) -> u8 {
+        self.cliff_back_impassability
+    }
+
+    /// The Rock row the early overlay branch of RecalcAttributes writes behind
+    /// a cliff, when `CliffBackImpassability=2`.
+    pub(crate) fn cliff_back_rock(
+        &self,
+    ) -> Option<&crate::rules::terrain_rules::LandTypeSemantics> {
+        self.cliff_back_rock.as_ref()
     }
 
     /// AlphaImage strings retained by the allocated OverlayType entries.
@@ -687,8 +698,9 @@ impl OverlayTypeRegistry {
     }
 
     /// OverlayToTiberiumIndex5FDD20: flag gate, then ordered pointer/range
-    /// reads. A reached null before a later match faults natively; an earlier
-    /// match returns without touching later nulls. Flagged misses return slot0.
+    /// reads. Flagged misses return slot0. gamemd faults on a reached null
+    /// Image (`[pImage+0x294]`); an inert entry is skipped instead, and a miss
+    /// whose slot0 is inert or absent is no Tiberium at all.
     pub fn tiberium_type_for_overlay(
         &self,
         tiberium_types: &TiberiumTypeRegistry,
@@ -702,6 +714,9 @@ impl OverlayTypeRegistry {
         }
         let ordinal = i32::from(overlay_id);
         for ty in tiberium_types.types() {
+            if ty.is_inert() {
+                continue;
+            }
             let base = self.tiberium_image_base(ty)?;
             let primary_end = base.wrapping_add(ty.image().primary_count());
             let extra_end = primary_end.wrapping_add(ty.image().slope_count());
@@ -710,10 +725,7 @@ impl OverlayTypeRegistry {
                 return Ok(Some(ty.id));
             }
         }
-        tiberium_types
-            .get(TiberiumTypeId(0))
-            .ok_or(TiberiumImageError::MissingType(TiberiumTypeId(0)))?;
-        Ok(Some(TiberiumTypeId(0)))
+        Ok(tiberium_types.live(TiberiumTypeId(0)).map(|ty| ty.id))
     }
 
     /// Speculative atlas prefetch, not a native read. Only return available
@@ -847,9 +859,34 @@ pub(crate) fn retained_overlay_land(flags: &OverlayTypeFlags, slope_type: u8) ->
     (uses_early_branch || flags.tiberium).then_some(flags.land)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_repeated_overlay_name_projects_the_processed_registry() {
+        // Repeating a name, here the list section's own, allocates one type.
+        let registry = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str(
+                "[OverlayTypes]\n0=GASAND\n1=OverlayTypes\n2=OverlayTypes\n3=GASAND\n4=GAWALL\n",
+            ),
+            None,
+        );
+        assert_eq!(registry.len(), 3);
+        assert_eq!(registry.id_for_name("GAWALL"), Some(2));
+    }
+
+    #[test]
+    fn retail_map_overlay_list_naming_itself_adds_one_type() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str("[OverlayTypes]\n4=OverlayTypes\n6=OverlayTypes\n"),
+        ) else {
+            return;
+        };
+        let registry = retail.rules.overlay_registry();
+        let added = registry.id_for_name("OverlayTypes").unwrap();
+        assert_eq!(usize::from(added) + 1, registry.len());
+    }
 
     #[test]
     fn retail_wall_image_override_retains_damage_stages_through_a_hit() {
@@ -1545,8 +1582,8 @@ Image=5
         let cold_first = TiberiumTypeRegistry::from_ini(&cold_first);
         assert_eq!(
             overlays.tiberium_type_for_overlay(&cold_first, target),
-            Err(TiberiumImageError::UnboundImage(TiberiumTypeId(0))),
-            "the first visited null cannot be skipped to a later match"
+            Ok(Some(TiberiumTypeId(1))),
+            "an entry without Image= is inert, so the walk reaches the later match"
         );
         let cold_later =
             IniFile::from_str(&text.replace("[FirstDefault]\nImage=1", "[FirstDefault]"));
@@ -1574,7 +1611,37 @@ Image=5
         let stray_id = overlays.id_for_name("STRAY").expect("STRAY id");
         assert_eq!(
             overlays.tiberium_type_for_overlay(&empty_types, stray_id),
-            Err(TiberiumImageError::MissingType(TiberiumTypeId(0)))
+            Ok(None)
+        );
+    }
+
+    /// `TiberiumClass::ReadINI @ 0x00721A50` leaves `+0xE0..+0xEC` at the
+    /// constructor's zeros when `Image=` is absent (`0x00721C3F` default -1).
+    /// The entry keeps its array position and matches no overlay.
+    #[test]
+    fn tiberium_entry_without_image_is_inert_in_place() {
+        let mut ini = stock_shaped_tiberium_ini(None);
+        ini.merge(&IniFile::from_str(
+            "[Tiberiums]\n4=NoImage\n[NoImage]\nValue=5\n",
+        ));
+        let overlays = OverlayTypeRegistry::from_ini(&ini, None);
+        let tiberiums = TiberiumTypeRegistry::from_ini(&ini);
+        assert_eq!(tiberiums.len(), 5);
+        let inert: Vec<bool> = tiberiums.types().iter().map(|ty| ty.is_inert()).collect();
+        assert_eq!(inert, [false, false, false, false, true]);
+        assert!(tiberiums.live(TiberiumTypeId(4)).is_none());
+        for (slot, overlay) in [(0, "TIB01"), (1, "GEM01"), (2, "TIB2_01"), (3, "TIB3_01")] {
+            assert_eq!(
+                overlays
+                    .tiberium_type_for_overlay(&tiberiums, overlays.id_for_name(overlay).unwrap()),
+                Ok(Some(TiberiumTypeId(slot)))
+            );
+        }
+        // A flagged overlay outside every range walks past the fifth entry.
+        let stray = overlays.id_for_name("STRAY").unwrap();
+        assert_eq!(
+            overlays.tiberium_type_for_overlay(&tiberiums, stray),
+            Ok(Some(TiberiumTypeId(0)))
         );
     }
 
@@ -1660,8 +1727,17 @@ Image=5
             assert_eq!(flags.y_draw_offset(), -12.0);
         }
 
-        // Bridges, tracks, rocks and the rest sit flat on the cell.
+        // Bridges, rocks and the rest sit flat on the cell; Land=Railroad
+        // tracks sit one pixel higher (0x005FDCFE).
         assert_eq!(OverlayTypeFlags::default().y_draw_offset(), 0.0);
+        assert_eq!(
+            OverlayTypeFlags {
+                land: LandType::Railroad,
+                ..OverlayTypeFlags::default()
+            }
+            .y_draw_offset(),
+            -1.0
+        );
         assert_eq!(
             OverlayTypeFlags {
                 bridge_deck: true,

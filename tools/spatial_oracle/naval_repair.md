@@ -160,6 +160,5 @@ for packet in naval_lifetime_audio naval_lifetime_cleanup naval_lifetime_control
 done
 ```
 
-The Shrapnel packet records a separate required CliffBack constructor/retention
-follow-up. Other low/raised types and affected gameplay mechanisms remain work
-for the whole-bridge audit.
+Other low/raised types and affected gameplay mechanisms remain work for the
+whole-bridge audit.

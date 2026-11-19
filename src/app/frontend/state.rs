@@ -151,6 +151,9 @@ pub(crate) struct FrontendState {
     /// `0x10E` and full controls instead of opening at the online sign-in,
     /// and a LAN guest's BD keeps Accept (`SetupDialog::modern`).
     pub(crate) native_shell_ui: bool,
+    /// A shell capture's WOL provider, which its Internet visit opens with.
+    /// Outside captures it is `None` and every visit opens online.
+    pub(crate) wol_capture_provider: Option<crate::app::shell_wol::WolProvider>,
     /// LAN lobby interaction/discovery; admitted participants belong to MatchSession.
     pub(crate) lan: Option<crate::app::shell_lan::LanShellRuntime>,
     pub(crate) network_setup_protocol:
@@ -165,6 +168,9 @@ pub(crate) struct FrontendState {
     /// The host unticked Ranked game at its last Create Game in VERA's
     /// online lobby, which its next Create Game shows.
     pub(crate) wol_room_unranked: bool,
+    /// The host's Watching at its last Create Game in VERA's online lobby,
+    /// which its next Create Game shows and its room publishes.
+    pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).
@@ -220,8 +226,7 @@ pub(crate) struct FrontendState {
     /// Number of matches finished this session — the score screen's `Game: n`.
     /// gamemd increments the same counter as it tears the scenario down.
     pub(crate) finished_game_count: u32,
-    /// Which shell surface owns the MainMenu screen (F11): structural
-    /// exclusivity replaces the old boolean triple.
+    /// Which shell surface owns the MainMenu screen.
     pub(crate) shell_route: crate::app::shell_route::ShellRoute,
     /// Which screen is currently active (MainMenu, Loading, InGame).
     pub(crate) screen: GameScreen,
@@ -255,9 +260,6 @@ pub(crate) struct FrontendState {
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
     /// VERA's enlarged map preview, while it shows.
     pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
-    /// Minimap renderer — created at map load time.
-    pub(crate) loading_screen_atlas:
-        Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,
     pub(crate) loading_progress: crate::app::loading::pump::LoadingProgressState,
     /// Game data from rules.ini — needed by combat system for weapon/warhead lookups.
     /// Startup-shell rules loaded at boot for menu presentation; match paths
@@ -267,13 +269,15 @@ pub(crate) struct FrontendState {
     /// last-loaded match registry across scenario exit, matching the pre-F07
     /// persistence of the old app field. Match paths read the runtime-bound
     /// copy via `overlay_registry()`.
-    pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
+    pub(crate) shell_preview_overlay_registry: Option<std::sync::Arc<OverlayTypeRegistry>>,
     /// The online map library's catalog and Choose Map's map download.
     pub(crate) map_library: crate::app::map_library::MapLibrary,
-    /// The online login page's lobby counts and news.
+    /// The online login page's lobby counts.
     pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
     /// VERA's own map pictures for the setup screens' previews.
     pub(crate) map_pictures: crate::app::map_picture::MapPictures,
+    /// The mod this run reads on top of the game folder (`app::mods`).
+    pub(crate) mods: crate::app::mods::Mods,
     /// The release check, its main-menu offer and the download (desktop only).
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) updater: crate::app::updater::Updater,
@@ -287,10 +291,18 @@ pub(crate) struct ShellMessageBox {
 }
 
 impl ShellMessageBox {
-    /// VERA's Esc menu asks over the page that is showing. gamemd's callers
-    /// destroy their dialog first and ask over the empty backdrop.
+    /// VERA's Esc menu and the Mods page's boxes ask over the page that is
+    /// showing, so an answer that changes nothing leaves the
+    /// page as it was. gamemd's callers destroy their dialog first and ask
+    /// over the empty backdrop.
     pub(crate) fn keeps_page(&self) -> bool {
-        matches!(self.purpose, ShellMessageBoxPurpose::ShellMenu(_))
+        matches!(
+            self.purpose,
+            ShellMessageBoxPurpose::ShellMenu(_)
+                | ShellMessageBoxPurpose::ModRestart(_)
+                | ShellMessageBoxPurpose::ModFiles(_)
+                | ShellMessageBoxPurpose::ModMade(_)
+        )
     }
 
     /// The settings VERA's Esc menu shows.
@@ -336,7 +348,27 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// button stops waiting.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     UpdateCheck,
-    /// The updater's notice (`0xCE`): a failure, or what a check found.
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    UpdateNotice,
+    /// An OK notice (`0xCE`): the updater's failure or what its check found,
+    /// or why a mod is not in use (`app::mods`).
+    Notice,
+    /// The Mods page's Use This Mod: Restart keeps this folder, or the
+    /// original game, for the next start and starts the game again.
+    ModRestart(Option<String>),
+    /// The Mods page's Check Files (`App::check_picked_mod`).
+    ModFiles(ModFilesBox),
+    /// The Mods page's New Mod made this folder: Open Folder shows it, Close
+    /// closes.
+    ModMade(std::path::PathBuf),
+}
+
+/// The boxes of the Mods page's Check Files, in the order they come.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModFilesBox {
+    /// The mod's files are being read; the button stops the wait.
+    Reading,
+    /// What the check found, or what came of writing the list: OK.
+    Found,
+    /// The mod has no list, or differs from it: the first button writes the
+    /// folder's files as the mod's list, the second closes.
+    Offer,
 }

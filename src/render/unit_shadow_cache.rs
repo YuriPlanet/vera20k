@@ -1,7 +1,7 @@
 //! Retained shadow stencil payloads within the existing unit atlas pages.
 //!
 //! Native 706BD0/707280 retains the first composed-body mask for a cache key.
-//! This bounded owner keeps that history across frames and atlas growth,
+//! This bounded owner keeps that history across frames and first-use draws,
 //! until the shared pool's flush ([`crate::render::voxel_image_cache`])
 //! frees it.
 
@@ -26,12 +26,11 @@ impl UnitAtlas {
     #[cfg(test)]
     pub(crate) fn prepare_native_shadow(
         &self,
-        queue: &wgpu::Queue,
         key: &UnitSpriteKey,
         flushes: u32,
         parts: impl IntoIterator<Item = (UnitSpriteEntry, [f32; 2])>,
     ) -> bool {
-        self.prepare_native_shadow_with(queue, key, flushes, |body| {
+        self.prepare_native_shadow_with(key, flushes, |body| {
             let mut any = false;
             for (part, offset) in parts {
                 any = true;
@@ -50,10 +49,10 @@ impl UnitAtlas {
     /// Fill only on the first supported request since the image cache's
     /// `flushes`-th flush. `stamp` composes the exact parts and anchor
     /// offsets of this Unit's visible body draw. Hits perform no body
-    /// composition, pixel filtering, or texture upload.
+    /// composition, pixel filtering, or texture upload. A fill reaches the
+    /// template's page at the next [`Self::upload`].
     pub(crate) fn prepare_native_shadow_with(
         &self,
-        queue: &wgpu::Queue,
         key: &UnitSpriteKey,
         flushes: u32,
         stamp: impl FnOnce(&mut [u8]) -> bool,
@@ -66,17 +65,15 @@ impl UnitAtlas {
         {
             return true;
         }
-        let Some(entry) = self
-            .entries
-            .get(key)
-            .filter(|e| e.native_draw_bounds.is_some())
-        else {
-            return false;
-        };
         let Some(sprite) = self.masked_shadow(key, [0, 0], stamp) else {
             return false;
         };
-        self.upload_shadow_pixels(queue, entry, &sprite.palette_indices);
+        let Some(entry) = self.get(key) else {
+            return false;
+        };
+        self.resident
+            .borrow_mut()
+            .restage(&entry, sprite.palette_indices.clone());
         self.shadow_masks
             .borrow_mut()
             .insert(key.clone(), (flushes, sprite.palette_indices));
@@ -90,7 +87,7 @@ impl UnitAtlas {
         let Some((_, mask)) = masks.get(key) else {
             return self.pool_bytes(key);
         };
-        let entry = self.entries.get(key)?;
+        let entry = self.get(key)?;
         Some(crate::render::voxel_image_cache::sprite_pool_bytes(
             mask,
             entry.pixel_size.map(|side| side as u32),
@@ -107,7 +104,8 @@ impl UnitAtlas {
         part: &UnitSpriteEntry,
         point: [i32; 2],
     ) -> bool {
-        let Some(source) = self.rendered_by_place(part) else {
+        let resident = self.resident.borrow();
+        let Some(source) = resident.rendered_by_place(part) else {
             return false;
         };
         composite_mask_part(body, &source.pixels, source.width, source.height, point);
@@ -123,87 +121,43 @@ impl UnitAtlas {
         body_offset: [i32; 2],
         stamp: impl FnOnce(&mut [u8]) -> bool,
     ) -> Option<super::vxl_raster::VxlSprite> {
-        let stencil = self.baked_shadow_stencil(key)?;
-        self.mask_stencil(key, body_offset, &stencil, stamp)
-    }
-
-    /// The stencil `key`'s baked atlas sprite holds, as the source a masked
-    /// draw samples when the body carries no pose.
-    pub(crate) fn baked_shadow_stencil(&self, key: &UnitSpriteKey) -> Option<ShadowStencil> {
-        let template = self.rendered_by_key(key)?;
-        Some(ShadowStencil {
-            sprite: super::vxl_raster::VxlSprite {
-                palette_indices: template.pixels.clone(),
-                depth: Vec::new(),
-                width: template.width,
-                height: template.height,
-                offset_x: template.offset_x,
-                offset_y: template.offset_y,
-            },
-            center: template.shadow_center,
-        })
-    }
-
-    /// Compose `stamp`'s body mask over `stencil`, at `body_offset`'s mask
-    /// displacement: the baked template, or the per-frame re-raster a Phobos
-    /// airborne `JumpjetTilt` pose produces
-    /// (`Ext/TechnoType/Hooks.MatrixOp.cpp:768-773` invalidates the shadow
-    /// cache key, so native re-rasterizes instead of sampling the baked one).
-    pub(crate) fn mask_stencil(
-        &self,
-        key: &UnitSpriteKey,
-        body_offset: [i32; 2],
-        stencil: &ShadowStencil,
-        stamp: impl FnOnce(&mut [u8]) -> bool,
-    ) -> Option<super::vxl_raster::VxlSprite> {
-        self.entries
-            .get(key)
-            .filter(|e| e.native_draw_bounds.is_some())?;
+        self.get(key).filter(|e| e.native_draw_bounds.is_some())?;
+        // Copied out, so `stamp` may draw the body parts it asks for.
+        let (mut pixels, width, height, offset, center) = {
+            let resident = self.resident.borrow();
+            let template = resident.rendered_by_key(key)?;
+            (
+                template.pixels.clone(),
+                template.width,
+                template.height,
+                [template.offset_x, template.offset_y],
+                template.shadow_center,
+            )
+        };
         let mut body = vec![0u8; 65536];
         if !stamp(&mut body) {
             return None;
         }
-        let mut pixels = stencil.sprite.palette_indices.clone();
         let sample_offset = if body_offset == [0, 0] {
             [0, 0]
         } else {
-            super::vxl_raster::shadow::body_sample_offset(stencil.center?, body_offset)?
+            super::vxl_raster::shadow::body_sample_offset(center?, body_offset)?
         };
         super::vxl_raster::shadow::mask_body(
             &mut pixels,
-            stencil.sprite.width,
-            [
-                stencil.sprite.offset_x as i32,
-                stencil.sprite.offset_y as i32,
-            ],
+            width,
+            offset.map(|v| v as i32),
             &body,
             sample_offset,
         )?;
         Some(super::vxl_raster::VxlSprite {
             palette_indices: pixels,
             depth: Vec::new(),
-            width: stencil.sprite.width,
-            height: stencil.sprite.height,
-            offset_x: stencil.sprite.offset_x,
-            offset_y: stencil.sprite.offset_y,
+            width,
+            height,
+            offset_x: offset[0],
+            offset_y: offset[1],
         })
-    }
-
-    fn upload_shadow_pixels(&self, queue: &wgpu::Queue, entry: &UnitSpriteEntry, pixels: &[u8]) {
-        let page = &self.pages[entry.page].texture;
-        let origin = [
-            (entry.uv_origin[0] * page.width as f32).round() as u32,
-            (entry.uv_origin[1] * page.height as f32).round() as u32,
-        ];
-        let size = entry.pixel_size.map(|v| v as u32);
-        crate::render::atlas_growth::write_texels(
-            queue,
-            page.view.texture(),
-            origin,
-            size,
-            1,
-            pixels,
-        );
     }
 }
 
@@ -233,6 +187,6 @@ pub(crate) fn composite_mask_part(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "unit_shadow_tests.rs"]
 mod tests;

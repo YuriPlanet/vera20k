@@ -60,8 +60,13 @@ pub(super) enum RadarVisibility<'a> {
     /// No viewer, or full visibility: every cell revealed.
     Revealed,
     /// The viewer's cell flags (`OwnerVisibility::cells_raw`), row-major,
-    /// and the plane's size in cells.
-    Plane { flags: &'a [u8], size: (u16, u16) },
+    /// the plane's size in cells, and the flags the map's fallback Cell
+    /// answers with.
+    Plane {
+        flags: &'a [u8],
+        size: (u16, u16),
+        dummy: u8,
+    },
     /// A viewer without a plane has revealed nothing.
     Shrouded,
 }
@@ -78,8 +83,8 @@ struct Params {
     hd_scale: u32,
     visibility: u32,
     revealed: u32,
-    gap_covered: u32,
     gap_fog: u32,
+    dummy_flags: u32,
     pad: u32,
 }
 
@@ -91,21 +96,22 @@ pub(crate) fn shader_source() -> String {
     )
 }
 
-/// A generated surface's R5G6B5 words and the cell each pixel reads, as GPU
-/// textures. The words follow the terrain; the cells only the geometry.
+/// A generated surface's R5G6B5 words and the shroud Cells each pixel reads
+/// ([`super::terrain::RadarShroudLattice`]), as GPU textures. The words
+/// follow the terrain; the Cells only the geometry and the map's levels.
 pub(super) struct SurfaceTextures {
     words: wgpu::Texture,
     cells: wgpu::Texture,
 }
 
 impl SurfaceTextures {
-    /// `cells` ([`NativeRadarSurfaceGeometry::visibility_cells`]) and `words`
-    /// cover a generated surface of `width` by `height` pixels, row-major.
+    /// `cells` and `words` cover a generated surface of `width` by `height`
+    /// pixels, row-major.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         (width, height): (i32, i32),
-        cells: &[u32],
+        cells: &[[u32; 2]],
         words: &[u16],
     ) -> Self {
         let size = [width.max(1) as u32, height.max(1) as u32];
@@ -120,7 +126,7 @@ impl SurfaceTextures {
                 device,
                 "Radar pixel cells",
                 size,
-                wgpu::TextureFormat::R32Uint,
+                wgpu::TextureFormat::Rg32Uint,
             ),
         };
         write_rows(
@@ -147,7 +153,7 @@ impl SurfaceTextures {
                 device,
                 "No radar cells",
                 [1, 1],
-                wgpu::TextureFormat::R32Uint,
+                wgpu::TextureFormat::Rg32Uint,
             ),
         }
     }
@@ -374,8 +380,11 @@ pub(super) struct RadarCompositor {
     inputs: Option<wgpu::BindGroup>,
     stores: InstanceUpload,
     store_count: u32,
+    /// The stores `stores` holds.
+    uploaded_stores: Vec<RadarStore>,
     /// Whether the pictures must be drawn again.
     pending: bool,
+    generation: u64,
 }
 
 impl RadarCompositor {
@@ -407,7 +416,6 @@ impl RadarCompositor {
         });
         let params = Params {
             revealed: crate::sim::vision::FLAG_REVEALED.into(),
-            gap_covered: crate::sim::vision::FLAG_GAP_COVERED.into(),
             gap_fog: crate::sim::vision::FLAG_GAP_FOG.into(),
             ..Params::zeroed()
         };
@@ -443,7 +451,9 @@ impl RadarCompositor {
             inputs: None,
             stores: InstanceUpload::default(),
             store_count: 0,
+            uploaded_stores: Vec::new(),
             pending: true,
+            generation: 0,
         };
         compositor.write_params(queue);
         compositor
@@ -466,7 +476,7 @@ impl RadarCompositor {
                 device,
                 queue,
                 terrain.geometry().generated_size(),
-                terrain.pixel_cells(),
+                terrain.shroud_cells(),
                 terrain.generated_rgb565(),
             )
         });
@@ -490,9 +500,10 @@ impl RadarCompositor {
         {
             surface.write_words(queue, terrain.generated_rgb565());
             self.terrain_revision = terrain.revision();
+            self.pending = true;
         }
         if let (Some(hd), Some(words)) = (&mut self.hd, terrain.hd_rgb565()) {
-            hd.refresh(queue, words);
+            self.pending |= hd.refresh(queue, words);
         }
     }
 
@@ -512,6 +523,7 @@ impl RadarCompositor {
                 batch,
                 terrain.geometry(),
                 scale,
+                &terrain.hd_shroud_cells(scale),
                 words,
             ))
         });
@@ -537,9 +549,11 @@ impl RadarCompositor {
         queue: &wgpu::Queue,
         visibility: RadarVisibility<'_>,
     ) {
+        let previous = self.params;
         self.params.visibility = match visibility {
             RadarVisibility::Revealed => 0,
-            RadarVisibility::Plane { flags, size } => {
+            RadarVisibility::Plane { flags, size, dummy } => {
+                self.params.dummy_flags = dummy.into();
                 let size = [u32::from(size.0), u32::from(size.1)];
                 debug_assert_eq!(flags.len(), (size[0] * size[1]) as usize);
                 let texture_size = [size[0].max(1), size[1].max(1)];
@@ -554,22 +568,26 @@ impl RadarCompositor {
                     self.plane_flags.clear();
                     self.inputs = None;
                 }
-                self.write_plane(queue, flags, size[0]);
+                self.pending |= self.write_plane(queue, flags, size[0]);
                 self.params.plane_size = size;
                 1
             }
             RadarVisibility::Shrouded => 2,
         };
+        self.pending |= bytemuck::bytes_of(&previous) != bytemuck::bytes_of(&self.params);
         self.write_params(queue);
     }
 
-    /// Upload the rows of `flags` that differ from the plane's.
-    fn write_plane(&mut self, queue: &wgpu::Queue, flags: &[u8], width: u32) {
+    /// Upload the rows of `flags` that differ from the plane's, returning
+    /// whether any did.
+    fn write_plane(&mut self, queue: &wgpu::Queue, flags: &[u8], width: u32) -> bool {
         if flags.is_empty() {
-            return;
+            return false;
         }
+        let mut changed = false;
         if self.plane_flags.len() != flags.len() {
             write_rows(queue, &self.plane, 0, width, flags);
+            changed = true;
         } else {
             let row = width as usize;
             let rows = flags.len() / row;
@@ -586,10 +604,12 @@ impl RadarCompositor {
                 }
                 let bytes = &flags[start * row..y * row];
                 write_rows(queue, &self.plane, start as u32, width, bytes);
+                changed = true;
             }
         }
         self.plane_flags.clear();
         self.plane_flags.extend_from_slice(flags);
+        changed
     }
 
     /// The mapless fallback's terrain, composed on the CPU, as the base the
@@ -597,6 +617,7 @@ impl RadarCompositor {
     pub fn set_fallback_base(&mut self, queue: &wgpu::Queue, rgba: &[u8]) {
         debug_assert!(self.surface.is_none());
         write_rows(queue, &self.composite, 0, MINIMAP_WIDTH, rgba);
+        self.pending = true;
     }
 
     pub fn set_stores(
@@ -605,16 +626,28 @@ impl RadarCompositor {
         queue: &wgpu::Queue,
         stores: &[RadarStore],
     ) {
+        if self.uploaded_stores == stores {
+            return;
+        }
+        self.uploaded_stores.clear();
+        self.uploaded_stores.extend_from_slice(stores);
         self.store_count = stores.len() as u32;
         if !stores.is_empty() {
             self.stores
                 .write(device, queue, "Radar stores", bytemuck::cast_slice(stores));
         }
+        self.pending = true;
     }
 
     /// Draw the pictures again with the next [`Self::encode`].
+    #[cfg(test)]
     pub fn request(&mut self) {
         self.pending = true;
+    }
+
+    /// A number that changes whenever the pictures are drawn again.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Compose and present a requested update into `encoder`.
@@ -622,6 +655,7 @@ impl RadarCompositor {
         if !std::mem::take(&mut self.pending) {
             return;
         }
+        self.generation += 1;
         let inputs = self.inputs.get_or_insert_with(|| {
             let [words, cells] = self.surface.as_ref().unwrap_or(&self.empty).views();
             let [hd_words, hd_cells] = self
@@ -720,6 +754,6 @@ fn begin_pass<'e>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "compose_gpu_tests.rs"]
 mod gpu_tests;

@@ -65,6 +65,10 @@ pub(crate) enum FrameStep {
     /// Publish the terrain navigation and smudge changes the object pass left
     /// pending.
     TerrainNavigation,
+    /// The local anims' AI (`0x0055B61B..0x0055B649`, AnimClass vt+0x5C):
+    /// gamemd walks its local list (`0x00A83E00`) after the LogicClass
+    /// vector in LAN and online games, the only ones that fill it.
+    LocalAnims,
     /// `IonBlastClass::UpdateAll @ 0x0053D310` (`0x0055B64B`), then
     /// `AlphaShapeClass::PurgeDisabled @ 0x00420E90` (`0x0055B650`).
     IonBlasts,
@@ -81,7 +85,7 @@ pub(crate) enum FrameStep {
 }
 
 /// The master frame's steps before its tail, in the order they run.
-pub(crate) const LOGIC_STEPS: [FrameStep; 19] = [
+pub(crate) const LOGIC_STEPS: [FrameStep; 20] = [
     FrameStep::SessionCommands,
     FrameStep::AdmitCommands,
     FrameStep::Triggers,
@@ -98,6 +102,7 @@ pub(crate) const LOGIC_STEPS: [FrameStep; 19] = [
     FrameStep::Wakes,
     FrameStep::Vision,
     FrameStep::TerrainNavigation,
+    FrameStep::LocalAnims,
     FrameStep::IonBlasts,
     FrameStep::CrateRegen,
     FrameStep::Factories,
@@ -115,12 +120,12 @@ impl FrameStep {
             Self::Shroud => phase::SHROUD,
             Self::Lighting => phase::LIGHTING,
             Self::OreGrowth => phase::ORE_GROWTH,
-            Self::BombList => return None,
+            Self::BombList | Self::LocalAnims => return None,
             Self::Kamikaze | Self::DiskLasers => phase::BOMBS,
             Self::TeamScript => phase::TEAM_AI,
             Self::LightningStorm => phase::SUPERWEAPONS,
             Self::Radiation => phase::RADIATION,
-            Self::LogicVector => phase::OBJECTS,
+            Self::LogicVector => phase::UNIT_AI,
             Self::Wakes => phase::WAKES,
             Self::Vision => phase::VISION,
             Self::TerrainNavigation => phase::COMBAT,
@@ -143,6 +148,10 @@ pub(super) struct FrameInputs<'a> {
 }
 
 impl<'a> FrameInputs<'a> {
+    fn bound(rules: &'a RuleSet, tick_ms: u32, effects: FrameEffects<'a>) -> Self {
+        Self::new(rules, Some(rules.overlay_registry()), tick_ms, effects)
+    }
+
     pub(super) fn new(
         rules: &'a RuleSet,
         overlay_registry: Option<&'a OverlayTypeRegistry>,
@@ -252,7 +261,11 @@ impl Simulation {
         };
         for step in LOGIC_STEPS {
             self.enter_frame_step(step);
-            self.run_logic_step(step, inputs, request, &mut frame)?;
+            match frame_clock.as_mut() {
+                Some(clock) if step == FrameStep::LogicVector => clock
+                    .split_object_pass(|| self.run_logic_step(step, inputs, request, &mut frame))?,
+                _ => self.run_logic_step(step, inputs, request, &mut frame)?,
+            }
             if let (Some(clock), Some(slot)) = (frame_clock.as_mut(), step.profile_slot()) {
                 clock.stamp(slot);
             }
@@ -297,22 +310,19 @@ impl Simulation {
                 if request.lane == TickLane::Ordinary {
                     frame.commands = self.admit_frame_commands(request.ingress, rules, effects);
                 }
-                // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
-                Self::sort_display_ground(
-                    &self.interner,
-                    &self.terrain_objects,
-                    &mut self.substrate,
-                    rules,
-                );
-                // MainTick55DBCD saves the post-input, post-sort world before Logic.
+                // MainTick55DBC8 sorts Ground here, before Logic55DC9E. The
+                // simulation keeps Ground unordered (`DisplayLayers::submit`);
+                // the picture sorts it (`Simulation::ground_draw_order`).
+                // MainTick55DBCD saves the post-input world before Logic.
                 effects.before_logic(self);
                 self.lifecycle_outputs.emit(LifecycleOutput::LogicVisit);
             }
             FrameStep::Triggers => {
                 // Ares LogicClass_Update_1000 100680F0 heads Logic55AFB0
                 // (hook 0x55AFB3), before its trigger poll.
-                #[cfg(feature = "ares")]
-                self.ares_make_stuff_up_logic(rules);
+                if rules.ares() {
+                    self.ares_make_stuff_up_logic(rules);
+                }
                 if request.poll_triggers {
                     self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
                 }
@@ -461,11 +471,38 @@ impl Simulation {
                 // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`),
                 // and passengers board in their class PerCellProcess.
             }
+            FrameStep::LocalAnims => {
+                for id in self.substrate.anims.local_ids() {
+                    // No expiry reaches a presentation anim, which nothing
+                    // lists: it ends with its owner's UnInit instead
+                    // (`AnimConstructorInput::Presentation`).
+                    if self.presentation_anim_orphaned(id) {
+                        self.destroy_anim(id, rules);
+                        continue;
+                    }
+                    frame.bridge_state_changed |= self
+                        .visit_anim(id, rules, overlay_registry, effects)
+                        .map_err(|error| {
+                            FrameAdvanceError::new(
+                                self.session.tick(),
+                                self.session.binary_frame(),
+                                id,
+                                error.to_string(),
+                            )
+                        })?;
+                }
+            }
             // Follows the object loop.
             FrameStep::IonBlasts => {
                 frame.bridge_state_changed |=
                     self.update_ion_blasts(rules, overlay_registry, effects);
                 self.alpha_shapes.purge_disabled();
+                // Ares' `ObjectClass_Update_AlphaLight` (`0x005F3E70`) places
+                // each surviving glow from its object's live GetCoords ahead
+                // of the Tactical's draw.
+                if rules.ares() {
+                    self.update_alpha_shape_screens(rules);
+                }
             }
             FrameStep::CrateRegen => {
                 // Called between `AlphaShapeClass::PurgeDisabled` and the
@@ -524,6 +561,9 @@ impl Simulation {
                 // visit, so every factory observes the wallet after that
                 // object's repair. The tank-bunker install runs in the
                 // bunker's Repair mission.
+                if rules.ares() {
+                    self.ares_refresh_temporal_factories(rules, effects);
+                }
                 production::step_factories(self);
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace_house_ai_activation_order(
@@ -820,6 +860,37 @@ impl Simulation {
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
+        tick_ms: u32,
+        lane: TickLane,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        self.advance_and_collect_frame(
+            commands,
+            rules,
+            Some(rules.overlay_registry()),
+            tick_ms,
+            lane,
+            effects,
+        )
+    }
+
+    /// Exercise a frame whose fixture deliberately withholds overlay types.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn advance_app_frame_without_overlay_types_for_test(
+        &mut self,
+        commands: &[CommandEnvelope],
+        rules: &RuleSet,
+        tick_ms: u32,
+        lane: TickLane,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        self.advance_and_collect_frame(commands, rules, None, tick_ms, lane, effects)
+    }
+
+    fn advance_and_collect_frame(
+        &mut self,
+        commands: &[CommandEnvelope],
+        rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
         tick_ms: u32,
         lane: TickLane,
@@ -876,7 +947,6 @@ impl Simulation {
     pub fn resume_outcome_wait(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         if self.pending_outcome_wait().is_none() {
@@ -890,7 +960,7 @@ impl Simulation {
         let Some(FrameContinuation::Outcome(mut pending)) = self.frame_continuation.take() else {
             unreachable!("checked House outcome continuation")
         };
-        let inputs = FrameInputs::new(rules, overlay_registry, pending.tick_ms, effects);
+        let inputs = FrameInputs::bound(rules, pending.tick_ms, effects);
         let result = self.run_late_region(inputs, &mut pending.frame, Some(pending.cursor))?;
         let output = self.complete_or_suspend_frame(pending.frame, result, inputs, None);
         self.unit_voice_visit_interest.clear();
@@ -942,6 +1012,25 @@ impl Simulation {
     pub fn resume_after_network_failure(
         &mut self,
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        self.resume_failed_network_frame(rules, Some(rules.overlay_registry()), effects)
+    }
+
+    /// Resume a diagnostic replay with the same optional table its frame started with.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn resume_after_network_failure_for_test(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<SimFrameOutput, FrameAdvanceError> {
+        self.resume_failed_network_frame(rules, overlay_registry, effects)
+    }
+
+    fn resume_failed_network_frame(
+        &mut self,
+        rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
@@ -972,7 +1061,6 @@ impl Simulation {
     pub fn leave_network_wait(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         if !self.pending_network_wait() {
@@ -988,7 +1076,7 @@ impl Simulation {
         };
         Ok(self.finish_aborted_network_frame(
             pending.frame,
-            FrameInputs::new(rules, overlay_registry, pending.tick_ms, effects),
+            FrameInputs::bound(rules, pending.tick_ms, effects),
         ))
     }
 
@@ -1011,7 +1099,6 @@ impl Simulation {
     pub fn resume_network_wait(
         &mut self,
         rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         if !self.pending_network_wait() {
@@ -1025,7 +1112,7 @@ impl Simulation {
         let Some(FrameContinuation::Waiting(mut pending)) = self.frame_continuation.take() else {
             unreachable!("checked wait continuation")
         };
-        let inputs = FrameInputs::new(rules, overlay_registry, pending.tick_ms, effects);
+        let inputs = FrameInputs::bound(rules, pending.tick_ms, effects);
         let result =
             self.run_network_command_tail(inputs, &mut pending.frame, Some(pending.context));
         let result = match result {
@@ -1129,8 +1216,8 @@ impl Simulation {
         frame_clock: Option<crate::sim::frame_profile::FrameClock>,
     ) -> MasterFrameOutput {
         let tick_ms = inputs.tick_ms;
-        // A MindControl shot changes an existing SHP's house-colour key.
-        // Publish the atlas invalidation before the next draw, even with no spawn.
+        // An owner change outside the object pass (a MindControl shot)
+        // reaches the tick's report too.
         frame.ownership_changed |= std::mem::take(&mut self.ownership_changed_since_output);
         let frame_committed = if let FrameTailResult::Complete(committed) = result {
             committed

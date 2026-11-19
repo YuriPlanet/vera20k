@@ -13,15 +13,15 @@ use crate::sim::world::Simulation;
 /// precedence over Ares; Phobos builds never call this.
 #[cfg_attr(feature = "phobos", allow(dead_code))]
 pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
-    #[cfg(feature = "ares")]
-    ares_emit(world, rules, detonation);
-    #[cfg(not(feature = "ares"))]
-    stock_emit(world, rules, detonation);
+    if rules.ares() {
+        ares_emit(world, rules, detonation);
+    } else {
+        stock_emit(world, rules, detonation);
+    }
 }
 
 /// Eight native compass neighbors followed by the retained center identity;
 /// Cluster controls neither this count nor a second parent detonation.
-#[cfg(not(feature = "ares"))]
 #[cfg_attr(feature = "phobos", allow(dead_code))]
 fn stock_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
     if crate::rules::PHOBOS_ENABLED {
@@ -36,7 +36,7 @@ fn stock_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     let Some(kind) = parent
         .payload()
         .projectile_type()
-        .and_then(|id| rules.projectile(world.interner.resolve(id)))
+        .and_then(|id| world.interner.projectile_type(id, rules))
         .filter(|kind| kind.airburst)
     else {
         return;
@@ -135,7 +135,6 @@ fn stock_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
 ///
 /// [`ProjectileType::airburst_arm`]: crate::rules::projectile_type::ProjectileType::airburst_arm
 /// [`ares_airburst_launch_velocity`]: crate::sim::projectile::launch::ares_airburst_launch_velocity
-#[cfg(feature = "ares")]
 #[cfg_attr(feature = "phobos", allow(dead_code))]
 fn ares_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
     let Some(parent) = world.projectiles.get(detonation.projectile_id) else {
@@ -145,7 +144,7 @@ fn ares_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDet
     let Some(kind) = parent
         .payload()
         .projectile_type()
-        .and_then(|id| rules.projectile(world.interner.resolve(id)))
+        .and_then(|id| world.interner.projectile_type(id, rules))
         .filter(|kind| kind.airburst_arm())
     else {
         return;
@@ -278,7 +277,6 @@ fn ares_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDet
 }
 
 /// `BulletTypeExt::CreateBullet` then `BulletClass::MoveTo` for one child.
-#[cfg(feature = "ares")]
 #[cfg_attr(feature = "phobos", allow(dead_code))]
 #[allow(clippy::too_many_arguments)]
 fn spawn_ares_child(
@@ -298,31 +296,28 @@ fn spawn_ares_child(
         world.interner.intern(&warhead.id),
         Some(world.interner.intern(&child.id)),
         weapon.bright,
-    )
+    );
     // CreateBullet sets Range to the weapon's ProjectileRange, which only a
-    // `Ranged=` type spends (as Fire_CreateBullet 1001ADE0 does).
-    .with_ares_range(child.ranged.then(|| {
+    // `Ranged=` type spends (as Fire_CreateBullet 1001ADE0 does), in a game
+    // read the Ares way.
+    let payload = if rules.ares_form() {
         let range = weapon.ares_projectile_range;
         #[cfg(feature = "phobos")]
-        {
-            if let Some(firer_entity) = world.substrate.entities.get(firer) {
-                crate::sim::attach_effect::initial_projectile_range(
-                    rules,
-                    &world.interner,
-                    Some(&world.substrate.entities),
-                    firer_entity,
-                    weapon,
-                    range,
-                )
-            } else {
-                range
-            }
-        }
-        #[cfg(not(feature = "phobos"))]
-        {
-            range
-        }
-    }));
+        let range = match world.substrate.entities.get(firer) {
+            Some(firer_entity) => crate::sim::attach_effect::initial_projectile_range(
+                rules,
+                &world.interner,
+                Some(&world.substrate.entities),
+                firer_entity,
+                weapon,
+                range,
+            ),
+            None => range,
+        };
+        payload.with_ares_range(child.ranged.then_some(range))
+    } else {
+        payload
+    };
     // 1001A6B0: one Scenario draw after the constructor.
     let velocity = crate::sim::projectile::launch::ares_airburst_launch_velocity(
         weapon.speed,
@@ -344,7 +339,6 @@ fn spawn_ares_child(
 }
 
 /// The Target's GetCoords (vt+0x48); `None` without a Target.
-#[cfg(feature = "ares")]
 #[cfg_attr(feature = "phobos", allow(dead_code))]
 fn target_get_coords(
     world: &Simulation,
@@ -375,7 +369,6 @@ fn target_get_coords(
 /// of `floor(radius + 0.99) * 2 + 1` cells from `center`, row-major, keeping
 /// the cells within `radius` that `TryGetCellAt` finds. The square is clipped
 /// to the map first, which yields the same cells.
-#[cfg(feature = "ares")]
 #[cfg_attr(feature = "phobos", allow(dead_code))]
 fn cell_range(world: &Simulation, center: (i32, i32), radius: f64) -> Vec<ProjectileTarget> {
     let half = (radius + 0.99).floor();
@@ -411,7 +404,6 @@ fn cell_range(world: &Simulation, center: (i32, i32), radius: f64) -> Vec<Projec
 }
 
 /// The map's real cell at `cell` as a target, or `None` off the map.
-#[cfg(feature = "ares")]
 #[cfg_attr(feature = "phobos", allow(dead_code))]
 fn map_cell_target(world: &Simulation, cell: (i16, i16)) -> Option<ProjectileTarget> {
     let Some(terrain) = world.resolved_terrain.as_ref() else {
@@ -429,6 +421,6 @@ fn map_cell_target(world: &Simulation, cell: (i16, i16)) -> Option<ProjectileTar
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "airburst_tests.rs"]
 mod tests;

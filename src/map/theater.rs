@@ -9,9 +9,12 @@
 //! - Part of map/ — depends on assets/, rules/ (for INI parsing).
 //! - Does NOT depend on render/ or sim/.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use crate::assets::asset_manager::AssetManager;
+use crate::assets::mix_archive::MixArchive;
+use crate::assets::mix_hash::mix_hash;
 use crate::assets::pal_file::Palette;
 use crate::assets::tmp_file::TmpFile;
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
@@ -57,8 +60,9 @@ pub struct TileImage {
 
 /// Static definition for a theater.
 struct TheaterDef {
-    /// Exact active-YR theater INI filename.
-    ini_name: &'static str,
+    /// Theater control-file name. `Read_Theater_TileSets_INI` (`0x00545150`)
+    /// appends the INI suffix to it (`IniRoots::theater_ini`).
+    control_name: &'static str,
     /// File extension for TMP files (e.g., "tem" for temperate).
     extension: &'static str,
     /// Exact isometric, unit, and theater/ore palette filenames.
@@ -74,7 +78,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "TEMPERATE",
         TheaterDef {
-            ini_name: "temperatmd.ini",
+            control_name: "temperat",
             extension: "tem",
             iso_palette_name: "isotem.pal",
             unit_palette_name: "unittem.pal",
@@ -85,7 +89,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "SNOW",
         TheaterDef {
-            ini_name: "snowmd.ini",
+            control_name: "snow",
             extension: "sno",
             iso_palette_name: "isosno.pal",
             unit_palette_name: "unitsno.pal",
@@ -102,7 +106,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "URBAN",
         TheaterDef {
-            ini_name: "urbanmd.ini",
+            control_name: "urban",
             extension: "urb",
             iso_palette_name: "isourb.pal",
             unit_palette_name: "uniturb.pal",
@@ -113,7 +117,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "LUNAR",
         TheaterDef {
-            ini_name: "lunarmd.ini",
+            control_name: "lunar",
             extension: "lun",
             iso_palette_name: "isolun.pal",
             unit_palette_name: "unitlun.pal",
@@ -124,7 +128,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "DESERT",
         TheaterDef {
-            ini_name: "desertmd.ini",
+            control_name: "desert",
             extension: "des",
             iso_palette_name: "isodes.pal",
             unit_palette_name: "unitdes.pal",
@@ -135,7 +139,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "NEWURBAN",
         TheaterDef {
-            ini_name: "urbannmd.ini",
+            control_name: "urbann",
             extension: "ubn",
             iso_palette_name: "isoubn.pal",
             unit_palette_name: "unitubn.pal",
@@ -344,6 +348,9 @@ pub struct TilesetLookup {
     /// Per-tileset AllowTiberium= flag — parsed from `[TileSetNNNN] AllowTiberium=`.
     /// Default `false`. Tiberium/ore only places on opt-in in-range tile types.
     allow_tiberium_flags: Vec<bool>,
+    /// Per-tileset IsometricTileTypeClass+0x305, copied to every pristine and
+    /// suffix tile by Read_Theater_TileSets_INI545150. Fresh default true.
+    allow_burrowing_flags: Vec<bool>,
     /// Per-tileset IsometricTileTypeClass+0x2E1 (`ShadowCaster` with a
     /// nonzero `ShadowTiles`); see [`TilesetLookup::casts_tile_shadow`].
     shadow_caster_flags: Vec<bool>,
@@ -475,6 +482,16 @@ impl TilesetLookup {
             .unwrap_or(false)
     }
 
+    /// Read_Theater_TileSets_INI546167 reads AllowBurrowing with a fresh true
+    /// default and copies it to each tile at546460/546A97. Cell486FF0 skips
+    /// the flag for an out-of-range physical index; it does not use ClearTile.
+    pub fn allows_burrowing(&self, tile_id: u16) -> bool {
+        self.tileset_index(tile_id)
+            .and_then(|index| self.allow_burrowing_flags.get(usize::from(index)))
+            .copied()
+            .unwrap_or(true)
+    }
+
     /// IsometricTileTypeClass+0x2E1, the gate of the tile-shadow draw
     /// (CellClass::DrawTileShadow `0x004802A0`) and of the shadow-cell offsets
     /// RecalcAttributes applies (GetShadowCellOffsets `0x00547C80`, called at
@@ -548,6 +565,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
     let mut set_names: Vec<String> = Vec::new();
     let mut morphable_flags: Vec<bool> = Vec::new();
     let mut allow_tiberium_flags: Vec<bool> = Vec::new();
+    let mut allow_burrowing_flags: Vec<bool> = Vec::new();
     let mut shadow_caster_flags: Vec<bool> = Vec::new();
     let mut tile_anims: Vec<Option<TileAnimAttachment>> = Vec::new();
     let mut legacy_tile_index_exceptions = Vec::new();
@@ -602,6 +620,9 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         morphable_flags.push(morphable);
         let allow_tiberium: bool = section.read_bool("AllowTiberium", false);
         allow_tiberium_flags.push(allow_tiberium);
+        // IsometricTileTypeClass ctor5448B5 and ReadTheater546167 default
+        // true independently for each admitted TileSet%04d section.
+        allow_burrowing_flags.push(section.read_bool("AllowBurrowing", true));
         // ReadBool `0x00546204` (default false); only a set ShadowCaster reads
         // ShadowTiles (ReadInt `0x00546248`, default 0). Each tile stores
         // +0x2E1 only when both are nonzero (`0x005464A6`, `0x00546AF8`). The
@@ -657,32 +678,6 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         })?;
     }
 
-    // Diagnostic: log first 15 tilesets for debugging tile mapping.
-    for (idx, (bounds, name)) in tileset_bounds
-        .iter()
-        .zip(set_names.iter())
-        .enumerate()
-        .take(15)
-    {
-        let fname: &str = entries
-            .get(bounds.start as usize)
-            .and_then(|o| o.as_deref())
-            .unwrap_or("(blank)");
-        log::info!(
-            "  TileSet{:04}: start={:4}, count={:3}, name={:20} file={}",
-            idx,
-            bounds.start,
-            bounds.count,
-            name,
-            fname,
-        );
-    }
-    log::info!(
-        "  ... {} total tilesets, {} total tile_id slots",
-        tileset_bounds.len(),
-        entries.len()
-    );
-
     Ok(TilesetLookup {
         entries,
         variant_filenames,
@@ -690,6 +685,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         set_names,
         morphable_flags,
         allow_tiberium_flags,
+        allow_burrowing_flags,
         shadow_caster_flags,
         tile_anims,
         legacy_tile_index_exceptions,
@@ -705,8 +701,12 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
 /// numeric keys pass the field's current value as their own INI default, which
 /// for a freshly constructed tile type is 0 / 0 / -1 / 0.
 fn parse_tile_anim(section: &IniSection, tile_ordinal: u32) -> Option<TileAnimAttachment> {
-    // 0x80-byte ReadString at `0x00546524`, then `AnimTypeClass::Find`.
-    let anim_name = section.read_name(&format!("Tile{:02}Anim", tile_ordinal), 0x80)?;
+    // 0x80-byte ReadString at `0x00546524`, then `AnimTypeClass::FindOrAllocate`
+    // (`0x00546538`), which gives no type for `<none>` or `none`: the block is
+    // skipped (`JE 0x00546642`).
+    let anim_name = section
+        .read_name(&format!("Tile{:02}Anim", tile_ordinal), 0x80)
+        .filter(|name| !crate::rules::ini_parser::is_native_none_type_name(name))?;
     Some(TileAnimAttachment {
         anim_name: anim_name.to_string(),
         x_offset: section.read_int(
@@ -841,10 +841,191 @@ impl BridgeMiddleTiles {
     }
 }
 
+/// The theater INI `load_theater` reads for a control name: the one the
+/// selected INI roots name (`IniRoots::theater_ini`), else the stock
+/// `%sMD.INI` name. VERA: falling back keeps a game folder that loaded the
+/// stock INI before a suffix was selected loading.
+fn theater_ini_name(asset_manager: &AssetManager, control_name: &str) -> String {
+    let selected = asset_manager.ini_roots().theater_ini(control_name);
+    if asset_manager.resolve_ref(&selected).is_some() {
+        return selected;
+    }
+    crate::util::ini_roots::IniRoots::default().theater_ini(control_name)
+}
+
+/// VERA: each theater's INI as `load_theater` names it, in table order. Its
+/// tilesets decide every map cell's land and height, so the multiplayer
+/// agreement and Quick Match's check for changed game files compare it.
+/// The lookup sees whichever theater MIX group the last load activated, and a
+/// suffixed INI that only a theater MIX holds is outside this; theater MIXes
+/// search last, and retail theater INIs come from `localmd.mix`.
+pub fn theater_ini_names(asset_manager: &AssetManager) -> Vec<String> {
+    THEATER_DEFS
+        .iter()
+        .map(|(_, def)| theater_ini_name(asset_manager, def.control_name))
+        .collect()
+}
+
+/// VERA: the theater tiles the game folder changes ([`changed_tiles`]).
+pub struct ChangedTiles {
+    /// The loose files and outermost archives that change them, once each.
+    pub files: Vec<String>,
+    /// Each changed tile's name and the bytes the game reads for it, in
+    /// theater and tile order; `None` when no tile changes.
+    pub digest: Option<String>,
+}
+
+/// VERA: the tiles each theater reads, compared with the ones a retail
+/// install reads, for the multiplayer agreement and Quick Match. These are
+/// the pristine files the tilesets of its INI (`theater_ini_name`) name and
+/// their contiguous variants (`resolve_contiguous_variant_chains`). A tile
+/// decides the land, height and ramp of the cells it covers, and map loading
+/// picks each cell's variant by how many files its tile has
+/// (`TileVariantSelectionContext::select_variant`), so a changed, added or
+/// missing tile file changes a match. A retail install searches the shipped
+/// archives (`retail_sources::shipped_source`) in the same order, with the
+/// shipped copy of an archive the game folder replaces (a loose
+/// `isosnomd.mix`, even one that does not open) in its place, and no loose
+/// files. A replaced shipped archive is not caught, as in
+/// `files_changing_shipped_inis`. Read with no theater active, the theater
+/// MIXes as `AssetManager::theater_archives_unmounted` finds them.
+pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
+    use crate::rules::retail_sources::{game_folder_file, shipped_source};
+    let registered: Vec<_> = asset_manager
+        .registered_archives()
+        .filter_map(|(source, archive)| retail_archive(asset_manager, source, Some(archive)))
+        .collect();
+    // The first registered archive listing each name, as `lookup_index`.
+    let mut registered_index = HashMap::new();
+    for (position, (_, archive)) in registered.iter().enumerate() {
+        for entry in archive.entries() {
+            registered_index.entry(entry.id).or_insert(position);
+        }
+    }
+    let mut files = Vec::new();
+    let mut digest: Option<crate::util::sha256::Sha256> = None;
+    for (_, def) in THEATER_DEFS {
+        let Some(lookup) = asset_manager
+            .get_with_source_ref(&theater_ini_name(asset_manager, def.control_name))
+            .and_then(|(bytes, _)| IniFile::from_bytes(bytes).ok())
+            .and_then(|ini| parse_tileset_sections(&ini, def.extension).ok())
+        else {
+            continue;
+        };
+        let theater = asset_manager.theater_archives_unmounted(def.mix_archives);
+        let theater_retail: Vec<_> = theater
+            .iter()
+            .filter_map(|unmounted| {
+                retail_archive(
+                    asset_manager,
+                    &unmounted.source,
+                    unmounted.archive.as_deref(),
+                )
+            })
+            .collect();
+        let read = |name: &str| asset_manager.resolve_ref_with_unmounted(name, &theater);
+        let read_retail = |name: &str| {
+            let id = mix_hash(name);
+            let (replaces, archive) = match registered_index.get(&id) {
+                Some(&position) => &registered[position],
+                None => theater_retail
+                    .iter()
+                    .find(|(_, archive)| archive.contains_id(id))?,
+            };
+            archive.get_by_id(id).map(|bytes| (*replaces, bytes))
+        };
+        for pristine in lookup.entries.iter().flatten() {
+            let used = tile_files(pristine, |name| read(name).is_some());
+            let original = tile_files(pristine, |name| read_retail(name).is_some());
+            for index in 0..used.len().max(original.len()) {
+                let Some(name) = used.get(index).or(original.get(index)) else {
+                    continue;
+                };
+                let found = used.get(index).and_then(|name| read(name));
+                let retail_found = original.get(index).and_then(|name| read_retail(name));
+                // A shipped archive is the same object on both sides, so its
+                // tiles compare without being read.
+                let same = match (found, retail_found) {
+                    (Some((_, bytes)), Some((_, retail))) => {
+                        std::ptr::eq(bytes, retail) || bytes == retail
+                    }
+                    (found, retail) => found.is_none() && retail.is_none(),
+                };
+                if same {
+                    continue;
+                }
+                // The file the game reads it from, else the replacement that
+                // hides the retail copy.
+                let file = match found {
+                    Some((source, _)) if !shipped_source(source) => Some(game_folder_file(source)),
+                    _ => retail_found
+                        .and_then(|(replaces, _)| replaces)
+                        .map(game_folder_file),
+                };
+                let file = file.unwrap_or_else(|| name.clone());
+                if !files.contains(&file) {
+                    files.push(file);
+                }
+                let hash = digest.get_or_insert_with(|| {
+                    let mut hash = crate::util::sha256::Sha256::new();
+                    hash.update(b"VERA20k theater tiles v1\0");
+                    hash
+                });
+                hash.update(name.as_bytes());
+                hash.update(&[0]);
+                match found {
+                    Some((_, bytes)) => {
+                        hash.update(&[1]);
+                        hash.update(&(bytes.len() as u64).to_le_bytes());
+                        hash.update(bytes);
+                    }
+                    None => hash.update(&[0]),
+                }
+            }
+        }
+    }
+    ChangedTiles {
+        files,
+        digest: digest.map(|hash| crate::util::sha256::digest_hex(hash.finalize())),
+    }
+}
+
+/// What a retail install searches in place of one archive (`None` when it
+/// does not open): the archive itself when it ships; else the shipped copy of
+/// the archive of its name, with the source it stands in for; else nothing
+/// (`expandmd99.mix`).
+fn retail_archive<'a>(
+    assets: &AssetManager,
+    source: &'a str,
+    archive: Option<&'a MixArchive>,
+) -> Option<(Option<&'a str>, Cow<'a, MixArchive>)> {
+    if let Some(archive) = archive.filter(|_| crate::rules::retail_sources::shipped_source(source))
+    {
+        return Some((None, Cow::Borrowed(archive)));
+    }
+    let name = source.rsplit("->").next().unwrap_or(source).trim();
+    crate::rules::retail_sources::shipped_nested_archive(assets, name)
+        .map(|copy| (Some(source), Cow::Owned(copy)))
+}
+
+/// A tile's files as a theater reads them: the pristine file and its
+/// contiguous variants, or none without the pristine file.
+fn tile_files(pristine: &str, mut exists: impl FnMut(&str) -> bool) -> Vec<String> {
+    let variants = contiguous_variant_filenames(pristine, &mut exists);
+    if variants.is_empty() && !exists(pristine) {
+        return Vec::new();
+    }
+    std::iter::once(pristine.to_owned())
+        .chain(variants)
+        .collect()
+}
+
 /// Load tileset data for a theater.
 ///
-/// Replaces the active theater MIX group, then loads the exact active-YR INI
-/// and palette filenames.
+/// Replaces the active theater MIX group, then loads the theater INI the
+/// selected INI roots name (`snowmd.ini` for YR, the stock name when the
+/// selected one is absent; `theater_ini_name`) and the exact palette
+/// filenames.
 /// The AssetManager is mutable because theater MIX archives are loaded on demand.
 pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Option<TheaterData> {
     let def: &TheaterDef = theater_def(theater_name)?;
@@ -858,11 +1039,19 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         return None;
     }
 
-    let (ini_data, ini_source) = asset_manager.get_with_source(def.ini_name)?;
+    let selected = asset_manager.ini_roots().theater_ini(def.control_name);
+    let ini_name = theater_ini_name(asset_manager, def.control_name);
+    if ini_name != selected {
+        log::warn!("Theater {theater_name}: INI '{selected}' not found; reading '{ini_name}'");
+    }
+    let Some((ini_data, ini_source)) = asset_manager.get_with_source(&ini_name) else {
+        log::warn!("Theater {theater_name}: INI '{ini_name}' not found");
+        return None;
+    };
     log::info!(
         "Theater {}: INI '{}' from {}",
         theater_name,
-        def.ini_name,
+        ini_name,
         ini_source
     );
 
@@ -871,12 +1060,37 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
     // tools/rules_oracle/theater_general_reader.md preserves executed results.
     let ini = IniFile::from_bytes(&ini_data).ok()?;
     let mut lookup = parse_tileset_sections(&ini, def.extension).ok()?;
+    // Diagnostic: log first 15 tilesets for debugging tile mapping.
+    for (idx, (bounds, name)) in lookup
+        .tileset_bounds
+        .iter()
+        .zip(lookup.set_names.iter())
+        .enumerate()
+        .take(15)
+    {
+        let fname = lookup
+            .filename(i32::from(bounds.start))
+            .unwrap_or("(blank)");
+        log::info!(
+            "  TileSet{:04}: start={:4}, count={:3}, name={:20} file={}",
+            idx,
+            bounds.start,
+            bounds.count,
+            name,
+            fname,
+        );
+    }
+    log::info!(
+        "  ... {} total tilesets, {} total tile_id slots",
+        lookup.tileset_bounds.len(),
+        lookup.len()
+    );
     resolve_contiguous_variant_chains(&mut lookup, asset_manager);
     log::info!(
         "Theater {}: loaded {} from INI '{}' ({} tile_id slots, {} tilesets)",
         theater_name,
         def.extension,
-        def.ini_name,
+        ini_name,
         lookup.len(),
         lookup.bounds().len()
     );
@@ -1058,10 +1272,8 @@ pub(crate) fn resolve_rmg_tile_keys(
     general: Option<&IniSection>,
     slope_set_pieces: Option<u16>,
 ) -> RmgTileKeys {
-    let resolve = |key: &str| {
-        let ordinal = general.map_or(-1, |section| section.read_int(key, -1));
-        resolve_tileset_start(lookup, ordinal)
-    };
+    let read = |key: &str| general.map_or(-1, |section| section.read_int(key, -1));
+    let resolve = |key: &str| resolve_tileset_start(lookup, read(key));
     RmgTileKeys {
         clear_tile: resolve("ClearTile"),
         ramp_base: resolve("RampBase"),
@@ -1083,8 +1295,18 @@ pub(crate) fn resolve_rmg_tile_keys(
         misc_pave_tile: resolve("MiscPaveTile"),
         paved_roads: resolve("PavedRoads"),
         paved_road_ends: resolve("PavedRoadEnds"),
-        medians: resolve("Medians"),
+        medians: resolve_tileset_start(lookup, medians_ordinal(read("Medians"))),
     }
+}
+
+/// The `[General] Medians=` ordinal ReadTheater545150 keeps. Ares' MediansFix
+/// (Ares.dll 1006A920, hook 0x545904 right after the ReadInt) turns the
+/// missing-key -1 into 71: SNOWMD.INI, the one shipped theater without the
+/// key, holds its "Paved road bits" medians there. Every build applies it:
+/// the urban pass is this value's only reader, and VERA's opted-in Urban
+/// Presence runs that pass without Ares.
+fn medians_ordinal(read: i32) -> i32 {
+    if read == -1 { 71 } else { read }
 }
 
 fn resolve_cliff_ranges(
@@ -1495,6 +1717,6 @@ pub fn load_tile_images(
 }
 
 // Tests extracted to map/theater_tests.rs to stay under 400 lines.
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 #[path = "theater_tests.rs"]
 mod theater_tests;

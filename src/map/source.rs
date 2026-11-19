@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::assets::asset_manager::AssetManager;
+use crate::assets::asset_manager::{AssetManager, ResolvedAssetFile};
+use crate::assets::error::AssetError;
 use crate::map::map_file::{self, MapFile};
 use crate::rules::ini_parser::IniFile;
 use crate::util::sha256::sha256_hex;
@@ -16,6 +17,7 @@ use crate::util::sha256::sha256_hex;
 const MAP_EXTENSIONS: [&str; 5] = ["mmx", "yro", "map", "mpr", "yrm"];
 pub const MAX_TRANSFER_MAP_BYTES: usize = 8 * 1024 * 1024;
 mod cache;
+mod saved_path;
 pub use cache::CacheLease;
 
 /// Exact source whose bytes were parsed into the active map.
@@ -23,6 +25,7 @@ pub use cache::CacheLease;
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LoadedMapSource {
     Loose {
+        #[serde(flatten, with = "saved_path")]
         path: PathBuf,
         payload_len: usize,
         /// Hash of the consumed file buffer, including the wrapper for .mmx.
@@ -52,6 +55,22 @@ pub enum LoadedMapSource {
 }
 
 impl LoadedMapSource {
+    /// Lookup name and external mission directory after restoring a saved world.
+    /// A moved install can find its own copy by basename. Its old parent no
+    /// longer supplies the directory for the next mission.
+    pub fn restored_loose_lookup(&self) -> (Option<&str>, Option<&Path>) {
+        let Self::Loose { path, .. } = self else {
+            return (None, None);
+        };
+        if crate::util::file_system::is_file(path) {
+            return (
+                path.to_str().or_else(|| saved_path::basename(path)),
+                path.parent().filter(|dir| !dir.as_os_str().is_empty()),
+            );
+        }
+        (saved_path::basename(path), None)
+    }
+
     pub fn physical_identity(&self) -> Option<(usize, &str)> {
         match self {
             Self::Loose {
@@ -141,7 +160,7 @@ pub struct LoadedMap {
 }
 
 pub fn read_map_ini_for_metadata(path: &Path) -> Option<IniFile> {
-    map_file::ini_from_file_bytes(crate::util::file_system::read(path).ok()?).ok()
+    map_file::ini_from_file_bytes(crate::util::file_system::read(path).ok()?.into()).ok()
 }
 
 /// Physical INI plus the exact source bytes used by shell map verification.
@@ -155,6 +174,36 @@ pub struct LoadedMapIni {
 struct MapInput<'a> {
     bytes: Cow<'a, [u8]>,
     source: LoadedMapSource,
+}
+
+impl<'a> MapInput<'a> {
+    fn loose(path: &Path, bytes: Cow<'a, [u8]>) -> Self {
+        let source = LoadedMapSource::Loose {
+            cache_lease: Default::default(),
+            path: path.to_path_buf(),
+            payload_len: bytes.len(),
+            source_sha256: sha256_hex(&bytes),
+        };
+        Self { bytes, source }
+    }
+
+    fn from_asset(logical_name: String, file: ResolvedAssetFile<'a>) -> Self {
+        match file {
+            ResolvedAssetFile::Loose { path, entry } => {
+                Self::loose(path, Cow::Borrowed(entry.bytes))
+            }
+            ResolvedAssetFile::Mix(entry) => Self {
+                bytes: Cow::Borrowed(entry.bytes),
+                source: LoadedMapSource::Mix {
+                    logical_name,
+                    source_archive: entry.source_archive.to_owned(),
+                    entry_id: entry.entry_id,
+                    payload_len: entry.bytes.len(),
+                    source_sha256: sha256_hex(entry.bytes),
+                },
+            },
+        }
+    }
 }
 
 static DOWNLOADED_MAPS_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -171,6 +220,42 @@ pub fn downloaded_maps_dir() -> Option<&'static Path> {
     DOWNLOADED_MAPS_DIR.get().map(PathBuf::as_path)
 }
 
+static MOD_DIR: std::sync::RwLock<Option<&'static Path>> = std::sync::RwLock::new(None);
+
+/// VERA: the mod folder in use (`app::mods`), set at each start. Its maps
+/// read as if they had been copied on top of the game folder: a lookup finds
+/// a mod's file first, and Choose Map's scan lists it in place of a
+/// game-folder file of the same name. A desktop run starts once; the browser
+/// build starts again in one page, perhaps with another mod or none, so each
+/// start sets it anew. The path is leaked to hand out `&'static`: a few bytes
+/// a start.
+pub fn set_mod_dir(dir: Option<PathBuf>) {
+    let dir = dir.map(|dir| &*Box::leak(dir.into_boxed_path()));
+    *MOD_DIR
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = dir;
+}
+
+pub fn mod_dir() -> Option<&'static Path> {
+    *MOD_DIR
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The folders a listing of the game folder reads, for
+/// `case_insensitive_path::native_listing_over`: `ra2_dir`, then the mod's.
+pub fn game_folders(ra2_dir: &Path) -> Vec<&Path> {
+    std::iter::once(ra2_dir).chain(mod_dir()).collect()
+}
+
+/// The file `name` of the game folder: the mod's when it has one.
+pub fn game_folder_file(ra2_dir: &Path, name: &str) -> PathBuf {
+    mod_dir()
+        .map(|dir| dir.join(name))
+        .filter(|path| crate::util::file_system::exists(path))
+        .unwrap_or_else(|| ra2_dir.join(name))
+}
+
 /// Where the random-map dialog's files live: `RandMap.Sed`, its `RandMap.img`
 /// preview and the saved seeds. VERA: gamemd keeps them in its own folder
 /// (`RandomMapSetupDialog__Run` 0x00595BC0 writes `RandMap.img`, its accepted
@@ -180,13 +265,18 @@ pub fn random_map_dir(root: &Path) -> &Path {
     downloaded_maps_dir().unwrap_or(root)
 }
 
-/// A map file by name: the game folder first, then VERA's downloaded maps.
-/// A seed is only looked for in [`random_map_dir`].
+/// A map file by name: the mod folder in use, then the game folder, then
+/// VERA's downloaded maps. A seed is only looked for in [`random_map_dir`].
 pub fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
-    local_map_path_in(ra2_dir, downloaded_maps_dir(), map_name)
+    local_map_path_in(mod_dir(), ra2_dir, downloaded_maps_dir(), map_name)
 }
 
-fn local_map_path_in(ra2_dir: &Path, downloaded: Option<&Path>, map_name: &str) -> Result<PathBuf> {
+fn local_map_path_in(
+    mod_dir: Option<&Path>,
+    ra2_dir: &Path,
+    downloaded: Option<&Path>,
+    map_name: &str,
+) -> Result<PathBuf> {
     let direct = PathBuf::from(map_name);
     if direct.is_absolute() && crate::util::file_system::exists(&direct) {
         return Ok(direct);
@@ -198,7 +288,12 @@ fn local_map_path_in(ra2_dir: &Path, downloaded: Option<&Path>, map_name: &str) 
     } else {
         ra2_dir
     };
-    for root in std::iter::once(first).chain(downloaded.filter(|_| !seed)) {
+    let roots = mod_dir
+        .filter(|_| !seed)
+        .into_iter()
+        .chain(std::iter::once(first))
+        .chain(downloaded.filter(|_| !seed));
+    for root in roots {
         let exact = root.join(map_name);
         if crate::util::file_system::exists(&exact) {
             return Ok(exact);
@@ -243,16 +338,7 @@ fn read_loose_map_input_bounded(path: &Path, limit: Option<usize>) -> Result<Map
         limit.is_none_or(|limit| bytes.len() <= limit),
         "map exceeds transfer size limit"
     );
-    let source = LoadedMapSource::Loose {
-        cache_lease: Default::default(),
-        path: path.to_path_buf(),
-        payload_len: bytes.len(),
-        source_sha256: sha256_hex(&bytes),
-    };
-    Ok(MapInput {
-        bytes: Cow::Owned(bytes),
-        source,
-    })
+    Ok(MapInput::loose(path, Cow::Owned(bytes)))
 }
 
 fn decode_map(input: MapInput<'_>) -> Result<LoadedMap> {
@@ -272,8 +358,7 @@ fn decode_metadata(input: MapInput<'_>) -> Result<LoadedMapIni> {
         //695349 ignores INI.Load's boolean before ReadString. A malformed
         // physical file still supplies the reader default; it must not cause
         // a fallback to a different MIX payload.
-        ini: map_file::ini_from_file_bytes(input.bytes.into_owned())
-            .unwrap_or_else(|_| IniFile::empty()),
+        ini: map_file::ini_from_file_bytes(input.bytes).unwrap_or_else(|_| IniFile::empty()),
         source: input.source,
     })
 }
@@ -293,7 +378,7 @@ fn expand_map_ini_with_options(
     strict: bool,
     logical_name: Option<&str>,
 ) -> Result<IniFile> {
-    if !(crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED) {
+    if !(crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED) {
         return Ok(ini);
     }
     let name = match source {
@@ -345,12 +430,15 @@ pub fn validate_network_map_content(ini: &IniFile, seed: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn effective_network_map_digest(ini: &IniFile, seed: bool) -> String {
+/// `ares`: Ares.dll is loaded (the game is read the Ares way); only a seed
+/// reads it, whose bytes then carry the Urban Areas box
+/// (`RmgOptions::to_sed_bytes`).
+pub fn effective_network_map_digest(ini: &IniFile, seed: bool, ares: bool) -> String {
     if seed {
         let mut options = crate::map::rmg::RmgOptions::default();
-        options.apply_sed(ini);
+        options.apply_sed(ini, ares);
         options.normalize();
-        return IniFile::from_bytes(&options.to_sed_bytes())
+        return IniFile::from_bytes(&options.to_sed_bytes(ares))
             .expect("serialized seed INI")
             .multiplayer_digest();
     }
@@ -383,7 +471,7 @@ pub fn load_network_map_ini(
 
 fn decode_map_with_assets(input: MapInput<'_>, assets: &AssetManager) -> Result<LoadedMap> {
     let ini = if matches!(input.source, LoadedMapSource::Loose { .. }) {
-        map_file::ini_from_file_bytes(input.bytes.into_owned())?
+        map_file::ini_from_file_bytes(input.bytes)?
     } else {
         IniFile::from_bytes(&input.bytes)?
     };
@@ -416,22 +504,16 @@ fn load_map_input_with_assets<T>(
         Ok(value) => Ok(value),
         Err(local_err) => {
             for candidate in asset_map_candidates(map_name) {
-                if let Some(resolved) = assets.resolve_ref(&candidate) {
-                    anyhow::ensure!(
-                        limit.is_none_or(|limit| resolved.bytes.len() <= limit),
-                        "map exceeds transfer size limit"
-                    );
-                    let source = LoadedMapSource::Mix {
-                        logical_name: candidate,
-                        source_archive: resolved.source_archive.to_string(),
-                        entry_id: resolved.entry_id,
-                        payload_len: resolved.bytes.len(),
-                        source_sha256: sha256_hex(resolved.bytes),
-                    };
-                    return decode(MapInput {
-                        bytes: Cow::Borrowed(resolved.bytes),
-                        source,
-                    });
+                let file = assets
+                    .resolve_file_with_limit(&candidate, limit)
+                    .map_err(|error| match error {
+                        AssetError::ReadLimitExceeded { .. } => {
+                            anyhow::anyhow!("map exceeds transfer size limit")
+                        }
+                        error => error.into(),
+                    })?;
+                if let Some(file) = file {
+                    return decode(MapInput::from_asset(candidate, file));
                 }
             }
             Err(local_err)
@@ -612,7 +694,9 @@ fn decode_transfer(bytes: &[u8], resource: TransferResource) -> Result<TransferC
             "random-map seed options missing"
         );
         let mut options = crate::map::rmg::RmgOptions::default();
-        options.apply_sed(&ini);
+        // The options are read and dropped: whether Ares.dll is loaded (the
+        // Urban Areas box) changes nothing here.
+        options.apply_sed(&ini, false);
         options.normalize();
     } else if !include_expansion_will_run(&ini) {
         map_file::MapFile::from_ini(ini.clone())?;
@@ -647,10 +731,6 @@ fn install_received_asset_with_limits(
     resource: TransferResource,
     limits: cache::Limits,
 ) -> Result<LoadedTransferAsset> {
-    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-    use std::io::Write;
-    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-    use std::sync::atomic::{AtomicU64, Ordering};
     anyhow::ensure!(valid_source_sha256(digest), "invalid map source identity");
     anyhow::ensure!(
         length > 0 && length <= resource.limit() && bytes.len() == length,
@@ -675,32 +755,9 @@ fn install_received_asset_with_limits(
     }
     #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     if !already_cached {
-        static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
-        let (stage, mut file) = loop {
-            let id = NEXT_STAGE.fetch_add(1, Ordering::Relaxed);
-            let stage = cache
-                .directory()
-                .join(format!(".map-{}-{id}.tmp", std::process::id()));
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&stage)
-            {
-                Ok(file) => break (stage, file),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error.into()),
-            }
-        };
-        let result = (|| -> std::io::Result<()> {
-            file.write_all(&bytes)?;
-            file.sync_all()?;
-            drop(file);
-            std::fs::rename(&stage, &path)
-        })();
-        if result.is_err() {
-            let _ = crate::util::file_system::remove_file(&stage);
-        }
-        result?;
+        write_staged(cache.directory(), &bytes, |stage| {
+            std::fs::rename(stage, &path)
+        })?;
     }
     let source = LoadedMapSource::Loose {
         cache_lease: cache.pin(&path)?,
@@ -709,6 +766,43 @@ fn install_received_asset_with_limits(
         source_sha256: digest.to_owned(),
     };
     Ok(LoadedTransferAsset { source, content })
+}
+
+/// Writes `bytes` to a new hidden file in `dir`, syncs it, and hands its path
+/// to `publish` to move it into place. The staged file is removed when the
+/// write or `publish` fails, so no partial file is published or left behind.
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+fn write_staged(
+    dir: &Path,
+    bytes: &[u8],
+    publish: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
+    let (stage, mut file) = loop {
+        let id = NEXT_STAGE.fetch_add(1, Ordering::Relaxed);
+        let stage = dir.join(format!(".map-{}-{id}.tmp", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stage)
+        {
+            Ok(file) => break (stage, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    };
+    let result = (|| -> std::io::Result<()> {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        publish(&stage)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&stage);
+    }
+    result
 }
 
 /// The name a received or downloaded map is kept under in VERA's Maps folder: the
@@ -762,13 +856,23 @@ pub struct KeptMap {
     pub name: String,
 }
 
+/// The names a map is kept under, in the order [`keep_received_map`] tries
+/// them: `kept_name`, which [`kept_map_file_name`] gave, then
+/// `<stem>-<first 8 hex of its SHA-256>.yrm` for when another map holds the
+/// first.
+pub fn kept_map_names(kept_name: &str, sha256: &str) -> [String; 2] {
+    let stem = kept_name.strip_suffix(".yrm").unwrap_or(kept_name);
+    let prefix: String = sha256.chars().take(8).collect();
+    [kept_name.to_owned(), format!("{stem}-{prefix}.yrm")]
+}
+
 /// Keeps a map downloaded or received in a room in VERA's `maps_dir`, never
 /// the retail installation; Choose Map lists it from there, so the player can
 /// host it later. `host_file` is the host's logical map name and `bytes` the
-/// verified file. The map is kept as `<stem>.yrm`, or as
-/// `<stem>-<first 8 hex of its SHA-256>.yrm` when another map holds that
-/// name in either folder, so a player's file is never replaced. A file that
-/// already holds these bytes under either name is the kept map.
+/// verified file. The map is kept under the first of [`kept_map_names`] that
+/// no other map holds in either folder, so a player's file is never
+/// replaced. A file that already holds these bytes under either name is the
+/// kept map.
 pub fn keep_received_map(
     maps_dir: &Path,
     ra2_dir: &Path,
@@ -776,11 +880,10 @@ pub fn keep_received_map(
     bytes: &[u8],
 ) -> Result<KeptMap> {
     let name = kept_map_file_name(host_file)?;
-    let sha256 = sha256_hex(bytes);
-    let stem = name.strip_suffix(".yrm").unwrap_or(&name);
-    for name in [name.clone(), format!("{stem}-{}.yrm", &sha256[..8])] {
-        if let Some(path) = [ra2_dir, maps_dir]
+    for name in kept_map_names(&name, &sha256_hex(bytes)) {
+        if let Some(path) = mod_dir()
             .into_iter()
+            .chain([ra2_dir, maps_dir])
             .find_map(|dir| held_file(dir, &name))
         {
             let same = read_loose_map_input_bounded(&path, Some(MAX_TRANSFER_MAP_BYTES))
@@ -827,27 +930,25 @@ fn write_kept_map(maps_dir: &Path, name: &str, bytes: &[u8]) -> Result<bool> {
     }
     #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     {
-        // Claiming the name first lets the file system refuse a spelling it
-        // treats as the same; the bytes go beside it, so Choose Map never
-        // reads half a file, and then replace only that claim.
+        // The bytes are staged beside the name first, so Choose Map never
+        // reads half a file. Claiming the name then lets the file system
+        // refuse a spelling it treats as the same, and the staged file
+        // replaces only that claim.
         let target = maps_dir.join(name);
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&target)
-        {
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
-            Err(error) => return Err(error.into()),
+        let written = write_staged(maps_dir, bytes, |stage| {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)?;
+            std::fs::rename(stage, &target).inspect_err(|_| {
+                let _ = std::fs::remove_file(&target);
+            })
+        });
+        match written {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+            Err(error) => Err(error.into()),
         }
-        let stage = maps_dir.join(format!(".{name}.part"));
-        let result = std::fs::write(&stage, bytes).and_then(|()| std::fs::rename(&stage, &target));
-        if result.is_err() {
-            let _ = std::fs::remove_file(&stage);
-            let _ = std::fs::remove_file(&target);
-        }
-        result?;
-        Ok(true)
     }
 }
 
@@ -878,33 +979,6 @@ pub fn load_received_asset(
         source: input.source,
         content,
     })
-}
-
-/// Existing authored-map entry points share the typed asset installer.
-pub fn install_received_map(
-    directory: &Path,
-    bytes: Vec<u8>,
-    digest: &str,
-    length: usize,
-) -> Result<LoadedMapIni> {
-    let LoadedTransferAsset {
-        source,
-        content: TransferContent::Scenario(ini),
-    } = install_received_asset(directory, bytes, digest, length, TransferResource::Map)?
-    else {
-        unreachable!()
-    };
-    Ok(LoadedMapIni { source, ini })
-}
-pub fn load_received_map(directory: &Path, digest: &str, length: usize) -> Result<LoadedMapIni> {
-    let LoadedTransferAsset {
-        source,
-        content: TransferContent::Scenario(ini),
-    } = load_received_asset(directory, digest, length, TransferResource::Map)?
-    else {
-        unreachable!()
-    };
-    Ok(LoadedMapIni { source, ini })
 }
 
 pub fn asset_map_candidates(map_name: &str) -> Vec<String> {
@@ -981,6 +1055,23 @@ pub mod test_support {
         }
     }
 
+    /// [`install_received_asset`] for an authored map, with its INI.
+    pub fn install_received_map(
+        directory: &Path,
+        bytes: Vec<u8>,
+        digest: &str,
+        length: usize,
+    ) -> Result<LoadedMapIni> {
+        let LoadedTransferAsset {
+            source,
+            content: TransferContent::Scenario(ini),
+        } = install_received_asset(directory, bytes, digest, length, TransferResource::Map)?
+        else {
+            anyhow::bail!("an authored map installs as a scenario");
+        };
+        Ok(LoadedMapIni { source, ini })
+    }
+
     pub fn make_new_format_mix_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let body_size: usize = entries.iter().map(|(_, body)| body.len()).sum();
         let mut data = Vec::new();
@@ -1015,9 +1106,59 @@ pub mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_loose_path_stays_readable_across_readers_and_platforms() {
+        use super::LoadedMapSource;
+        use std::os::unix::ffi::OsStrExt;
+        use std::path::PathBuf;
+
+        let loose = |path| LoadedMapSource::Loose {
+            path,
+            cache_lease: Default::default(),
+            payload_len: 12,
+            source_sha256: "saved-digest".into(),
+        };
+        let ordinary = loose("maps/Mission.map".into());
+        let old = serde_json::to_value(&ordinary).unwrap();
+        assert_eq!(old["path"], "maps/Mission.map");
+        assert!(old.get("native_path").is_none());
+        assert_eq!(
+            serde_json::from_value::<LoadedMapSource>(old).unwrap(),
+            ordinary
+        );
+
+        let path = std::ffi::OsStr::from_bytes(b"/game/\xff/Mission.map");
+        let source = loose(path.into());
+        let mut wire = serde_json::to_value(&source).unwrap();
+        assert_eq!(
+            wire["native_path"]["Unix"],
+            serde_json::json!(path.as_bytes())
+        );
+        #[derive(serde::Deserialize)]
+        struct OldLooseFields {
+            path: PathBuf,
+        }
+        let old: OldLooseFields = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(old.path, PathBuf::from("Mission.map"));
+        assert_eq!(
+            serde_json::from_value::<LoadedMapSource>(wire.clone()).unwrap(),
+            source
+        );
+
+        // A Windows save with a non-Unicode parent retains the same portable name.
+        let windows: Vec<u16> = [0xd800, b'\\' as u16]
+            .into_iter()
+            .chain("Mission.map".encode_utf16())
+            .collect();
+        wire["native_path"] = serde_json::json!({ "Windows": windows });
+        let foreign: LoadedMapSource = serde_json::from_value(wire).unwrap();
+        assert_eq!(foreign, loose("Mission.map".into()));
+    }
 
     #[test]
     fn a_received_map_is_kept_in_veras_folder_without_replacing_the_players_file() {
@@ -1033,7 +1174,7 @@ mod tests {
         );
         // Found by name after the game folder, as every map lookup does.
         assert_eq!(
-            local_map_path_in(game.path(), Some(&maps), "FrozenLakes.yrm").unwrap(),
+            local_map_path_in(None, game.path(), Some(&maps), "FrozenLakes.yrm").unwrap(),
             maps.join("FrozenLakes.yrm")
         );
         let record =
@@ -1071,20 +1212,33 @@ mod tests {
         // An older seed the original game left in its folder is never the
         // random-map dialog's: not even when VERA's folder has none yet.
         game.write("RandMap.Sed", b"[RandomMap]\nSeed=1\n");
-        assert!(local_map_path_in(game.path(), Some(vera.path()), "RandMap.Sed").is_err());
+        assert!(local_map_path_in(None, game.path(), Some(vera.path()), "RandMap.Sed").is_err());
         vera.write("RandMap.Sed", b"[RandomMap]\nSeed=2\n");
         assert_eq!(
-            local_map_path_in(game.path(), Some(vera.path()), "RandMap.Sed").unwrap(),
+            local_map_path_in(None, game.path(), Some(vera.path()), "RandMap.Sed").unwrap(),
             vera.path().join("RandMap.Sed")
         );
         // Maps still come from the game folder first.
         game.write("Lakes.map", b"[Basic]\n");
         vera.write("Lakes.map", b"[Basic]\n");
         assert_eq!(
-            local_map_path_in(game.path(), Some(vera.path()), "Lakes.map").unwrap(),
+            local_map_path_in(None, game.path(), Some(vera.path()), "Lakes.map").unwrap(),
             game.path().join("Lakes.map")
         );
+        // A mod folder in use reads as if copied on top of the game folder:
+        // its map first, the game folder's where it has none, never its seed.
+        let mod_dir = TestDirectory::new("seed-lookup-mod");
+        mod_dir.write("Lakes.map", b"[Basic]\n");
+        mod_dir.write("RandMap.Sed", b"[RandomMap]\nSeed=3\n");
+        game.write("Hills.map", b"[Basic]\n");
+        let found = |name| {
+            local_map_path_in(Some(mod_dir.path()), game.path(), Some(vera.path()), name).unwrap()
+        };
+        assert_eq!(found("Lakes"), mod_dir.path().join("Lakes.map"));
+        assert_eq!(found("Hills.map"), game.path().join("Hills.map"));
+        assert_eq!(found("RandMap.Sed"), vera.path().join("RandMap.Sed"));
     }
+    use super::test_support::install_received_map;
     use super::*;
     use crate::assets::mix_hash::mix_hash;
 
@@ -1492,7 +1646,7 @@ mod tests {
         let mut options = crate::map::rmg::RmgOptions::default();
         options.seed = 1234;
         options.normalize();
-        let bytes = options.to_sed_bytes();
+        let bytes = options.to_sed_bytes(false);
         let digest = sha256_hex(&bytes);
         let loaded = install_received_asset(
             root.path(),
@@ -1506,7 +1660,7 @@ mod tests {
             panic!("seed INI");
         };
         let mut decoded = crate::map::rmg::RmgOptions::default();
-        decoded.apply_sed(&ini);
+        decoded.apply_sed(&ini, false);
         decoded.normalize();
         assert_eq!(decoded, options);
         let LoadedMapSource::Loose { path, .. } = loaded.source else {
@@ -1565,44 +1719,48 @@ mod tests {
 
     #[test]
     fn network_effective_digest_uses_existing_include_expansion_and_rejects_missing_closure() {
-        let root = TestDirectory::new("network-map-includes");
-        let mut bytes = SOURCE_TEST_MAP.to_vec();
-        bytes.extend_from_slice(b"\n[#include]\n0=child.ini\n");
-        root.write("Shared.map", &bytes);
-        root.write("child.ini", b"[General]\nBuildSpeed=.5\n");
-        let a = AssetManager::from_loose_root_for_test(root.path());
-        let first = load_network_map_ini(root.path(), "Shared.map", &a).unwrap();
-        root.write("child.ini", b"[General]\nBuildSpeed=.7\n");
-        let b = AssetManager::from_loose_root_for_test(root.path());
-        let second = load_network_map_ini(root.path(), "Shared.map", &b).unwrap();
-        assert_eq!(
-            first.source.physical_identity(),
-            second.source.physical_identity()
-        );
-        assert_eq!(
-            effective_network_map_digest(&first.ini, false)
-                != effective_network_map_digest(&second.ini, false),
-            crate::rules::ARES_ENABLED
-        );
-        std::fs::remove_file(root.path().join("child.ini")).unwrap();
-        let c = AssetManager::from_loose_root_for_test(root.path());
-        assert_eq!(
-            load_network_map_ini(root.path(), "Shared.map", &c).is_err(),
-            crate::rules::ARES_ENABLED
-        );
-        if crate::rules::ARES_ENABLED {
-            root.write("child.ini", SOURCE_TEST_MAP);
-            let bytes = b"[#include]\n0=child.ini\n".to_vec();
-            let loaded = install_received_map(
-                &root.path().join("cache"),
-                bytes.clone(),
-                &sha256_hex(&bytes),
-                bytes.len(),
-            )
-            .unwrap();
-            let assets = AssetManager::from_loose_root_for_test(root.path());
-            let loaded = resolve_network_map_ini(loaded, &assets, false, "Included.map").unwrap();
-            validate_network_map_content(&loaded.ini, false).unwrap();
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let root = TestDirectory::new("network-map-includes");
+            let mut bytes = SOURCE_TEST_MAP.to_vec();
+            bytes.extend_from_slice(b"\n[#include]\n0=child.ini\n");
+            root.write("Shared.map", &bytes);
+            root.write("child.ini", b"[General]\nBuildSpeed=.5\n");
+            let a = AssetManager::from_loose_root_for_test(root.path());
+            let first = load_network_map_ini(root.path(), "Shared.map", &a).unwrap();
+            root.write("child.ini", b"[General]\nBuildSpeed=.7\n");
+            let b = AssetManager::from_loose_root_for_test(root.path());
+            let second = load_network_map_ini(root.path(), "Shared.map", &b).unwrap();
+            assert_eq!(
+                first.source.physical_identity(),
+                second.source.physical_identity()
+            );
+            assert_eq!(
+                effective_network_map_digest(&first.ini, false, false)
+                    != effective_network_map_digest(&second.ini, false, false),
+                ares_way
+            );
+            std::fs::remove_file(root.path().join("child.ini")).unwrap();
+            let c = AssetManager::from_loose_root_for_test(root.path());
+            assert_eq!(
+                load_network_map_ini(root.path(), "Shared.map", &c).is_err(),
+                ares_way
+            );
+            if ares_way {
+                root.write("child.ini", SOURCE_TEST_MAP);
+                let bytes = b"[#include]\n0=child.ini\n".to_vec();
+                let loaded = install_received_map(
+                    &root.path().join("cache"),
+                    bytes.clone(),
+                    &sha256_hex(&bytes),
+                    bytes.len(),
+                )
+                .unwrap();
+                let assets = AssetManager::from_loose_root_for_test(root.path());
+                let loaded =
+                    resolve_network_map_ini(loaded, &assets, false, "Included.map").unwrap();
+                validate_network_map_content(&loaded.ini, false).unwrap();
+            }
         }
     }
 
@@ -1644,9 +1802,17 @@ mod tests {
             path.file_name().unwrap().to_str().unwrap(),
             format!("{SOURCE_TEST_MAP_SHA256}.map")
         );
-        assert!(load_received_map(&cache, SOURCE_TEST_MAP_SHA256, SOURCE_TEST_MAP.len()).is_ok());
+        let load = || {
+            load_received_asset(
+                &cache,
+                SOURCE_TEST_MAP_SHA256,
+                SOURCE_TEST_MAP.len(),
+                TransferResource::Map,
+            )
+        };
+        assert!(load().is_ok());
         std::fs::write(path, b"damaged").unwrap();
-        assert!(load_received_map(&cache, SOURCE_TEST_MAP_SHA256, SOURCE_TEST_MAP.len()).is_err());
+        assert!(load().is_err());
         install_received_map(
             &cache,
             SOURCE_TEST_MAP.to_vec(),
@@ -1670,52 +1836,55 @@ mod tests {
 
     #[test]
     fn ini_directives_map_gameplay_and_metadata_follow_build_capability() {
-        let dir = TestDirectory::new("map-ini-directives");
-        let root = [
-            SOURCE_TEST_MAP,
-            b"[#include]\n0=rules-extra.ini\n[Unit]\n$Inherits=Base\nOwn=map\n",
-        ]
-        .concat();
-        dir.write("Arena.map", &root);
-        dir.write(
-            "rules-extra.ini",
-            b"[Basic]\nName=Included name\n[Base]\nStrength=250\nOwn=parent\n",
-        );
-        let assets = AssetManager::from_loose_root_for_test(dir.path());
-        let loaded =
-            load_map_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
-        let metadata =
-            load_map_ini_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
-        assert_eq!(loaded.map.ini.content_hash(), metadata.ini.content_hash());
-        let ares_include = crate::rules::ARES_ENABLED;
-        assert_eq!(
-            loaded
-                .map
-                .ini
-                .section_or_empty("Unit")
-                .read_int("Strength", 0),
-            if ares_include { 250 } else { 0 }
-        );
-        assert_eq!(
-            loaded
-                .map
-                .ini
-                .section_or_empty("Unit")
-                .read_name("Own", 128),
-            Some("map")
-        );
-        assert_eq!(
-            loaded
-                .map
-                .ini
-                .section_or_empty("Basic")
-                .read_name("Name", 128),
-            ares_include.then_some("Included name")
-        );
-        assert_eq!(
-            serde_json::to_value(&loaded.source).unwrap(),
-            serde_json::to_value(&metadata.source).unwrap()
-        );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let dir = TestDirectory::new("map-ini-directives");
+            let root = [
+                SOURCE_TEST_MAP,
+                b"[#include]\n0=rules-extra.ini\n[Unit]\n$Inherits=Base\nOwn=map\n",
+            ]
+            .concat();
+            dir.write("Arena.map", &root);
+            dir.write(
+                "rules-extra.ini",
+                b"[Basic]\nName=Included name\n[Base]\nStrength=250\nOwn=parent\n",
+            );
+            let assets = AssetManager::from_loose_root_for_test(dir.path());
+            let loaded =
+                load_map_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
+            let metadata =
+                load_map_ini_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
+            assert_eq!(loaded.map.ini.content_hash(), metadata.ini.content_hash());
+            let ares_include = ares_way;
+            assert_eq!(
+                loaded
+                    .map
+                    .ini
+                    .section_or_empty("Unit")
+                    .read_int("Strength", 0),
+                if ares_include { 250 } else { 0 }
+            );
+            assert_eq!(
+                loaded
+                    .map
+                    .ini
+                    .section_or_empty("Unit")
+                    .read_name("Own", 128),
+                Some("map")
+            );
+            assert_eq!(
+                loaded
+                    .map
+                    .ini
+                    .section_or_empty("Basic")
+                    .read_name("Name", 128),
+                ares_include.then_some("Included name")
+            );
+            assert_eq!(
+                serde_json::to_value(&loaded.source).unwrap(),
+                serde_json::to_value(&metadata.source).unwrap()
+            );
+        }
     }
 
     #[test]
@@ -1738,6 +1907,38 @@ mod tests {
                 source_sha256: SOURCE_TEST_MAP_SHA256.to_string(),
             }
         );
+    }
+
+    #[test]
+    fn asset_fallback_keeps_the_loose_wrappers_path_and_bytes() {
+        let direct = TestDirectory::new("empty-direct-root");
+        let loose = TestDirectory::new("asset-wrapper");
+        let wrapper = make_new_format_mix_bytes(&[("Arena.map", SOURCE_TEST_MAP)]);
+        loose.write("Arena.mmx", &wrapper);
+        let assets = AssetManager::from_loose_root_for_test(loose.path());
+        let name = "ARENA.MMX";
+        let metadata =
+            load_map_ini_by_name_or_path_with_assets(direct.path(), name, &assets).unwrap();
+        let digest = sha256_hex(&wrapper);
+        assert_eq!(
+            metadata.source,
+            LoadedMapSource::Loose {
+                path: loose.path().join("Arena.mmx"),
+                payload_len: wrapper.len(),
+                source_sha256: digest.clone(),
+                cache_lease: Default::default(),
+            }
+        );
+
+        let gameplay = load_map_by_name_or_path_with_assets(direct.path(), name, &assets).unwrap();
+        assert_eq!(gameplay.map.header.theater, "TEMPERATE");
+        assert_eq!(gameplay.map.ini.content_hash(), metadata.ini.content_hash());
+        assert_eq!(gameplay.source, metadata.source);
+
+        // The same map as plain INI is a different file from the selected wrapper.
+        let upload = prepare_transfer_map_source(&metadata.source, &assets).unwrap();
+        loose.write("Arena.mmx", SOURCE_TEST_MAP);
+        assert!(upload.read(&digest, wrapper.len()).is_err());
     }
 
     #[test]

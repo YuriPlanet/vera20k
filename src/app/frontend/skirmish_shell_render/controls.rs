@@ -10,7 +10,7 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::{
     ControlChrome, SkirmishShellChromeAtlas, SkirmishShellChromeEntry,
 };
-use crate::rules::color_scheme::ColorSchemeEntry;
+use crate::rules::ruleset::RuleSet;
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 use crate::ui::skirmish_shell::{
@@ -163,7 +163,8 @@ pub(super) fn push_new_edit_instances(
 /// A NewEdit's frame, caret and text, as NewEdit__DrawTextAndCaret
 /// `0x00623880` paints them in BB, BC/BD, C2/C9 and `0x10F`: the text sits
 /// inside the frame from the first visible unit, and an open IME composition
-/// is spliced in at the caret in the composition colour (`app::input::ime`).
+/// is spliced in at the caret in the composition colour (`app::input::ime`),
+/// the rest in `rgb`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn push_new_edit(
     controls: &mut Vec<SpriteInstance>,
@@ -174,6 +175,7 @@ pub(super) fn push_new_edit(
     composition: Option<(&[u16], usize)>,
     rect: RectPx,
     caret_visible: bool,
+    rgb: [f32; 3],
     text_depth: f32,
     scale: ShellScale,
 ) {
@@ -216,9 +218,9 @@ pub(super) fn push_new_edit(
     let composition_rgb = crate::app::input::ime::COMPOSITION_RGB.map(|c| f32::from(c) / 255.0);
     let mut x = 0;
     for (units, rgb) in [
-        (first..start, SHELL_LABEL_TEXT_RGB),
+        (first..start, rgb),
         (start..end, composition_rgb),
-        (end..view.units.len(), SHELL_LABEL_TEXT_RGB),
+        (end..view.units.len(), rgb),
     ] {
         if units.is_empty() {
             continue;
@@ -439,12 +441,10 @@ pub(super) fn scrollbar_arrow_entry(
     }
 }
 
-/// Resolve a normal Skirmish lobby color slot to its fixed owner-draw swatch.
+/// YR's eight lobby colours' fixed owner-draw swatches.
 ///
 /// The active native initializer copies these eight packed RGB values from
-/// `0x008316A8`; gameplay `[Colors]` schemes do not feed this UI table. The
-/// existing parameter remains part of the renderer seam but deliberately has no
-/// authority here.
+/// `0x008316A8`; gameplay `[Colors]` schemes do not feed this UI table.
 const SKIRMISH_SWATCH_RGB: [[u8; 3]; 8] = [
     [221, 226, 13],
     [255, 25, 25],
@@ -456,12 +456,96 @@ const SKIRMISH_SWATCH_RGB: [[u8; 3]; 8] = [
     [255, 154, 235],
 ];
 
-pub(super) fn house_color_tint(_color_schemes: &[ColorSchemeEntry], index: usize) -> [f32; 3] {
-    let [r, g, b] = SKIRMISH_SWATCH_RGB
-        .get(index)
-        .copied()
-        .unwrap_or([96, 96, 96]);
-    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]
+/// Resolve a selectable lobby colour priority to its owner-draw swatch.
+///
+/// YR's eight read the fixed table whatever `rules` hold. gamemd has no
+/// swatch for VERA's extra colours, so theirs is the colour gamemd prints
+/// their House's text in: the scheme's own H,S,V (`house_text_rgb`). Anything
+/// else has no player swatch.
+fn lobby_swatch_rgb(rules: Option<&RuleSet>, index: usize) -> Option<[u8; 3]> {
+    SKIRMISH_SWATCH_RGB.get(index).copied().or_else(|| {
+        let rules = rules?;
+        let priority = i32::try_from(index).ok()?;
+        let colors = rules.skirmish_colors();
+        colors.is_lobby_priority(priority).then(|| {
+            crate::rules::house_colors::house_text_rgb(
+                &rules.color_schemes,
+                crate::rules::house_colors::HouseColorIndex(
+                    colors.entry_for_priority(priority) as u8
+                ),
+            )
+        })
+    })
+}
+
+pub(super) fn house_color_tint(rules: Option<&RuleSet>, index: usize) -> [f32; 3] {
+    lobby_swatch_rgb(rules, index)
+        .unwrap_or([96, 96, 96])
+        .map(|v| f32::from(v) / 255.0)
+}
+
+/// Hue in degrees round the RGB colour wheel. Very low saturation has no
+/// useful hue; near-grey swatches share a separate family.
+fn swatch_hue(rgb: [u8; 3]) -> Option<i32> {
+    let [r, g, b] = rgb.map(i32::from);
+    let high = r.max(g).max(b);
+    let chroma = high - r.min(g).min(b);
+    if 8 * chroma <= high {
+        return None;
+    }
+    let hue = if r == high {
+        60 * (g - b) / chroma
+    } else if g == high {
+        120 + 60 * (b - r) / chroma
+    } else {
+        240 + 60 * (r - g) / chroma
+    };
+    Some(hue.rem_euclid(360))
+}
+
+/// Each seat votes for the closest of the eight lobby swatch hues or grey.
+/// The caption takes the mean colour of the strict majority's swatches.
+pub(super) fn team_caption_tint(rules: Option<&RuleSet>, colors: &[u8]) -> Option<[f32; 3]> {
+    const GREY: usize = SKIRMISH_SWATCH_RGB.len();
+    let hues = SKIRMISH_SWATCH_RGB.map(|rgb| swatch_hue(rgb).unwrap_or_default());
+    let mut families = [(0usize, [0u32; 3]); GREY + 1];
+    let mut votes = 0;
+    for &priority in colors {
+        let Some(rgb) = lobby_swatch_rgb(rules, usize::from(priority)) else {
+            continue;
+        };
+        let family = swatch_hue(rgb)
+            .and_then(|hue| {
+                (0..hues.len()).min_by_key(|&i| {
+                    let gap = (hue - hues[i]).abs();
+                    gap.min(360 - gap)
+                })
+            })
+            .unwrap_or(GREY);
+        let (count, sum) = &mut families[family];
+        *count += 1;
+        for (channel, value) in sum.iter_mut().zip(rgb) {
+            *channel += u32::from(value);
+        }
+        votes += 1;
+    }
+    let (count, sum) = families.into_iter().find(|(count, _)| *count > votes / 2)?;
+    let mut rgb = sum.map(|v| v as f32 / (255.0 * count as f32));
+    // First raise the value of dark shades (such as navy) keeping their saturation.
+    // Mix in white only when the hue itself is too dark for the small text.
+    let mut luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    const MIN_LUMA: f32 = 0.55;
+    if luma > 0.0 && luma < MIN_LUMA {
+        let peak = rgb[0].max(rgb[1]).max(rgb[2]);
+        let gain = (MIN_LUMA / luma).min(1.0 / peak);
+        rgb = rgb.map(|v| v * gain);
+        luma *= gain;
+    }
+    if luma < MIN_LUMA {
+        let white = (MIN_LUMA - luma) / (1.0 - luma);
+        rgb = rgb.map(|v| v + (1.0 - v) * white);
+    }
+    Some(rgb)
 }
 
 /// The value plaque of `ShellTrackbar__WndProc`'s paint
@@ -634,7 +718,11 @@ pub(super) fn paint_control(
                 }
             }
             let base = scale.base_rect(rect);
-            if let Some(frame) = chrome.trackbar_frame(plaque, base.w, base.h) {
+            if let Some(frame) = crate::render::skirmish_shell_chrome::drawn_trackbar_frame_slot(
+                plaque, base.w, base.h, scale,
+            )
+            .and_then(|slot| chrome.trackbar_frames[slot])
+            {
                 push_entry(
                     out,
                     frame,
@@ -787,10 +875,11 @@ pub(super) fn push_trackbar_instances(
     ] {
         let rect = trackbar_rect_for_id(layout, id);
         let value = trackbar_visual_value(shell, id);
-        let thumb_left = shell
-            .trackbar_bounds
-            .range(id)
-            .thumb_left_in(value, rect, layout.scale);
+        let thumb_left =
+            shell
+                .trackbar_bounds
+                .visual_range(id)
+                .thumb_left_in(value, rect, layout.scale);
         paint_control(
             out,
             &chrome,
@@ -808,7 +897,7 @@ pub(super) fn push_trackbar_instances(
 pub(super) fn push_combo_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
-    color_schemes: &[ColorSchemeEntry],
+    rules: Option<&RuleSet>,
     layout: &SkirmishShellLayout,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
@@ -822,8 +911,7 @@ pub(super) fn push_combo_instances(
     // popup + shared scrollbar stay on `atlas` (4D).
     let chrome = atlas.control_chrome();
     let open = shell.open_combo_dropdown.map(|dropdown| dropdown.id);
-    let swatch_for =
-        |color_index: Option<usize>| color_index.map(|ci| house_color_tint(color_schemes, ci));
+    let swatch_for = |color_index: Option<usize>| color_index.map(|ci| house_color_tint(rules, ci));
     paint_control(
         out,
         &chrome,
@@ -877,7 +965,7 @@ pub(super) fn push_combo_instances(
         layout.scale,
     );
 
-    for (slot, row, opponent) in shell.paged_opponents() {
+    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
@@ -971,7 +1059,7 @@ pub(super) fn push_opponent_scrollbar_instances(
 pub(super) fn push_dropdown_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
-    color_schemes: &[ColorSchemeEntry],
+    rules: Option<&RuleSet>,
     layout: &SkirmishShellLayout,
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
@@ -1004,7 +1092,7 @@ pub(super) fn push_dropdown_instances(
                 layout
                     .scale
                     .derive_rect(row, |row| RectPx::new(row.x + 2, row.y + 2, row.w - 4, 19)),
-                house_color_tint(color_schemes, color),
+                house_color_tint(rules, color),
             ))
         });
     let scrollbar = needs_scrollbar
@@ -1057,7 +1145,7 @@ pub(super) fn dropdown_selected_row_rect(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::render::skirmish_shell_chrome::{TRACKBAR_FRAMES, trackbar_frame_slot};
@@ -1136,28 +1224,46 @@ mod tests {
                 rgb[1] as f32 / 255.0,
                 rgb[2] as f32 / 255.0,
             ];
-            assert_eq!(house_color_tint(&[], slot), expected, "slot {slot}");
+            assert_eq!(house_color_tint(None, slot), expected, "slot {slot}");
         }
     }
 
     #[test]
-    fn gameplay_color_schemes_cannot_change_skirmish_ui_swatches() {
-        let deliberately_different = [ColorSchemeEntry {
-            name: "NotTheLobbySwatch".to_string(),
-            hsv: [0, 0, 0],
-        }];
-        assert_eq!(
-            house_color_tint(&deliberately_different, 2),
-            house_color_tint(&[], 2)
-        );
+    fn team_caption_follows_the_majority_of_picked_swatch_hues() {
+        use crate::rules::ini_parser::IniFile;
+
+        // Two different blue shades outvote red, including a mod's dark navy.
+        let ini = IniFile::from_str("[Colors]\nNavy=166,220,100\n[SkirmishColors]\n1=Navy\n");
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let team = team_caption_tint(Some(&rules), &[2, 9, 1]).expect("blue majority");
+        assert!(team[2] > team[1] && team[2] > team[0]);
+        assert_eq!(Some(team), team_caption_tint(Some(&rules), &[2, 9]));
+        let navy = team_caption_tint(Some(&rules), &[9]).expect("navy");
+        assert!(navy[2] > 0.8 && navy[2] - navy[0] > 0.2);
+        assert_eq!(team_caption_tint(Some(&rules), &[9, 1]), None);
+        assert_eq!(team_caption_tint(None, &[]), None);
     }
 
     #[test]
-    fn out_of_range_swatch_uses_native_observer_grey() {
-        assert_eq!(
-            house_color_tint(&[], 8),
-            [96.0 / 255.0, 96.0 / 255.0, 96.0 / 255.0]
-        );
+    fn extra_colour_swatches_come_from_the_rules_and_the_eight_do_not() {
+        use crate::rules::ini_parser::IniFile;
+
+        // Entry 10 is priority 2's scheme, here black; Mine is the one extra.
+        let mut text = String::from("[Colors]\n");
+        for index in 0..15 {
+            text.push_str(&format!("Stock{index}=0,0,0\n"));
+        }
+        text.push_str("Mine=0,255,255\n[SkirmishColors]\n1=Mine\n");
+        let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+        let grey = [96.0 / 255.0; 3];
+
+        assert_eq!(house_color_tint(Some(&rules), 2), house_color_tint(None, 2));
+        // Priority 9 is the first extra colour: pure red here.
+        assert_eq!(house_color_tint(Some(&rules), 9), [1.0, 0.0, 0.0]);
+        // 8 is the observer's, 10 is past this list, and no rules list none.
+        assert_eq!(house_color_tint(Some(&rules), 8), grey);
+        assert_eq!(house_color_tint(Some(&rules), 10), grey);
+        assert_eq!(house_color_tint(None, 9), grey);
     }
 
     #[test]
@@ -1362,12 +1468,20 @@ mod tests {
         assert!(chrome.trackbar_frame(false, 180, 21).is_none());
     }
 
-    /// Every trackbar window the shell pages paint has a frame.
+    /// Every trackbar window the shell pages paint has a frame, in a window
+    /// large enough that the room's team bar draws above the shell's size
+    /// too.
     #[test]
     fn every_shell_trackbar_window_has_a_frame() {
         use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
         use crate::ui::skirmish_shell::{compute_layout, compute_random_map_setup_layout};
-        for (width, height) in [(640u32, 480u32), (800, 600), (1024, 768)] {
+        for (width, height) in [
+            (640u32, 480u32),
+            (800, 600),
+            (1024, 768),
+            (1600, 900),
+            (3440, 1440),
+        ] {
             let skirmish = compute_layout(width, height).trackbars;
             let players = compute_random_map_setup_layout(width, height).control_rects[5];
             let mut windows = vec![
@@ -1405,29 +1519,56 @@ mod tests {
             .expect("FF has its sliders");
             windows.extend(internet.sliders.map(|rect| (true, rect)));
             use crate::ui::multiplayer_setup::{
-                DIFFICULTY, MultiplayerSetupLayout, SetupDialog, SetupFlavor,
+                DIFFICULTY, MultiplayerSetupLayout, ROOM_SIZE, SUPERWEAPON_LIMIT, SetupDialog,
+                SetupFlavor, TEAM_COUNT,
             };
-            for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
+            // gamemd's setup dialogs and VERA's room, in a centred shell and
+            // one filling the window; only the room paints its Teams count
+            // and Superweapon Limit, and only its host Room size.
+            let mut drawn = Vec::new();
+            for (dialog, fills) in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
                 .flat_map(|flavor| {
-                    [false, true].map(|host| SetupDialog {
-                        host,
-                        flavor,
-                        modern: false,
-                    })
+                    [(false, false), (true, false), (false, true), (true, true)].map(
+                        |(host, modern)| SetupDialog {
+                            host,
+                            flavor,
+                            modern,
+                        },
+                    )
                 })
+                .flat_map(|dialog| [(dialog, false), (dialog, true)])
             {
                 let layout =
-                    MultiplayerSetupLayout::new(dialog, width as i32, height as i32, false);
-                windows.extend(
+                    MultiplayerSetupLayout::new(dialog, width as i32, height as i32, fills);
+                // The room's team bar draws its Teams count at 78% size.
+                drawn.extend(
                     layout
                         .trackbars
-                        .map(|(id, rect)| (id != DIFFICULTY, layout.page.scale.base_rect(rect))),
+                        .into_iter()
+                        .filter(|(id, _)| match *id {
+                            TEAM_COUNT | SUPERWEAPON_LIMIT => dialog.modern,
+                            ROOM_SIZE => dialog.modern && dialog.host,
+                            _ => true,
+                        })
+                        .map(|(id, rect)| {
+                            let scale = layout.control_scale(id);
+                            (id != DIFFICULTY, scale.base_rect(rect), scale)
+                        }),
                 );
             }
             for (plaque, rect) in windows {
                 assert!(
                     trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),
+                    "{rect:?} at {width}x{height}"
+                );
+            }
+            for (plaque, rect, scale) in drawn {
+                assert!(
+                    crate::render::skirmish_shell_chrome::drawn_trackbar_frame_slot(
+                        plaque, rect.w, rect.h, scale
+                    )
+                    .is_some(),
                     "{rect:?} at {width}x{height}"
                 );
             }

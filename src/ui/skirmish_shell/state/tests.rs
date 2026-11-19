@@ -11,14 +11,14 @@ use crate::map::waypoints::Waypoint;
 use crate::rules::ini_parser::IniFile;
 use crate::skirmish_launch::{
     LaunchCountry, LaunchStartPosition, LaunchTeam, LaunchValidationError, SKIRMISH_AI_SLOT_COUNT,
-    SkirmishLaunchOptions,
 };
 use crate::skirmish_modes::stock_skirmish_modes;
-use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold, TrackbarRange};
+use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold};
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
-    COMBO_FACE_H, RectPx, checkbox_text_rect, compute_layout,
+    COMBO_FACE_H, RectPx, checkbox_text_rect, combo_face_rect, compute_layout,
+    compute_layout_for_rows,
 };
 
 fn test_map_entry(name: &str) -> MapMenuEntry {
@@ -138,7 +138,7 @@ fn choose_map_modal_open_filters_and_highlights_current_record() {
         &layout,
     );
 
-    assert_eq!(modal.selected_mode_id, 1);
+    assert_eq!(modal.selected_mode.id, 1);
     assert_eq!(modal.filtered_record_indices, vec![0, 1]);
     assert_eq!(modal.highlighted_filtered_index, Some(1));
     assert_eq!(modal.selected_record_index(), Some(1));
@@ -165,7 +165,7 @@ fn choose_map_modal_select_mode_rebuilds_map_list_by_filter() {
 
     assert!(modal.select_mode(9, &modes, &records, &layout));
 
-    assert_eq!(modal.selected_mode_id, 9);
+    assert_eq!(modal.selected_mode.id, 9);
     assert_eq!(modal.filtered_record_indices, vec![1]);
     assert_eq!(modal.selected_record_index(), Some(1));
     assert_eq!(modal.map_top_index, 0);
@@ -193,14 +193,14 @@ fn choose_map_modal_cancel_restores_saved_selection_accept_uses_highlight() {
     assert_eq!(
         modal.accept_selection(),
         Some(ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(1),
         })
     );
     assert_eq!(
         modal.cancel_selection(),
         ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(0),
         }
     );
@@ -296,70 +296,36 @@ fn retail_ranges_shell() -> Option<SkirmishShellState> {
 fn credits_thumb_x(shell: &SkirmishShellState, rect: RectPx) -> i32 {
     let range = shell
         .trackbar_bounds
-        .range(SkirmishTrackbarId::Credits0x511);
-    rect.x + range.thumb_left(shell.starting_credits, rect.w)
-}
-
-/// The original instructions' Credits samples for the runtime window
-/// (`tools/storage_oracle/launcher_trackbar.py`): `(x, position)` pairs.
-fn native_credits_pointers() -> Vec<(i32, i32)> {
-    let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/storage_oracle/launcher_trackbar.json",
-    ))
-    .unwrap();
-    let geometry = golden["geometries"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|g| g["width"] == 129 && g["maximum"] == 5000)
-        .expect("runtime Credits fixture");
-    geometry["pointers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|p| {
-            (
-                p["x"].as_i64().unwrap() as i32,
-                p["position"].as_i64().unwrap() as i32,
-            )
-        })
-        .collect()
+        .visual_range(SkirmishTrackbarId::Credits0x511);
+    rect.x
+        + range.thumb_left(
+            shell
+                .trackbar_bounds
+                .credits_visual_position(shell.starting_credits),
+            rect.w,
+        )
 }
 
 #[test]
-fn credits_presses_and_drags_follow_the_native_pointer_partition() {
-    let Some(retail) = retail_ranges_shell() else {
+fn extra_credit_presets_are_reachable_by_drag_and_reach_the_launched_match() {
+    let Some(mut shell) = retail_ranges_shell() else {
         return;
     };
-    // The native samples ran with retail Rules' Credits range.
-    let range = retail
-        .trackbar_bounds
-        .range(SkirmishTrackbarId::Credits0x511);
-    assert_eq!(range, TrackbarRange::new(5000, 10000, 100));
     let layout = compute_layout(800, 600);
     let rect = layout.trackbars.credits;
     let y = first_admitted_row(rect);
-    let thumb = credits_thumb_x(&retail, rect) - rect.x;
-    let samples = native_credits_pointers();
-    for &(x, position) in &samples {
-        let mut shell = retail.clone();
-        let before = shell.starting_credits;
-        handle_option_mouse_down(&mut shell, &layout, &[], rect.x + x, y);
-        if !(0..rect.w).contains(&x) {
-            assert_eq!(shell.starting_credits, before, "x={x} is off the window");
-        } else if (thumb..thumb + THUMB_W).contains(&x) {
-            assert_eq!(shell.starting_credits, before, "x={x} grabs the thumb");
-        } else {
-            assert_eq!(shell.starting_credits, range.min + position, "x={x}");
-        }
-    }
-    // A grabbed thumb follows the pointer anywhere along the row.
-    let mut shell = retail;
-    handle_option_mouse_down(&mut shell, &layout, &[], rect.x + thumb, y);
-    for &(x, position) in &samples {
-        handle_option_mouse_move(&mut shell, &layout, &[], rect.x + x, y);
-        assert_eq!(shell.starting_credits, range.min + position, "drag x={x}");
-    }
+    let thumb = credits_thumb_x(&shell, rect);
+    handle_option_mouse_down(&mut shell, &layout, &[], thumb, y);
+    // The two added choices occupy the right end of the existing rail.
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 66, y);
+    assert_eq!(shell.credits(), 30_000);
+    let maps = [test_map_entry("first.mmx")];
+    let launch = launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap();
+    assert_eq!(launch.options.starting_credits, 30_000);
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + rect.w, y);
+    assert_eq!(shell.credits(), 100_000);
+    let launch = launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap();
+    assert_eq!(launch.options.starting_credits, 100_000);
 }
 
 #[test]
@@ -549,7 +515,7 @@ fn skirmish_status_help_includes_flag_and_right_panel_static_targets() {
     let maps = vec![test_map_entry("arena.map")];
 
     // Flag picture controls 0x6DA..0x6E1 -> STT:SkirmishPictureFlag.
-    for flag in &layout.flags {
+    for flag in layout.flags.iter().take(layout.shown_rows) {
         let target = hovered_shell_control(&layout, &shell, &maps, flag.x, flag.y);
         assert_eq!(target, Some(SkirmishHoverTarget::FlagPicture));
         assert_eq!(
@@ -587,7 +553,7 @@ fn skirmish_status_help_includes_flag_and_right_panel_static_targets() {
 fn a_downloaded_map_waits_for_ok_before_use_map_goes_on() {
     let prompt = |kind| ChooseMapPrompt {
         selection: ChooseMapSelection {
-            mode_id: 1,
+            mode: 1.into(),
             record_index: Some(0),
         },
         pressed: None,
@@ -782,7 +748,7 @@ fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
             layout.mode_list.x + 1,
             layout.mode_list.y + 1
         ),
-        Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode_id: 1 })
+        Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode: 1.into() })
     );
     assert_eq!(
         hovered_choose_map_modal_control(
@@ -859,7 +825,15 @@ fn a_zero_money_increment_slides_credits_in_ones() {
         .trackbar_bounds
         .range(SkirmishTrackbarId::Credits0x511);
     assert_eq!(range.step, 1);
-    assert_eq!(shell.starting_credits, range.value_at(39, rect.w));
+    assert_eq!(
+        shell.starting_credits,
+        shell.trackbar_bounds.credits_from_visual_position(
+            shell
+                .trackbar_bounds
+                .visual_range(SkirmishTrackbarId::Credits0x511)
+                .value_at(39, rect.w)
+        )
+    );
     assert_eq!(shell.credits(), shell.starting_credits);
 }
 
@@ -915,7 +889,8 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
     // following move must not retrack the value to the cursor.
     handle_option_mouse_move(&mut shell, &layout, &[], 470, 319);
 
-    assert_eq!(shell.starting_credits, 7400);
+    let selected = shell.starting_credits;
+    assert!((5000..10000).contains(&selected));
     assert_eq!(
         shell.trackbar_hold,
         Some(TrackbarHold {
@@ -930,7 +905,7 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
 
     handle_option_mouse_up(&mut shell);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, 319);
-    assert_eq!(shell.starting_credits, 7400);
+    assert_eq!(shell.starting_credits, selected);
     assert_eq!(shell.trackbar_hold, None);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
@@ -943,14 +918,15 @@ fn trackbar_repeated_drag_same_value_is_silent() {
     let thumb_x = credits_thumb_x(&shell, rect);
     let y = first_admitted_row(rect);
 
-    let max_value_x = thumb_x + THUMB_W / 2;
-    handle_option_mouse_down(&mut shell, &layout, &[], max_value_x, y);
-    handle_option_mouse_move(&mut shell, &layout, &[], max_value_x, y);
-
+    handle_option_mouse_down(&mut shell, &layout, &[], thumb_x + THUMB_W / 2, y);
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 66, y);
+    assert_eq!(shell.credits(), 30_000);
     assert_eq!(
-        shell.starting_credits,
-        SkirmishLaunchOptions::default().starting_credits
+        shell.drain_pending_ui_sounds(),
+        vec![SkirmishShellUiSound::GenericClick]
     );
+    handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 66, y);
+    assert_eq!(shell.credits(), 30_000);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
@@ -967,7 +943,7 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
     shell.player_team = 0;
     shell.starting_credits = 7400;
     shell.unit_count = 4;
-    shell.game_speed = game_speed_from_visual_position(3);
+    shell.game_speed = crate::ui::shell::game_speed::SpeedContext::Offline.stored_speed(3);
     shell.short_game = false;
     shell.super_weapons = false;
     shell.build_off_ally = false;
@@ -1007,6 +983,22 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
     assert_eq!(session.options.mcv_redeploy, shell.mcv_redeploy);
 }
 
+/// A map declaring one hundred twenty starts fills every offline Skirmish row: one
+/// human plus the one hundred nineteen computer rows, then Neutral and Special.
+#[test]
+fn a_one_hundred_twenty_start_map_packs_every_offline_row() {
+    let mut shell = SkirmishShellState::default();
+    shell.player_name_edit.text = "Commander".to_string();
+    for opponent in &mut shell.opponents {
+        opponent.row_type = SkirmishAiRowType::Easy;
+    }
+    let maps = [test_map_entry_with_starts("wide.map", 120)];
+    let modes = stock_skirmish_modes();
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
+    assert_eq!(session.opponents.len(), 119);
+    assert_eq!(session.pre_fill_house_roster().created_house_count(), 122);
+}
+
 /// SkirmishDialog's packing forces Fog of War off, Bridge Destruction on,
 /// Harvester Truce off and MultiEngineer off (`0x006AD88F..0x006AD8A4`),
 /// whatever `[MultiplayerDialogSettings]` set.
@@ -1037,7 +1029,7 @@ fn launch_session_forces_the_dialogs_fixed_session_options() {
 #[test]
 fn launch_session_preserves_selected_team_game_mode_id() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         ..Default::default()
     };
     let maps = [test_map_entry("team.yrm")];
@@ -1054,7 +1046,7 @@ fn launch_session_preserves_selected_team_game_mode_id() {
 #[test]
 fn launch_session_does_not_synthesize_unknown_mode() {
     let shell = SkirmishShellState {
-        selected_mode_id: 99,
+        selected_mode: 99.into(),
         ..Default::default()
     };
     let maps = [test_map_entry("map.mmx")];
@@ -1062,6 +1054,56 @@ fn launch_session_does_not_synthesize_unknown_mode() {
     assert_eq!(
         launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::NoSelectedMode { mode_id: 99 }
+    );
+}
+
+#[test]
+fn colour_combo_lists_the_rules_extra_colours_after_the_eight() {
+    use crate::rules::skirmish_colors::SkirmishColorMode;
+    use SkirmishComboItem::{Color, ColorSentinel};
+
+    let mut shell = controlled_country_shell();
+    shell.lobby_colors = SkirmishColorMode::with_extra_entries(&[21, 22]);
+    let maps = [test_map_entry("map.mmx")];
+    // The first computer row holds red (1); 8 is the observer's, never listed.
+    assert_eq!(
+        combo_items(&shell, &maps, SkirmishComboId::Color(0)),
+        [
+            ColorSentinel(-2),
+            Color(0),
+            Color(2),
+            Color(3),
+            Color(4),
+            Color(5),
+            Color(6),
+            Color(7),
+            Color(9),
+            Color(10),
+        ]
+    );
+
+    // An extra colour is claimed like any other and reaches the launch.
+    apply_combo_selection_for_test(&mut shell, SkirmishComboId::Color(1), Color(10));
+    assert!(!combo_items(&shell, &maps, SkirmishComboId::Color(0)).contains(&Color(10)));
+    shell.player_color_index = 7;
+    apply_action(
+        &mut shell,
+        SkirmishShellAction::SelectColor(ColorComboId::Player),
+        &maps,
+    );
+    assert_eq!(shell.player_color_index, 9);
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false).expect("session");
+    assert_eq!(session.local_slot().color_index, 9);
+    assert_eq!(session.opponents[0].color_index, 10);
+
+    // Rules that list one extra fewer refuse the colour they dropped.
+    shell.lobby_colors = SkirmishColorMode::with_extra_entries(&[21]);
+    assert_eq!(
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
+        LaunchValidationError::InvalidColorIndex {
+            slot: 1,
+            color_index: 10,
+        }
     );
 }
 
@@ -1199,7 +1241,7 @@ fn raw_pack_retains_sparse_ai_house_slots_before_compaction() {
     );
     assert_eq!(
         packed
-            .pre_fill_house_roster
+            .pre_fill_house_roster()
             .ai_slots()
             .iter()
             .map(|slot| (slot.slot_index, slot.valid))
@@ -1216,7 +1258,7 @@ fn raw_pack_retains_sparse_ai_house_slots_before_compaction() {
         ]
     );
     assert_eq!(packed.required_start_count(), 3);
-    assert_eq!(packed.pre_fill_house_roster.created_house_count(), 5);
+    assert_eq!(packed.pre_fill_house_roster().created_house_count(), 5);
 }
 
 #[test]
@@ -1237,7 +1279,7 @@ fn launch_session_rejects_same_explicit_team() {
 #[test]
 fn team_game_must_ally_omits_team_none_combo_item() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1257,7 +1299,7 @@ fn team_game_must_ally_omits_team_none_combo_item() {
 #[test]
 fn ffa_combo_keeps_explicit_teams_despite_allies_disabled() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1273,6 +1315,55 @@ fn ffa_combo_keeps_explicit_teams_despite_allies_disabled() {
             SkirmishComboItem::Team(3),
         ]
     );
+}
+
+#[test]
+fn shrinking_selected_random_map_removes_slot_eight_from_launch() {
+    let modes = stock_skirmish_modes();
+    let layout = compute_choose_map_modal_layout(800, 600);
+    let mut records = vec![SkirmishScenarioRecord::random_map_sentinel(
+        0,
+        "Random Map",
+        8,
+    )];
+    let mut shell = SkirmishShellState::default();
+    let maps = [records[0].to_map_menu_entry()];
+    assert!(accept_selected_map(&mut shell, &maps, 0));
+    // Slot 2 already has an AI. Enable slot 8 so both would fit by count alone.
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::AiType(6),
+        SkirmishComboItem::AiType(SkirmishAiRowType::Hard),
+    );
+
+    let mut chooser = ChooseMapModalState::open(
+        ChooseMapContext::Skirmish,
+        1,
+        Some(shell.selected_map_idx),
+        &modes,
+        &records,
+        &layout,
+    );
+    let chosen = chooser
+        .create_random_map(&mut records, &modes, "Random Map", 3, &layout)
+        .unwrap();
+    let maps: Vec<_> = records
+        .iter()
+        .map(SkirmishScenarioRecord::to_map_menu_entry)
+        .collect();
+    assert!(ai_rows_beyond_limit_occupied(
+        &shell.opponents,
+        maps[chosen].player_capacity
+    ));
+    assert!(accept_selected_map(&mut shell, &maps, chosen));
+
+    let launch = launch_session(&shell, &maps, &modes, false).unwrap();
+    let ai_slots: Vec<_> = launch
+        .opponents
+        .iter()
+        .map(|ai| ai.raw_slot_index + 1)
+        .collect();
+    assert_eq!(ai_slots, [2]);
 }
 
 #[test]
@@ -1321,46 +1412,48 @@ fn thirty_start_map_scrolls_its_computer_rows_through_to_player_thirty() {
     let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
     let mut shell = SkirmishShellState::default();
     initialize_rows_for_selected_map(&mut shell, &maps);
-    // The scrollbar stands right of Team beside the computer rows, short of
-    // the right panel.
-    let layout = compute_layout(800, 600);
+    // The page shows thirteen rows; the scrollbar stands right of Team from
+    // the player's row to the last, short of the right panel.
+    let layout = compute_layout_for_rows(800, 600, 30);
     let scrollbar = |shell: &SkirmishShellState| {
         opponent_scroll_geometry(&layout, shell, &maps).expect("thirty starts scroll")
     };
     let bar = scrollbar(&shell).scrollbar.expect("the rows overflow");
     let team = layout.rows.team_combos;
-    assert!(team[0].y + COMBO_FACE_H < bar.y && bar.y + bar.h <= team[7].y + COMBO_FACE_H);
-    assert!(team[7].x + team[7].w < bar.x && bar.x + bar.w < layout.right_panel.top.x);
+    assert!(team[0].y < bar.y && bar.y < team[0].y + COMBO_FACE_H);
+    assert!(team[12].y < bar.y + bar.h && bar.y + bar.h <= team[12].y + COMBO_FACE_H);
+    assert!(team[12].x + team[12].w < bar.x && bar.x + bar.w < layout.right_panel.top.x);
 
-    // The player's row and computer rows 1-7; a notch down shows row 8
-    // under the player's, and the down arrow row 9.
-    assert!(player_row_visible(&shell, &maps, 7));
-    assert!(!player_row_visible(&shell, &maps, 8));
+    // The player's row and computer rows 1-12; a notch down shows row 13
+    // under the player's, and the down arrow row 14.
+    assert!(player_row_visible(&shell, &maps, 12));
+    assert!(!player_row_visible(&shell, &maps, 13));
     assert!(handle_option_mouse_wheel(&mut shell, &maps, -1.0));
     assert!(!player_row_visible(&shell, &maps, 1));
-    assert!(player_row_visible(&shell, &maps, 8));
+    assert!(player_row_visible(&shell, &maps, 13));
     let x = bar.x + bar.w / 2;
     handle_option_mouse_down(&mut shell, &layout, &maps, x, bar.y + bar.h - 5);
     handle_option_mouse_up(&mut shell);
-    assert!(player_row_visible(&shell, &maps, 9));
+    assert!(player_row_visible(&shell, &maps, 14));
     assert!(!player_row_visible(&shell, &maps, 2));
 
-    // The thumb dragged to the bottom shows the last seven, player thirty in
-    // the seventh computer row's controls; the wheel goes no further.
+    // The thumb dragged to the bottom shows the last twelve, player thirty in
+    // the twelfth computer row's controls; the wheel goes no further.
     let thumb = scrollbar(&shell).thumb.expect("thumb");
     handle_option_mouse_down(&mut shell, &layout, &maps, x, thumb.y + thumb.h / 2);
     handle_option_mouse_move(&mut shell, &layout, &maps, x, bar.y + bar.h);
     handle_option_mouse_up(&mut shell);
     assert!(player_row_visible(&shell, &maps, 0));
-    assert!(!player_row_visible(&shell, &maps, 22));
+    assert!(!player_row_visible(&shell, &maps, 17));
+    assert!(player_row_visible(&shell, &maps, 18));
     assert!(!handle_option_mouse_wheel(&mut shell, &maps, -1.0));
     assert_eq!(
         combo_rect(&layout, &shell, SkirmishComboId::AiType(28)),
-        Some(layout.rows.ai_type_combos[6])
+        Some(layout.rows.ai_type_combos[11])
     );
     assert_eq!(
         combo_rect(&layout, &shell, SkirmishComboId::Start(29)),
-        Some(layout.rows.start_combos[7])
+        Some(layout.rows.start_combos[12])
     );
 
     // Player thirty can take the thirtieth start into the match.
@@ -1508,7 +1601,7 @@ fn ai_type_none_applies_inactive_combo_defaults() {
 #[test]
 fn ai_type_none_uses_ffa_inactive_team_default() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
@@ -1528,7 +1621,7 @@ fn ai_type_none_uses_ffa_inactive_team_default() {
 #[test]
 fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 9,
+        selected_mode: 9.into(),
         player_team: 1,
         ..Default::default()
     };
@@ -1539,7 +1632,7 @@ fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
     assert_eq!(shell.player_team, 0);
     assert_eq!(shell.opponents[0].team, 3);
 
-    shell.selected_mode_id = 2;
+    shell.selected_mode = 2.into();
     shell.player_team = 2;
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
 
@@ -1550,7 +1643,7 @@ fn mode_refresh_reselects_native_local_and_ai_team_defaults() {
 #[test]
 fn ffa_mode_refresh_defaults_every_ai_team_to_none_and_disables_the_team_column() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     for opponent in &mut shell.opponents {
@@ -1580,7 +1673,7 @@ fn ffa_mode_refresh_defaults_every_ai_team_to_none_and_disables_the_team_column(
 #[test]
 fn battle_mode_enables_the_team_column_for_local_and_active_rows_only() {
     let mut shell = SkirmishShellState {
-        selected_mode_id: 1,
+        selected_mode: 1.into(),
         ..Default::default()
     };
     shell.opponents[0].row_type = SkirmishAiRowType::Easy;
@@ -1601,7 +1694,7 @@ fn battle_mode_enables_the_team_column_for_local_and_active_rows_only() {
 fn disabled_team_combo_cannot_be_opened_or_reselected_in_free_for_all() {
     let layout = compute_layout(800, 600);
     let mut shell = SkirmishShellState {
-        selected_mode_id: 2,
+        selected_mode: 2.into(),
         ..Default::default()
     };
     shell.opponents[0].row_type = SkirmishAiRowType::Easy;
@@ -2371,10 +2464,10 @@ fn choose_map_help_keys_match_the_native_table() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
     use crate::rules::ini_parser::IniFile;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[Countries]\n0=Low\n1=High\n2=Hidden\n3=Custom\n\
          [Low]\nMultiplay=yes\nUIName=NAME:Low\nListIndex=10\n\
@@ -2441,8 +2534,9 @@ fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
     );
 }
 
-/// VERA's Load Setup puts back what Save Setup kept, clearing the page's own
-/// claims first; a saved choice the page does not offer leaves Random.
+/// VERA's last setup goes back on the page as it was kept, clearing the
+/// page's own claims first; a saved choice the page does not offer leaves
+/// Random.
 #[test]
 fn saved_setup_loads_back_through_the_combo_rules() {
     use SkirmishComboId as Id;
@@ -2508,8 +2602,8 @@ fn saved_setup_loads_back_through_the_combo_rules() {
     assert_eq!(shown.computers[1].seat.start, LaunchStartPosition::Auto);
 }
 
-/// Save and Load reach every computer row the map seats, not only the rows
-/// VERA's scrollbar shows.
+/// Keeping a setup and putting it back reach every computer row the map
+/// seats, not only the rows VERA's scrollbar shows.
 #[test]
 fn saved_setup_keeps_computer_rows_scrolled_out_of_view() {
     let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
@@ -2538,4 +2632,50 @@ fn saved_setup_keeps_computer_rows_scrolled_out_of_view() {
     saved.apply(&mut loaded, &maps);
     assert_eq!(loaded.opponents[28].row_type, SkirmishAiRowType::Hard);
     assert_eq!(SkirmishSavedSetup::capture(&loaded, &maps), saved);
+}
+
+#[test]
+fn a_scrolling_start_list_keeps_the_face_width_for_its_captions() {
+    // Ten starts give the Start list eleven rows, two past its nine, so it
+    // scrolls; its 38 px face less the scrollbar left the captions no width.
+    let maps = [test_map_entry_with_starts("ten.mmx", 10)];
+    let mut shell = SkirmishShellState::default();
+    initialize_rows_for_selected_map(&mut shell, &maps);
+    let layout = compute_layout(800, 600);
+    let id = SkirmishComboId::Start(0);
+    assert!(combo_dropdown_needs_scrollbar(&shell, &maps, id));
+    let face = combo_face_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
+    let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
+    let bar = combo_dropdown_scrollbar_rect(&shell, &layout, &maps, id).unwrap();
+    assert_eq!((content.x, content.w), (face.x, face.w));
+    assert_eq!(bar.x, face.x + face.w);
+}
+
+#[test]
+fn a_low_row_of_the_longer_list_opens_its_list_upward() {
+    let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
+    let mut shell = SkirmishShellState::default();
+    initialize_rows_for_selected_map(&mut shell, &maps);
+    for row in [1, 12] {
+        apply_combo_selection_for_test(
+            &mut shell,
+            SkirmishComboId::AiType(row - 1),
+            SkirmishComboItem::AiType(SkirmishAiRowType::Easy),
+        );
+    }
+    let layout = compute_layout_for_rows(800, 600, 30);
+    let list_and_face = |id| {
+        let face = combo_face_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
+        (
+            combo_dropdown_rect(&shell, &layout, &maps, id).unwrap(),
+            face,
+        )
+    };
+    // Row 12's nine-row Start list would run past the status line, so it
+    // opens above its face; row 1's opens below, as every retail list does.
+    let (list, face) = list_and_face(SkirmishComboId::Start(12));
+    assert!(face.y + face.h + 1 + list.h > layout.status_help.y);
+    assert_eq!(list.y + list.h, face.y - 1);
+    let (list, face) = list_and_face(SkirmishComboId::Start(1));
+    assert_eq!(list.y, face.y + face.h + 1);
 }

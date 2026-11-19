@@ -66,8 +66,7 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
         )
         .unwrap();
     sim.fog_mut_for_test().reveal_all_for_owner(owner);
-    sim.entities_mut_for_test()
-        .get_mut(actor)
+    sim.entity_mut_for_test(actor)
         .unwrap()
         .selection
         .set_selected_for_test(true);
@@ -75,9 +74,8 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
 }
 
 fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
-    let (x, y) = crate::app::presentation::instances::interpolated_screen_position_entity(
-        sim.entities().get(target).unwrap(),
-    );
+    let (x, y) =
+        crate::render::locomotor_visual::screen_position(sim.entities().get(target).unwrap());
     let hover =
         crate::app::input::entity_pick::hover_target_at_point(sim, x, y, "Americans", false)
             .expect("revealed ordinary tank is picked");
@@ -87,6 +85,16 @@ fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
 
 #[test]
 fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
+    no_manual_fire_object_click(false);
+}
+
+#[test]
+fn ares_no_manual_fire_object_click_follows_the_key_in_an_ares_game() {
+    no_manual_fire_object_click(true);
+}
+
+fn no_manual_fire_object_click(ares_way: bool) {
+    let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
     let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
     let rows = corpus["rows"].as_array().unwrap();
     for setting in [false, true] {
@@ -111,7 +119,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
                 && case["alt"] == false
                 && row["no_manual_fire_native_reader_value"] == u64::from(setting)
         }) {
-            let expected = if crate::rules::ARES_ENABLED {
+            let expected = if ares_way {
                 row
             } else {
                 rows.iter()
@@ -161,7 +169,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
             }
         }
         let (sim, actor, _) = object_pair(&battle.rules, "MTNK", "enemy");
-        let effective = setting && crate::rules::ARES_ENABLED;
+        let effective = setting && ares_way;
         let native_cell = rows
             .iter()
             .find(|row| {
@@ -453,7 +461,7 @@ fn allied_object_shared_grants_match_original_without_forking_weapon_selection()
         let (mut sim, actor, target) = object_pair(&battle.rules, "MTNK", "ally");
         if input["infested"] == true {
             crate::sim::arena_fixture::install_action_infestation(
-                sim.entities_mut_for_test().get_mut(target).unwrap(),
+                sim.entity_mut_for_test(target).unwrap(),
                 actor,
             );
         }
@@ -656,8 +664,7 @@ fn a_building_over_another_selected_building_does_nothing() {
     let other = sim
         .spawn_object("GAPILL", "Americans", 10, 14, 0, &battle.rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(other)
+    sim.entity_mut_for_test(other)
         .unwrap()
         .selection
         .set_selected_for_test(true);
@@ -810,10 +817,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
         let tree = sim.intern("TREE01");
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, Some(tree), None);
-        sim.entities_mut_for_test()
-            .get_mut(target)
-            .unwrap()
-            .disguise = Some(disguise);
+        sim.entity_mut_for_test(target).unwrap().disguise = Some(disguise);
         assert_eq!(
             attack_action(
                 &sim,
@@ -975,8 +979,7 @@ fn a_receiver_the_player_cannot_control_answers_its_attack_rung_under_alt() {
     let bunkered = sim
         .spawn_object("MTNK", "Americans", 10, 12, 0, &battle.rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(bunkered)
+    sim.entity_mut_for_test(bunkered)
         .unwrap()
         .bunker
         .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(3));
@@ -1074,9 +1077,6 @@ fn a_terrain_fire_weapon_attacks_an_enemy_worn_as_a_tree() {
     let tree = sim.intern("TREE01");
     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
     disguise.acquire(0, Some(tree), None);
-    sim.entities_mut_for_test()
-        .get_mut(target)
-        .unwrap()
-        .disguise = Some(disguise);
+    sim.entity_mut_for_test(target).unwrap().disguise = Some(disguise);
     assert_eq!(action(&sim), AttackAction::Attack);
 }

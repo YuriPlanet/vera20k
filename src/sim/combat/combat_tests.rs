@@ -890,7 +890,7 @@ fn gsi_04_05_null_attacker_building_hit_keeps_the_attacker_index() {
 /// `TechnoClass::ReceiveDamage @ 0x00701900`: an ordinary sourced area hit,
 /// even under an Iron Curtain, resolves no receiver outcome (no Techno
 /// gates, impact light, anger or threat tail), and a WaveClass caller's
-/// shared damage stays unchanged (`wave_post_object_damage` is `None`).
+/// shared damage stays unchanged.
 #[test]
 fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
     use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
@@ -932,34 +932,16 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             .is_none()
         };
         assert!(resolve(&sim), "IC {iron_curtain}: no receiver outcome");
-        #[cfg(feature = "phobos")]
-        let wave = wave_post_object_damage(
-            &event,
-            &sim.substrate.entities,
+        let (_, _, packet) = world_receiver::commit_receiver(
+            &mut sim,
+            &mut world_receiver::ReceiverRun::default(),
+            combat_aoe::AreaDamageReceiver::Entity(event),
             &rules,
-            &sim.interner,
-            &sim.houses,
-            &sim.house_alliances,
-            false,
-            0,
-            None,
-            Some(&sim),
-        );
-        #[cfg(not(feature = "phobos"))]
-        let wave = wave_post_object_damage(
-            &event,
-            &sim.substrate.entities,
-            &rules,
-            &sim.interner,
-            &sim.houses,
-            &sim.house_alliances,
-            false,
-            0,
             None,
         );
         assert_eq!(
-            wave, None,
-            "IC {iron_curtain}: the Wave packet is untouched"
+            packet, 100,
+            "IC {iron_curtain}: the hut kept the incoming packet"
         );
     }
     sim.commit_noncombat_aoe_hits(
@@ -2158,11 +2140,13 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     let mut cargo = crate::sim::passenger::PassengerCargo::new(2, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
     let mut carrier = make_entity(1, "MTNK", 5, 5, 0);
-    carrier.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+    carrier.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
     store.insert(carrier);
 
     let mut passenger = make_infantry_entity(2, "E1", 5, 5, 125);
-    passenger.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(1, false);
+    passenger.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+        1, false,
+    ));
     passenger.selection.set_selected_for_test(true);
     passenger
         .attack_target
@@ -2179,13 +2163,13 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
     assert_eq!(result.immediate_uninit_ids, vec![1]);
     let carrier = store.get(1).unwrap();
     assert_eq!(
-        carrier.passenger_role.cargo().unwrap().passengers(),
+        carrier.passenger_role().cargo().unwrap().passengers(),
         vec![2]
     );
     let passenger = store.get(2).unwrap();
     assert_eq!(passenger.health.current(), 125);
     assert!(!passenger.death.is_dying());
-    assert_eq!(passenger.passenger_role.inside_transport_id(), Some(1));
+    assert_eq!(passenger.passenger_role().inside_transport_id(), Some(1));
     assert!(passenger.selection.is_selected());
     assert!(passenger.attack_target.target().is_some());
     assert!(passenger.navigation.nav_com().is_some());
@@ -2986,7 +2970,9 @@ fn retaliates(case: RetaliationCase) -> bool {
         ));
     source.lifecycle.set_cell_marked_for_test(true);
     if case.rider {
-        source.passenger_role = crate::sim::passenger::PassengerRole::boarded_for_test(3, true);
+        source.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::boarded_for_test(
+            3, true,
+        ));
         let mut transport = make_entity(3, "SOURCE", source_rx, 5, case.source_health);
         transport.set_owner_for_test(source_owner);
         transport.set_type_ref_for_test(interner.intern("SOURCE"));
@@ -3047,9 +3033,9 @@ fn retaliates(case: RetaliationCase) -> bool {
 /// Ares 3.0 TechnoClass_ReceiveDamage_OpenTopped (1004AD10, hook 0x702A38):
 /// a hit from a rider of an open-topped transport makes the victim
 /// retaliate against the transport.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_retaliation_turns_on_an_open_topped_riders_transport() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     assert!(retaliates(RetaliationCase {
         rider: true,
         ..Default::default()
@@ -3157,36 +3143,39 @@ fn gsi_04_07_a_human_unit_does_not_charge_an_unseen_shooter() {
 /// heal test would allow.
 #[test]
 fn gsi_04_07_retaliation_verses_and_healer_gates() {
-    // Ares3.0 parser100523E0 and retaliation hook100543E0 replace the stock
-    // threshold: tools/rules_oracle/ares_armor.json `parse_1%` has Retaliate=false.
-    assert_eq!(
-        retaliates(RetaliationCase {
-            verses: "1%",
-            ..Default::default()
-        }),
-        !crate::rules::ARES_ENABLED,
-    );
-    assert!(!retaliates(RetaliationCase {
-        verses: "0.005",
-        ..Default::default()
-    }));
-    assert!(!retaliates(RetaliationCase {
-        verses: "0%",
-        ..Default::default()
-    }));
-    assert!(!retaliates(RetaliationCase {
-        damage: 0,
-        ..Default::default()
-    }));
-    for source_health in [200, 100] {
-        assert!(
-            !retaliates(RetaliationCase {
-                damage: -5,
-                source_health,
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        // Ares3.0 parser100523E0 and retaliation hook100543E0 replace the stock
+        // threshold: tools/rules_oracle/ares_armor.json `parse_1%` has Retaliate=false.
+        assert_eq!(
+            retaliates(RetaliationCase {
+                verses: "1%",
                 ..Default::default()
             }),
-            "{source_health}"
+            !ares_way,
         );
+        assert!(!retaliates(RetaliationCase {
+            verses: "0.005",
+            ..Default::default()
+        }));
+        assert!(!retaliates(RetaliationCase {
+            verses: "0%",
+            ..Default::default()
+        }));
+        assert!(!retaliates(RetaliationCase {
+            damage: 0,
+            ..Default::default()
+        }));
+        for source_health in [200, 100] {
+            assert!(
+                !retaliates(RetaliationCase {
+                    damage: -5,
+                    source_health,
+                    ..Default::default()
+                }),
+                "{source_health}"
+            );
+        }
     }
 }
 
@@ -3603,16 +3592,17 @@ fn gsi_04_07_a_garrison_retaliates_with_its_occupants_weapon() {
     occupant.set_owner_for_test(sim.substrate.entities.get(GATE_VICTIM).unwrap().owner());
     occupant.set_type_ref_for_test(sim.interner.intern("E1"));
     occupant.set_category_for_test(EntityCategory::Infantry);
-    occupant.passenger_role =
-        crate::sim::passenger::PassengerRole::inside_for_test(GATE_VICTIM, false);
+    occupant.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+        GATE_VICTIM,
+        false,
+    ));
     sim.substrate.entities.insert(occupant);
     sim.substrate
         .entities
         .get_mut(GATE_VICTIM)
         .unwrap()
-        .passenger_role
-        .occupants_mut()
-        .add(occupant_id);
+        .garrison_mut_for_test()
+        .add_for_test(occupant_id);
     assert!(combat_targeting::should_retaliate(
         &sim,
         &rules,
@@ -4439,13 +4429,13 @@ fn gsi_04_07_damage_spawn_and_slave_managers_block_retaliation() {
                 .object("SLAVEMASTER")
                 .and_then(|object| object.enslaves.as_deref())
                 .expect("resolved Enslaves profile creates native SlaveManager");
-            victim.slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
+            victim.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
                 interner.intern(slave_type),
                 [None; 0],
                 0,
                 0,
                 0,
-            ));
+            )));
         }
         entities.insert(victim);
 
@@ -4541,11 +4531,11 @@ fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
             entities.insert(controlled);
         }
         // The stock tower's link limit (`[MultipleMindControlTower] Damage=3`).
-        victim.capture_manager = Some(
+        victim.capture_manager = Some(Box::new(
             crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
                 3, false, &links,
             ),
-        );
+        ));
         entities.insert(victim);
 
         let event = EntityDamageEvent::area(2, 1, 0, 1, Some(source_owner), hit_wh);
@@ -4894,6 +4884,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
         .entities
         .get_mut(edge)
         .unwrap()
+        .building
         .pending_c4_detonation
         .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
             crate::sim::timer::CdTimer::started(0, 40),
@@ -4919,7 +4910,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
         sim.substrate
             .entities
             .get(id)
-            .and_then(|entity| entity.pending_c4_detonation.pending())
+            .and_then(|entity| entity.building.pending_c4_detonation.pending())
             .expect("qualifying fatal barrel becomes PostMortem")
     };
     assert_eq!(pending(&sim, center).timer().duration(), 5);
@@ -4952,6 +4943,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
             .entities
             .get(middle)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending()
             .is_none()
@@ -5079,6 +5071,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
         .entities
         .get(target_id)
         .unwrap()
+        .building
         .pending_c4_detonation
         .pending()
         .expect("PostMortem arms the shared timer after callbacks");
@@ -5184,7 +5177,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
     let target = sim.substrate.entities.get(target_id).unwrap();
     assert_eq!(target.health.current(), 1);
     assert_eq!(
-        target.pending_c4_detonation.pending(),
+        target.building.pending_c4_detonation.pending(),
         Some(original_pending)
     );
     assert!(target.lifecycle.object_alive() && target.in_logic_vector.is_member());
@@ -6666,10 +6659,12 @@ fn garrison_fire_keeps_occupant_anim_and_sound_path() {
     let mut store = EntityStore::new();
     let mut building = make_entity(10, "CAGAS", 5, 5, 800);
     building.set_category_for_test(EntityCategory::Structure);
-    building.passenger_role.occupants_mut().add(1);
+    building.garrison_mut_for_test().add_for_test(1);
     store.insert(building);
     let mut occupant = make_infantry_entity(1, "E1", 5, 5, 125);
-    occupant.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+    occupant.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+        10, false,
+    ));
     store.insert(occupant);
     store.insert(make_infantry_entity(2, "E2", 8, 5, 125));
 
@@ -6905,8 +6900,8 @@ fn mapless_guard_pick(shell: &str) -> Option<u64> {
 
 /// A mapless Guard scan by a human player's guarding `ART` (with `art`) of
 /// one enemy `MTNK` (with `target`) a cell away.
-#[cfg(feature = "ares")]
 fn ares_guarding_pick(art: &str, target: &str) -> Option<u64> {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[InfantryTypes]\n[VehicleTypes]\n0=ART\n1=MTNK\n[AircraftTypes]\n[BuildingTypes]\n\
          [ART]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=Shell\n{art}\n\
@@ -6951,9 +6946,9 @@ fn ares_guarding_pick(art: &str, target: &str) -> Option<u64> {
 /// Ares `CanPassiveAquire.Guard=no` stops a human player's guarding Foot
 /// from scanning (hook 0x4D9920), and `CivilianEnemy=yes` makes an
 /// `Insignificant=` candidate an enemy (hook 0x6F826E).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_passive_acquire_and_civilian_enemy_gate_the_guard_scan() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     assert_eq!(ares_guarding_pick("", ""), Some(20));
     assert_eq!(ares_guarding_pick("CanPassiveAquire.Guard=no", ""), None);
     assert_eq!(ares_guarding_pick("", "Insignificant=yes"), None);
@@ -11460,7 +11455,7 @@ fn projectile_shrapnel_fragment_holds_its_weapon_only_in_ares() {
             .iter()
             .map(|fragment| fragment.payload().installed_weapon())
             .collect::<Vec<_>>(),
-        vec![crate::rules::ARES_ENABLED.then_some(child)]
+        vec![rules.ares().then_some(child)]
     );
 }
 
@@ -12096,9 +12091,9 @@ fn gsi_08_05_a_sonic_shot_carries_no_damage() {
 
 /// Ares `ApplyDamage=yes` (TechnoClass_Fire_AllowDamage 1004A370, hook
 /// 0x6FE31C) keeps the Sonic shot's `Damage=`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_apply_damage_keeps_a_sonic_shots_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
          [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\n\n\
@@ -12191,10 +12186,12 @@ fn gsi_08_05_a_garrison_shot_takes_the_f32_occupy_multiplier() {
     let mut store = EntityStore::new();
     let mut building = make_entity(10, "CAGAS", 5, 5, 800);
     building.set_category_for_test(EntityCategory::Structure);
-    building.passenger_role.occupants_mut().add(1);
+    building.garrison_mut_for_test().add_for_test(1);
     store.insert(building);
     let mut occupant = make_infantry_entity(1, "E1", 5, 5, 125);
-    occupant.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+    occupant.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+        10, false,
+    ));
     store.insert(occupant);
     store.insert(make_infantry_entity(2, "E2", 8, 5, 125));
     let mut interner = test_interner();
@@ -12278,14 +12275,15 @@ fn gsi_08_12_a_garrison_kill_pays_the_occupant_next_in_line() {
     building.set_category_for_test(EntityCategory::Structure);
     // Preserve the former supplied Cargo prepend order as occupant input.
     building
-        .passenger_role
-        .occupants_mut()
+        .garrison_mut_for_test()
         .set_ids_for_test(vec![3, 1]);
     store.insert(building);
     for id in [1, 3] {
         let mut occupant = make_infantry_entity(id, "E1", 5, 5, 125);
         occupant.set_owner_for_test(test_intern("Soviet"));
-        occupant.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+        occupant.set_passenger_role_for_test(
+            crate::sim::passenger::PassengerRole::inside_for_test(10, false),
+        );
         store.insert(occupant);
     }
     let mut victim = make_infantry_entity(2, "E2", 8, 5, 1);
@@ -12295,7 +12293,7 @@ fn gsi_08_12_a_garrison_kill_pays_the_occupant_next_in_line() {
     install_entity_attack_target_for_test(&mut store, 10, 2);
     // The occupant at fire index 0 shoots; the one after it is next in line.
     let (shooter, next) = {
-        let occupants = store.get(10).unwrap().passenger_role.occupants();
+        let occupants = store.get(10).unwrap().passenger_role().occupants();
         assert_eq!(occupants.fire_index(), 0);
         (occupants.ids()[0], occupants.ids()[1])
     };
@@ -12334,20 +12332,21 @@ fn gsi_08_05_a_mixed_garrison_rearms_with_the_next_occupants_weapon() {
     let mut building = make_entity_owned(10, "CAGAS", 5, 5, 800, "Soviet");
     building.set_category_for_test(EntityCategory::Structure);
     building
-        .passenger_role
-        .occupants_mut()
+        .garrison_mut_for_test()
         .set_ids_for_test(vec![3, 1]);
     store.insert(building);
     // Whichever occupant sits at index 0 shoots with the quick gun; the one
     // after it carries the slow gun.
     let (shooter, next) = {
-        let occupants = store.get(10).unwrap().passenger_role.occupants();
+        let occupants = store.get(10).unwrap().passenger_role().occupants();
         (occupants.ids()[0], occupants.ids()[1])
     };
     for (id, kind) in [(shooter, "E1"), (next, "E2")] {
         let mut occupant = make_infantry_entity(id, kind, 5, 5, 125);
         occupant.set_owner_for_test(test_intern("Soviet"));
-        occupant.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(10, false);
+        occupant.set_passenger_role_for_test(
+            crate::sim::passenger::PassengerRole::inside_for_test(10, false),
+        );
         store.insert(occupant);
     }
     let mut victim = make_infantry_entity(2, "E3", 8, 5, 400);
@@ -12363,7 +12362,7 @@ fn gsi_08_05_a_mixed_garrison_rearms_with_the_next_occupants_weapon() {
     );
     let building = store.get(10).unwrap();
     assert_eq!(
-        building.passenger_role.occupants().fire_index(),
+        building.passenger_role().occupants().fire_index(),
         1,
         "the turn passed to the next occupant"
     );
@@ -12633,9 +12632,9 @@ fn gsi_08_05_rearm_frames_match_the_original() {
 /// 0x6FF28F): a berserk firer's rearm is its GetROF value times the type's
 /// `Berserk.ROFMultiplier`, else `[CombatDamage] BerserkROFMultiplier`,
 /// truncated toward zero.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_berserk_rearm_takes_the_type_or_rules_multiplier() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[CombatDamage]\nBerserkROFMultiplier=0.75\n[VehicleTypes]\n0=OWN\n1=RULES\n\
          [OWN]\nBerserk.ROFMultiplier=0.25\n[RULES]\nStrength=1\n",
@@ -13586,8 +13585,8 @@ fn phobos_radiation_color_ignores_the_theater() {
 /// green, so the theater decides which channels the field uses. Ares's
 /// RadSiteClass_Radiate_UnhardcodeSnow (10056DB0, hook 0x65B5FB) jumps past
 /// this substitution; `radiation::ares_radiation_keeps_rad_color_on_snow`
-/// covers that build.
-#[cfg(not(any(feature = "phobos", feature = "ares")))]
+/// covers a game where Ares plays.
+#[cfg(not(feature = "phobos"))]
 #[test]
 fn retail_snow_theater_substitutes_red_and_blue() {
     let rules = radiation_rules();

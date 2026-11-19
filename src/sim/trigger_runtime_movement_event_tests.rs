@@ -40,11 +40,10 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         let first_change = control["first_change"].as_bool().unwrap();
         let second_change = control["second_change"].as_bool().unwrap();
         let expected_index = usize::try_from(control["owner"].as_u64().unwrap()).unwrap();
-        let (mut sim, rules, registry, initial_houses) =
-            super::tests::event_ingress_fixture_with_rules(
-                "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=500\nCost=800\n\
+        let (mut sim, rules, _, initial_houses) = super::tests::event_ingress_fixture_with_rules(
+            "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=500\nCost=800\n\
                  Capturable=yes\nRepairable=yes\n",
-            );
+        );
         let country2 = sim.interner.intern("Country2");
         sim.houses
             .get_mut(&initial_houses[2])
@@ -145,14 +144,7 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         for frame in 0..256 {
             let trace_start = sim.trigger_runtime.dispatch_trace.len();
             let output = sim
-                .advance_app_frame(
-                    &[],
-                    &rules,
-                    Some(&registry),
-                    67,
-                    TickLane::Ordinary,
-                    FrameEffects::default(),
-                )
+                .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
                 .unwrap();
             arrivals.extend(
                 sim.trigger_runtime.dispatch_trace[trace_start..]
@@ -656,8 +648,7 @@ fn retail_infantry_map_event(
             true,
         ),
         &rules,
-    )
-    .unwrap();
+    );
     Some((sim, rules, registry))
 }
 
@@ -956,7 +947,7 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
             .entities
             .get(infantry)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id(),
         Some(reactor)
     );
@@ -1047,7 +1038,7 @@ fn an_occupier_garrisoning_a_building_raises_its_entered_by_event() {
             .entities
             .get(building)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .occupants()
             .count(),
         1
@@ -1106,6 +1097,7 @@ fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
                 .entities
                 .get(building)
                 .unwrap()
+                .building
                 .pending_c4_detonation
                 .pending()
                 .is_some(),
@@ -1120,9 +1112,11 @@ fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
 #[test]
 fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
     // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
-    // is civilian (TechLevel -1); this one is not.
-    let red_entered = cfg!(feature = "ares");
-    for (actor_house, health, entered) in [(0, 500, true), (1, 500, false), (0, 50, red_entered)] {
+    // is civilian (TechLevel -1); this one is not. `None` is that red entry:
+    // admitted when Ares plays.
+    for (actor_house, health, entered) in
+        [(0, 500, Some(true)), (1, 500, Some(false)), (0, 50, None)]
+    {
         let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
             "[Country7]\nMultiplayPassive=yes\n\
              [InfantryTypes]\n0=TAGINF\n[TAGINF]\nStrength=100\nSpeed=4\n\
@@ -1131,6 +1125,8 @@ fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
              [BuildingTypes]\n0=TAGGARRISON\n[TAGGARRISON]\nStrength=500\n\
              CanBeOccupied=yes\nMaxNumberOccupants=3\n",
         );
+        let red_entered = rules.ares_form();
+        let entered = entered.unwrap_or(red_entered);
         sim.houses
             .get_mut(&houses[1])
             .unwrap()
@@ -1168,7 +1164,7 @@ fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
                 .entities
                 .get(infantry)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport_id(),
             (health == 500 || red_entered).then_some(building),
         );
@@ -1200,7 +1196,6 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
         )
         .unwrap()
         .into_parts();
-    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&map.ini, None);
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let needle = map
@@ -1326,7 +1321,6 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),
@@ -1337,7 +1331,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 .entities
                 .get(infantry)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport_id()
                 == Some(building)
             {
@@ -1377,7 +1371,6 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 crate::sim::world::TickLane::Ordinary,
                 FrameEffects::default(),

@@ -1,7 +1,6 @@
 //! Physical TMP through the production decoder, atlas, live cell
 //! selection, common lighting, A binding, upload and ordinary terrain draw.
 //! Expected RGB565 and stored Z are captured by original Cell480350/TMP547CF0.
-use super::draw_pooled_zdepth;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::lighting::{LightingProfileUnits, build_cell_light_grid_from_heights_and_units};
 use crate::map::map_file::{MapCell, MapFile};
@@ -323,6 +322,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             assert_eq!(instances.normal.len(), 1);
             pool.upload_on_device(
@@ -728,6 +728,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             assert_eq!(instances.normal.len(), 1);
             pool.upload_on_device(
@@ -833,7 +834,10 @@ fn assert_tmp_pass(
         let clip: [u32; 4] = std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
         pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
         for _ in 0..input["repeat"].as_u64().unwrap() {
-            draw_pooled_zdepth(&mut pass, batch, pool, Some(atlas), "tmp-clear-native");
+            // A row whose cell admits no tile uploads nothing.
+            if let Some((buffer, count)) = pool.get("tmp-clear-native") {
+                batch.draw_with_buffer_zdepth(&mut pass, &atlas.zdepth_bind_group, buffer, count);
+            }
         }
     }
     let reads = [gpu.read(&mut encoder, color), gpu.read(&mut encoder, depth)];
@@ -1189,6 +1193,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
                 size[1] as f32,
                 Some(&lookup),
                 Some(terrain),
+                Vec::new(),
             );
             if row["output"]["selected_file_index"].as_u64().is_some() {
                 assert_eq!(instances.normal.len(), 1);
@@ -1385,6 +1390,7 @@ fn retail_partial_redraw_continuation_matches_full_reconstruction() {
             size[1] as f32,
             Some(&lookup),
             Some(terrain),
+            Vec::new(),
         );
         assert!(!instances.normal.is_empty());
         let mut pool = InstanceBufferPool::new();

@@ -201,7 +201,6 @@ pub(crate) fn tick_terrain_object_ai(
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> Result<(), RuntimeOverlayError> {
-    #[cfg(feature = "ares")]
     let live = sim
         .terrain_objects
         .objects()
@@ -213,12 +212,17 @@ pub(crate) fn tick_terrain_object_ai(
     if tick_terrain_crumble(sim, stable_id, rules, overlay_registry, effects)? {
         return Ok(());
     }
+    let live = rules.ares_form()
+        && sim
+            .terrain_objects
+            .objects()
+            .get(&stable_id)
+            .is_some_and(|terrain| terrain.is_live());
     tick_terrain_animation(sim, stable_id, rules, overlay_registry, effects)?;
     // Ares 3.0 TerrainClass_Update_ForestFire (1004F530, hook 0x71C7C2)
     // follows the IsAnimated draw. VERA runs it after the whole stage step:
     // the order differs only for an animated flammable non-spawner tree
     // whose stage reaches its midpoint the same frame (none in retail).
-    #[cfg(feature = "ares")]
     if live {
         sim.ares_spread_forest_fire(stable_id, rules);
     }
@@ -796,6 +800,7 @@ impl crate::sim::world::Simulation {
 }
 
 #[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
 
     use super::*;
@@ -2840,7 +2845,6 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             }
         }
 
-        #[cfg(feature = "ares")]
         {
             construct_terrain_objects(
                 &mut sim,

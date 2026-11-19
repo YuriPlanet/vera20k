@@ -123,7 +123,7 @@ fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
             y + 2,
             0,
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
         )
         .unwrap_or_else(|| panic!("{kind} spawns"));
     sim.resolve_type_handles(&resources.rules);
@@ -139,7 +139,9 @@ fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
             .substrate
             .entities
             .get(rider)
-            .is_some_and(|entity| entity.passenger_role.open_transport_id() == Some(fortress.bfrt))
+            .is_some_and(|entity| {
+                entity.passenger_role().open_transport_id() == Some(fortress.bfrt)
+            })
         {
             return rider;
         }
@@ -217,14 +219,14 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
     {
         let sim = fortress.scenario.sim();
         let transport = sim.substrate.entities.get(bfrt).unwrap();
-        let cargo = transport.passenger_role.cargo().expect("a transport");
+        let cargo = transport.passenger_role().cargo().expect("a transport");
         assert_eq!(
             cargo.passengers(),
             gis.iter().rev().copied().collect::<Vec<_>>()
         );
         for &id in &gis {
             let gi = sim.substrate.entities.get(id).unwrap();
-            assert_eq!(gi.passenger_role.inside_transport(), Some((bfrt, true)));
+            assert_eq!(gi.passenger_role().inside_transport(), Some((bfrt, true)));
             assert!(gi.lifecycle.in_limbo());
             assert_eq!(gi.mission.current().known(), Some(MissionType::Guard));
             assert!(gi.attack_target.target().is_none());
@@ -298,7 +300,7 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
             .entities
             .get(bfrt)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .cargo()
             .unwrap();
         let port = cargo
@@ -551,7 +553,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
                 y + 2,
                 0,
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
             )
             .expect("GI spawns");
         sim.resolve_type_handles(&resources.rules);
@@ -570,7 +572,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
             .entities
             .get(gi)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport()
             .is_some_and(|(_, open)| open == true)
     };
@@ -604,7 +606,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
             "frame {frame}: a stationary carrier retains the arrival subcell"
         );
         assert_eq!(
-            rider.passenger_role.open_transport_id(),
+            rider.passenger_role().open_transport_id(),
             Some(transport.stable_id())
         );
         for cx in x - 3..=x + 1 {

@@ -66,6 +66,7 @@ fn health(sim: &Simulation, id: u64) -> i32 {
 /// `Warhead`; `TiberiumProof=yes` (and the default for vehicles) spares it.
 #[test]
 fn per_cell_arrival_on_tiberium_applies_the_mineral_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, ids) = scene(
         "Damage=7\nWarhead=TIBWH\n",
         &[
@@ -101,6 +102,7 @@ fn per_cell_arrival_on_tiberium_applies_the_mineral_damage() {
 /// does not.
 #[test]
 fn tiberium_heal_steps_on_the_delay_cadence_up_to_strength() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, ids) = scene(
         "Heal.UStep=11\n",
         &[
@@ -189,7 +191,7 @@ fn harvester(sim: &mut Simulation, rules: &RuleSet, name: &str, bales: u16) -> u
     let mut miner =
         crate::sim::miner::Miner::new(crate::sim::miner::MinerKind::War, &Default::default(), 20);
     miner.add_bales(bale, bales);
-    entity.miner = Some(miner);
+    entity.miner = Some(Box::new(miner));
     sim.substrate.entities.insert(entity);
     id
 }
@@ -200,6 +202,7 @@ fn harvester(sim: &mut Simulation, rules: &RuleSet, name: &str, bales: u16) -> u
 /// leaves nothing.
 #[test]
 fn dying_spill_and_remains_types_leave_ore_around_their_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (keys, bales, leaves_ore) in [
         ("TiberiumSpill=yes\n", 10, true),
         ("TiberiumRemains=yes\n", 0, true),
@@ -218,20 +221,28 @@ fn dying_spill_and_remains_types_leave_ore_around_their_cell() {
 
 /// Ares 1004BD90 (hook 0x738749): with `TiberiumExplosive=yes` a dying
 /// harvester's bales times Power go off as one Apply_area_damage with
-/// `TiberiumExplosiveWarhead` that leaves tiberium alone.
+/// `TiberiumExplosiveWarhead` that leaves tiberium alone. The hook sits in
+/// Death_Explosion's `Explosion=` block (JLE 0x738695), so a harvester with
+/// none does not blast.
 #[test]
 fn tiberium_explosive_harvester_blasts_bales_times_power() {
-    let (mut sim, rules, _) = scene_with_harvester(
-        "\n[CombatDamage]\nTiberiumExplosive=yes\nTiberiumExplosiveWarhead=TIBWH\n",
-    );
-    let id = harvester(&mut sim, &rules, "HARV", 10);
-    let (_, visits) =
-        crate::sim::combat::receiver_fixture::trace_area_visits(|| kill(&mut sim, &rules, id));
-    // 10 bales of Power=4 Riparius.
-    assert_eq!(visits.len(), 1);
-    assert_eq!(visits[0]["damage"], 40);
-    assert_eq!(visits[0]["warhead"], "TIBWH");
-    assert_eq!(visits[0]["affects_tiberium"], false);
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for (explosion, blasts) in [("Explosion=TWLT070\n", 1), ("", 0)] {
+        let (mut sim, rules, _) = scene_with_harvester(&format!(
+            "{explosion}[CombatDamage]\nTiberiumExplosive=yes\nTiberiumExplosiveWarhead=TIBWH\n"
+        ));
+        let id = harvester(&mut sim, &rules, "HARV", 10);
+        let (_, visits) =
+            crate::sim::combat::receiver_fixture::trace_area_visits(|| kill(&mut sim, &rules, id));
+        assert_eq!(visits.len(), blasts, "{explosion:?}");
+        if blasts == 0 {
+            continue;
+        }
+        // 10 bales of Power=4 Riparius.
+        assert_eq!(visits[0]["damage"], 40);
+        assert_eq!(visits[0]["warhead"], "TIBWH");
+        assert_eq!(visits[0]["affects_tiberium"], false);
+    }
 }
 
 /// Ore on (5, 5) that kills a Strength-100 `E1` standing on it, with
@@ -301,6 +312,7 @@ fn visceroids(sim: &Simulation) -> Vec<(String, u16, u16)> {
 /// keeps the fresh `TiberiumDeathToVisceroid=yes`.
 #[test]
 fn tiberium_death_spawns_a_neutral_small_visceroid() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, id) = visceroid_scene();
     let killed = sim.ares_foot_tiberium_damage(
         id,
@@ -318,6 +330,7 @@ fn tiberium_death_spawns_a_neutral_small_visceroid() {
 /// blocks the visceroid.
 #[test]
 fn visceroid_needs_the_map_flag_and_a_cell_without_a_unit() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _) = visceroid_scene();
     let coord = DriveCoord {
         x: 5 * 256 + 128,
@@ -366,6 +379,7 @@ fn visceroid_needs_the_map_flag_and_a_cell_without_a_unit() {
 /// `ChainReaction=yes` keeps its ore.
 #[test]
 fn chain_reacting_ore_halves_and_blasts_power_times_the_loss() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for chain_reaction in [true, false] {
         let mut tiberium = tiberium_rules_text().replacen(
             "[Riparius]\n",

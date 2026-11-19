@@ -173,7 +173,6 @@ fn click_fire_matches_native() {
                 SimSoundEvent::PsychicDominatorRefused { owner } => Some(("dominator", owner)),
                 // Installed Ares: SW_LightningStorm::AbortFire (10072AB0)
                 // and SW_PsychicDominator::AbortFire (10070780).
-                #[cfg(feature = "ares")]
                 SimSoundEvent::AresSuperWeaponAborted { owner, .. } => Some((
                     if int(&row["kind"]) == 2 {
                         "storm"
@@ -215,7 +214,7 @@ fn click_fire_matches_native() {
 /// Phobos `FireSuperWeaponExt`'s `sw_ext.ShotCount++`
 /// (`Ext/SWType/FireSuperWeapon.cpp:45`) runs at the shared Launch tail, so
 /// a stock-handled type counts too; Ares' 100226D0 shares the field.
-#[cfg(any(feature = "ares", feature = "phobos"))]
+#[cfg(feature = "phobos")]
 #[test]
 fn an_accepted_stock_launch_counts_one_shot() {
     let rules = rules();
@@ -364,7 +363,6 @@ fn the_launch_alert_matches_native() {
     }
 }
 
-#[cfg(not(feature = "ares"))]
 fn default_build_scene(
     kind: crate::rules::superweapon_type::SuperWeaponKind,
 ) -> (
@@ -421,7 +419,6 @@ fn default_build_scene(
     (sim, rules, owner, sw_type)
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
     use crate::rules::superweapon_targeting::TargetReject;
@@ -475,7 +472,6 @@ fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
     }
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
     use crate::rules::superweapon_type::{SuperWeaponBuildingRequirements, SuperWeaponKind};
@@ -524,7 +520,6 @@ fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
     ));
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
     use crate::rules::superweapon_type::SuperWeaponKind;
@@ -540,8 +535,9 @@ fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
     instance.paid_sequence = selection.sequence;
     instance.paid_selection = Some(selection);
     let before = sim.state_hash();
-    assert!(sim.validate_paid_super_weapon_selections().is_err());
-    assert_eq!(sim.paid_super_weapon_selection(owner), None);
+    // The player load refuses the saved selection in a game without Ares;
+    // forged past it, no command it could produce is admitted below.
+    assert!(sim.validate_ares_state_for_load(rules.ares()).is_err());
     assert_eq!(
         sim.next_paid_super_weapon_selection(&rules, owner, sw_type),
         None
@@ -570,9 +566,9 @@ fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
 
 /// Ares 10034C70 (hook 0x4FAF2A): a Fire_SW whose ClickFire refused (the
 /// Super is still charged) alerts no computer house; one that launched does.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_a_super_still_charged_after_fire_alerts_no_house() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut rules = rules();
     rules.general.ai_super_defense_distance = 1_000_000;
     rules.general.ai_super_defense_probability = vec![100, 100, 100];

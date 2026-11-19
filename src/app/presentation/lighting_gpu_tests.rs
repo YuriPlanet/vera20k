@@ -132,6 +132,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         tile.height as f32,
         Some(&lookup),
         None,
+        Vec::new(),
     )
     .normal
     .remove(0);
@@ -178,6 +179,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         tile.height as f32,
         Some(&lookup),
         None,
+        Vec::new(),
     )
     .normal
     .remove(0);

@@ -359,3 +359,15 @@ fn the_demo_mod_keeps_the_green_type_separate() {
     assert_eq!(green.color, (0, 255, 0));
     assert_eq!(green.duration_multiple, 2);
 }
+
+/// `RadLevelDelay` and `RadLightDelay` are divisors; a type's own zero gets the
+/// floor the global reader applies.
+#[test]
+fn a_types_zero_delays_are_floored_like_the_globals() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("[Radiation]\n")).expect("rules");
+    let catalog =
+        catalog("[RadiationTypes]\n0=ToxicField\n[ToxicField]\nRadLevelDelay=0\nRadLightDelay=0\n");
+    let effective = catalog.effective(&rules.radiation, Some("ToxicField"));
+    assert_eq!(effective.level_delay, 1);
+    assert_eq!(effective.light_delay, 1);
+}

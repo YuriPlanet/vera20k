@@ -190,7 +190,8 @@ pub(crate) struct TacticalCaptureSettings {
     pub(crate) output_width: u32,
     pub(crate) output_height: u32,
     pub(crate) surface_formats: Vec<String>,
-    /// Always true: the window always presents in step with the display. The
+    /// Always true: a capture presents in step with the display whatever the
+    /// Options page's VSync box says (`App::sync_present_mode`). The
     /// sealed profiles keep the key.
     pub(crate) vsync: bool,
     /// Always false: a capture never zooms. The sealed profiles keep the key.
@@ -553,10 +554,10 @@ impl TacticalCaptureProfile {
     }
 
     pub(crate) fn launch_session(&self) -> SkirmishLaunchSession {
-        SkirmishLaunchSession {
-            mode: self.launch.mode.clone(),
-            selected_map_file: Some(self.fixture.logical_map_name.clone()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            self.launch.mode.clone(),
+            Some(self.fixture.logical_map_name.clone()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: self.launch.player_name.clone(),
                 slot: SkirmishLocalSlot {
@@ -569,10 +570,8 @@ impl TacticalCaptureProfile {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: self.launch.opponents.len() as i32,
-            opponents: self
-                .launch
+            0,
+            self.launch
                 .opponents
                 .iter()
                 .enumerate()
@@ -587,12 +586,8 @@ impl TacticalCaptureProfile {
                     difficulty: AiDifficulty::Easy,
                 })
                 .collect(),
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(
-                    self.launch.opponents.len(),
-                ),
-            options: self.launch.options.to_launch_options(),
-        }
+            self.launch.options.to_launch_options(),
+        )
     }
 }
 
@@ -618,6 +613,10 @@ impl TacticalOptions {
             harvester_truce: self.harvester_truce,
             ally_change_allowed: self.ally_change_allowed,
             bans: Default::default(),
+            teams: None,
+            auto_balance: false,
+            queue: Vec::new(),
+            host_rules: Default::default(),
         }
     }
 }
@@ -750,7 +749,7 @@ fn validate_options(options: &TacticalOptions) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -821,12 +820,12 @@ mod tests {
                 ),
                 (632.0, 158.0, 227.0, 527.0, 6)
             );
-            // Soviet and Yuri take the NOD position table, so the aperture
-            // sits at the native NOD delta from the GDI one: +3, +1.
+            // The NOD position table moves the top buttons, not the radar
+            // aperture (MapAreaX 16 in both Init_For_House arms).
             let aperture = radar_minimap_rect_with_spec(800.0, spec);
             assert_eq!(
                 (aperture.x, aperture.y, aperture.w, aperture.h),
-                (651.0, 50.0, 140.0, 108.0)
+                (648.0, 49.0, 140.0, 108.0)
             );
             profile.capture.app_ui_scale = 0.5;
             assert!(

@@ -26,7 +26,8 @@ pub(crate) struct PlannedBuildingPieceInstance {
 /// Texture/pipeline identity retained after native object ordering is decided.
 ///
 /// Atlas identity is deliberately data carried by a draw piece, never a sort
-/// key. Parent order comes exclusively from the retained Display vector.
+/// key. Parent order comes exclusively from the Display draw order
+/// ([`NativeDisplayOrder`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ObjectTexture {
     /// Ordered DSurface calls, fenced into this parent's native draw slot.
@@ -35,7 +36,6 @@ pub(crate) enum ObjectTexture {
     CombatLight(usize),
     /// Initial Building Extras status, sharing the late run's instance range.
     Status(usize),
-    OverlayAtlas,
     /// Per-piece native destination edit; never a texture-only coalesced draw.
     TerrainShp(crate::render::terrain_draw::TerrainPiece),
     /// An atlas SHP whose source mask performs a native destination edit.
@@ -84,6 +84,13 @@ pub(crate) struct PlannedObjectInstance {
     pub tether_redraws: Vec<DrawId>,
     /// A Unit that draws only in its tether building's slot.
     pub drawn_by_tether: bool,
+    /// A live Terrain object whose type is not `IsAnimated`. The Display loop
+    /// skips it (`Tactical_ObjectRenderingLoop @ 0x006D8DB0` draws RTTI 0x24
+    /// only when `IsAnimated` (type+0x2B3) or crumbling (+0xCD) is set);
+    /// `0x006D97D0` draws it instead, walking Ground backward, from
+    /// `Tactical_layer_building_overlays @ 0x006D3AC0` (`0x006D44D3`), before
+    /// the building bases ([`ObjectLayerPass::static_tree_runs`]).
+    pub static_tree: bool,
 }
 
 impl PlannedObjectInstance {
@@ -98,6 +105,7 @@ impl PlannedObjectInstance {
             status: None,
             tether_redraws: Vec::new(),
             drawn_by_tether: false,
+            static_tree: false,
         }
     }
 
@@ -112,6 +120,7 @@ impl PlannedObjectInstance {
             status: None,
             tether_redraws: Vec::new(),
             drawn_by_tether: false,
+            static_tree: false,
         }
     }
 }
@@ -143,7 +152,12 @@ pub(crate) enum ObjectExtrasRun {
         parent: DrawId,
         bomb_clock: Option<u32>,
         wrench: Option<u32>,
+        /// Ares POWEROFF marker (10049FE0), after the wrench; `None` unless
+        /// the Rules were read the Ares way (`techno_extras_for_parent`).
+        power_off: Option<u32>,
         rank: Option<u32>,
+        /// The rank's custom insignia SHP; `None` binds the stock PIPS strip.
+        rank_insignia: Option<String>,
         background: Option<u32>,
         shield_background: Option<u32>,
         fills: std::ops::Range<u32>,
@@ -183,6 +197,11 @@ pub(crate) struct ObjectLayerPass {
     /// Building6D9920 draws bases before rally6D4648. Base and later dynamic
     /// Display runs share one flat instance upload; each range draws once.
     pub building_base_runs: Vec<ObjectDrawRun>,
+    /// Static trees ([`PlannedObjectInstance::static_tree`]) in reverse
+    /// Ground order: `0x006D97D0` counts down from the last member
+    /// (`0x006D9805`, `0x006D98FA`/`0x006D98FF` DEC/JNS). They draw once,
+    /// before `building_base_runs`, from the same instance upload.
+    pub static_tree_runs: Vec<ObjectDrawRun>,
     /// Native6D913C/6D9153 lines and Particle body points, in parent order.
     pub surface_draws: Vec<Vec<crate::render::surface_line::SurfaceDraw>>,
     /// Frame-local uploads of `surface_draws`, prepared after the shared A plane.
@@ -202,29 +221,67 @@ pub(crate) struct ObjectLayerPass {
     pub owners: Vec<DrawId>,
 }
 
-/// Frame-local lookup derived solely from the five retained Display vectors.
-/// The sim owns all registration and sorting; atlas builders only read ranks.
-/// Rebuilt each frame for every Display member and only looked up, so it
-/// takes the lookup hasher, sized up front.
-#[derive(Default)]
+/// Frame-local draw order of the Display members
+/// (`Simulation::display_draw_order`): the simulation owns registration, and
+/// the presentation sorts Ground off the simulation's frame. Built once for
+/// each presentation frame (`PresentationFrame::display_order`) for every
+/// Display member and presentation anim and only looked up, so it takes the
+/// lookup hasher, sized up front.
+#[derive(Clone, Debug, Default)]
 pub(crate) struct NativeDisplayOrder {
     positions: LookupMap<DrawId, (TacticalLayer, u64)>,
+    ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
 }
 
 impl NativeDisplayOrder {
-    pub(crate) fn from_display(display: &crate::sim::world::display_layers::DisplayLayers) -> Self {
-        use crate::sim::world::display_layers::DisplayLayer;
-        let layer = |index| DisplayLayer::from_index(index).expect("native Display layer index");
-        let members: usize = (0..5u8)
-            .map(|index| display.members(layer(index)).len())
-            .sum();
-        let mut positions = LookupMap::with_capacity_and_hasher(members, Default::default());
-        for index in 0..5u8 {
-            for (rank, &id) in display.members(layer(index)).iter().enumerate() {
-                positions.insert(id, (TacticalLayer(index), rank as u64));
-            }
+    /// `sim`'s draw order under `rules` (`Simulation::picture_draw_order`),
+    /// each presentation anim where an ordinary anim of its submission would
+    /// stand. They hold no Display slot, so [`Self::ordered`] leaves them
+    /// out: every other draw there is registered.
+    pub(crate) fn from_world(
+        sim: &crate::sim::world::Simulation,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+    ) -> Self {
+        let mut order = Self::ranked(sim.picture_draw_order(rules)).0;
+        let display = sim.display_layers();
+        order
+            .ordered
+            .retain(|&(_, id)| display.layer_of(id).is_some());
+        order
+    }
+
+    /// The order of `ordered`, every Display member with its layer in draw
+    /// order.
+    #[cfg(test)]
+    pub(crate) fn from_ordered(
+        ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
+    ) -> Self {
+        Self::ranked(ordered).0
+    }
+
+    /// [`Self::from_ordered`] and each layer's member count.
+    fn ranked(
+        ordered: Vec<(crate::sim::world::display_layers::DisplayLayer, u64)>,
+    ) -> (Self, [u64; 5]) {
+        let mut positions = LookupMap::with_capacity_and_hasher(ordered.len(), Default::default());
+        let mut rank = [0u64; 5];
+        for &(layer, id) in &ordered {
+            let next = &mut rank[usize::from(layer.index())];
+            positions.insert(id, (TacticalLayer(layer.index()), *next));
+            *next += 1;
         }
-        Self { positions }
+        (Self { positions, ordered }, rank)
+    }
+
+    /// Every Display member with its layer, in draw order.
+    pub(crate) fn ordered(&self) -> &[(crate::sim::world::display_layers::DisplayLayer, u64)] {
+        &self.ordered
+    }
+
+    /// The order of a bare `display`, Ground as it holds its members.
+    #[cfg(test)]
+    pub(crate) fn from_display(display: &crate::sim::world::display_layers::DisplayLayers) -> Self {
+        Self::from_ordered(display.members_in_order().collect())
     }
 
     #[cfg(test)]
@@ -235,7 +292,18 @@ impl NativeDisplayOrder {
                 .enumerate()
                 .map(|(rank, &id)| (id, (TacticalLayer(2), rank as u64)))
                 .collect(),
+            ordered: ids
+                .iter()
+                .map(|&id| (crate::sim::world::display_layers::DisplayLayer::GROUND, id))
+                .collect(),
         }
+    }
+
+    /// `id`'s place in the Display walk, `None` for an id no layer holds:
+    /// ordering by it is the order of [`Self::ordered`], with each
+    /// presentation anim in its place (`Simulation::picture_draw_order`).
+    pub(crate) fn position(&self, id: DrawId) -> Option<(TacticalLayer, u64)> {
+        self.positions.get(&id).copied()
     }
 
     pub(crate) fn object_draw(&self, id: DrawId, encoding: SpriteEncoding) -> Option<ObjectDraw> {
@@ -253,9 +321,10 @@ impl NativeDisplayOrder {
     }
 }
 
-/// Restore the retained Display vector order after the class-specific builders.
-/// Native Tactical6D8F39 reads members in order; neither sprite depth nor a new
-/// GetYSort query participates. Building pieces remain contiguous in their slot.
+/// Restore the Display draw order ([`NativeDisplayOrder`]) after the
+/// class-specific builders. Native Tactical6D8F39 reads members in order;
+/// sprite depth does not participate. Building pieces remain contiguous in
+/// their slot.
 pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [ObjectLayerPass; 5] {
     // Side tables of the frame's Display parents, keyed by parent id. They
     // are only filled and then taken by key in plan order, never walked, so
@@ -270,6 +339,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
     let mut tail_draws = LookupMap::default();
     let mut tether_redraws = LookupMap::default();
     let mut drawn_by_tether = LookupSet::default();
+    let mut static_trees = LookupSet::default();
     let mut inputs = Vec::with_capacity(entries.len());
 
     for entry in entries {
@@ -279,6 +349,9 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
         }
         if entry.drawn_by_tether {
             drawn_by_tether.insert(id);
+        }
+        if entry.static_tree {
+            static_trees.insert(id);
         }
         if let Some(draw) = entry.body_draw {
             assert!(
@@ -355,6 +428,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
     let mut layers: [ObjectLayerPass; 5] = std::array::from_fn(|_| ObjectLayerPass::default());
     for layer in plan.object_layers {
         let lowered = &mut layers[usize::from(layer.layer.0)];
+        let mut static_tree_pieces = Vec::new();
         for entry in layer.entries {
             let owner = entry.object().id;
             let is_building = matches!(
@@ -369,6 +443,11 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     index
                 });
                 let wrench = strip.wrench.map(|instance| {
+                    let index = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.push(instance);
+                    index
+                });
+                let power_off = strip.power_off.map(|instance| {
                     let index = lowered.extras_instances.len() as u32;
                     lowered.extras_instances.push(instance);
                     index
@@ -443,7 +522,9 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     parent: owner,
                     bomb_clock,
                     wrench,
+                    power_off,
                     rank,
+                    rank_insignia: strip.rank_insignia,
                     background,
                     shield_background,
                     fills: start..end,
@@ -468,11 +549,16 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 if let Some(ObjectExtrasRun::Status {
                     bomb_clock,
                     wrench,
+                    power_off,
                     rank,
+                    rank_insignia,
                     fills,
                     ..
                 }) = &strip
-                    && (bomb_clock.is_some() || wrench.is_some() || rank.is_some())
+                    && (bomb_clock.is_some()
+                        || wrench.is_some()
+                        || rank.is_some()
+                        || power_off.is_some())
                 {
                     split_prefix = Some(lowered.extras_runs.len());
                     lowered.extras_runs.push(ObjectExtrasRun::Status {
@@ -480,7 +566,9 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         parent: owner,
                         bomb_clock: *bomb_clock,
                         wrench: *wrench,
+                        power_off: *power_off,
                         rank: *rank,
+                        rank_insignia: rank_insignia.clone(),
                         background: None,
                         shield_background: None,
                         fills: fills.start..fills.start,
@@ -553,7 +641,9 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
             if let Some(ObjectExtrasRun::Status {
                 bomb_clock,
                 wrench,
+                power_off,
                 rank,
+                rank_insignia,
                 background,
                 shield_background,
                 fills,
@@ -569,6 +659,8 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
             {
                 let bomb_clock = bomb_clock.filter(|_| split_prefix.is_none());
                 let wrench = wrench.filter(|_| split_prefix.is_none());
+                let power_off = power_off.filter(|_| split_prefix.is_none());
+                let marker = power_off.is_some();
                 let rank = rank.filter(|_| split_prefix.is_none());
                 #[cfg(feature = "phobos")]
                 let select_box = select_box.filter(|_| split_prefix.is_none());
@@ -580,6 +672,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 let has_select_box = false;
                 if bomb_clock.is_some()
                     || wrench.is_some()
+                    || marker
                     || rank.is_some()
                     || background.is_some()
                     || shield_background.is_some()
@@ -604,7 +697,9 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         parent: owner,
                         bomb_clock,
                         wrench,
+                        power_off,
                         rank,
+                        rank_insignia,
                         background,
                         shield_background,
                         fills,
@@ -655,6 +750,10 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     let pieces = ordinary
                         .remove(&owner)
                         .expect("planned Display object must retain its sprites");
+                    if static_trees.contains(&owner) {
+                        static_tree_pieces.push((owner, pieces));
+                        continue;
+                    }
                     // Unit73B0B0 refuses the body to a tethered Unit; its
                     // building's redraw draws it.
                     for piece in pieces.into_iter().filter(|_| !refused) {
@@ -687,6 +786,12 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
             }
             if let Some(draws) = tail_draws.remove(&owner).filter(|_| !refused) {
                 push_surface_draws(lowered, draws);
+            }
+        }
+        for (owner, pieces) in static_tree_pieces.into_iter().rev() {
+            for piece in pieces {
+                let run = push_object_piece(lowered, owner, piece);
+                append_object_run(&mut lowered.static_tree_runs, run);
             }
         }
     }
@@ -819,7 +924,7 @@ fn append_object_run(runs: &mut Vec<ObjectDrawRun>, next: ObjectDrawRun) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::*;
     use crate::render::draw_state::DrawState;
@@ -844,7 +949,7 @@ mod tests {
                     policy: BlitPolicy::z_read(SpriteEncoding::Rle),
                 },
                 vec![ObjectPieceInstance {
-                    target: ObjectTexture::OverlayAtlas,
+                    target: ObjectTexture::ShpPage(0),
                     render_z: RenderZPolicy::ReadOnly,
                     instance: SpriteInstance::default(),
                 }],
@@ -900,7 +1005,7 @@ mod tests {
         };
         let parent = |id, display_order, tail_draws: Vec<SurfaceDraw>| {
             let piece = || ObjectPieceInstance {
-                target: ObjectTexture::OverlayAtlas,
+                target: ObjectTexture::ShpPage(0),
                 render_z: RenderZPolicy::ReadOnly,
                 instance: SpriteInstance::default(),
             };
@@ -928,9 +1033,9 @@ mod tests {
                 .map(|run| (run.target, run.start, run.count))
                 .collect::<Vec<_>>(),
             [
-                (ObjectTexture::OverlayAtlas, 0, 2),
+                (ObjectTexture::ShpPage(0), 0, 2),
                 (ObjectTexture::SurfaceLines(0), 2, 0),
-                (ObjectTexture::OverlayAtlas, 2, 2),
+                (ObjectTexture::ShpPage(0), 2, 2),
             ]
         );
     }
@@ -958,7 +1063,7 @@ mod tests {
                 kind: BuildingPieceKind::Body,
                 z_bias: 0,
                 policy: BlitPolicy::z_read(SpriteEncoding::Rle),
-                target: ObjectTexture::OverlayAtlas,
+                target: ObjectTexture::ShpPage(0),
                 instance: SpriteInstance::default(),
             }],
         );
@@ -1011,8 +1116,65 @@ mod tests {
                 .iter()
                 .map(|run| run.target)
                 .collect::<Vec<_>>(),
-            [ObjectTexture::OverlayAtlas]
+            [ObjectTexture::ShpPage(0)]
         );
+    }
+
+    #[test]
+    fn static_trees_leave_display_and_draw_backward_before_the_bases() {
+        use crate::render::terrain_draw::TerrainPiece;
+        let piece = |target, render_z| ObjectPieceInstance {
+            target,
+            render_z,
+            instance: SpriteInstance::default(),
+        };
+        let parent = |id, static_tree| {
+            let mut parent = PlannedObjectInstance::object(
+                ObjectDraw {
+                    id,
+                    layer: TacticalLayer(2),
+                    display_order: id,
+                    policy: BlitPolicy::z_read(SpriteEncoding::Terrain),
+                },
+                vec![
+                    piece(
+                        ObjectTexture::TerrainShp(TerrainPiece::Body),
+                        RenderZPolicy::ReadWrite,
+                    ),
+                    piece(
+                        ObjectTexture::TerrainShp(TerrainPiece::Shadow),
+                        RenderZPolicy::ReadWrite,
+                    ),
+                ],
+            );
+            parent.static_tree = static_tree;
+            parent
+        };
+        // Ground order 1, 2, 3; 2 stands for an animated tree or a unit.
+        let pass =
+            lower_ground_object_instances(vec![parent(1, true), parent(2, false), parent(3, true)]);
+        let owners = |runs: &[ObjectDrawRun]| -> Vec<DrawId> {
+            runs.iter()
+                .flat_map(|run| run.start..run.start + run.count)
+                .map(|index| pass.owners[index as usize])
+                .collect()
+        };
+        // 0x006D97D0 counts down; each tree draws its body, then its shadow.
+        assert_eq!(owners(&pass.static_tree_runs), [3, 3, 1, 1]);
+        assert_eq!(
+            pass.static_tree_runs
+                .iter()
+                .map(|run| run.target)
+                .collect::<Vec<_>>(),
+            [
+                ObjectTexture::TerrainShp(TerrainPiece::Body),
+                ObjectTexture::TerrainShp(TerrainPiece::Shadow),
+                ObjectTexture::TerrainShp(TerrainPiece::Body),
+                ObjectTexture::TerrainShp(TerrainPiece::Shadow),
+            ]
+        );
+        // 0x006D8DB0 skips them: only the Display member remains.
+        assert_eq!(owners(&pass.runs), [2, 2]);
     }
 
     #[test]
@@ -1044,9 +1206,7 @@ mod tests {
                         let layer = DisplayLayer::from_index(
                             row["queries"][actor]["layer"].as_u64().unwrap() as u8,
                         );
-                        display.submit(actor as u64 + 1, layer, &|id| {
-                            keys[id as usize - 1].expect("native only queries Ground keys")
-                        });
+                        display.submit(actor as u64 + 1, layer);
                     }
                     "remove" => {
                         display.remove(actor.unwrap() as u64 + 1);
@@ -1057,11 +1217,9 @@ mod tests {
                                 .wrapping_add(step["xyz"][1].as_i64().unwrap() as i32),
                         );
                     }
-                    "sort" => {
-                        display.sort_ground_pass(&|id| {
-                            keys[id as usize - 1].expect("native only queries Ground keys")
-                        });
-                    }
+                    // VERA's simulation keeps Ground unordered; the picture
+                    // sorts it at once (`Simulation::ground_draw_order`).
+                    "sort" => {}
                     other => panic!("unexpected native step {other}"),
                 }
                 // Load must preserve the retained order even when it is only
@@ -1070,7 +1228,21 @@ mod tests {
                     &crate::util::save_codec::serialize(&display).unwrap(),
                 )
                 .unwrap();
-                let order = NativeDisplayOrder::from_display(&display);
+                // Ground by key, as `Simulation::ground_draw_order` sorts it.
+                // Equal keys by id here: this checks that lowering keeps the
+                // order it is handed, not how ties are broken.
+                let ground_key = |id: u64| (keys[id as usize - 1].unwrap_or(i32::MIN), id);
+                let mut ordered: Vec<_> = display.members_in_order().collect();
+                // Stable: the other layers keep their members' order.
+                ordered.sort_by_key(|&(layer, id)| {
+                    let key = if layer == DisplayLayer::GROUND {
+                        ground_key(id)
+                    } else {
+                        (0, 0)
+                    };
+                    (layer.index(), key)
+                });
+                let order = NativeDisplayOrder::from_ordered(ordered);
                 let entries = actors
                     .iter()
                     .enumerate()
@@ -1099,12 +1271,19 @@ mod tests {
                     .collect();
                 let lowered = lower_object_instances(entries);
                 for (index, pass) in lowered.iter().enumerate() {
-                    let owners: Vec<_> = expected[index]
+                    let mut members: Vec<u64> = expected[index]
                         .as_array()
                         .unwrap()
                         .iter()
-                        .flat_map(|value| {
-                            let actor = value.as_u64().unwrap() as usize;
+                        .map(|value| value.as_u64().unwrap())
+                        .collect();
+                    if index == usize::from(DisplayLayer::GROUND.index()) {
+                        members.sort_by_key(|&actor| ground_key(actor + 1));
+                    }
+                    let owners: Vec<_> = members
+                        .iter()
+                        .flat_map(|&value| {
+                            let actor = value as usize;
                             std::iter::repeat_n(
                                 actor as u64 + 1,
                                 if actors[actor]["kind"] == "bullet" {
@@ -1139,7 +1318,10 @@ mod tests {
         use crate::util::fixed_math::SimFixed;
 
         // Original instructions produce a partially sorted vector after each
-        // 551A30 call. Rendering must preserve every intermediate history.
+        // 551A30 call and reach the sorted order after three. VERA's
+        // simulation keeps Ground unordered and the picture sorts it at once
+        // (`Simulation::ground_draw_order`, a sim-scale deviation): picking and
+        // drawing see the order native settles on as soon as members move.
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/crate_ground_membership.json",
         ))
@@ -1178,6 +1360,8 @@ mod tests {
             sim.entities_mut_for_test().insert(entity);
         }
         sim.set_logic_order_for_test(vec![4, 3, 2, 1]);
+        let settled = row["after_steps"].as_array().unwrap().last().unwrap()["layers"][2].clone();
+        let mut moved = false;
         for (step, observed) in row["input"]["steps"]
             .as_array()
             .unwrap()
@@ -1186,11 +1370,10 @@ mod tests {
         {
             let id = step["actor"].as_u64().map(|index| index + 1);
             match step["op"].as_str().unwrap() {
-                "submit" => {
-                    sim.submit_object_display_for_test(id.unwrap(), DisplayLayer::GROUND, None)
-                }
+                "submit" => sim.submit_object_display_for_test(id.unwrap(), DisplayLayer::GROUND),
                 "coordinates" => {
-                    let entity = sim.entities_mut_for_test().get_mut(id.unwrap()).unwrap();
+                    moved = true;
+                    let entity = sim.entity_mut_for_test(id.unwrap()).unwrap();
                     entity.position.set_sub_x_for_test(SimFixed::from_num(
                         step["xyz"][0].as_i64().unwrap() - 2560,
                     ));
@@ -1203,18 +1386,27 @@ mod tests {
                 }
                 op => panic!("unexpected {op}"),
             }
-            let expected: Vec<_> = observed["layers"][2]
+            // Between the moves the order follows whichever keys moved so far.
+            if moved && step["op"] == "coordinates" {
+                continue;
+            }
+            let native = if moved {
+                &settled
+            } else {
+                &observed["layers"][2]
+            };
+            let expected: Vec<_> = native
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|id| id.as_u64().unwrap() + 1)
                 .collect();
             assert_eq!(
-                tactical_entity_encounter_order(&sim),
+                tactical_entity_encounter_order(&sim, None),
                 expected,
                 "pick: {step}"
             );
-            let order = NativeDisplayOrder::new(sim.display_layers().members(DisplayLayer::GROUND));
+            let order = NativeDisplayOrder::new(&sim.ground_draw_order(None));
             let entries = (1..=4)
                 .rev()
                 .filter_map(|id| {
@@ -1473,7 +1665,7 @@ mod tests {
         let pass = lower_ground_object_instances(vec![
             PlannedObjectInstance::object(
                 order.object_draw(10, SpriteEncoding::Terrain).unwrap(),
-                vec![marked_piece(ObjectTexture::OverlayAtlas, 10)],
+                vec![marked_piece(ObjectTexture::ShpPage(1), 10)],
             ),
             building,
             PlannedObjectInstance::object(
@@ -1485,7 +1677,7 @@ mod tests {
         assert_eq!(pass.owners, [20, 30, 10]);
         assert_eq!(
             pass.runs.iter().map(|run| run.target).collect::<Vec<_>>(),
-            [ObjectTexture::UnitAtlasPage(9), ObjectTexture::OverlayAtlas,]
+            [ObjectTexture::UnitAtlasPage(9), ObjectTexture::ShpPage(1),]
         );
         assert_eq!(
             pass.building_base_runs
@@ -1533,7 +1725,7 @@ mod tests {
             ),
             PlannedObjectInstance::object(
                 plain_parent(&order, 1),
-                vec![marked_piece(ObjectTexture::OverlayAtlas, 1)],
+                vec![marked_piece(ObjectTexture::ShpPage(2), 1)],
             ),
         ]);
 

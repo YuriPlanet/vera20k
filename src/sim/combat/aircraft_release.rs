@@ -15,7 +15,7 @@ use crate::sim::aircraft::fire_at::{AircraftShot, FireAtHost};
 use crate::sim::components::NavTargetRef;
 use crate::sim::projectile::ProjectileVelocity;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "aircraft_release_tests.rs"]
 mod tests;
 
@@ -378,7 +378,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
     /// reads at `0x00415EEE`.
     fn carries_passenger(&mut self) -> bool {
         self.entity()
-            .and_then(|entity| entity.passenger_role.cargo())
+            .and_then(|entity| entity.passenger_role().cargo())
             .is_some_and(|cargo| !cargo.is_empty())
     }
 

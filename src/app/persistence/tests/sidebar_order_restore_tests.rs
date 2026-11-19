@@ -112,7 +112,7 @@ fn scrolled_projection(owner: InternedId, candidates: &[Cameo]) -> SidebarProjec
     let mut projection = SidebarProjectionState::default();
     assert!(
         !projection
-            .reconcile_fixture(owner, candidates, 1)
+            .reconcile_fixture(owner, candidates, 1, false)
             .build_inserted()
     );
     for (tab, row) in SidebarTab::all().into_iter().zip(SAVED_SCROLL_ROWS) {
@@ -147,14 +147,14 @@ fn retained_history(owner: InternedId, types: [InternedId; 2]) -> SidebarProject
     let mut projection = SidebarProjectionState::default();
     assert!(
         !projection
-            .reconcile_fixture(owner, &candidates(types, 100), 3)
+            .reconcile_fixture(owner, &candidates(types, 100), 3, false)
             .build_inserted()
     );
     // The current keys would sort LATER first, but native Recalculate retains
     // survivors. This records history through the actual shared strip owner.
     assert!(
         !projection
-            .reconcile_fixture(owner, &candidates(types, 400), 3)
+            .reconcile_fixture(owner, &candidates(types, 400), 3, false)
             .build_inserted()
     );
     assert_eq!(
@@ -191,7 +191,6 @@ fn prepare(
         Some(LOAD_FIXTURE_MAP_HASH),
         Some(rules),
         Some(&load_fixture_terrain()),
-        Some(&OverlayTypeRegistry::empty()),
     )
 }
 
@@ -221,6 +220,28 @@ fn sw_sidebar_expanded_flag_survives_the_snapshot_envelope() {
     );
 }
 
+/// Mouse Save 5BE6D0 / Load 5BDF70 keep the open tab (ActiveTab, +0x539C).
+#[test]
+fn a_loaded_game_opens_the_tab_it_was_saved_on() {
+    use crate::ui::sidebar::SidebarTab;
+    let (sim, rules, owner, types) = fixture();
+    let saved = retained_history(owner, types)
+        .saved_order()
+        .unwrap()
+        .with_active_tab(2);
+    let prepared = prepare(&save(&sim, &rules, Some(&saved)), &sim, &rules).unwrap();
+    let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+    let committed = prepared.commit_into(&mut runtime);
+    assert_eq!(
+        crate::app::sidebar_projection::loaded_active_tab(committed.sidebar_order.as_ref()),
+        SidebarTab::Infantry
+    );
+    assert_eq!(
+        crate::app::sidebar_projection::loaded_active_tab(None),
+        SidebarTab::Building
+    );
+}
+
 #[test]
 fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
     let (sim, rules, owner, types) = fixture();
@@ -237,7 +258,7 @@ fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
     assert_eq!(loaded.sidebar_order(), Some(&saved));
     assert_eq!(loaded.sidebar_order().unwrap().owner(), owner);
     assert_eq!(loaded.sinking_waterlines, [(7, -12)]);
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
     let bytes = GameSnapshot::save_validated(
         &sim,
         LOAD_FIXTURE_MAP_HASH,
@@ -254,7 +275,7 @@ fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
     .unwrap();
     assert!(loaded.sidebar_order().is_none());
     assert!(loaded.sinking_waterlines.is_empty());
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
 }
 
 #[test]
@@ -265,7 +286,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     let mut outgoing = SidebarProjectionState::default();
     assert!(
         !outgoing
-            .reconcile_fixture(owner, &candidates(types, 400), 3)
+            .reconcile_fixture(owner, &candidates(types, 400), 3, false)
             .build_inserted()
     );
     let before = outgoing.saved_order().unwrap();
@@ -285,7 +306,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     assert_eq!(outgoing.saved_order(), Some(saved.clone()));
     assert!(
         !outgoing
-            .reconcile_fixture(owner, &candidates(types, 400), 3)
+            .reconcile_fixture(owner, &candidates(types, 400), 3, false)
             .build_inserted()
     );
     assert_eq!(outgoing.saved_order(), Some(saved));
@@ -299,7 +320,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     assert!(outgoing.saved_order().is_none());
     assert!(
         !outgoing
-            .reconcile_fixture(owner, &candidates(types, 400), 3)
+            .reconcile_fixture(owner, &candidates(types, 400), 3, false)
             .build_inserted()
     );
 }
@@ -320,7 +341,7 @@ fn load_keeps_every_strip_order_and_shows_its_top_row() {
     )
     .unwrap();
     assert_eq!(loaded.sidebar_order(), Some(&saved));
-    assert_eq!(loaded.sim.state_hash(), hash);
+    assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);
 
     let mut outgoing = scrolled_projection(owner, &candidates);
     let before = outgoing.saved_order();
@@ -356,7 +377,7 @@ fn load_keeps_every_strip_order_and_shows_its_top_row() {
     assert_eq!(outgoing.saved_order(), Some(saved.clone()));
     assert!(
         !outgoing
-            .reconcile_fixture(owner, &candidates, 1)
+            .reconcile_fixture(owner, &candidates, 1, false)
             .build_inserted()
     );
     assert_eq!(outgoing.saved_order(), Some(saved));
@@ -389,6 +410,7 @@ fn invalid_sidebar_payload_preserves_outgoing_projection_and_running_world() {
         SavedSidebarOrder::new(owner, unknown),
         SavedSidebarOrder::new(owner, wrong_kind),
         SavedSidebarOrder::new(owner, over_capacity),
+        SavedSidebarOrder::new(owner, valid.strips().clone()).with_active_tab(4),
     ];
     for order in invalid {
         assert!(matches!(

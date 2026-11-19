@@ -287,8 +287,7 @@ fn shift_alt_and_ctrl_alt_over_a_tree_take_the_key_rungs() {
             "{modifier:?} over the GI"
         );
     }
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .berserk
         .set_active_for_test(true);

@@ -491,7 +491,7 @@ pub fn mark_start_areas(ctx: &mut StartsCtx<'_>, args: &StartsArgs, outcome: &St
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock, TileBlocks};

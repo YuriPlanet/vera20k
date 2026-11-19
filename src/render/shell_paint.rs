@@ -21,8 +21,8 @@
 //! art lives in the skirmish chrome atlas today) so the emitter stays a pure
 //! composition the quit-confirm and validation modals both delegate to.
 
-use std::borrow::Cow;
 use crate::util::time::Instant;
+use std::borrow::Cow;
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
@@ -458,8 +458,8 @@ pub(crate) fn shuttered_column(panel: RightPanelRects) -> Vec<ColumnDraw> {
 /// (`0x0061595E..0x0061597E`) centers the shape only along an axis where the
 /// window is larger, and the window clips it.
 ///
-/// `scale` is the layout's stretch: the shape grows with the window it was
-/// laid out into, then keeps the same center-and-clip rule. `ShellScale::RETAIL`
+/// `scale` is the layout's stretch: center and clip in authored pixels first,
+/// then map the resulting rectangle with the static panel artwork. `ShellScale::RETAIL`
 /// reproduces the native 1:1 draw exactly.
 pub fn paint_warning_monitor(
     atlas: &MainMenuShellChromeAtlas,
@@ -468,7 +468,34 @@ pub fn paint_warning_monitor(
     scale: ShellScale,
 ) -> Option<SpriteInstance> {
     let entry = *atlas.warning_monitor_frames.get(frame)?;
-    paint_kind4_static(entry, monitor, scale)
+    paint_scaled_warning_monitor(entry, monitor, scale)
+}
+
+fn paint_scaled_warning_monitor(
+    entry: MainMenuShellChromeEntry,
+    monitor: RectPx,
+    scale: ShellScale,
+) -> Option<SpriteInstance> {
+    // 0x0061595E..0x0061597E truncates the native half-gap before drawing.
+    // Centre in authored pixels, then scale with the static panel artwork.
+    // Re-centering a 92-wide shape in the scaled 93-wide window adds a pixel
+    // at 2x, making the animation shift relative to the baked-in monitor.
+    // Below 1x, rounded device edges cannot recover the authored window.
+    // Keep the existing downscaled path rather than inventing lost pixels.
+    if scale.factor() < 1.0 {
+        return paint_kind4_static(entry, monitor, scale);
+    }
+    let native_window = scale.base_rect(monitor);
+    let mut sprite = paint_kind4_static(entry, native_window, ShellScale::RETAIL)?;
+    let drawn = scale.scale_rect(RectPx::new(
+        sprite.position[0] as i32,
+        sprite.position[1] as i32,
+        sprite.size[0] as i32,
+        sprite.size[1] as i32,
+    ));
+    sprite.position = [drawn.x as f32, drawn.y as f32];
+    sprite.size = [drawn.w as f32, drawn.h as f32];
+    Some(sprite)
 }
 
 /// The native kind-4 STATIC's centre-and-clip placement of one SHP frame in
@@ -837,7 +864,7 @@ fn push_skirmish_entry(
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::ui::shell::geom::RIGHT_PANEL_WIDTH;
@@ -911,6 +938,45 @@ mod tests {
         assert_eq!(stretched.size, [336.0, 46.0]);
         assert_eq!(stretched.uv_size, retail.uv_size);
         assert_eq!(stretched.uv_origin, retail.uv_origin);
+    }
+
+    #[test]
+    fn warning_monitor_centers_before_integer_upscaling() {
+        // Native 0x71C window and SDWRNANM canvas: x half-gap truncates to
+        // zero, y half-gap is one (0x0061595E..0x0061597E).
+        let window = RectPx::new(670, 47, 93, 55);
+        let entry = fake_entry(92.0, 53.0);
+        let retail = paint_scaled_warning_monitor(entry, window, ShellScale::RETAIL).unwrap();
+        assert_eq!(retail.position, [670.0, 48.0]);
+        let scale = ShellScale::from_screen(1600, 1200);
+        let scaled = paint_scaled_warning_monitor(entry, scale.scale_rect(window), scale).unwrap();
+        assert_eq!(scaled.position, [1340.0, 96.0]);
+        assert_eq!(scaled.size, [184.0, 106.0]);
+    }
+
+    #[test]
+    fn warning_monitor_preserves_retail_640_and_downscaled_placement() {
+        let entry = fake_entry(92.0, 53.0);
+        let retail =
+            paint_scaled_warning_monitor(entry, RectPx::new(510, 47, 93, 55), ShellScale::RETAIL)
+                .unwrap();
+        assert_eq!(retail.position, [510.0, 48.0]);
+        let scale = ShellScale::from_screen(400, 300);
+        let window = scale.scale_rect(RectPx::new(670, 47, 93, 55));
+        let old = paint_kind4_static(entry, window, scale).unwrap();
+        let new = paint_scaled_warning_monitor(entry, window, scale).unwrap();
+        assert_eq!(new.position, old.position);
+        assert_eq!(new.size, old.size);
+    }
+
+    #[test]
+    fn warning_monitor_edges_follow_fractional_letterboxed_panel_scaling() {
+        let scale = ShellScale::from_screen(1920, 1080);
+        let window = scale.scale_rect(RectPx::new(670, 47, 93, 55));
+        let sprite = paint_scaled_warning_monitor(fake_entry(92.0, 53.0), window, scale).unwrap();
+        assert_eq!(sprite.position, [1446.0, 86.0]);
+        // Round the authored right/bottom edges, not the size separately.
+        assert_eq!(sprite.size, [166.0, 96.0]);
     }
 
     /// `ShellScale::RETAIL` leaves the monitor at its native shape, centre-and-clip

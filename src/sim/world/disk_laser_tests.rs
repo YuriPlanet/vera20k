@@ -719,16 +719,15 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
         return;
     };
     let rules = retail.rules;
-    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let source = sim
-        .spawn_object_with_overlay_registry("DISK", "Americans", 10, 10, 64, &rules, &registry)
+        .spawn_object_with_map_overlays("DISK", "Americans", 10, 10, 64, &rules)
         .expect("stock DISK enters through the ordinary constructor");
     let target = sim
         // Six cells preserves this witness's unrocked source; the MTNK's
         // five-cell weapon cannot counterfire. The first RED used four cells.
-        .spawn_object_with_overlay_registry("MTNK", "Russians", 16, 10, 0, &rules, &registry)
+        .spawn_object_with_map_overlays("MTNK", "Russians", 16, 10, 0, &rules)
         .expect("full-health stock MTNK");
     sim.resolve_type_handles(&rules);
     let health = sim.substrate.entities.get(target).unwrap().health.current();
@@ -743,11 +742,7 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
     );
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources {
-            rules,
-            overlay_registry: registry,
-            ..SimResources::empty()
-        },
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     let mut commands = vec![command];
     for frame in 0..300 {
@@ -786,9 +781,9 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
 /// DISK's hit always asks for the warhead's flash, and with
 /// `[AudioVisual] DiskLaserAnimEnabled=yes` also plays DiskWH's damage
 /// animation (90 damage selects XGRYMED1).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for enabled in [false, true] {
         let patch = crate::rules::ini_parser::IniFile::from_str(if enabled {
             "[AudioVisual]\nDiskLaserAnimEnabled=yes\n"
@@ -804,15 +799,13 @@ fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
         let mut rules = retail.rules;
         // The anim's SHP binding comes from the asset loader in the game.
         rules.bind_anim_frame_count_for_test("XGRYMED1", 10);
-        let registry =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         let source = sim
-            .spawn_object_with_overlay_registry("DISK", "Americans", 10, 10, 64, &rules, &registry)
+            .spawn_object_with_map_overlays("DISK", "Americans", 10, 10, 64, &rules)
             .unwrap();
         let target = sim
-            .spawn_object_with_overlay_registry("MTNK", "Russians", 16, 10, 0, &rules, &registry)
+            .spawn_object_with_map_overlays("MTNK", "Russians", 16, 10, 0, &rules)
             .unwrap();
         sim.resolve_type_handles(&rules);
         let health = sim.substrate.entities.get(target).unwrap().health.current();
@@ -827,11 +820,7 @@ fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
         );
         let mut runtime = SimRuntime {
             simulation: sim,
-            resources: SimResources {
-                rules,
-                overlay_registry: registry,
-                ..SimResources::empty()
-            },
+            resources: std::sync::Arc::new(SimResources::new(rules)),
         };
         let mut commands = vec![command];
         let mut flashed = false;

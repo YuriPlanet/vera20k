@@ -1052,12 +1052,22 @@ pub(crate) fn render_wol_page(
         text.extend(my_info.texts);
         text.extend(my_info.popup_texts);
     }
-    if let (Some(atlas), Some(options)) = (controls_atlas, options_children) {
+    if let (Some(atlas), Some(mut options)) = (controls_atlas, options_children) {
         draws.push(TexturedDraw {
             texture: &atlas.texture,
             instances: options.controls,
         });
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: options.popup,
+        });
+        if let Painted::Options(layout) = &painted
+            && let Some(list) = options_page.and_then(|page| page.ui.translate_popup(layout))
+        {
+            hide_glyphs_under(&mut options.texts, list.rect);
+        }
         text.extend(options.texts);
+        text.extend(options.popup_texts);
     }
     if let (Some(atlas), Some(mut lobby)) = (controls_atlas, lobby_children) {
         draws.push(TexturedDraw {

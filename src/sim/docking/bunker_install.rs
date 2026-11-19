@@ -126,7 +126,7 @@ pub(crate) fn update_bunker(
         .substrate
         .entities
         .get(building_id)
-        .and_then(|b| b.bunker_runtime.map(|rt| rt.state))
+        .and_then(|b| b.building.bunker_runtime.map(|rt| rt.state))
     else {
         return;
     };
@@ -216,7 +216,7 @@ fn bunker_partner(sim: &Simulation, building_id: u64) -> Option<u64> {
 
 fn set_state(substrate: &mut ObjectSubstrate, building_id: u64, state: BunkerState) {
     if let Some(b) = substrate.entities.get_mut(building_id)
-        && let Some(rt) = b.bunker_runtime.as_mut()
+        && let Some(rt) = b.building.bunker_runtime.as_mut()
     {
         rt.state = state;
     }
@@ -371,7 +371,7 @@ fn start_install_force_track(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
@@ -415,7 +415,7 @@ mod tests {
             5,
             false,
         );
-        ge.bunker_runtime = Some(BunkerRuntime::idle());
+        ge.building.bunker_runtime = Some(BunkerRuntime::idle());
         sim.substrate.entities.insert(ge);
     }
 
@@ -453,6 +453,7 @@ mod tests {
             .entities
             .get(id)
             .unwrap()
+            .building
             .bunker_runtime
             .unwrap()
     }

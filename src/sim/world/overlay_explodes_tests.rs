@@ -8,10 +8,11 @@ use crate::sim::projectile::ProjectileCoord;
 fn scene() -> Option<(Simulation, RuleSet)> {
     // Ares 3.0 1002C8E0 (hook 0x48A2D9) keeps an Explodes overlay below
     // [General] OverlayExplodeThreshold (0); -1 keeps the stock outcomes.
-    #[cfg(feature = "ares")]
-    return scene_with("[General]\nOverlayExplodeThreshold=-1\n");
-    #[cfg(not(feature = "ares"))]
-    scene_with("")
+    scene_with(if crate::rules::ares_switch::ares_way() {
+        "[General]\nOverlayExplodeThreshold=-1\n"
+    } else {
+        ""
+    })
 }
 
 fn scene_with(patch: &str) -> Option<(Simulation, RuleSet)> {
@@ -248,6 +249,11 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
         )
         .unwrap();
     let overlay = rock(&mut sim, &rules, neighbor);
+    // Coord49F550 keeps the barrel's height above ground on the raised
+    // neighbor: Z 0 - ground 0 + ground at level 2 (208).
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let index = terrain.index(neighbor.0, neighbor.1).unwrap();
+    terrain.cells_mut_for_test()[index].level = 2;
     assert!(rules.object("CAMISC02").unwrap().explodes);
     assert!(
         rules
@@ -284,7 +290,7 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
         crate::sim::anim_class::AnimWorldCoord {
             x: 13 * 256 + 128,
             y: 12 * 256 + 128,
-            z: 0
+            z: 208
         }
     );
     assert_eq!(fire.draw_flags(), 0x600);
@@ -333,7 +339,7 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
         sim.resolved_terrain(),
     );
     let position = glam::IVec3::new(coord.x, coord.y, coord.z);
-    sim.emit_debris_voxel(type_id, kind, None, position, true, &mut Vec::new())
+    sim.emit_debris_voxel(type_id, kind, None, position, true, &mut Vec::new(), &rules)
         .unwrap();
     let piece = sim.voxel_anims().ids()[0];
     let warhead = sim.interner.intern("TankOGas");
@@ -396,9 +402,9 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
 
 /// Ares 3.0 1002C8E0 (hook 0x48A2D9): an Explodes overlay blows up only from
 /// `damage >= [General] OverlayExplodeThreshold`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_overlay_explode_threshold_gates_the_explodes_tail() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((mut sim, rules)) = scene_with("[General]\nOverlayExplodeThreshold=50\n") else {
         return;
     };

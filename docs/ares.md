@@ -1,21 +1,52 @@
-# Optional Ares compatibility
+# Ares compatibility
 
-VERA20K can build in partial, Rust-native support for some Ares extensions. It does not load the
+VERA20K has partial, Rust-native support for some Ares extensions. It does not load the
 Ares DLL and is not general mod support.
 
-Default builds use the retail readers and dispatch; an INI or client setting cannot enable omitted
-extensions. Build the supported extensions explicitly:
+Every build holds all the Ares support VERA20K has; no build option is needed. Ares
+switches on from a game's data: a game whose rules or map hold an Ares
+key plays with Ares, and any other game plays as the original (`src/rules/ares_switch.rs`).
+The player's [Ares setting](#the-ares-setting) can turn it on or off for every game instead.
 
-```sh
-cargo run --release --bin vera20k --features ares
-```
+With **No mod** selected, `ares.mix` in the installation is
+ignored (unless the [Ares setting](#the-ares-setting) is On), so an Ares installation can
+play the original game without moving files.
+A selected mod can use its own `ares.mix` or the installation's copy. Every build
+mounts it for that mod and reads the game the Ares way: its INIs load with Ares' syntax (`+=`
+keys, `[Child]:[Base]` sections, a later key winning) and `[#include]`, its Rules are read
+with every Ares key VERA20K reads, Ares' sound bags and string tables are added, and the
+whole simulation, the Country loading screen, the sidebar, superweapon targeting, the HUD's
+markers, the flying credits, `IvanBomb.Image`, messages and sounds, the skirmish shell's random
+countries and flags, the random map generator and the spawn file's Country and Side limits
+take their Ares form. A game with Ares keys but no `ares.mix` is
+read the stock way and plays only the world, unit and combat parts and the sidebar's Ares
+behaviour (no cameo limit, Ares' cameo order, Shift-click queuing five, `EnemyUIName`) with
+the original sidebar art, so it can play unlike both the original and Ares: a mod that needs Ares ships `ares.mix`, as Ares mods do.
 
-Ares builds identify themselves in the window title and startup log. Saves retain the build
-capability and cannot load in another capability combination, even with identical retail INIs.
+## The Ares setting
 
-Ares is one of three orthogonal capabilities: it combines with `phobos` and `npatch`
-(`--features ares,phobos,npatch`), and every implemented feature must keep working when the others
-are compiled in. The rule and the pattern for two extensions touching one native site are in
+**Options → Game Options → Ares** (`[VERA] Ares=` in VERA.INI) chooses how a start
+treats Ares. Like the mod, it is read at start and holds until the next one:
+
+| Setting | What it does |
+| --- | --- |
+| **Auto** (default) | As above: the game's data decides. A selected mod that ships `ares.mix` makes an Ares game; Ares keys in its rules, mode or map turn Ares on. |
+| **On** | Every game is an Ares game, as if its mod shipped `ares.mix`: its INIs load with Ares' syntax and `[#include]`, its Rules are read the Ares way, and Ares plays, the original game too. The installation's `ares.mix` mounts even with **No mod**, so a map alone can use all of this. |
+| **Off** | No game is an Ares game: `ares.mix` stays unmounted, even a mod's own, and no Ares key turns Ares on. |
+
+With On, the original game plays unlike gamemd wherever Ares itself does, such as the
+[gameplay bugfixes](ares-bugfixes.md). A `-SPAWN` launch file's `[Settings] Ares=Auto|On|Off`
+replaces the setting for that launch, and `vera20k --probe --ares <setting>` reports
+the digest such a launch is checked against. Players whose settings differ cannot start
+a network match together ([Networking](Networking.md#room-rules)); a save keeps the
+answer it was started with.
+
+A save records no Ares capability; a save from an older build with the retired `ares`
+feature does not load.
+
+Ares combines with the `phobos` and `npatch` build features, and every implemented feature
+must keep working when they are compiled in. The rule and the pattern for two extensions
+touching one native site are in
 [NPatch placeholder](npatch.md#cross-extension-compatibility).
 
 For ordinary selected-map offline loading, Ares Country loading fields are read
@@ -29,33 +60,40 @@ Campaign, observer and generated-map presentation retain their existing paths;
 country row flags and status use the country presentation chain, and this
 support does not certify whole-frame parity.
 
-For offline CnCNet campaign launches, both builds pass the client's explicit `Scenario`
+For offline CnCNet campaign launches, every game passes the client's explicit `Scenario`
 independently of campaign record 0, as the upstream spawner's
 `StartScenario(ScenarioName, 1, 0)` call does. The retained first record supplies its real CD,
 final movie and continuation identity even when its authored Scenario differs. `CampaignID`
 and `Side` do not select a retail array entry; an empty catalog fails before reading the seed.
-Ares builds additionally accept byte-wide campaign `Side` metadata, while default builds
-retain their existing Side 0/1 admission. This does not change named campaigns in VERA's menu.
+A game read the Ares way also accepts byte-wide campaign `Side` metadata, while any other
+game keeps the Side 0/1 admission. This does not change named campaigns in VERA's menu.
 The [native prefix controls](../tools/input_oracle/campaign_start_prefix.md) demonstrate
 filename/index/CD independence; they do not certify the installed legacy mod spawner,
 complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ordinary ground and tower EMP](ares-emp.md) (bounded human Drive/Walk, unteamed AI Drive and independent powered defensive buildings;
-  team members, spawners and Fly/Jumpjet victims follow in [warhead residuals](ares-warhead-residuals.md))
+- [Ground, airborne and building EMP](ares-emp.md) (every Foot mover but Tunnel, human or AI,
+  miners, falling and mind-controlled victims, every EMP-prone building with its factory, gap,
+  superweapon, PowersUnit, clone, Prism and undeploy effects, the Tank Bunker exemption,
+  and the player's miner and base warnings; team members and spawners in
+  [warhead residuals](ares-warhead-residuals.md))
 - [Water and land type conversion](../src/sim/game_entity/type_conversion.rs):
   `Convert.Water` applies over water or beach; `Convert.Land` applies over land
   and bridges. It uses the same in-place conversion owner as script action 68,
   preserves the object identity and ignores a target equal to the current type.
 - [Custom armor](ares-custom-armor.md)
 - [Supplemental string tables](../tools/rules_oracle/ares_csf.md), shared by
-  game loading and default `asset csf-get` / `csf-grep` queries.
+  game loading and default `asset csf-get` / `csf-grep` queries (`--ares On` for
+  an Ares game).
 - [Per-type SHP building palettes](ares-building-palettes.md)
 - [PCX sidebar icons](ares-pcx-cameos.md) (`CameoPCX`, `AltCameoPCX`, `SidebarPCX`)
 - [EVA voice tags and Side selection](ares-eva.md)
 - [Per-type promotion sounds](ares-promotion-sounds.md)
   (`Promote.VeteranSound`, `Promote.EliteSound`)
+- [Subterranean dig effects](ares-subterranean.md) (`DigIn`, `DigOut`,
+  `DigInSound`, `DigOutSound`) on the stock Tunnel locomotor, which every
+  build ports for mods that select it
 - [Finite infantry ammo](../src/sim/ammo.rs): Ares' Infantry reload dispatch
   runs through the shared Techno reload owner before the scatter/fire suffix,
   and per-weapon `Ammo` shares one count across admission, debit and reload
@@ -76,7 +114,8 @@ Supported extensions:
   `MenuText.Status`, `File.Taunt`, `ListIndex`, random/AI selection weights,
   ParentCountry inheritance, and the shell/Co-Op flag and status consumers.
   Observer art is retained but has no renderer yet.
-- [Country paradrop overrides](ares-country-paradrop.md): `ParaDrop.Types`,
+- [Paradrop overrides](ares-country-paradrop.md): the superweapon's own
+  `ParaDrop.*` planes (vehicles too), then the country's `ParaDrop.Types`,
   `.Num`, `.Aircraft` and `Parachute.Anim` in front of the SideExt values.
 - [Country AI power plants](ares-country-powerplants.md): `AI.PowerPlants=`
   and the draw among the plants the AI can build when it splices one.
@@ -94,17 +133,17 @@ Supported extensions:
   Operator updates remain outside this path.
   Per-type `Survivor.*`, `Crew.TechnicianChance`, `Crew.EngineerChance` and nullable
   aircraft `Crashable` share the existing crew and placement owners. These paths
-  require `ares`; loading INI settings cannot activate them in a default build.
+  run when the game plays Ares.
 - [Extended IFV modes](../src/rules/gunner_turrets.rs): Gunner vehicles read
   `WeaponCount` beyond the original eighteen slots, including normal/elite weapons,
   ART firing offsets and `WeaponTurretIndexN` mappings. `WeaponUINameN` supplies
-  the current mode's full tooltip name. Default builds retain the original bound
+  the current mode's full tooltip name. Other games retain the original bound
   and FV-only mapping. Barrel geometry and `TurretLocked` retain their separate
   support limits documented in the [firing-offset owner](../src/rules/weapon_offsets.rs).
 - [Type selection groups](https://ares-developers.github.io/Ares-docs/new/typeselect.html):
   retained `GroupAs` keys share type IDs' case-insensitive namespace in T tap,
   held-T click/band and additive removal. `General/TypeSelectUseDeploy` controls
-  automatic deployed-form seeds. Without `ares`, both tags are ignored and
+  automatic deployed-form seeds. In a game without Ares, both tags are ignored and
   retail selection remains active.
 - [NoManualFire](../src/app/input/context_order.rs) blocks ordinary manual attacks;
   C4 and infiltration remain incomplete.
@@ -115,8 +154,8 @@ Supported extensions:
 - [GenericWarhead](ares-generic-warhead.md)
 - [Kill bounties](../src/sim/bounty.rs): `Bounty`, rank-specific `Bounty.Value`
   overrides, `GivesBounty`, on-map `BountyEnablers`, signed wallet changes and
-  optional floating credit labels. All readers, state and display hooks are
-  compiled only with `ares`; default builds keep the retail kill path.
+  optional floating credit labels. They run when the game plays Ares; other games
+  keep the retail kill path.
 - [HunterSeeker launch and initial target acquisition](ares-hunter-seeker.md)
 - [House survival](ares-house-survival.md)
 - [Superweapon building gates](ares-superweapon-building-gates.md)
@@ -152,8 +191,8 @@ Supported extensions:
   `CloningFacility`.
 - [Ivan bombs, abductors and weapon extras](ares-ivan-bomb-abductor.md):
   `IvanBomb.*` from the planting weapon, `Abductor.*` with `ImmuneToAbduction`,
-  `ApplyDamage` and `ProjectileRange`. The player's Detonate action
-  (`IvanBomb.CanDetonate*`) and `Cursor.Attack*` remain outside this chain.
+  `ApplyDamage`, `ProjectileRange` and the player's Detonate
+  (`IvanBomb.CanDetonate*`). `Cursor.Attack*` remains outside this chain.
 - [Building types](ares-building-types.md): advanced rubble (`Rubble.*`),
   `EngineerRepairable`, urban combat and raidable garrisons (`UC.*`,
   `Bunker.Raidable`, `CanBeOccupiedBy`), `IsPassable`, `EngineerDamage`,
@@ -165,8 +204,7 @@ Supported extensions:
   passive acquisition, `CivilianEnemy`, damage smoke and sparks,
   `CrashSpin`, `PassengerTurret`, self-healing rates and combat delay, fall
   rates, `AirRate`, `NoManualUnload`/`NoManualEnter`, the Desolator, cow and
-  bomb roles, drain keys and building reload. Carryall totes remain outside
-  this chain.
+  bomb roles, drain keys and building reload.
 - [Superweapon retail types](ares-superweapon-types.md): Ares handlers for
   the Chronosphere and ChronoWarp (`Chronosphere.*`, `Chronoshift.*`), Nuke
   (`Nuke.*`, `NukeFlash.Duration`, `PreImpactAnim`), Psychic Dominator
@@ -208,8 +246,8 @@ Supported extensions:
   ported, presentation, equivalent or not applicable, including the Find-only
   type-list readers (a list name no registry holds is dropped).
 - [Anim and particle extensions](ares-anim-particles.md): `Damage.Delay`, the anim
-  `Weapon`, `SpawnsParticle.Range*` and gas `DamageRange`. Ares' own particle-system
-  simulation remains outside this chain.
+  `Weapon`, `SpawnsParticle.Range*`, gas `DamageRange` and ParticleSystemExt, Ares'
+  own Smoke, Spark and Railgun simulation and its after-Air draw.
 - [Remaining Techno hooks](ares-techno-hooks.md) and
   [Building, House, Infantry and SWType hooks](ares-building-house-hooks.md): per-hook
   dispositions, including healers, gap and spotlight hooks, rank immunities, the
@@ -237,7 +275,11 @@ Supported extensions:
   `SpyEffect.UndoReverseEngineer`, `UnitSell`/`Unsellable` sales on a depot,
   the ProduceCash rework with `ProduceCashDisplay`, and `SecretLab.*`.
 - [Transports and payloads](ares-transports.md): `InitialPayload.*`,
-  `Convert.Deploy` and Hospital/Armory eviction on sale and capture.
+  `Convert.Deploy`, Hospital/Armory eviction on sale and capture, Carryall
+  totes (`Carryall.Allowed`, `Carryall.SizeLimit` and the 3.0 drop hooks),
+  `Passengers.Allowed`/`.Disallowed` on aircraft transports, and
+  `Assaulter.Level` over the stock assault
+  ([dormant-stock-rules.md](dormant-stock-rules.md#assaulters)).
 - [Warhead, AI and techno residuals](ares-warhead-residuals.md): airborne
   victims of the curtain, EMP and AttachEffect, PoweredBy team, spawn and slave
   updates, `TeamRetaliate`, `AIInnerBase`, `EVA.Lost`, EMP on Fly and Jumpjet
@@ -247,10 +289,16 @@ Supported extensions:
   loader hooks are deferred.
 - [Radiation types](ares-radiation.md): Ares 3.0 never loads `[RadiationTypes]`;
   its snow-theater hook is the only live radiation hook.
+- [Random-map generator](ares-rmg.md): Archipelago and Desert in the dialog, the
+  Urban Areas box and Surprise Me, `GenerateUrbanAreas` and the `[Urban]` lists,
+  urban areas with roads, buildings, foots and plazas, and the bridge, road-end
+  and `Medians` fixes.
 - [Hooks skipped on purpose](ares-skipped-hooks.md) and
   [remaining work](ares-remaining.md).
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
+- [INI syntax](ares-ini-syntax.md): `+=` keys, `[Child]:[Base]` sections and later-wins
+  repeated keys in every INI load, with included files loaded into the INI that lists them.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
 
 ## VERA20K porting credits
@@ -300,7 +348,7 @@ the merged pull requests that carried each chain:
 VERA20K is an independent Rust reimplementation. It does not load `Ares.dll` or
 redistribute Ares binaries. The supported behavior follows the
 [Ares 3.0 documentation](https://ares-developers.github.io/Ares-docs/), the
-installed DLL and Ares' source code. Parts of the `ares` build are translated
+installed DLL and Ares' source code. Parts of VERA20K's Ares support are translated
 from that source, including source restored from the Ares 3.0 DLL, and keep
 Ares' copyright notice and
 [license](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/Ares.txt).

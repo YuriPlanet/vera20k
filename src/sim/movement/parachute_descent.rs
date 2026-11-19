@@ -116,6 +116,8 @@ impl crate::sim::world::Simulation {
                     self.interner
                         .try_resolve(entity.type_ref())
                         .and_then(|_| self.interner.object_type(entity.type_ref(), rules)),
+                    rules.ares(),
+                    rules.ares_form(),
                 );
             }
         }
@@ -133,14 +135,7 @@ impl crate::sim::world::Simulation {
             && let Some(layer) = new_layer
         {
             //5F4001..5F400E: resubmit only when the live layer changed.
-            Self::submit_object_display(
-                &self.interner,
-                &self.terrain_objects,
-                &mut self.substrate,
-                id,
-                layer,
-                rules,
-            );
+            Self::submit_object_display(&mut self.substrate, id, layer);
         }
         if let Some(health) = self
             .substrate
@@ -483,19 +478,21 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         owner_id: u64,
     ) -> Option<crate::sim::anim_class::AnimId> {
+        let owner = self.substrate.entities.get(owner_id)?;
+        let object = self.interner.try_resolve(owner.type_ref()).and_then(|_| {
+            self.interner
+                .object_type_in_category(owner.type_ref(), owner.category().into(), rules)
+        });
         // Ares 3.0 10047C60 (hook 0x5F5ADD), before the canopy type: an
         // `IsBomb` Foot sets IsABomb (+8F), so it lands as a bomb.
-        #[cfg(feature = "ares")]
-        if let Some(owner) = self.substrate.entities.get(owner_id)
+        if rules.ares_form()
             && owner.category().is_foot()
-            && self
-                .interner
-                .try_resolve(owner.type_ref())
-                .and_then(|_| self.interner.object_type(owner.type_ref(), rules))
-                .is_some_and(|object| object.techno_combat().roles().is_bomb())
-            && let Some(owner) = self.substrate.entities.get_mut(owner_id)
+            && object.is_some_and(|object| object.techno_combat().roles().is_bomb())
         {
-            owner.mark_parachuted_bomb();
+            self.substrate
+                .entities
+                .get_mut(owner_id)?
+                .mark_parachuted_bomb();
         }
         let owner = self.substrate.entities.get(owner_id)?;
         let owner_house = owner.owner();
@@ -509,7 +506,7 @@ impl crate::sim::world::Simulation {
             .get(&owner_house)
             .and_then(|house| house.country())
             .map(|country| self.interner.resolve(country));
-        let Some(canopy) = parachute_anim_name(rules, owner, side, country) else {
+        let Some(canopy) = parachute_anim_name(rules, owner, object, side, country) else {
             self.substrate
                 .entities
                 .get_mut(owner_id)?
@@ -537,9 +534,7 @@ impl crate::sim::world::Simulation {
                 // the Anim owner. Keep a single held identity, not a type scan.
                 self.substrate
                     .entities
-                    .write_held_anim(owner_id, |owner, authority| {
-                        owner.hold_parachute_animation(anim_id, authority)
-                    })?;
+                    .hold_parachute_animation(owner_id, anim_id)?;
                 self.set_anim_owner_object(anim_id, Some(owner_id), rules);
                 // Native Paradrop calls SetOwnerObject, then GetRemapColour
                 // through the owner's vtable and stores that ConvertClass at
@@ -600,14 +595,25 @@ impl crate::sim::world::Simulation {
 /// (`ObjectClass::Paradrop`'s hook `0x5F5ADD` -> cave `0xC2B0E4`:
 /// `0xC2FA75..0xC2FA8A`). The cave's first arm sends an object whose type
 /// has NPSE's `IsBomb=` flag to `BombParachute=` (`0xC2B0FC..0xC2B103`);
-/// VERA has no parachuted bombs and no `IsBomb=` type flag yet, so that arm
-/// stays native-only.
+/// The NPSE-specific `BombParachute=` selection remains a residual.
 fn parachute_anim_name<'r>(
     rules: &'r crate::rules::ruleset::RuleSet,
     entity: &crate::sim::game_entity::GameEntity,
+    object: Option<&'r crate::rules::object_type::ObjectType>,
     side: i32,
     country: Option<&str>,
 ) -> Option<&'r str> {
+    // ObjectClass_SpawnParachuted_Animation (installed Ares 3.0 DLL10047C60),
+    // hook5F5ADD replaces `mov edx,[ecx+0xBBC]`
+    // and resumes5F5AE3 with the chosen type in EDX. Foot types take
+    // TechnoTypeExt+F0 before Country's GetParachuteAnim1001BBC0.
+    if rules.ares()
+        && entity.category().is_foot()
+        && let Some(canopy) =
+            object.and_then(|object| object.techno_combat().presentation().parachute_anim())
+    {
+        return Some(canopy);
+    }
     // `GetParachuteAnim @ 0x1001BBC0` answers the country's own
     // `[Country] Parachute.Anim=` first; a never-set or `none` field is the
     // null pointer there and defers to the side.
@@ -620,12 +626,6 @@ fn parachute_anim_name<'r>(
     // NPSE non-infantry branch; an unset key leaves that existing owner, and
     // `none` falls through to `Find("PARACH")`
     // (`HouseTypeExt::GetParachuteAnim @ 0x1001BBC0`).
-    //
-    // RESIDUAL (Ares): the canopy hook `0x5F5ADD` -> `0x10047C80` first takes
-    // the dropped type's own `Parachute.Anim` (TechnoTypeExt `+0xF0`), before
-    // the Country layer above; VERA does not read that type key. Trigger: a
-    // mod setting it. Effect: another canopy art; no gameplay change. Never
-    // on retail data.
     if let Some(override_) = rules.side_parachute_override(side) {
         return Some(override_.unwrap_or("PARACH"));
     }
@@ -729,6 +729,8 @@ impl crate::sim::world::Simulation {
                     self.interner
                         .try_resolve(entity.type_ref())
                         .and_then(|_| self.interner.object_type(entity.type_ref(), rules)),
+                    rules.ares(),
+                    rules.ares_form(),
                 );
             }
             return false;
@@ -745,7 +747,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod canopy_tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;
@@ -918,9 +920,9 @@ mod canopy_tests {
 
     /// Ares `HouseTypeExt::GetParachuteAnim @ 0x1001BBC0`: a Side's explicit
     /// `Parachute.Anim=none` falls back to `PARACH`, not to no canopy.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_side_parachute_none_falls_back_to_parach() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(
             "[General]\nParachute=OTHER\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
              [Fourth]\nParachute.Anim=none\n",
@@ -930,7 +932,7 @@ mod canopy_tests {
         let rules = RuleSet::from_processed_rules(&processed).expect("side projection");
         let entity = GameEntity::test_default(1, "E1", "Americans", 10, 11);
         assert_eq!(
-            parachute_anim_name(&rules, &entity, 3, None),
+            parachute_anim_name(&rules, &entity, None, 3, None),
             Some("PARACH")
         );
     }

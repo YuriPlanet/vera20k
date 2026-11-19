@@ -156,6 +156,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .set_side_index_for_test(input["side"].as_i64().unwrap() as i32);
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     building
+        .building
         .has_been_captured
         .set_for_test(input["captured"] == true);
     building
@@ -163,7 +164,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .set_selected_for_test(input["selected"] == true);
     let mut passengers = Vec::new();
     if let Some(names) = input["passengers"].as_array() {
-        building.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
+        building.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(5, 0.0)));
         for name in names {
             let id = sim
                 .construct_object_limbo_at_height(
@@ -177,8 +178,11 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                     crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
-            sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-                PassengerRole::inside_for_test(refinery, false);
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .set_passenger_role_for_test(PassengerRole::inside_for_test(refinery, false));
             passengers.push(id);
         }
         // AddPassenger prepends: the list's head is the first passenger.
@@ -187,7 +191,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                 .entities
                 .get_mut(refinery)
                 .unwrap()
-                .passenger_role
+                .passenger_role_mut_for_test()
                 .cargo_mut()
                 .unwrap()
                 .board_forced_chain(&[(id, 1.0)]);
@@ -243,7 +247,7 @@ fn compare_infantry(s: &SlaveScene, id: u64, expected: &Value, context: &str) {
 #[test]
 fn sale_stage_one_matches_the_original_survivors_and_sounds() {
     // Stock oracle; Ares replaces Building and Techno GetCrew (44EB10, 707D20).
-    if cfg!(feature = "ares") {
+    if crate::rules::ares_switch::ares_way() {
         return;
     }
     let corpus = corpus();
@@ -362,7 +366,7 @@ fn replay_crew_row(row: &Value) {
     );
     assert_eq!(
         building
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map_or(0, |cargo| i64::from(cargo.count())),
         row["building"]["passengers"].as_i64().unwrap(),

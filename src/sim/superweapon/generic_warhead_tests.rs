@@ -61,6 +61,7 @@ fn common_presentation_rules(layers: &RulesLayerStack) -> RuleSet {
 
 #[test]
 fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = common_presentation_rules(&common_presentation_layers("none"));
     assert!(
         crate::rules::effect_asset_catalog::anim_class_roots(&rules)
@@ -116,6 +117,7 @@ fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
 /// keeps the earlier layer's mask; unset AI masks use the Offensive row.
 #[test]
 fn ares_target_masks_keep_prior_layers_on_native_parse_failures() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::superweapon_targeting::{HouseMask, TargetMask, TargetRequirements};
     let mut layers = common_presentation_layers("all");
     layers.push(
@@ -164,6 +166,7 @@ fn ares_target_masks_keep_prior_layers_on_native_parse_failures() {
 /// mode for a name outside its table.
 #[test]
 fn ares_ai_targeting_initializes_once_and_keeps_prior_layers_on_unknown_names() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = common_presentation_layers("all");
     layers.push(
         RulesLayerKind::GameMode,
@@ -195,6 +198,7 @@ fn ares_ai_targeting_initializes_once_and_keeps_prior_layers_on_unknown_names() 
 
 #[test]
 fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = common_presentation_layers("team");
     layers.push(
         RulesLayerKind::GameMode,
@@ -274,6 +278,7 @@ fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
 
 #[test]
 fn ares_common_launch_visibility_snapshots_alliances_and_uniform_writes_replace_it() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = common_presentation_rules(&common_presentation_layers("team"));
     let (mut sim, rules, owner, typ, _) = fixture_with_rules(rules, "Russians");
     let enemy = sim.interner.get("Americans").unwrap();
@@ -370,6 +375,7 @@ fn fire(
 
 #[test]
 fn designation_requires_own_unit_and_includes_the_range_boundary() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::superweapon_targeting::TargetReject;
     let (mut sim, rules, owner, sw, _) = fixture(
         "[VehicleTypes]\n0=SCOUT\n[SCOUT]\nStrength=100\nSight=7\nDesignatorRange=3\n\
@@ -408,6 +414,7 @@ fn designation_requires_own_unit_and_includes_the_range_boundary() {
 
 #[test]
 fn hostile_building_inhibits_only_while_powered_and_within_range() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::superweapon_targeting::TargetReject;
     use crate::sim::power_system::PowerState;
     let (mut sim, rules, owner, sw, target) = fixture(
@@ -444,6 +451,7 @@ fn hostile_building_inhibits_only_while_powered_and_within_range() {
 
 #[test]
 fn designation_rules_retain_nullable_ranges_across_invalid_later_reads() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(
         "[VehicleTypes]\n0=SCOUT\n[SCOUT]\nStrength=100\nDesignatorRange=3\nInhibitorRange=0\n\
          [SuperWeaponTypes]\n0=Strike\n[Strike]\nType=GenericWarhead\n\
@@ -474,6 +482,7 @@ fn designation_rules_retain_nullable_ranges_across_invalid_later_reads() {
 
 #[test]
 fn ares_generic_warhead_binds_unlisted_payload_and_preserves_layered_references() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // No [Warheads] list or WeaponType references Payload: the SW must allocate it.
     let base = IniFile::from_str(RULES);
     let mut layers = RulesLayerStack::new(base);
@@ -517,6 +526,7 @@ fn ares_generic_warhead_binds_unlisted_payload_and_preserves_layered_references(
 
 #[test]
 fn ares_generic_warhead_command_applies_area_damage_and_consumes_charge_once() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) = fixture("", "Russians");
     let far = sim
         .spawn_object_at_height("TARGET", "Americans", 25, 25, 0, 0, &rules)
@@ -537,6 +547,7 @@ fn ares_generic_warhead_command_applies_area_damage_and_consumes_charge_once() {
 
 #[test]
 fn ares_generic_warhead_source_obeys_damage_self() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for damage_self in [false, true] {
         let extra = format!(
             "[LAUNCHER]\nDamageSelf={}\n",
@@ -554,6 +565,7 @@ fn ares_generic_warhead_source_obeys_damage_self() {
 
 #[test]
 fn generic_warhead_source_destruction_keeps_single_charge_cleanup() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for one_time in [false, true] {
         let (mut sim, rules, owner, sw_type, _) = fixture(
             "[Strike]\nSW.Damage=250\n[LAUNCHER]\nDamageSelf=yes\n",
@@ -593,6 +605,7 @@ fn generic_warhead_source_destruction_keeps_single_charge_cleanup() {
 
 #[test]
 fn ares_generic_warhead_ai_offensive_and_none_use_normal_firing() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for mode in ["Offensive", "None"] {
         let (mut sim, rules, owner, sw_type, target) =
             fixture(&format!("[Strike]\nSW.AITargeting={mode}\n"), "Russians");
@@ -620,6 +633,7 @@ fn ares_generic_warhead_ai_offensive_and_none_use_normal_firing() {
 // and RangeGate_UsesLiveSpecificLauncherWithInclusiveBoundaries in ra2-mono.
 #[test]
 fn mono_invalid_preflight_preserves_charge_health_and_observable_effects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for extra in [
         "[Strike]\nSW.RequiresTarget=water\n",
         "[Strike]\nSW.RequiresHouse=owner\n",
@@ -645,6 +659,7 @@ fn mono_invalid_preflight_preserves_charge_health_and_observable_effects() {
 
 #[test]
 fn generic_warhead_range_requires_the_existing_provider_prerequisites() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::superweapon_targeting::TargetReject;
 
     let (mut sim, rules, owner, sw_type, _) = fixture(
@@ -678,6 +693,7 @@ fn generic_warhead_range_requires_the_existing_provider_prerequisites() {
 
 #[test]
 fn mono_range_gate_uses_second_live_launcher_at_inclusive_boundary() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) = fixture(
         "[Strike]\nSW.RangeMinimum=5\nSW.RangeMaximum=5\n",
         "Russians",
@@ -691,6 +707,7 @@ fn mono_range_gate_uses_second_live_launcher_at_inclusive_boundary() {
 
 #[test]
 fn mono_player_and_ai_queries_keep_independent_requirements() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) = fixture(
         "[Strike]\nSW.RequiresHouse=owner\nSW.AIRequiresHouse=enemies\nSW.AIRequiresTarget=buildings\n",
         "Russians",
@@ -718,6 +735,7 @@ fn mono_player_and_ai_queries_keep_independent_requirements() {
 
 #[test]
 fn mono_fire_into_shroud_allows_explored_fog_but_not_never_explored_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) =
         fixture("[Strike]\nSW.FireIntoShroud=no\n", "Russians");
     sim.fog = crate::sim::vision::FogState::new(32, 32);
@@ -732,6 +750,7 @@ fn mono_fire_into_shroud_allows_explored_fog_but_not_never_explored_cell() {
 // VERA has no AttachEffect receiver, so this scene observes ordinary HP damage.
 #[test]
 fn mono_generic_warhead_target_gate_does_not_override_payload_house_filter() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, enemy) = fixture(
         "[Strike]\nSW.AffectsHouse=none\nSW.RequiresHouse=enemies\n[Payload]\nAffectsAllies=no\n",
         "Russians",
@@ -746,6 +765,7 @@ fn mono_generic_warhead_target_gate_does_not_override_payload_house_filter() {
 
 #[test]
 fn ares_generic_warhead_one_time_consumption_survives_snapshot() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, _) = fixture("", "Russians");
     sim.super_weapons
         .map_mut_for_test()
@@ -775,6 +795,7 @@ fn ares_generic_warhead_one_time_consumption_survives_snapshot() {
 /// grant invalidation, and the unavailable building-Anim fallback.
 #[test]
 fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallback_body() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, mut rules, owner, typ, target) = fixture("[Strike]\nSW.Shots=2\n", "Russians");
     let native = crate::test_fixture::json("tools/rules_oracle/ares_super_anims.json");
     let rows = native["availability_history"].as_array().unwrap();

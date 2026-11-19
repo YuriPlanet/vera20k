@@ -51,23 +51,10 @@
 //! with matching zones falls back to the plain A*, and one with differing
 //! zones returns `None`. What is missing:
 //!
-//! - **Two uncommon `allowHS` terms remain unmodelled.** VERA now threads the
-//!   canonical `TechnoClass+0x3D5` byte and applies exact bridge-resolved mode-1
-//!   endpoint membership before admitting hierarchy. It still does not model
-//!   `IsTrain=` (the INI key
-//!   behind `TechnoTypeClass+0xC94`, string `0x008444BC`, stored at
-//!   `0x00712284` — absent from stock `rulesmd.ini`, so this term never fires);
-//!   the `0x004DA1D0` predicate, which — given the other terms already hold at
-//!   the call site — reduces to
-//!   `mover+0x3D4 != 0` **or** current-or-queued mission == Retreat(4) **or**
-//!   (`mover+0x5D4` non-null and `FUN_006EC300`). Player effect: for such a
-//!   mover gamemd runs an unrestricted A*
-//!   and can return a route where VERA answers "unreachable" from the zone map,
-//!   so the unit refuses an order retail accepts. Frequency: a unit on Retreat
-//!   or linked to the remaining team predicate — uncommon in ordinary
-//!   skirmish, but not zero. Team6EC300 can perform mode1 waypoint lookups
-//!   before endpoint membership. Foot's shared outside-playfield owner now
-//!   calls the single Team6EC300 port, backed by Scenario waypoint authority.
+//! - **`IsTrain=` stays unmodelled.** The `allowHS` term for the INI key behind
+//!   `TechnoTypeClass+0xC94` (string `0x008444BC`, stored at `0x00712284`) is
+//!   absent from stock `rulesmd.ini`, so it never fires. The `0x004DA1D0` term
+//!   is `Simulation::foot_search_allows_hierarchy`.
 //! - **Without blocker counts there is no hierarchy search.** The one
 //!   production search, the live Foot search in `movement_tick`, supplies
 //!   blocker counts, and every `ZoneGrid` carries levels 0/1/2. A caller
@@ -399,34 +386,6 @@ fn admit_zone_search<'a>(
     Err(PathSearchFailure::CompatibilityZoneRejected)
 }
 
-/// 429C1A prepares the marker transaction only after 42C900 has admitted
-/// the search; the receiver's transaction, else the caller's overlay, holds
-/// through the cell A*. Returns the facts with the prepared urgency.
-fn prepared_markers<'a>(
-    facts: MoverSearchFacts<'a>,
-) -> Result<
-    (
-        MoverSearchFacts<'a>,
-        Option<std::cell::Ref<'a, SearchMarkerOverlay>>,
-    ),
-    PathSearchFailure,
-> {
-    let prepared = facts
-        .foot_entry
-        .prepare_search_markers()
-        .map_err(PathSearchFailure::CellEntryUnavailable)?;
-    Ok(match prepared {
-        Some((urgency, overlay)) => (
-            MoverSearchFacts {
-                urgency,
-                foot_entry: facts.foot_entry,
-            },
-            Some(overlay),
-        ),
-        None => (facts, None),
-    })
-}
-
 /// [`find_layered_path_zoned_marker_detailed`] asking [`super::WalkableEntry`].
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn find_layered_path_zoned_marker(
@@ -561,11 +520,6 @@ fn find_layered_path_after_entry(
         },
         facts.foot_entry,
     )?;
-    let (facts, prepared) = prepared_markers(facts)?;
-    // Native builds and drops the marker transaction around each
-    // AStar_main_loop (0x429C1A, then 0x42A42D or 0x42A44C). Nothing between
-    // two tries changes what it reads, so the one transaction serves them all.
-    let overlay = prepared.as_deref().or(marker_overlay);
     let search = |gate: Option<HierarchyGate<'_>>| {
         find_layered_path_marker(
             grid,
@@ -574,7 +528,7 @@ fn find_layered_path_after_entry(
             goal,
             gate,
             resolved_terrain,
-            overlay,
+            marker_overlay,
             facts,
         )
     };
@@ -619,6 +573,6 @@ fn find_layered_path_after_entry(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "zone_search_tests.rs"]
 mod zone_search_tests;

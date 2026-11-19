@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
 use crate::sim::runtime::{SimResources, SimRuntime};
@@ -28,13 +27,11 @@ impl Scene {
         retail
             .rules
             .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
-        let registry =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xa220);
         // The supplied clear map still owns its empty overlay cells and saved
         // wall-neighbor plane; full map-authority restore requires both.
-        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         for name in ["Americans", "Russians"] {
@@ -58,11 +55,10 @@ impl Scene {
         let terrain_template = sim.resolved_terrain().cloned();
         let mut scene = Self(SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template,
-            },
+            }),
         });
         scene.spawn("GAPOWR", "Americans", (4, 24));
         scene.spawn("NAPOWR", "Russians", (28, 28));
@@ -81,7 +77,7 @@ impl Scene {
                 cell.1,
                 0,
                 &self.0.resources.rules,
-                &self.0.resources.overlay_registry,
+                self.0.resources.rules.overlay_registry(),
             )
             .expect("retail constructor and ordinary Unlimbo")
     }
@@ -101,7 +97,7 @@ impl Scene {
         // Observe the actual serialized clock without depending on a new API:
         // the same test source compiles against the pre-fix production tree.
         let entity = serde_json::to_value(self.actor(id)).unwrap();
-        serde_json::from_value(entity["ammo_reload_timer"].clone())
+        serde_json::from_value(entity["seldom"]["ammo_reload_timer"].clone())
             .expect("authoritative saved reload clock")
     }
 
@@ -170,7 +166,7 @@ impl Scene {
         restored
             .restore_map_authority_after_snapshot_load(
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
                 None,
             )
             .unwrap();
@@ -205,16 +201,16 @@ fn finite_infantry_reloads_and_resumes_fire_only_with_ares() {
     );
     let first = scene.shot(infantry, target);
     assert_eq!(scene.count(infantry), 0);
-    #[cfg(feature = "ares")]
-    assert_eq!(
-        (
-            scene.reload(infantry).start_frame(),
-            scene.reload(infantry).duration()
-        ),
-        (first, 12)
-    );
-    #[cfg(not(feature = "ares"))]
-    let _ = first;
+    let ares = scene.0.resources.rules.ares();
+    if ares {
+        assert_eq!(
+            (
+                scene.reload(infantry).start_frame(),
+                scene.reload(infantry).duration()
+            ),
+            (first, 12)
+        );
+    }
     let mut fired_again = false;
     for _ in 0..100 {
         if fired(&scene.frame(), infantry) {
@@ -223,8 +219,7 @@ fn finite_infantry_reloads_and_resumes_fire_only_with_ares() {
         }
     }
     assert_eq!(
-        fired_again,
-        cfg!(feature = "ares"),
+        fired_again, ares,
         "Ares adds the Infantry reload visit; stock does not"
     );
 }
@@ -232,7 +227,6 @@ fn finite_infantry_reloads_and_resumes_fire_only_with_ares() {
 /// Infantry5200E1..520105 refills only on a positive-fear turn that reaches
 /// zero. Stock E1's unlimited count bypasses it; the native Scenario reader
 /// admits this finite-magazine map override without an extension.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
     use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
@@ -272,7 +266,7 @@ fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
     );
     scene.0.simulation.commit_direct_damage_receiver(
         &scene.0.resources.rules,
-        Some(&scene.0.resources.overlay_registry),
+        Some(scene.0.resources.rules.overlay_registry()),
         hit,
         FrameEffects::default(),
     );
@@ -307,7 +301,6 @@ fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
 /// InfantryClass::FireAt51DF8C..51DFD6: a Fraidycat's last returned Bullet
 /// starts panic and queues Guard. The physical E1 weapons/art stay unchanged;
 /// these registered Scenario overrides activate the stock finite-ammo branch.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn fraidycat_last_round_queues_guard_panics_then_refills() {
     let Some(mut scene) =
@@ -362,7 +355,6 @@ fn fraidycat_last_round_queues_guard_panics_then_refills() {
 }
 
 /// FireAt's panic is independent of ReceiveDamage/ForcePanic's Fearless gate.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn fraidycat_last_round_does_not_use_fearless_gate() {
     let Some(mut scene) = Scene::new(
@@ -385,9 +377,9 @@ fn fraidycat_last_round_does_not_use_fearless_gate() {
     assert_eq!(scene.actor(infantry).mission.queued().raw(), 5);
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_weapon_ammo_cost_controls_admission_debit_and_reload() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let weapon =
         "[AmmoProbe]\nDamage=1\nROF=15\nRange=6\nProjectile=InvisibleLow\nWarhead=SA\nAmmo=";
     let Some(mut free) = Scene::new(&format!(
@@ -440,7 +432,6 @@ fn ares_weapon_ammo_cost_controls_admission_debit_and_reload() {
 
 // This is the stock GetROF6FCFA9 magazine shortcut. Installed Ares hook
 // 10047A60 skips it (continues at6FCFC1), independently of this ammo port.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() {
     let Some(mut scene) = Scene::new("[GAPILL]\nAmmo=2\nInitialAmmo=2\nCanPassiveAquire=no\n")
@@ -491,9 +482,9 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
 /// building other than a Hospital or Armory reloads through
 /// TechnoClass::Reload, by `ReloadAmount` on its reload clock, where the
 /// stock visit refills an empty magazine at once.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_building_reloads_by_reload_amount_on_its_clock() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(mut scene) = Scene::new(
         "[GAPILL]\nAmmo=4\nInitialAmmo=0\nReloadAmount=3\nReload=10\nEmptyReload=10\n\
          CanPassiveAquire=no\n",
@@ -623,7 +614,7 @@ fn damage_reduces_readiness_before_object_immunity_and_restarts_reload() {
         );
         scene.0.simulation.commit_direct_damage_receiver(
             &scene.0.resources.rules,
-            Some(&scene.0.resources.overlay_registry),
+            Some(scene.0.resources.rules.overlay_registry()),
             event,
             FrameEffects::default(),
         );

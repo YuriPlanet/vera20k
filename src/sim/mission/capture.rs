@@ -138,6 +138,6 @@ pub(crate) fn mission_capture(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "capture_tests.rs"]
 mod tests;

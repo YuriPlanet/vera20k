@@ -163,7 +163,7 @@ pub(crate) fn plan(
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .presentation()
         .map(|runtime| &runtime.simulation)
     else {
         return (SwSidebarLayout::default(), Vec::new());
@@ -182,9 +182,25 @@ pub(crate) fn plan(
             art.toggle_size(),
         )
     });
+    use crate::app::presentation::field_parts;
+    use crate::ui::field_layout::FieldPart;
+    // A layout that leaves the column out has no buttons to place.
+    if !field_parts::shows(state, FieldPart::Powers) {
+        return (SwSidebarLayout::default(), Vec::new());
+    }
     // Phobos lays the left sidebar out on `DSurface::ViewBounds`, so it stays
     // in native screen pixels and does not scale with the client Sidebar size.
-    let screen_height = state.sidebar_frame().column().3 as i32;
+    // VERA centres it on the frame's height in the original interface. A
+    // layout that moves the sidebar or the bar centres it on the battlefield,
+    // and the column starts at the battlefield's corner plus the layout's
+    // offset.
+    let frame = state.sidebar_frame();
+    let [field_x, field_y, _, field_height] = field_parts::rect(state, FieldPart::Powers);
+    let screen_height = if frame.places() == crate::ui::sidebar::PanelPlaces::ORIGINAL {
+        frame.frame_size().1 as i32
+    } else {
+        field_height
+    };
     let owner_mask = owner_house_mask(sim, rules, &owner);
     let selected = select(
         rules,
@@ -199,7 +215,8 @@ pub(crate) fn plan(
         .map(|view| sim.interner().resolve(view.type_id).to_string())
         .collect();
     let expanded = state.match_state.match_presentation.sw_sidebar.expanded;
-    let layout = compute_layout(ui, &type_ids, screen_height, top, bottom, toggle, expanded);
+    let layout = compute_layout(ui, &type_ids, screen_height, top, bottom, toggle, expanded)
+        .moved(field_x, field_y);
     let entries = layout
         .entries
         .iter()
@@ -218,7 +235,7 @@ pub(crate) fn plan(
 /// Per-frame `can_fire`/progress/readiness refresh, matching `SWButtonClass::Draw`
 /// reading the live `SuperClass`.
 pub(crate) fn refresh_draw_state(state: &mut AppState) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.presentation() else {
         return;
     };
     let Some(owner_name) = crate::app::input::commands::preferred_local_owner_name(state) else {
@@ -321,7 +338,7 @@ pub(crate) fn hovered_entry_rect(state: &AppState) -> Option<Rect> {
         .map(|entry| entry.rect)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -344,8 +361,9 @@ mod tests {
                 can_fire: false,
                 can_afford: false,
                 constraints_blocked: false,
-                #[cfg(feature = "ares")]
                 ares_refusal: None,
+                ready_shots: 0,
+                ares_show_cameo: true,
             },
         }
     }
@@ -396,8 +414,9 @@ mod tests {
                 can_fire: false,
                 can_afford: false,
                 constraints_blocked: false,
-                #[cfg(feature = "ares")]
                 ares_refusal: None,
+                ready_shots: 0,
+                ares_show_cameo: true,
             })
             .collect()
     }

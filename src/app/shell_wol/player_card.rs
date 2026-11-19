@@ -18,7 +18,7 @@ use crate::ui::shell::list::ListScrollPart;
 use crate::ui::shell::modal::{WolPlayerCardLayout, wol_player_card_layout_on};
 use crate::ui::wol_lobby::{
     CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_COUNTRY_ROWS, CARD_MESSAGE, CARD_PROFILE,
-    PLAYER_BADGE_X, WolCardAction, WolPlayerCard, badge_name_key,
+    WolCardAction, WolPlayerCard, badge_name_key,
 };
 use crate::ui::wol_persona::{LOCALE_COUNT, locale_rows};
 use crate::util::time::Instant;
@@ -396,18 +396,6 @@ pub(super) fn status_help(state: &AppState) -> Option<String> {
     ))
 }
 
-/// The player list's badge for `name`, which the card shows beside it.
-fn badge(state: &AppState, name: &str) -> Option<&'static str> {
-    let lobby = state.frontend.wol.as_ref()?.lobby()?;
-    lobby
-        .ui
-        .player_rows
-        .iter()
-        .find(|row| row.name == name)
-        .and_then(|row| row.score_icons.iter().find(|(_, x)| *x == PLAYER_BADGE_X))
-        .map(|(file, _)| *file)
-}
-
 /// One row of the card: its caption, its value and the help it shows under
 /// the pointer.
 struct CardRow {
@@ -427,7 +415,7 @@ fn rows(state: &AppState, name: &str) -> Vec<CardRow> {
         value,
         help: None,
     };
-    let badge_help = badge(state, name)
+    let badge_help = super::lobby::player_badge(state, name)
         .and_then(badge_name_key)
         .map(|key| crate::i18n::fill(&label("VERA:BadgeHelp"), &[("badge", &label(key))]));
     let mut rows = vec![CardRow {
@@ -472,7 +460,7 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
     let name = card.name.as_str();
     let own = own(state, name);
     let label = |key: &str| label(state, key);
-    let badge = badge(state, name);
+    let badge = super::lobby::player_badge(state, name);
     let rows = rows(state, name)
         .into_iter()
         .map(|row| (row.caption, row.value))

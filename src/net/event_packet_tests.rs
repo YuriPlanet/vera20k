@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_fixture::unhex;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -62,14 +63,6 @@ fn corpus() -> Corpus {
         "tools/storage_oracle/lan_event_packets.json",
     ))
     .expect("native Event packet corpus")
-}
-
-fn unhex(text: &str) -> Vec<u8> {
-    assert!(text.len().is_multiple_of(2));
-    text.as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect()
 }
 
 fn record(text: &str, fill: u8) -> CommandRecord {
@@ -224,7 +217,7 @@ fn blocked_external_payload_retains_encoded_prefix_and_source() {
     let step = &controls.flows[0].steps[0];
     let source = record(&step.inputs[0], 0xa5);
     let bytes = unhex(&step.packet);
-    let extended = CommandRecord::encode(EXTENDED, 2, 25, &[0x34; 8]).unwrap();
+    let extended = CommandRecord::encode(ADD_PLAYER_OPCODE, 2, 25, &[0x34; 8]).unwrap();
     let mut codec = EventPacketCodec::default();
     let encoded = codec
         .encode_packet(&[&source, &extended], header(&bytes), 15, 558)
@@ -234,7 +227,7 @@ fn blocked_external_payload_retains_encoded_prefix_and_source() {
     assert_eq!(encoded.consumed_records(), 1);
     assert_eq!(extended.payload()[..8], [0x34; 8]);
     let mut extended_bytes = bytes;
-    extended_bytes.extend([EXTENDED, 4, 0, 0, 0, 1, 2, 3, 4]);
+    extended_bytes.extend([ADD_PLAYER_OPCODE, 4, 0, 0, 0, 1, 2, 3, 4]);
     let mut admitted = Vec::new();
     let error = codec
         .decode_packet(&extended_bytes, |record| {
@@ -244,7 +237,7 @@ fn blocked_external_payload_retains_encoded_prefix_and_source() {
         .unwrap_err();
     assert_eq!(error.kind, DecodeFailureKind::ExtendedPayload);
     assert_eq!(error.admitted_records, 2);
-    assert_eq!(error.remainder, [EXTENDED, 4, 0, 0, 0, 1, 2, 3, 4]);
+    assert_eq!(error.remainder, [ADD_PLAYER_OPCODE, 4, 0, 0, 0, 1, 2, 3, 4]);
 }
 
 #[test]

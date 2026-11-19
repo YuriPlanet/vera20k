@@ -95,7 +95,7 @@ impl BuildingZShape {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::assets::shp_file::ShpFrame;

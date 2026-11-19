@@ -74,10 +74,10 @@ impl Simulation {
             if delay > 0
                 && let Some(target) = self.substrate.entities.get_mut(event.target_id)
             {
-                target.ares_self_heal_combat.start(frame, delay);
+                target.ares.ares_self_heal_combat.start(frame, delay);
             }
         }
-        let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
             return;
         };
         let Some(settings) = warhead.ares_rules() else {
@@ -121,15 +121,18 @@ impl Simulation {
         let frame = self.session.binary_frame() as i32;
         if sonar > 0
             && let Some(target) = self.substrate.entities.get_mut(event.target_id)
-            && target.sonar_timer.remaining(frame) < sonar
+            && target.ares.sonar_timer.remaining(frame) < sonar
         {
-            target.sonar_timer.start(frame, sonar);
+            target.ares.sonar_timer.start(frame, sonar);
         }
         if disable_weapons > 0
             && let Some(target) = self.substrate.entities.get_mut(event.target_id)
-            && target.ares_disable_weapons.remaining(frame) < disable_weapons
+            && target.ares.ares_disable_weapons.remaining(frame) < disable_weapons
         {
-            target.ares_disable_weapons.start(frame, disable_weapons);
+            target
+                .ares
+                .ares_disable_weapons
+                .start(frame, disable_weapons);
         }
         // 1004AB50 last: a Flash.Duration above Flashing (+0xF0) calls vt+0x148.
         if flash > 0
@@ -351,7 +354,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get_mut(target) else {
             return false;
         };
-        actor.vehicle_driver.set_killed_from_owner(passive);
+        actor.ares.vehicle_driver.set_killed_from_owner(passive);
         if actor.owner() == owner {
             return false;
         }
@@ -367,7 +370,7 @@ impl Simulation {
             .substrate
             .entities
             .get(target)
-            .and_then(|actor| actor.passenger_role.cargo())
+            .and_then(|actor| actor.passenger_role().cargo())
             .map(|cargo| cargo.passengers().to_vec())
             .unwrap_or_default();
         match operator {
@@ -441,7 +444,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(target)
-                .map_or(0, |actor| actor.passenger_role.passenger_count());
+                .map_or(0, |actor| actor.passenger_role().passenger_count());
             for _ in 0..count {
                 let result = depart_cargo_head(
                     self,
@@ -528,7 +531,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::sim::combat::ReceiverCallFlags;
@@ -537,6 +540,7 @@ mod tests {
 
     #[test]
     fn driver_hit_kills_one_operator_ejects_rider_and_allows_a_new_driver() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for operator_rule in ["_ANY_", "OP"] {
             exercise_driver_handoff(operator_rule);
         }
@@ -660,7 +664,7 @@ mod tests {
         assert!(vehicle.driver_killed());
         assert!(vehicle.attack_target.target().is_none());
         assert!(vehicle.navigation.nav_com().is_none());
-        assert_eq!(vehicle.passenger_role.passenger_count(), 0);
+        assert_eq!(vehicle.passenger_role().passenger_count(), 0);
         assert_eq!(vehicle.veterancy.raw(), NativeF32Bits::from_bits(0));
         assert!(
             sim.entities()
@@ -670,7 +674,7 @@ mod tests {
         );
         let passenger = sim.entities().get(rider).unwrap();
         assert!(
-            !passenger.lifecycle.in_limbo() && !passenger.passenger_role.is_inside_transport(),
+            !passenger.lifecycle.in_limbo() && !passenger.passenger_role().is_inside_transport(),
             "{operator_rule} ejects the other matching passenger alive"
         );
         assert!(!sim.can_capture(controller, host, &rules));
@@ -706,7 +710,7 @@ mod tests {
         let vehicle = sim.entities().get(host).unwrap();
         assert_eq!(sim.interner.resolve(vehicle.owner()), "Americans");
         assert!(!vehicle.driver_killed());
-        assert_eq!(vehicle.passenger_role.passenger_count(), 1);
+        assert_eq!(vehicle.passenger_role().passenger_count(), 1);
         assert!(sim.entities().get(driver).unwrap().lifecycle.in_limbo());
         assert!(sim.can_capture(controller, host, &rules));
         assert!(sim.can_be_perma_mind_controlled(host, &rules));
@@ -760,6 +764,7 @@ mod tests {
 
     #[test]
     fn driver_eligibility_applies_aircraft_airport_and_dock_limits() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for (airport_bound, dock, expected) in [
             ("yes", "", false),
             ("no", "CABHUT", false),
@@ -791,6 +796,7 @@ mod tests {
     /// event value.
     #[test]
     fn driver_and_takeover_events_spring_the_vehicles_tag() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (mut sim, rules, _overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             "[Countries]\n0=Americans\n1=Russians\n[InfantryTypes]\n2=OP\n[VehicleTypes]\n0=HOST\n\
              [OP]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\

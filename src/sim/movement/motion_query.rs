@@ -12,7 +12,6 @@ use crate::sim::game_entity::GameEntity;
 /// ILocomotion+60, dispatched by Ares TechnoUpdate1004B49B. Hover516C70
 /// uses its existing height-aware owner; the other active families use the
 /// retained base power owner, rather than the object's Deactivated byte.
-#[cfg(feature = "ares")]
 pub(crate) fn is_powered(
     entity: &GameEntity,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
@@ -27,8 +26,8 @@ pub(crate) fn is_powered(
 
 /// ILocomotion+14 Destination, distinct from Head_To(+18) and the Foot's
 /// NavCom. Original retail gamemd.exe: Drive4AFC90, Ship69F3A0,
-/// Walk75ABA0, Hover514CB0, Fly4CCAE0, Jumpjet54AE60, Rocket661FB0 and
-/// Teleport7180A0. No state, map query, RNG or timers are changed.
+/// Walk75ABA0, Hover514CB0, Fly4CCAE0, Jumpjet54AE60, Rocket661FB0,
+/// Teleport7180A0 and Tunnel728A90. No state, map query, RNG or timers are changed.
 pub(crate) fn destination(entity: &GameEntity) -> Option<crate::sim::components::DriveCoord> {
     use crate::sim::components::DriveCoord;
     let null = DriveCoord { x: 0, y: 0, z: 0 };
@@ -53,17 +52,14 @@ pub(crate) fn destination(entity: &GameEntity) -> Option<crate::sim::components:
         LocomotorKind::Teleport => loco.teleport_runtime()?.armed_destination().unwrap_or(null),
         // Destination 0x728A90 answers the stored Coords while moving and the
         // object's own position when Idle.
-        LocomotorKind::Tunnel if !is_moving(entity)? => {
-            super::foot_coordinate::current_coordinate(entity)
-        }
-        LocomotorKind::Tunnel => {
-            super::tunnel_locomotion::destination_coord(entity).unwrap_or(null)
-        }
+        LocomotorKind::Tunnel => loco
+            .tunnel_runtime()?
+            .destination_or(super::foot_coordinate::current_coordinate(entity)),
     })
 }
 
 /// Drive4AFB80, Ship69F290, Walk75AB30, Fly4CCA90, Jumpjet54AE50,
-/// Hover514C30 and Rocket661F50. Teleport718080 delegates to its existing
+/// Hover514C30, Rocket661F50 and Tunnel728A50. Teleport718080 delegates to its existing
 /// state owner.
 /// Evidence: locomotor_moving, air_locomotor_moving, cmin_dock and
 /// jumpjet_infantry_actions --default-motion native corpora; Teleport's
@@ -90,6 +86,9 @@ pub fn is_moving(entity: &GameEntity) -> Option<bool> {
             .map(super::rocket_movement::RocketRuntime::is_moving),
         // Is_Moving 0x728A50: any state but Idle.
         LocomotorKind::Tunnel => Some(locomotor.tunnel_runtime()?.is_moving()),
+        LocomotorKind::Tunnel => locomotor
+            .tunnel_runtime()
+            .map(super::tunnel_movement::TunnelRuntime::is_moving),
     }
 }
 
@@ -113,7 +112,7 @@ pub fn is_moving_now(entity: &GameEntity, rules: super::SpeedRules<'_>, binary_f
         // tunnel does not report moving-now while sunk or travelling.
         LocomotorKind::Tunnel => locomotor
             .tunnel_runtime()
-            .is_some_and(super::tunnel_locomotion::TunnelRuntime::is_moving_now),
+            .is_some_and(super::tunnel_movement::TunnelRuntime::is_moving_now),
         _ => super::ready_producer::ready_state_for(entity, rules, binary_frame)
             .is_some_and(super::locomotor_ready::LocomotorReadyState::is_moving_now),
     }
@@ -141,6 +140,6 @@ pub(crate) fn is_really_moving_now(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_movement, tests_sim_world_c_o)))]
 #[path = "motion_query_tests.rs"]
 pub(crate) mod tests;

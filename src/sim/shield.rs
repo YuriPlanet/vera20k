@@ -570,12 +570,28 @@ pub(crate) struct BreakShot {
     pub(crate) impact: [i32; 3],
 }
 
-/// One `MapClass::FlashbangWarheadAt @ 0x48A620` call the absorbed-hit arm
-/// queued (`ShieldClass.cpp:275..295`): the shield owner's location, the
-/// type's `HitFlash.FixedSize` (default twice the clamped damage) and the
-/// caller's `SpotlightFlags`. The committing caller runs Phobos's
-/// `CombatLightChance` gate (`Misc/Hooks.LightEffects.cpp:69-74`, the same
-/// function's hook) before emitting the request.
+/// The same stage without writing the shield state: the surviving damage the
+/// receiver would see. The wave lookahead needs the value before its commit
+/// runs the real stage, which applies the absorption exactly once.
+pub(crate) fn preview_receive_damage(
+    sim: &Simulation,
+    rules: &RuleSet,
+    event: &EntityDamageEvent,
+    receiver_input: i32,
+) -> Option<i32> {
+    let target = sim.substrate.entities.get(event.target_id)?;
+    let target_type = sim.interner.object_type(target.type_ref(), rules)?;
+    let divisors = crate::sim::combat::receiver_divisors(
+        target,
+        Some(target_type),
+        rules,
+        &sim.interner,
+        &sim.houses,
+        target.phobos_armor_multiplier(),
+    );
+    shield_stage(sim, rules, event, receiver_input, &divisors).map(|result| result.remaining)
+}
+
 #[cfg(feature = "phobos")]
 #[derive(Debug, Clone)]
 struct ShieldHitFlash {
@@ -678,28 +694,6 @@ pub(crate) fn pre_receive_damage(
     })
 }
 
-/// The same stage without writing the shield state: the surviving damage the
-/// receiver would see. The wave lookahead needs the value before its commit
-/// runs the real stage, which applies the absorption exactly once.
-pub(crate) fn preview_receive_damage(
-    sim: &Simulation,
-    rules: &RuleSet,
-    event: &EntityDamageEvent,
-    receiver_input: i32,
-) -> Option<i32> {
-    let target = sim.substrate.entities.get(event.target_id)?;
-    let target_type = sim.interner.object_type(target.type_ref(), rules)?;
-    let divisors = crate::sim::combat::receiver_divisors(
-        target,
-        Some(target_type),
-        rules,
-        &sim.interner,
-        &sim.houses,
-        target.phobos_armor_multiplier(),
-    );
-    shield_stage(sim, rules, event, receiver_input, &divisors).map(|result| result.remaining)
-}
-
 fn shield_stage(
     sim: &Simulation,
     rules: &RuleSet,
@@ -713,7 +707,7 @@ fn shield_stage(
     }
     let target = sim.substrate.entities.get(event.target_id)?;
     let target_type = sim.interner.object_type(target.type_ref(), rules)?;
-    let warhead = rules.warhead(sim.interner.resolve(event.warhead_ref))?;
+    let warhead = sim.interner.warhead_type(event.warhead_ref, rules)?;
     let frame = sim.session.binary_frame() as i32;
 
     let mut state = target.shield.clone()?;
@@ -1981,6 +1975,7 @@ fn update_idle_anim(
 }
 
 #[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
 #[path = "shield_tests.rs"]
 mod tests;
 

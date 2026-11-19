@@ -2,6 +2,7 @@
 //! Destroy callbacks. Techno then reads their live consequences before its
 //! anger, delay-kill and survivor/death continuations.
 
+use super::receiver_call::ReceiverDamage;
 use super::*;
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
@@ -35,6 +36,7 @@ pub(super) struct ReceiverHealthCommit {
 struct ReceiverHealthHost<'world, 'input, 'effects> {
     world: &'world mut Simulation,
     event: &'input EntityDamageEvent,
+    caller_damage: &'input mut ReceiverDamage,
     rules: &'input RuleSet,
     registry: Option<&'input OverlayTypeRegistry>,
     effects: FrameEffects<'effects>,
@@ -63,27 +65,26 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
     }
 
     fn write_damage(&mut self, damage: i32) {
-        if self.execute_world_callbacks
-            && let Some(writeback) = self.event.damage_writeback
-        {
-            writeback.write(self.world, self.rules, damage);
+        if self.execute_world_callbacks {
+            self.caller_damage.write(self.world, self.rules, damage);
         }
     }
 
     /// 10053A10 culls only without ignoreDefenses, with a warhead and an
     /// attacker object; it passes the attacker without a Techno check. An
-    /// observation-only commit never draws.
-    #[cfg(feature = "ares")]
+    /// observation-only commit never draws, and neither does a game without
+    /// Ares, which never culls: the switch is asked before the warhead.
     fn culls(&mut self) -> bool {
         let event = self.event;
-        if !self.execute_world_callbacks
+        if !self.rules.ares()
+            || !self.execute_world_callbacks
             || event.receiver_flags.ignore_defenses
             || event.attacker_id == RAD_NO_ATTACKER
         {
             return false;
         }
         let rules = self.rules;
-        let Some(warhead) = rules.warhead(self.world.interner.resolve(event.warhead_ref)) else {
+        let Some(warhead) = self.world.interner.warhead_type(event.warhead_ref, rules) else {
             return false;
         };
         let (Some(attacker), Some(victim), Some(strength)) = (
@@ -239,6 +240,7 @@ pub(super) fn psychedelic_starts_berserk(
 
 pub(super) fn commit_receiver_health(
     event: &EntityDamageEvent,
+    caller_damage: &mut ReceiverDamage,
     world: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
@@ -339,6 +341,7 @@ pub(super) fn commit_receiver_health(
     let mut host = ReceiverHealthHost {
         world,
         event,
+        caller_damage,
         rules,
         registry,
         effects,
@@ -355,16 +358,19 @@ pub(super) fn commit_receiver_health(
         allow_zero_damage,
         rules.general.condition_red,
         attacker_id != RAD_NO_ATTACKER,
+        rules.ares(),
     );
     #[cfg(any(test, feature = "test-support"))]
     let reached_exact_zero = host.reached_exact_zero;
-    //End the adapter's exclusive borrow before the Techno continuation.
-    let world = host.world;
-    let final_packet = if receive_outcome.apply_object_damage {
+    // Techno701DF8 reads the caller's word after Object and its callbacks.
+    let final_packet = if execute_world_callbacks {
+        host.caller_damage.read(host.world, rules)
+    } else if receive_outcome.apply_object_damage {
         packet
     } else {
         receive_outcome.post_object_damage.unwrap_or(packet)
     };
+    let world = host.world;
     let reached_survivor_postlude = receive_outcome.reached_survivor_postlude;
     let live_source_owner = (attacker_id != RAD_NO_ATTACKER)
         .then(|| {
@@ -397,6 +403,8 @@ pub(super) fn commit_receiver_health(
                 source_owner,
                 delta,
                 world.session.game_mode_nonzero(),
+                rules.ares_form(),
+                rules.general.ai_nearest_enemy,
             );
         }
         Some(delta)

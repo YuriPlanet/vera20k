@@ -1,5 +1,7 @@
 //! Active gamemd narrow/wide string boundary helpers.
 
+use std::borrow::Cow;
+
 /// Zero-extend each narrow byte to one Unicode scalar.
 ///
 /// This is the engine's ordinary internal conversion. It is deliberately not
@@ -21,10 +23,42 @@ pub fn narrow_widened(text: &str) -> Vec<u8> {
         .collect()
 }
 
+/// VERA: widened `text` as the characters its bytes spell when they are valid
+/// UTF-8, so a map that saves a Chinese or Russian name that way shows it.
+/// gamemd has no such step: it widens those bytes like any others
+/// (`SessionClass__ParseMultiplayerMapHeader` `0x006994F0` through
+/// `NativeString__WidenBytes` `0x00735060`) and shows accented Latin letters.
+///
+/// A last character a native buffer cut short is dropped. Text that is not
+/// UTF-8 comes back as it is: CP1252, GBK and the like look alike as bytes, so
+/// a name saved in GBK still shows as gamemd widens it.
+pub fn decode_widened_utf8(text: &str) -> Cow<'_, str> {
+    if text.is_ascii() {
+        return Cow::Borrowed(text);
+    }
+    let mut bytes = narrow_widened(text);
+    if let Err(error) = std::str::from_utf8(&bytes) {
+        // `error_len` is `None` when the text only ends too early.
+        if error.error_len().is_some() {
+            return Cow::Borrowed(text);
+        }
+        bytes.truncate(error.valid_up_to());
+    }
+    // Nothing but ASCII before a cut: a last high byte, not a UTF-8 name.
+    if bytes.is_ascii() {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(String::from_utf8(bytes).expect("checked as UTF-8 above"))
+}
+
 /// `f` applied to `text` with its ASCII letters upper-cased, as
-/// `str::to_ascii_uppercase` gives, built on the stack when it fits. For keys
+/// `str::to_ascii_uppercase` gives: borrowed when no letters need folding,
+/// otherwise built on the stack when it fits. For keys
 /// folded on every lookup, where a heap key per query showed in profiles.
 pub fn with_ascii_uppercase<R>(text: &str, f: impl FnOnce(&str) -> R) -> R {
+    if !text.bytes().any(|byte| byte.is_ascii_lowercase()) {
+        return f(text);
+    }
     let mut buffer = [0u8; 64];
     match buffer.get_mut(..text.len()) {
         Some(key) => {
@@ -96,6 +130,7 @@ pub fn acp_encode(text: &str) -> Vec<u8> {
     }
 }
 
+/// VERA: off Windows there is no code page; text is stored as UTF-8.
 #[cfg(not(windows))]
 pub fn acp_encode(text: &str) -> Vec<u8> {
     text.as_bytes().to_vec()
@@ -152,9 +187,13 @@ pub fn acp_decode(bytes: &[u8]) -> String {
     }
 }
 
+/// VERA: off Windows [`acp_encode`] writes UTF-8, so this reads UTF-8 back.
+/// Bytes that are not UTF-8, which another code page wrote, widen one to one,
+/// and a last character that a byte cut split is dropped
+/// ([`decode_widened_utf8`]).
 #[cfg(not(windows))]
 pub fn acp_decode(bytes: &[u8]) -> String {
-    widen_bytes(bytes)
+    decode_widened_utf8(&widen_bytes(bytes)).into_owned()
 }
 
 /// Round-trip edit-control text through the Windows active ANSI code page.
@@ -309,7 +348,7 @@ pub fn crt_wcstoul(units: &[u16], base: u32) -> u32 {
     crt_wcstoxl(units, base, true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 
@@ -340,6 +379,19 @@ mod tests {
         assert_eq!(crt_wcstoul(&wide("x"), 10), 0);
     }
 
+    #[test]
+    fn only_valid_utf8_is_decoded_from_widened_text() {
+        // CP1252, GBK (大仙), and a high last byte after nothing but ASCII.
+        for bytes in [
+            &b"D\xE9fense"[..],
+            &b"\xB4\xF3\xCF\xC9"[..],
+            &b"Francais\xE9"[..],
+        ] {
+            let widened = widen_bytes(bytes);
+            assert_eq!(decode_widened_utf8(&widened), widened);
+        }
+    }
+
     /// The stack fold and the heap fallback past 64 bytes answer
     /// `to_ascii_uppercase`, leaving non-ASCII letters as they are.
     #[test]
@@ -350,6 +402,14 @@ mod tests {
                 with_ascii_uppercase(text, str::to_owned),
                 text.to_ascii_uppercase()
             );
+        }
+    }
+
+    #[test]
+    fn ascii_uppercase_borrows_names_that_need_no_folding() {
+        let long = "T".repeat(65);
+        for text in ["TREE01", long.as_str()] {
+            with_ascii_uppercase(text, |key| assert!(std::ptr::eq(key, text)));
         }
     }
 }

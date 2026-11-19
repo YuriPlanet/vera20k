@@ -124,14 +124,9 @@ fn busy_factory_exit_product(
     }
     let type_id = sim.intern("MTNK");
     let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), rules);
-    sim.production.factories_mut().create_building_factory(
-        1,
-        owner,
-        ProductionCategory::Vehicle,
-        type_id,
-        70,
-        cost,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(1, owner, ProductionCategory::Vehicle, type_id, 70, cost);
     let product = super::factory_lifecycle::start_active_production(
         sim,
         rules,
@@ -228,7 +223,6 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
 
 /// Stock type match; Ares admits NAWEAP
 /// ([`ares_busy_factory_exit_takes_another_type_that_can_build_the_product`]).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
@@ -251,14 +245,9 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
         dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
     });
     let mtnk = sim.intern("MTNK");
-    sim.production.factories_mut().create_building_factory(
-        2,
-        owner,
-        ProductionCategory::Vehicle,
-        mtnk,
-        90,
-        700,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(2, owner, ProductionCategory::Vehicle, mtnk, 90, 700);
     let attached = sim.production.factories().building_factory(2).cloned();
     sim.houses
         .get_mut(&owner)
@@ -282,9 +271,9 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
 /// Ares 3.0 BuildingClass_KickOutUnit_FindAlternateKickout (100415E0, hook
 /// 0x4444E2): a guarding NAWEAP, another type with GAWEAP's `Factory=` and
 /// `Naval=` that MTNK can be built at, takes the busy factory's product.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_busy_factory_exit_takes_another_type_that_can_build_the_product() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
         return;
     };
@@ -394,14 +383,9 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     let product = busy_factory_exit_product(&mut sim, &rules, owner, true);
     let mtnk = sim.intern("MTNK");
     let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
-    sim.production.factories_mut().create_building_factory(
-        3,
-        owner,
-        ProductionCategory::Vehicle,
-        mtnk,
-        91,
-        cost,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(3, owner, ProductionCategory::Vehicle, mtnk, 91, cost);
     let registry = sim.production.factories().clone();
     let source = sim.production.factories().building_factory(1).cloned();
     let credits = sim.houses[&owner].economy().credits();
@@ -409,14 +393,14 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     for (from, to) in [(1, 3), (1, 1), (4, 2)] {
         assert!(
             !sim.production
-                .factories_mut()
+                .edit_factories()
                 .transfer_building_factory_attachment(from, to)
         );
         assert_eq!(*sim.production.factories(), registry);
     }
     assert!(
         sim.production
-            .factories_mut()
+            .edit_factories()
             .transfer_building_factory_attachment(1, 2)
     );
     assert!(sim.production.factories().building_factory(1).is_none());
@@ -428,7 +412,7 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     assert_eq!(source.unwrap().object().unwrap().entity_id, Some(product));
     assert!(
         sim.production
-            .factories_mut()
+            .edit_factories()
             .transfer_building_factory_attachment(2, 1)
     );
     assert_eq!(*sim.production.factories(), registry);
@@ -540,7 +524,6 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
 
 /// Stock gamemd rows; Ares 100415E0 (hook 0x4444E2) admits other factory
 /// types they hold as refused candidates.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng() {
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -552,10 +535,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
     use serde_json::{Value, json};
     use std::collections::BTreeMap;
 
-    let data: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/unit_unlimbo.json",
-    ))
-    .unwrap();
+    let data = crate::test_fixture::json("tools/spatial_oracle/anytown_damage/unit_unlimbo.json");
     assert_eq!(data["schema_version"], 1);
     let rows = data["factory_busy_redirect_rows"].as_array().unwrap();
     assert_eq!(rows.len(), 6);
@@ -775,14 +755,16 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
         for (label, _) in &producer_types {
             if *label != "source" && before["producers"][label]["attachment"] != "0x0" {
-                sim.production.factories_mut().create_building_factory(
-                    labels[label],
-                    owner,
-                    ProductionCategory::Vehicle,
-                    type_id,
-                    90 + labels[label],
-                    cost,
-                );
+                sim.production
+                    .factories_mut_for_test()
+                    .create_building_factory_for_test(
+                        labels[label],
+                        owner,
+                        ProductionCategory::Vehicle,
+                        type_id,
+                        90 + labels[label],
+                        cost,
+                    );
             }
         }
         let actor = sim.substrate.entities.get_mut(product).unwrap();
@@ -1111,7 +1093,6 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         .advance_app_frame(
             std::slice::from_ref(&rally),
             &rules,
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1165,7 +1146,6 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
             crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1242,7 +1222,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::default()
@@ -1278,7 +1257,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             TickLane::Ordinary,
             FrameEffects::default().with_production_strip(&visits, &|_| {}),
@@ -1308,7 +1286,6 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
             .advance_app_frame(
                 &due,
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
                 FrameEffects::default().with_production_strip(&visits, &|_| {}),

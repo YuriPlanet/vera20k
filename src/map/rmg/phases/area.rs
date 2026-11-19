@@ -7,10 +7,11 @@
 //! through **one routine in the original**, so they are one routine here — two
 //! copies of a native predicate is how the copies start disagreeing.
 //!
-//! The routine takes two override bytes that would let paved roads and
-//! road-ends through instead of refusing them. Both call sites pass zero for
-//! both, so the overrides are folded away and the rule is simply: a road
-//! refuses, and what is left has to be clear ground, misc-pave or pave.
+//! The routine takes two override bytes that let paved roads and road-ends
+//! through instead of refusing them. Both stock call sites pass zero for
+//! both, so for them the rule is simply: a road refuses, and what is left has
+//! to be clear ground, misc-pave or pave. Only the urban pass Ares reaches
+//! sets them.
 
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::scratch::RmgScratch;
@@ -40,8 +41,18 @@ pub fn corners_in_diamond(scratch: &RmgScratch, rect: (i32, i32, i32, i32)) -> b
 /// of each tileset, so a short set lets a span run on into its neighbour and a
 /// tile can land in two families at once. Where that happens the refusal wins.
 pub fn tile_is_placeable(ids: &TileIds, tile: i32) -> bool {
-    if ids.is_paved_road(tile) || ids.is_paved_road_end(tile) {
-        return false;
+    tile_is_admitted(ids, tile, false, false)
+}
+
+/// [`tile_is_placeable`] with `AreaIsPavedClear`'s override bytes: a paved
+/// road passes when `roads` is set and a road end when `road_ends` is, each
+/// without the clear/pave test.
+fn tile_is_admitted(ids: &TileIds, tile: i32, roads: bool, road_ends: bool) -> bool {
+    if ids.is_paved_road(tile) {
+        return roads;
+    }
+    if ids.is_paved_road_end(tile) {
+        return road_ends;
     }
     ids.is_clear(tile) || ids.is_misc_pave(tile) || ids.is_pave(tile)
 }
@@ -49,11 +60,10 @@ pub fn tile_is_placeable(ids: &TileIds, tile: i32) -> bool {
 /// `RandomMapGenerator::AreaIsPavedClear @ 0x005A7250`: is every cell of
 /// `rect` clear of roads and standable?
 ///
-/// Its two override bytes (EDX and the stack byte) admit roads and road ends.
-/// Every reachable call passes zero: `PlaceLowBridgeDeck @ 0x0058F2C0` and
-/// `RmgRegion::PlaceStartingPoints` (0x00594992, EBP cleared at 0x00594892).
-/// Only 0x005A5B50/0x005A6D80/0x005A7070, reached from the unreferenced
-/// 0x005A5020, and the unreferenced 0x005A80B0 set them, so the port has none.
+/// Its two override bytes (EDX and the stack byte) admit roads and road ends;
+/// see [`area_admits_paving`]. Every stock call passes zero:
+/// `PlaceLowBridgeDeck @ 0x0058F2C0` and `RmgRegion::PlaceStartingPoints`
+/// (0x00594992, EBP cleared at 0x00594892).
 ///
 /// Corners first, then **exactly `w x h`** — no inclusive margin. There is no
 /// level test here; a rect spanning a step in the ground still passes. The
@@ -64,6 +74,21 @@ pub fn area_is_paved_clear(
     scratch: &RmgScratch,
     ids: &TileIds,
     rect: (i32, i32, i32, i32),
+) -> bool {
+    area_admits_paving(grid, scratch, ids, rect, false, false)
+}
+
+/// `AreaIsPavedClear @ 0x005A7250` with its override bytes: `roads` (EDX)
+/// admits paved roads and `road_ends` (the stack byte) road ends. Only the
+/// urban pass under `0x005A5020` (0x005A5B50, 0x005A6D80, 0x005A7070) sets
+/// them, and only Ares reaches it.
+pub fn area_admits_paving(
+    grid: &RmgGrid,
+    scratch: &RmgScratch,
+    ids: &TileIds,
+    rect: (i32, i32, i32, i32),
+    roads: bool,
+    road_ends: bool,
 ) -> bool {
     let (rx, ry, w, h) = rect;
 
@@ -78,7 +103,7 @@ pub fn area_is_paved_clear(
             let Some(cell) = grid.get(x, y) else {
                 return false;
             };
-            if !tile_is_placeable(ids, cell.tile) {
+            if !tile_is_admitted(ids, cell.tile, roads, road_ends) {
                 return false;
             }
         }

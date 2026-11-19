@@ -180,7 +180,7 @@ pub enum LocomotorRuntimePayload {
     Ship(ShipRuntime),
     Fly(super::super::fly_height::FlyRuntime),
     Jumpjet(super::super::jumpjet_movement::JumpjetRuntime),
-    Tunnel(super::super::tunnel_locomotion::TunnelRuntime),
+    Tunnel(super::super::tunnel_movement::TunnelRuntime),
 }
 
 impl LocomotorRuntimePayload {
@@ -196,9 +196,9 @@ impl LocomotorRuntimePayload {
             LocomotorKind::Ship => Self::Ship(ShipRuntime::at_binary_frame(binary_frame)),
             LocomotorKind::Fly => Self::Fly(Default::default()),
             LocomotorKind::Jumpjet => Self::Jumpjet(Default::default()),
-            LocomotorKind::Tunnel => {
-                Self::Tunnel(super::super::tunnel_locomotion::TunnelRuntime::constructed())
-            }
+            LocomotorKind::Tunnel => Self::Tunnel(
+                super::super::tunnel_movement::TunnelRuntime::constructed(binary_frame),
+            ),
         }
     }
 }
@@ -237,7 +237,6 @@ impl StashedLocomotor {
 
     /// Rebind the Foot's derived type caches without resuming the suspended
     /// controller or exposing its private mutable state.
-    #[cfg(any(feature = "ares", feature = "phobos"))]
     pub(in crate::sim::movement) fn change_type_binding(
         &mut self,
         old_type_kind: LocomotorKind,
@@ -335,7 +334,7 @@ pub fn suspend_effect_for_test(
     effect
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::rules::locomotor_type::SpeedType;

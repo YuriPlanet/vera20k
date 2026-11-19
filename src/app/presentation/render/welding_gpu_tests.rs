@@ -20,6 +20,8 @@ use crate::rules::ruleset::DetailRules;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::world::display_layers::{DisplayLayer, DisplayLayers};
 
+// Ares simulates WeldingSys itself (hooks 0x62DF05, 0x62FD60) and builds no
+// ParticleClass children for this stock draw path.
 #[test]
 #[ignore = "requires retail assets and GPU; ordinary Engineer IFV children through the canonical builder, Detail traversal and shared composition"]
 fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_mutating_simulation() {
@@ -133,7 +135,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
     let size = [160, 120];
     let center = crate::util::lepton::absolute_leptons_to_screen(at.x, at.y, at.z);
     let view_camera = [center.0 - 80., center.1 - 60.];
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let lighting = crate::map::lighting::CellLightGrid::new();
     let house_colors = Default::default();
     let hidden = Default::default();
@@ -142,8 +144,8 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
         let mut parents = Vec::new();
         build_display_effect_instances(
             &DisplayEffectInputs {
-                interpolation: None,
                 sim: &sim,
+                frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
                 rules: &rules,
                 camera: view_camera,
                 render_size: size,
@@ -438,10 +440,10 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
             assert_eq!(system["clip"], particles["clip"]);
             batch.write_camera(&gpu.queue, camera(size));
             let mut display = DisplayLayers::default();
-            assert!(display.submit(1, Some(DisplayLayer::GROUND), &|_| 0));
+            assert!(display.submit(1, Some(DisplayLayer::GROUND)));
             let points = particles["points"].as_array().unwrap();
             for index in 0..points.len() {
-                assert!(display.submit(index as u64 + 2, Some(DisplayLayer::AIR), &|_| 0));
+                assert!(display.submit(index as u64 + 2, Some(DisplayLayer::AIR)));
             }
             let order = NativeDisplayOrder::from_display(&display);
             let mut parents = Vec::new();

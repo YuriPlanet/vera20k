@@ -1,10 +1,20 @@
 package org.vera20k
 
 import android.app.Activity
+import android.app.ActivityManager.TaskDescription
 import android.app.NativeActivity
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
+import android.os.Process
 import android.provider.DocumentsContract
+import android.provider.Settings
 import java.io.File
 import java.io.IOException
 
@@ -31,6 +41,10 @@ class VeraActivity : NativeActivity() {
 
         /** What the engine opens directly; a folder without these is not RA2. */
         val REQUIRED_ARCHIVES = listOf("ra2md.mix", "ra2.mix")
+
+        /** The two launcher entries; exactly one is enabled at a time. */
+        const val LAUNCHER_RETAIL = "org.vera20k.LauncherRetail"
+        const val LAUNCHER_VERA = "org.vera20k.LauncherVera"
     }
 
     /**
@@ -48,6 +62,26 @@ class VeraActivity : NativeActivity() {
             )
         }
         startActivityForResult(intent, REQUEST_PICK_FOLDER)
+    }
+
+    /**
+     * Ends the process with the task.
+     *
+     * winit builds one event loop per process, so this activity cannot serve a
+     * second task: a relaunch inside a surviving process calls `android_main`
+     * again and exits on the spot, which the player sees as a splash flash and
+     * a crash. A task can also lose its activity without the player swiping it —
+     * applying the new launcher icon disables the alias that hosted it — so the
+     * process follows its activity and the next tap is a cold start.
+     *
+     * Every configuration change is listed in `configChanges`, so reaching here
+     * means the activity is really going away.
+     */
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) {
+            Process.killProcess(Process.myPid())
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -73,9 +107,172 @@ class VeraActivity : NativeActivity() {
 
     fun cancelImport(): Boolean = AssetImportJob.cancelActive()
 
+    /**
+     * Shows the icon the Options page's VERA Icon box selected.
+     *
+     * A launcher icon is a resource compiled into the package, so the only way
+     * to change it at run time is to enable one `activity-alias` and disable the
+     * other. The app switcher takes the same bitmap from the task description.
+     * Called from Rust at start-up and whenever the box is toggled
+     * (`vera20k::util::app_icon`).
+     */
+    fun applyAppIcon(veraIcon: Boolean) {
+        // Rust calls this from the engine's own thread; enabling, disabling and
+        // finishing an activity all belong to Android's main thread.
+        runOnUiThread { applyAppIconOnUi(veraIcon) }
+    }
+
+    private fun applyAppIconOnUi(veraIcon: Boolean) {
+        val wanted = if (veraIcon) LAUNCHER_VERA else LAUNCHER_RETAIL
+        val other = if (veraIcon) LAUNCHER_RETAIL else LAUNCHER_VERA
+        val wantedName = ComponentName(this, wanted)
+        val otherName = ComponentName(this, other)
+        val enabled = PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        val disabled = PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        // Already in effect: touching the components would still tear down the
+        // task, because disabling the alias that launched it removes the task.
+        if (packageManager.getComponentEnabledSetting(wantedName) == enabled &&
+            packageManager.getComponentEnabledSetting(otherName) == disabled
+        ) {
+            updateTaskDescription(veraIcon)
+            return
+        }
+        packageManager.setComponentEnabledSetting(wantedName, enabled, PackageManager.DONT_KILL_APP)
+        packageManager.setComponentEnabledSetting(otherName, disabled, PackageManager.DONT_KILL_APP)
+        // Disabling the alias that launched this task already removed it, and a
+        // surviving process cannot serve another one (winit builds a single
+        // event loop per process). Close deliberately instead of leaving a
+        // headless process, and the next tap on the new icon is a cold start.
+        //
+        // Restarting the app for the player would need a background activity
+        // start, which Android refuses once this process is no longer in front;
+        // the alarm-and-relaunch approach only worked while the app still held
+        // the foreground.
+        finishAndRemoveTask()
+        Process.killProcess(Process.myPid())
+    }
+
+    /** The app switcher's picture and label for the chosen icon. */
+    private fun updateTaskDescription(veraIcon: Boolean) {
+        // The adaptive icon is an XML drawable, which decodes to no bitmap; the
+        // foreground PNG is the same artwork the launcher composites.
+        val icon = BitmapFactory.decodeResource(
+            resources,
+            if (veraIcon) {
+                R.mipmap.ic_launcher_vera_foreground
+            } else {
+                R.mipmap.ic_launcher_retail_foreground
+            },
+        ) ?: return
+        setTaskDescription(
+            TaskDescription(applicationInfo.loadLabel(packageManager).toString(), icon),
+        )
+    }
+
     private var copiedBytes = 0L
     private var reportedBytes = 0L
 
+    private var lanNetworkCallback: ConnectivityManager.NetworkCallback? = null
+
+    /** The Wi-Fi network the process is bound to, to spot a real change. */
+    private var boundLanNetwork: Network? = null
+
+    /**
+     * Last three hex digits of the Android ID, upper-case; empty when the device
+     * gives none.
+     *
+     * The LAN default handle is the same on every install and a visit drops
+     * advertisements that carry the local name, so two fresh installs never see
+     * each other. Android has no text input to change the name with yet, so the
+     * engine appends this to the stock default (`vera20k::util::device_identity`).
+     * The ID is stable across reinstalls and changes only on a factory reset.
+     * Three digits keep the whole name inside the lobby's 134 px name box.
+     */
+    fun defaultHandleSuffix(): String {
+        val id = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: return ""
+        val hex = id.filter { it.isLetterOrDigit() }.takeLast(3).uppercase()
+        return if (hex.length == 3) hex else ""
+    }
+
+    /**
+     * Runs the LAN visit on the Wi-Fi network.
+     *
+     * Android sends a datagram by the process's default network. With Wi-Fi and
+     * cellular both up — and especially when the Wi-Fi network has no internet —
+     * a limited broadcast otherwise leaves by the mobile interface and the lobby
+     * finds nothing. Called from Rust when the LAN lobby opens
+     * (`vera20k::util::lan_network`).
+     */
+    fun bindLanNetwork() {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        bindWifiNetwork(manager)
+        if (lanNetworkCallback != null) {
+            return
+        }
+        // A Wi-Fi network may appear or go away while the lobby waits.
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = rebindLanNetwork()
+            override fun onLost(network: Network) = rebindLanNetwork()
+        }
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        try {
+            manager.registerNetworkCallback(request, callback)
+            lanNetworkCallback = callback
+        } catch (error: SecurityException) {
+            // Without ACCESS_NETWORK_STATE the visit still runs on the default
+            // network; discovery is what suffers, not the app.
+            lanNetworkCallback = null
+        }
+    }
+
+    /** Leaves the LAN lobby: stop watching and let the system route again. */
+    fun releaseLanNetwork() {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        lanNetworkCallback?.let { manager.unregisterNetworkCallback(it) }
+        lanNetworkCallback = null
+        manager.bindProcessToNetwork(null)
+    }
+
+    private fun rebindLanNetwork() {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        val wifi = wifiNetwork(manager)
+        if (wifi != null) {
+            bindWifiNetwork(manager)
+        }
+        // Registering reports the network that is already there; only a network
+        // that really changed makes the visit forget what it learned.
+        val unchanged = wifi != null && wifi == boundLanNetwork
+        boundLanNetwork = wifi
+        if (!unchanged) {
+            nativeOnLanNetworkChanged()
+        }
+    }
+
+    private fun bindWifiNetwork(manager: ConnectivityManager) {
+        val wifi = wifiNetwork(manager) ?: return
+        try {
+            manager.bindProcessToNetwork(wifi)
+            boundLanNetwork = wifi
+        } catch (error: SecurityException) {
+            // Same fallback as above: keep running on the default network.
+        }
+    }
+
+    /** The Wi-Fi network to run the visit on, internet or not. */
+    private fun wifiNetwork(manager: ConnectivityManager): Network? {
+        val wifi = NetworkCapabilities.TRANSPORT_WIFI
+        val active = manager.activeNetwork
+        if (manager.getNetworkCapabilities(active)?.hasTransport(wifi) == true) {
+            return active
+        }
+        return manager.allNetworks.firstOrNull { network ->
+            manager.getNetworkCapabilities(network)?.hasTransport(wifi) == true
+        }
+    }
+
+    private external fun nativeOnLanNetworkChanged()
     /**
      * Copies the chosen tree into the app's own folder and points config.toml at
      * the copy.

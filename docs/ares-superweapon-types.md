@@ -1,7 +1,7 @@
 # Optional Ares handlers for the stock Chronosphere, Nuke, Dominator and Genetic Mutator
 
-Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+A game that ships `ares.mix` reads and plays these keys in every build ([Ares](ares.md));
+other games keep the original superweapons.
 
 ```ini
 [ChronoSphereSpecial]
@@ -41,7 +41,7 @@ handlers and the `Ext/SWType` hooks); no Ares DLL is loaded.
 
 ## The redirect
 
-In an Ares build the stock `Type=` ChronoSphere, ChronoWarp, MultiMissile,
+In an Ares game the stock `Type=` ChronoSphere, ChronoWarp, MultiMissile,
 PsychicDominator and GeneticConverter are handed to their NewSWType handlers, on the
 dispatch [the common keys](ares-superweapon-common.md) introduced: each handler's
 Initialize sets its defaults on the first rules pass with the section, its LoadFromINI
@@ -54,9 +54,16 @@ plays `SW.Sound`, raises the radar event and prints `Message.Launch`, each unles
 Flags skip it, and remembers the House's last Super (SWLastIndex), which a PostClick
 Super uses as its source.
 
-The other stock Types (Iron Curtain, Force Shield, the paradrops, Psychic Reveal) keep
-their stock owners in this port; parts 2 and 3 below add the Spy Plane and the
-Lightning Storm.
+The Iron Curtain and Force Shield keep their stock handlers. The paradrops,
+Spy Plane, Lightning Storm and Psychic Reveal use their Ares redirects.
+
+## Psychic Reveal
+
+An Ares `Type=PsychicReveal` uses `SW.Range` for both its targeting cursor and
+the area it explores. A single positive value gives a circle around the
+target, and a width and positive height give a rectangle. `SW.Range=-1`
+reveals the playable map directly from the cameo. An absent range or
+`SW.Range=-1,-1` uses `[CombatDamage] PsychicRevealRadius`, capped at 10.
 
 ## Chronosphere
 
@@ -244,7 +251,7 @@ and GroundStrike follow the type's keys, and every draw is `RandomRanged`:
   is current), and throw `Lightning.DebrisMin`..`DebrisMax` pieces of
   `Lightning.Debris`. Unset lists fall back to the `[General]` ones.
 
-In an Ares build every storm, a trigger's too, strikes a cloud from half its
+In an Ares game every storm, a trigger's too, strikes a cloud from half its
 frames on and in list order; a trigger's storm otherwise keeps the stock
 rules. A nuke flash with a duration below -1 never ends.
 
@@ -387,7 +394,7 @@ near the cell for twice its Damage unless an ally stands there. On the
 ground the Foot leaves limbo again at its Location with `DropPodPuff=` and
 `DropPod=` item 0 (item 1 for a far-side entry), idles, commences its
 mission and scatters; a refused Unlimbo blows 100 `C4Warhead=` and leaves it
-in limbo. The stock RulesClass keys are kept only in an Ares build: no stock
+in limbo. The stock RulesClass keys are kept only in an Ares game: no stock
 path installs the DropPod locomotor.
 
 A computer House fires it through the Ares AI's DropPod mode (PickTarget

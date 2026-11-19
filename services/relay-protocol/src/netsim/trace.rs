@@ -82,8 +82,6 @@ pub struct Trace {
     pub client_stats: Vec<(u64, usize, ClientLinkStats)>,
     /// (time µs, client, snapshot) after each relay pass that changed it.
     pub reader_stats: Vec<(u64, usize, ReaderLinkStats)>,
-    /// (time µs, client) of every service.
-    pub services: Vec<(u64, usize)>,
     /// Per client: when each command was issued, in µs.
     pub issued: Vec<Vec<u64>>,
     /// Per client, at the end: (time µs, batch id) of each sealed batch.
@@ -104,11 +102,11 @@ pub struct Trace {
     pub forged: Vec<Forged>,
     /// Every replayed datagram (`forgery` is the client) and the answer.
     pub replayed: Vec<Forged>,
-    /// The relay's canonical records in sequence order, when an interface
-    /// reads them (`Simulation::relay_history`).
-    pub relay_history: Option<Vec<Vec<u8>>>,
-    /// The relay's tag failures over the run (compaction spec §6.4).
-    pub mac_counts: Option<crate::MacFailureCounts>,
+    /// The relay's canonical records in sequence order (compaction spec
+    /// §12.2), by the test-support `RelayServer::ordering_history`.
+    pub relay_history: Vec<Vec<u8>>,
+    /// The relay's session alerts over the run (compaction spec §6.4 item 2).
+    pub session_alerts: u64,
     /// Per client: tags that failed at the client (§6.4 item 6).
     pub client_mac_failures: Vec<u64>,
 }

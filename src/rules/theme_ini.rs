@@ -8,7 +8,6 @@
 use crate::assets::asset_manager::AssetManager;
 use crate::rules::ini_parser::{IniFile, IniSection};
 
-const THEME_INI_NAME: &str = "thememd.ini";
 const RA2_THEME_INI_NAME: &str = "theme.ini";
 
 /// One `[Themes]` entry (native 0x290-byte record, ctor inside `0x00720590`,
@@ -47,8 +46,9 @@ impl ThemeCatalog {
     /// ReadINI720590 + Scan7207F0, then the authorized RA2 gameplay append.
     /// Select independently so RA2 cannot replace YR lifecycle sections.
     pub fn select(assets: &AssetManager) -> Self {
-        let mut entries = crate::rules::retail_sources::select_ini(assets, THEME_INI_NAME)
-            .map_or_else(|_| Vec::new(), |selected| catalog_from_ini(&selected.ini));
+        let mut entries =
+            crate::rules::retail_sources::select_ini(assets, assets.ini_roots().theme())
+                .map_or_else(|_| Vec::new(), |selected| catalog_from_ini(&selected.ini));
         scan_catalog_availability(&mut entries, assets);
         if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, RA2_THEME_INI_NAME) {
             let mut ra2_entries = catalog_from_ini(&selected.ini);
@@ -91,6 +91,19 @@ impl ThemeCatalog {
             .map_or(-1, |index| index as i32)
     }
 
+    /// The catalog as it stands when Scan `0x007207F0` never ran: its gate
+    /// (`0x007207F0..0x0072081B`) needs ScoresPresent, an output device and
+    /// no `-X…Q` (`0x00A8ED64`), and without it every entry keeps the
+    /// constructor's unavailable flag and zero length. Membership, which
+    /// trigger operands read through `from_name`, does not change.
+    pub fn without_scan(mut self) -> Self {
+        for entry in &mut self.entries {
+            entry.available = false;
+            entry.duration_seconds = 0;
+        }
+        self
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_entries_for_test(entries: Vec<ThemeEntry>) -> Self {
         Self { entries }
@@ -125,11 +138,12 @@ fn scan_catalog_availability(entries: &mut [ThemeEntry], assets: &AssetManager) 
 /// without initializing an audio device or decoding whole songs.
 pub fn missing_install_music(assets: &AssetManager) -> Vec<String> {
     let mut missing = Vec::new();
-    for name in [THEME_INI_NAME, RA2_THEME_INI_NAME] {
+    let theme_ini = assets.ini_roots().theme();
+    for name in [theme_ini, RA2_THEME_INI_NAME] {
         let selected = match crate::rules::retail_sources::select_ini(assets, name) {
             Ok(selected) => selected,
             Err(error) => {
-                if name == THEME_INI_NAME {
+                if name == theme_ini {
                     missing.push(format!("{name}: {error}"));
                 }
                 continue;

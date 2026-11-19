@@ -10,24 +10,28 @@ Find the defects the owner missed that would ship wrong behavior, before the PR
 opens. Real defects found are the measure, not coverage. Look first where a wrong
 result costs most, common paths before rare ones:
 
-1. Gameplay a player can see that differs from active-retail `gamemd.exe`.
+1. Gameplay a player can see that differs from active-retail `gamemd.exe`, including
+   stock play changed by an extension or fix without its switch.
 2. Determinism, state authority and lifecycle: a copy, wrapper or competing owner,
    tick order, timers, persistence.
-3. Native claims without the evidence AGENTS.md requires.
-4. Tests that miss the behavior or only mirror the implementation, and test or fixture
+3. Online play: what an outdated, modified or hostile client can break or read, and
+   what a mixed room or a rollback does.
+4. Native claims without the evidence AGENTS.md requires.
+5. Tests that miss the behavior or only mirror the implementation, and test or fixture
    bloat beyond AGENTS.md's limits: sweeps, unread fields, oversized corpora.
-5. Refactoring opportunities worth their risk.
+6. Refactoring opportunities worth their risk.
 
 Stop when more checking is unlikely to change a finding, and list what you did not
 reach as coverage gaps.
 
 ## When
 
-Run one fresh read-only critic for each change to gameplay behavior, after
-implementation and focused tests and before opening its PR. Each validated,
-dependency-coherent mechanism gets its own PR and at most one critic pass; do not
-hold validated mechanisms back to batch them into one review. Changes outside
-gameplay (rendering, UI, tooling, tests, docs) and trivial edits get no critic.
+Run one fresh read-only critic for each change to gameplay behavior or to online play
+(protocol, relay, lobby exchange, accounts, updater), after implementation and focused
+tests and before opening its PR. Each validated, dependency-coherent mechanism gets its
+own PR and at most one critic pass; do not hold validated mechanisms back to batch them
+into one review. Other changes (rendering, UI, tooling, tests, docs) and trivial edits
+get no critic.
 Do not run critics per implementation increment, or follow-up or replacement critics
 after fixes or revisions, unless the user explicitly asks.
 

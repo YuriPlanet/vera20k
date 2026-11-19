@@ -77,7 +77,9 @@ fn shared_null_destination_matches_original_gate_and_timer_boundaries() {
             );
         }
         if input["open_transport"] == true {
-            e.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(2, true);
+            e.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                2, true,
+            ));
         }
         sim.substrate.entities.insert(e);
         if aircraft {
@@ -971,10 +973,8 @@ fn destination_receipt_actor(
 fn noncell_foot_destinations_match_original_anytown_class_calls() {
     use crate::sim::rng::SimRng;
 
-    let native: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/foot_missions.json",
-    ))
-    .unwrap();
+    let native =
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
     let rows = native["navigation_rows"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
     for row in rows {

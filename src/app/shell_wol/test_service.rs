@@ -1,8 +1,7 @@
-//! VERA's offline WOL test service: a developer stand-in behind the same
-//! request/event boundary a real service will use, chosen by the Options
-//! page's `[VERA] WolTestService=` box. It is not gamemd behavior: it lets
-//! the Internet screens (login `0x10F`, lobby `0x113`, setup C2/C9) be
-//! opened and clicked without a server.
+//! VERA's offline WOL test service: a stand-in behind the live service's
+//! request/event boundary, which only shell captures select. It is not
+//! gamemd behavior: it lets the Internet screens (login `0x10F`, lobby
+//! `0x113`, setup C2/C9) be opened and clicked without a server.
 //!
 //! It answers the visit's and the WOL setup's requests once no shell
 //! transition runs: like a real service, a reply arrives after the page that
@@ -27,7 +26,9 @@
 
 use super::lobby::WolJoined;
 use super::service::{WolHighScoreRecord, WolLadderRecord};
-use super::{WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent};
+use super::{
+    SERVER_STATUS_READY, WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent,
+};
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
 use crate::app::match_runtime::session::SessionMode;
@@ -38,9 +39,6 @@ use crate::ui::wol_lobby::{
 };
 use crate::ui::wol_login::WolCredential;
 use crate::util::time::Instant;
-
-/// Event 9's status that completes the server-list wait.
-const SERVER_STATUS_READY: u32 = 0x0004_012F;
 
 /// Replies per poll; each may queue further requests (a list reply asks to
 /// join, a join asks for both lists).
@@ -97,6 +95,7 @@ fn pending(state: &AppState) -> bool {
 fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
     if state.match_state.session_mode() != SessionMode::Wol
         || !(state.frontend.shell_route.network_setup()
+            || super::lobby::visiting(state)
             || crate::app::shell_network_setup::quick_match(state))
     {
         return Vec::new();
@@ -125,6 +124,10 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
         {
             log::warn!("WOL test service: host options refused: {error:#}");
         }
+        return;
+    }
+    // The stand-in lobby rates nobody, so its balance moves nobody.
+    if request == NetworkSetupRequest::Balance {
         return;
     }
     // 0x0078F000: the stand-in server keeps the host's new record.
@@ -336,7 +339,6 @@ fn host_options(
         }
     }
     launch.selected_map_file = Some(file.clone());
-    launch.rebuild_house_roster();
     let map_metadata = crate::app::shell_network_setup::local_map_metadata(state, &file)?;
     crate::app::shell_network_setup::service_event(
         state,
@@ -376,13 +378,9 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
             WolServiceEvent::ServerList(Ok(servers()))
         }
-        // VERA's own message of the day, then this service's.
         WolServiceRequest::Connect { .. } => WolServiceEvent::Login(Ok(WolLoginAccepted {
-            motd: format!(
-                "{}\n{}",
-                super::service::vera_motd(state),
-                crate::i18n::tr(MOTD)
-            ),
+            motd: crate::i18n::tr(MOTD),
+            lobby_visits: true,
         })),
         WolServiceRequest::ListChannels { kind, .. } => WolServiceEvent::Channels {
             kind,
@@ -392,6 +390,22 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
                 lobbies()
             },
         },
+        // VERA: the stand-in public lobby, visited from a game room.
+        WolServiceRequest::VisitLobby => {
+            let mut members = lobby_members();
+            members.push(WolMember {
+                squad: SQUAD,
+                ..member(&nickname(state), 0)
+            });
+            let Some(mut channel) = lobbies()
+                .into_iter()
+                .find(|lobby| lobby.name == super::lobby::PUBLIC_LOBBY_NAME)
+            else {
+                return;
+            };
+            channel.users = members.len() as i32;
+            WolServiceEvent::VisitJoined(WolJoined { channel, members })
+        }
         WolServiceRequest::JoinChannel { mut channel, .. } => {
             let local = nickname(state);
             let lobby = channel.kind != GAME_CHANNEL;
@@ -535,6 +549,11 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         }
         // VERA online's account requests: the stand-in lobby accepts each.
         WolServiceRequest::Account(_) => WolServiceEvent::Account(Ok(())),
+        // Nobody plays, so no match can be watched.
+        WolServiceRequest::ListMatches => WolServiceEvent::Matches(Vec::new()),
+        WolServiceRequest::Watch { .. } => {
+            WolServiceEvent::WatchRefused(super::lobby::WATCH_UNKNOWN_MATCH)
+        }
         // Nothing to cancel or deliver: nobody is online.
         WolServiceRequest::SetLocale(_)
         | WolServiceRequest::LeaveChannel
@@ -543,6 +562,9 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         | WolServiceRequest::CancelWait
         | WolServiceRequest::Chat { .. }
         | WolServiceRequest::Emote { .. }
+        | WolServiceRequest::EndVisit
+        | WolServiceRequest::VisitChat { .. }
+        | WolServiceRequest::VisitEmote { .. }
         // Server-side page/find/language enforcement is not simulated.
         | WolServiceRequest::SetLangFilter(_)
         | WolServiceRequest::SetFindPage { .. }
@@ -558,6 +580,7 @@ fn lobby_greeting(state: &mut AppState) {
     let line = |from, text: &str| WolServiceEvent::Message {
         from,
         text: text.encode_utf16().collect(),
+        localized: false,
         private: false,
         action: false,
         ansi: false,
@@ -768,6 +791,7 @@ fn match_requested(state: &mut AppState) {
     let line = |text: String, private: bool, options| WolServiceEvent::Message {
         from: member(MATCHBOT, MEMBER_OPERATOR),
         text: text.encode_utf16().collect(),
+        localized: false,
         private,
         action: false,
         ansi: true,
@@ -908,7 +932,7 @@ fn store_credential(stored: &mut Vec<WolCredential>, nickname: String, password:
     stored.sort_by_key(|stored| stored.slot);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

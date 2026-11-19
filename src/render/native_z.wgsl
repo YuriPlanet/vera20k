@@ -1,6 +1,9 @@
 // Native stored Z is an unsigned 16-bit word; lower is nearer, empty=65535.
 // The independent row seed is32768. Preserve the entire word in Depth32Float.
 // TREE leaves 4990E0/497390 compare signed candidate BEFORE this low16 store.
+// RESIDUAL: the sprite and voxel pipelines compare this low16 word, where
+// every Z leaf compares the signed 32-bit candidate (draw iff cand < stored).
+// They differ only for cand < 0 or > 65535, about 32K rows from the seed.
 fn stored_native_depth(z: i32) -> f32 {
     return f32(bitcast<u32>(z) & 65535u) / 65535.0;
 }

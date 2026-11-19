@@ -1,7 +1,8 @@
 //! Overlay and terrain object parsing from RA2 map files.
 //!
 //! RA2 maps have three overlay-related sections:
-//! - `[OverlayPack]`: base64 → LCW compressed → 262,144 bytes (512×512 grid).
+//! - `[OverlayPack]`: base64 → LCW compressed → 262,144 bytes (512×512 grid),
+//!   or 1024×1024 on VERA's extended sizes (`docs/map-format.md`).
 //!   Each byte is an overlay type ID (0xFF = no overlay).
 //! - `[OverlayDataPack]`: same format. Each byte is a frame/value for the overlay
 //!   (e.g., ore density 0-11, wall connection frame).
@@ -310,7 +311,7 @@ fn decode_pack_section(ini: &IniFile, section_name: &str, grid: CellGrid) -> Opt
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -404,7 +405,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod large_map_tests {
     use super::*;
     #[test]

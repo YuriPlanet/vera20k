@@ -852,7 +852,7 @@ pub(crate) enum ArrivalStep {
     },
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "mega_mission_tests.rs"]
 mod tests;
 

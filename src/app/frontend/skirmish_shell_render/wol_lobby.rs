@@ -105,6 +105,7 @@ pub(super) fn push_edit(
         None,
         rect,
         caret_visible,
+        SHELL_LABEL_TEXT_RGB,
         text_depth,
         scale,
     );
@@ -237,6 +238,7 @@ pub(crate) fn paint_wol_lobby_children(
             .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
         layout.chat,
         ui.popup.is_none() && ui.caret_visible(now),
+        SHELL_LABEL_TEXT_RGB,
         SHELL_CONTROL_TEXT_DEPTH,
         scale,
     );
@@ -369,7 +371,8 @@ pub(crate) fn paint_wol_lobby_children(
         }
         // A -1 ping is the text "???"; any other is an integer cell. The
         // modern list centres it under its Ping header instead of starting
-        // it at the retail column, left of the header's caption.
+        // it at the retail column, left of the header's caption. A match to
+        // watch has no ping.
         let ping = if row.ping == -1 {
             "???".to_owned()
         } else {
@@ -382,7 +385,9 @@ pub(crate) fn paint_wol_lobby_children(
             ),
             None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
         };
-        paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
+        if !row.watch {
+            paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
+        }
         if modern {
             if row.keyed
                 && let Some(art) = art
@@ -497,7 +502,6 @@ pub(crate) fn paint_wol_lobby_children(
 /// VERA's Players trackbar and Allow spectators box in a Create Game box,
 /// painted after the box as its other checkboxes are.
 pub(super) fn paint_room_limits(
-    state: &AppState,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     controls: &mut Vec<SpriteInstance>,
     labels: &mut Vec<PaintLabel<'_>>,
@@ -611,11 +615,15 @@ pub(crate) fn paint_wol_lobby_popup(
             let layout =
                 crate::ui::shell::modal::wol_create_game_layout_on(width, height, modern, scale);
             let check_text = |rect| crate::ui::skirmish_shell::checkbox_text_rect(rect, scale);
-            // Style SS_RIGHT.
+            let field_align = if modern {
+                ShellAlign::H_RIGHT | ShellAlign::V_CENTER
+            } else {
+                ShellAlign::H_RIGHT
+            };
             let mut labels = vec![caption(
                 "GUI:Password",
                 layout.password_label,
-                ShellAlign::H_RIGHT,
+                field_align,
                 true,
             )];
             // The online layout has no clan or observer box.
@@ -651,15 +659,7 @@ pub(crate) fn paint_wol_lobby_popup(
                 ));
             }
             if let (Some(picker), Some(room)) = (&create.room, &layout.room) {
-                paint_room_limits(
-                    state,
-                    atlas,
-                    &mut paint.controls,
-                    &mut labels,
-                    picker,
-                    room,
-                    scale,
-                );
+                paint_room_limits(atlas, &mut paint.controls, &mut labels, picker, room, scale);
             }
             if let (Some(ranked), Some(rect)) = (create.ranked, layout.ranked) {
                 paint_control(
@@ -679,11 +679,44 @@ pub(crate) fn paint_wol_lobby_popup(
                     path_a_reveal: None,
                 });
             }
+            // Watching: its caption, and the box ticked while others may
+            // watch, beside its value.
+            if let (Some(watching), Some((label, rect))) = (create.watching, layout.watching) {
+                paint_control(
+                    &mut paint.controls,
+                    &atlas.control_chrome(),
+                    ControlPaint::Checkbox {
+                        rect,
+                        checked: watching != RoomWatching::Off,
+                    },
+                    scale,
+                );
+                for (key, rect, align) in [
+                    (
+                        "VERA:Watching",
+                        label,
+                        ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+                    ),
+                    (
+                        watching.label_key(),
+                        crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+                        ShellAlign::V_CENTER,
+                    ),
+                ] {
+                    labels.push(PaintLabel {
+                        text: crate::i18n::tr(key).into(),
+                        rect,
+                        align,
+                        rgb: SHELL_LABEL_TEXT_RGB,
+                        path_a_reveal: None,
+                    });
+                }
+            }
             if let (Some(edit), Some((label, rect))) = (&create.name, layout.name) {
                 labels.push(PaintLabel {
                     text: crate::i18n::tr("VERA:RoomName").into(),
                     rect: label,
-                    align: ShellAlign::H_RIGHT,
+                    align: field_align,
                     rgb: SHELL_LABEL_TEXT_RGB,
                     path_a_reveal: None,
                 });

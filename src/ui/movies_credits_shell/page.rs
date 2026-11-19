@@ -68,7 +68,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MenuPageLayout {
     menu_page::compute_layout(&MOVIES_CREDITS_PAGE, screen_w, screen_h)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::shell::geom::RectPx;

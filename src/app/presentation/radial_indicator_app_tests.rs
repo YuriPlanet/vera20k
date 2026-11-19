@@ -58,6 +58,7 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
     let mut pulse = RangePulse::default();
     let result = build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         ids,
         None,
@@ -103,6 +104,7 @@ fn target_query(
     )]);
     build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         &[],
         armed_super_weapon,
@@ -488,8 +490,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
         .unwrap();
     // A retained dummy target makes the dummy coordinate part of lockstep
     // state. This supplied prior isolates rendering from target acquisition.
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
             u16::MAX,
@@ -519,6 +520,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
         );
         let draws = build(
             Some(&sim),
+            Some(&crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules)),
             Some(rules),
             &[],
             Some("NukeSpecial"),
@@ -552,15 +554,8 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
 }
 
 fn advance(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_app_frame(
-        &[],
-        rules,
-        None,
-        33,
-        TickLane::Ordinary,
-        FrameEffects::default(),
-    )
-    .unwrap();
+    sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, FrameEffects::default())
+        .unwrap();
 }
 
 /// One composite while `armed` is placed at `cursor` or `super_weapon` is
@@ -581,6 +576,7 @@ fn action_query(
     let [placement, superweapon] = pulses;
     build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         &[],
         super_weapon,
@@ -914,6 +910,7 @@ fn placement_query(
     let mut pulse = RangePulse::default();
     build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         &[],
         None,
@@ -991,8 +988,7 @@ fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
     let mut sim = state(&rules);
     insert_enhancer(&mut sim, "ENH", "Americans", (16, 16), false);
     assert!(placement_query(&sim, &rules, "GAPOWR", (18, 16), true).is_empty());
-    sim.entities_mut_for_test()
-        .get_mut(1)
+    sim.entity_mut_for_test(1)
         .unwrap()
         .set_building_online_for_test(true);
     assert_eq!(
@@ -1081,7 +1077,7 @@ fn designator_query(
 /// (`Phobos.INI.cpp:133`, `Ext/Rules/Body.cpp:176`, `Ext/SWType/Body.cpp:283`);
 /// the combined client/rules bool short-circuits the arm, no armed superweapon
 /// draws nothing, and the armed `[SuperWeaponType]` switch is checked in build.
-#[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
 #[test]
 fn designator_range_gates_default_and_short_circuit() {
     assert!(
@@ -1135,7 +1131,7 @@ fn designator_range_gates_default_and_short_circuit() {
 /// One own designator and one enemy inhibitor ring in their owning house's
 /// colour at `DesignatorRange`/`InhibitorRange`; a designator type without
 /// `DesignatorRange` falls back to `Sight` (`Ext/SWType/Hooks.cpp:81-88`).
-#[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
 #[test]
 fn designator_and_inhibitor_rings_use_house_colour_and_range() {
     let rules = designator_rules("");
@@ -1162,10 +1158,7 @@ fn designator_and_inhibitor_rings_use_house_colour_and_range() {
         crate::rules::house_colors::HouseColorIndex(5),
     );
     // Without Ares the nullable range keys are unread, so Sight is the source.
-    #[cfg(feature = "ares")]
     let (desig_radius, inhib_radius) = (5.0_f32, 4.0_f32);
-    #[cfg(not(feature = "ares"))]
-    let (desig_radius, inhib_radius) = (3.0_f32, 2.0_f32);
     let has = |radius: f32, rgb: [u8; 3]| draws.iter().any(|d| d.radius == radius && d.rgb == rgb);
     assert!(
         has(desig_radius, american),
@@ -1183,7 +1176,7 @@ fn designator_and_inhibitor_rings_use_house_colour_and_range() {
 
 /// The hook skips allies other than the current player, limbo and dead
 /// technos, and types absent from the lists (`Ext/SWType/Hooks.cpp:70-77`).
-#[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
 #[test]
 fn designator_scan_excludes_allies_limbo_dead_and_unlisted() {
     let rules = designator_rules("");

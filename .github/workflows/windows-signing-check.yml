@@ -51,12 +51,9 @@ jobs:
           from datetime import datetime, timezone
           import os
           from pathlib import Path
-          from tools.test_windows_signing import pe_fixture, signing
+          from tools.test_windows_signing import package_fixture, signing
           package = Path('packaging-fixture')
-          package.mkdir()
-          for filename in signing.PACKAGE_FILES:
-              data = pe_fixture() if filename.endswith('.exe') else b'Inert packaging fixture.\n'
-              (package / filename).write_bytes(data)
+          package_fixture(package)
           stamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
           iscc = Path(os.environ['INNO_SETUP_ISCC'])
           signing.plain(package, Path('plain-installer'), '0.0.0', stamp, 'packaging-fixture', iscc)
@@ -117,6 +114,7 @@ jobs:
         shell: bash
         env:
           VERA20K_COMMIT: ${{ github.sha }}
+          VERA20K_LANGUAGE_FOLDER: '1'
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -134,6 +132,7 @@ jobs:
           mkdir -p dist/package
           cp target/shipping/vera20k.exe config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html dist/package/
+          bash .github/release/languages.sh dist/package
           sed -e "s/@VERSION@/${version}/" -e "s/@BUILD@/${stamp}/" -e "s/@COMMIT@/${GITHUB_SHA}/" \
             .github/release/README.txt.in > dist/package/README.txt
           python .github/release/windows/signing.py prepare --package dist/package \

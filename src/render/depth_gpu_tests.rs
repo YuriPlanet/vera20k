@@ -285,13 +285,18 @@ impl Gpu {
                 )
             } else if let Some(rows) = &layer.palette_rows {
                 self.texture(
-                    wgpu::TextureFormat::Rgba8UnormSrgb,
+                    wgpu::TextureFormat::Rgba8Unorm,
                     rows,
                     [256, (rows.len() / 1024) as u32],
                 )
             } else {
+                // Tile pages are encoded, like production's; RGBA pages are sRGB.
                 self.texture(
-                    wgpu::TextureFormat::Rgba8UnormSrgb,
+                    if matches!(layer.shader, Shader::Terrain) {
+                        wgpu::TextureFormat::Rgba8Unorm
+                    } else {
+                        wgpu::TextureFormat::Rgba8UnormSrgb
+                    },
                     &layer.rgba,
                     layer.source_size,
                 )
@@ -326,18 +331,13 @@ impl Gpu {
             if let Some(bytes) = &layer.palette_override {
                 palette_bytes.clone_from(bytes);
             }
-            let palette = self.texture(
-                wgpu::TextureFormat::Rgba8UnormSrgb,
-                &palette_bytes,
-                [256, 1],
-            );
+            let palette = self.texture(wgpu::TextureFormat::Rgba8Unorm, &palette_bytes, [256, 1]);
             let ramp_bytes = if layer.palette_override.is_some() {
                 palette_bytes[16 * 4..32 * 4].repeat(2)
             } else {
                 [RED.repeat(16), GREEN.repeat(16)].concat()
             };
-            let house_ramp =
-                self.texture(wgpu::TextureFormat::Rgba8UnormSrgb, &ramp_bytes, [16, 2]);
+            let house_ramp = self.texture(wgpu::TextureFormat::Rgba8Unorm, &ramp_bytes, [16, 2]);
             let voxel_palette_group = voxel.then(|| {
                 self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Depth test indexed VXL palette and house ramp"),
@@ -839,6 +839,44 @@ fn bridge_direct_shp_unit_uses_whole_body_flat_fudge_even_below_split_height() {
 }
 
 #[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn unsplit_voxel_body_seeds_from_its_view_clipped_bottom() {
+    use super::native_z::pack_voxel_z_gradient;
+
+    // Bit_Blit clips an unsplit composite's rectangle to the view before it
+    // seeds (0x00437461, 0x004374BB..0x004375A7): a body running 12 rows past
+    // a 20-row view walks Z as if its bottom row were the view's last.
+    let gpu = Gpu::new();
+    let size = [20, 24];
+    let mut terrain = Layer::solid(Shader::Terrain, RED, -40.0);
+    terrain.source_size = size;
+    terrain.instance.size = [20.0, 24.0];
+    terrain.rgba = RED.repeat(20 * 24);
+    terrain.z_bytes = (0..20 * 24)
+        .map(|pixel| 40 - [5, 10, 11, 12, 18, 19, 20, 21, 22, 23][pixel % 10])
+        .collect();
+
+    let mut cut = indexed_bridge_test_layer([0.0, 4.0], [20, 16], 33);
+    cut.instance.zshape_origin = [4.0, 16.0];
+    cut.instance.z_gradient = ZGradient::Vertical as u32;
+    let expected = gpu.render_sized(&[terrain.clone(), cut], size);
+
+    let mut body = indexed_bridge_test_layer([0.0, 4.0], [20, 28], 33);
+    body.instance.zshape_origin = [4.0, 28.0];
+    body.instance.z_gradient = pack_voxel_z_gradient(ZGradient::Vertical, false);
+    body.instance.draw_state.fx_params[3] = 20.0;
+    let actual = gpu.render_sized(&[terrain.clone(), body.clone()], size);
+    assert_eq!(actual, expected, "unsplit body ignored the view clip");
+
+    body.instance.z_gradient = ZGradient::Vertical as u32;
+    assert_ne!(
+        gpu.render_sized(&[terrain, body], size),
+        actual,
+        "fixture missed the clipped seed"
+    );
+}
+
+#[test]
 #[ignore = "requires installed stock YR assets and a wgpu adapter; run explicitly"]
 fn stock_cliff_decoder_and_terrain_instances_occlude_shp_and_indexed_voxels() {
     use std::collections::HashSet;
@@ -941,6 +979,7 @@ fn stock_cliff_decoder_and_terrain_instances_occlude_shp_and_indexed_voxels() {
         60.0,
         Some(&lookup),
         None,
+        Vec::new(),
     )
     .normal;
     assert_eq!(instances.len(), 1);

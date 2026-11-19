@@ -40,6 +40,7 @@ fn locals(sim: &Simulation, count: u32) -> Vec<bool> {
 /// 0x7032B0), compared by House index.
 #[test]
 fn damage_and_kill_events_compare_the_attacking_house() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules("");
     let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let attacker = spawn_event_ingress_unit(&mut sim, &rules, houses[1], (17, 15));
@@ -77,6 +78,7 @@ fn damage_and_kill_events_compare_the_attacking_house() {
 /// array. 81/82 ask the Trigger's House, 86 and the replaced 60/61 everyone.
 #[test]
 fn owned_type_events_count_the_houses_objects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _overlays, houses) = event_ingress_fixture_with_rules(
         "[BuildingTypes]\n1=TAGPOST\n[TAGPOST]\nStrength=100\nInsignificant=yes\n",
     );
@@ -129,6 +131,7 @@ fn owned_type_events_count_the_houses_objects() {
 /// stock body answers true.
 #[test]
 fn house_value_events_resolve_player_slots_and_keep_alive_counts() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _overlays, houses) = event_ingress_fixture_with_rules(
         "[BuildingTypes]\n1=TAGHQ\n[TAGHQ]\nStrength=1000\n\
          [InfantryTypes]\n2=KEEPER\n[KEEPER]\nStrength=100\nSpeed=4\nSpeedType=Foot\n\
@@ -187,6 +190,7 @@ fn house_value_events_resolve_player_slots_and_keep_alive_counts() {
 /// (Deactivate 100325D0).
 #[test]
 fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules(
         "[SuperWeaponTypes]\n0=Cell\n1=Other\n\
          [Cell]\nType=Battery\nRechargeTime=1\nIsPowered=no\nSW.AlwaysGranted=yes\n\
@@ -226,9 +230,14 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     );
     sim.session.set_binary_frame_for_test(100);
     crate::sim::superweapon::grant_provided_supers(&mut sim, &rules, owner);
-    crate::sim::superweapon::update_owned_supers(&mut sim, &rules, owner);
+    crate::sim::superweapon::update_owned_supers(&mut sim, &rules, owner, FrameEffects::default());
     sim.session.set_binary_frame_for_test(1000);
-    crate::sim::superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+    crate::sim::superweapon::tick_house_superweapon_instances(
+        &mut sim,
+        &rules,
+        owner,
+        FrameEffects::default(),
+    );
     let fire = |sim: &mut Simulation| {
         sim.apply_command_with_overlays(
             "House0",
@@ -248,11 +257,77 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     assert_eq!(locals(&sim, 5), [true, false, true, false, true]);
 }
 
+#[test]
+fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
+    use crate::sim::{command::Command, superweapon, world::TickLane};
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for expire in [false, true] {
+        let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules(
+            "[SuperWeaponTypes]\n0=Cell\n[Cell]\nType=Battery\nRechargeTime=0.02\n\
+             IsPowered=no\nSW.AlwaysGranted=yes\nSW.InitialReady=yes\nSW.ChargeToDrainRatio=1\n\
+             [OverlayTypes]\n0=BOX\n[BOX]\nCrate=yes\n[CrateRules]\nWoodCrateImg=BOX\nCrateImg=BOX\n",
+        );
+        let owner = houses[0];
+        let cell = sim.interner.get("Cell").unwrap();
+        let crate_id = overlays.id_for_name("BOX").unwrap();
+        let map = install_event_ingress_map(
+            &mut sim,
+            &rules,
+            "[Waypoints]\n0=15015\n[Triggers]\nEND=Country0,<none>,Battery ended,0,1,1,1,0\n\
+             [Tags]\nENDTAG=0,Battery ended,END\n[Events]\nEND=1,76,0,0\n\
+             [Actions]\nEND=3,132,11,0,0,0,0,0,123,56,0,0,0,0,0,0,A,108,0,0,0,0,0,0,A\n",
+        );
+        sim.session.install_waypoints(&map.waypoints);
+        for house in houses {
+            superweapon::construct_house_supers(&mut sim, &rules, house, false);
+        }
+        superweapon::grant_provided_supers(&mut sim, &rules, owner);
+        let command = Command::LaunchSuperWeapon {
+            sw_type_id: cell,
+            target_rx: 15,
+            target_ry: 15,
+        };
+        let registry = Some(&overlays);
+        let effects = FrameEffects::default();
+        let click = |sim: &mut Simulation| {
+            sim.apply_command_with_overlays("House0", &command, &rules, registry, effects)
+        };
+        assert!(click(&mut sim));
+        assert!(sim.power_states[&owner].has_battery());
+        if expire {
+            let duration = sim.super_weapons[&owner][&cell].charge_duration();
+            assert!(duration > 0);
+            for _ in 0..=duration {
+                sim.advance_app_frame(&[], &rules, 66, TickLane::Ordinary, effects)
+                    .unwrap();
+            }
+        } else {
+            click(&mut sim);
+        }
+        assert!(!sim.power_states[&owner].has_battery());
+        assert!(
+            sim.trigger_runtime.local_variable_is_set(0),
+            "event 76 marked the local variable"
+        );
+        assert_eq!(
+            sim.overlay_grid().unwrap().cell(15, 15).overlay_id,
+            Some(crate_id),
+            "place crate on deactivation (timer expired: {expire})"
+        );
+        // Expiry restarts after the Tag's action 132. An immediate click-off at
+        // a 1:1 ratio already converted the full drain back to zero recharge.
+        let expected = if expire { 123 } else { 0 };
+        assert_eq!(sim.super_weapons[&owner][&cell].charge_duration(), expected);
+    }
+}
+
 /// The abduction raises 72 (by the abductor's House) and 71 on the abductee,
 /// then 74 (of the abductee's previous House) and 73 on the abductor
 /// (conductAbduction 10054A80).
 #[test]
 fn an_abduction_raises_its_events_on_both_objects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // The ingress fixture's Houses, with an abductor among its VehicleTypes.
     let mut text = String::from("[Countries]\n");
     for index in 0..8 {
@@ -332,6 +407,7 @@ fn an_abduction_raises_its_events_on_both_objects() {
 /// them to the House Value names).
 #[test]
 fn ares_actions_write_power_group_voice_and_drivers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules("");
     let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let other = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (17, 15));
@@ -373,6 +449,7 @@ fn ares_actions_write_power_group_voice_and_drivers() {
 /// when some waypoint is defined.
 #[test]
 fn random_waypoint_sound_without_waypoints_draws_nothing() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _overlays, _houses) = event_ingress_fixture_with_rules("");
     sim.session
         .install_waypoints(&std::collections::HashMap::new());

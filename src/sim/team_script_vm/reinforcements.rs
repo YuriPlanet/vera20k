@@ -11,7 +11,7 @@
 
 use super::{TeamScriptAction, TeamTarget, TeamTypeHouse};
 use crate::map::entities::EntityCategory;
-use crate::rules::locomotor_type::MovementZone;
+use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::tiberium_type::TiberiumTypeId;
@@ -22,8 +22,10 @@ use crate::sim::miner::CargoBale;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
 use crate::sim::movement::teleport_movement::ChronoWarp;
+use crate::sim::movement::tunnel_movement::TUNNEL_DEPTH_Z;
 use crate::sim::tiberium::resource_type_for_tiberium_slot;
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
+use crate::util::native_x87::NativeF64Bits;
 
 impl Simulation {
     /// GetHouse6F2070: fixed Country attachment, otherwise the native
@@ -45,7 +47,6 @@ impl Simulation {
     /// 0x65EC4A), at the entry of both reinforcement owners: the TeamType's
     /// House (GetHouse) must exist, and unless the TeamType names a Country
     /// (`+0xC4`) or this is a campaign, must not be defeated.
-    #[cfg(feature = "ares")]
     fn ares_reinforcement_house_valid(&self, team_type: InternedId, rules: &RuleSet) -> bool {
         let Some(house) = self.team_type_house(team_type, rules) else {
             return false;
@@ -98,6 +99,25 @@ impl Simulation {
         Some(id)
     }
 
+    /// `TeamClass::TeamClass @ 0x006E8A90` called directly, with no `Max=`
+    /// gate: Reinforcement65DD30 and team script action 18 (`0x006E96E4`).
+    /// The constructor takes the TeamType's initial waypoint and its own Tag.
+    pub(crate) fn construct_team_unlimited(
+        &mut self,
+        team_type: InternedId,
+        owner: InternedId,
+    ) -> Option<u64> {
+        let zone = self.team_initial_zone(team_type);
+        let team = self.team_script_vm.construct_team_instance(
+            team_type,
+            owner,
+            self.session.binary_frame() as i32,
+            zone,
+        )?;
+        self.attach_team_trigger_tag(team, team_type);
+        Some(team)
+    }
+
     /// Trigger4 original6DEB6B brackets CreateTeam with A8E7AC. Recruiting
     /// remains in TeamAI's normal same-frame visit, using real class arrays.
     pub(crate) fn trigger_create_team(
@@ -122,8 +142,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
-        #[cfg(feature = "ares")]
-        if !self.ares_reinforcement_house_valid(team_type, rules) {
+        if rules.ares_form() && !self.ares_reinforcement_house_valid(team_type, rules) {
             return (false, None);
         }
         let Some(definition) = self.team_script_vm.team_types.get(&team_type).copied() else {
@@ -305,8 +324,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
-        #[cfg(feature = "ares")]
-        if !self.ares_reinforcement_house_valid(team_type, rules) {
+        if rules.ares_form() && !self.ares_reinforcement_house_valid(team_type, rules) {
             return (false, None);
         }
         let Some(definition) = self.team_script_vm.team_types.get(&team_type).copied() else {
@@ -709,7 +727,6 @@ impl Simulation {
                 .entities
                 .get_mut(member)
                 .unwrap()
-                .passenger_role
                 .set_inside_transport(plane, false);
         }
         //65DCF9 invokes Aircraft Commence41B870 directly, with no Ready
@@ -777,14 +794,7 @@ impl Simulation {
             return None;
         }
         let owner = self.team_type_house(team_type, rules)?;
-        let zone = self.team_initial_zone(team_type);
-        let team = self.team_script_vm.construct_team_instance(
-            team_type,
-            owner,
-            self.session.binary_frame() as i32,
-            zone,
-        )?;
-        self.attach_team_trigger_tag(team, team_type);
+        let team = self.construct_team_unlimited(team_type, owner)?;
         let state = self
             .team_script_vm
             .teams
@@ -930,7 +940,6 @@ impl Simulation {
                         .entities
                         .get_mut(member)
                         .expect("loaded Full member")
-                        .passenger_role
                         .set_inside_transport(transport, false);
                 }
                 if air_transports && has_unload_script {
@@ -948,7 +957,11 @@ impl Simulation {
         Some(members)
     }
 
-    /// Normal65E010 without Tunnel/Droppod. A successful member leaves the
+    /// Normal and Tunnel65E010 without Droppod. A team whose every member's
+    /// type names the Tunnel CLSID (`0x007E9A50`) in `Locomotor=` (Type+0x34C,
+    /// 65E039..65E064) takes the nearby-cell search and heading zero, as a
+    /// nearby team does, and each member arrives underground
+    /// ([`Self::place_tunnel_reinforcement`]). A successful member leaves the
     /// candidate unchanged for the next member; never invent formation
     /// offsets. Failure tests native eight directions and the inverted Size
     /// gate65E554: only OUTSIDE Size candidates reach class admission. Original
@@ -970,6 +983,15 @@ impl Simulation {
             .get(&owner)
             .map_or(0, |house| house.authored_edge());
         let edge = if edge == -1 { 0 } else { edge };
+        let all_tunnel = !members.is_empty()
+            && members.iter().all(|&member| {
+                self.substrate
+                    .entities
+                    .get(member)
+                    .and_then(|member| self.object_type(member.type_ref(), rules))
+                    .is_some_and(|object| object.locomotor == LocomotorKind::Tunnel)
+            });
+        let nearby = nearby || all_tunnel;
         if nearby {
             let speed = self
                 .substrate
@@ -1036,8 +1058,12 @@ impl Simulation {
                 //a retry decrements before restarting. Unit's destructor
                 //uses this same byte to retain cargo on that refusal path.
                 let (placed, next) = self.with_object_placement_scope(|sim| {
-                    let placed = sim
-                        .reveal_constructed_object_at_coord_with_overlay_context(
+                    let placed = if all_tunnel {
+                        sim.place_tunnel_reinforcement(
+                            member, cell, target, coord, facing, rules, registry, effects,
+                        )
+                    } else {
+                        sim.reveal_constructed_object_at_coord_with_overlay_context(
                             member,
                             coord,
                             facing,
@@ -1046,7 +1072,8 @@ impl Simulation {
                             registry,
                             effects,
                         )
-                        .is_some();
+                        .is_some()
+                    };
                     if placed {
                         if !aircraft {
                             sim.team_member_queue_mission(member, MissionType::Guard, rules);
@@ -1099,5 +1126,77 @@ impl Simulation {
             }
         }
         placed_any
+    }
+
+    /// 65E010's Tunnel arm (65E2D3..65E404). The member Unlimbos 400 leptons
+    /// under the cell's coordinate (vt+0xD8; UnitType's clamp `0x00747EB0`
+    /// puts it on the floor), then goes to [`TUNNEL_DEPTH_Z`] (SetLocation,
+    /// vt+0x1B4), takes Set_Destination(cell, 1) (vt+0x480) and full speed
+    /// (vt+0x544), and its locomotor's Move_To (ILocomotion+0x44) heads for
+    /// the raw cell's centre at Z 0. The Tunnel, idle under the ground, leaves
+    /// the cell (Mark(UP)) and digs out there. A refused Unlimbo takes the
+    /// Normal arm's retry (65E506).
+    #[allow(clippy::too_many_arguments)]
+    fn place_tunnel_reinforcement(
+        &mut self,
+        member: u64,
+        cell: (i16, i16),
+        target: TeamTarget,
+        coord: DriveCoord,
+        facing: u8,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let below = DriveCoord {
+            z: coord.z.wrapping_sub(0x190),
+            ..coord
+        };
+        if self
+            .reveal_constructed_object_at_coord_with_overlay_context(
+                member,
+                below,
+                facing,
+                PlacementEvidence::FootEntryAdmitted,
+                rules,
+                registry,
+                effects,
+            )
+            .is_none()
+        {
+            return false;
+        }
+        let Some(location) = self.substrate.entities.get(member).map(|entity| {
+            crate::sim::movement::ground_pose::object_location(
+                entity,
+                self.resolved_terrain.as_ref(),
+            )
+        }) else {
+            return true;
+        };
+        self.foot_set_location_marked(
+            member,
+            DriveCoord {
+                z: TUNNEL_DEPTH_Z,
+                ..location
+            },
+            rules,
+            registry,
+            effects,
+        );
+        self.team_member_set_destination(member, Some(target), rules, registry, effects);
+        if let Some(entity) = self.substrate.entities.get_mut(member) {
+            entity
+                .foot_speed
+                .set_speed_fraction_native_bits(NativeF64Bits::ONE.bits());
+        }
+        self.tunnel_move_to(
+            member,
+            DriveCoord::cell(cell.0 as u16, cell.1 as u16, 0),
+            rules,
+            registry,
+            effects,
+        );
+        true
     }
 }

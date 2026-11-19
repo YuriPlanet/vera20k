@@ -36,20 +36,20 @@ use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession}
 
 /// A Battle session on `selected_map_file`: the local player against one
 /// computer house for each of `opponents` (its country and difficulty), every
-/// house on a start the launch draws. The lobby allows seven opponents.
+/// house on a start the launch draws.
 pub fn battle_session(
     selected_map_file: &str,
     opponents: &[(LaunchCountry, AiDifficulty)],
 ) -> SkirmishLaunchSession {
     use crate::skirmish_launch::{
-        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot,
-        SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
+        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
+        SkirmishLaunchOptions, SkirmishLocalSlot,
     };
 
-    SkirmishLaunchSession {
-        mode: SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
-        selected_map_file: Some(selected_map_file.to_string()),
-        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
+        Some(selected_map_file.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
             name: "Player".to_string(),
             slot: SkirmishLocalSlot {
@@ -62,9 +62,8 @@ pub fn battle_session(
             },
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],
-        local_player_index: 0,
-        ai_player_count: opponents.len() as i32,
-        opponents: opponents
+        0,
+        opponents
             .iter()
             .enumerate()
             .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
@@ -78,9 +77,8 @@ pub fn battle_session(
                 difficulty,
             })
             .collect(),
-        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(opponents.len()),
-        options: SkirmishLaunchOptions::default(),
-    }
+        SkirmishLaunchOptions::default(),
+    )
 }
 
 /// A loaded scenario plus the per-tick inputs `advance_tick` needs.
@@ -281,6 +279,11 @@ fn load_with_assets(
         cold_rules_owner = owner;
         &mut cold_rules_owner
     };
+    if game_mode.is_network() {
+        native_rules_owner
+            .reset_for_network_match()
+            .map_err(|error| format!("reset network Rules: {error}"))?;
+    }
     // ThemeClass::ReadINI720590 is process data even without an output device.
     // Keep the existing headless archive stack: THEMEMD.MIX and the preserved
     // RA2 THEME.MIX extension were mounted at startup; this route has no shell
@@ -299,8 +302,8 @@ fn load_with_assets(
         Some(&launch.session().mode.override_file),
     )?;
     // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
-    // It shares the process Rules owner (including LANGRULE Digest reads), but
-    // cannot admit Full_Init's mode-5 TMCJ4F route.
+    // It shares the process Rules owner; this no-mod entry skips LANGRULE
+    // and cannot admit Full_Init's mode-5 TMCJ4F route.
     let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
@@ -310,6 +313,9 @@ fn load_with_assets(
         )
         .map_err(|error| format!("load native noncampaign rules: {error}"))?
         .into_parts();
+    // The game's later readers (ARTMD, the asset closures) follow the way its
+    // Rules were read (`ares_switch::ares_way`).
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     let bound_scenario_prefix = scenario_prefix_plan
         .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
         .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
@@ -318,7 +324,6 @@ fn load_with_assets(
     let theater = theater::load_theater(assets, &map.header.theater)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let overlay_registry = rules.overlay_registry().clone();
     let house_roster = crate::map::houses::parse_house_roster(
         &map.ini,
         rules.color_schemes.as_slice(),
@@ -405,7 +410,7 @@ fn load_with_assets(
             Some(&theater),
             Some(&assets),
             Some(&rules.terrain_rules),
-            Some(&overlay_registry),
+            Some(rules.overlay_registry()),
             true,
             rules.general.cliff_back_impassability,
             &mut scenario_fill_ranged,
@@ -417,16 +422,13 @@ fn load_with_assets(
     // Pending authored Fill has no eager Tile##Anim list. Bind damage-fire
     // roots now and let the authored host bind each actually reached map Anim
     // synchronously before its native constructor spends an ID.
-    let scheduler_roots =
-        crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlay_registry, &[]);
-    rules
-        .bind_scheduler_anim_assets(
-            &scheduler_roots,
-            &assets,
-            theater.extension,
-            &map.header.theater,
-        )
-        .map_err(|error| format!("bind authoritative animation assets: {error}"))?;
+    let scheduler_roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
+    rules.bind_scheduler_anim_assets(
+        &scheduler_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
     // Every other AnimClass producer and the building animations: tolerant pass,
     // after the strict one, which rewrites the scheduler-owned set wholesale.
     let tolerant_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
@@ -461,9 +463,9 @@ fn load_with_assets(
         theater.extension,
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
-    rules.bind_alpha_images(&overlay_registry, &assets);
+    rules.bind_alpha_images(&assets);
     let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
-        &overlay_registry,
+        rules.overlay_registry(),
         &assets,
         theater.extension,
         &map.header.theater,
@@ -475,7 +477,7 @@ fn load_with_assets(
     };
     let signed_new_ini_format = map.basic.new_ini_format.unwrap_or(0);
     let cliff_back_impassability = rules.general.cliff_back_impassability;
-    let output = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
+    let resolved_terrain = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
         &mut sim,
         &mut map,
         terrain_fill,
@@ -483,7 +485,6 @@ fn load_with_assets(
         &assets,
         &mut rules,
         native_rules_owner,
-        &overlay_registry,
         &overlay_shp_ids,
         signed_new_ini_format,
         true,
@@ -502,31 +503,25 @@ fn load_with_assets(
         },
     )
     .map_err(|error| format!("finalize authored headless load: {error}"))?;
-    let resolved_terrain = output.resolved_terrain;
-    let overlay_grid = output.overlay_grid;
     // Match the ordinary app's pre-launch binding: production options need
     // identities for unspawned types too, and snapshots carry this interner.
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&team_ai_registry, &rules)
-        .map_err(|refused| format!("active YR aimd.ini failed RuleSet resolution: {refused:?}"))?;
-    let _launch_result = crate::sim::scenario_bootstrap::
-        apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+    sim.install_team_ai_registry(&team_ai_registry, &rules);
+    let _launch_result =
+        crate::sim::scenario_bootstrap::apply_pre_fill_scenario_prefix_launch_session(
             &mut sim,
             &map,
             &house_roster,
             &rules,
             &resolved_terrain,
             &launch,
-            &overlay_registry,
             &scenario_prefix_projection,
         );
     let post_map = crate::sim::runtime::finalize_constructed_scenario(
         &mut sim,
         &map,
         &rules,
-        &overlay_registry,
-        overlay_grid,
         &house_roster,
         Some(&launch),
     )
@@ -541,11 +536,10 @@ fn load_with_assets(
     Ok(HeadlessScenario {
         runtime: crate::sim::runtime::SimRuntime {
             simulation: sim,
-            resources: crate::sim::runtime::SimResources {
-                overlay_registry,
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
                 terrain_template: None,
                 rules,
-            },
+            }),
         },
         map,
         source,
@@ -568,7 +562,7 @@ impl HeadlessScenario {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod retail_construction_tests {
     use super::*;
     use crate::sim::rng::SimRng;
@@ -637,7 +631,7 @@ mod retail_construction_tests {
             (extent, extent),
             "Fill allocates the extent the descriptor announced"
         );
-        crate::sim::runtime::populate_staged_scenario_with_generated_inits(
+        crate::sim::runtime::populate_staged_fixture(
             &mut sim,
             map,
             &resolved,
@@ -885,18 +879,8 @@ mod retail_construction_tests {
             baseline.native_unique_id().map(|id| id.wrapping_add(1))
         );
         assert_eq!(signed.sim().rng_state(), control.sim().rng_state());
-        assert_eq!(
-            signed.sim().substrate.raw_cell_occupation.ground_bits(0, 0),
-            0
-        );
-        assert_eq!(
-            signed
-                .sim()
-                .substrate
-                .raw_cell_occupation
-                .ground_bits(u16::MAX, 0),
-            0
-        );
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(0, 0), 0);
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(u16::MAX, 0), 0);
     }
 
     #[test]
@@ -974,8 +958,7 @@ mod retail_construction_tests {
         assert_eq!(sim.terrain_objects().cell_index().len(), 1);
         use crate::sim::occupancy::CellObjectMember;
         let building = sim
-            .substrate
-            .occupancy
+            .occupancy()
             .first_building_on_layer(
                 26,
                 60,
@@ -1233,9 +1216,7 @@ mod retail_construction_tests {
         );
         assert_eq!(
             late.sim()
-                .substrate
-                .raw_cell_occupation
-                .ground_bits(source.rx, source.ry)
+                .ground_occupation_bits_for_test(source.rx, source.ry)
                 & 0x1C,
             0
         );
@@ -1609,8 +1590,7 @@ mod retail_construction_tests {
                     .path_grid()
                     .is_some_and(|grid| grid.is_walkable_for_infantry(rx, ry));
                 let empty = sim
-                    .substrate
-                    .occupancy
+                    .occupancy()
                     .get(rx, ry)
                     .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground));
                 (walkable && empty).then_some((rx, ry))
@@ -1857,8 +1837,7 @@ mod retail_construction_tests {
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -1883,14 +1862,43 @@ mod retail_construction_tests {
             let runtime = &mut scenario.runtime;
             let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
             let yards: Vec<String> = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .filter(|(_, entity)| entity.owner() == human)
                 .map(|(_, entity)| sim.interner.resolve(entity.type_ref()).to_string())
                 .collect();
             eprintln!("{team_type}: the local house owns {yards:?}");
-            let (house, spawned) = spawn_beside_base(sim, &resources.rules, country, &types);
+            // The members stand together in a free 3x3 block, within Stray of
+            // their mean, the team's centre (`Calc_Center @ 0x006EAEE0`).
+            // Action 14 (`0x006ED200`) sends a member farther off there on
+            // Move before it joins, and a Night Hawk in flight cannot be
+            // boarded: on Move with a NavCom it answers its passengers
+            // NEGATIVE (`UnitClass::Receive_Radio`,
+            // `0x007377F5..0x0073780D`), and a cell they stand in refuses its
+            // landing (State 4, `0x0054C6CE..0x0054C714`, to Stop_Moving at
+            // `0x0054CA3C`).
+            let house = house_of(sim, country);
+            let (bx, by) = sim.houses[&house]
+                .base_center()
+                .expect("the base has a centre");
+            let free = |sim: &Simulation, rx: i32, ry: i32| {
+                let (Ok(x), Ok(y)) = (u16::try_from(rx), u16::try_from(ry)) else {
+                    return false;
+                };
+                sim.path_grid()
+                    .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
+                    && sim.occupancy().get(x, y).is_none_or(|cell| {
+                        cell.is_empty_on(crate::sim::movement::locomotor::MovementLayer::Ground)
+                    })
+            };
+            let block = (0..900)
+                .map(|n| (i32::from(bx) + n % 30 - 15, i32::from(by) + n / 30 - 15))
+                .find(|&(rx, ry)| {
+                    (-1..=1).all(|dy| (-1..=1).all(|dx| free(&*sim, rx + dx, ry + dy)))
+                })
+                .expect("a free 3x3 block beside the base");
+            let spawned =
+                spawn_on_free_cells(sim, &resources.rules, house, cells_nearest(block), &types);
             let id = sim
                 .interner
                 .get(team_type)
@@ -1931,7 +1939,7 @@ mod retail_construction_tests {
                 let team = sim.team_script_vm.team(team_id);
                 let aboard = infantry.iter().all(|&id| {
                     sim.entities().get(id).is_some_and(|entity| {
-                        entity.passenger_role.inside_transport_id() == Some(transport)
+                        entity.passenger_role().inside_transport_id() == Some(transport)
                     })
                 });
                 if loaded.is_none() && aboard {
@@ -1980,7 +1988,7 @@ mod retail_construction_tests {
                                     None => "out",
                                 },
                                 entity.navigation.nav_com(),
-                                if entity.passenger_role.is_inside_transport() {
+                                if entity.passenger_role().is_inside_transport() {
                                     " aboard"
                                 } else {
                                     ""
@@ -2080,8 +2088,7 @@ mod retail_construction_tests {
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -2106,8 +2113,7 @@ mod retail_construction_tests {
             let runtime = &mut scenario.runtime;
             let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
             let yard = sim
-                .substrate
-                .entities
+                .entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == human)
                 .map(|(id, _)| id)
@@ -2240,9 +2246,25 @@ mod retail_construction_tests {
         let (bx, by) = sim.houses[&yuri]
             .base_center()
             .expect("the base has a centre");
-        // A 2x2 foundation inside a free 4x4 square, so a tank can reach it.
-        let open = |sim: &Simulation, rx: i32, ry: i32| {
-            (-1..3).all(|dy| {
+        // A 2x2 foundation inside a free 4x4 square, so a tank can reach it,
+        // where the bunker's own placement test admits it (the AI's base
+        // changes which free cells are ramps, ore or otherwise unbuildable).
+        let placing = std::sync::Arc::clone(resources);
+        let open = move |sim: &Simulation, rx: i32, ry: i32| {
+            let (Ok(x), Ok(y)) = (i16::try_from(rx), i16::try_from(ry)) else {
+                return false;
+            };
+            let natbnk = placing.rules.object("NATBNK").expect("retail NATBNK");
+            crate::sim::build_site::can_place_building_at(
+                sim,
+                &placing.rules,
+                Some(placing.rules.overlay_registry()),
+                natbnk,
+                (x, y),
+                None,
+                None,
+                None,
+            ) && (-1..3).all(|dy| {
                 (-1..3).all(|dx| {
                     let (Ok(x), Ok(y)) = (u16::try_from(rx + dx), u16::try_from(ry + dy)) else {
                         return false;
@@ -2250,8 +2272,7 @@ mod retail_construction_tests {
                     sim.path_grid()
                         .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
                         && sim
-                            .substrate
-                            .occupancy
+                            .occupancy()
                             .get(x, y)
                             .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground))
                 })
@@ -2404,11 +2425,16 @@ mod retail_construction_tests {
     ///
     /// Put on line 3 instead, as action 6 would, the team's action 9 orders
     /// each chopper (`IsSimpleDeployer=`) to Unload, and they start to land.
-    /// Action 9 is done at once, and the team's next attack order takes them
-    /// off Unload in the air, as `Coordinate_Attack` does natively
+    /// Action 9 is done at once, and the team's next attack order queues
+    /// Attack over their Unload, as `Coordinate_Attack` does natively
     /// (`0x006EB79A..0x006EB7B5`): Unit vt+0x4E4 (`0x00736D50`) keeps only a
     /// `DeployToFire=` unit, or a computer one deploying into a `TickTank=`
-    /// building, on Unload, and the Siege Chopper is neither.
+    /// building, on Unload, and the Siege Chopper is neither. The queued
+    /// Attack waits while the chopper comes down
+    /// (`UnitClass::Is_Ready_To_Commence @ 0x00744270`, the moving arm
+    /// `0x007442C2..0x00744327`; a descending jumpjet is moving,
+    /// `JumpjetLocomotionClass::Is_Moving_Now @ 0x0054D0D0`), so each takes
+    /// it once it is down, before it deploys.
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn retail_soviet_siege_chopper_team_holds_then_attacks_undeployed() {
@@ -2518,6 +2544,8 @@ mod retail_construction_tests {
             )
         };
         let (mut on_9, mut past, mut attacking) = (None, None, None);
+        // Each chopper's state on the first frame it is on Attack.
+        let mut ordered = vec![None; choppers.len()];
         for frame in 1..=600u32 {
             scenario.tick();
             let sim = scenario.sim();
@@ -2526,6 +2554,11 @@ mod retail_construction_tests {
                 states.iter().all(|state| !state.2),
                 "a chopper deployed at frame {frame}: {states:?}"
             );
+            for (first, state) in ordered.iter_mut().zip(&states) {
+                if first.is_none() && state.3 == Some(MissionType::Attack) {
+                    *first = Some((frame, *state));
+                }
+            }
             let cursor = sim.team_script_vm.team(team).map(|team| team.cursor());
             if on_9.is_none() && cursor == Some(3) {
                 on_9 = Some((frame, states.clone()));
@@ -2553,10 +2586,17 @@ mod retail_construction_tests {
             "action 9 did not set both choppers landing to unload: {unloading:?}"
         );
         assert!(past.is_some(), "the team stayed on action 9");
-        let (_, _, airborne) = attacking.expect("no attack order took the choppers off Unload");
+        attacking.expect("no attack order took the choppers off Unload");
+        eprintln!("Siege Chopper team: each chopper's first Attack frame {ordered:?}");
+        // Is_Ready_To_Commence @ 0x00744270 holds the queued Attack while the
+        // jumpjet moves, so none takes it on the way down (it was once
+        // expected in the air).
         assert!(
-            airborne.iter().all(|state| state.1 > 0),
-            "a chopper landed before its attack order: {airborne:?}"
+            ordered
+                .iter()
+                .flatten()
+                .all(|(_, state)| state.0 != Some(STATE_DESCEND)),
+            "a chopper took Attack while it was descending: {ordered:?}"
         );
     }
 
@@ -2727,7 +2767,7 @@ mod retail_construction_tests {
                         crate::sim::build_site::can_place_building_at(
                             sim,
                             &resources.rules,
-                            Some(&resources.overlay_registry),
+                            Some(resources.rules.overlay_registry()),
                             yard,
                             (x, y),
                             None,
@@ -2975,10 +3015,12 @@ mod retail_construction_tests {
         )
         .expect("the Rhino takes the GI as its target");
         let now = sim.session.binary_frame();
-        sim.substrate
+        sim.substrate_mut_for_test()
             .mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
             .expect("the Rhino takes Attack");
-        let _ = sim.substrate.mission_commence_exact(rhino, now);
+        let _ = sim
+            .substrate_mut_for_test()
+            .mission_commence_exact(rhino, now);
         let (mut charged, mut died, mut gi_cell, mut crushed) = (None, None, None, false);
         for frame in 1..=600u32 {
             let output = tick_with_due_commands(&mut scenario);
@@ -3156,8 +3198,7 @@ mod retail_construction_tests {
             )
         };
         let mcv = sim
-            .substrate
-            .entities
+            .entities()
             .iter_sorted()
             .find(|(_, entity)| entity.owner() == soviet)
             .map(|(id, _)| id)
@@ -3183,8 +3224,7 @@ mod retail_construction_tests {
         // test, which only DWORD -1 skips (`0x006F7E36`), then rejects every
         // quarry of a spy standing there.
         let american_yard = sim
-            .substrate
-            .entities
+            .entities()
             .iter_sorted()
             .find(|(_, entity)| is_american_yard(entity))
             .map(|(id, _)| id)
@@ -3273,10 +3313,23 @@ mod retail_construction_tests {
             },
             &[(LaunchCountry::America, AiDifficulty::Normal)],
         );
+        // As the spy team's test waits: the American yard's deploy sends
+        // every ground Techno of the house to the new base
+        // (`HouseClass::MoveGroundForcesToBase @ 0x0050C920`) and would call
+        // Tanya off the reactor.
+        let america = house_of(scenario.sim(), "Americans");
+        for _ in 0..300 {
+            scenario.tick();
+            if scenario.sim().entities().values().any(|entity| {
+                entity.owner() == america
+                    && entity.category() == crate::map::entities::EntityCategory::Structure
+            }) {
+                break;
+            }
+        }
         let runtime = &mut scenario.runtime;
         let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
         let soviet = house_of(sim, "Russians");
-        let america = house_of(sim, "Americans");
         let at = |sim: &Simulation, id| {
             let entity = sim.entities().get(id).expect("spawned");
             (
@@ -3285,8 +3338,7 @@ mod retail_construction_tests {
             )
         };
         let mcv_of = |sim: &Simulation, house| {
-            sim.substrate
-                .entities
+            sim.entities()
                 .iter_sorted()
                 .find(|(_, entity)| entity.owner() == house)
                 .map(|(id, _)| id)
@@ -3311,7 +3363,7 @@ mod retail_construction_tests {
             .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
         let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
         let now = sim.session.binary_frame();
-        sim.substrate
+        sim.substrate_mut_for_test()
             .mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
         sim.assign_target_represented(
@@ -3337,7 +3389,7 @@ mod retail_construction_tests {
                 && let Some(pending) = sim
                     .entities()
                     .get(reactor)
-                    .and_then(|reactor| reactor.pending_c4_detonation.pending())
+                    .and_then(|reactor| reactor.building.pending_c4_detonation.pending())
             {
                 planted = Some((frame, pending));
             }
@@ -3408,7 +3460,7 @@ mod retail_construction_tests {
         let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
         let strength = rules.object("HARV").expect("retail HARV").strength;
         let at = {
-            let entity = sim.substrate.entities.get_mut(miner).unwrap();
+            let entity = sim.entity_mut_for_test(miner).unwrap();
             entity.health.set_for_test(strength / 2);
             (
                 i32::from(entity.position.rx()),
@@ -3605,7 +3657,7 @@ mod retail_construction_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod launch_special_flags_tests {
     use super::*;
 
@@ -3657,7 +3709,7 @@ mod launch_special_flags_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod launch_alliance_tests {
     use super::{battle_session, load_session};
 

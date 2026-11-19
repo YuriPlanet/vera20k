@@ -1,10 +1,10 @@
 # Optional Ares generic prerequisites
 
-Build with `--features ares` to enable this Rust-native prerequisite subset.
-Default builds keep retail prerequisites, including `PrerequisiteProcAlternate`,
-and ignore `[GenericPrerequisites]` and Ares's other generic alternate lists.
-An INI, map or client setting cannot enable the feature. This feature supplies
-no Mental Omega adapter, rules, maps or resources.
+A game that ships `ares.mix` uses this Rust-native prerequisite subset in every
+build ([Ares](ares.md)). Other games keep retail prerequisites, including
+`PrerequisiteProcAlternate`, and ignore `[GenericPrerequisites]` and Ares's other
+generic alternate lists. This support supplies no Mental Omega adapter, rules,
+maps or resources.
 
 ```ini
 [GenericPrerequisites]

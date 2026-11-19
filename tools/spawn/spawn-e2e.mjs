@@ -4,11 +4,14 @@
 //   node tools/spawn/spawn-e2e.mjs relay  --out DIR --ra2 RETAIL [--players 2] [--port 8787]
 //                                         [--relay 127.0.0.1:5000] [--key HEX] [--cors ORIGIN]
 //                                         [--pacing on|off] (a VO2C certificate; default VO1C)
+//                                         [--gateway ws://localhost:8788] (browser players)
 //   node tools/spawn/spawn-e2e.mjs direct --out DIR --ra2 RETAIL [--players 2] [--base-port 1300]
 //                                         [--ips A,B,...]
-// Both accept --spectators S,T (SourceIndex list, [IsSpectator]).
+// Both accept --spectators S,T (SourceIndex list, [IsSpectator]) and --speed N
+// (GameSpeed, default 2; one of the selectable speeds, 8 included).
 // --ips gives each source's address in the other files (default 127.0.0.1).
 // --cors ORIGIN answers the browser's CORS preflight for that page origin.
+// --gateway ORIGIN names the WebSocket gateway browser players reach the relay by.
 //
 // Both write one directory per player (DIR/p0, DIR/p1, ...) holding spawn.ini,
 // the map as spawnmap.ini and a config.toml pointing at RETAIL with settings
@@ -16,14 +19,17 @@
 // spawned client uses, signing relay grants in the lobby's format
 // (relay_grant.mjs); it is a test mock, never a deployment.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { base64url, relayGrant } from './relay_grant.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const LAUNCH_HZ = [60, 45, 30, 20, 15, 12, 10];
+// The rate the lobby signs as `tick_hz` for each selectable GameSpeed, as the
+// game's own test writes it (docs/lobby-protocol.md).
+const LAUNCH_HZ = new Map(JSON.parse(readFileSync(join(ROOT, 'tests/fixtures/lobby/game_contract.json'), 'utf8'))
+  .game_speeds.map(({ game_speed, tick_hz }) => [game_speed, tick_hz]));
 // docs/lobby-protocol.md: initial and renewed ticket lifetimes.
 const BOOTSTRAP_GRANT_SECONDS = 120;
 const GRANT_SECONDS = 300;
@@ -39,6 +45,7 @@ function options(argv) {
   if (!['relay', 'direct'].includes(parsed.mode) || !parsed.out || !parsed.ra2)
     throw new Error('usage: spawn-e2e.mjs relay|direct --out DIR --ra2 RETAIL_DIR [options]');
   if (!(parsed.players >= 2 && parsed.players <= 30)) throw new Error('--players must be 2..30');
+  if (!LAUNCH_HZ.has(parsed.speed)) throw new Error(`--speed must be one of ${[...LAUNCH_HZ.keys()].join(', ')}`);
   parsed.spectatorSet = new Set(String(parsed.spectators).split(',').filter(Boolean).map(Number));
   parsed.ipList = String(parsed.ips).split(',').filter(Boolean);
   return parsed;
@@ -93,7 +100,7 @@ async function relay(opts) {
   if (!/^[0-9a-f]{64}$/i.test(key ?? '')) throw new Error('--key or VERA_RELAY_TICKET_KEY must be 64 hex digits');
   const matchId = randomUUID();
   const payloadKey = base64url(randomBytes(32));
-  const ordering = { sources_mask: 2 ** opts.players - 1, tick_hz: LAUNCH_HZ[opts.speed], pacing: opts.pacing };
+  const ordering = { sources_mask: 2 ** opts.players - 1, tick_hz: LAUNCH_HZ.get(opts.speed), pacing: opts.pacing };
   const now = () => Math.floor(Date.now() / 1000);
   const users = Array.from({ length: opts.players }, (_, source) => ({
     source, player_id: randomUUID(), token: base64url(randomBytes(32)),
@@ -107,7 +114,7 @@ async function relay(opts) {
     const section = `[Relay]\nAddress=${opts.relay}\nMatchId=${matchId}\nPlayerId=${user.player_id}\n` +
       `Ticket=${relayGrantValue.ticket}\nPacketKey=${relayGrantValue.packet_key}\nPayloadKey=${payloadKey}\n` +
       `OrderingCertificate=${relayGrantValue.ordering_certificate}\nServiceUrl=${service}\n` +
-      `Token=${user.token}\nAdmissionTimeout=60\n`;
+      `Token=${user.token}\nAdmissionTimeout=60\n${opts.gateway ? `GatewayUrl=${opts.gateway}\n` : ''}`;
     console.log(`wrote ${playerDirectory(opts, user.source, spawnIni(opts, user.source, '', () => '', section))}`);
   }
   const log = (...args) => console.log(new Date().toISOString(), ...args);

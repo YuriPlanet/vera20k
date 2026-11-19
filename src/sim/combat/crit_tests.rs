@@ -807,7 +807,7 @@ fn create_gap_reshrouds_the_map_for_non_allies() {
 /// Phobos `DetonateOnOneUnit`'s `ApplyReverseEngineer`
 /// (`Ext/WarheadType/Detonate.cpp:227-228,260-264`): with Ares present, the
 /// firing house records each hit victim's type; the default skips.
-#[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
 #[test]
 fn reverse_engineer_warhead_records_the_victim_type() {
     let recorded = |wh_ini: &str| {

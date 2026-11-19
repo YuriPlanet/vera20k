@@ -129,7 +129,6 @@ impl LocomotorState {
     /// Ares conversion1004382D..100438AD compares the two Type CLSIDs, not
     /// the active (possibly piggybacked) locomotor. Equal CLSIDs retain the
     /// instance and its timers; VERA's derived type caches still need rebinding.
-    #[cfg(any(feature = "ares", feature = "phobos"))]
     pub(crate) fn change_type_binding(
         &mut self,
         old_type_kind: LocomotorKind,
@@ -395,6 +394,31 @@ impl LocomotorState {
             (LocomotorKind::Hover, LocomotorRuntimePayload::Hover(runtime)) => Some(runtime),
             _ => None,
         }
+    }
+
+    /// The active Tunnel object's state.
+    pub fn tunnel_runtime(&self) -> Option<&super::tunnel_movement::TunnelRuntime> {
+        match (self.kind, &self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
+    /// The active Tunnel object's state, lent to `world::tunnel_process`.
+    pub(crate) fn tunnel_runtime_mut(
+        &mut self,
+    ) -> Option<&mut super::tunnel_movement::TunnelRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
+    /// Install a Tunnel payload from a draw test in `vera20k`, which cannot
+    /// reach this crate's `pub(crate)` writer.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tunnel_runtime_for_test(&mut self, runtime: super::tunnel_movement::TunnelRuntime) {
+        self.runtime_payload = LocomotorRuntimePayload::Tunnel(runtime);
     }
 
     pub(crate) fn teleport_runtime(&self) -> Option<&super::teleport_movement::TeleportRuntime> {
@@ -746,30 +770,14 @@ impl LocomotorState {
         &self.runtime_payload
     }
 
-    /// Class-local state of this locomotor object. The presentation reads the
-    /// Tunnel state and timer through it for `Z_Adjust 0x729E50`.
-    pub fn tunnel_runtime(&self) -> Option<&super::tunnel_locomotion::TunnelRuntime> {
-        match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
-            _ => None,
-        }
-    }
 
-    pub(crate) fn tunnel_runtime_mut(
-        &mut self,
-    ) -> Option<&mut super::tunnel_locomotion::TunnelRuntime> {
-        match (self.kind, &mut self.runtime_payload) {
-            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
-            _ => None,
-        }
-    }
 
     /// Fixture seam for the client's presentation tests, which arm a Tunnel
     /// state and timer without driving a whole `process` cycle.
     #[cfg(any(test, feature = "test-support"))]
     pub fn tunnel_runtime_mut_for_test(
         &mut self,
-    ) -> Option<&mut super::tunnel_locomotion::TunnelRuntime> {
+    ) -> Option<&mut super::tunnel_movement::TunnelRuntime> {
         self.tunnel_runtime_mut()
     }
 
@@ -805,15 +813,18 @@ impl LocomotorState {
         self.runtime_payload = payload;
     }
 
-    /// The Foot's layer, cached on the active object.
-    ///
-    /// A Tunnel object answers its class's `In_Which_Layer` (`0x72A1A0`) from
-    /// `State` instead: only `Digging` is underground.
+    /// The Foot's layer, cached on the active object. An active Tunnel
+    /// answers from its State instead (`In_Which_Layer @ 0x0072A1A0`):
+    /// underground while it travels below the cells, else the cached ground
+    /// layer.
     pub(crate) fn layer(&self) -> MovementLayer {
-        match self.runtime_payload {
-            LocomotorRuntimePayload::Tunnel(ref runtime) => runtime.layer(),
-            _ => self.layer,
+        if self
+            .tunnel_runtime()
+            .is_some_and(super::tunnel_movement::TunnelRuntime::underground)
+        {
+            return MovementLayer::Underground;
         }
+        self.layer
     }
 
     /// A fixture's layer.
@@ -875,6 +886,6 @@ impl LocomotorState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "locomotor_tests.rs"]
 mod locomotor_tests;

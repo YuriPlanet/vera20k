@@ -2,6 +2,8 @@
 //! NewEdit614B30 ->5EDD00 ->5DE360. Discovery and displayed rows are views;
 //! admitted participants, setup, timers and service requests belong to the app.
 
+use std::collections::VecDeque;
+
 use crate::util::time::Instant;
 
 use crate::ui::shell::button::ShellButtonInteraction;
@@ -17,6 +19,8 @@ pub(crate) const JOIN: u16 = 0x6CD;
 pub(crate) const OBSERVE: u16 = 0x6CE;
 pub(crate) const BACK: u16 = 0x5C0;
 pub(crate) const NAME: u16 = 0x541;
+/// The name edit's limit: 16 units, each a code-page byte in gamemd.
+const NAME_LIMIT: usize = 16;
 pub(crate) const CHAT: u16 = 0x540;
 pub(crate) const GAMES: u16 = 0x549;
 pub(crate) const PLAYERS: u16 = 0x53E;
@@ -142,7 +146,19 @@ impl LanListState {
         count: usize,
         scale: ShellScale,
     ) -> ShellListGeometry {
-        ShellListGeometry::new(rect, count, self.top_index, ListMetrics::scaled(scale))
+        self.geometry_for_text(rect, count, scale, 1.0)
+    }
+
+    /// [`Self::geometry`] for rows of text at `text` times the shell's size.
+    pub(crate) fn geometry_for_text(
+        &self,
+        rect: RectPx,
+        count: usize,
+        scale: ShellScale,
+        text: f32,
+    ) -> ShellListGeometry {
+        let metrics = ListMetrics::for_text(scale, text);
+        ShellListGeometry::new(rect, count, self.top_index, metrics)
     }
 
     fn reconcile(&mut self, count: usize) {
@@ -154,10 +170,22 @@ impl LanListState {
     /// Reapply the shared scrollbar's range after discovery or a resized
     /// viewport, before painting/hit-testing its retained top index.
     pub(crate) fn reconcile_geometry(&mut self, rect: RectPx, count: usize, scale: ShellScale) {
+        self.reconcile_geometry_for_text(rect, count, scale, 1.0);
+    }
+
+    /// [`Self::reconcile_geometry`] for rows of text at `text` times the
+    /// shell's size.
+    pub(crate) fn reconcile_geometry_for_text(
+        &mut self,
+        rect: RectPx,
+        count: usize,
+        scale: ShellScale,
+        text: f32,
+    ) {
         self.reconcile(count);
         self.top_index = self
             .top_index
-            .min(self.geometry(rect, count, scale).max_top);
+            .min(self.geometry_for_text(rect, count, scale, text).max_top);
     }
 }
 
@@ -174,12 +202,23 @@ pub(crate) enum LanLobbyAction {
     NameChanged(String),
     SendChat(Vec<u16>),
     ObserverChanged(bool),
-    /// Every selection notification refreshes displayed users; only a change
-    /// broadcasts selection in5DDCFD..5DDD28.
+    /// Every selection notification refreshes displayed users; `change`
+    /// decides what the service broadcasts.
     SelectGame {
         game_id: Option<u64>,
-        changed: bool,
+        change: LanSelectionChange,
     },
+}
+
+/// How a game selection came about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LanSelectionChange {
+    /// A click on the row already selected.
+    Unchanged,
+    /// A click on another row.
+    Changed,
+    /// Discovery dropped rows and clamped the selection to the last one.
+    Clamped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,6 +241,11 @@ pub(crate) struct LanChatState {
     pub(crate) edit: SavedSeedDescriptionEdit,
     pub(crate) lines: Vec<LanChatLine>,
     pub(crate) list: LanListState,
+    /// The messages `lines` were wrapped from, newest last, and the width
+    /// they were wrapped to: VERA's room re-wraps them when its chat column
+    /// changes width with the window ([`Self::rewrap`]).
+    messages: VecDeque<LanChatLine>,
+    width: i32,
 }
 
 impl LanChatState {
@@ -249,6 +293,12 @@ impl LanChatState {
         visible_rows: usize,
         measure: impl Fn(&[u16]) -> i32,
     ) {
+        self.rewrap(width, visible_rows, &measure);
+        // Each message adds a row at least, so these cover the rows kept.
+        if self.messages.len() >= CHAT_ROWS {
+            self.messages.pop_front();
+        }
+        self.messages.push_back(message.clone());
         append_list_message(
             &mut self.lines,
             &mut self.list,
@@ -258,7 +308,50 @@ impl LanChatState {
             measure,
         );
     }
+
+    /// Wrap the messages again when the log is now `width` wide (VERA's own:
+    /// gamemd's logs never change width). A view at the bottom stays there;
+    /// a scrolled one keeps its top row's index.
+    pub(crate) fn rewrap(
+        &mut self,
+        width: i32,
+        visible_rows: usize,
+        measure: impl Fn(&[u16]) -> i32,
+    ) {
+        if width == self.width {
+            return;
+        }
+        self.width = width;
+        let follow = self.lines.len().saturating_sub(self.list.top_index) <= visible_rows;
+        self.lines = self
+            .messages
+            .iter()
+            .flat_map(|message| {
+                split_chat_lines(&message.text, width, &measure)
+                    .into_iter()
+                    .map(|text| LanChatLine {
+                        text,
+                        color: message.color,
+                    })
+            })
+            .collect();
+        let dropped = self.lines.len().saturating_sub(CHAT_ROWS);
+        self.lines.drain(..dropped);
+        if follow {
+            self.list.top_index = self.lines.len().saturating_sub(visible_rows);
+        }
+    }
 }
+
+/// The width a chat log's rows wrap to ([`LanChatState::append_message`]):
+/// the log's width in the shell's 800x600 pixels, counted in its text's own
+/// pixels, so smaller text fits more of it.
+pub(crate) fn chat_wrap_width(rect: RectPx, scale: ShellScale, text: f32) -> i32 {
+    (scale.base_rect(rect).w as f32 / text) as i32
+}
+
+/// `0x005E29A0` keeps at most 501 rows.
+const CHAT_ROWS: usize = 501;
 
 /// The shell list line adder `0x005E2820` -> `0x005E29A0`: wrap the text to
 /// the list's width and append each row. An empty text adds nothing.
@@ -292,7 +385,7 @@ fn append_row(
     visible_rows: usize,
 ) {
     let follow = lines.len().saturating_sub(list.top_index) <= visible_rows;
-    if lines.len() > 500 {
+    if lines.len() >= CHAT_ROWS {
         lines.remove(0);
         list.top_index = list.top_index.saturating_sub(1);
     }
@@ -391,8 +484,8 @@ pub(crate) struct LanLobbyState {
 impl LanLobbyState {
     pub(crate) fn new(name: &str, observer: bool) -> Self {
         let mut name_edit = SavedSeedDescriptionEdit::default();
-        name_edit.set_units_limited(name.encode_utf16(), 16);
-        let notified_name = name_edit.narrow_text(20);
+        name_edit.set_units_limited(name.encode_utf16(), NAME_LIMIT);
+        let notified_name = name_text(&name_edit);
         Self {
             name: name_edit,
             chat: LanChatState {
@@ -441,7 +534,7 @@ impl LanLobbyState {
         self.game_list.selected = Some(selected);
         (selected != before).then(|| LanLobbyAction::SelectGame {
             game_id: self.selected_game().map(|row| row.id),
-            changed: true,
+            change: LanSelectionChange::Clamped,
         })
     }
 
@@ -522,13 +615,17 @@ impl LanLobbyState {
         {
             return None;
         }
-        let changed = self.game_list.selected != Some(index);
+        let change = if self.game_list.selected == Some(index) {
+            LanSelectionChange::Unchanged
+        } else {
+            LanSelectionChange::Changed
+        };
         self.game_list.selected = Some(index);
         // The roster follows through `replace_players` (the 0x549 LBN_SELCHANGE
         // handler's `0x005DAFE0`), which keeps the selected player by name.
         Some(LanLobbyAction::SelectGame {
             game_id: self.selected_game().map(|row| row.id),
-            changed,
+            change,
         })
     }
 
@@ -562,9 +659,12 @@ impl LanLobbyState {
         //5DDD90..5DDE42: collapse all ASCII spaces, but preserve every
         // leading/trailing space in a name that contains another character.
         if !self.name.units.is_empty() && self.name.units.iter().all(|unit| *unit == 32) {
-            self.name.set_units_limited([], 16);
+            self.name.set_units_limited([], NAME_LIMIT);
         }
-        let value = self.name.narrow_text(20);
+        // BB narrows its edit's units by their low byte (`0x5DDE07`), which
+        // gives back the code-page bytes its ANSI edit was typed in. This edit
+        // holds the typed text instead; the app saves it through the code page.
+        let value = name_text(&self.name);
         if value == self.notified_name {
             return None;
         }
@@ -572,21 +672,47 @@ impl LanLobbyState {
         Some(LanLobbyAction::NameChanged(value))
     }
 
+    /// BB's name edit takes 16 bytes: BB switches on its byte-only filter
+    /// (`0x4D1` at `0x5DE0E3`), which drops units from 0x100 up
+    /// (`0x61525E..0x61526A`). Typed keys reach gamemd, an ANSI program, as
+    /// code-page bytes and get in, but input-method characters arrive widened
+    /// (`0x6151F6..0x61520C`) and stay out; VERA offers no input method here
+    /// either. VERA gets keys as text, so it keeps the text and saves it
+    /// through the code page: a character goes in as the code page passes it
+    /// (`?` for one it cannot hold) while the name's code-page bytes fit in
+    /// 16. A character of two UTF-16 units, such as an emoji, stays out, so
+    /// the edit's one-unit keys never split one.
+    fn insert_name_char(&mut self, character: char) -> bool {
+        let Ok(unit) = u16::try_from(u32::from(character)) else {
+            return false;
+        };
+        let mut text = self.name.display_text();
+        text.push(character);
+        crate::util::native_string::acp_encode(&text).len() <= NAME_LIMIT
+            && self.name.insert_unit_filtered(unit, 0, false, &[44])
+    }
+
     pub(crate) fn insert_text(&mut self, text: &str) -> Vec<LanLobbyAction> {
         let mut actions = Vec::new();
         if !self.enabled || self.pending_command {
             return actions;
         }
-        for unit in text.encode_utf16() {
-            match self.focused_control {
-                NAME if self.name.insert_unit_filtered(unit, 16, true, &[44]) => {
-                    if let Some(action) = self.name_changed() {
+        match self.focused_control {
+            NAME => {
+                for character in crate::util::native_string::acp_round_trip(text).chars() {
+                    if self.insert_name_char(character)
+                        && let Some(action) = self.name_changed()
+                    {
                         actions.push(action);
                     }
                 }
-                CHAT => self.chat.insert_unit(unit),
-                _ => {}
             }
+            CHAT => {
+                for unit in text.encode_utf16() {
+                    self.chat.insert_unit(unit);
+                }
+            }
+            _ => {}
         }
         actions
     }
@@ -625,6 +751,12 @@ impl LanLobbyState {
             None
         }
     }
+}
+
+/// The name edit's text as BB reads it: message `0x4B3` with room for 20
+/// units, the last for the NUL (`0x005DDDA9..0x005DDDBC`).
+fn name_text(edit: &SavedSeedDescriptionEdit) -> String {
+    String::from_utf16_lossy(&edit.wide_text(20))
 }
 
 /// One port of the shared5EDD00 chat-length prepass (BB/BC/BD and WOL).
@@ -719,7 +851,7 @@ impl LanLobbyLayout {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -791,6 +923,41 @@ mod tests {
         assert_eq!(lobby.chat.lines.len(), 501);
         assert_eq!(lobby.chat.lines.first().unwrap().text, [1]);
         assert_eq!(lobby.chat.list.top_index, 9);
+    }
+
+    /// VERA's room re-wraps its chat when the column changes width: a
+    /// message wrapped wide splits to fit a narrow log, the view stays at
+    /// the bottom, and a later message at the old width joins it again.
+    #[test]
+    fn chat_rewraps_its_messages_to_a_new_width() {
+        let measure = |units: &[u16]| units.len() as i32 * 8;
+        let message = |text: &str| LanChatLine {
+            text: text.encode_utf16().collect(),
+            color: u32::MAX,
+        };
+        let rows = |chat: &LanChatState| -> Vec<String> {
+            chat.lines
+                .iter()
+                .map(|line| String::from_utf16_lossy(&line.text))
+                .collect()
+        };
+        let hint = "Players join ready. Press Start Game when everyone is here.";
+        let mut chat = LanChatState::default();
+        chat.append_message(message(hint), 600, 2, measure);
+        assert_eq!(rows(&chat), [hint]);
+        chat.rewrap(200, 2, measure);
+        assert_eq!(
+            rows(&chat),
+            [
+                "Players join ready.",
+                "Press Start Game when",
+                "everyone is here."
+            ]
+        );
+        assert_eq!(chat.list.top_index, 1);
+        chat.append_message(message("ok"), 600, 2, measure);
+        assert_eq!(rows(&chat), [hint, "ok"]);
+        assert_eq!(chat.list.top_index, 0);
     }
 
     #[test]
@@ -865,17 +1032,34 @@ mod tests {
     }
 
     #[test]
-    fn name_input_uses_byte_filter_comma_rejection_and_literal_space_rule() {
+    fn name_input_takes_16_code_page_bytes_rejects_commas_and_keeps_literal_spaces() {
         let mut lobby = LanLobbyState::new("", false);
         assert_eq!(lobby.focused_control, CHAT);
         lobby.focus(NAME);
-        lobby.insert_text("  A,éĀB");
-        assert_eq!(lobby.name.display_text(), "AéB");
+        lobby.insert_text("  A,é€B");
+        assert_eq!(lobby.name.display_text(), "Aé€B");
         lobby.insert_text("12345678901234567890");
-        assert_eq!(lobby.name.units.len(), 16);
+        let saved = crate::util::native_string::acp_encode(&lobby.name.display_text());
+        assert_eq!(saved.len(), 16);
         assert_eq!(lobby.edit_key(LanEditKey::Enter), None);
         let retained = LanLobbyState::new(" A ", false);
         assert_eq!(retained.name.display_text(), " A ");
+    }
+
+    /// Typing into a name beyond Latin-1 and deleting it again reports the
+    /// name as shown, not its characters' low bytes (`玩家` as `©¶`).
+    #[test]
+    fn name_edit_reports_the_name_it_shows() {
+        let mut lobby = LanLobbyState::new("玩家", false);
+        lobby.focus(NAME);
+        assert_eq!(
+            lobby.insert_text("x"),
+            vec![LanLobbyAction::NameChanged("玩家x".into())]
+        );
+        assert_eq!(
+            lobby.edit_key(LanEditKey::Backspace),
+            Some(LanLobbyAction::NameChanged("玩家".into()))
+        );
     }
 
     #[test]
@@ -893,14 +1077,14 @@ mod tests {
             lobby.select_game(3),
             Some(LanLobbyAction::SelectGame {
                 game_id: Some(2),
-                changed: true
+                change: LanSelectionChange::Changed
             })
         );
         assert_eq!(
             lobby.replace_games(Vec::new()),
             Some(LanLobbyAction::SelectGame {
                 game_id: None,
-                changed: true
+                change: LanSelectionChange::Clamped
             })
         );
         assert_eq!(

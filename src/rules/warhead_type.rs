@@ -74,18 +74,6 @@ pub struct WarheadType {
     /// at `0x0075d47c`, key string `0x00847e54`).
     pub delay_kill_at_max_f64: f64,
     /// Whether this warhead can damage walls/bridges (Wall=yes).
-    /// `Sparky=`, `Bullets=`, `Deform=` and `DeformThreshhold=` are retained
-    /// from their WarheadTypeClass ReadINI fields; their gameplay effects are
-    /// outside these state-retention issues. `Sparky` has one consumer:
-    /// `BuildingClass::ReceiveDamage @ 0x00442230` tests it for each
-    /// foundation cell of its NowYellow/NowRed loop (`0x00442785`) and, by
-    /// Scenario `RandomRanged` draws (`0x004427C0`, `0x00442804`), may build
-    /// one of Rules' `OnFire` anims (`+0xB78`) there. That arm is dormant:
-    /// the constructor stores `false` (`0x0075CF77`), and all 28 stock
-    /// `Sparky=` entries are `no`, including `[Fire]` and `[Fire2]`. The
-    /// `Apply_area_damage @ 0x00489280` helper does not read the retained
-    /// metadata above.
-    ///
     /// The field itself is `WarheadTypeClass+0x144` (ReadINI `0x0075d508`,
     /// key string `0x0081ac58`).
     pub wall: bool,
@@ -94,11 +82,12 @@ pub struct WarheadType {
     /// `WarheadTypeClass+0x147` (ReadINI `0x0075d556`, key string
     /// `0x00847e00`).
     pub wood: bool,
-    /// `Sparky=` (`WarheadTypeClass+0x14A`, constructor false at
-    /// `0x0075CF77`): Ares 3.0's TerrainClass_ReceiveDamage_ForestFire
-    /// (1004F4E0, hook 0x71B99E) sets a flammable tree it hurts alight
-    /// (`sim::terrain_fire`). Stock data sets it on no warhead.
-    #[cfg(feature = "ares")]
+    /// BuildingReceiveDamage442785 tests +14A for the per-foundation-cell
+    /// OnFire loop after NowYellow/NowRed. WarheadCtor75CF77 starts false;
+    /// ReadINI75D576..75D58A and Save75E2D1/Load75E0F0 retain the byte.
+    /// The ordered Rules processor owns its current-default read. Ares 3.0's
+    /// TerrainClass_ReceiveDamage_ForestFire (1004F4E0, hook 0x71B99E) also
+    /// sets a flammable tree it hurts alight (`sim::terrain_fire`).
     pub sparky: bool,
     /// `Fire=` -> `WarheadTypeClass+0x14C` (ReadINI `0x0075d5f2`, key string
     /// `0x00836f04`) over the constructor's 0 (`0x0075cf83`). Techno
@@ -874,30 +863,17 @@ impl WarheadType {
             self.phobos_prevent_scatter
                 .unwrap_or(rules.phobos_globals.warhead_prevent_scatter)
         }
-        #[cfg(all(feature = "ares", not(feature = "phobos")))]
-        {
-            let _ = rules;
-            self.ares_combat()
-                .is_some_and(|combat| combat.prevent_scatter())
-        }
-        #[cfg(not(any(feature = "phobos", feature = "ares")))]
-        {
-            let _ = rules;
-            false
-        }
     }
 
     pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_ref()
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_rules_mut(
         &mut self,
     ) -> Option<&mut crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_mut()
     }
     /// The Ares 3.0 damage-modifier group of this warhead's WarheadTypeExt.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_combat(&self) -> Option<&crate::rules::ares_warhead::WarheadCombatRules> {
         self.ares.as_ref().map(|ares| ares.combat())
     }
@@ -912,34 +888,23 @@ impl WarheadType {
     /// `0x0075CED0`): what a warhead whose sections name no `InfDeath=` keeps.
     pub(crate) const DEFAULT_INF_DEATH: i32 = 0;
 
+    /// A warhead read the Ares way holds the retained Ares verses; a stock
+    /// read leaves them `None` and uses the original WH+A0 array.
     pub fn interaction(&self, armor: ArmorId) -> ArmorInteraction {
-        #[cfg(feature = "ares")]
-        {
-            self.ares_verses
-                .as_ref()
-                .expect("Ares build requires its retained warhead extension")
-                .interaction(armor)
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            ArmorInteraction::retail(crate::util::native_x87::NativeF64Bits::from_bits(
+        match &self.ares_verses {
+            Some(verses) => verses.interaction(armor),
+            None => ArmorInteraction::retail(crate::util::native_x87::NativeF64Bits::from_bits(
                 self.verses_f64[armor.index()].to_bits(),
-            ))
+            )),
         }
     }
 
     /// WH+149 controls an Infantry passive-target class shortcut. The
     /// installed Ares75DDCC hook skips its native derivation and clears it;
-    /// effective extension entries must never reintroduce that shortcut.
+    /// effective extension entries must never reintroduce that shortcut, so
+    /// a warhead read the Ares way (it holds Ares verses) never uses it.
     pub fn uses_medium_wood_target_mask(&self) -> bool {
-        #[cfg(feature = "ares")]
-        {
-            false
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            self.verses_f64[4] == 0.0 && self.verses_f64[6] == 0.0
-        }
+        self.ares_verses.is_none() && self.verses_f64[4] == 0.0 && self.verses_f64[6] == 0.0
     }
 
     pub(crate) fn install_ares_verses(&mut self, state: Option<&AresWarheadVerses>) {
@@ -977,11 +942,15 @@ impl WarheadType {
 
         // The IntVector reader (`0x0075DD22` -> `0x00475D70`). Ares 3.0
         // WarheadTypeClass_LoadFromINI_ListLength (1005C080, hook 0x75D660)
-        // reads it through ParseList<int> (1005B030) instead.
-        #[cfg(feature = "ares")]
-        let debris_maximums = section.read_ares_int_list("DebrisMaximums");
-        #[cfg(not(feature = "ares"))]
-        let debris_maximums = section.read_int_list("DebrisMaximums");
+        // reads it through ParseList<int> (1005B030) instead when the Rules
+        // are read the Ares way.
+        let debris_maximums = if crate::rules::ares_switch::ares_way() {
+            crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int_list("DebrisMaximums")
+            })
+        } else {
+            section.read_int_list("DebrisMaximums")
+        };
         let debris_maximums: Vec<i32> = debris_maximums.unwrap_or_default();
 
         // `WarheadTypeClass::ReadINI @ 0x0075DA95..0x0075DAE6`: MaxDebris is
@@ -998,15 +967,19 @@ impl WarheadType {
         // (`0x0084439C`) and `MinDebris` (`0x00844390`). No stock `[Warheads]`
         // section mis-spells either — only `Smashing` and `TRexWH` author them
         // at all — so this changes nothing in retail and is right in principle.
-        let max_debris = section.read_int("MaxDebris", 0);
-        let min_debris = section.read_int("MinDebris", 0).max(0);
+        let max_debris = section
+            .read_int("MaxDebris", 0)
+            .min(crate::rules::object_type::DEBRIS_LIMIT);
+        let min_debris = section
+            .read_int("MinDebris", 0)
+            .clamp(0, crate::rules::object_type::DEBRIS_LIMIT);
         let max_debris = max_debris.max(min_debris);
 
         Self {
             id: id.to_string(),
             particle_system: None,
             verses_f64,
-            ares_verses: cfg!(feature = "ares").then(AresWarheadVerses::default),
+            ares_verses: crate::rules::ares_switch::ares_way().then(AresWarheadVerses::default),
             ares: None,
             cell_spread_f64,
             cell_inset_f32,
@@ -1016,8 +989,7 @@ impl WarheadType {
             delay_kill_at_max_f64,
             wall: section.read_bool("Wall", false),
             wood: section.read_bool("Wood", false),
-            #[cfg(feature = "ares")]
-            sparky: section.read_bool("Sparky", false),
+            sparky: false,
             fire: section.read_bool("Fire", false),
             penetrates_bunker: section.read_bool("PenetratesBunker", false),
             affects_allies: section.read_bool("AffectsAllies", true),
@@ -1027,9 +999,9 @@ impl WarheadType {
             affects_enemies: section.read_bool("AffectsEnemies", true),
             affects_neutral: section.read_bool("AffectsNeutral", true),
             psychic_damage: section.read_bool("PsychicDamage", false),
-            // Conventional, AnimList and EMEffect keep the constructor's false
-            // and empty values (`0x0075CF89`, `0x0075CFB3`): the ordered Rules
-            // processor owns those reads and RuleSet publishes its result.
+            // Conventional, Sparky, AnimList and EMEffect keep constructor
+            // defaults here: the ordered Rules processor owns those reads
+            // and RuleSet publishes its result.
             anim_list: Vec::new(),
             inf_death: section.read_int("InfDeath", Self::DEFAULT_INF_DEATH),
             deform_f64: section.read_double("Deform", 0.0),
@@ -1384,7 +1356,7 @@ pub(crate) fn verses_value(token: &str) -> f64 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

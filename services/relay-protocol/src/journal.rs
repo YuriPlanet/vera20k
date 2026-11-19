@@ -473,28 +473,51 @@ impl Journal {
         result
     }
 
+    /// Records are stored back to back, so a page costs one read of each file
+    /// however many records it holds.
     fn read_inner(&mut self, sequence: u64, count: usize) -> io::Result<Vec<Vec<u8>>> {
         let count = (self.entries + 1 - sequence).min(count as u64) as usize;
-        let mut offsets = vec![0; count * 8];
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let invalid = || io::Error::from(io::ErrorKind::InvalidData);
+        // Ends with the offset after the page, unless the page ends the file.
+        let bounded = sequence - 1 + (count as u64) < self.entries;
+        let mut offsets = vec![0; (count + usize::from(bounded)) * 8];
         self.index.seek(SeekFrom::Start((sequence - 1) * 8))?;
         self.index.read_exact(&mut offsets)?;
+        let offset =
+            |index: usize| u64::from_le_bytes(offsets[index * 8..][..8].try_into().unwrap());
+        let start = offset(0);
+        let end = if bounded {
+            offset(count)
+        } else {
+            self.data.seek(SeekFrom::End(0))?
+        };
+        let length = end
+            .checked_sub(start)
+            .filter(|length| *length <= count as u64 * (4 + MAX_RECORD_BYTES) as u64)
+            .ok_or_else(invalid)?;
+        let mut page = vec![0; length as usize];
+        self.data.seek(SeekFrom::Start(start))?;
+        self.data.read_exact(&mut page)?;
         let mut output = Vec::with_capacity(count);
-        for (index, offset) in offsets.chunks_exact(8).enumerate() {
-            self.data.seek(SeekFrom::Start(u64::from_le_bytes(
-                offset.try_into().unwrap(),
-            )))?;
-            let mut length = [0; 4];
-            self.data.read_exact(&mut length)?;
-            let length = u32::from_le_bytes(length) as usize;
-            if !(13..=MAX_RECORD_BYTES).contains(&length) {
-                return Err(io::ErrorKind::InvalidData.into());
+        let mut rest = page.as_slice();
+        for index in 0..count {
+            let (length, tail) = rest.split_first_chunk::<4>().ok_or_else(invalid)?;
+            let length = u32::from_le_bytes(*length) as usize;
+            if !(13..=MAX_RECORD_BYTES).contains(&length) || length > tail.len() {
+                return Err(invalid());
             }
-            let mut bytes = vec![0; length];
-            self.data.read_exact(&mut bytes)?;
+            let (bytes, tail) = tail.split_at(length);
             if u64::from_le_bytes(bytes[1..9].try_into().unwrap()) != sequence + index as u64 {
-                return Err(io::ErrorKind::InvalidData.into());
+                return Err(invalid());
             }
-            output.push(bytes);
+            output.push(bytes.to_vec());
+            rest = tail;
+        }
+        if !rest.is_empty() {
+            return Err(invalid());
         }
         Ok(output)
     }

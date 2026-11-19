@@ -221,7 +221,7 @@ fn spawn_supplied_ground_mtnk(
                 previous_cell: None,
             },
             &resources.rules,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
         )
         .unwrap(),
         0
@@ -366,7 +366,7 @@ fn hills_native_fields_and_mtnk_admission_feed_an_ordinary_ramp_move() {
                     previous_cell: None,
                 },
                 &scenario.runtime.resources.rules,
-                Some(&scenario.runtime.resources.overlay_registry),
+                Some(scenario.runtime.resources.rules.overlay_registry()),
             )
             .expect("live Unit entry receiver");
         assert_eq!(
@@ -797,7 +797,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
                         ),
                     },
                     &resources.rules,
-                    Some(&resources.overlay_registry),
+                    Some(resources.rules.overlay_registry()),
                 )
                 .unwrap();
             assert_eq!(
@@ -806,11 +806,12 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             );
             let urgency = control["urgency"].as_u64().unwrap() as u8;
             let multiplier = crate::sim::pathfinding::code2_multiplier(urgency, || {
-                sim.astar_code2_chain_jams(
+                sim.astar_code2_chain(
                     peer_cell,
                     crate::sim::movement::locomotor::MovementLayer::Ground,
                     None,
                 )
+                .map(|chain| chain.jams)
             })
             .unwrap();
             assert_eq!(
@@ -850,7 +851,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         assert!(sim.foot_mark_remove(
             mover,
             &resources.rules,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
             crate::sim::world::FrameEffects::default()
         ));
         {
@@ -899,7 +900,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         assert!(sim.foot_mark_put(
             mover,
             &resources.rules,
-            Some(&resources.overlay_registry),
+            Some(resources.rules.overlay_registry()),
             crate::sim::world::FrameEffects::default()
         ));
         let marker_flags: Vec<_> = sim
@@ -925,7 +926,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             sim.foot_find_path(
                 &request,
                 &resources.rules,
-                Some(&resources.overlay_registry),
+                Some(resources.rules.overlay_registry()),
                 crate::sim::world::FrameEffects::default()
             )
             .unwrap(),

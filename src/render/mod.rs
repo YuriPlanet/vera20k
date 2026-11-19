@@ -20,9 +20,10 @@
 //! - render/ does NOT depend on: app/, audio/, net/
 
 pub(crate) mod aircraft_shadow;
+pub(crate) mod snapshot;
 pub mod area_scale;
 pub(crate) mod atlas_growth;
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod atlas_refresh_retail_tests;
 pub mod batch;
 pub mod beacon_art;
@@ -34,14 +35,16 @@ pub mod building_zshape;
 pub mod cell_window;
 pub mod chrome_atlas;
 pub(crate) mod chrono_screen;
+pub(crate) mod color_vision;
 pub mod combat_light;
 pub mod cursor_atlas;
-#[cfg(test)]
+#[cfg(all(test, any(tests_render_a_r, tests_app_presentation, tests_render_s_z)))]
 pub(crate) mod depth_gpu_tests;
 pub mod draw_state;
 pub(crate) mod electric_bolt;
 pub(crate) mod entity_atlas_growth;
 pub(crate) mod foot_depth;
+pub(crate) mod frame_handoff;
 pub mod frame_readback;
 pub mod gpu;
 pub(crate) mod gpu_timer;
@@ -60,6 +63,7 @@ pub mod pixel_fx_sparkles;
 pub mod radar;
 pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
+pub(crate) mod depth_shift;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
 pub mod screenshot;
@@ -71,7 +75,7 @@ pub mod shell_text_reveal;
 pub mod shell_transition_pass;
 pub(crate) mod shell_ui_style_assets;
 pub mod shroud_buffer;
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod shroud_gpu_tests;
 pub mod sidebar_cameo_atlas;
 pub mod sidebar_chrome;
@@ -88,7 +92,7 @@ pub mod tactical_compat;
 pub mod tactical_draw_plan;
 pub(crate) mod tactical_shader;
 pub(crate) mod terrain_draw;
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod terrain_draw_gpu_tests;
 pub mod terrain_instances;
 pub(crate) mod text_audit;
@@ -103,6 +107,7 @@ pub mod upscale_pass;
 pub(crate) mod voxel_gpu;
 pub mod voxel_image_cache;
 #[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod voxel_parity_tests;
 pub mod vxl_normals;
 pub mod vxl_raster;
@@ -110,9 +115,9 @@ pub mod wave_geometry;
 pub(crate) mod webgl;
 pub mod xbr;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod sidebar_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod smooth_chrome_gpu_tests;
 #[cfg(all(test, feature = "phobos"))]
 #[path = "tooltip_blur_gpu_tests.rs"]

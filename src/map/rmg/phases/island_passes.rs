@@ -220,7 +220,7 @@ pub fn run(ctx: &mut RegionCtx<'_>) -> Regions {
     rebuilt
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::rng::RmgRng;
@@ -386,7 +386,9 @@ mod tests {
     /// `tools/rmg_oracle/bridge_pass.py` over declared terrains (not a
     /// Generate prefix): the raise and rebuild here, then the production
     /// connector/deck driver. Every changed cell, region owner, rebuilt
-    /// region, repair hut and the exit RNG state.
+    /// region, repair hut and the exit RNG state. Stock controls, run without
+    /// Ares.dll: Ares' bridge hooks (0x58FA51, 0x58FE7B, 0x58FBDD..0x5900F7)
+    /// change the deck validation and end coins.
     #[test]
     fn native_bridge_pass_controls() {
         use super::super::carve::CarveCtx;
@@ -501,6 +503,7 @@ mod tests {
                 blocks: &tile_blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             carve_driver::connect_regions(
                 &mut ctx,

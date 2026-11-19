@@ -1186,10 +1186,10 @@ fn open_topped_port_coordinate(
 ) -> Option<FireCoordinate> {
     let entities = &world.substrate.entities;
     let rider = entities.get(snap.stable_id)?;
-    let transport_id = rider.passenger_role.open_transport_id()?;
+    let transport_id = rider.passenger_role().open_transport_id()?;
     let transport = entities.get(transport_id)?;
     let port = transport
-        .passenger_role
+        .passenger_role()
         .cargo()?
         .passengers()
         .iter()
@@ -1346,6 +1346,11 @@ fn barrel_voxel_coordinate(
 /// When nothing is picked and the firer rides an open-topped transport
 /// (`+0x82`), the weapon's `OpenToppedAnim=` (`+0x118`) plays instead
 /// (`0x006FF32F..0x006FF347`); stock gives it to PsychicJab and Virusgun.
+///
+/// RESIDUAL: the eight-way pick takes its facing from vt+0x308
+/// (`0x006FF2E5`), which for an aircraft is its SecondaryFacing (`+0x3A0`,
+/// `0x0041A570`); `aim_facing16` carries an aircraft's body facing. No retail
+/// aircraft weapon has `Anim=`.
 pub(crate) fn muzzle_anim_name(
     weapon: &crate::rules::weapon_type::WeaponType,
     aim_facing16: u16,
@@ -1387,7 +1392,7 @@ pub fn building_muzzle_z_adjust(offset_y: i32, occupied: bool) -> i32 {
 /// `0x006FF41D`: `MOV [anim+0x100], 0xFFFFFF38`.
 const OCCUPIED_MUZZLE_Z_ADJUST: i32 = -200;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;
@@ -2422,15 +2427,15 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_coord_building_tests.rs"]
 mod building_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_coord_hover_tests.rs"]
 mod hover_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod control_link_port_tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;

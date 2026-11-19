@@ -205,7 +205,8 @@ fn sell_release_uses_building_center_preserves_pose_and_orders_links_after_speed
 #[test]
 fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
     let mut sim = release_fixture();
-    let registry = crate::sim::crates::tests::crate_registry();
+    let rules = crate::sim::crates::tests::crate_ruleset("");
+    let registry = rules.overlay_registry();
     let wood = registry.id_for_name("WOOD").unwrap();
     let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(64, 64);
     overlays.place_overlay(10, 12, wood, 0);
@@ -213,8 +214,8 @@ fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
     release_sell_destroy(
         &mut sim,
         2,
-        crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default().with_overlay_registry(Some(&registry)),
+        &rules,
+        crate::sim::world::FrameEffects::default().with_overlay_registry(Some(registry)),
     );
     let trace = take_trace();
     assert_eq!(trace[1].name, "force");
@@ -227,6 +228,43 @@ fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
         sim.overlay_grid.as_ref().unwrap().cell(10, 12).overlay_id,
         None,
         "the crate is picked up"
+    );
+}
+
+/// `EmptyBunker`'s destination (`0x004597FA`) is the Unit setter, so the Foot
+/// setter's tail (`0x004D96C2..0x004D9707`) restarts both path timers.
+#[test]
+fn normal_release_runs_the_foot_setters_timer_tail() {
+    let mut sim = release_fixture();
+    let rules = super::tests::rules();
+    let frame = sim.session.binary_frame();
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .navigation
+        .path_runtime_mut()
+        .start_movement(frame, 99);
+
+    release_normal(
+        &mut sim,
+        2,
+        &rules,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let _ = take_trace();
+
+    let path = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .navigation
+        .path_runtime();
+    assert_eq!(path.movement_timer().remaining(frame as i32), 0);
+    assert_eq!(
+        path.blocked_timer().remaining(frame as i32),
+        rules.general.blockage_path_delay_ticks
     );
 }
 
@@ -273,7 +311,10 @@ fn normal_release_clears_unit_first_and_assigns_destination_without_teleport() {
         building.mission.queued(),
         MissionId::from_known(MissionType::Guard)
     );
-    assert_eq!(building.bunker_runtime.unwrap().state(), BunkerState::Idle);
+    assert_eq!(
+        building.building.bunker_runtime.unwrap().state(),
+        BunkerState::Idle
+    );
 }
 
 #[test]
@@ -424,7 +465,7 @@ fn nonunit_link_does_not_release_or_reset_bunker() {
         let building = sim.substrate.entities.get(2).unwrap();
         assert_eq!(building.bunker.occupant(), Some(1));
         assert_eq!(
-            building.bunker_runtime.unwrap().state(),
+            building.building.bunker_runtime.unwrap().state(),
             BunkerState::Occupied
         );
     }

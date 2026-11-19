@@ -1,9 +1,9 @@
 //! VERA20k — entry point.
 //!
 //! Runs the CLI-only switches (replay verification, retail data check, language
-//! file check and the headless spawn probe), then delegates start-up to
-//! [`vera20k::entry`], which owns the logging, panic reporting and event-loop
-//! work. Android has no `main`; its cdylib (the `vera20k-android` crate in
+//! file check, the headless spawn probe and random-map file), then delegates
+//! start-up to [`vera20k::entry`], which owns the logging, panic reporting and
+//! event-loop work. Android has no `main`; its cdylib (the `vera20k-android` crate in
 //! `android/`) reaches the same start-up through `entry::run_with_loop`.
 //!
 //! Module declarations live in lib.rs so integration tests can import them.
@@ -16,6 +16,13 @@
 )]
 
 use anyhow::Result;
+
+// On Windows the game allocates through mimalloc instead of the process heap
+// (Cargo.toml, "Windows memory allocator"). Only this program: the tools and
+// the tests keep the system allocator.
+#[cfg(windows)]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
     if let Some(result) =
@@ -35,6 +42,12 @@ fn main() -> Result<()> {
     }
     // docs/spawn.md: headless launch compatibility probe; JSON on stdout.
     if let Some(result) = vera20k::app::frontend::launch::try_probe(std::env::args_os().skip(1)) {
+        std::process::exit(result?);
+    }
+    // docs/spawn.md "Random maps": headless random-map file; JSON on stdout.
+    if let Some(result) =
+        vera20k::app::frontend::launch::try_generate_map(std::env::args_os().skip(1))
+    {
         std::process::exit(result?);
     }
     // A launch from the macOS app bundle or the Linux AppImage works in the

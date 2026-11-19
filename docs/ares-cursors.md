@@ -1,10 +1,13 @@
-# Optional Ares mouse cursors
+# Ares mouse cursors
 
-Build with `--features ares` to draw the software cursor through the Ares
-`[MouseCursors]` list and to let types name the cursors of their actions.
-Default builds keep the compiled cursor table (`0x0082D028`) and its action
-switches (`DisplayClass::SetCursorFromAction @ 0x004AAE90`); INI keys cannot
-enable the extension there.
+While Ares plays in a game (`RuleSet::ares`), every build draws the software
+cursor through the Ares `[MouseCursors]` list and lets types name the cursors
+of their actions. The superweapon cursors are superweapon code and follow the
+Ares superweapons (`RuleSet::ares_form`, how the Rules were read).
+Only Rules read the Ares way hold the list's lines and the `Cursor.*` keys, so
+a game whose Rules were read the stock way draws the list's defaults. A game
+with neither switch keeps the compiled cursor table (`0x0082D028`) and its
+action switches (`DisplayClass::SetCursorFromAction @ 0x004AAE90`).
 
 ```ini
 [MouseCursors]                          ; rulesmd.ini, every Rules pass
@@ -80,8 +83,10 @@ reads the list or the overrides.
   superweapon actions reach a Foot's click; VERA's radar drops a NoCursor
   click instead of dispatching it. `0x4AB366`, `0x4AB44A` and `0x5BDD9F` are
   0.A hooks 3.0 no longer installs.
-- InfantryHeal and UnitRepair (`0x5A`/`0x5B`) belong to the unported Ares
-  heal actions (`0x51E710`, `0x73FDBD`).
+- InfantryHeal and UnitRepair (`0x5A`/`0x5B`): the heal arms (`0x51E710`,
+  `0x73FDBD`) set them over an Organic or Infantry target and over any other
+  one (`unit_repair_feedback`); an Infantryman's Heal shows the cursor
+  directly.
 - A cursor of -1 (`none`) or outside the list faults in Ares; VERA keeps the
   stock cursor. A zero Count, which Ares divides by, draws one frame.
 - Overrides another selected object's What_Action left in the same frame are

@@ -36,7 +36,6 @@ use super::*;
 ///
 /// Every cost on both sides is the type's Cost_Of for the VICTIM's house
 /// (`victim_house`; `0x00702ED1`, `0x00702F13`, `0x00702F77`, `0x00702FD4`).
-#[cfg_attr(feature = "ares", allow(dead_code))]
 fn award_kill_experience(
     entities: &mut EntityStore,
     rules: &RuleSet,
@@ -78,7 +77,7 @@ fn award_kill_experience(
     };
     // Branch 1: a passenger firing from an OpenTopped transport pays its
     // transporter (the `+0x82`/`+0x11C` pair).
-    let open_transporter = killer.passenger_role.open_transport_id();
+    let open_transporter = killer.passenger_role().open_transport_id();
     let recipient = if let Some(transporter) = open_transporter.and_then(trainable_cost) {
         Some(transporter)
     } else if killer_type.trainable {
@@ -139,7 +138,6 @@ fn award_kill_experience(
 /// Every factor product is a binary64 spill, as the DLL keeps them.
 /// Returns the gunner or occupant to promote immediately
 /// (`UpdateVeterancy 10046AF0`, called at `1004F2C7` with no flash).
-#[cfg(feature = "ares")]
 fn award_ares_kill_experience(
     entities: &mut EntityStore,
     houses: &crate::sim::houses::Houses,
@@ -190,7 +188,7 @@ fn award_ares_kill_experience(
     let killer_ext = killer_type.ares_veterancy();
     let killer_house = killer.owner();
     let mut promote_now = false;
-    let recipient = if let Some(transporter_id) = killer.passenger_role.open_transport_id() {
+    let recipient = if let Some(transporter_id) = killer.passenger_role().open_transport_id() {
         let transporter = entities.get(transporter_id)?;
         let transporter_type = interner.object_type(transporter.type_ref(), rules)?;
         let transporter_ext = transporter_type.ares_veterancy();
@@ -212,7 +210,7 @@ fn award_ares_kill_experience(
         }
     } else if killer_type.gunner {
         let gunner = killer
-            .passenger_role
+            .passenger_role()
             .cargo()
             .and_then(|cargo| cargo.passengers().first().copied());
         if killer_type.trainable
@@ -413,8 +411,9 @@ fn record_the_kill(
     if matches!(source, KillSource::Techno(_)) && victim.tracking_facts.dont_score() {
         return None;
     }
-    #[cfg(feature = "ares")]
-    if let KillSource::Techno(Some(attacker)) = source {
+    if rules.ares()
+        && let KillSource::Techno(Some(attacker)) = source
+    {
         // Ares RegisterDestruction_Bounty702E64 ->1004B100 precedes the
         // original alliance/XP work, after Tags and DontScore. No E4 payout.
         crate::sim::bounty::award(
@@ -423,8 +422,8 @@ fn record_the_kill(
     }
     // Bounty changes the existing wallet and may queue a presentation sum on
     // an actor. Reborrow the victim after that visit rather than retaining a
-    // mutable-store alias across the native hook.
-    #[cfg(feature = "ares")]
+    // mutable-store alias across the native hook. Without Ares nothing above
+    // touched the store, so the reborrow finds the same victim.
     let Some(victim) = entities.get(victim_id) else {
         return None;
     };
@@ -441,8 +440,6 @@ fn record_the_kill(
         KillSource::House(house) => house,
     };
     let victim_owner = victim.owner();
-    #[cfg(not(feature = "ares"))]
-    let victim_house = houses.get(&victim_owner);
     let victim_type = interner.object_type(victim.type_ref(), rules);
     let insignificant_building = victim.category() == EntityCategory::Structure
         && victim_type.is_some_and(|object| object.insignificant);
@@ -455,8 +452,14 @@ fn record_the_kill(
     let allied = asker.is_some_and(|asker| alliances.is_allied(interner, asker, victim_owner));
     let points =
         super::veterancy::kill_award_points(victim_cost, victim.veterancy.rank_kind(), allied);
-    #[cfg(not(feature = "ares"))]
-    let promote_now = {
+    let promote_now = if rules.ares() {
+        killer_id.and_then(|killer_id| {
+            award_ares_kill_experience(
+                entities, houses, interner, alliances, rules, killer_id, victim_id, points,
+            )
+        })
+    } else {
+        let victim_house = houses.get(&victim_owner);
         if let Some(killer_id) = killer_id {
             award_kill_experience(
                 entities,
@@ -470,12 +473,6 @@ fn record_the_kill(
         }
         None
     };
-    #[cfg(feature = "ares")]
-    let promote_now = killer_id.and_then(|killer_id| {
-        award_ares_kill_experience(
-            entities, houses, interner, alliances, rules, killer_id, victim_id, points,
-        )
-    });
     // 702FF0 awards experience before 703003..7031DC book the House fields.
     if let Some(victim) = entities.get_mut(victim_id) {
         let count_killer = !victim.tracking_facts.dont_score();
@@ -534,8 +531,8 @@ impl crate::sim::world::Simulation {
                     // (100506D0, hook 0x744745): with a destroyer, 85
                     // (destroyed by House) precedes 7, its source the
                     // destroyer's House; no Alive test.
-                    #[cfg(feature = "ares")]
-                    if kind == 7
+                    if rules.ares()
+                        && kind == 7
                         && let KillSource::Techno(Some(destroyer)) = source
                     {
                         self.raise_ares_destroyed_by_house(victim_id, destroyer, context);
@@ -598,12 +595,10 @@ impl crate::sim::world::Simulation {
         );
         // Ares1004F2C7: a gunner or an occupant cannot reach its own AI
         // promotion sample, so the hook updates its rank now, without flash.
-        #[cfg(feature = "ares")]
+        // Without Ares nobody is handed back.
         if let Some(recipient) = promote_now {
             self.update_ares_veterancy(recipient, false, false, rules, context.effects());
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = promote_now;
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(
             crate::sim::world::LifecycleTestEvent::RecordKillBookkeeping {
@@ -637,8 +632,8 @@ impl crate::sim::world::Simulation {
         // Ares 3.0 TechnoClass_RegisterLoss_Trigger (10050690, hook 0x7032B0):
         // E4 raises 85 with its incoming House after 4 and before the RTTI
         // test below, so for every class, while the object is alive.
-        #[cfg(feature = "ares")]
-        if let KillSource::House(Some(house)) = source
+        if context.rules().ares()
+            && let KillSource::House(Some(house)) = source
             && self
                 .substrate
                 .entities
@@ -665,8 +660,9 @@ impl crate::sim::world::Simulation {
         // Ares 3.0 TechnoClass_RegisterDestruction_Trigger (10050650, hook
         // 0x702DD6): past the RTTI test, E0 raises 85 with the destroyer's
         // House before 7.
-        #[cfg(feature = "ares")]
-        if let KillSource::Techno(Some(destroyer)) = source {
+        if context.rules().ares()
+            && let KillSource::Techno(Some(destroyer)) = source
+        {
             self.raise_ares_destroyed_by_house(victim, destroyer, context);
         }
         for kind in [7, 48, 29] {
@@ -685,7 +681,6 @@ impl crate::sim::world::Simulation {
     }
 
     /// Event 85 from E0: the source slot holds `destroyer->Owner`, read now.
-    #[cfg(feature = "ares")]
     fn raise_ares_destroyed_by_house(
         &mut self,
         victim: u64,
@@ -808,11 +803,14 @@ fn record_kill_credit(
         {
             house.stats_mut().record_loss(victim.category());
         }
+        let victim_house = houses.index_of(victim.owner());
         if count_killer
             && let Some(killer) = killer_owner
             && let Some(house) = houses.get_mut(&killer)
         {
-            house.stats_mut().record_kill(victim.category());
+            house
+                .stats_mut()
+                .record_kill(victim.category(), victim_house);
         }
     }
 }

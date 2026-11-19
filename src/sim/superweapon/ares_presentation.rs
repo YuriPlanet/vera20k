@@ -65,6 +65,10 @@ pub(super) fn on_launch(
     // GeneticMutatorActivateSound=`.
     let sound = match &presentation.sound {
         Some(sound) => sound.clone(),
+        // SW_PsychicReveal::GetSound100752B0.
+        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::PsychicReveal => {
+            rules.general.psychic_reveal_activate_sound.clone()
+        }
         None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::GeneticConverter => {
             rules.general.genetic_mutator_activate_sound.clone()
         }
@@ -112,6 +116,25 @@ pub(super) fn on_launch(
                 message: !flags.has(F::NO_MESSAGE),
             });
     }
+}
+
+/// SWTypeExt::ExtData::IsTimerVisible (Ares.dll 10032E80), asked by
+/// TacticalClass_Draw_TimerVisibility (10035A80, hook `0x6D49D1`) before the
+/// stock hold test of each Super on the timer list: whether the local player
+/// (HouseClass::Player) sees `view`'s timer line. An observer sees what an
+/// ally sees; otherwise the owner's relation to the player (10021440: the
+/// owner, an ally, else an enemy, also when there is no player) picks the
+/// type's `SW.TimerVisibility` bit. A hidden Super takes no line (`0x6D4A71`).
+pub fn ares_timer_visible(sim: &Simulation, rules: &RuleSet, view: super::SuperTimerView) -> bool {
+    let Some(sw) = rules.super_weapon(sim.interner.resolve(view.sw_type())) else {
+        return true;
+    };
+    let relation = match sim.session.current_house() {
+        Some(player) if sim.session.is_observer_house(player) => HouseMask::ALLIES,
+        Some(player) => sim.ares_house_relation(view.owner(), player),
+        None => HouseMask::ENEMIES,
+    };
+    sw.presentation.timer_visibility.intersects(relation)
 }
 
 /// `AnimClass+0x19D` (Invisible) per viewer: hidden from each House the

@@ -14,13 +14,13 @@ use crate::util::native_x87::MaskedX87Ordering::Greater;
 
 #[path = "building_art_admission.rs"]
 mod admission;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_depot_tests.rs"]
 mod depot_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_expiry_tests.rs"]
 mod expiry_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_garrison_tests.rs"]
 mod garrison_tests;
 #[path = "building_art_power.rs"]
@@ -36,7 +36,7 @@ pub(crate) use storage::BuildingStorage;
 /// (Building+55C), their effect-replay marks (+5B0), the damaged-art flag
 /// (+6E6), its StorageClass art, the Stuff flag (+6EA) and the
 /// OnConstructionComplete guard (+6E4).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingArt {
     /// Building+5FC, initialized to -1 by43B768/43B7BF. This is the
     /// WallTower upgrade image variant, not Techno's gunner turret index.
@@ -66,7 +66,6 @@ pub struct BuildingArt {
     actually_placed: bool,
     /// Ares BuildingExt `FreeUnits_Done` (`+0xC`): a Place has reached the
     /// free-unit block (BuildingClass_Place_SkipFreeUnits, `10036860`).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     free_units_done: bool,
     /// Derived draw cache from UpdateAnimation, before this object's Techno
@@ -78,7 +77,7 @@ pub struct BuildingArt {
 /// Inputs to native BuildingClass::UpdateAnimation's relight at 00450A47.
 /// Retain the pre-Techno values across save/load because the next render uses
 /// them; the gameplay owners remain the entity's live tint and flash state.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingTintSample {
     frame: u32,
     flashed: bool,
@@ -136,6 +135,28 @@ impl BuildingArt {
         });
     }
 
+    /// Whether [`Self::capture_tint_sample`] with these inputs would leave
+    /// what the draw reads as it is. The draw reads the sample's frame only
+    /// under an Iron Curtain or an airstrike mark (`presentation::lighting`,
+    /// `effect_light`), so a sample without either that agrees on the rest
+    /// is current whatever frame it holds.
+    pub(crate) fn tint_sample_is_current(
+        &self,
+        flashed: bool,
+        invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+        airstrike: &crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
+        airstrike_active: bool,
+    ) -> bool {
+        invulnerability.is_none()
+            && !airstrike_active
+            && self.tint_sample.as_ref().is_some_and(|sample| {
+                sample.flashed == flashed
+                    && sample.invulnerability.is_none()
+                    && !sample.airstrike_active
+                    && sample.airstrike == *airstrike
+            })
+    }
+
     pub fn tint_sample(&self) -> Option<&BuildingTintSample> {
         self.tint_sample.as_ref()
     }
@@ -173,20 +194,17 @@ impl BuildingArt {
     /// Ares 3.0 BuildingClass_Place_SkipFreeUnits (10036860, hook 0x446AAF):
     /// whether this Place runs the free-unit block, which only the first
     /// Place to reach it does.
-    #[cfg(feature = "ares")]
     fn take_free_units(&mut self) -> bool {
         !std::mem::replace(&mut self.free_units_done, true)
     }
 
     /// Whether a Place has reached the free-unit block (hashed).
-    #[cfg(feature = "ares")]
     pub(crate) fn free_units_done(&self) -> bool {
         self.free_units_done
     }
 
     /// Ares ChronoWarpStateMachine::Update (`10070230`) drops +6E4 when it
     /// removes a chronoshifted building, so its next Place opens it again.
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_actually_placed(&mut self) {
         self.actually_placed = false;
     }
@@ -240,17 +258,8 @@ impl crate::sim::world::ObjectSubstrate {
     /// (`0x0043FE56`) steps either tint stage or the flash.
     pub(crate) fn relight_building_anims(&mut self, id: u64, frame: u32) {
         let airstrike_active = self.airstrike_tint_active(id);
-        if let Some(entity) = self.entities.get_mut(id)
-            && entity.category() == crate::map::entities::EntityCategory::Structure
-        {
-            entity.building_art.capture_tint_sample(
-                frame,
-                entity.flashing.flashed(),
-                entity.invulnerability.as_ref(),
-                &entity.airstrike_tint,
-                airstrike_active,
-            );
-        }
+        self.entities
+            .capture_building_tint_sample(id, frame, airstrike_active);
     }
 
     /// Building vt+0x148 `Flash` (`0x00456E00`): the Techno body
@@ -274,10 +283,19 @@ impl Default for BuildingArt {
             storage: BuildingStorage::default(),
             stuff_enabled: true,
             actually_placed: false,
-            #[cfg(feature = "ares")]
             free_units_done: false,
             tint_sample: None,
         }
+    }
+}
+
+/// An object that is not a Building never writes its art, and keeps none
+/// (`GameEntity::building_art`).
+impl crate::util::sparse::SparseDefault for BuildingArt {
+    fn sparse_default() -> &'static Self {
+        static DEFAULT: std::sync::LazyLock<BuildingArt> =
+            std::sync::LazyLock::new(BuildingArt::default);
+        &DEFAULT
     }
 }
 
@@ -374,8 +392,8 @@ impl Simulation {
         // Ares445F80 entry hook100100B0 ->10013700 (a SecretLab type's roll)
         // ->100449D0 precedes the vanilla ActuallyPlaced early return,
         // including repeated and capture calls.
-        #[cfg(feature = "ares")]
-        {
+        let ares = rules.ares_form();
+        if ares {
             self.ares_update_secret_lab(id, rules);
             self.grant_factory_plans(id, rules);
         }
@@ -394,21 +412,16 @@ impl Simulation {
         let owner = entity.owner();
         let cell = (entity.position.rx(), entity.position.ry());
         let refinery = object.refinery;
-        // 0x00445FE4 redirects a keyed refinery to 0x00446183, the normal
-        // opening-anim path.
-        #[cfg(feature = "phobos")]
-        let refinery = refinery && !self.refinery_uses_normal_active_anim(id, rules);
-        let powered = Self::anim_power_policy(object, entity);
+        let powered = Self::anim_power_policy(object, entity, rules);
         let damaged = requested_damage_state(
             entity.health,
             object.strength,
             rules.general.condition_yellow,
         );
-        let garrisoned = !entity.passenger_role.occupants().is_empty();
+        let garrisoned = !entity.passenger_role().occupants().is_empty();
         // Ares BuildingClass_Place_Academy (hook 0x00446366 -> 10023750),
         // inside the first-opening block: an academy joins its owner's list.
-        #[cfg(feature = "ares")]
-        if first_opening {
+        if ares && first_opening {
             self.update_ares_academy_membership(id, true, rules);
         }
         // 0x00446382..0x004463B4: the built type's InfantryGainSelfHeal and
@@ -452,9 +465,10 @@ impl Simulation {
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);
         }
-        // 0x00446662..0x0044667B, after the wall-tower variant arm and before
-        // the shared light block: slot 9 from the rules `TurretAnim=` name.
-        self.sync_rules_turret_anim(id, rules);
+        // 0x00446580..0x004466D5: the turret animation in slot 9.
+        if first_opening {
+            self.open_turret_anim(id, rules);
+        }
         // 0x004466D5..0x0044676C: the light block Unlimbo shares.
         if first_opening {
             self.light_building(id, rules);
@@ -515,14 +529,12 @@ impl Simulation {
         // 446AAF: Ares marks the block run on its first reach, whatever the
         // capture and ScenarioInit arguments, and skips it afterwards (a
         // building ChronoWarp put back opens again with +6E4 clear).
-        #[cfg(feature = "ares")]
-        let free_units = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .is_some_and(|entity| entity.building_art.take_free_units());
-        #[cfg(not(feature = "ares"))]
-        let free_units = true;
+        let free_units = !rules.ares()
+            || self
+                .substrate
+                .entities
+                .get_mut(id)
+                .is_some_and(|entity| entity.building_art.take_free_units());
         if free_units && !captured && !scenario_initialization {
             if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
             {
@@ -531,9 +543,10 @@ impl Simulation {
         }
         // Ares 3.0 BuildingClass_Place_InitialPayload (10048EB0, hook
         // 0x446EE2), where every reached opening resumes past the free unit:
-        // the building's InitialPayload, once.
-        #[cfg(feature = "ares")]
-        self.create_ares_initial_payload(id, rules, registry, effects);
+        // the building's InitialPayload, once, when Ares plays.
+        if rules.ares() {
+            self.create_ares_initial_payload(id, rules, registry, effects);
+        }
     }
     fn building_anim_config(
         &self,
@@ -548,6 +561,10 @@ impl Simulation {
             // PowerUp records belong to the retained BuildingType, including
             // constructor defaults when no ART section was ever reached.
             rules.art().building_power_up_config(slot, record)
+        } else if slot == 9 {
+            // Slot 9's record is read from the rules INI, not ART
+            // (`0x00464450..0x00464632`).
+            crate::rules::art_data::building_turret_anim_config(object)
         } else {
             rules
                 .art()
@@ -650,7 +667,7 @@ impl Simulation {
                 object.strength,
                 rules.general.condition_yellow,
             );
-            let garrisoned = !entity.passenger_role.occupants().is_empty();
+            let garrisoned = !entity.passenger_role().occupants().is_empty();
             self.set_building_anim_slot(id, slot as u8, damaged, garrisoned, 0, rules);
         }
     }
@@ -771,12 +788,7 @@ impl Simulation {
             //constructor/cycling state stays in -1..=2.
             return;
         }
-        let name = format!("{image}_{}", char::from(b'B'.wrapping_add(next as u8)));
-        // RESIDUAL: a map/mod registering this dynamic type can reach
-        // the unported Rules slot9/SHP turret configuration and binding
-        // mechanism. The selected retail NTIRON_B is unregistered, so
-        // native427CB0 exits before any coordinates/configuration read.
-        self.allocate_building_anim_slot(id, 9, &name, false, 0, None, rules);
+        self.allocate_wall_tower_art(id, &image, next, rules);
         self.substrate
             .entities
             .get_mut(id)
@@ -785,66 +797,82 @@ impl Simulation {
             .wall_tower_variant = next;
     }
 
-    /// `0x00446662..0x0044667B` inside `Grand_Opening`: a `HasTurret` building
-    /// without `TurretAnimIsVoxel` synchronizes its slot-9 animation from the
-    /// rules `TurretAnim=` name (type `+0x11B0`); the wall-tower variant arm
-    /// above owns the `Image` + `B`/`C`/`D` name on a changed variant. Native
-    /// `0x451890` replaces the slot animation on every opening.
-    ///
-    /// RESIDUAL: the damaged/garrisoned slot-9 names are separate rules reads
-    /// (`0x004644FD`/`0x00464594`, `TurretAnimDamaged=` plus the image's
-    /// `TurretAnimGarrisoned=`); this port uses the normal name for both, and
-    /// the reachable data authors neither key.
-    fn sync_rules_turret_anim(&mut self, id: u64, rules: &RuleSet) {
+    /// The WallTower variant's slot-9 art, `Image_B`, `_C` or `_D`, handed
+    /// straight to451890: PowerUp's request above and Grand_Opening's
+    /// (`0x004465D2..0x00446655`).
+    fn allocate_wall_tower_art(&mut self, id: u64, image: &str, variant: i32, rules: &RuleSet) {
+        let name = format!("{image}_{}", char::from(b'B'.wrapping_add(variant as u8)));
+        // RESIDUAL: nothing binds this dynamic type's SHP, so a map or mod
+        // that registers it gets no drawn art. The selected retail NTIRON_B
+        // is unregistered, so native427CB0 exits before any slot read.
+        self.allocate_building_anim_slot(id, 9, &name, false, 0, None, rules);
+    }
+
+    /// Grand_Opening `0x00446580..0x004466D5`, inside the first-opening
+    /// block. A HasTurret (`0x004527D0`) building without `TurretAnimIsVoxel`
+    /// (`+0x16C5`) builds its slot-9 animation: the WallTower variant's art
+    /// when one is set (`+0x5FC != -1`, after clearing the slot), otherwise
+    /// the rules `TurretAnim` name (`+0x11B0`) when it is not empty. Both go
+    /// straight to451890 with a clear damage flag, so a building that opens
+    /// damaged returns its other slots to their normal names, as natively.
+    /// The block then aims the animation it built.
+    fn open_turret_anim(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let name = self.interner.resolve(entity.type_ref());
-        let Some(object) = rules.object(name) else {
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if object.turret_anim_is_voxel {
-            return;
-        }
-        let Some(turret_name) = object.turret_anim.clone() else {
-            return;
-        };
-        // 0x451238..0x451242 asks `HasTurret()` (vt+0x3FC = 0x4527D0), which
-        // folds in the type's upgrades; a `Turret=no` host never reaches the
-        // slot-9 synchronization.
-        if !self.substrate.entities.get(id).is_some_and(|entity| {
-            entity
+        if object.turret_anim_is_voxel
+            || !entity
                 .building_upgrades()
                 .has_turret(object, rules, &self.interner)
-        }) {
+        {
             return;
         }
-        let config = BuildingAnimConfig {
-            native_slot: 9,
-            anim_type: turret_name.to_ascii_uppercase(),
-            damaged_variant: None,
-            garrisoned_variant: None,
-            kind: crate::rules::art_data::BuildingAnimKind::Special,
-            is_primary: false,
-            x: object.turret_anim_x,
-            y: object.turret_anim_y,
-            y_sort: 0,
-            z_adjust: object.turret_anim_z_adjust,
-            loop_start: 0,
-            loop_end: 0,
-            loop_count: 0,
-            rate: 0,
-            start_frame: 0,
-            ping_pong: false,
+        let variant = entity.building_art.wall_tower_variant;
+        if variant != -1 {
+            let image = object.image.clone();
+            self.clear_building_anim_slot(id, 9);
+            self.allocate_wall_tower_art(id, &image, variant, rules);
+        } else if let Some(name) = object.turret_anim.clone() {
+            self.allocate_building_anim_slot(id, 9, &name, false, 0, None, rules);
+        }
+        self.aim_building_turret_anim(id, true);
+    }
+
+    /// A HasTurret building shows its heading on its slot-9 animation: the
+    /// frame is the `0x007F4890` table entry for the 32-step bucket of the
+    /// `+0x388` facing (`FacingClass::Current @ 0x004C93D0`), and the frame
+    /// step is zeroed so the animation neither advances nor ends. Grand_Opening
+    /// (`0x00446680..0x004466CB`) and UpdateAnimation's tail, every frame
+    /// (`0x00451234..0x0045128C`), write it. No RNG draw, timer write or
+    /// detach is involved.
+    ///
+    /// RESIDUAL: the map's building reader writes it too
+    /// (`0x0044FDC5..0x0044FE1D`), and VERA has no call there. Trigger: a
+    /// preset building with a slot-9 animation whose heading the reader set
+    /// after it opened; effect: none once UpdateAnimation runs on the first
+    /// logic frame.
+    ///
+    /// The slot is tested before the caller's HasTurret answer: only a
+    /// building with a slot-9 animation has anything to write.
+    pub(crate) fn aim_building_turret_anim(&mut self, id: u64, has_turret: bool) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
         };
-        let registered = rules
-            .anim_type_names
-            .contains(&turret_name.to_ascii_uppercase());
-        let anim =
-            self.allocate_building_anim_slot(id, 9, &turret_name, false, 0, Some(config), rules);
-        log::debug!(
-            "building {id}: SHP turret anim {turret_name:?} registered={registered} -> slot 9 anim {anim:?}"
-        );
+        let Some(anim_id) = entity.building_art.anim_slots[9] else {
+            return;
+        };
+        if !has_turret {
+            return;
+        }
+        let facing = entity.body_facing_current(self.session.binary_frame());
+        let frame = crate::util::direction_tables::DRAGON_FRAME_TABLE
+            [usize::from(crate::util::direction_tables::step32_from_facing16(facing))];
+        if let Some(anim) = self.substrate.anims.get_mut(anim_id) {
+            anim.hold_at_frame(frame);
+        }
     }
 
     /// Original451890: synchronize other slots, construct new AnimClass, copy
@@ -932,15 +960,18 @@ impl Simulation {
         let enabled = self.substrate.entities.get(id)?.building_art.stuff_enabled
             && self.building_operational_state(id, rules) == Some(true);
         if !enabled
-            && Self::anim_power_policy(object, self.substrate.entities.get(id)?)
+            && Self::anim_power_policy(object, self.substrate.entities.get(id)?, rules)
             && self.building_anim_power_flags(id, slot, rules).powered
         {
             self.substrate.anims.get_mut(new_id)?.pause();
         }
         // RESIDUAL (dormant): `0x00451AFB..0x00451B10` hides a slot-9 anim
-        // (Anim `+0x19D`) of a `BarrelAnimIsVoxel=` type. VERA reads the key
-        // only for its fire coordinate (`fire_coord.rs`) and leaves this hide
-        // unported; no retail rules layer sets it.
+        // (Anim `+0x19D`) of a `BarrelAnimIsVoxel=` type, and the building's
+        // own draw shows it around the voxel barrel
+        // (`0x0043E5D9..0x0043E795`). VERA reads the key only for its fire
+        // coordinate (`fire_coord.rs`) and ports neither, so such a type's
+        // slot-9 anim draws as an ordinary slot anim; no retail rules layer
+        // sets the key.
         // 0x00451B17..0x00451B25: a building being erased (`vt+0x1D4`,
         // Techno `+0x270`) freezes the new anim.
         if self.substrate.entities.get(id)?.is_warped_out() {
@@ -952,7 +983,6 @@ impl Simulation {
     /// Whether the building's type names an anim for `slot`, the first-byte
     /// test of the anim name (`+0x11F4` for the SpecialAnim) the Ares Prism
     /// charge makes before it swaps anims (`100169A0`, `10017970`).
-    #[cfg(feature = "ares")]
     pub(crate) fn building_has_anim(&self, id: u64, slot: u8, rules: &RuleSet) -> bool {
         self.building_anim_config(id, slot, rules)
             .is_some_and(|config| !config.anim_type.is_empty())
@@ -963,7 +993,6 @@ impl Simulation {
     /// Special (`+0x584`) or SpecialTwo (`+0x588`) slot, not through
     /// `0x00451890`: no other slot or the damage flag changes, and the anim
     /// keeps its constructor's offsets (`sim::ares_firestorm`).
-    #[cfg(feature = "ares")]
     pub(crate) fn install_ares_firewall_anim(&mut self, id: u64, slot: u8, anim: u64) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -1081,7 +1110,7 @@ impl Simulation {
                 == crate::sim::mission::MissionId::from_known(
                     crate::sim::mission::MissionType::Repair,
                 );
-        let garrisoned = !entity.passenger_role.occupants().is_empty();
+        let garrisoned = !entity.passenger_role().occupants().is_empty();
         let delayed_fire = self.building_anim_delayed_fire(owner, rules);
         self.substrate.clear_building_anim_reference(expired);
         let next = match slot {
@@ -1326,14 +1355,10 @@ pub fn building_image(entity: &GameEntity, has_buildup: bool) -> BuildingImage {
 /// of a stock `FirestormWall=` type, whose only writer is gone from YR (the
 /// constructor's 0); the Ares hook replaces the test
 /// ([`crate::sim::ares_firestorm::firewall_body_frame`]).
-fn firestorm_body_frame(entity: &GameEntity, object: &ObjectType) -> Option<i32> {
-    #[cfg(feature = "ares")]
-    {
+fn firestorm_body_frame(entity: &GameEntity, object: &ObjectType, rules: &RuleSet) -> Option<i32> {
+    if rules.ares_form() {
         crate::sim::ares_firestorm::firewall_body_frame(entity, object)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = entity;
+    } else {
         object.firestorm_wall.then_some(0)
     }
 }
@@ -1356,13 +1381,13 @@ pub fn current_body_frame(
             state: entity.building_body_state().unwrap_or(1),
             base_frame: entity.construction_stage_value(),
             laser_frame: object.laser_fence.then_some(0),
-            firestorm_frame: firestorm_body_frame(entity, object),
+            firestorm_frame: firestorm_body_frame(entity, object, rules),
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
             occupants: object
                 .can_be_occupied
-                .then_some(entity.passenger_role.occupants().count()),
+                .then_some(entity.passenger_role().occupants().count()),
             tech_level,
             selling: entity.building_down(),
             buildup: [control[0], control[1]],
@@ -1401,13 +1426,13 @@ pub(crate) fn receiver_body_frame(
             },
             base_frame: 0,
             laser_frame: object.laser_fence.then_some(0),
-            firestorm_frame: firestorm_body_frame(entity, object),
+            firestorm_frame: firestorm_body_frame(entity, object, rules),
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |art| art.building_gate_stages)),
             occupants: object
                 .can_be_occupied
-                .then_some(entity.passenger_role.occupants().count()),
+                .then_some(entity.passenger_role().occupants().count()),
             tech_level,
             selling: false,
             buildup: [0, 1],
@@ -1423,7 +1448,7 @@ pub(crate) fn receiver_body_frame(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod body_tests {
     use super::*;
     use serde::Deserialize;
@@ -1520,15 +1545,22 @@ mod body_tests {
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
+    slot_test_fixture_with("")
+}
+
+/// [`slot_test_fixture`] with more keys on the building's rules section.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn slot_test_fixture_with(building_rules: &str) -> (Simulation, RuleSet, u64) {
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
     let art_ini = IniFile::from_str(
         "[B]\nActiveAnim=N\nActiveAnimDamaged=D\nActiveAnimGarrisoned=G\n[N]\nLoopCount=-1\nRate=150\nRandomRate=450,150\nStopSound=OLDSTOP\n[D]\nLoopCount=-1\nRate=300\nRandomRate=900,300\n[G]\nLoopCount=-1\nRate=450\n",
     );
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &IniFile::from_str(
-            "[BuildingTypes]\n0=B\n[B]\nStrength=100\n[Animations]\n0=N\n1=D\n2=G\n",
-        ),
+    let mut rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+        &IniFile::from_str(&format!(
+            "[BuildingTypes]\n0=B\n[B]\nStrength=100\n{building_rules}[Animations]\n0=N\n1=D\n2=G\n"
+        )),
         &art_ini,
+        &["OLDSTOP"],
     )
     .unwrap();
     let mut art = ArtRegistry::from_ini(&art_ini);
@@ -1554,7 +1586,7 @@ pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
     (sim, rules, id)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod slot_tests {
     use super::*;
 
@@ -1613,21 +1645,10 @@ mod slot_tests {
 
     #[test]
     fn wall_tower_missing_type_releases_slot9_then_uses_shared_damage_refresh() {
-        let (mut sim, mut rules, id) = slot_test_fixture();
-        // Supplied slot metadata makes the old animation constructible;
-        // this tests the real Anim deletion/replacement owner, not native
-        // Rules slot9 reading or a registered WallTower dynamic-name port.
-        let mut registry = rules.art().clone();
-        let entry = registry.get_mut("B").unwrap();
-        let mut turret = entry
-            .building_anims
-            .iter()
-            .find(|config| config.native_slot == 3)
-            .unwrap()
-            .clone();
-        turret.native_slot = 9;
-        entry.building_anims.push(turret);
-        rules.install_art_data(registry);
+        // The rules name makes the old slot-9 animation constructible; this
+        // tests the real Anim deletion/replacement owner, not a registered
+        // WallTower dynamic-name port.
+        let (mut sim, rules, id) = slot_test_fixture_with("TurretAnim=N\n");
         sim.set_building_anim_slot(id, 9, false, false, 0, &rules)
             .unwrap();
         sim.set_building_anim_slot(id, 3, true, false, 0, &rules)
@@ -1909,6 +1930,16 @@ TurretAnim=S
         );
         assert_eq!(sim.anim(replaced).unwrap().world_coord().x, 768);
         assert_eq!(sim.anim(replaced).unwrap().world_coord().y, 1024);
+        assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
+        // SetHeight5F5FA0 re-enters BuildingMark43F738 without Unlimbo.
+        // Move the retained slot after PlaceDown without restarting it.
+        let old_z = sim.anim(replaced).unwrap().world_coord().z;
+        sim.set_object_height(id, 96, &rules, None, FrameEffects::default());
+        assert_eq!(sim.anim(replaced).unwrap().world_coord().z, old_z + 96);
+        assert_eq!(
+            sim.entities().get(id).unwrap().building_art.anim_slots[3],
+            Some(replaced)
+        );
         assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
@@ -2237,7 +2268,7 @@ TurretAnim=S
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod native_slot_tests {
     use super::*;
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
@@ -2263,7 +2294,7 @@ mod native_slot_tests {
             ));
             let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
                 &IniFile::from_str(
-                    "[BuildingTypes]\n0=B\n[B]\nStrength=100\nUpgrades=3\n[Animations]\n0=N\n",
+                    "[BuildingTypes]\n0=B\n[B]\nStrength=100\nUpgrades=3\nTurretAnim=N\n[Animations]\n0=N\n",
                 ),
                 &art_ini,
             )
@@ -2407,6 +2438,15 @@ mod native_slot_tests {
                     ping_pong: false,
                 };
                 config.damaged_variant = (slot["damaged"] == true).then_some(variant);
+                if n == 9 {
+                    // Slot 9's record belongs to the rules type.
+                    let damaged = config.damaged_variant.as_ref();
+                    rules.set_turret_anim_names_for_test(
+                        "B",
+                        &config.anim_type,
+                        damaged.map_or("", |variant| &variant.anim_type),
+                    );
+                }
                 configs.push(config);
             }
             art.get_mut("B").unwrap().building_anims = configs;

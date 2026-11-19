@@ -195,7 +195,6 @@ fn fire_error_reads_the_targets_shield_armor() {
 /// Only the Ares build separates the two gates: the stock Verses reader takes
 /// whole percents, so without `Versus.<armor>.Retaliate` every column
 /// `CanFire` admits (1% and up) also clears the widened `0.01f` threshold.
-#[cfg(feature = "ares")]
 #[test]
 fn retaliation_reads_the_sources_shield_armor() {
     let rules = shield_rules("Reach");

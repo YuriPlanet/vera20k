@@ -1,17 +1,16 @@
 //! Final-window Performance Stats panel, hidden at every launch until
-//! Ctrl+Alt+F or the Options page's Performance Stats box shows it, and the
-//! replay/recovery status line below it.
+//! Ctrl+Alt+F or the Options page's Performance Stats box shows it.
 //!
 //! The panel reads like the game's message line: rows of text on black
 //! boxes, at the top left of the battlefield at the match zoom, or of the
-//! window elsewhere. While it shows, the status line and the match's message
-//! list start below it. Its rows are in [`panel`]: rates and units, the
+//! window elsewhere. While it shows, the match's message list starts below
+//! it. Its rows are in [`panel`]: rates and units, the
 //! engine areas that took the most of the last second, the load on each core
 //! and the GPU's share of each frame ([`crate::render::gpu_timer`], which
-//! times the GPU only while the panel shows). The rows and the status line
-//! are localized text ([`crate::i18n`]), so both draw with the process font, which draws
+//! times the GPU only while the panel shows). The rows are localized text
+//! ([`crate::i18n`]), so they draw with the process font, which draws
 //! GAME.FNT's style without GAME.FNT until it loads ([`BitFont::without_fnt`]).
-//! Both are independent of tactical cameras,
+//! The panel is independent of tactical cameras,
 //! optional dev overlays, and shell/offscreen composition.
 
 mod panel;
@@ -26,10 +25,9 @@ use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 
 use super::state::FrameTimer;
+use crate::app::match_runtime::sim_host::SimHost;
 use panel::{DOT, GREEN, HOT, PanelStats, Part, TRACK, WARM};
 
-/// The status line's top when the panel is hidden.
-const STATUS_TOP: f32 = 8.0;
 /// The gap between the panel and the battlefield's or window's top and left
 /// edges, and below it to the match's messages, in font pixels.
 const EDGE: f32 = 4.0;
@@ -43,6 +41,8 @@ const ELLIPSIS: &str = "...";
 
 pub(crate) struct PerformanceOverlay {
     visible: bool,
+    /// Whether the panel also draws its Threads and Ticks rows.
+    thread_rows: bool,
     /// One white texel, tinted into the row boxes and the core bars.
     white: BatchTexture,
     camera_buffer: wgpu::Buffer,
@@ -56,13 +56,76 @@ struct OverlayFrame {
     size: [u32; 2],
     depth: wgpu::TextureView,
     logged_first_frame: bool,
-    simulation: Option<crate::app::presentation::interpolation::SimulationReadout>,
+    simulation_rate: SimulationRate,
     stats: PanelStats,
-    /// Where the status line starts: below the panel while it shows.
-    status_top: f32,
     /// In a match, how far down the battlefield the panel reaches: see
     /// [`PerformanceOverlay::message_top`]. 0 elsewhere.
     message_top: i32,
+}
+
+/// The Logic frames per second on the panel's Sim row, counted over
+/// half-second windows of presented frames, so draws between two game frames
+/// do not count.
+#[derive(Default)]
+struct SimulationRate {
+    /// `None` outside a match, which hides the row.
+    tps: Option<f32>,
+    last_frame: Option<u32>,
+    window_start_ms: u32,
+    window_frames: u32,
+}
+
+impl SimulationRate {
+    fn observe(&mut self, frame: u32, now_ms: u32, held: bool) {
+        let mut tps = self.tps.unwrap_or(0.0);
+        if self.last_frame != Some(frame) {
+            match self.last_frame.map(|last| frame.wrapping_sub(last)) {
+                Some(delta) if delta <= 300 => {
+                    self.window_frames = self.window_frames.saturating_add(delta);
+                }
+                // A new match, or a jump no window could have held.
+                _ => {
+                    self.window_start_ms = now_ms;
+                    self.window_frames = 0;
+                    tps = 0.0;
+                }
+            }
+            self.last_frame = Some(frame);
+        }
+        let elapsed = now_ms.wrapping_sub(self.window_start_ms);
+        if held {
+            self.window_start_ms = now_ms;
+            self.window_frames = 0;
+            tps = 0.0;
+        } else if elapsed >= 500 {
+            tps = self.window_frames as f32 * 1000.0 / elapsed as f32;
+            self.window_start_ms = now_ms;
+            self.window_frames = 0;
+        }
+        self.tps = Some(tps);
+    }
+}
+
+/// Once per presented frame: the Logic frames since the last one, for the
+/// panel's Sim row. Exact captures, pauses and a frozen window read 0.
+pub(crate) fn observe_simulation(state: &crate::app::AppState, exact_capture: bool) {
+    let overlay = &state.renderer.performance_overlay;
+    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
+        overlay.clear_simulation_rate();
+        return;
+    }
+    let held = exact_capture
+        || state
+            .match_state
+            .presentation_paused(&state.frontend.screen)
+        || state.focus_freeze_active();
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
+        overlay.observe_simulation_frame(
+            runtime.simulation.session().binary_frame(),
+            crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
+            held,
+        );
+    }
 }
 
 /// Where the panel draws, in window pixels.
@@ -98,10 +161,12 @@ impl PanelPlacement {
     }
 }
 
-/// A match the panel reads its unit count and Most CPU areas from.
+/// A match the panel reads its unit count, Most CPU areas and tick counts
+/// from.
 pub(crate) struct MatchPanel<'a> {
     pub(crate) placement: PanelPlacement,
-    pub(crate) simulation: Option<&'a crate::sim::world::Simulation>,
+    pub(crate) host: &'a SimHost,
+    pub(crate) loop_counts: crate::app::match_runtime::frame_pacer::LoopCounts,
 }
 
 /// The panel over the battlefield of the match on screen, if one is.
@@ -109,19 +174,21 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
     if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
         return None;
     }
-    // The battlefield is the frame's top left, beside the sidebar column and
-    // above the command bar's strip.
-    let (width, _) = crate::app::input::camera::tactical_viewport_size(state);
+    // The battlefield is the frame beside the sidebar column and the command
+    // bar's strip: its top left in the original, wherever a layout puts it.
+    let (x, y, width, _) = crate::app::input::camera::tactical_viewport_px(state);
     let (scale, (left, top)) = state.tactical_zoom().map_or((1.0, (0, 0)), |zoom| {
         (zoom.percent as f32 / 100.0, zoom.origin)
     });
     Some(MatchPanel {
-        placement: PanelPlacement::top_left(left as f32, top as f32, width as f32 * scale, scale),
-        simulation: state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|runtime| &runtime.simulation),
+        placement: PanelPlacement::top_left(
+            left as f32 + x as f32 * scale,
+            top as f32 + y as f32 * scale,
+            width as f32 * scale,
+            scale,
+        ),
+        host: &state.match_state.sim_runtime,
+        loop_counts: state.platform.frame_pacer.loop_counts(),
     })
 }
 
@@ -130,6 +197,7 @@ impl PerformanceOverlay {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
             visible: false,
+            thread_rows: false,
             white: batch.create_texture(gpu, &[255; 4], 1, 1),
             camera_buffer,
             camera_group,
@@ -139,22 +207,28 @@ impl PerformanceOverlay {
                 size: [gpu.config.width, gpu.config.height],
                 depth: gpu.create_depth_texture(),
                 logged_first_frame: false,
-                simulation: None,
+                simulation_rate: SimulationRate::default(),
                 stats: PanelStats::default(),
-                status_top: STATUS_TOP,
                 message_top: 0,
             }),
         }
     }
 
-    pub(crate) fn set_simulation_readout(
-        &self,
-        simulation: Option<crate::app::presentation::interpolation::SimulationReadout>,
-    ) {
+    /// Count a presented frame's Logic frames. `held` zeroes the rate.
+    fn observe_simulation_frame(&self, binary_frame: u32, now_ms: u32, held: bool) {
         self.frame
             .lock()
             .expect("performance overlay frame lock")
-            .simulation = simulation;
+            .simulation_rate
+            .observe(binary_frame, now_ms, held);
+    }
+
+    /// Forget the rate: a match ended or a new one is loading.
+    pub(crate) fn clear_simulation_rate(&self) {
+        self.frame
+            .lock()
+            .expect("performance overlay frame lock")
+            .simulation_rate = SimulationRate::default();
     }
 
     /// One finished in-game render's phase spans, for the Most CPU row.
@@ -197,6 +271,14 @@ impl PerformanceOverlay {
         self.visible
     }
 
+    /// Ctrl+Alt+G: show or hide the panel's Threads and Ticks rows; returns
+    /// whether they are now shown. They draw with the panel, and like it
+    /// start hidden at every launch.
+    pub(crate) fn toggle_thread_rows(&mut self) -> bool {
+        self.thread_rows = !self.thread_rows;
+        self.thread_rows
+    }
+
     /// Where the match's message list starts, in frame pixels from the
     /// battlefield's top: below the shown panel, from its last drawn frame,
     /// and 0 while it is hidden.
@@ -231,14 +313,13 @@ impl PerformanceOverlay {
         gpu.timer.set_active(self.visible);
         if !self.visible {
             frame.stats = PanelStats::default();
-            frame.status_top = STATUS_TOP;
             frame.message_top = 0;
             return;
         }
         let size = [destination.width(), destination.height()];
         let over_battlefield = in_match.is_some();
-        let (placement, simulation) = match in_match {
-            Some(panel) => (panel.placement, panel.simulation),
+        let (placement, source) = match in_match {
+            Some(panel) => (panel.placement, Some((panel.host, panel.loop_counts))),
             // Loading and menu screens: the window's own pixels.
             None => (
                 PanelPlacement::top_left(0.0, 0.0, size[0] as f32, 1.0),
@@ -247,17 +328,16 @@ impl PerformanceOverlay {
         };
         if frame.stats.due(now) {
             let frame_ms = frame.timer.frame_ms_mean();
-            let readout = frame.simulation;
+            let tps = frame.simulation_rate.tps;
             let gpu_ms = gpu.timer.take_frame_ms();
             frame
                 .stats
-                .close_window(now, frame_ms, readout, simulation.map(match_sample), gpu_ms);
+                .close_window(now, frame_ms, tps, source.and_then(match_sample), gpu_ms);
         }
-        let mut rows = panel::rows(&frame.stats.shown);
+        let mut rows = panel::rows(&frame.stats.shown, self.thread_rows);
         let mut instances = Vec::new();
         let mut glyphs = Vec::new();
         let bottom = layout_rows(font, &mut rows, placement, &mut instances, &mut glyphs);
-        frame.status_top = bottom + 4.0;
         frame.message_top = if over_battlefield {
             placement.battlefield_rows(bottom)
         } else {
@@ -287,59 +367,6 @@ impl PerformanceOverlay {
                 (&self.white, 0, solid),
                 (font.atlas(), solid, total - solid),
             ],
-        );
-    }
-
-    /// Persistent replay/recovery facts share the final-window camera. `font`
-    /// is the process font, which covers localized text.
-    /// This call neither samples nor changes the performance panel's visibility.
-    pub(crate) fn encode_status(
-        &self,
-        gpu: &GpuContext,
-        batch: &BatchRenderer,
-        encoder: &mut wgpu::CommandEncoder,
-        destination: &wgpu::Texture,
-        font: &BitFont,
-        text: &str,
-    ) {
-        let mut frame = self.frame.lock().expect("window status overlay frame lock");
-        let top = if self.visible {
-            frame.status_top
-        } else {
-            STATUS_TOP
-        };
-        let mut instances = Vec::with_capacity(text.len() * 5);
-        let layout = font.wrap_layout(text, destination.width().saturating_sub(16));
-        let line_height = font.cell_height() + 4.0;
-        for (line_index, line) in layout.lines.iter().enumerate() {
-            for (dx, dy, tint) in [
-                (-1.0, 0.0, [0.0; 3]),
-                (1.0, 0.0, [0.0; 3]),
-                (0.0, -1.0, [0.0; 3]),
-                (0.0, 1.0, [0.0; 3]),
-                (0.0, 0.0, [1.0, 1.0, 0.25]),
-            ] {
-                instances.extend(font.build_text(
-                    &text[line.start_byte..line.end_byte],
-                    8.0 + dx,
-                    top + line_index as f32 * line_height + dy,
-                    1.0,
-                    0.0,
-                    tint,
-                    [0.0; 2],
-                ));
-            }
-        }
-        let count = instances.len() as u32;
-        self.draw(
-            gpu,
-            batch,
-            encoder,
-            destination,
-            &mut frame,
-            "window_status",
-            &instances,
-            &[(font.atlas(), 0, count)],
         );
     }
 
@@ -416,15 +443,19 @@ impl PerformanceOverlay {
     }
 }
 
-fn match_sample(simulation: &crate::sim::world::Simulation) -> panel::MatchSample {
-    let entities = simulation.entities();
-    let structures = entities
-        .values_of_category(crate::map::entities::EntityCategory::Structure)
-        .count();
-    panel::MatchSample {
-        units: entities.len().saturating_sub(structures),
-        profile: simulation.frame_profile().totals_ns(),
-    }
+/// The figures of the match `host` holds. Its units are every object but the
+/// buildings, counted from the frame drawing reads: while a tick runs on the
+/// simulation thread, the world [`SimHost::runtime`] lends for reading is
+/// drawing's copy, which holds no objects (`Simulation::presentation_copy`).
+fn match_sample(
+    (host, loop_counts): (&SimHost, crate::app::match_runtime::frame_pacer::LoopCounts),
+) -> Option<panel::MatchSample> {
+    let frame = host.frame()?;
+    Some(panel::MatchSample {
+        units: frame.objects().len() - frame.structures().len(),
+        profile: host.runtime()?.simulation.frame_profile().totals_ns(),
+        loop_counts,
+    })
 }
 
 /// Lay `rows` out down from `placement.top` in reading order, each on its own
@@ -569,9 +600,70 @@ fn tint(rgb: [u8; 3]) -> [f32; 3] {
     rgb.map(|channel| f32::from(channel) / 255.0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    /// The panel counts every object but the buildings, also while a tick
+    /// runs on the simulation thread: what the host lends for reading then
+    /// is drawing's world copy, which holds no objects.
+    #[test]
+    fn the_unit_count_holds_while_a_tick_is_lent() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::{combat::Health, game_entity::GameEntity, runtime::SimRuntime};
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let owner = sim.intern("Americans");
+        let tank = sim.intern("GTNK");
+        let yard = sim.intern("GACNST");
+        for (id, kind, category) in [
+            (1, tank, EntityCategory::Unit),
+            (2, yard, EntityCategory::Structure),
+            (3, tank, EntityCategory::Unit),
+        ] {
+            sim.entities_mut_for_test()
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    10 + id as u16,
+                    10,
+                    0,
+                    0,
+                    owner,
+                    Health::new(100),
+                    kind,
+                    category,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(sim)));
+        let units =
+            |host: &SimHost| match_sample((host, Default::default())).map(|sample| sample.units);
+        assert_eq!(units(&host), Some(2));
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        assert!(host.lend(Box::new(move |_| {
+            wait.recv().unwrap();
+            Box::new(())
+        })));
+        assert_eq!(units(&host), Some(2), "counted beside the lent tick");
+        go.send(()).unwrap();
+        assert!(host.take_job_result().is_some());
+    }
+
+    #[test]
+    fn simulation_rate_counts_logic_frames_not_draws() {
+        let mut rate = SimulationRate::default();
+        rate.observe(10, 100, false);
+        for now in 101..500 {
+            rate.observe(10, now, false);
+        }
+        rate.observe(11, 600, false);
+        assert_eq!(rate.tps, Some(2.0)); // One Logic frame / 500 ms.
+        rate.observe(11, 601, true);
+        assert_eq!(rate.tps, Some(0.0));
+    }
 
     #[test]
     fn a_row_too_wide_for_the_battlefield_loses_the_end_of_its_last_text() {

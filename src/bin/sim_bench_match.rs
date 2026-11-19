@@ -73,8 +73,11 @@ const ORE_REACH: i32 = 40;
 const DEPLOY_PAD: i32 = 3;
 /// Houses a house attacks: its nearest living ones.
 const FRONTS: usize = 3;
-/// Computer houses by default: the seven the skirmish lobby allows.
-pub(crate) const COMPUTERS: usize = 7;
+/// Computer houses at most: one at every start of a 120-start map
+/// (`tools.scale_map --starts 120`) but the local house's, filling the offline
+/// Skirmish rows (`SKIRMISH_MAX_SLOT_COUNT`). A map with fewer starts seats
+/// fewer.
+pub(crate) const COMPUTERS: usize = vera20k_core::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT - 1;
 /// The default run, two minutes of game time, in which the armies reach the
 /// nearest bases.
 pub(crate) const TICKS: u64 = 1800;
@@ -82,15 +85,31 @@ pub(crate) const TICKS: u64 = 1800;
 pub(crate) const WARMUP: u64 = 150;
 
 /// The computer houses in launch order: their countries and difficulties.
-pub(crate) const COMPUTER_ROSTER: [(LaunchCountry, AiDifficulty); COMPUTERS] = [
-    (LaunchCountry::Russia, AiDifficulty::Hard),
-    (LaunchCountry::France, AiDifficulty::Normal),
-    (LaunchCountry::Yuri, AiDifficulty::Easy),
-    (LaunchCountry::Iraq, AiDifficulty::Hard),
-    (LaunchCountry::Korea, AiDifficulty::Normal),
-    (LaunchCountry::Cuba, AiDifficulty::Easy),
-    (LaunchCountry::GreatBritain, AiDifficulty::Hard),
-];
+/// Countries rotate over the ten and difficulties over Hard, Normal and
+/// Easy, so a run seating the first seven matches the old seven-house roster.
+pub(crate) const COMPUTER_ROSTER: [(LaunchCountry, AiDifficulty); COMPUTERS] = {
+    const COUNTRIES: [LaunchCountry; 10] = [
+        LaunchCountry::Russia,
+        LaunchCountry::France,
+        LaunchCountry::Yuri,
+        LaunchCountry::Iraq,
+        LaunchCountry::Korea,
+        LaunchCountry::Cuba,
+        LaunchCountry::GreatBritain,
+        LaunchCountry::America,
+        LaunchCountry::Germany,
+        LaunchCountry::Libya,
+    ];
+    const DIFFICULTIES: [AiDifficulty; 3] =
+        [AiDifficulty::Hard, AiDifficulty::Normal, AiDifficulty::Easy];
+    let mut roster = [(COUNTRIES[0], DIFFICULTIES[0]); COMPUTERS];
+    let mut index = 0;
+    while index < COMPUTERS {
+        roster[index] = (COUNTRIES[index % 10], DIFFICULTIES[index % 3]);
+        index += 1;
+    }
+    roster
+};
 
 /// The human houses' countries, in a fixed rotation over the ten; the march
 /// scenario's houses take them too.
@@ -440,9 +459,14 @@ fn place_building(
             simulation,
             resources,
         } = &mut *runtime;
-        if let Some(id) =
-            simulation.spawn_object(type_id, owner, x as u16, y as u16, 0, &resources.rules)
-        {
+        if let Some(id) = simulation.spawn_object_with_map_overlays(
+            type_id,
+            owner,
+            x as u16,
+            y as u16,
+            0,
+            &resources.rules,
+        ) {
             for cy in y - 1..=y + height {
                 for cx in x - 1..=x + width {
                     ground.reserved.insert(cx, cy);
@@ -474,9 +498,14 @@ fn place_mobile(
             simulation,
             resources,
         } = &mut *runtime;
-        if let Some(id) =
-            simulation.spawn_object(type_id, owner, x as u16, y as u16, 0, &resources.rules)
-        {
+        if let Some(id) = simulation.spawn_object_with_map_overlays(
+            type_id,
+            owner,
+            x as u16,
+            y as u16,
+            0,
+            &resources.rules,
+        ) {
             return Some((id, (dx, dy)));
         }
     }
@@ -578,7 +607,7 @@ impl MatchScenario {
                 let ore = sim
                     .overlay_grid()
                     .and_then(|grid| grid.cell(cell.rx, cell.ry).overlay_id)
-                    .and_then(|id| runtime.resources.overlay_registry.flags(id))
+                    .and_then(|id| runtime.resources.rules.overlay_registry().flags(id))
                     .is_some_and(|flags| flags.tiberium);
                 if ore {
                     ground.ore.insert(x, y);

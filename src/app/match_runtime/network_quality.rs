@@ -7,6 +7,8 @@
 //! `finish`), and the closed report stays for the external launch result
 //! until the next install.
 
+use std::collections::BTreeMap;
+
 use crate::net::live_commands::{
     ClientLinkStats, DeliveryCounters, LinkState, NetworkRecoveryStatus,
 };
@@ -155,6 +157,12 @@ pub(crate) struct PacingReport {
 pub(crate) struct OutcomeReport {
     pub(crate) desync_frame: Option<u32>,
     pub(crate) reconnects: u32,
+    pub(crate) started: bool,
+    pub(crate) failure: Option<&'static str>,
+    /// Each part of the start this game offered the relay, as long as the
+    /// match has not started: two games' reports of one match differ in the
+    /// part that differs.
+    pub(crate) start_hash: Option<BTreeMap<&'static str, String>>,
 }
 
 /// Live values for the telemetry dashboard.
@@ -191,6 +199,7 @@ pub(crate) struct NetworkQualityStats {
     slowdowns: u32,
     slowed_by: Vec<i8>,
     delivery: DeliveryCounters,
+    start_parts: Vec<(&'static str, u64)>,
     tick_ms: MsHistogram,
     frame_ms: MsHistogram,
     last_present: Option<Instant>,
@@ -204,6 +213,11 @@ impl NetworkQualityStats {
             deferrals_at_start: render_deferrals,
             ..Self::default()
         };
+    }
+
+    /// The parts of the start a relay-sequenced match is about to offer.
+    pub(crate) fn record_start_parts(&mut self, parts: Vec<(&'static str, u64)>) {
+        self.start_parts = parts;
     }
 
     pub(crate) fn record_tick(&mut self, tick_ms: f32) {
@@ -293,6 +307,14 @@ impl NetworkQualityStats {
             outcome: OutcomeReport {
                 desync_frame: delivery.desync_frame,
                 reconnects: self.reconnects,
+                started: delivery.started,
+                failure: delivery.failure,
+                start_hash: (!delivery.started && !self.start_parts.is_empty()).then(|| {
+                    self.start_parts
+                        .iter()
+                        .map(|&(part, digest)| (part, format!("{digest:016x}")))
+                        .collect()
+                }),
             },
         }
     }
@@ -307,7 +329,7 @@ pub(crate) fn observe_pass(state: &mut AppState) {
         .live_network
         .as_ref()
         .filter(|live| in_game && live.uses_sequenced_lockstep())
-        .zip(state.match_state.sim_runtime.as_ref())
+        .zip(state.match_state.sim_runtime.runtime())
         .map(|(live, runtime)| {
             let frame = runtime.simulation.session().binary_frame();
             let reconnecting = live.recovery_status(
@@ -385,7 +407,7 @@ pub(crate) fn close(state: &mut AppState) -> Option<NetworkQualityReport> {
     Some(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 
@@ -427,24 +449,83 @@ mod tests {
     }
 
     /// The lobby reads `finish`'s report by these names
-    /// (docs/lobby-protocol.md) and drops one it cannot read.
+    /// (docs/lobby-protocol.md) and drops one it cannot read; its tests read
+    /// this report, every field filled.
     #[test]
-    fn the_report_keeps_the_names_the_lobby_reads() {
-        let report = serde_json::to_value(NetworkQualityStats::default().summarize()).unwrap();
-        assert_eq!(
-            report,
-            serde_json::json!({
-                "played_seconds": 0.0,
-                "catch_up": {"episodes": 0, "seconds": 0.0, "max_backlog_frames": 0, "skipped_draws": 0},
-                "network": {"gaps": 0, "repair_pulls": 0, "command_round_trip_ms": null,
-                    "max_jitter_reserve_ms": 0.0, "underruns": 0, "underrun_wait_ms": 0.0,
-                    "max_underrun_wait_ms": 0.0, "link": null},
-                "performance": {"tick_ms_p50": null, "tick_ms_p99": null, "fps_p50": null,
-                    "fps_p5": null, "unfocused_seconds": 0.0},
-                "pacing": {"slowdowns": 0, "slowed_by": [], "slowed_seconds": 0.0},
-                "outcome": {"desync_frame": null, "reconnects": 0},
-            })
+    fn a_full_report_sends_the_pinned_names() {
+        let mut stats = NetworkQualityStats {
+            played: Duration::from_millis(754_500),
+            catch_up_episodes: 3,
+            catch_up: Duration::from_millis(12_250),
+            max_backlog_frames: 45,
+            max_reserve_micros: 37_500,
+            underruns: 6,
+            underrun_wait_micros: 90_250,
+            max_underrun_wait_micros: 40_500,
+            unfocused: Duration::from_millis(2_500),
+            slowed: Duration::from_millis(8_750),
+            reconnects: 1,
+            slowdowns: 3,
+            slowed_by: vec![2, 5, 2],
+            delivery: DeliveryCounters {
+                link: Some(ClientLinkStats {
+                    uplink_state_ms: [700_000, 30_500, 24_000, 0],
+                    srtt_p50_ms: Some(38),
+                    up_loss_permille_max: 120,
+                    rto_timeouts: 4,
+                    gaps: 9,
+                    gaps_repaired_by_push: 7,
+                    repair_pulls: 2,
+                    jitter_max_us: 18_750,
+                    ..ClientLinkStats::default()
+                }),
+                round_trips: 400,
+                round_trip_total_ms: 30_000,
+                round_trip_max_ms: 250,
+                desync_frame: Some(9_000),
+                started: false,
+                failure: Some("agreement_mismatch"),
+            },
+            ..NetworkQualityStats::default()
+        };
+        stats.live.skipped_draws = 17;
+        for ms in [8.0, 9.5, 31.0] {
+            stats.tick_ms.record(ms);
+        }
+        for ms in [16.0, 16.0, 49.8] {
+            stats.frame_ms.record(ms);
+        }
+        stats.record_start_parts(vec![
+            ("setup_seed", 7),
+            ("houses", 0x0123_4567_89ab_cdef),
+            ("world", u64::MAX),
+        ]);
+        crate::test_fixture::assert_sent_json(
+            "tests/fixtures/lobby/network_quality.json",
+            &serde_json::json!({
+                "about": "A report as a game sends it with `finish` (`network_quality`, \
+                    docs/lobby-protocol.md), every field filled. The game's test in \
+                    src/app/match_runtime/network_quality.rs writes this file; a lobby \
+                    keeps the report.",
+                "report": stats.summarize(),
+            }),
         );
+    }
+
+    /// Only a match the relay never started reports its start part by part.
+    #[test]
+    fn a_match_that_started_leaves_out_its_start_hash() {
+        let mut stats = NetworkQualityStats::default();
+        stats.record_start_parts(vec![("setup_seed", 7), ("world", u64::MAX)]);
+        let start_hash = |stats: &NetworkQualityStats| {
+            serde_json::to_value(stats.summarize()).unwrap()["outcome"]["start_hash"].clone()
+        };
+        assert_eq!(
+            start_hash(&stats),
+            serde_json::json!({"setup_seed": "0000000000000007", "world": "ffffffffffffffff"})
+        );
+        stats.delivery.started = true;
+        assert_eq!(start_hash(&stats), serde_json::Value::Null);
     }
 
     /// The relay hop's report reads the uplink's time by state, and the gap
