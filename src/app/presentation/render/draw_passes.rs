@@ -1880,7 +1880,7 @@ mod tests {
     fn fogged_snapshots_draw_between_the_ground_and_the_cell_bodies() {
         let ground = source_offset(".keep_ground(&state.renderer.gpu.device, encoder, ground)");
         let fogged = source_offset("pool.get(\"fogged_objects\")");
-        let cell_bodies = source_offset("\"cell_body\",\n");
+        let cell_bodies = source_offset("\"cell_body\",");
         let bridge_shadows = source_offset("pool.get(\"overlay_bridge_body_shadow\")");
         assert!(ground < fogged && fogged < cell_bodies && cell_bodies < bridge_shadows);
     }
