@@ -650,10 +650,15 @@ pub fn cancel_production_for_owner(
     };
     let owner_id = sim.interner.intern(owner);
     let abandonment = HouseFactoryAbandonment::capture(sim, owner_id, category);
-    let outcome = sim
-        .production
-        .edit_factories()
-        .cancel_one(owner_id, category, type_id, all, build_cat);
+    let building_queue = effects.building_production_queue();
+    let outcome = sim.production.edit_factories().cancel_one(
+        owner_id,
+        category,
+        type_id,
+        all,
+        build_cat,
+        building_queue,
+    );
     match outcome {
         CancelOutcome::NoMatch => false,
         CancelOutcome::QueuedRemoved => true,

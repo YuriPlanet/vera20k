@@ -42,9 +42,13 @@ and `SelectClass::Action`'s busy structure check is skipped at `0x6AB689`
   badge when the option is on.
 - `sim/production/factory.rs` — `cancel_one` follows Phobos'
   `HouseClass_AbandonProduction_RewriteForBuilding @ 0x004FAAD8`, which replaces
-  vanilla's `BuildCat == DontCare` test so a structure cancel removes one queued
-  copy before the held product. That rewrite is unconditional in Phobos, so it
-  follows the `phobos` feature rather than this switch.
+  vanilla's `BuildCat == DontCare` test so a structure cancel removes queued
+  copies before the held product. The rewrite is unconditional in Phobos, and
+  this player switch also enables it in a default build: `cancel_one` reads the
+  flag from the frame's `FrameEffects` and follows either `phobos` or this
+  option. That is what makes Shift + right-click ABANDON_ALL drain every queued
+  copy of the clicked type (with `Shift-Click Batch Queue` also on) instead of
+  abandoning only the held building.
 
 ## Residuals
 
@@ -65,9 +69,10 @@ and `SelectClass::Action`'s busy structure check is skipped at `0x6AB689`
   product, so Phobos' own null-held skip keeps vanilla there. Only the sidebar
   right-click path is covered by tests here.
 - The structure cancel order comes from the static decode of
-  `0x004FAAC4..0x004FAB2F`. The executed sidebar controls cover the mobile arm
-  and the null-held admit, not a structure ABANDON_ALL, so the drain-then-abandon
-  sequence is instruction-supported rather than executed.
+  `0x004FAAC4..0x004FAB2F`. `factory::tests` now executes the structure
+  ABANDON_ALL drain-then-abandon sequence (`cancel_all_structures_drain_the_queue_then_the_held_product`
+  and `building_queue_option_drains_copies_in_a_default_build`), so it is no
+  longer only instruction-supported.
 - Shift-Click batching for buildings is VERA's convenience, not native
   behavior; it remains governed by `[VERA] ShiftQueue=` and
   `[General] MaximumQueuedObjects=`.
