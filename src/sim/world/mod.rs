@@ -4902,7 +4902,8 @@ impl Simulation {
     ///   the presentation frame holds their draw records), and none of the
     ///   state only gameplay reads (the zone and path grids, the team script
     ///   VM, the movement pass's kept products, the reveal pass's answers,
-    ///   the Houses' spatial threat grids);
+    ///   the Houses' spatial threat grids, the AI's base reservations and the
+    ///   structures' navigation cells);
     /// - its fog is only what `viewer`, the local player, sees
     ///   ([`FogState::presentation_copy`]);
     /// - its terrain, overlays, smudges, terrain objects, interner and
@@ -4923,6 +4924,11 @@ impl Simulation {
         let team_script_vm = std::mem::take(&mut self.team_script_vm);
         let movement_pass_cache = std::mem::take(&mut self.movement_pass_cache);
         let reveal_viewers = std::mem::take(&mut self.reveal_viewers);
+        // CellClass +0xDC, one word per reserved cell: a city map's thousands
+        // of buildings reserve tens of thousands, which cloned took most of
+        // the copy. Only the AI's base planning reads them.
+        let base_reservations = std::mem::take(&mut self.substrate.base_reservations);
+        let structure_navigation_cells = std::mem::take(&mut self.structure_navigation_cells);
         // Each House's spatial threat grid (a large map's is 66,564 dwords,
         // thirty Houses about 8 MB) is AI state only gameplay reads.
         let spatial_threats: Vec<_> = self
@@ -4978,6 +4984,8 @@ impl Simulation {
         self.team_script_vm = team_script_vm;
         self.movement_pass_cache = movement_pass_cache;
         self.reveal_viewers = reveal_viewers;
+        self.substrate.base_reservations = base_reservations;
+        self.structure_navigation_cells = structure_navigation_cells;
         #[cfg(any(test, feature = "test-support"))]
         {
             (
