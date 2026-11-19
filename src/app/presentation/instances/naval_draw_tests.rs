@@ -160,7 +160,8 @@ fn offscreen_first_sinking_draw_survives_descent_camera_pan_and_save_load() {
             None,
             None,
             None,
-        );
+        )
+        .unwrap();
         let mut loaded = GameSnapshot::load_validated(&bytes, 1, 2, "DRAW-ADMISSION.MAP").unwrap();
         let waterlines = std::mem::take(&mut loaded.sinking_waterlines);
         assert_eq!(loaded.into_simulation_for_test().state_hash(), hash);

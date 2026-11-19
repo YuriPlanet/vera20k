@@ -1945,20 +1945,18 @@ mod fresh_transport_tests {
     }
 }
 
-/// Snapshot the active Scenario multiplayer-start table into the live session.
-///
-/// Authored loads retain their parsed waypoint table. Accepted RMG loads have
-/// already copied setup staging into the active Scenario array before `.SED`
-/// regeneration, so the prefix plan—not regenerated map content—owns these
-/// start entries for loading markers, save/restore, and deterministic hashing.
-/// Installs the startup's GameMode into the scenario session, with the
-/// admitted MaxAhead for a network start. The frame tail's `Queue_AI` route
-/// reads this mode, so a LAN/WOL start must arrive as LAN/WOL.
+/// Installs the startup's live rules and exact GameMode, with the admitted
+/// MaxAhead for a network start. A replay can have a live policy distinct
+/// from its authored map's construction policy.
 pub(super) fn install_startup_session_mode(
     simulation: &mut crate::sim::world::Simulation,
     startup: &LoadingStartup,
 ) {
-    simulation.install_session_mode(startup.session_mode());
+    simulation.install_session_admission(
+        startup.session_mode(),
+        startup.launch_session().map(|launch| launch.mode.class),
+        startup.match_spec().rules(),
+    );
     if let LoadingStartup::Network(accepted) = startup {
         simulation.install_network_timing(accepted.max_ahead_frames());
         let wol = accepted.wol_start();
@@ -1966,6 +1964,12 @@ pub(super) fn install_startup_session_mode(
     }
 }
 
+/// Project the active Scenario multiplayer-start table into the launch descriptor.
+///
+/// Authored loads retain their parsed waypoint table. Accepted RMG loads have
+/// already copied setup staging into the active Scenario array before `.SED`
+/// regeneration, so the prefix plan owns these start entries for loading
+/// markers, save/restore, and deterministic hashing.
 pub(crate) fn scenario_start_waypoints_for_load(
     map_data: &MapFile,
     projection: Option<&StockOfflinePrefixProjection>,

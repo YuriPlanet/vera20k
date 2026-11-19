@@ -128,7 +128,8 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let directory = crate::map::source::test_support::TestDirectory::new(label);
     let repository = crate::app::persistence::SaveRepository::at(directory.path());
     let path = repository.write_named("fixture.bin", &bytes).unwrap();

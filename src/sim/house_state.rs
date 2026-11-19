@@ -3669,8 +3669,7 @@ mod outcome_tests {
             house.pending_outcome(1060, policy).is_none(),
             "AllowWin count blocks Win"
         );
-        let mut ungated = policy;
-        ungated.allow_win_tags = AllowWinTagsPolicy::Ignore;
+        let ungated = policy.with_allow_win_tags(AllowWinTagsPolicy::Ignore);
         assert_eq!(
             house.pending_outcome(1060, ungated),
             Some(HouseOutcomeKind::Victory)

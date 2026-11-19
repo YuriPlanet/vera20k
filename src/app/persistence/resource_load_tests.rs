@@ -434,6 +434,7 @@ fn snapshot_bytes_with_lighting(
         Some(&view),
         Some(&resources),
     )
+    .unwrap()
 }
 
 fn lookup(assets: &AssetManager, name: &str) -> Option<(String, i32, Vec<u8>)> {

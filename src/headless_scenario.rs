@@ -319,10 +319,10 @@ fn load_with_assets(
     let bound_scenario_prefix = scenario_prefix_plan
         .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
         .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
-    // This entry constructs a noncampaign scenario. The exact replay mode
-    // is installed separately for the simulation.
-    let rule_policy =
-        ScenarioGameMode::Skirmish.stock_rule_policy(Some(launch.session().mode.class));
+    // This entry constructs a noncampaign scenario even when a replay
+    // installs the live mode and rules of a campaign.
+    let mode_class = Some(launch.session().mode.class);
+    let rule_policy = ScenarioGameMode::Skirmish.stock_rule_policy(mode_class);
     let team_ai_registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &map.ini,
@@ -387,7 +387,11 @@ fn load_with_assets(
     // CreateHouses687FCE..688092 gives WOL humans their node name; other
     // modes use "<human player>". The House owner hashes that native identity,
     // so restoring GameMode after construction cannot reconstruct a WOL start.
-    sim.install_session_mode(game_mode);
+    sim.install_session_admission(
+        game_mode,
+        mode_class,
+        game_mode.stock_rule_policy(mode_class),
+    );
     if let Some(checkpoint) = accepted_native_id_prefix {
         sim.install_accepted_native_id_prefix(checkpoint)
             .map_err(|error| format!("replay native-ID prefix: {error}"))?;

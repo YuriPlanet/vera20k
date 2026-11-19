@@ -186,7 +186,8 @@ fn save_projects_pending_anim_reads_without_consuming_live_history() {
         None,
         None,
         None,
-    );
+    )
+    .unwrap();
     let mut snapshot =
         GameSnapshot::load_validated(&bytes, 1, 2, sim.session().map_name()).unwrap();
     let anim_intensities = std::mem::take(&mut snapshot.anim_intensities);

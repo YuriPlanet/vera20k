@@ -1287,7 +1287,7 @@ where
             &tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            descriptor.rule_policy.crates,
+            descriptor.rule_policy.crates(),
             &mut host,
         )
         .run(packs)?

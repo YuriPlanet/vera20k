@@ -993,7 +993,7 @@ pub(crate) fn exit_building(
             {
                 house.base_plan_mut().count_placement_failure(
                     index,
-                    sim.session.rule_policy().ai_base,
+                    sim.session.rule_policy().ai_base(),
                     rules.general.maximum_building_placement_failures,
                 );
             }
@@ -1278,7 +1278,7 @@ pub(crate) fn find_node(
     wanted: i32,
     registry: Option<&OverlayTypeRegistry>,
 ) -> Option<usize> {
-    let policy = sim.session.rule_policy().ai_base;
+    let policy = sim.session.rule_policy().ai_base();
     let mut index = 0;
     // The count is re-read every step (`0x0042EBAE`).
     while index < sim.houses.get(&owner)?.base_plan().nodes().len() {

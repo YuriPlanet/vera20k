@@ -1036,7 +1036,7 @@ fn scan_factories<'a>(
         return FactorySearch::BuildLimitRefused;
     }
     let factory_type = FactoryType::for_category(obj.category);
-    let double_owned = sim.session.rule_policy().double_owned;
+    let double_owned = sim.session.rule_policy().double_owned();
     let ownable = get_ownable(obj, rules, double_owned);
     let naval_unit = obj.category == ObjectCategory::Vehicle && obj.naval;
     let mut candidate = FactorySearch::Missing;

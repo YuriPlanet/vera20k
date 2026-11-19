@@ -407,8 +407,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/production/production_queue.rs", 1),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/scenario_bootstrap.rs", 5),
-                // Session ownership plus the projection's field and initialization.
-                ("sim/scenario_session.rs", 8),
+                // Local identity owner, legacy restoration and its accessor.
+                ("sim/scenario_session.rs", 5),
                 ("sim/snapshot.rs", 2),
                 // Ares IsTimerVisible (10032E80): whether the local player
                 // sees a Super's timer line; only the timer drawing asks.
@@ -451,7 +451,7 @@ fn engine_per_client_reads_have_pinned_callers() {
         ),
         (
             "observer_houses",
-            &[("sim/scenario_session.rs", 6), ("sim/snapshot.rs", 1)],
+            &[("sim/scenario_session.rs", 1), ("sim/snapshot.rs", 1)],
         ),
         (
             "is_observer_house",
@@ -548,7 +548,7 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "local_view_identity",
             &[
-                ("sim/scenario_session.rs", 3),
+                ("sim/scenario_session.rs", 1),
                 ("sim/world/command_schedule.rs", 1),
             ],
         ),
