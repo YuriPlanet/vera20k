@@ -187,6 +187,7 @@ mod wall_autofill_oracle_tests;
 #[cfg(all(test, tests_sim_world_t_z))]
 mod wall_restore_tests;
 mod world_commands;
+pub use world_commands::Selection;
 mod world_hash;
 
 #[cfg(all(test, tests_sim_world_c_o))]

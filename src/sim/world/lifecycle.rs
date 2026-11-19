@@ -822,10 +822,12 @@ pub enum LifecycleOutput {
         stable_id: u64,
     },
     /// ObjectDetachAll5F52EF..5F5306 hands the follow camera back when it
-    /// follows this object, whatever the argument and the Deselect gate. A
-    /// logic Select's Unselect_All emits one per object it deselects
-    /// (Deselect `0x005F4503..0x005F4513`), which a later Select in the same
-    /// frame may select again.
+    /// follows this object, whatever the argument and the Deselect gate.
+    /// Every Deselect of a selected object emits one too
+    /// (`0x005F4503..0x005F4513`, [`Simulation::object_deselect`]): Limbo, a
+    /// lift, a Temporal erase, a cloak, shroud or a logic Select's
+    /// Unselect_All, after which a later Select in the same frame may select
+    /// the object again.
     FollowReleased {
         stable_id: u64,
     },
@@ -3968,9 +3970,8 @@ impl Simulation {
             return ConcealOutcome::AlreadyConcealed;
         }
 
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.selection.deselect();
-        }
+        // Its Deselect (vt+0x150, `0x005F4D55`).
+        self.object_deselect(stable_id);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDeselected);
 
@@ -4718,8 +4719,8 @@ impl Simulation {
                     self.house_is_human_player(entity.owner())
                         || super::techno_ai_cloak::sensor_visible_to_player(self, stable_id)
                 });
-        if !keeps_selection && let Some(target) = self.substrate.entities.get_mut(stable_id) {
-            target.selection.deselect();
+        if !keeps_selection {
+            self.object_deselect(stable_id);
         }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::DestroyDeselected { stable_id });
@@ -4978,9 +4979,8 @@ impl Simulation {
             );
             self.detach_all(stable_id, true, context);
         }
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.selection.deselect();
-        }
+        // Deselect (vt+0x150, `0x006FCDA5`).
+        self.object_deselect(stable_id);
     }
 
     pub(crate) fn apply_lifecycle_request(

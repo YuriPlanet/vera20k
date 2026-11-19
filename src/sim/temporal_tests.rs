@@ -2680,11 +2680,11 @@ struct NativeWarpCase {
 /// victim even when the new warp is refused or has no Techno, the victim's
 /// own release, the harvester and building notices and the building going
 /// offline. VERA emits the harvester notice for every house and the app keeps
-/// the local owner's; VERA always has a player, so Deselect is compared only
-/// where the case has one; the gattling case's UpdateGattlingStage(1) on the
-/// victim is compared through its effect (one RateDown step and the loop's
-/// release). The spawn kill and FreeAll (read: both run before
-/// CanWarpTarget) and Mark are not compared.
+/// the local owner's; each case runs with its own current House, so Deselect
+/// is compared with and without one; the gattling case's
+/// UpdateGattlingStage(1) on the victim is compared through its effect (one
+/// RateDown step and the loop's release). The spawn kill and FreeAll (read:
+/// both run before CanWarpTarget) and Mark are not compared.
 #[test]
 fn native_initiate_warp_corpus() {
     let cases: Vec<NativeWarpCase> = serde_json::from_str(crate::test_fixture::text(
@@ -2739,6 +2739,10 @@ fn native_initiate_warp_corpus() {
         let rules = rules_from(&text, &art_text);
 
         let mut sim = sim(27);
+        // The case's player (`0x00A83D4C`): the local Americans, or none.
+        let player = (input["player"].as_bool() != Some(false))
+            .then(|| sim.interner.get("Americans").unwrap());
+        sim.session.set_current_house_for_test(player);
         let owner = if flag("local") {
             "Americans"
         } else {
@@ -2919,13 +2923,11 @@ fn native_initiate_warp_corpus() {
                 .all(|event| event[1] == "target" && event[2] == 1),
             "{name}: the original decays the victim by one tick"
         );
-        if input["player"].as_bool() != Some(false) {
-            assert_eq!(
-                !entity(&sim, target).selection.is_selected(),
-                native("deselect"),
-                "{name}: Deselect"
-            );
-        }
+        assert_eq!(
+            !entity(&sim, target).selection.is_selected(),
+            native("deselect"),
+            "{name}: Deselect"
+        );
         if rtti == 6 {
             assert_eq!(
                 !entity(&sim, target).building_online(),

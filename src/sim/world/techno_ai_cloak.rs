@@ -543,9 +543,8 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
     if fully_cloaked
         && player.is_some_and(|player| player != owner)
         && !sensor_visible_to_player(sim, id)
-        && let Some(entity) = sim.substrate.entities.get_mut(id)
     {
-        entity.selection.deselect();
+        sim.object_deselect(id);
     }
     // 6F4F46 checks the field before invoking CanAutoCloak and its range query.
     if !owner_cloak_field_bit(sim, owner, cell.0, cell.1) {
@@ -688,10 +687,13 @@ fn start_cloaking_detach(
 ) {
     sim.detach_all(id, false, UninitContext::new(rules).with_effects(effects));
     let player = sim.session.current_house();
-    if let Some(entity) = sim.substrate.entities.get_mut(id)
-        && player != Some(entity.owner())
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| player != Some(entity.owner()))
     {
-        entity.selection.deselect();
+        sim.object_deselect(id);
     }
 }
 
