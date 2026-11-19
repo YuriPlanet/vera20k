@@ -16,8 +16,9 @@
 //! `TechnoClass::ReceiveDamage @ 0x00701900` entry
 //! (installed hook `0x701900+0x6`, `src/Ext/Techno/Hooks.ReceiveDamage.cpp`).
 //!
-//! Read but not consumed here: `Pips*` (drawn by `app/presentation/ui_overlays`)
-//! and `AllowTransfer*` (a separate transfer chain). `IdleAnim*` is consumed by
+//! Read but not consumed here: `Pips*` (drawn by `app/presentation/ui_overlays`).
+//! `AllowTransfer`/`AllowTransfer.Convert` are consumed by
+//! `sim::shield`'s `ConvertCheck` on the conversion and deploy paths. `IdleAnim*` is consumed by
 //! `sim::shield` and `HitFlash*` feeds `sim::combat::CombatLightRequest`
 //! through the same owner. The warhead-side shield keys live in
 //! [`ShieldWarheadRules`]; the simulation owner `sim::shield` consumes them.
@@ -310,6 +311,16 @@ pub struct ShieldType {
     received_damage_maximum: i32,
     pips: [i32; 3],
     pips_building: [i32; 3],
+    /// `AllowTransfer` (`ShieldTypeClass.h:53`, `Nullable<bool>`, unset
+    /// `:108`): whether the shield survives onto a converted object. The
+    /// reading falls back to `Attached`, so an unset key keeps a
+    /// warhead-attached shield and drops a type-bound one.
+    #[serde(default)]
+    allow_transfer: Option<bool>,
+    /// `AllowTransfer.Convert` (`:54`, unset `:109`): the conversion override,
+    /// which falls back to `AllowTransfer.Get(Attached)`.
+    #[serde(default)]
+    allow_transfer_convert: Option<bool>,
     pips_background: Option<String>,
     pips_building_empty: Option<i32>,
     pips_hide_if_no_strength: bool,
@@ -438,6 +449,25 @@ impl ShieldType {
         self.powered
     }
 
+    /// `AllowTransfer` (`ShieldTypeClass.h:53`).
+    pub(crate) fn allow_transfer(&self) -> Option<bool> {
+        self.allow_transfer
+    }
+
+    /// `AllowTransfer.Convert` (`ShieldTypeClass.h:54`).
+    pub(crate) fn allow_transfer_convert(&self) -> Option<bool> {
+        self.allow_transfer_convert
+    }
+
+    /// `ShieldClass::ConvertCheck`'s `allowTransfer`
+    /// (`ShieldClass.cpp:612-613`): the conversion override falls back to
+    /// `AllowTransfer.Get(Attached)`, and an unset `AllowTransfer` falls back
+    /// to `Attached` itself.
+    pub(crate) fn conversion_transfer(&self, attached: bool) -> bool {
+        self.allow_transfer_convert
+            .unwrap_or(self.allow_transfer.unwrap_or(attached))
+    }
+
     pub(crate) fn respawn(&self) -> f64 {
         self.respawn
     }
@@ -462,10 +492,18 @@ impl ShieldType {
         self.respawn_weapon.as_deref()
     }
 
+    /// `SelfHealing.EnabledBy` (`ShieldTypeClass.cpp:49`): an empty list means
+    /// self-healing is enabled for every owner.
+    pub(crate) fn self_healing_enabled_by(&self) -> &[String] {
+        &self.self_healing_enabled_by
+    }
+
+    /// `SelfHealing` (`ShieldTypeClass.cpp:41`).
     pub(crate) fn self_healing(&self) -> f64 {
         self.self_healing
     }
 
+    /// `SelfHealing` (`ShieldTypeClass.cpp:41`).
     pub(crate) fn self_healing_rate(&self) -> i32 {
         self.self_healing_rate
     }
@@ -613,6 +651,8 @@ impl std::hash::Hash for ShieldType {
         self.tint_color.hash(state);
         self.tint_intensity.to_bits().hash(state);
         self.tint_visible_to_houses.hash(state);
+        self.allow_transfer.hash(state);
+        self.allow_transfer_convert.hash(state);
     }
 }
 
@@ -761,6 +801,12 @@ impl ShieldTypeCatalog {
             }
             entry.absorb_percent = section.read_double("AbsorbPercent", entry.absorb_percent);
             entry.pass_percent = section.read_double("PassPercent", entry.pass_percent);
+            // `ShieldTypeClass.cpp:75-76`, read after PassPercent and before
+            // the Pips block.
+            entry.allow_transfer =
+                section.read_phobos_nullable_bool("AllowTransfer", entry.allow_transfer);
+            entry.allow_transfer_convert = section
+                .read_phobos_nullable_bool("AllowTransfer.Convert", entry.allow_transfer_convert);
             entry.received_damage_minimum =
                 section.read_int("ReceivedDamage.Minimum", entry.received_damage_minimum);
             entry.received_damage_maximum =

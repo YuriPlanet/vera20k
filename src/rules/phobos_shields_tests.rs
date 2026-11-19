@@ -188,6 +188,45 @@ fn shield_tint_visible_to_houses_reads_affected_house_flags() {
     assert_eq!(entry("Bad").bits(), 0xF);
 }
 
+/// `AllowTransfer` / `AllowTransfer.Convert` (`ShieldTypeClass.h:53-54`, read
+/// at `ShieldTypeClass.cpp:75-76`): nullable, retained across failed reads,
+/// with the conversion fallback chain native applies
+/// (`ShieldClass.cpp:612-613`).
+#[test]
+fn shield_transfer_keys_read_nullable_and_fall_back_to_attached() {
+    let mut catalog = ShieldTypeCatalog::default();
+    catalog.apply_pass(&IniFile::from_str(
+        "[ShieldTypes]\n0=Plain\n1=Kept\n[Plain]\nStrength=100\n\
+         [Kept]\nStrength=100\nAllowTransfer=no\nAllowTransfer.Convert=yes\n",
+    ));
+    let plain = catalog.entry("Plain").unwrap();
+    assert_eq!(plain.allow_transfer(), None);
+    assert_eq!(plain.allow_transfer_convert(), None);
+    assert!(
+        !plain.conversion_transfer(false),
+        "unset keys follow Attached"
+    );
+    assert!(plain.conversion_transfer(true));
+    let kept = catalog.entry("Kept").unwrap();
+    assert_eq!(kept.allow_transfer(), Some(false));
+    assert_eq!(kept.allow_transfer_convert(), Some(true));
+    assert!(
+        kept.conversion_transfer(false),
+        "the conversion override wins"
+    );
+
+    catalog.apply_pass(&IniFile::from_str(
+        "[Kept]\nAllowTransfer=bad\nAllowTransfer.Convert=bad\n",
+    ));
+    let kept = catalog.entry("Kept").unwrap();
+    assert_eq!(
+        kept.allow_transfer(),
+        Some(false),
+        "a failed read is retained"
+    );
+    assert_eq!(kept.allow_transfer_convert(), Some(true));
+}
+
 #[test]
 fn shield_nullable_fields_retain_failed_reads_and_reset_to_type_defaults() {
     let mut catalog = ShieldTypeCatalog::default();

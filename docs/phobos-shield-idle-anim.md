@@ -91,7 +91,19 @@ translucent draw.
   the value a previous layer set; the two differ only for a misspelt band in
   a later INI layer.
 - `ConvertCheck`'s idle-anim transfer on DeploysInto/UndeploysInto and type
-  conversion is not ported (separate conversion chain).
+  conversion follows `ShieldClass::ConvertCheck` (`ShieldClass.cpp:608-760`,
+  called from `FootExt::UpdateTypeData`, `Ext/Foot/Body.cpp:186-187`):
+  `sim::shield`'s `phobos_shield_convert_check` applies the old type's
+  `AllowTransfer.Convert`/`AllowTransfer` (falling back to `Attached`),
+  rebinds or deletes the shield, compares both types'
+  `GetIdleAnimType` selections and kills the animation when they differ, then
+  rescales `HP` by the strength ratio and the recovery timers by the rate
+  ratio. Tests `a_conversion_rebinds_the_shield_and_rescales_its_hp`,
+  `an_allowed_conversion_keeps_the_shield_type`,
+  `a_conversion_without_a_new_shield_type_deletes_the_shield`,
+  `allow_transfer_alone_also_keeps_the_shield`.
+  Residual: the deploy paths that do not run type conversion (`DeploysInto`
+  on a type with no `DeploysInto=` rewrite) have no shield to check.
 - The warhead replace path constructs a fresh shield whose idle anim is null;
   the old anim stays attached until something else retires it, exactly as
   Phobos's destructor (which does not `KillAnim`) leaves it.

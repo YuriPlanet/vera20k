@@ -321,6 +321,26 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   与本臂的 `GetLevel()` 行为一致；该路径由
   `type_conversion_in_air_tests::an_airborne_conversion_lands_on_a_bridge_deck_over_water`
   锁定。
+- **盾的 `ConvertCheck`（2026-11-19）**：`ShieldClass::ConvertCheck`
+  （`New/Entity/ShieldClass.cpp:608-760`，入口 `FootExt::UpdateTypeData`，
+  `Ext/Foot/Body.cpp:186-187`）的 `pOldShield == nullptr` 支已接线：
+  `sim/shield.rs` 的 `phobos_shield_convert_check` 由类型转换 owner 在
+  `health.apply` 之后调用，先按旧类型的
+  `AllowTransfer.Convert`（回退 `AllowTransfer`，再回退 `Attached`）决定转移；
+  不转移时用目标类型的 `ShieldType=`（`Strength>0` 才算）重绑实例，目标没有
+  可用的盾类型则 `KillAnim` 并删除盾；转移或重绑后按
+  `GetIdleAnimType` 两侧选择比较决定是否 `KillAnim`，`HP` 按 strength 比
+  `round` 缩放，冲量与自愈计时按 rate 比缩放（`WHModifier` 进行中则保留）。
+  新键 `AllowTransfer` / `AllowTransfer.Convert` 在 `rules/phobos_shields.rs`
+  按 `ShieldTypeClass.cpp:75-76` 的可空读法接入。测试 4 条：
+  `a_conversion_rebinds_the_shield_and_rescales_its_hp`、
+  `an_allowed_conversion_keeps_the_shield_type`、
+  `a_conversion_without_a_new_shield_type_deletes_the_shield`、
+  `allow_transfer_alone_also_keeps_the_shield`，另有键读取测试
+  `shield_transfer_keys_read_nullable_and_fall_back_to_attached`。残余：
+  `TechnoID`/`BracketDelta` 属绘制侧（各 owner 从新类型重读）；
+  原生 `Cloak`/`Attached` 的逐实例拷贝在本实现里是 `attached` 标志 +
+  引擎侧的 cloak runtime。
 - **盾的 idle anim 与 tunnel（2026-11-19）**：`ShieldClass::AreAnimsHidden`
   （`New/Entity/ShieldClass.h:82-86`）只有一个写者进入本链：`FootExt::
   UpdateOnTunnelEnter/Exit` 由 `0x728F74` / `0x728E5F` 驱动

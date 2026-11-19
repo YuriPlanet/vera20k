@@ -71,6 +71,12 @@ impl ShieldTimer {
         self.has_started() && !self.timer.expired(frame)
     }
 
+    /// `timer->TimeLeft` as the shield timers carry it: the frames left at
+    /// `frame`, which a paused timer keeps verbatim.
+    fn remaining(self, frame: i32) -> i32 {
+        self.timer.remaining(frame)
+    }
+
     /// `timer->TimeLeft = X`: replace the stored countdown, keeping the frame
     /// anchor. A running timer's remaining therefore still shrinks by the
     /// frames since its original start, and a paused timer freezes the new
@@ -160,6 +166,13 @@ pub struct ShieldState {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     idle_anim: Option<u64>,
+    /// Phobos `ShieldClass::Attached` (`ShieldClass.h:159`), the constructor's
+    /// `isAttached`: true for a shield a warhead attached, false for the one
+    /// the techno type binds. `ConvertCheck`'s unset `AllowTransfer` falls
+    /// back to it.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    attached: bool,
 }
 
 impl ShieldState {
@@ -179,7 +192,17 @@ impl ShieldState {
             self_healing_modifier: None,
             #[cfg(feature = "phobos")]
             idle_anim: None,
+            #[cfg(feature = "phobos")]
+            attached: false,
         }
+    }
+
+    /// The `isAttached = true` constructor the `Shield.Attach` warhead path
+    /// uses (`Detonate.cpp`, `make_unique<ShieldClass>(pTarget, true)`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn attach_dynamic(mut self) -> Self {
+        self.attached = true;
+        self
     }
 
     pub fn type_name(&self) -> &str {
@@ -1710,8 +1733,165 @@ fn owner_is_hidden_in_tunnel(sim: &Simulation, id: u64) -> bool {
         })
 }
 
-/// Phobos `ShieldClass`'s idle-animation maintenance: `CloakCheck`
-/// (`ShieldClass.cpp:491..500`), `BreakShield`'s `KillAnim` (`:849`) and the
+/// `ShieldClass::ConvertCheck` (`New/Entity/ShieldClass.cpp:608-760`) for the
+/// `pOldShield == nullptr` callers — `DeploysInto`/`UndeploysInto` and type
+/// conversion, entered from `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:186-187`).
+#[cfg(feature = "phobos")]
+impl Simulation {
+    /// A converted object keeps or drops its shield per the old type's
+    /// `AllowTransfer`/`AllowTransfer.Convert`; otherwise the destination type
+    /// rebinds the shield, or the shield is deleted when the new type binds
+    /// none. A surviving shield then copies its state (VERA's instance already
+    /// carries it), rescales `HP` by the strength ratio, retires a mismatching
+    /// idle animation and rescales the recovery timers.
+    ///
+    /// RESIDUALS: `TechnoID` and `BracketDelta` are draw-side and are re-read
+    /// from the new type by their owners; native's `Cloak`/`Attached` copy is
+    /// the `attached` flag kept here plus the cloak runtime the engine reads
+    /// from the object, so no separate copy exists.
+    pub(crate) fn phobos_shield_convert_check(
+        &mut self,
+        id: u64,
+        destination: &crate::rules::object_type::ObjectType,
+        rules: &RuleSet,
+    ) {
+        let frame = self.session.binary_frame() as i32;
+        let Some(mut state) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|actor| actor.shield.take())
+        else {
+            return;
+        };
+        let old_name = state.type_name.clone();
+        // A type the catalog lost has no native analog: keep the shield as-is.
+        let Some(old_ty) = rules.shield_type(&old_name) else {
+            restore_shield(self, id, state);
+            return;
+        };
+        // `pOldShield ? AllowTransfer.Get(Attached) : AllowTransfer_Convert.Get(...)`.
+        if !old_ty.conversion_transfer(state.attached) {
+            let new_name = destination
+                .shield_type()
+                .filter(|name| rules.shield_type(name).is_some_and(|ty| ty.strength() > 0))
+                .map(str::to_owned);
+            let Some(new_name) = new_name else {
+                // Case 1: no transfer and no eligible new type deletes the shield.
+                kill_idle_anim(self, rules, &mut state);
+                return;
+            };
+            // Case 2: the destination type's shield takes over the instance.
+            state.type_name = new_name;
+        }
+        let new_name = state.type_name.clone();
+        let Some(new_ty) = rules.shield_type(&new_name) else {
+            restore_shield(self, id, state);
+            return;
+        };
+        // Powered and SelfHealing.EnabledBy normalizations run for both arms.
+        if !new_ty.powered() {
+            state.online = true;
+        }
+        if new_ty.self_healing_enabled_by().is_empty() {
+            state.self_healing_enabled = true;
+        }
+        if new_name.eq_ignore_ascii_case(&old_name) {
+            restore_shield(self, id, state);
+            return;
+        }
+        let techno_ratio = techno_health_ratio(self, rules, id);
+        let shield_ratio = state.health_ratio(old_ty);
+        // `GetIdleAnimType(IsDamaged, healthRatio)` on both types, compared
+        // before the HP rescale, exactly as `:708-712` does.
+        let old_selection = idle_anim_selection(old_ty, rules, techno_ratio, shield_ratio);
+        let new_selection = idle_anim_selection(new_ty, rules, techno_ratio, shield_ratio);
+        if old_selection != new_selection {
+            kill_idle_anim(self, rules, &mut state);
+        }
+        // `HP = (int)round(HP * NewStrength / OldStrength)`.
+        let old_strength = old_ty.strength();
+        if old_strength > 0 {
+            state.hp = (f64::from(state.hp) * f64::from(new_ty.strength())
+                / f64::from(old_strength))
+            .round() as i32;
+        }
+        let respawn = state.hp <= 0;
+        // Reuse an active warhead modifier; otherwise rescale toward the new
+        // type's rate (`:727-759`).
+        let modifier_active = if respawn {
+            state.timers.respawn_wh_modifier.in_progress(frame)
+        } else {
+            state.timers.self_healing_wh_modifier.in_progress(frame)
+        };
+        if !modifier_active {
+            let unavailable = if respawn {
+                new_ty.respawn() == 0.0
+            } else {
+                new_ty.self_healing() == 0.0
+            };
+            if unavailable {
+                if respawn {
+                    state.timers.respawn.stop();
+                } else {
+                    state.timers.self_healing.stop();
+                }
+            } else {
+                let new_rate = if respawn {
+                    new_ty.respawn_rate()
+                } else {
+                    new_ty.self_healing_rate()
+                };
+                let old_recovers = if respawn {
+                    old_ty.respawn() != 0.0
+                } else {
+                    old_ty.self_healing() != 0.0
+                };
+                let combat_restart_active = if respawn {
+                    state.timers.respawn_combat_restart.in_progress(frame)
+                } else {
+                    state.timers.self_healing_combat_restart.in_progress(frame)
+                };
+                if old_recovers {
+                    let old_rate = if respawn {
+                        old_ty.respawn_rate()
+                    } else {
+                        old_ty.self_healing_rate()
+                    };
+                    if old_rate > 0 {
+                        let timer = if respawn {
+                            &mut state.timers.respawn
+                        } else {
+                            &mut state.timers.self_healing
+                        };
+                        let left = timer.remaining(frame);
+                        timer.set_time_left(
+                            ((f64::from(left) * f64::from(new_rate)) / f64::from(old_rate)) as i32,
+                        );
+                    }
+                } else if !combat_restart_active {
+                    if respawn {
+                        state.timers.respawn.start(frame, new_rate);
+                    } else {
+                        state.timers.self_healing.start(frame, new_rate);
+                    }
+                }
+            }
+        }
+        restore_shield(self, id, state);
+    }
+}
+
+/// Put a shield back on the object it was taken from, or drop it when the
+/// entity is already gone.
+#[cfg(feature = "phobos")]
+fn restore_shield(sim: &mut Simulation, id: u64, state: ShieldState) {
+    if let Some(actor) = sim.substrate.entities.get_mut(id) {
+        actor.shield = Some(state);
+    }
+}
+
+/// Phobos `ShieldClass`'s idle-animation maintenance: `CloakCheck`/// (`ShieldClass.cpp:491..500`), `BreakShield`'s `KillAnim` (`:849`) and the
 /// `AI` create/retype tail (`:466..482`).
 ///
 /// The damaged/temporal selection is re-evaluated on every visit instead of
@@ -1988,7 +2168,8 @@ pub(crate) fn apply_shield_modifiers(
                     name.to_owned(),
                     new_ty.initial_strength(),
                     new_ty.strength(),
-                );
+                )
+                .attach_dynamic();
                 if shield.replace_only && shield.inherit_state_on_replace {
                     new_state.set_hp(new_ty, (f64::from(new_ty.strength()) * ratio) as i32);
                     // Value doesn't matter here, it's just for restarting timer
