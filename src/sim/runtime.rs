@@ -1042,7 +1042,8 @@ where
         sim,
         &map_data.terrain_objects,
         &mut construction_rules,
-        theater_name.eq_ignore_ascii_case("SNOW"),
+        crate::rules::object_image::ImageTheater::from_name(theater_name)
+            == crate::rules::object_image::ImageTheater::Snow,
         terrain_mode,
     )?;
     let rules = construction_rules.rules();

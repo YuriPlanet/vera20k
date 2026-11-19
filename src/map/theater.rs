@@ -64,6 +64,10 @@ struct TheaterDef {
     /// Theater control-file name. `Read_Theater_TileSets_INI` (`0x00545150`)
     /// appends the INI suffix to it (`IniRoots::theater_ini`).
     control_name: &'static str,
+    /// The radar's terrain brightness, `+0x58` of the TheaterType records at
+    /// `0x007E1B78 + index*0x70` that `CellClass::GetRadarColor` reads: 0.8
+    /// for Snow and 1.0 for every other theater.
+    radar_brightness: f32,
     /// File extension for TMP files (e.g., "tem" for temperate).
     extension: &'static str,
     /// Exact isometric, unit, and theater/ore palette filenames.
@@ -80,6 +84,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "TEMPERATE",
         TheaterDef {
             control_name: "temperat",
+            radar_brightness: 1.0,
             extension: "tem",
             iso_palette_name: "isotem.pal",
             unit_palette_name: "unittem.pal",
@@ -91,6 +96,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "SNOW",
         TheaterDef {
             control_name: "snow",
+            radar_brightness: 0.8,
             extension: "sno",
             iso_palette_name: "isosno.pal",
             unit_palette_name: "unitsno.pal",
@@ -108,6 +114,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "URBAN",
         TheaterDef {
             control_name: "urban",
+            radar_brightness: 1.0,
             extension: "urb",
             iso_palette_name: "isourb.pal",
             unit_palette_name: "uniturb.pal",
@@ -119,6 +126,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "LUNAR",
         TheaterDef {
             control_name: "lunar",
+            radar_brightness: 1.0,
             extension: "lun",
             iso_palette_name: "isolun.pal",
             unit_palette_name: "unitlun.pal",
@@ -130,6 +138,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "DESERT",
         TheaterDef {
             control_name: "desert",
+            radar_brightness: 1.0,
             extension: "des",
             iso_palette_name: "isodes.pal",
             unit_palette_name: "unitdes.pal",
@@ -141,6 +150,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "NEWURBAN",
         TheaterDef {
             control_name: "urbann",
+            radar_brightness: 1.0,
             extension: "ubn",
             iso_palette_name: "isoubn.pal",
             unit_palette_name: "unitubn.pal",
@@ -740,6 +750,12 @@ pub fn theater_names_and_extensions() -> impl Iterator<Item = (&'static str, &'s
     THEATER_DEFS
         .iter()
         .map(|(name, def)| (*name, def.extension))
+}
+
+/// The radar's terrain brightness for a theater name: that of the theater
+/// [`theater_def`] finds, 1.0 when it finds none.
+pub fn theater_radar_brightness(name: &str) -> f32 {
+    theater_def(name).map_or(1.0, |def| def.radar_brightness)
 }
 
 /// Look up the theater definition for a theater name (e.g., "TEMPERATE"):
@@ -1345,7 +1361,7 @@ fn apply_lunar_global_zeroing(
     cliff_ranges: &mut TheaterCliffRanges,
     rmg_tiles: &mut RmgTileKeys,
 ) {
-    if !theater_name.eq_ignore_ascii_case("LUNAR") {
+    if ImageTheater::from_name(theater_name) != ImageTheater::Lunar {
         return;
     }
     *bridge_set = None;

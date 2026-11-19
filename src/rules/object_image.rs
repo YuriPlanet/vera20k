@@ -58,10 +58,24 @@ impl ImageTheater {
 
     /// Full_Init687633..687649 invokes ReadTheater475870 with default0
     /// before resetting Types. This reads the raw map, not the merged Rules,
-    /// with the map header's read ([`crate::map::map_file::read_map_theater`]).
+    /// with the map header's read ([`read_map_theater`]).
     pub(crate) fn from_map(map: &IniFile) -> Self {
-        Self::from_name(&crate::map::map_file::read_map_theater(map))
+        Self::from_name(&read_map_theater(map))
     }
+}
+
+/// The map's `[Map] Theater=`: `ReadTheater @ 0x00475870` with default 0
+/// (Temperate), as the map reader (0x004ACFE5) and Full_Init (0x0068763E)
+/// both call it. The name its 0x80-byte ReadString copies, uppercased, or
+/// `TEMPERATE` when the copy is empty. An unknown name stays as read; the
+/// theater lookups match names without regard to case, as FindTheater
+/// (0x0048DBE0) does. Rules reads it for the image theater, so it lives here
+/// rather than in the map reader (rules must not import map).
+pub(crate) fn read_map_theater(ini: &IniFile) -> String {
+    ini.section_or_empty("Map")
+        .read_name("Theater", 0x80)
+        .unwrap_or("TEMPERATE")
+        .to_uppercase()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
