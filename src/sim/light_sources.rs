@@ -61,8 +61,9 @@ pub enum LightingEvent {
         palette: PaletteUpdate,
         constructor_rgb: Option<[i32; 3]>,
     },
-    /// The profile later full relights read changed with no refresh: cells
-    /// keep the scalars their last refresh gave them.
+    /// The profile later full relights read, or the RGB a new Convert is
+    /// constructed with (`LightConvert555DA0`), changed with no refresh:
+    /// cells keep the scalars their last refresh gave them.
     RelightProfile {
         cell_profile: ScenarioLightingProfile,
         constructor_rgb: Option<[i32; 3]>,
@@ -267,7 +268,9 @@ impl Simulation {
     }
 
     /// Publish [`LightingEvent::RelightProfile`] after a change of
-    /// [`Self::lighting_cell_profile`] that refreshes no cell.
+    /// [`Self::lighting_cell_profile`] or [`Self::palette_constructor_rgb`]
+    /// that refreshes no cell. Presentation follows only this stream, so
+    /// such a change publishes this itself.
     pub fn publish_relight_profile(&mut self) {
         let cell_profile = self.lighting_cell_profile();
         let constructor_rgb = self.palette_constructor_rgb();

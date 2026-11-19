@@ -2123,7 +2123,7 @@ pub(crate) fn tick_active_superweapon_effects(
         sim.update_lighting();
     }
     let dominator = psychic_dominator::process(sim, rules, overlay_registry, frame_effects);
-    let chrono = sim.session.process_chrono_screen_effect();
+    let chrono = sim.step_chrono_screen();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     if rules.ares_form() {

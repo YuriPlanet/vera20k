@@ -319,7 +319,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
             && let Some(terrain) = runtime.simulation.resolved_terrain()
         {
             let presentation = &mut self.state.match_state.match_presentation;
-            presentation.lighting.refresh(
+            presentation.lighting.set_detail_level(
                 terrain,
                 &runtime.simulation,
                 presentation.in_game_options.detail_level,
