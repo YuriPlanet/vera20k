@@ -429,6 +429,7 @@ impl App {
         state
             .match_state
             .sync_multiplayer_pause_clock(scenario_now_ms);
+        crate::app::match_runtime::authored_narrative::service(state, scenario_now_ms);
         if crate::app::match_runtime::network_failure::pending(state) {
             // ExecuteDoList64CD0C blocks inside ShellMessageBox5D3490. Its
             // message pump still reaches Network_ServiceLoop48D080/audio,
@@ -437,6 +438,12 @@ impl App {
             crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
             let frame_stopped = state.match_state.frame_stopped;
             if crate::app::match_runtime::network_failure::take_acknowledged(state) {
+                let initial_connection_failure = !frame_stopped
+                    && state.match_state.sim_runtime.runtime().is_some_and(|rt| {
+                        rt.simulation.session().binary_frame() == 0
+                            && rt.simulation.pending_network_interruption()
+                                == Some(crate::sim::world::NetworkInterruption::ConnectionFailed)
+                    });
                 // A stopped frame has no suspended native frame to finish and
                 // its world must not run again: Stop goes straight to the shell.
                 if !frame_stopped {
@@ -463,7 +470,7 @@ impl App {
                     // Main_Game55D347 returns directly to shell cleanup.
                     // This is the same route as WaitPass::Leave, without an
                     // EXIT command or BattleControlTerminated686570.
-                    Self::return_disconnected_to_main_menu(state);
+                    Self::return_disconnected_to_main_menu(state, initial_connection_failure);
                 }
             }
             return RuntimeServiceResult {
@@ -480,6 +487,7 @@ impl App {
             main_tick_admitted = sim_tick::advance_in_game_runtime(state, scenario_now_ms, false);
             if !Self::house_outcome_wait_pending(state)
                 && !crate::app::match_runtime::network_failure::pending(state)
+                && !crate::app::match_runtime::authored_narrative::pending(state)
             {
                 Self::consume_scenario_restart_request(state);
                 Self::consume_executed_abort_exit(state, scenario_now_ms);
@@ -499,15 +507,17 @@ impl App {
         // Main_Game's router55CFD0 takes it before EXIT.
         Self::consume_scenario_restart_request(state);
         Self::consume_executed_abort_exit(state, scenario_now_ms);
-        crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(
-            state,
-            scenario_now_ms,
-        );
+        if !crate::app::match_runtime::authored_narrative::pending(state) {
+            crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(
+                state,
+                scenario_now_ms,
+            );
 
-        // The native victory/defeat handlers synchronously finish their audio
-        // teardown before entering the score dialog. Drive the equivalent
-        // sequence before either another sim frame or the destination screen.
-        Self::drive_scenario_exit(state, scenario_now_ms);
+            // The native victory/defeat handlers synchronously finish their audio
+            // teardown before entering the score dialog. Drive the equivalent
+            // sequence before either another sim frame or the destination screen.
+            Self::drive_scenario_exit(state, scenario_now_ms);
+        }
 
         // Drive the graceful quit wait (started on Exit-confirm OK). It
         // (`0x0052E79C..0x0052E7E4`) holds while Theme `Still_Playing` and then
@@ -609,6 +619,7 @@ impl App {
         // published result. One the router leaves waiting for a commander
         // clip keeps the world on that frame, as headless and replay runs do.
         if matches!(state.frontend.screen, GameScreen::InGame)
+            && !crate::app::match_runtime::authored_narrative::pending(state)
             && (network_frame_pending
                 || (simulation_allowed
                     && !state.focus_freeze_active()
@@ -645,8 +656,10 @@ impl App {
             Self::consume_executed_abort_exit(state, now_ms);
             // The House's own Vox wait has finished before its result request.
             // Route the retained request after all remaining frame callbacks.
-            crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(state, now_ms);
-            Self::drive_scenario_exit(state, now_ms);
+            if !crate::app::match_runtime::authored_narrative::pending(state) {
+                crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(state, now_ms);
+                Self::drive_scenario_exit(state, now_ms);
+            }
         }
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::publish_if_due(state);
@@ -723,12 +736,12 @@ impl App {
             && crate::app::lan_service::has_online_relay_route(state)
     }
 
-    /// Does a hidden window still have a running match to service? True while
-    /// in-game and the configured focus freeze is not holding the world; a
-    /// tactical capture never reaches the hidden service loop.
+    /// A hidden match still services LAN readiness during fullscreen
+    /// narrative playback. Otherwise follow the normal battle focus policy.
     pub(super) fn match_runs_while_hidden(state: &AppState) -> bool {
-        state.frontend.screen == GameScreen::InGame
-            && (Self::house_outcome_wait_pending(state) || !state.focus_freeze_active())
+        crate::app::match_runtime::authored_narrative::pending(state)
+            || (state.frontend.screen == GameScreen::InGame
+                && (Self::house_outcome_wait_pending(state) || !state.focus_freeze_active()))
     }
 
     /// The active-game shell `page` into `destination`.

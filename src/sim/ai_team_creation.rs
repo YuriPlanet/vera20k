@@ -444,15 +444,13 @@ fn is_eligible(
     // gamemd.exe, AITriggerTypeClass::Is_Eligible @ 0x0041E720:
     // 41E7D7..41E84A selects House+184 (hardest first) in multiplayer,
     // Scenario+60C (easiest first) in a campaign, before the owner gate.
-    let difficulty = if sim.session.game_mode_nonzero() {
+    let difficulty = if !sim.session.uses_campaign_rules() {
         if !trigger.multiplayer {
             return false;
         }
         2 - house.difficulty().table_index()
     } else {
-        sim.session
-            .campaign_house_difficulties()
-            .map_or(1, |(player, _)| player.table_index())
+        sim.session.scenario_trigger_difficulty()
     };
     if !trigger.difficulty_enabled[difficulty] {
         return false;
@@ -708,7 +706,7 @@ fn factories_admit(
         if factory {
             return true;
         }
-        if sim.session.game_mode_nonzero() {
+        if !sim.session.uses_campaign_rules() {
             return false;
         }
         (0..sim.substrate.entities.foot_registry_len())

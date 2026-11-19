@@ -939,7 +939,7 @@ impl NativeRulesProcessOwner {
             .as_ref()
             .expect("Rules transition reentered")
             .registry_state()
-            .retained_random_map_projection_seed();
+            .retained_preview_projection_seed();
         self.random_map_projection_from_state(state, mode_rules_override, theater_name)
     }
 
@@ -965,12 +965,51 @@ impl NativeRulesProcessOwner {
     ) -> Result<ProcessedRulesLayers, RulesError> {
         let (layers, skip_root_color_add_and_mode) =
             self.random_map_preview_layers(mode_rules_override);
+        self.process_preview_layers(
+            state,
+            &layers,
+            crate::rules::object_image::ImageTheater::from_name(theater_name),
+            skip_root_color_add_and_mode,
+        )
+    }
+
+    /// Resolve Country, Side and Color for an authored LAN map from the cold
+    /// network Rules sources and Full_Init6876AC's post-reset layers. The
+    /// temporary projection cannot advance the live registry or Scenario IDs.
+    pub fn scenario_presentation_rules(
+        &self,
+        mode_rules_override: Option<&IniFile>,
+        map: &IniFile,
+    ) -> Result<RuleSet, RulesError> {
+        let state = self
+            .sources
+            .cold_registry()?
+            .into_registry_state_discarding_events();
+        let (langrule, skip_mode) = self.scenario_langrule();
+        let layers =
+            self.scenario_layers(mode_rules_override, map, langrule.as_ref(), None, skip_mode);
+        let processed = self.process_preview_layers(
+            state,
+            &layers,
+            crate::rules::object_image::ImageTheater::from_map(map),
+            skip_mode,
+        )?;
+        RuleSet::from_processed_rules(&processed)
+    }
+
+    fn process_preview_layers(
+        &self,
+        state: NativeRulesRegistryState,
+        layers: &RulesLayerStack,
+        theater: crate::rules::object_image::ImageTheater,
+        skip_root_color_add_and_mode: bool,
+    ) -> Result<ProcessedRulesLayers, RulesError> {
         layers
             .process_with_fixed_art_and_registry_state_recovering(
                 &self.sources.fixed_art,
                 state,
                 RulesProcessContext::ScenarioReset {
-                    theater: crate::rules::object_image::ImageTheater::from_name(theater_name),
+                    theater,
                     skip_root_color_add_and_mode,
                 },
                 &self.sources.fixed_eva,
@@ -1053,18 +1092,7 @@ impl NativeRulesProcessOwner {
         &self,
         mode_rules_override: Option<&IniFile>,
     ) -> (RulesLayerStack, bool) {
-        let langrule = self.read_langrule_for_process();
-        let skip_root_color_add_and_mode = matches!(
-            langrule,
-            NativeLangRuleRead::DigestRejected | NativeLangRuleRead::DigestIndeterminate
-        );
-        let langrule = match langrule {
-            NativeLangRuleRead::Accepted(ini) => Some(ini),
-            NativeLangRuleRead::Absent
-            | NativeLangRuleRead::DigestRejected
-            | NativeLangRuleRead::DigestIndeterminate
-            | NativeLangRuleRead::SelectionFailed => None,
-        };
+        let (langrule, skip_root_color_add_and_mode) = self.scenario_langrule();
         let mut layers = self.startup_layers(langrule.as_ref());
         if !skip_root_color_add_and_mode && let Some(mode) = mode_rules_override {
             layers.push(RulesLayerKind::GameMode, mode.clone());
@@ -1255,18 +1283,7 @@ impl NativeRulesProcessOwner {
         };
         let (pre_reset_events, pre_reset_super_count, pre_reset_state) =
             pre_reset_trace.into_parts();
-        let langrule = self.read_langrule_for_process();
-        let skip_root_color_add_and_mode = matches!(
-            langrule,
-            NativeLangRuleRead::DigestRejected | NativeLangRuleRead::DigestIndeterminate
-        );
-        let langrule = match langrule {
-            NativeLangRuleRead::Accepted(ini) => Some(ini),
-            NativeLangRuleRead::Absent
-            | NativeLangRuleRead::DigestRejected
-            | NativeLangRuleRead::DigestIndeterminate
-            | NativeLangRuleRead::SelectionFailed => None,
-        };
+        let (langrule, skip_root_color_add_and_mode) = self.scenario_langrule();
         let layers = self.scenario_layers(
             mode_rules_override,
             map_rules_overrides,
@@ -1358,6 +1375,16 @@ impl NativeRulesProcessOwner {
         )
     }
 
+    fn scenario_langrule(&self) -> (Option<IniFile>, bool) {
+        match self.read_langrule_for_process() {
+            NativeLangRuleRead::Accepted(ini) => (Some(ini), false),
+            NativeLangRuleRead::DigestRejected | NativeLangRuleRead::DigestIndeterminate => {
+                (None, true)
+            }
+            NativeLangRuleRead::Absent | NativeLangRuleRead::SelectionFailed => (None, false),
+        }
+    }
+
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
             .with_ares_mix(self.sources.ships_ares)
@@ -1411,6 +1438,40 @@ mod tests {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::native_processing::RulesLayerStack;
     use crate::rules::retail_sources::RetailRulesSources;
+
+    #[test]
+    fn scenario_presentation_uses_the_map_side_without_replacing_startup_countries() {
+        let root =
+            IniFile::from_str("[Countries]\n0=Alpha\n1=Beta\n[Sides]\nGDI=Alpha\nNod=Beta\n");
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root,
+            None,
+            IniFile::empty(),
+            Arc::default(),
+            Arc::default(),
+        )
+        .unwrap();
+        // Cold startup has not processed the primary Rules' Countries/Sides.
+        // Give the live registry its room-independent side through Full_Init.
+        let (mut baseline, ..) = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap()
+            .into_parts();
+        let alpha_side = |rules: &RuleSet| {
+            rules
+                .country_side_index("Alpha")
+                .and_then(|side| rules.side_name(side).map(str::to_owned))
+        };
+        assert_eq!(alpha_side(&baseline).as_deref(), Some("GDI"));
+        let map = IniFile::from_str("[Alpha]\nSide=Nod\n");
+        let effective = owner.scenario_presentation_rules(None, &map).unwrap();
+        assert_eq!(alpha_side(&effective).as_deref(), Some("Nod"));
+        owner.project_multiplayer_countries(&mut baseline);
+        assert_eq!(alpha_side(&baseline).as_deref(), Some("GDI"));
+    }
 
     #[test]
     fn retail_class_lights_convert_omitted_keys_only_in_reached_sections() {

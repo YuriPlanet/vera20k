@@ -117,6 +117,29 @@ impl CampaignCarryOver {
     }
 }
 
+/// Shared VMCE continuation. Money is keyed by the next stage's primary House,
+/// independent of which connection chooses that role.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthoredCampaignCarryOver {
+    #[serde(with = "saved_globals")]
+    globals: [bool; SCENARIO_GLOBAL_COUNT],
+    countdown_frames: i32,
+    funds: Vec<(String, i32)>,
+}
+
+impl AuthoredCampaignCarryOver {
+    pub fn matches_roles(&self, roles: &[String]) -> bool {
+        self.funds.len() <= roles.len()
+            && self.funds.iter().enumerate().all(|(index, (house, _))| {
+                roles.iter().any(|role| role.eq_ignore_ascii_case(house))
+                    && self.funds[..index]
+                        .iter()
+                        .all(|(other, _)| !other.eq_ignore_ascii_case(house))
+            })
+    }
+}
+
 impl Simulation {
     /// `0x004C6180`: the record a won mission saves for the next one. A
     /// session without a player House keeps the cleared row.
@@ -142,7 +165,54 @@ impl Simulation {
     /// map. SetDifficulty runs on the player House only; computer Houses keep
     /// the rows the scenario read gave them.
     pub fn restore_campaign_carry_over(&mut self, record: &CampaignCarryOver, rules: &RuleSet) {
-        for (index, &set) in record.globals.iter().enumerate() {
+        self.restore_campaign_globals(&record.globals);
+        self.restore_player_carry_over(record, rules);
+        self.session
+            .inherit_campaign_countdown(record.countdown_frames);
+        self.session.set_campaign_map_stage(record.map_stage);
+    }
+
+    pub fn save_authored_campaign_carry_over<'a>(
+        &self,
+        roles: impl Iterator<Item = (&'a str, String)>,
+    ) -> AuthoredCampaignCarryOver {
+        let funds = roles
+            .filter_map(|(source, destination)| {
+                let source = self.interner.get(source)?;
+                let money = self.houses.get(&source)?.economy().available_money();
+                Some((destination, money))
+            })
+            .collect();
+        AuthoredCampaignCarryOver {
+            globals: self.global_variables(),
+            countdown_frames: self.session.campaign_countdown_frames(),
+            funds,
+        }
+    }
+
+    /// Use the native Evade global, timer and money operations for the authored
+    /// roster. Difficulty remains the receiving room's selected difficulty.
+    pub fn restore_authored_campaign_carry_over<'a>(
+        &mut self,
+        record: &AuthoredCampaignCarryOver,
+        playing_houses: impl Iterator<Item = &'a str> + Clone,
+    ) {
+        self.restore_campaign_globals(&record.globals);
+        for (destination, money) in &record.funds {
+            if let Some(house) = playing_houses
+                .clone()
+                .find(|house| house.eq_ignore_ascii_case(destination))
+                .and_then(|name| self.interner.get(name))
+            {
+                self.add_campaign_carry_over_money(house, *money);
+            }
+        }
+        self.session
+            .inherit_campaign_countdown(record.countdown_frames);
+    }
+
+    fn restore_campaign_globals(&mut self, globals: &[bool; SCENARIO_GLOBAL_COUNT]) {
+        for (index, &set) in globals.iter().enumerate() {
             Self::set_trigger_variable(
                 &self.session,
                 &mut self.scenario_rng,
@@ -152,10 +222,6 @@ impl Simulation {
                 set,
             );
         }
-        self.restore_player_carry_over(record, rules);
-        self.session
-            .inherit_campaign_countdown(record.countdown_frames);
-        self.session.set_campaign_map_stage(record.map_stage);
     }
 
     /// `0x004C622F..0x004C6295`: the money and difficulty row go to PlayerPtr.
@@ -174,25 +240,7 @@ impl Simulation {
         let Some(array_index) = self.houses.index_of(player) else {
             return;
         };
-        // EvadeClass::Do4C622F..4C6285: FILD saved Available_Money, multiply
-        // the receiving Scenario's double, cap unless-1, ftol low32, then
-        // wallet/baseline adds. Reuse the economy's deterministic masked
-        // arithmetic owner (including signed truncation and overflow).
-        let (multiplier, cap) = self.session.campaign_money_policy();
-        let mut amount = X87::mul(X87::load_i32(record.money), X87::load_f64(multiplier));
-        if cap != -1
-            && matches!(
-                X87::compare(amount, X87::load_i32(cap)),
-                MaskedX87Ordering::Equal | MaskedX87Ordering::Greater
-            )
-        {
-            amount = X87::load_i32(cap);
-        }
-        if let Some(house) = self.houses.get_mut(&player) {
-            house
-                .economy_mut()
-                .add_campaign_carry_over(X87::ftol_i32_low_masked(amount));
-        }
+        self.add_campaign_carry_over_money(player, record.money);
         let frame = self.session.binary_frame() as i32;
         let country = self
             .houses
@@ -211,6 +259,32 @@ impl Simulation {
                 array_index as i32,
                 frame,
             );
+        }
+    }
+
+    fn add_campaign_carry_over_money(
+        &mut self,
+        player: crate::sim::intern::InternedId,
+        money: i32,
+    ) {
+        // EvadeClass::Do4C622F..4C6285: FILD saved Available_Money, multiply
+        // the receiving Scenario's double, cap unless-1, ftol low32, then
+        // wallet/baseline adds. Reuse the economy's deterministic masked
+        // arithmetic owner (including signed truncation and overflow).
+        let (multiplier, cap) = self.session.campaign_money_policy();
+        let mut amount = X87::mul(X87::load_i32(money), X87::load_f64(multiplier));
+        if cap != -1
+            && matches!(
+                X87::compare(amount, X87::load_i32(cap)),
+                MaskedX87Ordering::Equal | MaskedX87Ordering::Greater
+            )
+        {
+            amount = X87::load_i32(cap);
+        }
+        if let Some(house) = self.houses.get_mut(&player) {
+            house
+                .economy_mut()
+                .add_campaign_carry_over(X87::ftol_i32_low_masked(amount));
         }
     }
 }
@@ -295,6 +369,58 @@ mod tests {
         assert_eq!(economy.scenario_credits(), 9000);
         assert_eq!(economy.score(), 0);
         assert_eq!(economy.spent_credits(), 0);
+    }
+
+    #[test]
+    fn authored_funds_follow_the_mapped_primary_house_and_restart_from_the_same_record() {
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[Basic]\nTimerInherit=yes\nCarryOverMoney=25%\nCarryOverCap=2000\n",
+        );
+        let mut source = timer_campaign(&ini);
+        let player = source.session.current_house().unwrap();
+        source
+            .houses
+            .get_mut(&player)
+            .unwrap()
+            .economy_mut()
+            .add_credits(10_001);
+        let mut globals = [false; SCENARIO_GLOBAL_COUNT];
+        globals[7] = true;
+        source.restore_campaign_globals(&globals);
+        source
+            .session
+            .change_scenario_timer(ScenarioTimerAction::Set(120));
+        let record =
+            source.save_authored_campaign_carry_over(std::iter::once(("Player", "Target".into())));
+        let wire = serde_json::to_vec(&record).unwrap();
+        let record: AuthoredCampaignCarryOver = serde_json::from_slice(&wire).unwrap();
+        assert!(record.matches_roles(&["Player".into(), "Target".into()]));
+        assert!(!record.matches_roles(&["Player".into()]));
+
+        let load = |local_name: &str| {
+            let mut next = timer_campaign(&ini);
+            let target = next.interner.intern("Target");
+            next.houses
+                .get_or_register_for_test(target, || {
+                    crate::sim::house_state::HouseState::new(target, 1, None, false, 0, 10)
+                })
+                .economy_mut()
+                .initialize_scenario_credits(70, None, false, 0, 0);
+            next.session
+                .set_current_house_for_test(next.interner.get(local_name));
+            next.session.set_scenario_timer_caption("DESC:NextMap");
+            next.restore_authored_campaign_carry_over(&record, ["Player", "Target"].into_iter());
+            let target_money = next.houses[&target].economy().credits();
+            assert_eq!(next.houses[&player].economy().credits(), 0);
+            assert_eq!(target_money, 9000);
+            assert_eq!(next.global_variables(), globals);
+            assert_eq!(
+                next.session.scenario_timer_view(),
+                Some((1800, "DESC:NextMap"))
+            );
+        };
+        load("Player");
+        load("Target");
     }
 
     #[test]

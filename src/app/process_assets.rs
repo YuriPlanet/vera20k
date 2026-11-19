@@ -519,6 +519,13 @@ impl ProcessAssets {
     /// theater tiles the game folder changes.
     /// The legacy advertisement CRC remains a separate native UI value.
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
+        self.multiplayer_rules_digest_for(Some(mode))
+    }
+
+    pub(crate) fn multiplayer_rules_digest_for(
+        &self,
+        mode: Option<&str>,
+    ) -> Result<String, String> {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::retail_sources::{select_ini, select_mode_ini};
         let rules = self
@@ -527,7 +534,7 @@ impl ProcessAssets {
             .ok_or("retail rules not loaded")?;
         let assets = self.manager.as_ref().ok_or("retail sources are loading")?;
         let ai = select_ini(assets, assets.ini_roots().ai())?;
-        let selected_mode = select_mode_ini(assets, Some(mode))?;
+        let selected_mode = select_mode_ini(assets, mode)?;
         let mut digests = rules.multiplayer_source_digests().to_vec();
         digests.push(Some(ai.ini.multiplayer_digest()));
         digests.push(selected_mode.as_ref().map(IniFile::multiplayer_digest));

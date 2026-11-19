@@ -4787,10 +4787,9 @@ impl NativeRulesRegistryState {
         self.reads_ares_way
     }
 
-    /// Input to the existing read-only RMG source projection. Other domains
-    /// retain its prior default-based policy; the process-global tables start
-    /// with the same retained inputs as a real Reset6686C0.
-    pub(crate) fn retained_random_map_projection_seed(&self) -> Self {
+    /// Input to a read-only prospective map projection. Process-global tables
+    /// start with the retained inputs they would see after Reset6686C0.
+    pub(crate) fn retained_preview_projection_seed(&self) -> Self {
         Self {
             rules_powerups: self.rules_powerups.clone(),
             rules_land: self.rules_land.clone(),

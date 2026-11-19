@@ -2334,7 +2334,8 @@ impl ApplicationHandler for App {
                     // edge reaches first. macOS stops presenting to an occluded
                     // layer, so this loop cannot ride on redraws; it wakes at
                     // half the pacer bucket to hold the cadence.
-                    if Self::service_match_runtime(state, event_loop, true, true, false)
+                    let in_game = state.frontend.screen == GameScreen::InGame;
+                    if Self::service_match_runtime(state, event_loop, in_game, in_game, false)
                         .quit_requested
                     {
                         return;

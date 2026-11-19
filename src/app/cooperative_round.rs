@@ -179,7 +179,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
         .flatten();
     // BC6 keeps the match's route; the shared teardown then finds no match
     // transport to return.
-    crate::app::lan_service::cooperative::hold_transport(state);
+    crate::app::lan_service::hold_match_transport(state);
     App::retire_finished_scenario(state);
     if let Err(error) =
         state
@@ -205,6 +205,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
     state.frontend.score_page = None;
     state.frontend.score_art = None;
     state.frontend.campaign_score_page = None;
+    state.frontend.score_overlay = None;
     state.frontend.coop_score_page = Some(CoopScorePage {
         model,
         ui: Default::default(),
@@ -759,6 +760,7 @@ fn return_to_shell(state: &mut AppState) {
 /// `0xBC7`'s Continue (`0x6D1`, result 1) after its slide: the shell.
 pub(crate) fn campaign_end_continue(state: &mut AppState) {
     state.frontend.campaign_score_page = None;
+    state.frontend.score_overlay = None;
     leave_result(state);
 }
 

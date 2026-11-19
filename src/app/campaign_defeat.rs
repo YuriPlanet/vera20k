@@ -49,20 +49,22 @@ pub(crate) fn replay_route(result: ModalResult) -> ReplayRoute {
     }
 }
 
+/// GameExit::Defeat 0x00686060..0x00686073 plays Scenario+0x1440 through 5BF260.
+pub(super) fn lose_movie<'a>(
+    basic: &crate::map::basic::BasicSection,
+    movies: &'a crate::rules::movies::MovieRegistry,
+) -> Option<&'a str> {
+    movies.name(movies.find_index(basic.lose.as_deref()?))
+}
+
 impl App {
     /// The defeat cascade has finished: read what the prompt needs while the
     /// lost Simulation is still resident, retire it, then play the Lose movie.
     pub(super) fn begin_campaign_defeat(state: &mut AppState) {
         let retry = Self::prepare_campaign_restart(state).map(Box::new);
-        let movie = state
-            .match_state
-            .map_basic
-            .lose
-            .as_deref()
-            .and_then(|name| {
-                let movies = state.process_assets.native_rules()?.movies();
-                movies.name(movies.find_index(name)).map(str::to_owned)
-            });
+        let movie = state.process_assets.native_rules().and_then(|rules| {
+            lose_movie(&state.match_state.map_basic, rules.movies()).map(str::to_owned)
+        });
         Self::close_finished_scenario(state);
         let defeat = CampaignDefeat { retry };
         match movie {

@@ -27,6 +27,7 @@ pub(crate) const PLAYERS: u16 = 0x53E;
 pub(crate) const CHAT_LOG: u16 = 0x53F;
 pub(crate) const OBSERVER_IMAGE: u16 = 0x75F;
 pub(crate) const OBSERVER_TOGGLE: u16 = 0x760;
+pub(crate) const AUTHORED_FILTER: u16 = 0x7F35;
 
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0xBB),
@@ -78,6 +79,7 @@ pub(crate) struct LanGameRow {
     pub(crate) id: u64,
     pub(crate) name: String,
     pub(crate) open: bool,
+    pub(crate) authored: bool,
 }
 
 impl LanGameRow {
@@ -466,6 +468,7 @@ pub(crate) struct LanLobbyState {
     pub(crate) chat: LanChatState,
     /// Excludes the always-present TXT_LOBBY sentinel at displayed index0.
     pub(crate) games: Vec<LanGameRow>,
+    authored_only: bool,
     pub(crate) players: Vec<LanPlayerRow>,
     pub(crate) game_list: LanListState,
     pub(crate) player_list: LanListState,
@@ -496,6 +499,7 @@ impl LanLobbyState {
                 ..Default::default()
             },
             games: Vec::new(),
+            authored_only: false,
             players: Vec::new(),
             game_list: LanListState {
                 selected: Some(0),
@@ -514,27 +518,65 @@ impl LanLobbyState {
     }
 
     pub(crate) fn game_count(&self) -> usize {
-        self.games.len() + 1
+        let count = if self.authored_only {
+            self.visible_games().count()
+        } else {
+            self.games.len()
+        };
+        count + 1
+    }
+
+    pub(crate) fn authored_only(&self) -> bool {
+        self.authored_only
+    }
+
+    pub(crate) fn visible_games(&self) -> impl Iterator<Item = &LanGameRow> {
+        self.games
+            .iter()
+            .filter(|row| !self.authored_only || row.authored)
     }
 
     pub(crate) fn selected_game(&self) -> Option<&LanGameRow> {
         self.game_list
             .selected
             .and_then(|index| index.checked_sub(1))
-            .and_then(|index| self.games.get(index))
+            .and_then(|index| self.visible_games().nth(index))
     }
 
     pub(crate) fn replace_games(&mut self, games: Vec<LanGameRow>) -> Option<LanLobbyAction> {
+        let before_id = self.selected_game().map(|row| row.id);
         let before = self.game_list.selected.unwrap_or(0);
         self.games = games;
         //5DB9B0 clamps the numeric selection, preserving top index; it does
         // not reselect by name when discovery rows are reordered.
+        if self.authored_only {
+            return self.restore_visible_selection(before_id);
+        }
         let selected = before.min(self.games.len());
         self.game_list.reconcile(self.game_count());
         self.game_list.selected = Some(selected);
         (selected != before).then(|| LanLobbyAction::SelectGame {
             game_id: self.selected_game().map(|row| row.id),
             change: LanSelectionChange::Clamped,
+        })
+    }
+
+    pub(crate) fn toggle_authored_filter(&mut self) -> Option<LanLobbyAction> {
+        let before_id = self.selected_game().map(|row| row.id);
+        self.authored_only = !self.authored_only;
+        self.game_list.top_index = 0;
+        self.game_list.last_press = None;
+        self.game_list.scroll.cancel();
+        self.restore_visible_selection(before_id)
+    }
+
+    fn restore_visible_selection(&mut self, before_id: Option<u64>) -> Option<LanLobbyAction> {
+        let row = before_id.and_then(|id| self.visible_games().position(|room| room.id == id));
+        self.game_list.reconcile(self.game_count());
+        self.game_list.selected = Some(row.map_or(0, |index| index + 1));
+        (before_id.is_some() && row.is_none()).then_some(LanLobbyAction::SelectGame {
+            game_id: None,
+            change: LanSelectionChange::Changed,
         })
     }
 
@@ -789,6 +831,7 @@ pub(crate) struct LanLobbyLayout {
     pub(crate) chat_log: RectPx,
     pub(crate) observer_image: RectPx,
     pub(crate) observer_toggle: RectPx,
+    pub(crate) authored_filter: RectPx,
     pub(crate) labels: [(&'static str, RectPx); 3],
 }
 
@@ -820,12 +863,21 @@ impl LanLobbyLayout {
             chat_log: rect(11, 369, 612, 154),
             observer_image: rect(594, 13, 28, 21),
             observer_toggle: rect(576, 16, 16, 17),
+            authored_filter: rect(323, 16, 246, 19),
             labels: [
                 ("GUI:Games", rect(326, 49, 223, 17)),
                 ("GUI:Players", rect(15, 49, 171, 17)),
                 ("GUI:YourName", rect(15, 16, 112, 17)),
             ],
         }
+    }
+
+    pub(crate) fn game_columns(&self, row: RectPx) -> [RectPx; 2] {
+        let name_w = (row.w * 44 + 50) / 100;
+        [
+            RectPx::new(row.x, row.y, name_w, row.h),
+            RectPx::new(row.x + name_w, row.y, row.w - name_w, row.h),
+        ]
     }
 
     pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
@@ -842,6 +894,7 @@ impl LanLobbyLayout {
             (CHAT_LOG, self.chat_log),
             (OBSERVER_IMAGE, self.observer_image),
             (OBSERVER_TOGGLE, self.observer_toggle),
+            (AUTHORED_FILTER, self.authored_filter),
         ] {
             if rect.contains(x, y) {
                 return Some(id);
@@ -1063,6 +1116,37 @@ mod tests {
     }
 
     #[test]
+    fn authored_filter_keeps_discovery_and_joins_the_displayed_room() {
+        let mut lobby = LanLobbyState::new("Tester", false);
+        let room = |id, authored| LanGameRow {
+            id,
+            name: format!("Host{id}"),
+            open: true,
+            authored,
+        };
+        lobby.replace_games(vec![room(7, false), room(8, true), room(9, true)]);
+        assert!(lobby.select_game(1).is_some());
+        assert_eq!(
+            lobby.toggle_authored_filter(),
+            Some(LanLobbyAction::SelectGame {
+                game_id: None,
+                change: LanSelectionChange::Changed,
+            })
+        );
+        assert_eq!(lobby.game_count(), 3);
+        assert_eq!(lobby.games.len(), 3);
+        assert!(lobby.select_game(2).is_some());
+        lobby.replace_games(vec![room(9, true), room(7, false), room(8, true)]);
+        assert_eq!(
+            lobby.activate(JOIN),
+            Some(LanLobbyAction::Join {
+                game_id: Some(9),
+                observe: false,
+            })
+        );
+    }
+
+    #[test]
     fn discovery_clamps_selection_and_join_remains_an_intent() {
         let mut lobby = LanLobbyState::new("Tester", false);
         let rows = (0..3)
@@ -1070,6 +1154,7 @@ mod tests {
                 id,
                 name: format!("Player{id}"),
                 open: true,
+                authored: false,
             })
             .collect();
         lobby.replace_games(rows);

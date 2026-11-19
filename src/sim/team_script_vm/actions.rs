@@ -23,15 +23,12 @@
 //!   indexes a type array out of bounds, or would build a team from a
 //!   TeamType VERA holds no definition for (action 18), the team stays on
 //!   the step instead and records the first as its refusal.
-//! - Script22's LAN/WOL path remains refused: Map580BC0 reads process-current
-//!   shroud586360; native LAN guest setup5E0841..5E0931 installs its local
-//!   participant at index0, then688109 makes that House PlayerPtr. Feeding
-//!   this local plane into shared Scenario RNG would make network results
-//!   client-dependent. A deterministic network visibility contract is still
-//!   required; this is not an unreachable native branch or a whole22 port.
-//!   Such teams retain their members and Max slot. Native would request one
-//!   Scenario range for a nonempty pool, with no private timer or detach;
-//!   the refused handler currently performs none of those effects.
+//! - Script22 uses PlayerPtr's shroud offline and the first participating
+//!   map House's shroud in authored campaigns. Ordinary LAN/WOL still
+//!   refuses it: native LAN guest setup5E0841..5E0931 installs the local
+//!   participant at index0, then688109 makes that House PlayerPtr. Using
+//!   that private map for shared Scenario RNG would make results differ
+//!   between peers. A refused team retains its members and Max slot.
 //! - `Coordinate_Attack` orders an unloading unit to attack without asking
 //!   Unit vt+0x4E4 (`0x00736D50`), which keeps it unloading when its type is
 //!   `DeployToFire=`, or when a computer unit's `DeploysInto=` building is
@@ -317,7 +314,8 @@ impl Simulation {
             // Its script argument is unused. Shared movement owns timers
             // and detach/EOF cleanup; only the search can request RNG.
             22 => {
-                if !self.session.game_mode().is_single_player() {
+                let authored_campaign = self.session.is_authored_campaign();
+                if !authored_campaign && !self.session.game_mode().is_single_player() {
                     self.refuse_team_script_action(team_id, action.action_id);
                     return;
                 }
@@ -326,7 +324,14 @@ impl Simulation {
                         team.zone
                             .or_else(|| team.members().next().map(TeamTarget::Object))
                     });
-                    let Some(viewer) = self.session.current_house() else {
+                    // Authored lockstep peers substitute the same admitted
+                    // House for the native PlayerPtr visibility query.
+                    let viewer = if authored_campaign {
+                        self.authored_campaign_players().next()
+                    } else {
+                        self.session.current_house()
+                    };
+                    let Some(viewer) = viewer else {
                         return;
                     };
                     let target = origin

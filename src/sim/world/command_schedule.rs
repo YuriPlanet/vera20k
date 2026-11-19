@@ -155,6 +155,7 @@ impl Simulation {
             let mut valid = true;
             for &producer in producer_ids {
                 if let Some(record) = self.encode_archive_record(
+                    command.owner,
                     producer,
                     crate::sim::command::MegaMissionTarget::Cell {
                         x: *rx as i16,
@@ -183,6 +184,7 @@ impl Simulation {
                 return false;
             };
             let Some(record) = self.encode_archive_record(
+                command.owner,
                 *entity_id,
                 crate::sim::command::MegaMissionTarget::Object { id: target_id },
             ) else {
@@ -986,9 +988,9 @@ impl Simulation {
     /// The group spread `0x0064CDA0` per run (`0x0064CB0A..0x0064CB60`): each Foot
     /// member's coordinates (Location) and source cell.
     ///
-    /// VERA-only: in a LAN or WOL game a member whose order the network
-    /// ownership rule will refuse (`Simulation::network_actor_foreign`) is
-    /// left out, and a run left with fewer than two orders keeps its clicked
+    /// VERA-only: in a LAN or WOL game each member must be owned by the
+    /// sender or have a frozen grant for the synchronized Cell Move.
+    /// A run left with fewer than two orders keeps its clicked
     /// cells, as if `sender` had not ordered that member. Retail's member loop
     /// (`0x0064CE59..0x0064CEDF`) tests only Foot and tube (`+0x684`), never
     /// the owner, and `Execute_DoList` spreads every run of two or more
@@ -1035,7 +1037,9 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
-                    if sender.is_some_and(|owner| self.network_actor_foreign(owner, entity_id)) {
+                    if sender.is_some_and(|owner| self.network_actor_foreign(owner, entity_id))
+                        && !self.formation_move_granted(command)
+                    {
                         orders -= 1;
                         continue;
                     }
@@ -1104,6 +1108,19 @@ impl Simulation {
             }
             run_start = run_end;
         }
+    }
+
+    /// Use the same decoded command and sender House as execution. Only an
+    /// ordinary Cell Move decodes directly to `Move`: planned orders and
+    /// orders carrying NavComAux cannot use a frozen grant.
+    fn formation_move_granted(&self, command: &impl FormationCommand) -> bool {
+        command
+            .formation_record()
+            .and_then(|record| self.decode_native_command_record(record, self.session.tick()))
+            .is_some_and(|entry| {
+                matches!(entry.payload, Command::Move { entity_id, .. }
+                    if self.has_foot_control_grant(entry.owner, entity_id))
+            })
     }
 
     /// VERA `[JumpjetControls] LandNearby=` (off by default, no native

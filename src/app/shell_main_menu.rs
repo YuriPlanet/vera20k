@@ -680,8 +680,9 @@ impl App {
     /// This page has no Skirmish score-art dependency.
     pub(super) fn campaign_score_shell_active(state: &AppState) -> bool {
         matches!(state.frontend.screen, GameScreen::MissionResult { .. })
-            && state.frontend.campaign_score_page.is_some()
-            && state.frontend.main_menu_shell_chrome.is_some()
+            && (state.frontend.campaign_score_page.is_some()
+                && state.frontend.main_menu_shell_chrome.is_some()
+                || crate::app::frontend::score_overlay::room_result_active(state))
     }
 
     /// `ScoreDialog__Run` `0x005C9720` after a skirmish win or loss: the side
@@ -745,6 +746,7 @@ impl App {
             )
         });
         state.frontend.campaign_score_page = None;
+        state.frontend.score_overlay = None;
         state.frontend.campaign_score_art = None;
         if state.frontend.score_art.is_none() {
             log::warn!("Could not prepare the score art; the result screen falls back");
@@ -764,6 +766,7 @@ impl App {
         model: crate::ui::campaign_score_shell::CampaignScoreScreenModel,
         title: String,
         detail: String,
+        overlay: Option<crate::app::frontend::score_overlay::ScoreOverlay>,
     ) {
         use crate::app::frontend::shell_pass::resolve_csf;
         use crate::ui::campaign_score_shell::{CampaignScorePage, CampaignScoreTexts};
@@ -777,7 +780,10 @@ impl App {
             );
         }
         let texts = CampaignScoreTexts {
-            title: resolve_csf(state, "GUI:StandaloneScore").into_owned(),
+            title: overlay
+                .as_ref()
+                .and_then(|overlay| overlay.title())
+                .unwrap_or_else(|| resolve_csf(state, "GUI:StandaloneScore").into_owned()),
             continue_label: resolve_csf(state, "GUI:Continue").into_owned(),
             continue_status: resolve_csf(state, "STT:StandScoreButtonReturn").into_owned(),
             par_time_label: resolve_csf(state, "GUI:ParTime").into_owned(),
@@ -793,6 +799,7 @@ impl App {
             .unwrap_or_else(|| crate::app::match_runtime::scenario_exit::SCORE_THEME.to_owned());
         let page = CampaignScorePage::open(model, texts, now);
         state.frontend.campaign_score_page = Some(page);
+        state.frontend.score_overlay = overlay;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.screen = GameScreen::MissionResult { title, detail };
         state.frontend.shell_controller.reset_to(
@@ -808,7 +815,7 @@ impl App {
     }
 
     /// `ScoreArt__Load` (`0x0072D300`): prepare the active side's campaign
-    /// score art for the standalone and Cooperative result pages.
+    /// score art for the standalone, Cooperative and VMCE result pages.
     pub(super) fn prepare_campaign_score_art(state: &mut AppState, side: i32) {
         state.frontend.campaign_score_art = state.process_assets.manager().and_then(|assets| {
             crate::render::main_menu_shell_chrome::build_campaign_score_art(
@@ -822,6 +829,29 @@ impl App {
         });
     }
 
+    /// Present a caller's result in `0xBC6`, using the ordinary room return.
+    pub(super) fn open_room_result(
+        state: &mut AppState,
+        title: String,
+        detail: String,
+        side: i32,
+        overlay: crate::app::frontend::score_overlay::ScoreOverlay,
+    ) {
+        Self::prepare_campaign_score_art(state, side);
+        state.frontend.score_page = None;
+        state.frontend.score_art = None;
+        state.frontend.campaign_score_page = None;
+        state.frontend.coop_score_page = None;
+        state.frontend.score_overlay = Some(overlay);
+        state.frontend.shell_first_paint_slide = None;
+        state.frontend.screen = GameScreen::MissionResult { title, detail };
+        state
+            .frontend
+            .shell_controller
+            .reset_to(crate::ui::score_shell::ROOM_RESULT_DIALOG, false);
+        state.platform.window.request_redraw();
+    }
+
     /// Cooperative `+0xA4`'s campaign end (`0x00471420`): the side's score
     /// art again (`0x0072D300`, `ScoreArt__Load`), the empty backdrop, then
     /// dialog `0xBC7` with the texts its init writes. No theme changes.
@@ -830,6 +860,7 @@ impl App {
         model: crate::ui::campaign_score_shell::CampaignEndModel,
     ) {
         use crate::ui::campaign_score_shell::{CAMPAIGN_END_DIALOG, CampaignScorePage};
+        state.frontend.score_overlay = None;
         Self::prepare_campaign_score_art(state, model.side);
         if state.frontend.campaign_score_art.is_none() {
             log::warn!("Could not prepare the campaign-end score art; Continue remains available");
@@ -944,16 +975,50 @@ impl App {
     fn campaign_score_input(
         state: &mut AppState,
     ) -> (
-        crate::ui::campaign_score_shell::CampaignScoreLayout,
+        crate::app::frontend::score_overlay::ScoreLayout,
         Vec<crate::ui::shell::layout::LaidOutControl>,
         Vec<crate::ui::shell::layout::LaidOutControl>,
         (i32, i32),
     ) {
+        use crate::app::frontend::score_overlay::{
+            ScoreLayout, room_result_active, room_result_layout,
+        };
+        use crate::ui::shell::layout::LaidOutControl;
+
+        if let Some(overlay) = &state.frontend.score_overlay {
+            let (id, layout) = if room_result_active(state) {
+                (
+                    crate::ui::score_shell::ROOM_RESULT_DIALOG,
+                    ScoreLayout::from(&room_result_layout(state)),
+                )
+            } else {
+                (
+                    Self::campaign_score_dialog(state).id(),
+                    ScoreLayout::from(&Self::campaign_score_layout(state)),
+                )
+            };
+            let controls: Vec<_> = overlay
+                .buttons(&layout)
+                .into_iter()
+                .filter(|button| overlay.button_enabled(state, button.id))
+                .map(|button| LaidOutControl {
+                    id: button.id,
+                    rect: button.rect,
+                })
+                .collect();
+            state.frontend.shell_controller.ensure_active(id, false);
+            return (
+                layout,
+                controls.clone(),
+                controls,
+                state.match_state.input.cursor_px(),
+            );
+        }
         let dialog = Self::campaign_score_dialog(state);
         let layout = Self::campaign_score_layout(state);
         // Hover tracks the value statics' help strings. Keep the separate
         // button-only press feed so those static ids are never pressed.
-        let hover_feed = dialog
+        let hover_feed: Vec<_> = dialog
             .controls()
             .iter()
             .filter(|control| control.action.is_some() || control.tooltip_key.is_some())
@@ -966,7 +1031,7 @@ impl App {
                 })
             })
             .collect();
-        let press_feed = vec![crate::ui::shell::layout::LaidOutControl {
+        let press_feed = vec![LaidOutControl {
             id: dialog.continue_button(),
             rect: layout.continue_button,
         }];
@@ -975,7 +1040,7 @@ impl App {
             .shell_controller
             .ensure_active(dialog.id(), false);
         let cursor = state.match_state.input.cursor_px();
-        (layout, hover_feed, press_feed, cursor)
+        (ScoreLayout::from(&layout), hover_feed, press_feed, cursor)
     }
 
     pub(super) fn handle_campaign_score_mouse_move(state: &mut AppState) {
@@ -992,9 +1057,7 @@ impl App {
             .frontend
             .shell_controller
             .on_pointer_down(x, y, &press_feed);
-        if state.frontend.shell_controller.pressed()
-            == Some(Self::campaign_score_dialog(state).continue_button())
-        {
+        if state.frontend.shell_controller.pressed().is_some() {
             Self::play_main_menu_button_sound(state);
         }
     }
@@ -1013,28 +1076,44 @@ impl App {
     /// its slide before GameExit::Victory advances the campaign; `0xBC7`'s
     /// (`0x6D1`, result 1) before Main_Game returns to the shell.
     pub(super) fn handle_campaign_score_mouse_up(state: &mut AppState) {
+        use crate::app::frontend::score_overlay::ScoreAction;
         use crate::app::frontend::shell_transition::ShellExitThen;
         use crate::ui::campaign_score_shell::CampaignScoreDialog;
         let dialog = Self::campaign_score_dialog(state);
-        let (_, _, press_feed, (x, y)) = Self::campaign_score_input(state);
-        if state
+        let (layout, _, press_feed, (x, y)) = Self::campaign_score_input(state);
+        let released = state
             .frontend
             .shell_controller
-            .on_pointer_up(x, y, &press_feed)
-            != Some(dialog.continue_button())
-        {
-            return;
-        }
-        match dialog {
-            CampaignScoreDialog::Victory => {
-                // `0x423` ends the global VocHandle before the result returns.
+            .on_pointer_up(x, y, &press_feed);
+        let action = if let Some(overlay) = &mut state.frontend.score_overlay {
+            released.and_then(|id| overlay.activate(&layout, id))
+        } else {
+            (released == Some(dialog.continue_button())).then_some(ScoreAction::Continue)
+        };
+        match action {
+            Some(ScoreAction::Run(action)) => action(state),
+            Some(ScoreAction::Continue) => match dialog {
+                CampaignScoreDialog::Victory => {
+                    // `0x423` ends the global VocHandle before the result returns.
+                    Self::stop_campaign_score_anim_sound(state);
+                    Self::leave_shell_dialog(state, ShellExitThen::CampaignScoreContinue);
+                }
+                CampaignScoreDialog::CampaignEnd => {
+                    Self::leave_shell_dialog(state, ShellExitThen::CampaignEndContinue);
+                }
+            },
+            Some(ScoreAction::Exit) => {
                 Self::stop_campaign_score_anim_sound(state);
-                Self::leave_shell_dialog(state, ShellExitThen::CampaignScoreContinue);
+                Self::leave_shell_dialog(state, ShellExitThen::StandaloneScoreExit);
             }
-            CampaignScoreDialog::CampaignEnd => {
-                Self::leave_shell_dialog(state, ShellExitThen::CampaignEndContinue)
-            }
+            Some(ScoreAction::View(_)) => state.platform.window.request_redraw(),
+            None => {}
         }
+    }
+
+    pub(super) fn leave_lan_score(state: &mut AppState) {
+        Self::close_finished_scenario(state);
+        Self::commit_lan_back(state);
     }
 
     /// Shared teardown for both result-screen forms: flush the deterministic log
@@ -1047,7 +1126,11 @@ impl App {
         // A won campaign mission continues in GameExit::Victory instead of
         // returning to the shell; read it before the teardown below.
         let campaign_victory = Self::take_campaign_victory(state);
+        let score_overlay = state.frontend.score_overlay.take();
         Self::close_finished_scenario(state);
+        if score_overlay.is_some_and(|overlay| overlay.resume(state)) {
+            return;
+        }
         match campaign_victory {
             Some(victory) => Self::advance_campaign_victory(state, victory),
             None => Self::resume_shell_after_match(state),
@@ -1063,6 +1146,7 @@ impl App {
         Self::persist_returned_session_toggles(state);
         state.frontend.score_page = None;
         state.frontend.campaign_score_page = None;
+        state.frontend.score_overlay = None;
         // 0x0072D780 releases the score art.
         state.frontend.score_art = None;
         state.frontend.campaign_score_art = None;
@@ -2008,14 +2092,9 @@ impl App {
                 crate::app::input::keyboard::commit_close(state, exit)
             }
             ShellExitThen::LanBack => Self::commit_lan_back(state),
-            ShellExitThen::LanCreate { observe } => Self::commit_lan_create(state, observe),
+            ShellExitThen::LanCreate { observe } => Self::commit_lan_create(state, observe, None),
             ShellExitThen::LanJoinAccepted(accepted) => {
-                Self::open_joined_setup(
-                    state,
-                    accepted.local,
-                    accepted.observer_row,
-                    crate::ui::multiplayer_setup::SetupFlavor::Lan,
-                );
+                Self::open_lan_joined_setup(state, accepted);
             }
             ShellExitThen::NetworkSetupBack(_) => {
                 crate::app::shell_network_setup::commit_back(state)
@@ -2030,6 +2109,9 @@ impl App {
             ShellExitThen::NetworkStart { agreed_seed, .. } => {
                 crate::app::shell_network_setup::commit_start(state, agreed_seed)
             }
+            ShellExitThen::PreparedNetworkStart { startup, .. } => {
+                crate::app::shell_network_setup::commit_prepared_start(state, startup);
+            }
             ShellExitThen::SkirmishChooseMap => {
                 let mode_id = state.frontend.skirmish_shell_state.selected_mode.id;
                 let record_index = Self::current_choose_map_record_index(state);
@@ -2043,6 +2125,7 @@ impl App {
             ShellExitThen::WolBack => Self::return_from_wol(state),
             ShellExitThen::ScoreContinue => Self::leave_mission_result_screen(state),
             ShellExitThen::CampaignScoreContinue => Self::leave_mission_result_screen(state),
+            ShellExitThen::StandaloneScoreExit => Self::leave_lan_score(state),
             ShellExitThen::CampaignEndContinue => {
                 crate::app::cooperative_round::campaign_end_continue(state)
             }

@@ -66,12 +66,28 @@ pub(crate) fn in_game_key_edge(
         }
         return;
     }
+    let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
+    if is_escape
+        && state.platform.live_modifiers.is_empty()
+        && !state.match_state.match_presentation.in_game_menu.is_open()
+        && crate::app::match_runtime::authored_narrative::pending(state)
+    {
+        if crate::app::radar_movie::can_skip_authored_pause(state) {
+            if !edge.state.is_pressed() {
+                crate::app::radar_movie::skip_authored_pause(state);
+            }
+        } else if edge.state.is_pressed() && !edge.repeat {
+            // The movie or pause holds the frame that normally dispatches
+            // Options. Escape can still open the local menu for Abort.
+            crate::app::App::route_in_game_menu_escape(state);
+        }
+        return;
+    }
     // Shared pause keeps network chat usable without admitting gameplay keys.
     // Local modal/capture filtering has already happened in the window owner.
     if !hotkeys::input_admitted_while_paused(paused_at_event, edge.logical) {
         return;
     }
-    let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
     let locked = crate::app::input::campaign_input::is_locked(state);
     let binding_key = hotkeys::binding_logical_key(edge.logical, edge.unmodified, edge.location);
     let mut resolution = state.match_state.input.hotkey_bindings.resolve_event(

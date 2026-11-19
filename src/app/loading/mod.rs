@@ -2,6 +2,7 @@
 //! pump/session, native composition, progress rows, and the install
 //! transition into InGame.
 
+mod authored_presentation;
 pub(crate) mod campaign_presentation;
 pub(crate) mod composition;
 pub(crate) mod fresh_scenario;

@@ -537,8 +537,7 @@ pub struct ChooseMapModalLayout {
     pub use_map_button: RectPx,
     pub cancel_button: RectPx,
     pub create_random_map_button: RectPx,
-    /// VERA: the favorite button, in the right column's slot under Create
-    /// Random Map.
+    /// VERA: under Create Random Map, or in its slot for an authored stage.
     pub favorite_button: RectPx,
     pub title: RectPx,
     pub select_engagement: RectPx,
@@ -553,6 +552,11 @@ pub struct ChooseMapModalLayout {
 }
 
 impl ChooseMapModalLayout {
+    pub(crate) fn use_authored_sidebar(&mut self) {
+        self.favorite_button = self.create_random_map_button;
+        self.create_random_map_button = RectPx::new(0, 0, 0, 0);
+    }
+
     /// The width the chooser's background assets are selected by: they exist at
     /// 640 and 800, so a stretched chooser takes the 800 shape.
     pub fn authored_width(&self) -> i32 {
@@ -2321,6 +2325,36 @@ mod tests {
             assert!(author.y + author.h <= chooser.use_map_button.y);
             assert!(author.x >= top.x && author.x + author.w <= top.x + top.w);
         }
+    }
+
+    #[test]
+    fn authored_chooser_favorite_uses_the_first_slot_after_use_map() {
+        let standard = compute_responsive_choose_map_modal_layout(1024, 768);
+        let random = standard.create_random_map_button;
+        let favorite = standard.favorite_button;
+        let mut authored = standard.clone();
+        authored.use_authored_sidebar();
+        assert_eq!(authored.favorite_button, random);
+        assert_eq!(
+            authored.favorite_button.y,
+            authored.use_map_button.y + authored.use_map_button.h
+        );
+        assert_eq!(
+            choose_map_modal_button_at(&authored, random.x, random.y),
+            Some(ChooseMapModalButton::Favorite)
+        );
+        assert_eq!(
+            choose_map_modal_button_at(&authored, favorite.x, favorite.y),
+            None
+        );
+        assert_eq!(
+            choose_map_modal_button_at(&standard, random.x, random.y),
+            Some(ChooseMapModalButton::CreateRandomMap0x583)
+        );
+        assert_eq!(
+            choose_map_modal_button_at(&standard, favorite.x, favorite.y),
+            Some(ChooseMapModalButton::Favorite)
+        );
     }
 
     #[test]

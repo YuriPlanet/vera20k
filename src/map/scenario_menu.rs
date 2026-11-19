@@ -8,6 +8,75 @@ use crate::map::waypoints::{
 };
 use crate::rules::ini_parser::IniFile;
 
+/// A local chooser source's logical identity, independent of chooser rows
+/// and of the filename used by the stock multiplayer protocol.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalScenarioKey {
+    pub source: &'static str,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalScenario {
+    pub key: LocalScenarioKey,
+    pub mode_label: &'static str,
+    pub title: String,
+    /// Local labels follow the selection into the frozen start. They do not
+    /// participate in the verified inputs or in the setup protocol.
+    pub presentation: Option<std::sync::Arc<LocalScenarioPresentation>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalScenarioPresentation {
+    pub series_title: String,
+    pub stage_title: String,
+    pub briefing: Option<String>,
+    pub report_strings: std::collections::BTreeMap<String, String>,
+    pub role_titles: Vec<Option<String>>,
+    /// Opening camera waypoint by canonical primary House, from the admitted manifest.
+    pub role_camera_waypoints: std::collections::BTreeMap<String, u32>,
+    pub role_appearances: Vec<LocalScenarioRoleAppearance>,
+    pub preview: Option<crate::map::preview::DecodedPreview>,
+    pub starts: Option<PreviewSourceBounds>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalScenarioRoleAppearance {
+    pub country: Option<String>,
+    pub color: Option<String>,
+    pub opening: LocalScenarioRoleOpening,
+    pub shared_forces: Vec<Option<String>>,
+    pub resolved_visual: Option<LocalScenarioRoleVisual>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LocalScenarioRoleOpening {
+    pub funds: i32,
+    pub tech_level: Option<i32>,
+    pub units: usize,
+    pub buildings: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LocalScenarioRoleVisual {
+    pub flag: Option<String>,
+    pub rgb: Option<[u8; 3]>,
+}
+
+/// A manifest row in a local source's grouped chooser. Disabled stages retain
+/// a row so the displayed sequence does not change with installed files.
+#[derive(Clone, Debug)]
+pub struct LocalScenarioMenuEntry {
+    pub selection: LocalScenario,
+    pub group: String,
+    pub group_title: String,
+    pub stage_title: String,
+    pub label: String,
+    pub players: String,
+    pub unavailable: Option<String>,
+    pub no_preview: String,
+}
+
 /// Lightweight metadata used by the main-menu map selector.
 #[derive(Debug, Clone)]
 pub struct MapMenuEntry {

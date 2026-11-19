@@ -84,6 +84,12 @@ pub(crate) struct ScenarioHouseParameters {
     pub ratio_team_units: i32,
 }
 
+/// House ReadScenarioINI500B40 converts the authored Credits to the wallet's
+/// signed credit units before applying any campaign-only starting bonus.
+pub(crate) fn scenario_funds(raw_credits: i32) -> i32 {
+    raw_credits.wrapping_mul(100)
+}
+
 impl HouseDefinition {
     pub(crate) fn read_scenario_parameters(
         &self,

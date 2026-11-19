@@ -201,11 +201,16 @@ pub struct DiplomacyLayout {
     pub paging: [RectPx; 2],
     pub status_line: RectPx,
     pub headers: [RectPx; 4],
+    pub role_heading: Option<RectPx>,
+    pub faction_heading: Option<RectPx>,
     pub insignia: [RectPx; DIPLOMACY_ROWS],
     pub names: [RectPx; DIPLOMACY_ROWS],
+    pub roles: [RectPx; DIPLOMACY_ROWS],
+    pub factions: [RectPx; DIPLOMACY_ROWS],
     pub kills: [RectPx; DIPLOMACY_ROWS],
     /// Slot 0 has no box on the first page; later pages show a peer there.
     pub allies: [RectPx; DIPLOMACY_ROWS],
+    pub relations: [RectPx; DIPLOMACY_ROWS],
     pub chat: [RectPx; DIPLOMACY_ROWS],
     pub taunts: RectPx,
     pub mode_name: RectPx,
@@ -241,10 +246,15 @@ pub fn diplomacy_layout(
         paging: super::paging::button_rects(shell.lower_button_rect(width, button_size)),
         status_line: in_game_shell::status_line_rect(height),
         headers: DiplomacyHeader::ALL.map(|header| ordinary(header.dlu())),
+        role_heading: None,
+        faction_heading: None,
         insignia: INSIGNIA_DLU.map(ordinary),
         names: NAME_DLU.map(ordinary),
+        roles: [RectPx::new(0, 0, 0, 0); DIPLOMACY_ROWS],
+        factions: [RectPx::new(0, 0, 0, 0); DIPLOMACY_ROWS],
         kills: KILLS_DLU.map(ordinary),
         allies: boxes(&ALLIES_DLU),
+        relations: [RectPx::new(0, 0, 0, 0); DIPLOMACY_ROWS],
         chat: boxes(&CHAT_DLU),
         taunts: ordinary(TAUNTS_DLU),
         mode_name: ordinary(MODE_NAME_DLU),
@@ -253,6 +263,37 @@ pub fn diplomacy_layout(
 }
 
 impl DiplomacyLayout {
+    /// Keep the native row baselines and checkboxes in the authored roster.
+    pub fn with_authored_columns(mut self, sidebar_x: i32) -> Self {
+        let margin = sidebar_x / 16;
+        let usable = (sidebar_x - 2 * margin).max(0);
+        let column = |percent| margin + usable * percent / 100;
+        let [name, role, faction, relation, chat, end] = [0, 28, 55, 76, 90, 100].map(column);
+        let band = |rect: RectPx, left: i32, right: i32| {
+            RectPx::new(left, rect.y, (right - left - 8).max(0), rect.h)
+        };
+        let header_baseline = self.headers[DiplomacyHeader::Player as usize];
+        self.role_heading = Some(band(header_baseline, role, faction));
+        self.faction_heading = Some(band(header_baseline, faction, relation));
+        self.headers = [
+            band(header_baseline, name, role),
+            band(header_baseline, relation, chat),
+            band(header_baseline, chat, end),
+            RectPx::new(0, 0, 0, 0),
+        ];
+        for row in 0..DIPLOMACY_ROWS {
+            let baseline = self.names[row];
+            self.names[row] = band(baseline, name, role);
+            self.roles[row] = band(baseline, role, faction);
+            self.insignia[row].x = faction;
+            self.factions[row] = band(baseline, faction + self.insignia[row].w + 2, relation);
+            self.relations[row] = band(baseline, relation, chat);
+            self.allies[row].x = relation;
+            self.chat[row].x = chat;
+        }
+        self
+    }
+
     pub fn control_rect(&self, control: DiplomacyControl) -> RectPx {
         match control {
             DiplomacyControl::Return => self.return_button,
@@ -288,19 +329,44 @@ impl DiplomacyAlliesBox {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiplomacyRelation {
+    Mutual,
+    Ours,
+    Theirs,
+    Neither,
+}
+
+impl From<DiplomacyAlliesBox> for DiplomacyRelation {
+    fn from(allies: DiplomacyAlliesBox) -> Self {
+        match (allies.checked, allies.partner) {
+            (true, true) => Self::Mutual,
+            (true, false) => Self::Ours,
+            (false, true) => Self::Theirs,
+            (false, false) => Self::Neither,
+        }
+    }
+}
+
 /// One shown row (init 0x497 arm, refresh 0x00658330).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiplomacyRow {
+    /// House array index. Authored rosters can omit computer Houses between human rows.
+    pub house_index: usize,
     /// The 0x004E3560 insignia PCX, when the house type has one.
     pub insignia: Option<String>,
     /// House UI name (House+0x1602A).
     pub name: String,
+    pub role: Option<String>,
+    pub faction: Option<String>,
     /// Name and kills text colour (0x498).
     pub rgb: [u8; 3],
     /// Kills, formatted `%d`; `None` leaves the static blank.
     pub kills: Option<i32>,
     /// `None` when hidden; row 0 never has one.
     pub allies: Option<DiplomacyAlliesBox>,
+    /// The relation still changes with the world when player input is locked.
+    pub relation: Option<DiplomacyRelation>,
     /// `None` when hidden. Shown only for human rows.
     pub chat: Option<DiplomacyChatBox>,
 }
@@ -315,14 +381,14 @@ pub struct DiplomacyChatBox {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DiplomacyView {
     pub rows: [Option<DiplomacyRow>; DIPLOMACY_ROWS],
-    /// VERA extension: the physical rows window the full House-order projection.
-    pub first_row: usize,
     pub page_index: usize,
     pub page_count: usize,
     /// 0x597, hidden when no row showed an Allies box at init.
     pub allies_header: bool,
     /// 0x425, hidden when no row is human-controlled.
     pub chat_header: bool,
+    /// The authored stage disables player alliance changes.
+    pub map_locks_alliances: bool,
     /// 0x426 MPGameMode title, set only in LAN/WOL; otherwise `GUI:Blank`.
     pub mode_name: Option<String>,
     /// 0x730 TauntsOn: shown, never disabled, with the mode's check in
@@ -337,18 +403,27 @@ impl DiplomacyView {
     /// common handler's `ChildWindowFromPointEx(.., CWP_SKIPINVISIBLE)`
     /// (0x00622D24) finds it. Disabled children still answer.
     pub fn control_at(&self, layout: &DiplomacyLayout, x: i32, y: i32) -> Option<DiplomacyControl> {
-        self.visible_controls()
+        self.visible_controls(layout.faction_heading.is_some())
             .find(|control| layout.control_rect(*control).contains(x, y))
     }
 
-    fn visible_controls(&self) -> impl Iterator<Item = DiplomacyControl> + '_ {
+    pub fn header_visible(&self, header: DiplomacyHeader, authored: bool) -> bool {
+        match header {
+            DiplomacyHeader::Allies => self.allies_header,
+            DiplomacyHeader::Chat => self.chat_header,
+            DiplomacyHeader::Player => true,
+            DiplomacyHeader::Kills => !authored,
+        }
+    }
+
+    fn visible_controls(&self, authored: bool) -> impl Iterator<Item = DiplomacyControl> + '_ {
         let rows = (0..DIPLOMACY_ROWS).filter(|row| self.rows[*row].is_some());
         let row_controls = rows.flat_map(move |row| {
             let shown = self.rows[row].as_ref().expect("filtered");
             [
                 Some(DiplomacyControl::Insignia(row)),
                 Some(DiplomacyControl::Name(row)),
-                Some(DiplomacyControl::Kills(row)),
+                (!authored).then_some(DiplomacyControl::Kills(row)),
                 shown.allies.map(|_| DiplomacyControl::Allies(row)),
                 shown.chat.map(|_| DiplomacyControl::Chat(row)),
             ]
@@ -357,11 +432,7 @@ impl DiplomacyView {
         });
         let headers = DiplomacyHeader::ALL
             .into_iter()
-            .filter(|header| match header {
-                DiplomacyHeader::Allies => self.allies_header,
-                DiplomacyHeader::Chat => self.chat_header,
-                DiplomacyHeader::Player | DiplomacyHeader::Kills => true,
-            });
+            .filter(move |header| self.header_visible(*header, authored));
         std::iter::once(DiplomacyControl::Return)
             .chain(
                 (self.page_count > 1)
@@ -371,7 +442,12 @@ impl DiplomacyView {
             )
             .chain(row_controls)
             .chain(headers.map(DiplomacyControl::Header))
-            .chain([DiplomacyControl::ModeName, DiplomacyControl::MapName])
+            .chain(
+                (!authored)
+                    .then_some([DiplomacyControl::ModeName, DiplomacyControl::MapName])
+                    .into_iter()
+                    .flatten(),
+            )
             .chain(self.taunts.map(|_| DiplomacyControl::Taunts))
     }
 }
@@ -499,11 +575,15 @@ mod tests {
     fn hidden_children_take_no_pointer_and_disabled_ones_do() {
         let layout = diplomacy_layout(800, 600, shell(800, 600), [125, 25]);
         let row = |allies| DiplomacyRow {
+            house_index: 0,
             insignia: None,
             name: String::new(),
+            role: None,
+            faction: None,
             rgb: [0; 3],
             kills: None,
             allies,
+            relation: None,
             chat: None,
         };
         let disabled = DiplomacyAlliesBox {
@@ -541,6 +621,48 @@ mod tests {
         assert_eq!(
             view.control_at(&layout, taunts.x, taunts.y),
             Some(DiplomacyControl::Taunts)
+        );
+    }
+
+    #[test]
+    fn split_columns_make_locked_relations_ordinary_statics() {
+        let shell = shell(1024, 768);
+        let layout =
+            diplomacy_layout(1024, 768, shell, [125, 25]).with_authored_columns(shell.credits.x);
+        let player = layout.names[1];
+        let role = layout.roles[1];
+        let relation = layout.relations[1];
+        assert!(player.x + player.w < role.x);
+        assert!(role.x + role.w < layout.insignia[1].x);
+        assert!(layout.insignia[1].x + layout.insignia[1].w < layout.factions[1].x);
+        assert!(layout.factions[1].x + layout.factions[1].w < relation.x);
+        assert!(relation.x + relation.w < layout.chat[1].x);
+        assert_eq!(layout.headers[DiplomacyHeader::Kills as usize].w, 0);
+        let mut view = DiplomacyView::default();
+        view.rows[1] = Some(DiplomacyRow {
+            house_index: 1,
+            insignia: None,
+            name: "Guest".into(),
+            role: Some("Role 2".into()),
+            faction: Some("Allies".into()),
+            rgb: [255; 3],
+            kills: Some(0),
+            allies: None,
+            relation: Some(DiplomacyRelation::Theirs),
+            chat: None,
+        });
+        assert_eq!(view.control_at(&layout, relation.x, relation.y), None);
+        let row = view.rows[1].as_mut().unwrap();
+        row.relation = None;
+        row.allies = Some(DiplomacyAlliesBox {
+            checked: false,
+            partner: true,
+            enabled: true,
+        });
+        let control = layout.allies[1];
+        assert_eq!(
+            view.control_at(&layout, control.x, control.y),
+            Some(DiplomacyControl::Allies(1))
         );
     }
 }

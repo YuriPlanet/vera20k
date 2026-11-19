@@ -3,15 +3,16 @@
 //!
 //! Native `GameExit::Victory` opens `0x103` through `0x6C8E80`, and
 //! Cooperative `+0xA4` opens `0xBC7` through `0x00471420`; this renderer
-//! consumes the open dialog's retail controls and texts from
-//! `ui::campaign_score_shell`. It deliberately does not borrow the Skirmish
-//! score table (`0x108`) or its side-art owner.
+//! consumes the open dialog's controls and texts from
+//! `ui::campaign_score_shell`. A standalone result can supply its own
+//! presentation within the shell.
 
 use crate::util::time::Instant;
 
 use anyhow::Result;
 
 use crate::app::AppState;
+use crate::app::frontend::score_overlay::{ScoreLayout, room_result_active};
 use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
     software_cursor,
@@ -34,6 +35,9 @@ pub(crate) fn render_campaign_score_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
+    if room_result_active(state) {
+        return super::skirmish_shell_render::render_result_overlay(state, encoder, destination);
+    }
     if state.frontend.main_menu_shell_chrome.is_none()
         || state.frontend.campaign_score_page.is_none()
     {
@@ -114,6 +118,16 @@ pub(crate) fn render_campaign_score_page(
         .unwrap_or_default();
     let pressed = active.then(|| controller.pressed()).flatten();
 
+    let overlay = state.frontend.score_overlay.as_ref().filter(|_| children);
+    let overlay_layout = ScoreLayout::from(&layout);
+    let custom_buttons = overlay.map(|overlay| overlay.buttons(&overlay_layout));
+    let custom_body = overlay.map(|overlay| overlay.body(state, &overlay_layout));
+    let replaces_stock_body = custom_body
+        .as_ref()
+        .is_some_and(|body| body.replaces_stock_body);
+    let hidden_statics = custom_body
+        .as_ref()
+        .map_or(&[][..], |body| body.hidden_statics);
     let mut labels: Vec<PaintLabel<'static>> = Vec::new();
     let campaign_page = state
         .frontend
@@ -126,6 +140,9 @@ pub(crate) fn render_campaign_score_page(
             let Some(window) = static_text.paint(now) else {
                 continue;
             };
+            if replaces_stock_body || hidden_statics.contains(&static_text.id) {
+                continue;
+            }
             let Some(rect) = layout.control_rect(static_text.id) else {
                 continue;
             };
@@ -143,7 +160,11 @@ pub(crate) fn render_campaign_score_page(
             });
         }
         // `0xBC7`'s score cells paint whole in their row colour.
-        for cell in campaign_page.cells() {
+        for cell in campaign_page
+            .cells()
+            .iter()
+            .filter(|_| !replaces_stock_body)
+        {
             let Some(rect) = layout.control_rect(cell.id) else {
                 continue;
             };
@@ -191,16 +212,39 @@ pub(crate) fn render_campaign_score_page(
             &wave.button_draws(),
         ));
     }
-    let buttons: Vec<PaintButton> = if wave.is_some() {
-        Vec::new()
-    } else {
-        vec![PaintButton {
-            rect: layout.continue_button,
-            pressed: pressed == Some(continue_id),
-            hovered: false,
-            enabled: true,
-        }]
-    };
+    let mut buttons = Vec::new();
+    if children {
+        let button_controls = custom_buttons.map_or_else(
+            || vec![(continue_id, layout.continue_button, "GUI:Continue")],
+            |buttons| {
+                buttons
+                    .into_iter()
+                    .map(|button| (button.id, button.rect, button.caption))
+                    .collect()
+            },
+        );
+        for (id, rect, key) in button_controls {
+            let pressed = pressed == Some(id);
+            buttons.push(PaintButton {
+                rect,
+                pressed,
+                hovered: false,
+                enabled: true,
+            });
+            let text = if key.starts_with("VERA:") {
+                crate::i18n::tr(key)
+            } else {
+                resolve_csf(state, key).into_owned()
+            };
+            labels.push(PaintLabel {
+                text: text.into(),
+                rect: owner_draw_button_label_rect(rect, pressed),
+                align: ShellAlign::BUTTON_CAPTION,
+                rgb: SHELL_TEXT_RGB_ENABLED,
+                path_a_reveal: None,
+            });
+        }
+    }
     let button_sprites = shell_paint::paint_buttons(
         chrome,
         &buttons,
@@ -208,20 +252,15 @@ pub(crate) fn render_campaign_score_page(
         now,
         None,
     );
-    if wave.is_none() {
-        labels.push(PaintLabel {
-            text: resolve_csf(state, "GUI:Continue").into_owned().into(),
-            rect: owner_draw_button_label_rect(
-                layout.continue_button,
-                pressed == Some(continue_id),
-            ),
-            align: ShellAlign::BUTTON_CAPTION,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
-    let text =
+    let mut text =
         shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, layout.scale.factor());
+    if let Some(body) = &custom_body {
+        text.extend(shell_paint::paint_labels_scaled(
+            &state.renderer.bit_font,
+            &body.labels,
+            body.glyph_scale,
+        ));
+    }
     let mut draws = Vec::with_capacity(6);
     if let Some(art) = state.frontend.campaign_score_art.as_ref() {
         let background = layout.background;
@@ -249,7 +288,9 @@ pub(crate) fn render_campaign_score_page(
         texture: &chrome.texture,
         instances: chrome_sprites,
     });
-    if let Some(art) = state.frontend.campaign_score_art.as_ref() {
+    if let Some(art) = state.frontend.campaign_score_art.as_ref()
+        && !replaces_stock_body
+    {
         if let (Some(strip), Some(frame)) = (art.scrt.as_ref(), scrt_frame)
             && let Some(entry) = strip.frames.get(frame).copied()
         {

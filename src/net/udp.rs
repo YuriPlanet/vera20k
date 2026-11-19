@@ -133,6 +133,10 @@ pub fn stop_io_after_crash() {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LanScopeState {
     Prepared(SessionScope),
+    Reloading {
+        previous: SessionScope,
+        next: SessionScope,
+    },
     Active(SessionScope),
 }
 
@@ -140,13 +144,21 @@ impl LanScopeState {
     fn scope(self) -> SessionScope {
         match self {
             Self::Prepared(scope) | Self::Active(scope) => scope,
+            Self::Reloading { next, .. } => next,
         }
     }
 
     fn outgoing(self) -> Option<SessionScope> {
         match self {
-            Self::Prepared(_) => None,
+            Self::Prepared(_) | Self::Reloading { .. } => None,
             Self::Active(scope) => Some(scope),
+        }
+    }
+
+    fn previous(self) -> Option<SessionScope> {
+        match self {
+            Self::Reloading { previous, .. } => Some(previous),
+            _ => None,
         }
     }
 }
@@ -602,6 +614,10 @@ impl LanUdpTransport {
 
     pub fn prepare_lan_scope(&mut self, scope: SessionScope) -> io::Result<()> {
         self.lock().prepare_lan_scope(scope)
+    }
+
+    pub fn prepare_lan_reload(&mut self, scope: SessionScope) -> io::Result<()> {
+        self.lock().prepare_lan_reload(scope)
     }
 
     pub fn set_lan_scope(&mut self, scope: SessionScope) -> io::Result<()> {
@@ -1190,6 +1206,28 @@ impl UdpIo {
             ));
         }
         self.lan_scope = Some(LanScopeState::Prepared(scope));
+        Ok(())
+    }
+
+    /// A result handoff can reach the guest before its ACK reaches the host.
+    /// Keep acknowledging the previous scope's known reliable globals during
+    /// loading. No new record or private command from that scope is admitted.
+    fn prepare_lan_reload(&mut self, next: SessionScope) -> io::Result<()> {
+        let Some(LanScopeState::Active(previous)) = self.lan_scope else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "LAN reload requires an active match scope",
+            ));
+        };
+        if next.epoch != previous.epoch || previous.revision.checked_add(1) != Some(next.revision) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "LAN reload requires the next scope of the same match",
+            ));
+        }
+        self.connections.reset();
+        self.global.retire_application_messages();
+        self.lan_scope = Some(LanScopeState::Reloading { previous, next });
         Ok(())
     }
 
@@ -1959,18 +1997,20 @@ fn drain_socket(
         } else {
             let datagram = &bytes[..length];
             if datagram.starts_with(LAN_SCOPE_MAGIC) {
-                let Some(scope) = lan_scope.map(LanScopeState::scope) else {
+                let received = datagram
+                    .get(LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN)
+                    .and_then(SessionScope::decode);
+                let Some(scope) = received.filter(|&scope| {
+                    (LAN_SCOPE_HEADER_LEN + CHECKSUM_LEN..=UDP_DATAGRAM_CAPACITY)
+                        .contains(&datagram.len())
+                        && lan_scope.is_some_and(|route| {
+                            route.scope() == scope || route.previous() == Some(scope)
+                        })
+                }) else {
                     // Retired match bytes never enter plain lobby receive state.
                     report.malformed_datagrams += 1;
                     continue;
                 };
-                if datagram.len() < LAN_SCOPE_HEADER_LEN + CHECKSUM_LEN
-                    || datagram.len() > UDP_DATAGRAM_CAPACITY
-                    || datagram[LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN] != scope.encode()
-                {
-                    report.malformed_datagrams += 1;
-                    continue;
-                }
                 (&datagram[LAN_SCOPE_HEADER_LEN..], source, Some(scope))
             } else {
                 (datagram, source, None)
@@ -1992,11 +2032,15 @@ fn drain_socket(
         let is_global = frame.get(..2).is_some_and(|bytes| {
             u16::from_le_bytes([bytes[0], bytes[1]]) == global.discriminator()
         });
+        let previous_scope = lan_scope.and_then(LanScopeState::previous);
         let admitted = match lan_scope {
+            Some(LanScopeState::Reloading { .. }) if received_scope == previous_scope => {
+                is_global && global.is_received_reliable(source, frame)
+            }
             // No private connections belong to the new match until loading
             // installs gameplay. In particular a late old plain packet must
             // not initialize a fresh private receive sequence during loading.
-            Some(LanScopeState::Prepared(_)) => is_global,
+            Some(LanScopeState::Prepared(_) | LanScopeState::Reloading { .. }) => is_global,
             Some(LanScopeState::Active(scope)) if received_scope.is_none() => {
                 // A peer may still be loading after we received its100. Its
                 // retry stays plain until it promotes the same route. Only

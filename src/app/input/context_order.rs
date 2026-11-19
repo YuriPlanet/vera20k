@@ -342,7 +342,7 @@ pub(crate) fn attack_action(
     if action == AttackAction::Attack
         && actor.category() == EntityCategory::Unit
         && let TargetKind::Entity(target_id) = *target
-        && !sim.techno_is_active(actor_id, rules)
+        && !sim.local_order_actor_is_active(actor_id, rules)
     {
         action = if crate::sim::combat::veterancy::is_crusher(actor.veterancy.rank_kind(), kind)
             && sim.object_crushable_by_unit(actor_id, target_id, rules)
@@ -380,7 +380,7 @@ pub(crate) fn attack_action(
     // under the Cell's centre; Infantry51F8BB..51F94E).
     if action == AttackAction::Attack
         && actor.category() == EntityCategory::Infantry
-        && human
+        && (human || sim.local_foot_control_granted(actor))
         && kind.deployer
         && actor.infantry_deploy_doing()
         && (!kind.deploy_fire
@@ -527,7 +527,7 @@ pub(super) fn base_action(
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
         return AttackAction::None;
     };
-    let human = sim.house_is_human_player(actor.owner());
+    let human = sim.object_joins_player_selection(actor);
     let armed = crate::sim::combat::combat_weapon::is_armed(
         actor,
         kind,
@@ -574,7 +574,7 @@ pub(super) fn base_action(
             _ => AttackAction::None,
         }
     } else if admitted
-        && (sim.techno_player_controllable(actor_id, rules)
+        && (sim.techno_can_take_local_order(actor_id, rules)
             || resolved_unit_in_range(
                 sim,
                 actor_id,
@@ -1490,13 +1490,23 @@ fn emit_entity_order_voice(
 /// Evidence: tools/procedural_drawing_oracle/action_lines.
 fn finish_order(
     state: &mut AppState,
-    queued: Vec<CommandEnvelope>,
+    mut queued: Vec<CommandEnvelope>,
     speaker_id: Option<u64>,
     rally_announce: bool,
     clicked_cell: Option<(u16, u16)>,
 ) -> bool {
-    let admitted = if state.match_state.input.planning.active() {
-        let mut queued = queued;
+    let planning = state.match_state.input.planning.active();
+    if let Some(runtime) = state.match_state.sim_runtime.runtime() {
+        queued.retain(|order| {
+            runtime.simulation.permits_local_granted_order(
+                order.owner,
+                &order.payload,
+                &runtime.resources.rules,
+                planning,
+            )
+        });
+    }
+    let admitted = if planning {
         let selected = selected_stable_ids_in_order(
             state
                 .match_state
@@ -1510,7 +1520,6 @@ fn finish_order(
         restore_selection_dispatch_order(&mut queued, &selected);
         crate::app::input::planning_mode::queue_orders(state, &selected, queued, clicked_cell)
     } else {
-        let mut queued = queued;
         restore_selection_dispatch_order(
             &mut queued,
             &selected_stable_ids_in_order(
@@ -1672,7 +1681,7 @@ pub(super) fn object_key_action(
     if actor.berserk.is_active() || actor.is_warped_out() {
         return None;
     }
-    let human = sim.house_is_human_player(actor.owner());
+    let human = sim.object_joins_player_selection(actor);
     let alt = matches!(
         modifier,
         OrderModifier::ForceMove | OrderModifier::GuardArea
@@ -1685,7 +1694,7 @@ pub(super) fn object_key_action(
     {
         Some(ObjectKeyAction::GuardArea)
     } else {
-        (alt && human && sim.techno_player_controllable(actor_id, rules))
+        (alt && human && sim.techno_can_take_local_order(actor_id, rules))
             .then_some(ObjectKeyAction::Move)
     }?;
     Some(
@@ -1865,7 +1874,9 @@ fn object_click_payload(
     // the resulting Attack5 asks IsActive7010D0 before ClickedMission.
     // Infantry capture/sabotage return before this owner; Cell Attack4D80B1
     // and Building44343C do not have this Foot gate. Never recheck on receipt.
-    if actor.category() != EntityCategory::Structure && !sim.techno_is_active(attacker_id, rules) {
+    if actor.category() != EntityCategory::Structure
+        && !sim.local_order_actor_is_active(attacker_id, rules)
+    {
         return None;
     }
     Some(match order_mode {
@@ -2617,10 +2628,30 @@ pub(crate) fn try_queue_context_order(
                 HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
             )
         });
+        // Display relation uses the primary House. A granted actor can board
+        // a carrier its own House may enter even when the viewer sees it as
+        // hostile. Route that click to the existing passenger producer.
+        let shared_entry = !sim.session().house_control_grants().is_empty()
+            && hover.as_ref().is_some_and(|target| {
+                target.kind == HoverTargetKind::EnemyUnit
+                    && cursor_owner(sim, &resources.rules, &current_objects, target.stable_id)
+                        .is_some_and(|id| {
+                            entry_target_admits(sim, id, target)
+                                && entry_action(
+                                    sim,
+                                    &resources.rules,
+                                    id,
+                                    target.stable_id,
+                                    key_modifier,
+                                    force_move_key,
+                                    Some(resources.rules.overlay_registry()),
+                                )
+                                .is_some()
+                        })
+            });
         let cell_shot = force_fire && matches!(attack_target, TargetKind::Cell(..));
-        let attack_dispatch = if force_fire
-            || terrain_target.is_some()
-            || (enemy_object && context_actions_enabled)
+        let attack_dispatch = if !shared_entry
+            && (force_fire || terrain_target.is_some() || (enemy_object && context_actions_enabled))
         {
             // Foot's shroud wrapper takes a Foot's forced shot at a shrouded
             // Cell back.
@@ -3911,7 +3942,7 @@ pub(super) fn self_answers_no_deploy(
             planning,
         ) || (selected_ids == [target.stable_id]
             && sim.entities().get(target.stable_id).is_some_and(|entity| {
-                entity.owner() == local_owner
+                (entity.owner() == local_owner || sim.local_foot_control_granted(entity))
                     && sim
                         .interner()
                         .object_type(entity.type_ref(), rules)
@@ -4020,7 +4051,7 @@ fn planning_refuses_self(
     planning
         && selected_ids == [target.stable_id]
         && sim.entities().get(target.stable_id).is_some_and(|entity| {
-            entity.owner() == local_owner
+            (entity.owner() == local_owner || sim.local_foot_control_granted(entity))
                 && matches!(
                     entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
@@ -4054,7 +4085,7 @@ fn self_action(
     let entity = sim
         .entities()
         .get(target.stable_id)
-        .filter(|entity| entity.owner() == local_owner)?;
+        .filter(|entity| entity.owner() == local_owner || sim.local_foot_control_granted(entity))?;
     let obj = sim.interner().object_type(entity.type_ref(), rules);
     if obj.is_some_and(|object| self_deploy_is_blocked(entity, object)) {
         return None;
@@ -4098,7 +4129,7 @@ fn self_action(
             transport_id: target.stable_id,
         });
     }
-    if let Some(command) = super::transport_orders::unload_command(entity, obj, Some(local_owner)) {
+    if let Some(command) = super::transport_orders::unload_command(entity, obj, None) {
         return Some(command);
     }
     if entity.category() == EntityCategory::Structure {
@@ -4266,7 +4297,7 @@ pub(super) fn entry_action(
     if moves
         && sim.entities().get(actor_id).is_some_and(|actor| {
             actor.category() == EntityCategory::Infantry
-                && sim.house_is_human_player(actor.owner())
+                && sim.object_joins_player_selection(actor)
                 && actor.infantry_deploy_doing()
                 && sim
                     .interner()
@@ -4277,6 +4308,23 @@ pub(super) fn entry_action(
         return None;
     }
     sim.entry_click_action(actor_id, target_id, base, rules)
+}
+
+/// Display friendliness is enough for the native entry query. A granted Foot
+/// may also ask the carrier's existing alliance and CAN_LOAD gates.
+pub(super) fn entry_target_admits(
+    sim: &crate::sim::world::Simulation,
+    actor_id: u64,
+    hover: &HoverTargetKindWithId,
+) -> bool {
+    match hover.kind {
+        HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit => true,
+        HoverTargetKind::EnemyUnit if !sim.session().house_control_grants().is_empty() => sim
+            .entities()
+            .get(actor_id)
+            .is_some_and(|actor| sim.local_foot_control_granted(actor)),
+        _ => false,
+    }
 }
 
 /// The selected objects whose action over a friendly object is Enter, Grind
@@ -4306,13 +4354,16 @@ fn entry_orders(
     force_move_key: bool,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<Vec<Command>> {
-    if !matches!(
-        hover.kind,
-        HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit
-    ) {
+    if !selected
+        .iter()
+        .any(|&id| entry_target_admits(sim, id, hover))
+    {
         return None;
     }
     let action = |id| {
+        if !entry_target_admits(sim, id, hover) {
+            return None;
+        }
         entry_action(
             sim,
             rules,
@@ -4370,7 +4421,7 @@ fn entry_orders(
                 return false;
             }
         };
-        if sim.techno_player_controllable(id, rules) {
+        if sim.techno_can_take_local_order(id, rules) {
             orders.push(Command::MegaMission {
                 entity_id: id,
                 mission,

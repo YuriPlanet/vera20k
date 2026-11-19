@@ -75,6 +75,10 @@ pub mod entry;
 #[cfg(all(test, tests_root))]
 mod architecture_guards;
 
+// Standalone VMCE architecture guards kept separate from upstream guards.
+#[cfg(all(test, tests_root))]
+mod architecture_guards_vmce;
+
 // Fixture files that library tests read from the checkout.
 #[cfg(test)]
 use vera20k_core::test_fixture;

@@ -14,15 +14,16 @@ use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
 use super::preview::{build_preview_surface_instance, ensure_map_preview_texture};
+use super::result_overlay::room_result_chrome;
 use super::text::{button_text_rect, localized_label, rect_to_text_rect};
 use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH,
-    SHELL_LABEL_TEXT_RGB, SHELL_PARENT_BACKGROUND_DEPTH,
+    SHELL_LABEL_TEXT_RGB,
 };
 use crate::app::AppState;
 use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::coop_score_shell::*;
-use crate::ui::shell::geom::{self, RectPx};
+use crate::ui::shell::geom::RectPx;
 use crate::util::time::Instant;
 
 pub(crate) fn render_coop_score(
@@ -39,8 +40,6 @@ pub(crate) fn render_coop_score(
     crate::app::input::coop_score::update_geometry(state);
     let layout = crate::app::input::coop_score::layout(state);
     let scale = layout.page.scale;
-    let (width, height) = (state.render_width(), state.render_height());
-    let fills = crate::app::frontend::shell_layout::fills_window(state);
     let now = Instant::now();
     let (can_continue, map_index) = {
         let model = &state.frontend.coop_score_page.as_ref().expect("view").model;
@@ -96,41 +95,7 @@ pub(crate) fn render_coop_score(
     };
 
     // Paint mode 1: RightPanel__Draw, the dialog background, then D5/D6.
-    let chrome_layout = crate::ui::skirmish_shell::compute_layout_on(scale, width, height);
-    let mut art = Vec::new();
-    push_right_panel_base_instances(&mut art, atlas, &chrome_layout, false);
-    push_lower_strip_instance(&mut art, atlas, &chrome_layout);
-    push_steady_optional_chrome_instances(
-        &mut art,
-        atlas,
-        &chrome_layout,
-        super::draw_order::ShellDialogChromeProfile::SkirmishSetup0x102,
-    );
-    let score_backdrop = state.frontend.campaign_score_art.as_ref().map(|scores| {
-        let (aw, ah) = if fills {
-            (800, 600)
-        } else {
-            (width as i32, height as i32)
-        };
-        let (x, y) = geom::dialog_origin(aw, ah);
-        let small = chrome_layout.authored_width() == 640;
-        let rect = scale.scale_rect(RectPx::new(
-            x,
-            y,
-            if small { 472 } else { 632 },
-            if small { 448 } else { 568 },
-        ));
-        let mut sprites = Vec::with_capacity(1);
-        crate::render::shell_paint::push_entry_sized(
-            &mut sprites,
-            scores.background,
-            rect.x as f32,
-            rect.y as f32,
-            [rect.w as f32, rect.h as f32],
-            SHELL_PARENT_BACKGROUND_DEPTH,
-        );
-        sprites[0]
-    });
+    let (mut art, score_backdrop) = room_result_chrome(state, atlas, scale);
 
     let mut controls = Vec::new();
     let mut texts = Vec::new();

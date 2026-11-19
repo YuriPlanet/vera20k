@@ -1138,6 +1138,7 @@ impl LanCapture {
                                 id: 1,
                                 name: self.human(true)?.name,
                                 open: true,
+                                authored: false,
                             }]),
                         );
                         let rect = lobby::layout(state).games;
@@ -1224,6 +1225,7 @@ impl LanCapture {
                                 .context("native packet7 observer row")?
                                 as u8,
                         ),
+                        ready_on_return: None,
                     }),
                 );
                 self.event(frame, "controlled type7 acceptance after real Join");
@@ -2157,6 +2159,7 @@ impl LanCapture {
                             state,
                             NetworkSetupEvent::HostGo {
                                 agreed_seed: self.seed()?,
+                                scope: None,
                                 max_ahead_frames: self.timing()?,
                             },
                         )?;

@@ -259,6 +259,14 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         }
         return Ok(());
     };
+    queue_lan_start(state, max_ahead_frames, None)
+}
+
+pub(in crate::app::shell_network_setup) fn queue_lan_start(
+    state: &mut AppState,
+    max_ahead_frames: i32,
+    scope: Option<crate::net::lan_messages::SessionScope>,
+) -> anyhow::Result<()> {
     let agreed_seed = state
         .match_state
         .session
@@ -270,29 +278,21 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        queue_lan_go(protocol, launch, agreed_seed, max_ahead_frames);
+        let pending = (0..launch.humans.len())
+            .filter(|source| *source != launch.local_player_index)
+            .collect();
+        protocol.requests.push(NetworkSetupRequest::Go {
+            agreed_seed,
+            max_ahead_frames,
+        });
+        protocol.locked = true;
+        protocol.lan_go_scope = scope;
+        // The transport starts the native drain only after all GO packets
+        // have entered its existing global send queue.
+        protocol.lan_go = Some(super::super::LanGoWait::HostSending { pending });
     }
     state.frontend.skirmish_preview_texture = None;
     Ok(())
-}
-
-fn queue_lan_go(
-    protocol: &mut NetworkSetupProtocol,
-    launch: &SkirmishLaunchSession,
-    agreed_seed: u32,
-    max_ahead_frames: i32,
-) {
-    let pending = (0..launch.humans.len())
-        .filter(|source| *source != launch.local_player_index)
-        .collect();
-    protocol.requests.push(NetworkSetupRequest::Go {
-        agreed_seed,
-        max_ahead_frames,
-    });
-    protocol.locked = true;
-    // The transport starts the native drain only after all GO packets
-    // have entered its existing global send queue.
-    protocol.lan_go = Some(super::super::LanGoWait::HostSending { pending });
 }
 
 /// A direct spawn host's start (docs/spawn.md): the launcher already
@@ -327,21 +327,10 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
         .session
         .network_start_seed()
         .ok_or_else(|| anyhow::anyhow!("direct setup has no seed"))?;
-    let launch = state
-        .match_state
-        .session
-        .network_setup()
-        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     log::info!(
         "Direct spawn: every guest answered; GO with MaxAhead {max_ahead_frames}, seed {agreed_seed}"
     );
-    let protocol = state
-        .frontend
-        .network_setup_protocol
-        .as_mut()
-        .expect("checked setup");
-    queue_lan_go(protocol, launch, agreed_seed, max_ahead_frames);
-    Ok(())
+    queue_lan_start(state, max_ahead_frames, None)
 }
 
 /// VERA's shared LAN/online admission allows a human to play the ordinary

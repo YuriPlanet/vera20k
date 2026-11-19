@@ -992,7 +992,8 @@ pub(super) fn capability_cursor_for_hover(
     // admission with click/deploy-key, including loaded mobile transports.
     if selected == [hover.stable_id]
         && let (Some(rules), Some(entity)) = (rules, hovered_entity)
-        && sim.session().current_house() == Some(entity.owner())
+        && let Some(controller) = sim.session().current_house()
+        && (controller == entity.owner() || sim.local_foot_control_granted(entity))
         && !entity.berserk.is_active()
         && !entity.is_warped_out()
     {
@@ -1000,7 +1001,7 @@ pub(super) fn capability_cursor_for_hover(
             sim,
             rules,
             overlay_registry,
-            entity.owner(),
+            controller,
             selected,
             Some(hover),
             planning,
@@ -1013,7 +1014,7 @@ pub(super) fn capability_cursor_for_hover(
             sim,
             rules,
             overlay_registry,
-            entity.owner(),
+            controller,
             selected,
             hover,
             planning,
@@ -1131,12 +1132,7 @@ pub(super) fn capability_cursor_for_hover(
         //    UnitRepair= building and a Carryall's Tote over a Unit
         //    (`context_order::entry_action`).
         if let Some(action) = rules
-            .filter(|_| {
-                matches!(
-                    hover.kind,
-                    HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit
-                )
-            })
+            .filter(|_| super::context_order::entry_target_admits(sim, best_id, hover))
             .and_then(|rules| {
                 super::context_order::entry_action(
                     sim,

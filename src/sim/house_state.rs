@@ -57,6 +57,14 @@ impl HouseDifficulty {
     pub const fn table_index(self) -> usize {
         self as usize
     }
+
+    pub(super) const fn opposite(self) -> Self {
+        match self {
+            Self::Hard => Self::Easy,
+            Self::Normal => Self::Normal,
+            Self::Easy => Self::Hard,
+        }
+    }
 }
 
 /// House4F54A0's seven scalar doubles (+188..+1B8) and two delays
@@ -2013,7 +2021,7 @@ impl HouseState {
     }
 
     /// Apply the map-reader's native fields to their existing House/wallet
-    /// owners. Dynamic TechLevel default comes from Scenario's mission counter.
+    /// owners. The scenario supplies the dynamic TechLevel default.
     pub(crate) fn initialize_scenario_parameters(
         &mut self,
         read: crate::map::houses::ScenarioHouseParameters,
@@ -3071,22 +3079,14 @@ impl HouseState {
 }
 
 impl crate::sim::world::Simulation {
-    /// Bind the common exact-name query's native ordinal to the existing
-    /// internal House identity. Only fully initialized scenario Houses take
-    /// this path; generated preconsumed and partial diagnostic rows retain
-    /// their explicit internal-key projection in the map constructor owner.
+    /// FromName50C170 looks up the first exact scenario name in House-array
+    /// order. A connection-only House has an internal key for the transport
+    /// and no map name for the object readers to bind.
     pub(crate) fn scenario_house_named(houses: &Houses, requested: &str) -> Option<InternedId> {
-        let index = crate::map::houses::find_house_index(
-            houses.order().iter().map(|owner| {
-                houses
-                    .get(owner)
-                    .expect("registered House array entry")
-                    .native_scenario_name()
-                    .expect("scenario House names initialized before object readers")
-            }),
-            requested,
-        )?;
-        Some(houses.order()[index])
+        houses
+            .in_order()
+            .find(|house| house.native_scenario_name() == Some(requested))
+            .map(HouseState::name)
     }
 }
 

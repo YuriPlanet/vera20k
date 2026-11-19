@@ -325,7 +325,12 @@ pub(crate) fn build_factory_rally_line_strokes(
             continue;
         }
         let owner = sim.interner().resolve(entity.owner());
-        if owner != local_owner {
+        if owner != local_owner
+            && !sim
+                .interner()
+                .get(local_owner)
+                .is_some_and(|controller| sim.has_rally_control_grant(controller, id, rules))
+        {
             continue;
         }
         let Some(obj) = sim.interner().object_type(entity.type_ref(), rules) else {

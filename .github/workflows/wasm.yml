@@ -26,6 +26,7 @@ on:
       - 'src/assets/mix_archive.rs'
       - 'src/map/rmg/build.rs'
       - 'src/map/source**'
+      - 'src/map/vmce.rs'
       - 'src/bin/snapshot-layout.rs'
       - 'src/sim/mod.rs'
       - 'src/sim/parallel.rs'

@@ -195,16 +195,26 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     start_verdict_theme(state, outcome, wall_ms);
     let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome);
     let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome);
-    let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
-        state.match_state.session_mode(),
+    let destination = super::authored_result::destination(
+        state,
         outcome,
-        state.match_state.map_basic.skip_score.unwrap_or(false),
-        cooperative,
-        title,
-        detail,
-        || build_campaign_score_screen_model(state, elapsed_score_ticks),
-        || build_score_screen_model(state, elapsed_seconds, false),
-    );
+        &title,
+        &detail,
+        elapsed_score_ticks,
+        |state, rows| build_score_screen_model(state, elapsed_seconds, false, Some(rows)),
+    )
+    .unwrap_or_else(|| {
+        super::scenario_exit::scenario_exit_destination(
+            state.match_state.session_mode(),
+            outcome,
+            state.match_state.map_basic.skip_score.unwrap_or(false),
+            cooperative,
+            title,
+            detail,
+            || build_campaign_score_screen_model(state, elapsed_score_ticks),
+            || build_score_screen_model(state, elapsed_seconds, false, None),
+        )
+    });
     // Native campaign victories enter the standalone dialog `0x103`; campaign
     // defeats take a separate prompt path. Only GameMode!=0 takes the generic
     // `ScoreDialog__Run 0x5C9720` / SCORE-theme handoff.
@@ -358,9 +368,12 @@ fn build_campaign_score_screen_model(
                 .map(|house| house.side_index())
         })
         .unwrap_or(0);
-    let mut model = build_campaign_score_screen_model_from_sources(
+    let mut model = build_score_header_from_sources(
         elapsed_score_ticks,
-        difficulty,
+        state
+            .match_state
+            .map_ranking
+            .par_time_for_difficulty(difficulty),
         &state.match_state.map_ranking,
         houses.unwrap_or_default(),
         side,
@@ -378,9 +391,9 @@ fn build_campaign_score_screen_model(
     model
 }
 
-fn build_campaign_score_screen_model_from_sources(
+pub(super) fn build_score_header_from_sources(
     elapsed_score_ticks: i32,
-    difficulty: i32,
+    par_score_ticks: i32,
     ranking: &crate::map::ranking::RankingSection,
     houses: impl IntoIterator<Item = (bool, u32)>,
     side: i32,
@@ -392,7 +405,6 @@ fn build_campaign_score_screen_model_from_sources(
     };
     let elapsed_score_seconds = elapsed_score_ticks / 60;
     model.your_time = format_campaign_score_time(elapsed_score_seconds);
-    let par_score_ticks = ranking.par_time_for_difficulty(difficulty);
     let par_score_seconds = par_score_ticks / 60;
     model.par_time = format_campaign_score_time(par_score_seconds);
     // Native `0x6C9231..33` divides both Scenario+0x61C and ParTime by 60,
@@ -434,7 +446,7 @@ fn format_campaign_score_time(total_seconds: i32) -> String {
 
 #[cfg(all(test, tests_app_match))]
 mod campaign_score_model_tests {
-    use super::build_campaign_score_screen_model_from_sources;
+    use super::build_score_header_from_sources;
     use crate::assets::csf_file::test_csf;
     use crate::map::ranking::parse_ranking_section;
     use crate::rules::ini_parser::IniFile;
@@ -465,18 +477,28 @@ mod campaign_score_model_tests {
 
         // Scenario+0x60C raw 2 selects ParTimeHard. Elapsed=959 and Par=900
         // both divide to the same native 60-tick bucket, so this is UnderPar.
-        let equal_bucket =
-            build_campaign_score_screen_model_from_sources(959, 2, &ranking, houses, 0, resolve);
+        let equal_bucket = build_score_header_from_sources(
+            959,
+            ranking.par_time_for_difficulty(2),
+            &ranking,
+            houses,
+            0,
+            resolve,
+        );
         assert_eq!(equal_bucket.par_time, "00:00:15");
         assert_eq!(equal_bucket.your_time, "00:00:15");
         assert_eq!(equal_bucket.rank, "Gold");
         assert_eq!(equal_bucket.commendation, "Under par");
         assert_eq!(equal_bucket.enemies_destroyed, "10");
 
-        let over_bucket =
-            build_campaign_score_screen_model_from_sources(960, 2, &ranking, houses, 0, |key| {
-                csf.text(key).into_owned()
-            });
+        let over_bucket = build_score_header_from_sources(
+            960,
+            ranking.par_time_for_difficulty(2),
+            &ranking,
+            houses,
+            0,
+            |key| csf.text(key).into_owned(),
+        );
         assert_eq!(over_bucket.your_time, "00:00:16");
         assert_eq!(over_bucket.rank, "Silver");
         assert_eq!(over_bucket.commendation, "Over par");
@@ -527,6 +549,7 @@ fn build_score_screen_model(
     state: &AppState,
     elapsed_seconds: i32,
     aborted: bool,
+    rows: Option<Vec<crate::ui::score_shell::ScoreRow>>,
 ) -> crate::ui::score_shell::ScoreScreenModel {
     use crate::ui::score_shell::ScoreScreenModel;
 
@@ -542,23 +565,28 @@ fn build_score_screen_model(
     // match never reached that edge, so it reads the live rows instead: the
     // page still shows what the player earned, and leaving consumes none of
     // the Scenario RNG draws the latch owns.
-    let snapshot = if aborted {
-        sim.live_score_snapshot()
+    let rows = if let Some(rows) = rows {
+        rows
     } else {
-        let Some(snapshot) = sim.terminal_score_snapshot() else {
-            log::error!("Natural match exit reached the score screen without a sim snapshot");
-            return ScoreScreenModel::default();
+        let live;
+        let snapshot = if aborted {
+            live = sim.live_score_snapshot();
+            &live
+        } else {
+            let Some(snapshot) = sim.terminal_score_snapshot() else {
+                log::error!("Natural match exit reached the score screen without a sim snapshot");
+                return ScoreScreenModel::default();
+            };
+            snapshot
         };
-        snapshot.clone()
+        let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+        resolve_score_rows(
+            sim,
+            snapshot,
+            &crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer),
+            |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
+        )
     };
-    let raw_snapshot = &snapshot;
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
-    let rows = resolve_score_rows(
-        sim,
-        raw_snapshot,
-        &crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer),
-        |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
-    );
     // Scenario +0x34B8: the side of session player 0's country, the local
     // player in a skirmish (0x0068779A..0x0068782D).
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
@@ -667,7 +695,7 @@ pub(crate) fn build_aborted_score_screen_model(
     state: &AppState,
     elapsed_seconds: i32,
 ) -> crate::ui::score_shell::ScoreScreenModel {
-    build_score_screen_model(state, elapsed_seconds, true)
+    build_score_screen_model(state, elapsed_seconds, true, None)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1064,6 +1092,9 @@ fn advance_in_game_runtime_mode(
     startup_admitted: bool,
     main_tick_pumps_audio: bool,
 ) -> bool {
+    if super::authored_narrative::pending(state) {
+        return false;
+    }
     let replaying = state.match_state.match_diagnostics.is_replay_playback();
     state
         .match_state
@@ -1856,15 +1887,18 @@ fn advance_one_simulation_frame(
 
     if let Some(rt) = state.match_state.sim_runtime.runtime() {
         let _ = state.match_state.match_diagnostics.get_or_begin_replay(rt);
+        let session = &state.match_state.session;
+        let replay_launch = if session.local_network_scenario().is_some() {
+            // Standalone replay startup currently describes stock launch slots.
+            None
+        } else {
+            session
+                .network_setup()
+                .or_else(|| state.match_state.startup.offline_launch())
+        };
         state.match_state.match_diagnostics.retain_replay_startup(
             rt,
-            // A network match's session owns its launch; an offline
-            // skirmish's stays with the startup that installed it.
-            state
-                .match_state
-                .session
-                .network_setup()
-                .or_else(|| state.match_state.startup.offline_launch()),
+            replay_launch,
             state.match_state.loaded_map_source.as_ref(),
             state.match_state.loaded_map_hash,
             state
@@ -2374,6 +2408,7 @@ fn finish_simulation_frame(
         deferred,
     } = finish;
     let mut frame_committed = false;
+    let mut frame_tail_reached = false;
     let mut drained_lifecycle_outputs: Vec<LifecycleOutput> = Vec::new();
     let mut drained_combat_lights = Vec::new();
     let mut frame_overlay_updates = Vec::new();
@@ -2527,6 +2562,7 @@ fn finish_simulation_frame(
             frame_overlay_updates = overlay_updates;
             frame_overlay_removals = overlay_removals;
             frame_committed = tick_result.frame_committed;
+            frame_tail_reached = !network_waiting && network_failure.is_none();
             if tick_result.frame_committed {
                 drained_combat_lights =
                     crate::app::presentation::combat_lights::materialize_combat_lights(
@@ -2676,6 +2712,14 @@ fn finish_simulation_frame(
         // Authored Team/trigger Focus and lock effects precede TacticalAI in this Logic visit.
         // Coordinates were resolved by simulation before its final hash.
         apply_trigger_effects(state, &trigger_effects);
+        // Trigger facts can arrive from Logic while the native command wait
+        // retains this frame. Open the narrative gate only at its tail.
+        if frame_tail_reached {
+            super::authored_narrative::arm_after_frame(
+                state,
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+            );
+        }
         // Scroll_Map (0x4A9840 -> 0x6D8530) accumulates mouse requests;
         // Tactical__AI commits/clamps them at 0x6D26F9..0x6D2770, before
         // follow's SetView (0x55B6F3) overwrites both requested/current view.
@@ -3043,9 +3087,26 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 index,
                 pause_simulation,
             } => {
-                crate::app::radar_movie::enqueue(state, *index, *pause_simulation);
+                if super::authored_narrative::enabled(state) {
+                    super::authored_narrative::queue(
+                        state,
+                        super::authored_narrative::Clip::Radar {
+                            index: *index,
+                            blocking: *pause_simulation,
+                        },
+                    );
+                } else {
+                    crate::app::radar_movie::enqueue(state, *index, *pause_simulation);
+                }
             }
             TriggerEffect::FullscreenMovie { index } => {
+                if super::authored_narrative::enabled(state) {
+                    super::authored_narrative::queue(
+                        state,
+                        super::authored_narrative::Clip::Fullscreen(*index),
+                    );
+                    continue;
+                }
                 let name = state
                     .process_assets
                     .native_rules()

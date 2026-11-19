@@ -140,11 +140,23 @@ pub(crate) fn skirmish_layout(state: &AppState) -> SkirmishShellLayout {
 /// Choose Map `0x6B`, which replaces `0x102` while it is open.
 pub(crate) fn choose_map_layout(state: &AppState) -> ChooseMapModalLayout {
     let (width, height) = (state.render_width(), state.render_height());
-    if fills_window(state) {
+    let mut layout = if fills_window(state) {
         crate::ui::skirmish_shell::compute_responsive_choose_map_modal_layout(width, height)
     } else {
         crate::ui::skirmish_shell::compute_choose_map_modal_layout(width, height)
+    };
+    if state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_ref()
+        .is_some_and(|modal| {
+            modal.local_scenario_list_selected() || modal.selected_local_stage().is_some()
+        })
+    {
+        layout.use_authored_sidebar();
     }
+    layout
 }
 
 /// Random-map setup `0x105`, which replaces `0x6B` while it is open.

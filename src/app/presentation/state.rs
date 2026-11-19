@@ -139,6 +139,7 @@ pub(crate) struct MatchPresentationState {
     /// Animated radar chrome — plays 33-frame open/close animation when radar gained/lost.
     pub(crate) radar_anim: Option<crate::render::radar::anim::RadarAnimState>,
     pub(crate) radar_movies: crate::app::radar_movie::RadarMovies,
+    pub(crate) authored_narrative: crate::app::match_runtime::authored_narrative::AuthoredNarrative,
     /// Computer opponents' skirmish talking heads. Presentation only: the
     /// simulation never reads it, and switching it off leaves every
     /// personality and trigger weight alone.

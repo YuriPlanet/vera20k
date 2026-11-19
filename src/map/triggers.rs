@@ -11,6 +11,9 @@ use std::collections::HashMap;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok, truncate_native_bytes};
 
+/// Scenario global variables: SetGlobal689670 rejects indices from 0x32.
+pub const SCENARIO_GLOBAL_COUNT: usize = 50;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TriggerDifficulty {
     easy: bool,

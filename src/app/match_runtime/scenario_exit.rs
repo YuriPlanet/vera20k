@@ -144,6 +144,21 @@ pub(crate) enum ScenarioExitDestination {
         detail: String,
         model: crate::ui::campaign_score_shell::CampaignScoreScreenModel,
     },
+    /// The standalone score shell with caller-supplied presentation.
+    LanStandaloneScore {
+        title: String,
+        detail: String,
+        model: crate::app::frontend::score_overlay::ScoreHeader,
+        overlay: crate::app::frontend::score_overlay::ScoreOverlay,
+    },
+    /// Room result dialog `0xBC6` with a caller-supplied body and controls.
+    LanRoomScore {
+        title: String,
+        detail: String,
+        side: i32,
+        theme: Option<String>,
+        overlay: crate::app::frontend::score_overlay::ScoreOverlay,
+    },
     /// Campaign victory with `[Basic] SkipScore=yes` continues directly.
     CampaignVictoryContinue,
     /// Campaign defeat bypasses `0x108`: GameExit::Defeat plays the Lose
@@ -442,16 +457,18 @@ impl ScenarioExitCascade {
         let elapsed_buckets = wall_bucket(wall_ms).saturating_sub(voice_wait_started_bucket);
         if !voices_active || elapsed_buckets >= VOICE_WAIT_BUCKETS {
             self.phase = ScenarioExitPhase::Done;
+            let theme = match self.destination.as_ref() {
+                Some(ScenarioExitDestination::Score { model, .. }) => Some(&model.theme),
+                Some(ScenarioExitDestination::LanRoomScore { theme, .. }) => Some(theme),
+                _ => None,
+            };
             ScenarioExitTick {
                 clear_sounds: true,
-                after_cleanup: match self.destination.as_ref() {
-                    Some(ScenarioExitDestination::Score { model, .. }) => {
-                        Some(ScenarioExitAudioAction::PlayTheme(
-                            model.theme.clone().unwrap_or_else(|| SCORE_THEME.into()),
-                        ))
-                    }
-                    _ => None,
-                },
+                after_cleanup: theme.map(|theme| {
+                    ScenarioExitAudioAction::PlayTheme(
+                        theme.clone().unwrap_or_else(|| SCORE_THEME.into()),
+                    )
+                }),
                 finished: true,
                 ..Default::default()
             }

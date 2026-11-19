@@ -147,7 +147,6 @@ fn combatant_selection(
         clear: replace,
         ..Default::default()
     };
-    let player_owned = |owner| sim.house_controls_selection(owner);
     // Tactical6DA770 drops a lone non-player-controlled selection before
     // testing the shared mode. Deselect clears Follow but retains that mode.
     let dropped = selected.first().copied().filter(|id| {
@@ -155,7 +154,7 @@ fn combatant_selection(
             && sim
                 .entities()
                 .get(*id)
-                .is_some_and(|entity| !player_owned(entity.owner()))
+                .is_some_and(|entity| !sim.player_controls_object_selection(entity))
     });
     if let Some(id) = dropped {
         mutation.deselect.push(id);
@@ -163,9 +162,9 @@ fn combatant_selection(
     // TypeSelect__AliveLocalOwnerPredicate732580 does not read Health,
     // Limbo, discovery or in-playfield state. These are not N/M candidates.
     let local_alive = |id: &u64| {
-        sim.entities()
-            .get(*id)
-            .is_some_and(|entity| entity.lifecycle.object_alive() && player_owned(entity.owner()))
+        sim.entities().get(*id).is_some_and(|entity| {
+            entity.lifecycle.object_alive() && sim.player_controls_object_selection(entity)
+        })
     };
     // Final7325C0 calls the existing dynamic13C prefix (which refuses the
     // offline latch +1C8) and Object138 owner.
@@ -435,7 +434,7 @@ fn category_selection(
                 sim.entities().get(*id).is_some_and(|entity| {
                     entity.lifecycle.object_alive()
                         && entity.category() != EntityCategory::Structure
-                        && sim.house_controls_selection(entity.owner())
+                        && sim.player_controls_object_selection(entity)
                 })
             })
             .collect()

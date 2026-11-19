@@ -43,6 +43,7 @@ pub use choose_map::{
     FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection,
     ai_rows_beyond_limit_occupied, favorite_key,
 };
+pub(crate) use choose_map::ChooseMapChoice;
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
     PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,

@@ -68,6 +68,7 @@ pub(crate) struct CampaignLoadingPresentation {
     pub briefing: Option<String>,
     pub title_origin: [i32; 2],
     pub briefing_origin: [i32; 2],
+    pub(super) authored: bool,
 }
 
 impl CampaignLoadingPresentation {
@@ -77,6 +78,20 @@ impl CampaignLoadingPresentation {
     pub(crate) fn new(
         metadata: &CampaignLoadingMetadata,
         csf: &CsfFile,
+        render_size: [u32; 2],
+        scale: ShellScale,
+    ) -> Self {
+        let mut presentation = Self::layout_with_art(metadata, render_size, scale);
+        if !presentation.background_name.is_empty() {
+            let localize = |key: &str| (!key.is_empty()).then(|| csf.text(key).into_owned());
+            presentation.title = localize(metadata.load_message_key());
+            presentation.briefing = localize(metadata.load_briefing_key());
+        }
+        presentation
+    }
+
+    pub(super) fn layout_with_art(
+        metadata: &CampaignLoadingMetadata,
         render_size: [u32; 2],
         scale: ShellScale,
     ) -> Self {
@@ -93,21 +108,19 @@ impl CampaignLoadingPresentation {
             ),
         };
         let layout = CampaignLoadingLayout::for_authored_size(authored);
-        let localize = |key: &str| {
-            (!background_name.is_empty() && !key.is_empty()).then(|| csf.text(key).into_owned())
-        };
         Self {
             width,
             layout: layout.scaled(scale),
             background_name: background_name.to_owned(),
             background_palette_name: metadata.background_palette_name().to_owned(),
-            title: localize(metadata.load_message_key()),
-            briefing: localize(metadata.load_briefing_key()),
+            title: None,
+            briefing: None,
             title_origin: scale.scale_point([layout.title.x + 10, layout.title.y + 10]),
             briefing_origin: scale.scale_point([
                 layout.body.x.wrapping_add(brief_location[0]),
                 layout.body.y.wrapping_add(brief_location[1]),
             ]),
+            authored: false,
         }
     }
 

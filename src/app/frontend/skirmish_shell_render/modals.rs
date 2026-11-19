@@ -320,6 +320,9 @@ pub(super) fn push_choose_map_modal_control_instances(
         ),
         (layout.favorite_button, ChooseMapModalButton::Favorite),
     ] {
+        if button.w == 0 {
+            continue;
+        }
         push_right_panel_button_shp(
             out,
             atlas,

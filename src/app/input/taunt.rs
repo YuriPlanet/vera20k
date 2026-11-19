@@ -62,7 +62,7 @@ fn taunt_byte(country: u16, number: u8) -> u8 {
 /// (`0x0053645A..0x0053652B`); alliance does not matter.
 pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
     let mode = state.match_state.session_mode();
-    if !mode.is_network() {
+    if !mode.is_network() || super::diplomacy::authored_selection(state).is_some() {
         return;
     }
     let Some(runtime) = state.match_state.sim_runtime.runtime() else {
@@ -111,6 +111,9 @@ pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
 /// gate; it plays the sender's country voice from the byte, whoever sent it
 /// and whatever the receiver's chat mask, alliances or defeat.
 pub(crate) fn receive(state: &mut AppState, byte: u8) {
+    if super::diplomacy::authored_selection(state).is_some() {
+        return;
+    }
     let mode = state.match_state.session_mode();
     if state.frontend.multiplayer_shell_runtime.taunts_on(mode) == Some(true) {
         let pattern = state

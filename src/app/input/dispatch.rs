@@ -4492,7 +4492,8 @@ fn deploy_key_commands(
         .copied()
         .filter(|&id| {
             rules.is_none_or(|rules| {
-                (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
+                (sim.techno_can_take_local_order(id, rules)
+                    || sim.local_order_actor_is_active(id, rules))
                     && sim.can_deploy_slash_unload(id, rules)
             }) && sim
                 .entities()
@@ -4563,7 +4564,12 @@ fn deploy_key_command(
         }
         _ => {
             // Aircraft and other deployers retain their existing routing.
-            super::transport_orders::unload_command(entity, obj, local_owner).or_else(|| {
+            let unload_owner = if sim.local_foot_control_granted(entity) {
+                Some(entity.owner())
+            } else {
+                local_owner
+            };
+            super::transport_orders::unload_command(entity, obj, unload_owner).or_else(|| {
                 let object = obj?;
                 (super::context_order::is_simple_deploy_unit(entity, object)
                     || object.deploys_into.is_some()
@@ -4802,7 +4808,7 @@ fn live_group_members(sim: Option<&crate::sim::world::Simulation>, group: &[u64]
         .filter(|id| {
             sim.entities()
                 .get(*id)
-                .is_some_and(|entity| sim.house_controls_selection(entity.owner()))
+                .is_some_and(|entity| sim.player_controls_object_selection(entity))
         })
         .collect()
 }

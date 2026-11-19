@@ -22,18 +22,20 @@ pub const RETURN_LABEL: (&str, &str) = ("GUI:Return", "Return");
 /// The briefing text 0x6E7's template rect, in dialog units.
 const CONTENT_DLU: RectPx = RectPx::new(61, 45, 301, 265);
 
-/// The dialog's only owner-draw push button.
+/// Owner-draw push buttons in the briefing shell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestateButton {
     /// 0x423: the proc writes 0x423 to the result slot (0x0065F710), which
     /// ends the modal.
     Return,
+    Diplomacy,
 }
 
 /// A child the pointer can rest on, for the status-line help.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestateControl {
     Return,
+    Diplomacy,
     Content,
 }
 
@@ -41,6 +43,7 @@ impl RestateControl {
     pub fn help_key(self) -> Option<&'static str> {
         match self {
             Self::Return => Some("STT:BriefingButtonReturn"),
+            Self::Diplomacy => None,
             Self::Content => Some("STT:BriefingLabelContent"),
         }
     }
@@ -48,6 +51,7 @@ impl RestateControl {
     pub fn id(self) -> u16 {
         match self {
             Self::Return => 0x423,
+            Self::Diplomacy => 0x7F20,
             Self::Content => 0x6E7,
         }
     }
@@ -65,6 +69,7 @@ pub struct RestateInteraction {
 pub struct RestateLayout {
     pub title: RectPx,
     pub return_button: RectPx,
+    pub diplomacy_button: Option<RectPx>,
     pub status_line: RectPx,
     pub content: RectPx,
 }
@@ -78,6 +83,7 @@ pub fn restate_layout(
     RestateLayout {
         title: in_game_shell::right_panel_title_rect(width),
         return_button: shell.lower_button_rect(width, button_size),
+        diplomacy_button: None,
         status_line: in_game_shell::status_line_rect(height),
         content: in_game_shell::ordinary_child_rect(
             geom::dlu_rect(CONTENT_DLU.x, CONTENT_DLU.y, CONTENT_DLU.w, CONTENT_DLU.h),
@@ -88,17 +94,32 @@ pub fn restate_layout(
 }
 
 impl RestateLayout {
+    pub fn with_diplomacy_button(mut self, shell: InGameShellLayout) -> Self {
+        self.diplomacy_button = Some(RectPx::new(
+            self.return_button.x,
+            shell.side2.y,
+            self.return_button.w,
+            self.return_button.h,
+        ));
+        self
+    }
+
     pub fn control_rect(&self, control: RestateControl) -> RectPx {
         match control {
             RestateControl::Return => self.return_button,
+            RestateControl::Diplomacy => self.diplomacy_button.unwrap_or(RectPx::new(0, 0, 0, 0)),
             RestateControl::Content => self.content,
         }
     }
 
     pub fn control_at(&self, x: i32, y: i32) -> Option<RestateControl> {
-        [RestateControl::Return, RestateControl::Content]
-            .into_iter()
-            .find(|control| self.control_rect(*control).contains(x, y))
+        [
+            RestateControl::Return,
+            RestateControl::Diplomacy,
+            RestateControl::Content,
+        ]
+        .into_iter()
+        .find(|control| self.control_rect(*control).contains(x, y))
     }
 }
 
@@ -145,6 +166,21 @@ mod tests {
             assert_eq!(layout.return_button, diplomacy.return_button);
             assert_eq!(layout.status_line, diplomacy.status_line);
         }
+    }
+
+    #[test]
+    fn authored_briefing_puts_diplomacy_in_the_first_sidebar_slot() {
+        let shell = shell(1024, 768);
+        let native = restate_layout(1024, 768, shell, [125, 25]);
+        let authored = native.with_diplomacy_button(shell);
+        let button = authored.diplomacy_button.unwrap();
+        assert_eq!(button.y, shell.side2.y);
+        assert_eq!(native.control_at(button.x, button.y), None);
+        assert_eq!(
+            authored.control_at(button.x, button.y),
+            Some(RestateControl::Diplomacy)
+        );
+        assert_eq!(authored.return_button, native.return_button);
     }
 
     #[test]

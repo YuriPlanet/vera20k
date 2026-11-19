@@ -1396,7 +1396,7 @@ pub(crate) fn effective_purifier_count(
     else {
         return real;
     };
-    if house.is_human() || !sim.session.game_mode_nonzero() {
+    if house.is_human() || sim.session.uses_campaign_rules() {
         return real;
     }
     let table = rules.general.ai_virtual_purifiers;

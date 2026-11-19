@@ -131,7 +131,7 @@ fn building_strategy(
         rules.general.ai_nearest_enemy,
     );
     // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
-    if sim.session.game_mode_nonzero()
+    if !sim.session.uses_campaign_rules()
         || sim
             .houses
             .get(&owner)
@@ -156,7 +156,7 @@ fn building_strategy(
     // slot 1 Check_Build_Need's answer (0 or 1), both asked before either
     // acts; from level 4 down, slot 0's sells off and hunts and slot 1's
     // runs Manage_Build_Queue.
-    if sim.session.game_mode_nonzero() {
+    if !sim.session.uses_campaign_rules() {
         let suppressed = sim
             .houses
             .get(&owner)
@@ -268,7 +268,7 @@ fn pick_enemy(
     ares: bool,
     nearest_enemy: bool,
 ) {
-    if !session.game_mode_nonzero() {
+    if !session.uses_auto_enemy_selection() {
         return;
     }
     let Some(house) = houses.get(&owner) else {

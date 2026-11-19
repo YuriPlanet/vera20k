@@ -280,12 +280,16 @@ pub(crate) enum ShellExitThen {
         dialog: crate::ui::multiplayer_setup::SetupDialog,
         agreed_seed: u32,
     },
+    PreparedNetworkStart {
+        dialog: crate::ui::multiplayer_setup::SetupDialog,
+        startup: std::sync::Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
+    },
     /// Skirmish Choose Map (`0x5AA`): `0x102` slides out and hides without
     /// packing (`0x006AD931`, `0x006AD93C`), then `0x6B` runs.
     SkirmishChooseMap,
     /// Choose Map Use Map: `0x6B` slides out (`0x007757E0`), the selection
     /// commits and `0x102` shows again with its entry slide.
-    ChooseMapUse(crate::ui::skirmish_shell::ChooseMapSelection),
+    ChooseMapUse(crate::ui::skirmish_shell::ChooseMapChoice),
     /// Choose Map Cancel: `0x6B` slides out and `0x102` shows again.
     ChooseMapCancel,
     /// Choose Map Create Random Map: `0x6B` slides out and hides
@@ -306,6 +310,8 @@ pub(crate) enum ShellExitThen {
     /// Campaign victory Continue (`0x423`, result 1): `0x103` slides out
     /// before GameExit::Victory continues the campaign.
     CampaignScoreContinue,
+    /// Leave the LAN visit from its standalone score page.
+    StandaloneScoreExit,
     /// Campaign-end Continue (`0x6D1`, result 1): `0xBC7` slides out and
     /// Main_Game returns to the mode's shell.
     CampaignEndContinue,
@@ -379,7 +385,8 @@ impl ShellExitThen {
             Self::NetworkSetupBack(dialog)
             | Self::NetworkSetupBackWithNotice { dialog, .. }
             | Self::NetworkSetupChooseMap(dialog)
-            | Self::NetworkStart { dialog, .. } => ShellSlideKind::NetworkSetup(*dialog),
+            | Self::NetworkStart { dialog, .. }
+            | Self::PreparedNetworkStart { dialog, .. } => ShellSlideKind::NetworkSetup(*dialog),
             Self::SkirmishChooseMap => ShellSlideKind::Skirmish,
             Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap => {
                 ShellSlideKind::ChooseMap
@@ -400,7 +407,9 @@ impl ShellExitThen {
             Self::WolBuddyClose(_) => ShellSlideKind::WolBuddyList,
             Self::WolAddBuddyClose { .. } => ShellSlideKind::WolAddBuddyQuery,
             Self::ScoreContinue => ShellSlideKind::Score,
-            Self::CampaignScoreContinue => ShellSlideKind::CampaignScore,
+            Self::CampaignScoreContinue | Self::StandaloneScoreExit => {
+                ShellSlideKind::CampaignScore
+            }
             Self::CampaignEndContinue => ShellSlideKind::CampaignEnd,
         }
     }
@@ -883,13 +892,9 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
                 .then_some(ShellSlideKind::Score);
         }
         if crate::app::App::campaign_score_shell_active(state) {
-            let kind = ShellSlideKind::campaign_score(
-                state
-                    .frontend
-                    .campaign_score_page
-                    .as_ref()
-                    .map_or_else(Default::default, |page| page.dialog),
-            );
+            // Room result overlays (`0xBC6`) have no family slide.
+            let page = state.frontend.campaign_score_page.as_ref()?;
+            let kind = ShellSlideKind::campaign_score(page.dialog);
             return crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()).then_some(kind);
         }
         return None;

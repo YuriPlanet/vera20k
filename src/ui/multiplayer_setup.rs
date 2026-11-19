@@ -19,6 +19,13 @@ use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, Menu
 use crate::ui::shell::trackbar::{TrackbarHold, TrackbarRange};
 use crate::ui::skirmish_shell::{SkirmishStatics, SkirmishValidationModalState};
 
+mod scenario_room;
+pub(crate) use scenario_room::{
+    SCENARIO_BRIEFING, SCENARIO_DESCRIPTION_NEXT, SCENARIO_DESCRIPTION_PREVIOUS,
+    SCENARIO_DIFFICULTY_TRACK_W, SCENARIO_ROWS_PER_PAGE, ScenarioRoleDetails, ScenarioRoomLayout,
+    ScenarioRoomRow, ScenarioRoomView, scenario_details, scenario_details_row,
+};
+
 pub(crate) const VISIBLE_SETUP_ROWS: usize = 8;
 /// The most rows and headers VERA's roster ([`SetupDialog::modern`]) shows
 /// at once ([`roster_page`]), and the controls it numbers by them.
@@ -284,7 +291,9 @@ pub(crate) const SPEED: u16 = 0x529;
 pub(crate) const CREDITS: u16 = 0x402;
 pub(crate) const UNITS: u16 = 0x54F;
 pub(crate) const DIFFICULTY: u16 = 0x732;
-pub(crate) const CHECKBOXES: [u16; 5] = [0x54E, 0x3E8, 0x54D, 0x69A, 0x69D];
+pub(crate) const SHORT_GAME: u16 = 0x54E;
+pub(crate) const CRATES: u16 = 0x54D;
+pub(crate) const CHECKBOXES: [u16; 5] = [SHORT_GAME, 0x3E8, CRATES, 0x69A, 0x69D];
 /// VERA-only checkboxes its Game Options adds under the native five.
 pub(crate) const BRIDGES: u16 = 0x7F06;
 pub(crate) const ALLYING: u16 = 0x7F07;
@@ -777,6 +786,8 @@ const ROW_DRAG_START: i32 = 6;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RoomBox {
     GameOptions,
+    Briefing,
+    RoleDetails(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -793,15 +804,18 @@ pub(crate) struct SetupView {
     pub(crate) dialog: SetupDialog,
     pub(crate) host: bool,
     pub(crate) locked: bool,
-    /// C2's Short Game is held on in a tournament or clan room.
-    pub(crate) short_game_locked: bool,
+    pub(crate) stock_controls: bool,
+    pub(crate) start_enabled: bool,
+    pub(crate) choose_map_enabled: bool,
     /// The team header `0x794`; hidden in a clan room.
     pub(crate) team_header: bool,
     pub(crate) accept_enabled: bool,
     pub(crate) start_requested: bool,
     pub(crate) combos: Vec<SetupCombo>,
     pub(crate) trackbars: Vec<SetupTrackbar>,
+    pub(crate) difficulty_label: Option<String>,
     pub(crate) checks: [bool; 5],
+    pub(crate) checkbox_policy: [SetupCheckboxPolicy; 5],
     /// [`ROOM_CHECKBOXES`]' states.
     pub(crate) room_checks: [bool; 7],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
@@ -825,10 +839,69 @@ pub(crate) struct SetupView {
     pub(crate) mode_label: String,
     pub(crate) map_label: String,
     pub(crate) selected_map_index: Option<usize>,
+    /// The authored room can wait for the host before displaying its preview.
+    pub(crate) preview_hidden: bool,
     pub(crate) cooperative: bool,
     pub(crate) cooperative_description: Option<String>,
+    pub(crate) scenario_room: Option<ScenarioRoomView>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SetupCheckboxPolicy {
+    Hidden,
+    Locked,
+    Editable,
+}
+
 impl SetupView {
+    /// An authored scenario supplies its own setup rows and controls.
+    pub(crate) fn local_scenario(
+        dialog: SetupDialog,
+        locked: bool,
+        row_count: usize,
+        mode_label: &str,
+        map_label: &str,
+    ) -> Self {
+        Self {
+            first_row: 0,
+            row_count,
+            pages: Vec::new(),
+            page_len: 0,
+            roster_scroll: (0, 0),
+            dialog,
+            host: dialog.host,
+            locked,
+            stock_controls: false,
+            start_enabled: false,
+            choose_map_enabled: false,
+            team_header: false,
+            accept_enabled: false,
+            start_requested: false,
+            combos: Vec::new(),
+            trackbars: Vec::new(),
+            difficulty_label: None,
+            checks: Default::default(),
+            checkbox_policy: [SetupCheckboxPolicy::Hidden; 5],
+            room_checks: Default::default(),
+            row_icons: [const { None }; MODERN_SETUP_ROWS],
+            headers: [const { None }; MODERN_SETUP_ROWS],
+            open_box: None,
+            team_starts_enabled: false,
+            team_colors_enabled: false,
+            balance_enabled: false,
+            lobby_enabled: false,
+            drag_rows: Vec::new(),
+            map_offer_open: false,
+            mode_label: mode_label.to_owned(),
+            map_label: map_label.to_owned(),
+            selected_map_index: None,
+            preview_hidden: true,
+            cooperative: false,
+            cooperative_description: None,
+            scenario_room: None,
+        }
+    }
+
     /// Whether VERA's team bar shows: in a room with teams, and for the
     /// host's Room size.
     pub(crate) fn team_bar(&self) -> bool {
@@ -836,8 +909,13 @@ impl SetupView {
             .iter()
             .any(|bar| matches!(bar.id, TEAM_COUNT | ROOM_SIZE) && bar.visible)
     }
+
     pub(crate) fn page(&self) -> &'static MenuPageSpec {
-        self.dialog.page()
+        if self.scenario_room.is_some() {
+            scenario_room::page(self.host)
+        } else {
+            self.dialog.page()
+        }
     }
     pub(crate) fn combo(&self, id: u16) -> Option<&SetupCombo> {
         self.combos.iter().find(|combo| combo.id == id)
@@ -870,8 +948,43 @@ impl SetupView {
         {
             return true;
         }
+        if let Some(room) = &self.scenario_room {
+            if id == SCENARIO_BRIEFING {
+                return true;
+            }
+            if id == SCENARIO_DESCRIPTION_PREVIOUS {
+                return room.description_page > 0;
+            }
+            if id == SCENARIO_DESCRIPTION_NEXT {
+                return room.description_page + 1 < room.description_pages;
+            }
+            if let Some(row) = scenario_details_row(id) {
+                return room.rows.get(row).is_some_and(|row| row.details.is_some());
+            }
+        }
         if self.locked {
             return false;
+        }
+        if let Some(index) = CHECKBOXES.iter().position(|&checkbox| checkbox == id) {
+            return self.host && self.checkbox_policy[index] == SetupCheckboxPolicy::Editable;
+        }
+        let enabled_selection = || {
+            self.combo(id)
+                .is_some_and(|combo| combo.visible && combo.enabled)
+                || self
+                    .trackbars
+                    .iter()
+                    .any(|bar| bar.id == id && bar.visible && bar.enabled)
+        };
+        if !self.stock_controls && !matches!(id, PREVIOUS_ROWS | NEXT_ROWS) {
+            return match id {
+                BACK => true,
+                GAME_OPTIONS => self.dialog.modern,
+                START => self.start_enabled,
+                CHOOSE_MAP => self.choose_map_enabled,
+                ACCEPT => !self.host && self.accept_enabled,
+                _ => enabled_selection(),
+            };
         }
         match id {
             BACK | CHAT | CHAT_LOG | GAME_OPTIONS => true,
@@ -884,19 +997,11 @@ impl SetupView {
             PREVIOUS_ROWS => self.first_row > 0,
             NEXT_ROWS => self.first_row + self.page_len < self.row_count,
             ACCEPT => !self.host && self.accept_enabled,
-            0x54E if self.short_game_locked => false,
-            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.host,
+            id if ROOM_CHECKBOXES.contains(&id) => self.host,
             id if team_join_row(id).is_some() => self
                 .header_button(id)
                 .is_some_and(|header| header.join_enabled),
-            id => {
-                self.combo(id)
-                    .is_some_and(|combo| combo.visible && combo.enabled)
-                    || self
-                        .trackbars
-                        .iter()
-                        .any(|bar| bar.id == id && bar.visible && bar.enabled)
-            }
+            _ => enabled_selection(),
         }
     }
 }
@@ -982,6 +1087,8 @@ pub(crate) struct MultiplayerSetupState {
     /// VERA's roster's scrollbar.
     roster_scrollbar: ListScrollInteraction,
     pub(crate) chat: LanChatState,
+    pub(crate) description_page: usize,
+    pub(crate) description_pages: usize,
     pub(crate) notice: Option<SkirmishValidationModalState>,
     pub(crate) buttons: ShellButtonInteraction<u16>,
     pub(crate) popup: ComboPopupInteraction<u16>,
@@ -1011,6 +1118,8 @@ impl Default for MultiplayerSetupState {
         Self {
             first_visible_row: 0,
             roster_scrollbar: ListScrollInteraction::default(),
+            description_page: 0,
+            description_pages: 0,
             chat: {
                 let mut chat = LanChatState::default();
                 chat.edit.focused = true;
@@ -1208,8 +1317,17 @@ impl MultiplayerSetupState {
     }
     pub(crate) fn show_box(&mut self, open: Option<RoomBox>) {
         self.open_box = open;
+        self.description_page = 0;
+        self.description_pages = 0;
         self.popup.close();
         self.cancel_pointer();
+    }
+
+    pub(crate) fn page_description(&mut self, delta: isize) {
+        self.description_page = self
+            .description_page
+            .saturating_add_signed(delta)
+            .min(self.description_pages.saturating_sub(1));
     }
     pub(crate) fn accept_highlight(&mut self, enabled: bool, now: Instant) -> bool {
         if !enabled {
@@ -1349,18 +1467,37 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) cooperative_description: RectPx,
     pub(crate) mode_label: RectPx,
     pub(crate) map_label: RectPx,
+    pub(crate) scenario: Option<ScenarioRoomLayout>,
 }
 impl MultiplayerSetupLayout {
     pub(crate) fn new(dialog: SetupDialog, width: i32, height: i32, responsive: bool) -> Self {
+        Self::with_page(dialog, width, height, responsive, false)
+    }
+
+    pub(crate) fn for_scenario_room(dialog: SetupDialog, width: i32, height: i32) -> Self {
+        Self::with_page(dialog, width, height, true, true)
+    }
+
+    fn with_page(
+        dialog: SetupDialog,
+        width: i32,
+        height: i32,
+        responsive: bool,
+        scenario: bool,
+    ) -> Self {
         let host = dialog.host;
-        let spec = dialog.page();
+        let spec = if scenario {
+            scenario_room::page(host)
+        } else {
+            dialog.page()
+        };
         let mut page = if responsive {
             // VERA's room fills the window: its shell stands at the right
             // edge, and its roster and chat spread over the rest.
             let scale = ShellScale::from_screen(width, height);
             menu_page::compute_layout_on(
                 spec,
-                if dialog.modern {
+                if dialog.modern || scenario {
                     scale.anchored_right()
                 } else {
                     scale
@@ -1541,11 +1678,24 @@ impl MultiplayerSetupLayout {
                 aw,
                 ah,
             )),
+            scenario: None,
         };
-        if dialog.modern {
+        if scenario {
+            layout.place_scenario_room();
+        } else if dialog.modern {
             layout.move_options_into_popup(dialog.wol(), host);
         }
         layout
+    }
+
+    pub(crate) fn options_trackbar(&self, id: u16) -> bool {
+        self.game_options.is_some() && (OPTION_TRACKBARS.contains(&id) || id == SUPERWEAPON_LIMIT)
+    }
+
+    pub(crate) fn difficulty_label_rect(&self, bar: RectPx) -> RectPx {
+        self.page
+            .scale
+            .derive_rect(bar, |bar| RectPx::new(bar.x, bar.y - 19, bar.w, 17))
     }
     /// VERA's room: the roster's column and the chat's side by side across
     /// the window, the team bar under the roster, and the options in Game
@@ -1819,13 +1969,27 @@ impl MultiplayerSetupLayout {
             CHAT => Some(self.chat),
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
-            GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
+            GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok).or_else(|| {
+                self.scenario
+                    .as_ref()
+                    .map(|scenario| scenario.description.ok)
+            }),
+            SCENARIO_DESCRIPTION_PREVIOUS => {
+                self.scenario.as_ref().map(|room| room.description.previous)
+            }
+            SCENARIO_DESCRIPTION_NEXT => self.scenario.as_ref().map(|room| room.description.next),
             TEAM_STARTS => self.team_starts,
             TEAM_COLORS => self.team_colors,
             BALANCE => self.balance,
             MAP_OFFER_DOWNLOAD => Some(self.map_offer.ok),
             MAP_OFFER_LEAVE => Some(self.map_offer.cancel),
-            _ => self.page.button_rect(id),
+            _ => self.page.button_rect(id).or_else(|| {
+                self.scenario
+                    .as_ref()?
+                    .details
+                    .get(scenario_details_row(id)?)
+                    .copied()
+            }),
         }
     }
     /// An open Game Options popup takes every press; the room's own options
@@ -1838,38 +2002,42 @@ impl MultiplayerSetupLayout {
         if view.map_offer_open {
             return [MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE].into_iter().find(hit);
         }
+        let checks = CHECKBOXES
+            .into_iter()
+            .zip(view.checkbox_policy)
+            .filter_map(|(id, policy)| (policy != SetupCheckboxPolicy::Hidden).then_some(id));
+        let trackbars = view
+            .trackbars
+            .iter()
+            .filter(|bar| bar.visible)
+            .map(|bar| bar.id);
         match view.open_box {
             Some(RoomBox::GameOptions) => {
-                return CHECKBOXES
-                    .into_iter()
-                    .chain(ROOM_CHECKBOXES)
-                    .chain(OPTION_TRACKBARS)
-                    .chain([SUPERWEAPON_LIMIT, GAME_OPTIONS_OK])
+                return checks
+                    .chain(ROOM_CHECKBOXES.into_iter().filter(|_| view.stock_controls))
+                    .chain(trackbars.filter(|&id| self.options_trackbar(id)))
+                    .chain([GAME_OPTIONS_OK])
                     .find(hit);
+            }
+            Some(RoomBox::Briefing | RoomBox::RoleDetails(_)) => {
+                return [
+                    GAME_OPTIONS_OK,
+                    SCENARIO_DESCRIPTION_PREVIOUS,
+                    SCENARIO_DESCRIPTION_NEXT,
+                ]
+                .into_iter()
+                .filter(|id| view.enabled(*id))
+                .find(hit);
             }
             None => {}
         }
-        let in_room = |id: &u16| {
-            *id != SUPERWEAPON_LIMIT
-                && (self.game_options.is_none() || !OPTION_TRACKBARS.contains(id))
-        };
         let paged = view.pages.len() > 1;
         view.combos
             .iter()
             .filter(|combo| combo.visible)
             .map(|combo| combo.id)
-            .chain(
-                view.trackbars
-                    .iter()
-                    .filter(|bar| bar.visible)
-                    .map(|bar| bar.id)
-                    .filter(in_room),
-            )
-            .chain(
-                CHECKBOXES
-                    .into_iter()
-                    .filter(|_| self.game_options.is_none()),
-            )
+            .chain(trackbars.filter(|&id| id != SUPERWEAPON_LIMIT && !self.options_trackbar(id)))
+            .chain(checks.filter(|_| self.game_options.is_none()))
             .chain(
                 (0..MODERN_SETUP_ROWS)
                     .map(team_join)
@@ -1887,6 +2055,11 @@ impl MultiplayerSetupLayout {
                     .filter(|id| paged && view.enabled(*id)),
             )
             .chain(self.emote.map(|_| EMOTE))
+            .chain(
+                (0..SCENARIO_ROWS_PER_PAGE)
+                    .map(scenario_details)
+                    .filter(|id| view.enabled(*id)),
+            )
             .chain(self.page.buttons.iter().map(|button| button.id))
             .find(hit)
     }
@@ -2016,6 +2189,92 @@ mod tests {
     }
 
     #[test]
+    fn authored_room_keeps_chat_and_controls_in_distinct_columns_at_1024x768() {
+        let layout = MultiplayerSetupLayout::for_scenario_room(
+            dialog(true, SetupFlavor::Lan, true),
+            1024,
+            768,
+        );
+        let geometry = layout.scenario.as_ref().unwrap();
+        let last = geometry.seats[SCENARIO_ROWS_PER_PAGE - 1];
+        let role = layout.control_rect(SetupColumn::Team.control(0)).unwrap();
+        let start = layout.control_rect(START).unwrap();
+        let briefing = layout.control_rect(SCENARIO_BRIEFING).unwrap();
+        let choose = layout.control_rect(CHOOSE_MAP).unwrap();
+        assert!(last.x + last.w < layout.chat_log.x);
+        assert!(layout.chat_log.x + layout.chat_log.w < layout.map_preview.x);
+        assert!(role.y >= geometry.names[0].y + geometry.names[0].h);
+        assert!(geometry.flags[0].x + geometry.flags[0].w < role.x);
+        let scale = layout.page.scale;
+        assert_eq!(scale.base_rect(role).w, 249);
+        assert_eq!(
+            crate::ui::skirmish_shell::combo_face_rect(role, scale),
+            role
+        );
+        let arrow = crate::ui::skirmish_shell::combo_arrow_hit_rect(role, scale);
+        assert!(role.contains(arrow.x, arrow.y));
+        assert!(role.contains(arrow.x + arrow.w - 1, arrow.y + arrow.h - 1));
+        assert!(role.x + role.w < geometry.colors[0].x);
+        assert!(last.y + last.h < geometry.rules_heading.y);
+        assert!(layout.mode_label.y + layout.mode_label.h <= layout.map_label.y);
+        assert!(layout.map_label.y + layout.map_label.h <= start.y);
+        assert_eq!(layout.mode_label.x, layout.map_label.x);
+        assert_eq!(layout.mode_label.w, layout.map_label.w);
+        let panel = layout.page.right_panel.top;
+        assert!(layout.map_label.x > panel.x);
+        assert!(layout.map_label.x + layout.map_label.w < panel.x + panel.w);
+        assert!(start.y + start.h <= briefing.y && briefing.y + briefing.h <= choose.y);
+        assert_eq!(
+            layout.control_rect(GAME_OPTIONS_OK),
+            Some(geometry.description.ok)
+        );
+        assert_eq!(
+            layout.control_rect(SCENARIO_DESCRIPTION_PREVIOUS),
+            Some(geometry.description.previous)
+        );
+        assert_eq!(
+            layout.control_rect(SCENARIO_DESCRIPTION_NEXT),
+            Some(geometry.description.next)
+        );
+        let track = layout
+            .page
+            .scale
+            .base_rect(layout.control_rect(DIFFICULTY).unwrap());
+        assert!(
+            crate::render::skirmish_shell_chrome::trackbar_frame_slot(false, track.w, track.h)
+                .is_some()
+        );
+        assert!(
+            geometry.description.body.y + geometry.description.body.h
+                <= geometry.description.page.y
+        );
+        assert!(
+            geometry.description.previous.x + geometry.description.previous.w
+                <= geometry.description.ok.x
+        );
+        assert!(
+            geometry.description.ok.x + geometry.description.ok.w <= geometry.description.next.x
+        );
+    }
+
+    #[test]
+    fn authored_description_pages_clamp_and_reopen_at_the_start() {
+        let mut ui = MultiplayerSetupState::default();
+        ui.show_box(Some(RoomBox::Briefing));
+        ui.description_pages = 2;
+        ui.page_description(-1);
+        assert_eq!(ui.description_page, 0);
+        ui.page_description(1);
+        ui.page_description(1);
+        assert_eq!(ui.description_page, 1);
+        ui.page_description(-1);
+        assert_eq!(ui.description_page, 0);
+        ui.page_description(1);
+        ui.show_box(Some(RoomBox::RoleDetails(0)));
+        assert_eq!((ui.description_page, ui.description_pages), (0, 0));
+    }
+
+    #[test]
     fn the_room_looks_for_each_maps_briefing_once() {
         let mut room = MultiplayerSetupState::default();
         assert!(room.first_briefing_check("normandy.yrm"));
@@ -2070,13 +2329,17 @@ mod tests {
             dialog: dialog(true, SetupFlavor::Wol, true),
             host: true,
             locked: false,
-            short_game_locked: false,
+            stock_controls: true,
+            start_enabled: true,
+            choose_map_enabled: true,
             team_header: true,
             accept_enabled: false,
             start_requested: false,
             combos: Vec::new(),
             trackbars: Vec::new(),
+            difficulty_label: None,
             checks: [false; 5],
+            checkbox_policy: [SetupCheckboxPolicy::Editable; 5],
             room_checks: [false; 7],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
@@ -2090,8 +2353,10 @@ mod tests {
             mode_label: String::new(),
             map_label: String::new(),
             selected_map_index: None,
+            preview_hidden: false,
             cooperative: false,
             cooperative_description: None,
+            scenario_room: None,
         }
     }
 

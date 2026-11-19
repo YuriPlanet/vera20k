@@ -148,6 +148,105 @@ def match_layout(
     return ore, trees
 
 
+def _build_clear_diamond_data(
+    size: int,
+    cell_array_width: int | None = None,
+) -> tuple[int, bytearray, bytearray, bytearray]:
+    if cell_array_width is None:
+        cell_array_width = 512 if size <= 256 else 1024
+    # [Terrain] and [Waypoints] keys are y*1000+x, so x must stay below 1000.
+    if cell_array_width not in (512, 1024) or not 16 <= size <= min(cell_array_width // 2, 500):
+        raise ValueError('size must fit inside half the selected 512 or 1024 cell array, '
+                         'and at most 500 for y*1000+x cell keys')
+    cells = bytearray()
+    for y in range(1, 2 * size):
+        for x in range(1, 2 * size):
+            if in_diamond(size, x, y):
+                cells += struct.pack('<hHiBBB', x, y, CLEAR_TILE, 0, 0, 0)
+    overlay = bytearray(b'\xff' * cell_array_width * cell_array_width)
+    overlay_data = bytearray(cell_array_width * cell_array_width)
+    return cell_array_width, cells, overlay, overlay_data
+
+
+def _render_clear_map(
+    *,
+    basic_section: str,
+    size: int,
+    middle_sections: str,
+    overlay: bytearray,
+    overlay_data: bytearray,
+    cells: bytearray,
+) -> str:
+    margin = 4
+    return (
+        f'{basic_section}\n'
+        f'[Map]\n'
+        f'Theater=TEMPERATE\n'
+        f'Size=0,0,{size},{size}\n'
+        f'LocalSize={margin // 2},{margin},{size - margin},{size - 2 * margin}\n\n'
+        f'[Lighting]\n'
+        f'Ambient=1.0\n'
+        f'Red=1.0\n'
+        f'Green=1.0\n'
+        f'Blue=1.0\n'
+        f'Ground=0.0\n'
+        f'Level=0.032\n\n'
+        f'{middle_sections}'
+        f'[OverlayPack]\n'
+        f'{pack_lcw(bytes(overlay))}\n\n'
+        f'[OverlayDataPack]\n'
+        f'{pack_lcw(bytes(overlay_data))}\n\n'
+        f'[IsoMapPack5]\n'
+        f'{pack_lzo(bytes(cells))}\n'
+    )
+
+
+def build_vmce_minimal_map(size: int = 32) -> str:
+    """Build a single-player minimal VMCE map with one House and one straight-walking MTNK."""
+    if size < 24:
+        raise ValueError('VMCE minimal map requires size >= 24 for centered walkable LocalSize bounds')
+    _, cells, overlay, overlay_data = _build_clear_diamond_data(size)
+    start_x, start_y = size, size
+    goal_x, goal_y = size + 4, size + 4
+    basic_section = (
+        '[Basic]\n'
+        'Name=VMCE Minimal Stage 01\n'
+        'NewINIFormat=4\n'
+        'Player=HouseAlpha\n'
+        'HomeCell=0\n'
+        'AltHomeCell=0\n'
+        'MultiplayerOnly=no\n'
+        'Official=no\n'
+    )
+    middle_sections = (
+        '[Houses]\n'
+        '0=HouseAlpha\n\n'
+        '[HouseAlpha]\n'
+        'Country=Americans\n'
+        'Side=GDI\n'
+        'PlayerControl=yes\n'
+        'IQ=0\n'
+        'TechLevel=10\n'
+        'Credits=5000\n'
+        'Edge=North\n'
+        'Allies=HouseAlpha\n'
+        'Color=Gold\n\n'
+        '[Waypoints]\n'
+        f'0={start_y * 1000 + start_x}\n'
+        f'1={goal_y * 1000 + goal_x}\n\n'
+        '[Units]\n'
+        f'0=HouseAlpha,MTNK,256,{start_x},{start_y},128,Guard,None,0,-1,0,-1,1,1\n\n'
+    )
+    return _render_clear_map(
+        basic_section=basic_section,
+        size=size,
+        middle_sections=middle_sections,
+        overlay=overlay,
+        overlay_data=overlay_data,
+        cells=cells,
+    )
+
+
 def build_map(
     size: int,
     starts: int | None = None,
@@ -156,21 +255,9 @@ def build_map(
     ore_fields: int = 1,
     ore_radius: float | None = None,
 ) -> str:
-    if cell_array_width is None:
-        cell_array_width = 512 if size <= 256 else 1024
-    # [Terrain] and [Waypoints] keys are y*1000+x, so x must stay below 1000.
-    if cell_array_width not in (512, 1024) or not 16 <= size <= min(cell_array_width // 2, 500):
-        raise ValueError('size must fit inside half the selected 512 or 1024 cell array, '
-                         'and at most 500 for y*1000+x cell keys')
+    cell_array_width, cells, overlay, overlay_data = _build_clear_diamond_data(size, cell_array_width)
     if starts is not None and starts < 2:
         raise ValueError('a match needs at least two starts')
-    cells = bytearray()
-    for y in range(1, 2 * size):
-        for x in range(1, 2 * size):
-            if in_diamond(size, x, y):
-                cells += struct.pack('<hHiBBB', x, y, CLEAR_TILE, 0, 0, 0)
-    overlay = bytearray(b'\xff' * cell_array_width * cell_array_width)
-    overlay_data = bytearray(cell_array_width * cell_array_width)
     terrain = ''
     if starts is None:
         start_cells = ring_starts(size)
@@ -191,41 +278,25 @@ def build_map(
     if cell_array_width > 512:
         name = f'Large Size {size}x{size} - {len(start_cells)} Starts'
     waypoints = '\n'.join(f'{index}={ry * 1000 + rx}' for index, (rx, ry) in enumerate(start_cells))
-    # VERA's lobby seats more than the eight retail starts only on a map that
-    # declares them (`skirmish_player_capacity`: MaxPlayers 9 to 30).
+    # Declare additional starts explicitly. The game applies each mode's
+    # player limit when selecting the map.
     max_players = f'MaxPlayers={len(start_cells)}\n' if len(start_cells) > 8 else ''
-    margin = 4
-    return f'''[Basic]
-Name={name}
-{max_players}NewINIFormat=4
-MultiplayerOnly=1
-Official=no
-
-[Map]
-Theater=TEMPERATE
-Size=0,0,{size},{size}
-LocalSize={margin // 2},{margin},{size - margin},{size - 2 * margin}
-
-[Lighting]
-Ambient=1.0
-Red=1.0
-Green=1.0
-Blue=1.0
-Ground=0.0
-Level=0.032
-
-[Waypoints]
-{waypoints}
-{terrain}
-[OverlayPack]
-{pack_lcw(bytes(overlay))}
-
-[OverlayDataPack]
-{pack_lcw(bytes(overlay_data))}
-
-[IsoMapPack5]
-{pack_lzo(bytes(cells))}
-'''
+    basic_section = (
+        '[Basic]\n'
+        f'Name={name}\n'
+        f'{max_players}NewINIFormat=4\n'
+        'MultiplayerOnly=1\n'
+        'Official=no\n'
+    )
+    middle_sections = f'[Waypoints]\n{waypoints}\n{terrain}\n'
+    return _render_clear_map(
+        basic_section=basic_section,
+        size=size,
+        middle_sections=middle_sections,
+        overlay=overlay,
+        overlay_data=overlay_data,
+        cells=cells,
+    )
 
 
 def main() -> None:
@@ -237,25 +308,30 @@ def main() -> None:
     parser.add_argument('--starts', type=int, help='Grid starts with ore and trees, for the match scenario')
     parser.add_argument('--cell-array-width', type=int, choices=(512, 1024), default=None,
                         help='overlay encoding width (default: select from map Size)')
+    parser.add_argument('--vmce-minimal', action='store_true',
+                        help='Write a single-player minimal VMCE map with one House and one straight-walking MTNK')
     parser.add_argument('--ore-fields', type=int, default=1,
                         help='ore fields ringing each start (default 1, as the committed maps)')
     parser.add_argument('--ore-radius', type=float, default=None,
                         help='ore field radius in cells (default: a tenth of the start pitch)')
     args = parser.parse_args()
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    # Explicit LF: the map is committed and regenerated byte-identically, so
-    # the writer must not follow the host platform's newline translation.
-    args.output.write_text(
-        build_map(
+    if args.vmce_minimal and (args.starts is not None or args.cell_array_width is not None):
+        parser.error('--vmce-minimal cannot be combined with --starts or --cell-array-width')
+    content = (
+        build_vmce_minimal_map(args.size)
+        if args.vmce_minimal
+        else build_map(
             args.size,
             args.starts,
             cell_array_width=args.cell_array_width,
             ore_fields=args.ore_fields,
             ore_radius=args.ore_radius,
-        ),
-        encoding='ascii',
-        newline='\n',
+        )
     )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    # Explicit LF: the map is committed and regenerated byte-identically, so
+    # the writer must not follow the host platform's newline translation.
+    args.output.write_text(content, encoding='ascii', newline='\n')
 
 
 if __name__ == '__main__':

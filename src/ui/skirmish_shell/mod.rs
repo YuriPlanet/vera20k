@@ -33,6 +33,7 @@ pub use layout::{
     random_map_setup_dropdown_row_at, saved_seed_control_at,
 };
 pub(crate) use state::CountryMenuCatalog;
+pub(crate) use state::ChooseMapChoice;
 pub(crate) use state::status_help_key_for_hover_with_catalog;
 pub use state::{
     AcceptOutcome, ChooseMapContext, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapModalState,

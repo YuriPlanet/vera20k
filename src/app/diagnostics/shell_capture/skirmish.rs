@@ -1782,6 +1782,16 @@ mod tests {
 /// Tab through the ordinary key edge: the binding lookup falls back to
 /// Request_Diplomacy_Menu (0x0055E08A), which must open 0x73.
 pub(super) fn press_diplomacy_tab(state: &mut AppState) -> Result<()> {
+    press_tab(state);
+    ensure!(
+        state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Diplomacy,
+        "Tab did not open the Diplomacy dialog"
+    );
+    Ok(())
+}
+
+pub(super) fn press_tab(state: &mut AppState) {
     let tab = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Tab);
     for edge in [
         winit::event::ElementState::Pressed,
@@ -1802,10 +1812,4 @@ pub(super) fn press_diplomacy_tab(state: &mut AppState) -> Result<()> {
             paused_at_event,
         );
     }
-    ensure!(
-        state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Diplomacy,
-        "Tab did not open the Diplomacy dialog"
-    );
-    Ok(())
 }

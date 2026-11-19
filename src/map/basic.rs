@@ -303,7 +303,7 @@ pub fn parse_special_flags_section(ini: &IniFile) -> SpecialFlagsSection {
 }
 
 /// The most of a map's briefing [`briefing_text`] keeps, in characters.
-const MAX_BRIEFING_CHARS: usize = 2000;
+pub(crate) const MAX_BRIEFING_CHARS: usize = 2000;
 
 /// VERA: a map's `[Basic] Briefing`, the text lobby programs show over the
 /// map preview, each `@` starting a new line. gamemd never reads the key; its

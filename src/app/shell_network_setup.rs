@@ -22,10 +22,13 @@ pub(crate) use service::{
 };
 mod teams;
 pub(crate) use teams::{lobby_refused_option, starts_needed};
+#[path = "shell_network_setup/vmce_setup.rs"]
+pub(crate) mod local_scenarios;
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{
-    apply_action, begin_external_lan_go, commit_map_selection, commit_start, open_choose_map,
+    apply_action, begin_external_lan_go, commit_map_selection, commit_prepared_start, commit_start,
+    open_choose_map,
 };
 pub(crate) use view::view;
 pub(crate) use wol::{
@@ -40,6 +43,7 @@ use crate::app::frontend::shell_transition;
 use crate::app::frontend::skirmish_session::SetupProfile;
 use crate::app::match_runtime::session::NetworkVacancy;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::shell_lan::LanJoinAcceptance;
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};
 use crate::ui::wol_chat::WolChatLine;
@@ -67,6 +71,10 @@ pub(crate) enum NetworkSetupRequest {
         row: u8,
         slot: crate::skirmish_launch::SkirmishLocalSlot,
         observer: bool,
+    },
+    AuthoredChoices {
+        scope: crate::net::lan_messages::SessionScope,
+        text: Vec<u8>,
     },
     Ready(bool),
     RequestAcceptance,
@@ -158,8 +166,18 @@ pub(crate) struct NetworkSetupProtocol {
     wol_verify: Option<crate::ui::wol_verify::WolVerifyDialog>,
     start_requested: bool,
     accept_eligible: bool,
+    /// A guest's manual acceptance can be repeated after verification of an
+    /// options revision for this same local stage.
+    scenario_ready_intent: Option<crate::map::scenario_menu::LocalScenarioKey>,
+    /// The stage from a failed first-frame LAN admission. The first room
+    /// options must verify this stage before the guest can repeat Ready.
+    ready_on_return: Option<crate::map::scenario_menu::LocalScenarioKey>,
+    scenario_return_roles: Option<local_scenarios::ReturningGuestRoles>,
+    scenario_chooser_preview: Option<crate::map::scenario_menu::LocalScenario>,
     /// LAN5DD5E5/5DD690/5DD950: send admission, drain and reply phases.
     lan_go: Option<LanGoWait>,
+    /// A start backed by an exact authored Options revision requires every reply.
+    lan_go_scope: Option<crate::net::lan_messages::SessionScope>,
     transfer_progress: Option<(u32, u32)>,
     return_after_notice: bool,
     /// The guest verified the host's map locally at its last change
@@ -313,6 +331,10 @@ pub(crate) fn lan_go_receive_mode(state: &AppState) -> LanGoReceiveMode {
         .map_or(LanGoReceiveMode::Normal, LanGoWait::receive_mode)
 }
 
+pub(crate) fn lan_go_scope(state: &AppState) -> Option<crate::net::lan_messages::SessionScope> {
+    state.frontend.network_setup_protocol.as_ref()?.lan_go_scope
+}
+
 /// Call only after the complete GO broadcast or the guest's Type13 was admitted.
 pub(crate) fn mark_lan_go_packets_queued(state: &mut AppState, now: u32) -> anyhow::Result<()> {
     let protocol = state
@@ -346,6 +368,18 @@ pub(crate) fn observe_lan_go_transport(
     let Some(protocol) = state.frontend.network_setup_protocol.as_mut() else {
         return false;
     };
+    if protocol.lan_go_scope.is_some()
+        && matches!(&protocol.lan_go, Some(LanGoWait::HostReplies { pending, timer })
+            if !pending.is_empty() && timer.remaining(now) == 0)
+    {
+        let message = App::csf_label(
+            state,
+            "TXT_SYSTEM_NOT_RESPONDING",
+            "The other system is not responding.",
+        );
+        service::fail_go_handoff_with_message(state, message);
+        return false;
+    }
     if let Some(phase) = protocol.lan_go.take() {
         protocol.lan_go = Some(phase.observe(now, queued, service_ok));
     }
@@ -353,6 +387,18 @@ pub(crate) fn observe_lan_go_transport(
 }
 
 impl NetworkSetupProtocol {
+    /// Carry readiness into the new admission only after verifying the old stage.
+    pub(crate) fn finish_return_verification(
+        &mut self,
+        stage: Option<&crate::map::scenario_menu::LocalScenarioKey>,
+    ) {
+        if let Some(expected) = self.ready_on_return.take()
+            && stage == Some(&expected)
+        {
+            self.scenario_ready_intent = Some(expected);
+        }
+    }
+
     /// The host's options put the local player at `place`: the move to tell
     /// it, if any. The first options are none, and neither is the place the
     /// player last asked for; options the host sent before an ask arrived
@@ -387,7 +433,12 @@ impl NetworkSetupProtocol {
             wol_verify: None,
             start_requested: false,
             accept_eligible: false,
+            scenario_ready_intent: None,
+            ready_on_return: None,
+            scenario_return_roles: None,
+            scenario_chooser_preview: None,
             lan_go: None,
+            lan_go_scope: None,
             transfer_progress: None,
             return_after_notice: false,
             local_map_verified: false,
@@ -481,6 +532,13 @@ impl NetworkSetupProtocol {
 
     pub(crate) fn editable(&self) -> bool {
         !self.locked
+    }
+
+    fn cancel_lan_go(&mut self) {
+        self.lan_go = None;
+        self.lan_go_scope = None;
+        self.locked = false;
+        self.start_requested = false;
     }
 
     /// Publish the current accepted choices followed by their display rows.
@@ -772,7 +830,11 @@ impl App {
     /// Returns whether the setup opened. VERA: map archives are optional, so a
     /// catalog can have no eligible map; a WOL host then leaves the channel it
     /// just created.
-    pub(crate) fn open_host_setup(state: &mut AppState, observe: bool) -> bool {
+    pub(crate) fn open_host_setup(
+        state: &mut AppState,
+        observe: bool,
+        preselected: Option<&crate::map::scenario_menu::LocalScenarioKey>,
+    ) -> bool {
         let dialog = SetupDialog {
             host: true,
             ..dialog(state)
@@ -812,6 +874,12 @@ impl App {
                 return false;
             }
         };
+        if preselected.is_some() {
+            // Authored maps provide their own opponents. Reopening this room
+            // should not restore lobby AI from a prior stock setup.
+            launch.opponents.clear();
+            launch.ai_player_count = 0;
+        }
         // VERA: the room plays its host's rules, the Terrain Deformation and
         // Superweapon Limit of the host's skirmish Game Options, which the host
         // can change in the room's Game Options. Quick Match plays the
@@ -831,9 +899,13 @@ impl App {
             abandon_host_setup(state, dialog);
             return false;
         }
+        if let Some(key) = preselected {
+            local_scenarios::choose(state, key);
+        }
         // The WOL C2's own +20/+18 calls (0x791293, 0x7912A3) belong to a
         // later chain; LAN BC runs them here.
         if !dialog.wol()
+            && state.match_state.session.local_network_scenario().is_none()
             && let Err(error) = cooperative::host_opened(state)
         {
             log::error!("Could not open the Cooperative campaign: {error:#}");
@@ -901,6 +973,18 @@ impl App {
             return false;
         }
         true
+    }
+
+    pub(crate) fn open_lan_joined_setup(state: &mut AppState, acceptance: LanJoinAcceptance) {
+        if Self::open_joined_setup(
+            state,
+            acceptance.local,
+            acceptance.observer_row,
+            SetupFlavor::Lan,
+        ) && let Some(protocol) = state.frontend.network_setup_protocol.as_mut()
+        {
+            protocol.ready_on_return = acceptance.ready_on_return;
+        }
     }
 }
 
@@ -1067,6 +1151,30 @@ fn install_setup(
     Ok(())
 }
 
+/// Show the room's frozen view while its previous host is still at results.
+/// JoinConfirmed later replaces it through the ordinary setup owner.
+pub(crate) fn show_waiting_lan_room(state: &mut AppState) {
+    let dialog = setup_dialog(state, false, SetupFlavor::Lan);
+    state.frontend.multiplayer_setup = Some(MultiplayerSetupState::default());
+    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::new(dialog, false));
+    show_dialog(state, dialog);
+}
+
+pub(crate) fn join_waiting_lan_room(state: &mut AppState, acceptance: LanJoinAcceptance) {
+    let chat = state
+        .frontend
+        .multiplayer_setup
+        .as_mut()
+        .map(|setup| std::mem::take(&mut setup.chat));
+    // The agreement in the service belongs to this new admission. Retire
+    // only the previous frozen MatchSession before installing it.
+    state.match_state.session.return_to_network_lobby();
+    App::open_lan_joined_setup(state, acceptance);
+    if let (Some(setup), Some(chat)) = (&mut state.frontend.multiplayer_setup, chat) {
+        setup.chat = chat;
+    }
+}
+
 /// `[0xA8B254]` after the host's map choice (BC open `0x005ED668`, Use Map
 /// `0x005E7370`, C2 `0x00790DFE`): the selected map's record, or 0 when it
 /// has none (`0x005ED660`). Quick Match's setup has no dialog and never
@@ -1109,6 +1217,9 @@ pub(crate) fn show_statics(state: &mut AppState) {
 }
 
 pub(crate) fn remember_setup(state: &mut AppState) {
+    if state.match_state.session.local_network_scenario().is_some() {
+        return;
+    }
     let profile = profile(dialog(state));
     let session = &state.match_state.session;
     if session.host()
@@ -1151,6 +1262,9 @@ fn persist_setup_preferences(state: &mut AppState) {
 /// catalog (ParsePacket5E51C4..5E5409).
 pub(crate) fn map_display_name(state: &AppState) -> Option<&str> {
     let session = &state.match_state.session;
+    if let Some(map) = session.local_network_scenario() {
+        return Some(&map.title);
+    }
     let file = session.network_setup()?.selected_map_file.as_deref()?;
     session
         .network_map_metadata()
@@ -1190,6 +1304,7 @@ pub(crate) fn local_map_metadata(
 /// 0x113, leaving the process preference/RNG owners and the WOL login intact
 /// and clearing the admitted setup through its owner.
 pub(crate) fn commit_back(state: &mut AppState) {
+    state.frontend.lan_rematch = None;
     let dialog = leave_setup(state);
     if dialog.wol() && dialog.host {
         crate::app::shell_wol::lobby::host_setup_left(state);
@@ -1333,6 +1448,15 @@ pub(crate) fn acknowledge_notice(state: &mut AppState) {
         .as_ref()
         .is_some_and(|protocol| protocol.return_after_notice)
     {
+        if lan_go_scope(state).is_some() {
+            match crate::app::lan_service::request_setup_back(state) {
+                Ok(()) => {
+                    state.platform.window.request_redraw();
+                    return;
+                }
+                Err(error) => log::warn!("LAN setup departure failed: {error:#}"),
+            }
+        }
         App::leave_shell_dialog(
             state,
             shell_transition::ShellExitThen::NetworkSetupBack(dialog(state)),

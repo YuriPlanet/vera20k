@@ -1910,6 +1910,13 @@ impl Simulation {
             return;
         };
         let (rx, ry) = (entity.position.rx(), entity.position.ry());
+        if self.session.is_authored_campaign() {
+            // Building440D25..440D6C uses Cell+12C on the player's map.
+            // Discover for the represented views that have opened it.
+            self.discover_by_player(id, None, context);
+            self.light_building(id, context.rules());
+            return;
+        }
         let lit = !self.session.game_mode_nonzero()
             && (entity.discovery.discovered_by_current_house()
                 || !self
@@ -2172,14 +2179,16 @@ impl Simulation {
         } else {
             history.owned_by_current_house
         };
+        let reports_discovery = current
+            && !owned
+            && (!self.session.is_authored_campaign() || !self.session.is_observer_house(viewer));
         let entity = self
             .substrate
             .entities
             .get_mut(stable_id)
             .expect("discovered Techno");
         if admitted_network_views != 0 {
-            // One native noncampaign CellPUT is known by every represented
-            // PlayerPtr. Stamp those admissions before callbacks, so an
+            // Stamp every admitted view before callbacks, so an
             // opening's RevealToAll cannot reenter the same shared opening
             // through another logical view whose CellPUT is still pending.
             entity.discovery.network_human_discovery |= admitted_network_views;
@@ -2219,12 +2228,10 @@ impl Simulation {
             //Building's repaired health can therefore become visible before
             //its next own health sample, through this independent writer.
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
-            if !owned {
-                if !self.object_placement_scope_active() {
-                    //6F4A03..6F4A18: the attachment owner resolves the Tag,
-                    // including an Event48-only chain's no-match traversal.
-                    self.dispatch_object_tag_event(stable_id, 4, Some(stable_id), None, context);
-                }
+            if reports_discovery && !self.object_placement_scope_active() {
+                //6F4A03..6F4A18: the attachment owner resolves the Tag,
+                // including an Event48-only chain's no-match traversal.
+                self.dispatch_object_tag_event(stable_id, 4, Some(stable_id), None, context);
             }
         }
         // Ares3.0's successful discovery sites6F4A1D/6F4A37 share1004E840.
@@ -2244,8 +2251,7 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(owner);
         }
         //6F4A1D reloads owner AFTER synchronous Tag actions.
-        if current
-            && !owned
+        if reports_discovery
             && let Some(owner) = self
                 .substrate
                 .entities
@@ -2253,8 +2259,8 @@ impl Simulation {
                 .map(|entity| entity.owner())
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            // Network Event5 sees discovery by any represented human;
-            // every peer executes that same admitted-view callback order.
+            // Event5 (71F0FB) reads the discovered House's shared 1F4.
+            // Every peer sees the same participating views and callback order.
             house.notify_discovered_by_current_house();
         }
         true
@@ -2362,18 +2368,44 @@ impl Simulation {
         context: UninitContext<'_>,
     ) {
         if self.session.game_mode().is_network() {
-            let Some(owner) = self.substrate.entities.get(id).map(|entity| entity.owner()) else {
+            let Some(entity) = self.substrate.entities.get(id) else {
                 return;
+            };
+            let owner = entity.owner();
+            let authored_campaign = self.session.is_authored_campaign();
+            let cells = if authored_campaign && cell_put.is_some() {
+                context
+                    .terrain()
+                    .or(self.resolved_terrain.as_ref())
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+            } else {
+                None
             };
             // Usually empty, and then no list is allocated.
             let fresh: Vec<_> = self
                 .network_player_maps()
                 .filter(|&viewer| !self.techno_discovered_by_viewer(id, viewer))
+                .filter(|&viewer| {
+                    if !authored_campaign || viewer == owner {
+                        return true;
+                    }
+                    if let Some(cell) = cell_put {
+                        cells.as_ref().is_some_and(|cells| {
+                            !crate::sim::vision::cell_is_shrouded(&self.fog, cells, viewer, cell)
+                        })
+                    } else {
+                        self.fog
+                            .is_ground_open(viewer, entity.position.rx(), entity.position.ry())
+                    }
+                })
                 .collect();
             let Some(viewer) = fresh
                 .iter()
                 .copied()
-                .find(|&viewer| viewer != owner)
+                .find(|&viewer| {
+                    viewer != owner
+                        && (!authored_campaign || !self.session.is_observer_house(viewer))
+                })
                 .or_else(|| fresh.first().copied())
             else {
                 return;

@@ -166,9 +166,29 @@ pub fn read_map_ini_for_metadata(path: &Path) -> Option<IniFile> {
 /// Physical INI plus the exact source bytes used by shell map verification.
 /// Unlike full MapFile parsing, native6951F0 admits an INI without requiring
 /// a playable map header before comparing its [Digest] text.
+#[derive(Debug)]
 pub struct LoadedMapIni {
     pub ini: IniFile,
     pub source: LoadedMapSource,
+}
+
+/// Read a specific loose path and parse the same buffer recorded by its
+/// physical identity. Callers that already resolved a path need no MIX lookup.
+pub(super) fn read_loose_map_ini<T>(
+    path: &Path,
+    check_source: impl FnOnce(&LoadedMapSource) -> Result<()>,
+    inspect: impl FnOnce(&[u8]) -> T,
+) -> Result<(LoadedMapIni, T)> {
+    let input = read_loose_map_input(path)?;
+    check_source(&input.source)?;
+    let projection = inspect(&input.bytes);
+    Ok((
+        LoadedMapIni {
+            ini: map_file::ini_from_file_bytes(input.bytes)?,
+            source: input.source,
+        },
+        projection,
+    ))
 }
 
 struct MapInput<'a> {

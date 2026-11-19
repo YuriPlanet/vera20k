@@ -56,11 +56,22 @@ impl App {
     /// Wait_For_Players result 8 clears GameActive without an EXIT event, so
     /// Main_Game returns past the router without 0x00686570's EVA and fades
     /// (0x0064806C..0x006482A6, 0x0055D347).
-    pub(super) fn return_disconnected_to_main_menu(state: &mut AppState) {
+    pub(super) fn return_disconnected_to_main_menu(
+        state: &mut AppState,
+        initial_connection_failure: bool,
+    ) {
+        let stage = if initial_connection_failure {
+            crate::app::shell_lan::prepare_initial_failure_return(state)
+        } else {
+            None
+        };
         Self::record_match_result(state, super::cncnet::ExternalMatchResult::Disconnected);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         Self::browser_match_ended(state, super::cncnet::ExternalMatchResult::Disconnected);
         Self::return_to_main_menu(state);
+        if let Some(stage) = stage {
+            crate::app::shell_lan::offer_ready_on_return(state, stage);
+        }
     }
 
     /// Quit Game's leave: a frame suspended in Wait_For_Players finishes its
@@ -75,7 +86,7 @@ impl App {
         {
             crate::app::match_runtime::sim_tick::leave_network_wait(state);
         }
-        Self::return_disconnected_to_main_menu(state);
+        Self::return_disconnected_to_main_menu(state, false);
     }
 
     /// Stop a running scenario without an outcome teardown: its world,
@@ -591,6 +602,10 @@ impl App {
             Self::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Closed);
             return;
         }
+        if crate::app::match_runtime::authored_narrative::pending(state) {
+            Self::leave_authored_narrative(state);
+            return;
+        }
         log::info!("Abort Mission confirmed — queueing EXIT event");
         // 0x0048CAA1 clears the admission latch after queueing EXIT, even
         // when the event ring is full: until EXIT runs, State_Machine opens
@@ -619,6 +634,17 @@ impl App {
             live.keep_running_for_exit();
         }
         Self::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Closed);
+    }
+
+    pub(crate) fn leave_authored_narrative(state: &mut AppState) {
+        Self::record_match_result(state, super::cncnet::ExternalMatchResult::Quit);
+        state.frontend.lan_rematch = None;
+        state.match_state.match_presentation.modal_latch = false;
+        Self::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Closed);
+        if let Err(error) = crate::app::lan_service::request_authored_match_departure(state) {
+            log::warn!("Could not announce authored LAN departure: {error:#}");
+            Self::return_to_main_menu(state);
+        }
     }
 
     /// Consume EventClass opcode `0x13`'s executed edge and enter the existing
@@ -687,6 +713,9 @@ impl App {
         // Abort is the independent EXIT-event route: it never inherits the
         // victory/defeat HouseClass SavourDelay or its outcome-voice wait.
         state.match_state.scenario_outcome = None;
+        if state.match_state.session.local_network_scenario().is_some() {
+            state.frontend.lan_rematch = None;
+        }
         Self::record_match_result(state, super::cncnet::ExternalMatchResult::Quit);
         //686570 clears the movie queue before its independent audio fade.
         crate::app::radar_movie::retire(state, wall_ms);
@@ -843,11 +872,14 @@ impl App {
             }
         }
         let movie = state.process_assets.native_rules().and_then(|rules| {
-            crate::app::campaign_victory::win_movie(
-                &destination,
-                &state.match_state.map_basic,
-                rules.movies(),
-            )
+            let basic = &state.match_state.map_basic;
+            let movies = rules.movies();
+            match &destination {
+                crate::app::match_runtime::scenario_exit::ScenarioExitDestination::LanRoomScore {
+                    ..
+                } => crate::app::campaign_defeat::lose_movie(basic, movies),
+                _ => crate::app::campaign_victory::win_movie(&destination, basic, movies),
+            }
             .map(str::to_owned)
         });
         if let Some(movie) = movie {
@@ -867,7 +899,7 @@ impl App {
     }
 
     /// The outcome's sole destination dispatch, shared by the audio teardown
-    /// and Victory685928's movie return. The latter cannot replay the movie.
+    /// and Victory685928's or Defeat686073's movie return, without replaying it.
     pub(super) fn complete_scenario_exit(
         state: &mut AppState,
         destination: crate::app::match_runtime::scenario_exit::ScenarioExitDestination,
@@ -886,7 +918,24 @@ impl App {
                 detail,
                 model,
             } => {
-                Self::open_campaign_score_page(state, model, title, detail);
+                Self::open_campaign_score_page(state, model, title, detail, None);
+            }
+            ScenarioExitDestination::LanStandaloneScore {
+                title,
+                detail,
+                model,
+                overlay,
+            } => {
+                Self::open_campaign_score_page(state, model, title, detail, Some(overlay));
+            }
+            ScenarioExitDestination::LanRoomScore {
+                title,
+                detail,
+                side,
+                overlay,
+                ..
+            } => {
+                Self::open_room_result(state, title, detail, side, overlay);
             }
             ScenarioExitDestination::CampaignVictoryContinue => {
                 Self::leave_mission_result_screen(state)

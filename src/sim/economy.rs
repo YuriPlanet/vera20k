@@ -103,7 +103,7 @@ impl Economy {
         money_delta_easy: i32,
         money_delta_hard: i32,
     ) {
-        self.scenario_credits = raw_credits.wrapping_mul(100);
+        self.scenario_credits = crate::map::houses::scenario_funds(raw_credits);
         self.credits = self.scenario_credits;
         if let Some(difficulty) = campaign_difficulty.filter(|_| player_control) {
             self.credits = match difficulty as i32 {

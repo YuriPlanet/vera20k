@@ -165,18 +165,25 @@ pub(crate) fn destroy_connection(
     }
     // VERA shared control: a House a connected teammate still controls stays.
     let teammate = session.network_teammate_connected(source_index);
-    if error == ConnectionError::Lost && !startup_pending && !sequenced {
+    let authored = sim.session().is_authored_campaign();
+    // An authored global departure can arrive before a graceful EXIT (or
+    // replace it when a window closes). Retire that source through the same
+    // synchronized REMOVEPLAYER path as a lost connection.
+    if (error == ConnectionError::Lost || authored) && !startup_pending && !sequenced {
         let frame = sim.session().binary_frame();
-        if frame == 0 && sim.session().network_command_timing().is_none() && !teammate {
+        if !authored && frame == 0 && sim.session().network_command_timing().is_none() && !teammate
+        {
             sim.flag_house_to_die(owner);
         }
         // VERA UDP/relay adaptation: native5DA86A..5DA87A only flags at zero.
         // A vote can remove a source after live timing was installed but
         // before the initial frame commits. Reuse the existing shared event
         // so its timing row retires through DoList, never a local peer list.
-        if frame != 0 || sim.session().network_command_timing().is_some() {
+        if (frame != 0 || sim.session().network_command_timing().is_some())
+            && !(authored && error == ConnectionError::Left && sim.houses()[&owner].left_game())
+        {
             // EVENT_REMOVEPLAYER from PlayerPtr with the House's index
-            // (0x005DA898..0x005DA8F0); it kills the House on every peer.
+            // (0x005DA898..0x005DA8F0); it retires the source on every peer.
             // VERA shared control: the lost participant's sender, which is
             // that index unless players share Houses.
             let local = sim.session().current_house();
@@ -195,6 +202,7 @@ pub(crate) fn destroy_connection(
     // player who left (error 0). An executed EXIT ran this in the sim's EXIT
     // block. RESIDUAL: mode 4's ladder-stats call (0x005DA921..) is backend.
     if !startup_pending
+        && !authored
         && error == ConnectionError::Left
         && !teammate
         && sim.session().wol_tournament_game()
@@ -807,7 +815,7 @@ fn csf(state: &AppState, key: &str) -> String {
 /// Kick_Player_Now `0x0064B240`: drop the record and run DestroyConnection.
 /// RESIDUAL: its stats-only House+0x208/+0x247 writes and the WOL
 /// statistics block are not ported.
-fn kick(state: &mut AppState, source_index: usize, error: ConnectionError) {
+pub(super) fn kick(state: &mut AppState, source_index: usize, error: ConnectionError) {
     let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) else {
         return;
     };

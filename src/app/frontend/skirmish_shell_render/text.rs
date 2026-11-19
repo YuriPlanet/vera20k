@@ -1333,16 +1333,29 @@ pub(super) fn push_choose_map_modal_text_draws(
         return;
     };
     let scale = layout.scale;
-    for (key, fallback, rect) in [
+    let grouped = modal.local_scenario_list_selected();
+    for (label, rect) in [
         (
-            "GUI:SelectEngagement",
-            "Select Engagement",
+            if grouped {
+                tr("VERA:ChooseCampaignStage")
+            } else {
+                localized_label(state, "GUI:SelectEngagement", "Select Engagement")
+            },
             layout.select_engagement,
         ),
-        ("GUI:GameType", "Game Type", layout.game_type_heading),
-        ("GUI:GameMap", "Game Map", layout.game_map_heading),
+        (
+            localized_label(state, "GUI:GameType", "Game Type"),
+            layout.game_type_heading,
+        ),
+        (
+            if grouped {
+                tr("VERA:CampaignStages")
+            } else {
+                localized_label(state, "GUI:GameMap", "Game Map")
+            },
+            layout.game_map_heading,
+        ),
     ] {
-        let label = localized_label(state, key, fallback);
         push_text_draw(
             out,
             state,
@@ -1381,6 +1394,9 @@ pub(super) fn push_choose_map_modal_text_draws(
                 ChooseMapModalButton::Favorite,
             ),
         ] {
+            if rect.w == 0 {
+                continue;
+            }
             let disabled = !modal.button_enabled(button);
             push_text_draw(
                 out,
@@ -1393,13 +1409,26 @@ pub(super) fn push_choose_map_modal_text_draws(
                 scale.factor(),
             );
         }
-        // VERA: the selected map's author under its preview, top-aligned
-        // like `0x102`'s game type there, so a long name keeps its first line.
-        if let Some(line) = modal
+        if let Some(stage) = modal.selected_local_stage() {
+            if state.frontend.skirmish_preview_texture.is_none() {
+                push_text_draw(
+                    out,
+                    state,
+                    stage.unavailable.as_deref().unwrap_or(&stage.no_preview),
+                    rect_to_text_rect(layout.preview),
+                    [1.0, 0.82, 0.56],
+                    ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                    SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+                    scale.factor(),
+                );
+            }
+        } else if let Some(line) = modal
             .selected_record_index()
             .and_then(|index| state.frontend.scenario_catalog.records().get(index))
             .and_then(|record| map_author_line(record.author.as_deref()))
         {
+            // VERA: the selected catalog map's author is top-aligned like
+            // `0x102`'s game type, so a long name keeps its first line.
             push_text_draw(
                 out,
                 state,
@@ -1424,6 +1453,8 @@ pub(super) fn push_choose_map_modal_text_draws(
             tr("VERA:OnlineMaps")
         } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
             tr("VERA:Favorites")
+        } else if let Some(label) = modal.local_scenario_caption(*chosen) {
+            label.to_owned()
         } else {
             let Some(mode) = chosen.resolve(&state.frontend.skirmish_modes) else {
                 continue;
@@ -1456,27 +1487,34 @@ pub(super) fn push_choose_map_modal_text_draws(
         .take(geometry.visible_rows)
         .enumerate()
     {
-        let label = match &modal.row_labels {
-            Some(labels) => labels.get(index).cloned(),
-            None => state
-                .frontend
-                .scenario_catalog
-                .records()
-                .get(*record_idx)
-                .map(|record| {
-                    // Starred maps carry a star, except under Favorites,
-                    // where every map is one.
-                    if !modal.favorites_selected() && modal.is_favorite(record) {
-                        format!("* {}", record.display_name)
-                    } else {
-                        record.display_name.clone()
-                    }
-                }),
-        };
+        let label = modal
+            .local_favorite_label(index)
+            .or_else(|| match &modal.row_labels {
+                Some(labels) => labels.get(index).cloned(),
+                None => state
+                    .frontend
+                    .scenario_catalog
+                    .records()
+                    .get(*record_idx)
+                    .map(|record| {
+                        // Starred maps carry a star, except under Favorites,
+                        // where every map is one.
+                        if !modal.favorites_selected() && modal.is_favorite(record) {
+                            format!("* {}", record.display_name)
+                        } else {
+                            record.display_name.clone()
+                        }
+                    }),
+            });
         let Some(label) = label else {
             continue;
         };
         let row = geometry.row(visible);
+        let color = if modal.local_scenario_disabled_row(index) {
+            [1.0, 0.82, 0.56]
+        } else {
+            SHELL_LABEL_TEXT_RGB
+        };
         push_text_draw(
             out,
             state,
@@ -1487,7 +1525,7 @@ pub(super) fn push_choose_map_modal_text_draws(
                 row.w - list_text_inset(scale),
                 row.h,
             )),
-            SHELL_LABEL_TEXT_RGB,
+            color,
             LIST_ROW_TEXT_ALIGN,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
             scale.factor(),
@@ -1540,7 +1578,11 @@ pub(super) fn push_choose_map_modal_text_draws(
     let display_search = map_search_display(state, &modal.search);
     let hint;
     let (search, rgb) = if display_search.is_empty() {
-        hint = tr("VERA:MapSearchHint");
+        hint = tr(if grouped {
+            "VERA:CampaignStageSearchHint"
+        } else {
+            "VERA:MapSearchHint"
+        });
         (&*hint, SHELL_LABEL_TEXT_RGB)
     } else {
         let box_w = scale.base_rect(layout.map_search).w;

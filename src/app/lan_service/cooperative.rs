@@ -21,23 +21,6 @@ use crate::skirmish_launch::{
     SkirmishLocalSlot,
 };
 
-/// At a LAN co-op mission's end, before `retire_finished_scenario`: take the
-/// match's transport back without leaving its scope, so the shared teardown
-/// finds no match transport to return.
-pub(crate) fn hold_transport(state: &mut AppState) {
-    if state.match_state.session_mode() != SessionMode::Lan {
-        return;
-    }
-    let Some(live) = state.match_state.live_network.take() else {
-        return;
-    };
-    if let Some(service) = state.match_state.lan_service.as_mut() {
-        let mut transport = live.into_transport();
-        transport.connections_mut().reset();
-        service.transport = Some(transport);
-    }
-}
-
 /// BC6's exit to the shell: its last records (Quit's `0x24`) go out first,
 /// then the visit leaves the match scope as [`return_transport`] does.
 /// RESIDUAL: the `0x24` gets one transmission here; native's global manager

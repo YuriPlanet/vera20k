@@ -60,10 +60,14 @@ pub(crate) fn catching_up(state: &AppState, now_ms: u32) -> bool {
 pub(crate) fn key(state: &mut AppState, code: KeyCode, pressed: bool, repeat: bool) -> bool {
     match code {
         KeyCode::Escape => {
-            if pressed && let Some(live) = state.match_state.live_network.as_mut() {
-                // The next frame's network wait leaves the match
-                // (`exit_awaits_unreachable_relay`).
-                live.keep_running_for_exit();
+            if pressed {
+                if super::authored_narrative::pending(state) {
+                    crate::app::App::leave_authored_narrative(state);
+                } else if let Some(live) = state.match_state.live_network.as_mut() {
+                    // The next frame's network wait leaves the match
+                    // (`exit_awaits_unreachable_relay`).
+                    live.keep_running_for_exit();
+                }
             }
             true
         }

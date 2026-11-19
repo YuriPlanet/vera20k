@@ -112,3 +112,17 @@ pub(crate) fn country_display_name(
         .filter(|text| Some(text.as_str()) != ui_key);
     localized.or_else(|| plain.map(str::to_string))
 }
+
+/// Localize the stock Sides while preserving a mod's effective side name.
+pub(crate) fn faction_display_name(side: &str) -> String {
+    for (name, key) in [
+        ("GDI", "VERA:FactionAllies"),
+        ("Nod", "VERA:FactionSoviet"),
+        ("ThirdSide", "VERA:FactionYuri"),
+    ] {
+        if side.eq_ignore_ascii_case(name) {
+            return crate::i18n::tr(key);
+        }
+    }
+    side.to_owned()
+}

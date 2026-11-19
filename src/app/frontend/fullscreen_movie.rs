@@ -52,6 +52,7 @@ pub(crate) enum MovieReturn {
     /// fullscreen owner holds media/audio; the screen gate stops new frames.
     RunningScenario,
     /// Victory685928 plays Basic.Win before its score/SkipScore destination.
+    /// The LAN campaign also uses this return for Defeat686073's Basic.Lose.
     /// EOF, Escape, missing media and decode failure all resume that outcome.
     CampaignResult(Box<crate::app::match_runtime::scenario_exit::ScenarioExitDestination>),
     /// A won campaign mission's PostScore/PreMapSelect/FinalMovie
@@ -126,6 +127,14 @@ impl FullscreenMovie {
     }
     pub(crate) fn into_return(self) -> MovieReturn {
         self.return_to
+    }
+    pub(crate) fn precedes_lan_defeat_result(&self) -> bool {
+        use crate::app::match_runtime::scenario_exit::ScenarioExitDestination;
+        matches!(
+            &self.return_to,
+            MovieReturn::CampaignResult(destination)
+                if matches!(destination.as_ref(), ScenarioExitDestination::LanRoomScore { .. })
+        )
     }
     pub(crate) fn set_active(&mut self, active: bool) {
         self.playback.set_active(active);

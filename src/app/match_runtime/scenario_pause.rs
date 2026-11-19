@@ -26,7 +26,7 @@ impl ScenarioPauseClock {
         }
     }
 
-    fn elapsed(&self, wall_ms: u64) -> bool {
+    pub(super) fn elapsed(&self, wall_ms: u64) -> bool {
         self.timer.remaining(bucket(wall_ms)) <= 0
     }
 }

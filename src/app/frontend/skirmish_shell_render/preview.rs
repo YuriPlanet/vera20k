@@ -22,6 +22,7 @@ use super::{SHELL_PREVIEW_SURFACE_DEPTH, START_MARKER_OFFSET_X, START_MARKER_OFF
 
 pub(crate) struct SkirmishPreviewTexture {
     pub selected_map_idx: usize,
+    pub local_scenario: Option<crate::map::scenario_menu::LocalScenarioKey>,
     pub texture: BatchTexture,
     /// The size the preview box fits: the texture's own, or for VERA's
     /// picture of the map the size of the map's own preview whose place it
@@ -115,6 +116,7 @@ pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
     let (width, height) = (preview.width, preview.height);
     let source = preview.clone();
     state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+        local_scenario: None,
         selected_map_idx: usize::MAX,
         texture,
         width,
@@ -280,6 +282,7 @@ pub(super) fn selected_preview_texture_is_current(
             // generated image standing in for the chooser's own thumbnail.
             cached.setup_preview_generation.is_none()
                 && cached.received_preview.is_none()
+                && cached.local_scenario.is_none()
                 && cached.selected_map_idx == selected_map_idx
                 && cached.hd_setting == state.hd_map_previews()
                 && cached
@@ -440,6 +443,7 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
         rgba: preview.rgba.clone(),
     };
     state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+        local_scenario: None,
         selected_map_idx: state.frontend.skirmish_shell_state.selected_map_idx,
         texture,
         width: source.width,
@@ -551,6 +555,7 @@ pub(super) fn ensure_map_preview_texture(
         let fitted = aspect_fit_rect(preview_box, fit_w, fit_h);
         let texture = picture_texture(state, &picture, (fitted.w, fitted.h));
         state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+            local_scenario: None,
             selected_map_idx,
             texture,
             width: fit_w,
@@ -587,6 +592,7 @@ pub(super) fn ensure_map_preview_texture(
         decoded.height,
     );
     state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+        local_scenario: None,
         selected_map_idx,
         texture,
         width: decoded.width,
@@ -599,6 +605,81 @@ pub(super) fn ensure_map_preview_texture(
         zoom: None,
         briefing: OnceCell::new(),
     });
+}
+
+pub(super) fn ensure_local_scenario_preview(
+    state: &mut AppState,
+    key: &crate::map::scenario_menu::LocalScenarioKey,
+    presentation: Option<&crate::map::scenario_menu::LocalScenarioPresentation>,
+) {
+    let Some((presentation, preview)) = presentation.and_then(|p| Some((p, p.preview.as_ref()?)))
+    else {
+        state.frontend.skirmish_preview_texture = None;
+        return;
+    };
+    if state
+        .frontend
+        .skirmish_preview_texture
+        .as_ref()
+        .is_some_and(|texture| texture.local_scenario.as_ref() == Some(key))
+    {
+        return;
+    }
+    if !preview_fits_texture(
+        preview.width,
+        preview.height,
+        preview.rgba.len(),
+        state.renderer.gpu.device.limits().max_texture_dimension_2d,
+    ) {
+        state.frontend.skirmish_preview_texture = None;
+        return;
+    }
+    let texture = state.renderer.batch_renderer.create_texture(
+        &state.renderer.gpu,
+        &preview.rgba,
+        preview.width,
+        preview.height,
+    );
+    state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+        local_scenario: Some(key.clone()),
+        selected_map_idx: usize::MAX,
+        texture,
+        width: preview.width,
+        height: preview.height,
+        setup_preview_generation: None,
+        received_preview: None,
+        hd_setting: state.hd_map_previews(),
+        hd_picture: None,
+        source: preview.clone(),
+        zoom: None,
+        briefing: OnceCell::from(presentation.briefing.clone()),
+    });
+}
+
+/// Draw a role's verified start at its projected coordinate. Colour is a
+/// display hint only, and comes from the same presentation as the room row.
+pub(super) fn push_role_start_markers(
+    controls: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    positions: &[(i32, i32)],
+    colors: &[Option<[u8; 3]>],
+    fitted: RectPx,
+    scale: ShellScale,
+) {
+    let size = (scale.factor() * 9.0).round() as i32;
+    for (&(x, y), color) in positions.iter().zip(colors) {
+        if let Some(color) = color
+            && fitted.contains(x, y)
+        {
+            super::chrome::push_solid_rect(
+                controls,
+                atlas,
+                RectPx::new(x - size / 2, y - size / 2, size, size),
+                color.map(|value| f32::from(value) / 255.0),
+                0.00055,
+            );
+        }
+    }
 }
 
 /// A texture of `picture` for drawing it `size` large: shrunk here by area

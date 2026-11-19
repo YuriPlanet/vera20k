@@ -1736,7 +1736,10 @@ impl App {
             if Self::prompt_choose_map_eject(state, selection) {
                 return Ok(());
             }
-            Self::commit_choose_map_use(state, selection);
+            Self::commit_choose_map_use(
+                state,
+                crate::ui::skirmish_shell::ChooseMapChoice::Standard(selection),
+            );
         }
         Ok(())
     }

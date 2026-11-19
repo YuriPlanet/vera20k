@@ -63,6 +63,16 @@ use crate::sim::touch_log::live_read_check_enabled;
 use crate::sim::vision::RevealViewers;
 use crate::sim::world::{FrameEffects, ParanoidMaps, Simulation};
 
+/// Which authority admits a live player request to change alliances.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PlayerAllianceAdmission {
+    /// Retail rules gate player input and the native ALLY record executes directly.
+    #[default]
+    Retail,
+    /// The frozen room option and active human seats govern input and execution.
+    RoomParticipants,
+}
+
 /// The native ScenarioInit counter is nonzero during ReadScenarioINI's House
 /// pass (ordinary campaign prior2). CanAlly501540 then bypasses live-world
 /// defeated/count gates; MakeAlly4F9B70 writes only the sender's ally mask.
@@ -542,6 +552,42 @@ impl Simulation {
             }
         }
         self.session.set_fixed_alliance(true);
+    }
+
+    /// Admission of the player's live Alliance command. Stock input uses
+    /// the gates of Ally731840. Room-scoped admission also checks the two
+    /// participating Houses on synchronized execution.
+    pub fn player_alliance_change_allowed(
+        &self,
+        owner: InternedId,
+        other: InternedId,
+        rules: &RuleSet,
+    ) -> bool {
+        if !self.session.game_mode_nonzero()
+            || self.session.fixed_alliance()
+            || !self.session.game_options().ally_change_allowed
+        {
+            return false;
+        }
+        match self.session.player_alliance_admission() {
+            PlayerAllianceAdmission::Retail => {
+                rules.general.allies_allowed && rules.general.ally_change_allowed
+            }
+            PlayerAllianceAdmission::RoomParticipants => {
+                owner != other
+                    && [owner, other].into_iter().all(|house| {
+                        !self.session.is_observer_house(house)
+                            && self.houses.get(&house).is_some_and(|state| {
+                                state.is_human()
+                                    && !state.is_defeated()
+                                    && !state.left_game()
+                                    && !state.multiplay_passive()
+                                    && !state.has_won()
+                                    && !state.has_lost()
+                            })
+                    })
+            }
+        }
     }
 
     /// `HouseClass::Make_Ally @ 0x004F9B70`. Only the ALLY event passes

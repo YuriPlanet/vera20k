@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools import run_test_map
-from tools.scale_map import build_map
+from tools.scale_map import build_map, build_vmce_minimal_map
 from tools.run_test_map import MAPS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,6 +51,14 @@ class TestMapRegistryTests(unittest.TestCase):
     def test_map_names_are_unique(self):
         names = [entry.name for entry in MAPS]
         self.assertEqual(len(names), len(set(names)))
+
+    def test_vmce_minimal_map_matches_generator_and_checks_size_bounds(self):
+        path = ROOT / "tests/fixtures/vmce/minimal_stage01.map"
+        self.assertTrue(path.is_file(), f"{path} is missing")
+        committed = path.read_bytes()
+        self.assertEqual(committed, build_vmce_minimal_map(32).encode("ascii"))
+        with self.assertRaises(ValueError):
+            build_vmce_minimal_map(16)
 
     def test_every_map_declares_a_scenario_and_a_regeneration(self):
         for entry in MAPS:

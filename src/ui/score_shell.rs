@@ -19,11 +19,11 @@
 
 use crate::util::time::{Duration, Instant};
 
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::{DialogId, LOW_HEADING_ANCHOR};
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale, child_window,
 };
-use crate::ui::shell::layout::status_line_rect;
+use crate::ui::shell::layout::{anchor_rect, status_line_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::static_reveal::{Kind1Params, Kind1RevealWindow, PresentedKind1Static};
 
@@ -32,6 +32,54 @@ pub const CONTINUE_BUTTON: u16 = 0x06D1;
 /// VERA paging controls; omitted for native-sized result tables.
 pub const PREVIOUS_PAGE: u16 = 0xF201;
 pub const NEXT_PAGE: u16 = 0xF202;
+
+/// The frame and native button slots of the room result dialog `0xBC6`.
+pub(crate) const ROOM_RESULT_DIALOG: DialogId = DialogId(0x0BC6);
+pub(crate) const ROOM_RESULT_PRIMARY: u16 = 0x06D1;
+pub(crate) const ROOM_RESULT_EXIT: u16 = 0x05C0;
+pub(crate) const ROOM_RESULT_PAGE: MenuPageSpec = MenuPageSpec {
+    dialog: ROOM_RESULT_DIALOG,
+    title_key: "GUI:CampaignResults",
+    stacked: &[MenuPageButtonSpec {
+        id: ROOM_RESULT_PRIMARY,
+        dlu_top: 149,
+        csf_key: "GUI:Continue",
+        tooltip_key: "STT:MPCampScoreContinue",
+        result: None,
+    }],
+    back: MenuPageButtonSpec {
+        id: ROOM_RESULT_EXIT,
+        dlu_top: 346,
+        csf_key: "GUI:Quit",
+        tooltip_key: "STT:MPCampScoreQuit",
+        result: None,
+    },
+};
+
+pub(crate) fn room_result_layout(width: u32, height: u32, fills: bool) -> MenuPageLayout {
+    let (mut page, authored_size) = if fills {
+        (
+            menu_page::compute_responsive_layout(&ROOM_RESULT_PAGE, width, height),
+            (800, 600),
+        )
+    } else {
+        (
+            menu_page::compute_layout(&ROOM_RESULT_PAGE, width, height),
+            (width as i32, height as i32),
+        )
+    };
+    let (aw, ah) = authored_size;
+    page.title = page.scale.scale_rect(anchor_rect(
+        LOW_HEADING_ANCHOR,
+        RectPx::new(425, 1, 107, 10),
+        aw,
+        ah,
+    ));
+    page.status_help =
+        page.scale
+            .scale_rect(status_line_rect(RectPx::new(1, 356, 316, 12), aw, ah));
+    page
+}
 
 /// RT_DIALOG `0x108`'s right panel: Continue on the bottom tile.
 pub const SCORE_PAGE: MenuPageSpec = MenuPageSpec {

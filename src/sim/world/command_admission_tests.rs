@@ -461,13 +461,271 @@ fn native_frame_and_house_override_carrier_metadata() {
 }
 
 #[test]
+fn shared_control_group_keeps_local_and_discovered_granted_units() {
+    let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=MOVER\n[MOVER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let names = ["Local", "Granted", "Granted", "Other"];
+    for (index, name) in ["Local", "Granted", "Other"].into_iter().enumerate() {
+        let owner = sim.interner.intern(name);
+        sim.houses
+            .register(HouseState::new(owner, index as u8, None, index == 0, 0, 10));
+    }
+    let local = sim.interner.get("Local").unwrap();
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.set_current_house_for_test(Some(local));
+    sim.session.install_house_control_grants(vec![(0, 1)]);
+    let mut ids = Vec::new();
+    for (offset, owner) in names.into_iter().enumerate() {
+        let id = sim
+            .spawn_object_with_overlay_registry(
+                "MOVER",
+                owner,
+                10 + offset as u16,
+                12,
+                0,
+                &rules,
+                &overlays,
+            )
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .discovery
+            .set_discovered_by_current_house_for_test(offset != 2);
+        ids.push(id);
+    }
+
+    assert!(sim.apply_command(
+        "Local",
+        &Command::AssignControlGroup {
+            group: 1,
+            entity_ids: ids.clone()
+        },
+        Some(&rules),
+    ));
+    let groups: Vec<_> = ids
+        .iter()
+        .map(|id| sim.entities().get(*id).unwrap().control_group())
+        .collect();
+    assert_eq!(groups, [1, 1, -1, -1]);
+    assert!(!sim.select_unselects_all(ids[0], ids[1]));
+    assert!(sim.select_unselects_all(ids[0], ids[3]));
+}
+
+#[test]
+fn synchronized_cell_move_uses_the_real_sender_and_frozen_grants() {
+    use crate::sim::command::{MegaMissionRecord, MegaMissionTarget};
+    use crate::sim::components::NavTargetRef;
+    use std::cell::RefCell;
+
+    let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=MOVER\n[MOVER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [BuildingTypes]\n0=YARD\n1=FACTORY\n[YARD]\nStrength=1000\nConstructionYard=yes\nUndeploysInto=MOVER\n\
+         [FACTORY]\nStrength=800\nFactory=UnitType\n",
+    );
+    let [controller, peer, attached, excluded] =
+        ["Controller", "Peer", "Attached", "Excluded"].map(|name| sim.interner.intern(name));
+    for (index, owner) in [controller, peer, attached, excluded]
+        .into_iter()
+        .enumerate()
+    {
+        sim.houses
+            .register(HouseState::new(owner, index as u8, None, index < 2, 0, 10));
+    }
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.set_current_house_for_test(Some(peer));
+    sim.session.install_house_control_grants(vec![(0, 2)]);
+    let shared = sim
+        .spawn_object_with_overlay_registry("MOVER", "Attached", 10, 12, 0, &rules, &overlays)
+        .unwrap();
+    let denied = sim
+        .spawn_object_with_overlay_registry("MOVER", "Excluded", 12, 12, 0, &rules, &overlays)
+        .unwrap();
+    let yard = sim
+        .spawn_object_with_overlay_registry("YARD", "Attached", 13, 13, 0, &rules, &overlays)
+        .unwrap();
+    let factory = sim
+        .spawn_object_with_overlay_registry("FACTORY", "Attached", 15, 15, 0, &rules, &overlays)
+        .unwrap();
+    let cell_move = |sim: &Simulation, sender, entity_id, target_rx| {
+        sim.encode_megamission_record(
+            sender,
+            &Command::Move {
+                entity_id,
+                target_rx,
+                target_ry: 17,
+            },
+        )
+        .unwrap()
+    };
+    let allowed = cell_move(&sim, controller, shared, 19);
+    let mut with_auxiliary = cell_move(&sim, controller, shared, 18);
+    let mut mission = MegaMissionRecord::decode(&with_auxiliary).unwrap();
+    mission.auxiliary = MegaMissionTarget::Cell { x: 17, y: 17 };
+    mission.write_into(&mut with_auxiliary).unwrap();
+    let excluded_move = cell_move(&sim, controller, denied, 18);
+    let yard_move = cell_move(&sim, controller, yard, 20);
+    let yard_repair = sim.encode_repair_record(controller, yard).unwrap();
+    let yard_sell = sim
+        .encode_object_action_record(controller, &Command::SellBuilding { entity_id: yard })
+        .unwrap();
+    let repair = sim.encode_repair_record(controller, factory).unwrap();
+    let sell = sim
+        .encode_object_action_record(controller, &Command::SellBuilding { entity_id: factory })
+        .unwrap();
+    let rally = |actor| {
+        sim.encode_archive_record(controller, actor, MegaMissionTarget::Cell { x: 18, y: 16 })
+            .unwrap()
+    };
+    let yard_rally = rally(yard);
+    let factory_rally = rally(factory);
+    let attack = |sender, attacker_id| {
+        sim.encode_megamission_record(
+            sender,
+            &Command::Attack {
+                attacker_id,
+                target_id: denied,
+            },
+        )
+        .unwrap()
+    };
+    let shared_attack = attack(controller, shared);
+    let building_attack = attack(controller, factory);
+    let peer_attack = attack(peer, shared);
+    let spoofed = cell_move(&sim, peer, shared, 18);
+    let mut expected = Vec::new();
+    // DoList executes repair and sell in the first pass, then MegaMissions.
+    for (record, applied) in [
+        (yard_repair, false),
+        (yard_sell, false),
+        (repair, false),
+        (sell, false),
+        (yard_rally, false),
+        (factory_rally, true),
+        (shared_attack, true),
+        (building_attack, false),
+        (allowed, true),
+        (with_auxiliary, false),
+        (excluded_move, false),
+        (yard_move, false),
+        (peer_attack, false),
+    ] {
+        expected.push((record.house_id(), record.opcode(), applied));
+        assert!(sim.network_command_queues().admit_received(record));
+    }
+    expected.push((spoofed.house_id(), spoofed.opcode(), false));
+    sim.queue_command(CommandEnvelope::new(
+        attached,
+        u64::MAX,
+        Command::SynchronizedRecord { record: spoofed },
+    ));
+
+    let applied = RefCell::new(Vec::new());
+    let observe = |_: &Simulation, record: &crate::sim::command::CommandRecord, ok| {
+        applied
+            .borrow_mut()
+            .push((record.house_id(), record.opcode(), ok));
+    };
+    sim.advance_master_frame(
+        &[],
+        &rules,
+        Some(&overlays),
+        33,
+        crate::sim::world::TickLane::Ordinary,
+        false,
+        FrameEffects::default().with_command_applied(&observe),
+    )
+    .unwrap();
+    assert_eq!(applied.into_inner(), expected);
+    assert_eq!(
+        sim.entities().get(factory).unwrap().archive_target(),
+        Some(crate::sim::combat::TargetKind::Cell(18, 16))
+    );
+    assert_eq!(sim.entities().get(yard).unwrap().archive_target(), None);
+    let shared = sim.entities().get(shared).unwrap();
+    assert_eq!(shared.owner(), attached);
+    assert_eq!(
+        shared.navigation.nav_com(),
+        Some(NavTargetRef::cell(19, 17))
+    );
+    let denied = sim.entities().get(denied).unwrap();
+    assert_eq!(denied.navigation.nav_com(), None);
+    assert_eq!((denied.position.rx(), denied.position.ry()), (12, 12));
+}
+
+#[test]
+fn frozen_grants_use_the_existing_passenger_and_deploy_admission() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::mission::MissionType;
+    use std::cell::RefCell;
+
+    let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=CARRIER\n1=TANK\n[CARRIER]\nStrength=120\nPassengers=5\nSizeLimit=2\nSpeed=7\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [TANK]\nStrength=120\nSpeed=7\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let local = sim.intern("Controller");
+    let attached = sim.intern("Attached");
+    for (index, owner) in [(0, local), (1, attached)] {
+        sim.houses
+            .register(HouseState::new(owner, index, None, index == 0, 0, 10));
+    }
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.set_current_house_for_test(Some(local));
+    sim.session.install_house_control_grants(vec![(0, 1)]);
+    let mut spawn = |kind, x, y| {
+        sim.spawn_object_with_overlay_registry(kind, "Attached", x, y, 0, &rules, &overlays)
+            .unwrap()
+    };
+    let infantry = spawn("ENGINEER", 16, 15);
+    let carrier = spawn("CARRIER", 17, 15);
+    let tank = spawn("TANK", 17, 16);
+    let enter = |target| {
+        sim.encode_megamission_record(
+            local,
+            &Command::MegaMission {
+                entity_id: infantry,
+                mission: MissionType::Enter,
+                target: None,
+                destination: Some(TargetKind::Entity(target)),
+            },
+        )
+        .unwrap()
+    };
+    let records = [
+        sim.encode_deploy_record(local, tank).unwrap(),
+        enter(tank),
+        enter(carrier),
+    ];
+    for record in records {
+        assert!(sim.network_command_queues().admit_received(record));
+    }
+    let applied = RefCell::new(Vec::new());
+    let observe = |_: &Simulation, _: &crate::sim::command::CommandRecord, ok| {
+        applied.borrow_mut().push(ok);
+    };
+    sim.advance_master_frame(
+        &[],
+        &rules,
+        Some(&overlays),
+        33,
+        crate::sim::world::TickLane::Ordinary,
+        false,
+        FrameEffects::default().with_command_applied(&observe),
+    )
+    .unwrap();
+    assert_eq!(applied.into_inner(), [false, false, true]);
+}
+
+#[test]
 fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
     use crate::sim::command::CommandRecord;
     use crate::sim::components::NavTargetRef;
     use crate::sim::world::TickLane;
     use std::cell::RefCell;
 
-    let run = |transfer_second| {
+    let run = |transfer_second, grant_second| {
         let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             "[VehicleTypes]\n0=MOVER\n[MOVER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
         );
@@ -479,6 +737,9 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
         }
         sim.session.set_game_mode(ScenarioGameMode::Lan);
         sim.session.set_current_house_for_test(Some(other));
+        if grant_second {
+            sim.session.install_house_control_grants(vec![(0, 1)]);
+        }
         let units = [16, 15].map(|x| {
             sim.spawn_object_with_overlay_registry(
                 "MOVER",
@@ -526,12 +787,15 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
             FrameEffects::default().with_command_applied(&observe),
         )
         .unwrap();
-        assert_eq!(observed.into_inner(), [true, !transfer_second]);
+        assert_eq!(
+            observed.into_inner(),
+            [true, !transfer_second || grant_second]
+        );
         units.map(|id| sim.entities().get(id).unwrap().navigation.nav_com())
     };
 
     assert_eq!(
-        run(false),
+        run(false, false),
         [
             Some(NavTargetRef::cell(20, 17)),
             Some(NavTargetRef::cell(19, 17))
@@ -539,9 +803,17 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
         "both owned units get distinct group destinations",
     );
     assert_eq!(
-        run(true),
+        run(true, false),
         [Some(NavTargetRef::cell(19, 17)), None],
         "the remaining unit keeps the clicked destination",
+    );
+    assert_eq!(
+        run(true, true),
+        [
+            Some(NavTargetRef::cell(20, 17)),
+            Some(NavTargetRef::cell(19, 17))
+        ],
+        "the unit with a frozen Move grant still spreads with the group",
     );
 }
 

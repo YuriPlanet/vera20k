@@ -105,7 +105,9 @@ impl Simulation {
 
         #[cfg(any(test, feature = "test-support"))]
         let mut skirmish_order = [None; 4];
-        let crates = if input.skirmish_session.is_some() {
+        let place_startup_crates = input.skirmish_session.is_some()
+            || (self.session.game_mode().is_network() && self.session.game_options().crates);
+        let crates = if place_startup_crates {
             let player_count = crate::sim::crates::human_player_count(self);
             #[cfg(any(test, feature = "test-support"))]
             {
@@ -126,7 +128,7 @@ impl Simulation {
             None
         };
 
-        if self.session.game_mode_nonzero() {
+        if self.session.uses_auto_enemy_selection() {
             // ScenarioClass::Post_Map_Init006869EA..00686A2B starts every
             // nonhuman/nonpassive House's timer, before its credit grant.
             // The timer writes consume no RNG and do not affect credits or
@@ -186,7 +188,7 @@ impl Simulation {
         // Post_Map_Init's Special-House pass (lookup `0x006869AB..0x006869BC`,
         // alliances `0x00686A9E..0x00686AC1`), in the same GameMode>0 segment
         // as the AI credits and before the Secret Lab call (`0x00686AFE`) below.
-        if self.session.game_mode_nonzero() {
+        if !self.session.uses_campaign_rules() {
             #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[3] = Some(ScenarioPostMapStep::SpecialAllies);
@@ -205,7 +207,7 @@ impl Simulation {
         // Full_Init687BC8..687BF1 skips that pass in GameMode0 (campaign).
         // Generated/.SED maps have a separate684990 call, but the admitted
         // generated family is noncampaign. Restore never reruns this owner.
-        if self.session.game_mode_nonzero() {
+        if !self.session.uses_campaign_rules() {
             Self::assign_secret_lab_production(
                 &mut self.interner,
                 &mut self.scenario_rng,

@@ -202,6 +202,24 @@ impl GlobalChannel {
         *self = Self::new(self.config, self.timing);
     }
 
+    /// Retire the old application's messages while keeping the sequence and
+    /// receipt history needed to acknowledge a retransmitted handoff.
+    pub(super) fn retire_application_messages(&mut self) {
+        self.send.cancel(|_| true);
+        self.receive.clear();
+    }
+
+    pub(super) fn is_received_reliable(&self, source: SocketAddrV4, frame: &[u8]) -> bool {
+        frame.len() >= GLOBAL_HEADER_LEN && frame[2] == 0 && self.has_seen(source, sequence(frame))
+    }
+
+    fn has_seen(&self, source: SocketAddrV4, sequence: u32) -> bool {
+        self.seen
+            .iter()
+            .take(self.total_received as usize)
+            .any(|seen| seen.source == source && seen.sequence == sequence)
+    }
+
     pub fn set_timing(&mut self, timing: RetryTiming) {
         self.timing = timing;
     }
@@ -321,12 +339,7 @@ impl GlobalChannel {
         if frame[2] > 1 {
             return Ok(GlobalReceiveOutcome::IgnoredKind);
         }
-        let duplicate = frame[2] == 0
-            && self
-                .seen
-                .iter()
-                .take(self.total_received as usize)
-                .any(|seen| seen.source == normalized_source && seen.sequence == incoming_sequence);
+        let duplicate = frame[2] == 0 && self.has_seen(normalized_source, incoming_sequence);
         if !duplicate {
             // Unlike the private channel, global admission reserves no slot.
             if self.receive.len() == self.config.receive_capacity

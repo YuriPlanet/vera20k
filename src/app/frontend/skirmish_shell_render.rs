@@ -635,7 +635,36 @@ fn render_skirmish_shell_with_atlas(
     let preview_rect = setup_preview_rect
         .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
         .unwrap_or(layout.map_preview);
-    ensure_selected_preview_texture(state, preview_rect);
+    let local_chooser = state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_ref()
+        .filter(|modal| {
+            chooser_showing
+                && (modal.local_scenario_list_selected() || modal.selected_local_stage().is_some())
+        });
+    let show_local_chooser = local_chooser.is_some();
+    let local_selection = local_chooser
+        .and_then(|modal| modal.selected_local_stage())
+        .filter(|map| map.unavailable.is_none())
+        .map(|map| map.selection.clone());
+    let local_media = local_selection.as_ref().and_then(|selection| {
+        crate::app::shell_network_setup::local_scenarios::chooser_media(state, selection)
+    });
+    if let Some(selection) = local_selection.as_ref() {
+        preview::ensure_local_scenario_preview(
+            state,
+            &selection.key,
+            local_media
+                .as_ref()
+                .map(|(presentation, _)| presentation.as_ref()),
+        );
+    } else if show_local_chooser {
+        state.frontend.skirmish_preview_texture = None;
+    } else {
+        ensure_selected_preview_texture(state, preview_rect);
+    }
     let zoom_layout =
         ensure_zoom_texture(state, layout.scale, !sliding && !leaving && !message_box_up);
     let selected_entry = state
@@ -662,7 +691,13 @@ fn render_skirmish_shell_with_atlas(
             .filter(|_| setup_modal.is_none())
             .and_then(|entry| entry.preview_source_bounds.as_ref()),
     );
-    let selected_preview_bounds = selected_preview_bounds.as_ref();
+    let selected_preview_bounds = if show_local_chooser {
+        local_media
+            .as_ref()
+            .and_then(|(presentation, _)| presentation.starts.as_ref())
+    } else {
+        selected_preview_bounds.as_ref()
+    };
     let fitted_preview_rect = state
         .frontend
         .skirmish_preview_texture
@@ -699,11 +734,22 @@ fn render_skirmish_shell_with_atlas(
             .batch_renderer
             .create_instance_buffer(&state.renderer.gpu, &[*instance])
     });
-    let marker_instances = if draw_start_marker_overlays {
-        build_start_marker_instances(atlas, &projected_start_positions, layout.scale)
-    } else {
-        Vec::new()
-    };
+    let mut marker_instances = Vec::new();
+    if draw_start_marker_overlays {
+        if let Some(((_, colors), fitted)) = local_media.as_ref().zip(fitted_preview_rect) {
+            preview::push_role_start_markers(
+                &mut marker_instances,
+                atlas,
+                &projected_start_positions,
+                colors,
+                fitted,
+                layout.scale,
+            );
+        } else {
+            marker_instances =
+                build_start_marker_instances(atlas, &projected_start_positions, layout.scale);
+        }
+    }
     let marker_buffer = state
         .renderer
         .batch_renderer
@@ -855,7 +901,7 @@ fn render_skirmish_shell_with_atlas(
             validation_ok_pressed,
         );
     }
-    let marker_label_instances = if draw_start_marker_overlays {
+    let marker_label_instances = if draw_start_marker_overlays && !show_local_chooser {
         build_start_marker_label_instances(state, &projected_start_positions, layout.scale)
     } else {
         Vec::new()
@@ -2119,5 +2165,7 @@ pub(crate) use wol_quick_match::paint_wol_quick_match_children;
 mod coop_score;
 mod multiplayer_setup;
 pub(crate) use coop_score::render_coop_score;
+mod result_overlay;
 pub(crate) use keyboard::render_keyboard_shell;
 pub(crate) use multiplayer_setup::render_multiplayer_setup;
+pub(crate) use result_overlay::render_result_overlay;

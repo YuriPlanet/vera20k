@@ -13,16 +13,17 @@
 //! `MatchSession` owns; this leaf keeps only the dialog's interaction.
 
 use crate::ui::lan_shell::LanChatState;
+pub(crate) use crate::ui::score_shell::{
+    ROOM_RESULT_DIALOG as COOP_SCORE_DIALOG, ROOM_RESULT_EXIT as QUIT,
+    ROOM_RESULT_PAGE as COOP_SCORE_PAGE, ROOM_RESULT_PRIMARY as CONTINUE,
+};
 use crate::ui::shell::button::ShellButtonInteraction;
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
-use crate::ui::shell::geom::{RectPx, child_window};
-use crate::ui::shell::layout::{anchor_rect, status_line_rect};
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::descriptor::{AnchorRule, MAP_TEXT_ANCHOR};
+use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
+use crate::ui::shell::layout::anchor_rect;
+use crate::ui::shell::menu_page::MenuPageLayout;
 use crate::ui::shell::trackbar::TrackbarRange;
 
-pub const COOP_SCORE_DIALOG: DialogId = DialogId(0x0BC6);
-pub const CONTINUE: u16 = 0x06D1;
-pub const QUIT: u16 = 0x05C0;
 pub const TIME: u16 = 0x03EA;
 pub const NEXT_MISSION: u16 = 0x077E;
 pub const MODE_LABEL: u16 = 0x06EC;
@@ -47,27 +48,6 @@ pub const ROW_CELLS: [[u16; 5]; 2] = [
     [0x0781, 0x0783, 0x0785, 0x0787, 0x0789],
     [0x0782, 0x0784, 0x0786, 0x0788, 0x078A],
 ];
-
-/// The right-panel heading and the two buttons (`0x0060B000` Continue,
-/// `0x0060B350` Quit).
-pub const COOP_SCORE_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: COOP_SCORE_DIALOG,
-    title_key: "GUI:CampaignResults",
-    stacked: &[MenuPageButtonSpec {
-        id: CONTINUE,
-        dlu_top: 149,
-        csf_key: "GUI:Continue",
-        tooltip_key: "STT:MPCampScoreContinue",
-        result: None,
-    }],
-    back: MenuPageButtonSpec {
-        id: QUIT,
-        dlu_top: 346,
-        csf_key: "GUI:Quit",
-        tooltip_key: "STT:MPCampScoreQuit",
-        result: None,
-    },
-};
 
 /// Win32 STATIC alignment (`SS_RIGHT` is style 2, `SS_CENTER` 1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -375,24 +355,14 @@ pub struct CoopScoreLayout {
 
 impl CoopScoreLayout {
     pub fn new(width: i32, height: i32, responsive: bool) -> Self {
-        let mut page = if responsive {
-            menu_page::compute_responsive_layout(&COOP_SCORE_PAGE, width as u32, height as u32)
-        } else {
-            menu_page::compute_layout(&COOP_SCORE_PAGE, width as u32, height as u32)
-        };
+        let page =
+            crate::ui::score_shell::room_result_layout(width as u32, height as u32, responsive);
         let scale = page.scale;
         let (aw, ah) = if responsive {
             (800, 600)
         } else {
             (width, height)
         };
-        page.title = scale.scale_rect(anchor_rect(
-            LOW_HEADING_ANCHOR,
-            RectPx::new(425, 1, 107, 10),
-            aw,
-            ah,
-        ));
-        page.status_help = scale.scale_rect(status_line_rect(RectPx::new(1, 356, 316, 12), aw, ah));
         let mut controls: Vec<(u16, RectPx)> = COOP_SCORE_CONTROLS
             .iter()
             .map(|spec| {
@@ -408,17 +378,8 @@ impl CoopScoreLayout {
                 (spec.id, scale.scale_rect(window))
             })
             .collect();
-        // 0x0060B1D0 moves the preview; it keeps its created window size.
-        let created = child_window(432, 23, 96, 69);
-        let mut preview = anchor_rect(
-            AnchorRule::RightAnchor,
-            RectPx::new(432, 23, 96, 69),
-            aw,
-            ah,
-        );
-        preview.w = created.w;
-        preview.h = created.h;
-        controls.push((PREVIEW, scale.scale_rect(preview)));
+        let (preview, map_label) = room_map_rects(scale, aw, ah);
+        controls.push((PREVIEW, preview));
         controls.push((
             MODE_LABEL,
             scale.scale_rect(anchor_rect(
@@ -428,15 +389,7 @@ impl CoopScoreLayout {
                 ah,
             )),
         ));
-        controls.push((
-            MAP_LABEL,
-            scale.scale_rect(anchor_rect(
-                MAP_TEXT_ANCHOR,
-                RectPx::new(434, 116, 90, 20),
-                aw,
-                ah,
-            )),
-        ));
+        controls.push((MAP_LABEL, map_label));
         Self { page, controls }
     }
 
@@ -460,6 +413,18 @@ impl CoopScoreLayout {
                     .is_some_and(|rect| rect.contains(x, y))
             })
     }
+}
+
+/// The thumbnail and mission caption positions from the native BC6 right panel.
+pub(crate) fn room_map_rects(scale: ShellScale, aw: i32, ah: i32) -> (RectPx, RectPx) {
+    // 0x0060B1D0 moves the preview; it keeps its created window size.
+    let preview_dlu = RectPx::new(432, 23, 96, 69);
+    let created = child_window(preview_dlu.x, preview_dlu.y, preview_dlu.w, preview_dlu.h);
+    let mut preview = anchor_rect(AnchorRule::RightAnchor, preview_dlu, aw, ah);
+    preview.w = created.w;
+    preview.h = created.h;
+    let map_label = anchor_rect(MAP_TEXT_ANCHOR, RectPx::new(434, 116, 90, 20), aw, ah);
+    (scale.scale_rect(preview), scale.scale_rect(map_label))
 }
 
 /// A control's status help (`STT:` key), from the template table.

@@ -57,6 +57,7 @@ pub(crate) fn win_movie<'a>(
         destination,
         ScenarioExitDestination::CampaignScore { .. }
             | ScenarioExitDestination::CampaignVictoryContinue
+            | ScenarioExitDestination::LanStandaloneScore { .. }
     ) {
         return None;
     }

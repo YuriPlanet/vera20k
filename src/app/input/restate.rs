@@ -32,33 +32,37 @@ fn scenario_file_name(state: &AppState) -> Option<String> {
 
 /// `0x0065F520`: read the briefing, then open 0x10C.
 pub(crate) fn open(state: &mut AppState) {
-    let Some(file_name) = scenario_file_name(state) else {
-        log::info!("Mission briefing: no scenario file name to read MISSIONMD under");
-        return;
+    let text = if let Some(text) = super::diplomacy::authored_briefing_text(state) {
+        text
+    } else {
+        let Some(file_name) = scenario_file_name(state) else {
+            log::info!("Mission briefing: no scenario file name to read MISSIONMD under");
+            return;
+        };
+        let Some(assets) = state.process_assets.manager() else {
+            return;
+        };
+        let Ok(selected) =
+            crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mission())
+        else {
+            // The CCINIClass finds no file: no dialog and no redraw.
+            return;
+        };
+        let key = crate::rules::campaign_loading::restate_briefing_key(&selected.ini, &file_name);
+        crate::app::frontend::shell_pass::resolve_csf(state, &key).into_owned()
     };
-    let Some(assets) = state.process_assets.manager() else {
-        return;
-    };
-    let Ok(selected) =
-        crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mission())
-    else {
-        // The CCINIClass finds no file: no dialog and no redraw.
-        return;
-    };
-    let key = crate::rules::campaign_loading::restate_briefing_key(&selected.ini, &file_name);
-    let text = crate::app::frontend::shell_pass::resolve_csf(state, &key).into_owned();
     state.match_state.match_presentation.restate_text = text;
     App::enter_in_game_menu_state(state, InGameMenuState::MissionBriefing);
 }
 
 pub(crate) fn layout(state: &AppState) -> Option<RestateLayout> {
     let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(restate_layout(
-        shell.width,
-        shell.height,
-        shell.layout,
-        shell.button_size,
-    ))
+    let layout = restate_layout(shell.width, shell.height, shell.layout, shell.button_size);
+    Some(if super::diplomacy::authored_selection(state).is_some() {
+        layout.with_diplomacy_button(shell.layout)
+    } else {
+        layout
+    })
 }
 
 fn control_under_pointer(state: &AppState) -> Option<RestateControl> {
@@ -67,15 +71,19 @@ fn control_under_pointer(state: &AppState) -> Option<RestateControl> {
     layout.control_at(x, y)
 }
 
-fn return_under(control: Option<RestateControl>) -> Option<RestateButton> {
-    (control == Some(RestateControl::Return)).then_some(RestateButton::Return)
+fn button_under(control: Option<RestateControl>) -> Option<RestateButton> {
+    match control {
+        Some(RestateControl::Return) => Some(RestateButton::Return),
+        Some(RestateControl::Diplomacy) => Some(RestateButton::Diplomacy),
+        _ => None,
+    }
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
     let over = control_under_pointer(state);
     let interaction = &mut state.match_state.match_presentation.restate;
     interaction.hovered = over;
-    interaction.button.hovered = return_under(over);
+    interaction.button.hovered = button_under(over);
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
@@ -84,7 +92,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
     let over = control_under_pointer(state);
     state.match_state.match_presentation.restate.hovered = over;
-    let target = return_under(over);
+    let target = button_under(over);
     if pressed {
         state
             .match_state
@@ -97,16 +105,23 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             // at button-down (0x0061376B).
             App::play_main_menu_button_sound(state);
         }
-    } else if state
-        .match_state
-        .match_presentation
-        .restate
-        .button
-        .release(target)
-        == Some(RestateButton::Return)
-    {
-        // 0x0065F710 writes 0x423 to the result slot; State_Machine then
-        // clears state 9 (0x0048C97A).
-        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+    } else {
+        match state
+            .match_state
+            .match_presentation
+            .restate
+            .button
+            .release(target)
+        {
+            Some(RestateButton::Return) => {
+                // 0x0065F710 writes 0x423 to the result slot; State_Machine
+                // then clears state 9 (0x0048C97A).
+                App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+            }
+            Some(RestateButton::Diplomacy) => {
+                App::enter_in_game_menu_state(state, InGameMenuState::Diplomacy);
+            }
+            None => {}
+        }
     }
 }

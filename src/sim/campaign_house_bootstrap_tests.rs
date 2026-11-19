@@ -321,9 +321,10 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
             )
             .unwrap();
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::begin_campaign_prefix(
+        sim.native_unique_ids = Some(NativeUniqueIdCursor::begin_authored_prefix(
             0,
             row["id_before"].as_u64().unwrap() as usize - 1_000_000,
+            None,
         ));
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
@@ -556,7 +557,7 @@ fn fresh_campaign_rejects_an_absent_stock_roster_instead_of_fabricating_offline_
     );
     assert!(matches!(
         result,
-        Err(FreshScenarioPrefixError::MissingCampaignHouseRoster)
+        Err(FreshScenarioPrefixError::MissingAuthoredHouseRoster)
     ));
 }
 
@@ -603,7 +604,7 @@ fn fresh_campaign_rejects_unknown_country_factory_before_house_construction() {
     );
     assert!(matches!(
         result,
-        Err(FreshScenarioPrefixError::UnsupportedCampaignCountryConstructor { house, country })
+        Err(FreshScenarioPrefixError::UnsupportedAuthoredCountryConstructor { house, country })
             if house == "UnknownHouse" && country == "UnregisteredCountry"
     ));
 }

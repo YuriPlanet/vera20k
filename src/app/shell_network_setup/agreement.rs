@@ -23,6 +23,18 @@ pub(crate) fn version() -> String {
 }
 
 pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
+    // Authored LAN uses the same rules scope in setup and after freezing.
+    if state.match_state.session.local_network_scenario().is_some() {
+        state.process_assets.use_personal_rules(Default::default());
+        let rules_digest = state
+            .process_assets
+            .multiplayer_rules_digest_for(None)
+            .map_err(anyhow::Error::msg)?;
+        return Ok(MultiplayerAgreement {
+            version: version(),
+            rules_digest,
+        });
+    }
     let setup = state
         .match_state
         .session

@@ -8,6 +8,7 @@ use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, L
 use crate::ui::multiplayer_setup::*;
 use anyhow::Context;
 pub(crate) use start::begin_external_lan_go;
+pub(super) use start::queue_lan_start;
 
 /// While C2's StartGame request is pending (`00B77E28`), its proc skips
 /// checkboxes and sliders (`0x78F823`), and Back, ChooseMap and every
@@ -64,6 +65,19 @@ fn guest_on_row(state: &AppState, row: u8) -> Option<(usize, LaunchTeam)> {
 }
 
 pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
+    if crate::app::shell_lan::waiting_for_room(state) {
+        match action {
+            SetupAction::Back => {
+                crate::app::shell_lan::leave_waiting_room(state);
+                return;
+            }
+            SetupAction::Chat(_) | SetupAction::RosterPage { .. } | SetupAction::OpenBox(_) => {}
+            _ => return,
+        }
+    }
+    if super::local_scenarios::handle_action(state, &action) {
+        return;
+    }
     let dialog = super::dialog(state);
     let phase = super::start_phase(state);
     let kick = phase.in_progress() && kicks_guest(state, &action);
@@ -772,32 +786,75 @@ pub(super) fn try_commit_start(state: &mut AppState, agreed_seed: u32) -> anyhow
             crate::app::shell_random_map::AcceptedRmgStartStaging::from_scenario_staging(&staging),
         );
     }
-    // VERA's LAN room comes back after the match; the original one does not.
-    let dialog = super::dialog(state);
-    state.frontend.lan_rematch = match (dialog.wol() || !dialog.modern, dialog.host) {
-        (true, _) => None,
-        (false, true) => Some(crate::app::shell_lan::LanRematch::Host),
-        (false, false) => crate::app::lan_service::admitted_host_room(state)
-            .map(|(host, game_id)| crate::app::shell_lan::LanRematch::Guest { host, game_id }),
-    };
     let startup = state
         .match_state
         .session
         .freeze_network_start(agreed_seed)
         .context("network start")?;
-    if state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol {
+    if state.match_state.session_mode() == SessionMode::Wol {
         crate::app::shell_wol::match_started(state);
     }
-    state.frontend.multiplayer_setup = None;
-    state.frontend.network_setup_protocol = None;
-    state.frontend.skirmish_preview_texture = None;
-    crate::app::loading::pump::begin_loading(
+    begin_network_loading(
         state,
         crate::app::loading::pump::LoadingRequest::network(startup)
             .with_accepted_random_map(accepted_random_map)
             .with_start_staging(guest_staging),
     );
     Ok(())
+}
+
+pub(crate) fn commit_prepared_start(
+    state: &mut AppState,
+    startup: std::sync::Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
+) {
+    if state.match_state.session.admits_network_start(&startup) {
+        begin_network_loading(
+            state,
+            crate::app::loading::pump::LoadingRequest::network(
+                crate::app::match_bootstrap::LoadingStartup::Network(startup),
+            ),
+        );
+    }
+}
+
+fn begin_network_loading(state: &mut AppState, request: crate::app::loading::pump::LoadingRequest) {
+    use crate::app::shell_lan::LanRematch;
+
+    // VERA's LAN room comes back after the match; the original one does not.
+    let dialog = super::dialog(state);
+    let preselected = state
+        .match_state
+        .session
+        .local_network_scenario()
+        .map(|map| map.key.clone());
+    let room_scope = preselected
+        .as_ref()
+        .and_then(|_| state.match_state.lan_service.as_ref()?.setup_scope());
+    state.frontend.lan_rematch = match (dialog.wol() || !dialog.modern, dialog.host) {
+        (true, _) => None,
+        (false, true) => Some(LanRematch::Host {
+            preselected,
+            room_scope,
+            carry_over: state
+                .match_state
+                .session
+                .local_scenario_carry_over()
+                .cloned(),
+        }),
+        (false, false) => {
+            crate::app::lan_service::admitted_host_room(state).map(|(host, game_id)| {
+                LanRematch::Guest {
+                    host,
+                    game_id,
+                    room_epoch: room_scope.map(|scope| scope.epoch),
+                }
+            })
+        }
+    };
+    state.frontend.multiplayer_setup = None;
+    state.frontend.network_setup_protocol = None;
+    state.frontend.skirmish_preview_texture = None;
+    crate::app::loading::pump::begin_loading(state, request);
 }
 
 pub(crate) fn open_choose_map(state: &mut AppState) {
@@ -845,11 +902,11 @@ pub(crate) fn commit_map_selection(
         .ok_or_else(|| anyhow::anyhow!("unknown chosen map"))?;
     let file = map.file_name.clone();
     let metadata = super::local_map_metadata(state, &file)?;
-    let mode_changed = state
-        .match_state
-        .session
-        .network_setup()
-        .is_none_or(|launch| launch.mode.id != mode_id);
+    let session = &state.match_state.session;
+    let mode_changed = session.local_network_scenario().is_some()
+        || session
+            .network_setup()
+            .is_none_or(|launch| launch.mode.id != mode_id);
     let changed = state
         .match_state
         .session

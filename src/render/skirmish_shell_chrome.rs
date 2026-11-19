@@ -96,7 +96,7 @@ const TRACKBAR_FRAME_BORDER: i32 = 2;
 /// BC/BD/C2/C9 place their speed, credits and units sliders at 129x21 and the
 /// co-op difficulty slider at 266x22, or 266x21 on WOL's host C2
 /// (`0x0060B950` placement, `tools/storage_oracle/lan_lobby.json`).
-pub const TRACKBAR_FRAMES: [(i32, i32, i32); 11] = [
+pub const TRACKBAR_FRAMES: [(i32, i32, i32); 12] = [
     (129, 22, 50),
     (226, 22, 50),
     (263, 21, 50),
@@ -111,6 +111,13 @@ pub const TRACKBAR_FRAMES: [(i32, i32, i32); 11] = [
     // VERA's room's team bar: Teams and Room size, half again as wide as
     // the room's own 129x21 (`ui::multiplayer_setup`).
     (194, 21, 50),
+    // The authored LAN room keeps its wide difficulty rail while sharing
+    // the unplaqued ShellTrackbar recessed bevel.
+    (
+        crate::ui::multiplayer_setup::SCENARIO_DIFFICULTY_TRACK_W,
+        22,
+        0,
+    ),
 ];
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",

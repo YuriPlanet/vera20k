@@ -72,6 +72,22 @@ fn all_discovery_join_builders_match_original_complete_payloads() {
 }
 
 #[test]
+fn authored_mode_is_an_optional_advertisement_hint() {
+    let original = LanMessage::advertisement("Host", true).unwrap();
+    let ordinary = LanMessage::scenario_advertisement("Host", true, false).unwrap();
+    let authored = LanMessage::scenario_advertisement("Host", true, true).unwrap();
+    let received = LanMessage::decode(authored.as_bytes()).unwrap();
+    assert_eq!(ordinary, original);
+    assert!(!ordinary.advertises_authored_scenario());
+    assert!(received.advertises_authored_scenario());
+    assert_eq!(
+        received.advertisement_flags(),
+        original.advertisement_flags()
+    );
+    assert_eq!(received.name(), original.name());
+}
+
+#[test]
 fn game_name_hash_matches_complete_original_wide_hash() {
     for case in corpus()["game_name_hashes"].as_array().unwrap() {
         let units: Vec<u16> = case["units"]

@@ -6,19 +6,20 @@ use crate::app::AppState;
 /// Native mirror A8ED9C is copied from Scenario+35A2. App consumers read the
 /// session owner directly, including before its presentation effect drains.
 pub(crate) fn is_locked(state: &AppState) -> bool {
-    state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .is_some_and(|runtime| {
-            runtime.simulation.session().input_locked()
-                || (runtime.simulation.session().scenario_paused()
-                    && matches!(
-                        state.match_state.session_mode(),
-                        crate::app::match_runtime::session::SessionMode::Campaign
-                            | crate::app::match_runtime::session::SessionMode::Skirmish
-                    ))
-        })
+    crate::app::match_runtime::authored_narrative::pending(state)
+        || state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|runtime| {
+                runtime.simulation.session().input_locked()
+                    || (runtime.simulation.session().scenario_paused()
+                        && matches!(
+                            state.match_state.session_mode(),
+                            crate::app::match_runtime::session::SessionMode::Campaign
+                                | crate::app::match_runtime::session::SessionMode::Skirmish
+                        ))
+            })
 }
 
 /// TActionClass::Execute 0x006DD8B0, case 46 (`0x006DED8B..0x006DEDD7`;

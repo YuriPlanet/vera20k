@@ -448,7 +448,7 @@ fn low_credit_sale(
     let Some(house) = sim.houses.get(&entity.owner()) else {
         return;
     };
-    if !((sim.session.game_mode_nonzero() || entity.ai_sell_repair.ai_sellable())
+    if !((!sim.session.uses_campaign_rules() || entity.ai_sell_repair.ai_sellable())
         && entity.ai_sell_repair.was_attacked_by_enemy()
         && house.authored_iq() as u32 >= rules.general.iq_sell_back as u32)
     {

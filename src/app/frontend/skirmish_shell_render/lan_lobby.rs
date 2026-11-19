@@ -231,6 +231,37 @@ pub(crate) fn render_lan_lobby(
         let games = lobby
             .game_list
             .geometry(layout.games, lobby.game_count(), scale);
+        let [_, mode_column] = layout.game_columns(games.row(0));
+        let games_heading = layout.labels[0].1;
+        texts.push(text(
+            &crate::i18n::tr("VERA:LanMode"),
+            RectPx::new(
+                mode_column.x,
+                games_heading.y,
+                mode_column.w,
+                games_heading.h,
+            ),
+            ShellAlign::NONE,
+            SHELL_LABEL_TEXT_RGB,
+        ));
+        paint_control(
+            &mut controls,
+            &atlas.control_chrome(),
+            ControlPaint::Checkbox {
+                rect: layout.authored_filter,
+                checked: lobby.authored_only(),
+            },
+            scale,
+        );
+        let filter_caption = scale.derive_rect(layout.authored_filter, |rect| {
+            RectPx::new(rect.x + 23, rect.y, rect.w - 23, rect.h)
+        });
+        texts.push(text(
+            &crate::app::shell_network_setup::local_scenarios::lan_filter_label(),
+            filter_caption,
+            ShellAlign::V_CENTER,
+            SHELL_LABEL_TEXT_RGB,
+        ));
         let players = lobby
             .player_list
             .geometry(layout.players, lobby.players.len(), scale);
@@ -248,25 +279,66 @@ pub(crate) fn render_lan_lobby(
             scale,
         );
         list_controls(&mut controls, atlas, chat, &lobby.chat.list, false, scale);
-        for (visible, index) in (lobby.game_list.top_index..lobby.game_count())
+        let authored_mode = crate::app::shell_network_setup::local_scenarios::lan_mode_label();
+        let standard_mode = crate::i18n::tr("VERA:LanModeStandard");
+        let ellipsis = "...";
+        let ellipsis_width = font.text_width(ellipsis);
+        for (visible, game) in std::iter::once(None)
+            .chain(lobby.visible_games().map(Some))
+            .skip(lobby.game_list.top_index)
             .take(games.visible_rows)
             .enumerate()
         {
-            let label = if index == 0 {
-                localized_label(state, "TXT_LOBBY", "Lobby")
-            } else {
-                let game = &lobby.games[index - 1];
-                localized_label(state, game.label_key(), game.label_key())
-                    .replacen("%s", &game.name, 1)
-            };
-            texts.push(text(
-                &label,
-                scale.derive_rect(games.row(visible), |rect| {
-                    RectPx::new(rect.x + 2, rect.y, rect.w - 4, rect.h)
-                }),
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
+            let name = game.map_or_else(
+                || localized_label(state, "TXT_LOBBY", "Lobby"),
+                |game| {
+                    localized_label(state, game.label_key(), game.label_key())
+                        .replacen("%s", &game.name, 1)
+                },
+            );
+            let mode = game.map(|game| {
+                if game.authored {
+                    authored_mode.as_str()
+                } else {
+                    standard_mode.as_str()
+                }
+            });
+            let [name_column, mode_column] = layout.game_columns(games.row(visible));
+            for (index, (label, column)) in
+                [(Some(name.as_str()), name_column), (mode, mode_column)]
+                    .into_iter()
+                    .enumerate()
+            {
+                let Some(label) = label else {
+                    continue;
+                };
+                let right_padding = if index == 0 && game.is_some() { 10 } else { 2 };
+                let rect = scale.derive_rect(column, |rect| {
+                    RectPx::new(
+                        rect.x + 2,
+                        rect.y,
+                        (rect.w - 2 - right_padding).max(0),
+                        rect.h,
+                    )
+                });
+                let width = scale.base_rect(rect).w.max(0) as u32;
+                let fitted = if index == 0
+                    && game.is_some()
+                    && ellipsis_width <= width
+                    && font.text_width(label) > width
+                {
+                    let prefix = font.truncate_to_width(label, width - ellipsis_width);
+                    std::borrow::Cow::Owned(format!("{}{ellipsis}", prefix.trim_end()))
+                } else {
+                    font.truncate_to_width(label, width)
+                };
+                texts.push(text(
+                    &fitted,
+                    rect,
+                    ShellAlign::V_CENTER,
+                    SHELL_LABEL_TEXT_RGB,
+                ));
+            }
         }
         for (visible, player) in lobby
             .players

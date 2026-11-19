@@ -303,6 +303,23 @@ fn side_icon_name<'a>(
     country_file.or_else(|| variant.map(LoadingArtVariant::side_icon_pcx))
 }
 
+fn append_loading_side_icon(
+    assets: &AssetManager,
+    rendered: &mut Vec<ChromePiece>,
+    variant: Option<LoadingArtVariant>,
+    country_file: Option<&str>,
+) -> Option<String> {
+    let name = side_icon_name(variant, country_file)?;
+    let label = name.to_ascii_lowercase();
+    if rendered.iter().any(|entry| entry.label == label) {
+        return Some(label);
+    }
+    let entry = render_pcx_entry(assets, name)?;
+    let label = entry.label.clone();
+    rendered.push(entry);
+    Some(label)
+}
+
 /// Resolve the one background layer before atlas packing. Explicit Country
 /// input already owns its early palette; only the stock branch loads one here.
 fn render_loading_background(
@@ -412,18 +429,12 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
             rendered.push(entry);
             label
         };
-        let icon_label = side_icon_name(participant.variant, participant.side_icon.as_deref())
-            .and_then(|name| {
-                let label = name.to_ascii_lowercase();
-                if rendered.iter().any(|entry| entry.label == label) {
-                    Some(label)
-                } else {
-                    let entry = render_pcx_entry(assets, name)?;
-                    let label = entry.label.clone();
-                    rendered.push(entry);
-                    Some(label)
-                }
-            });
+        let icon_label = append_loading_side_icon(
+            assets,
+            &mut rendered,
+            participant.variant,
+            participant.side_icon.as_deref(),
+        );
         participant_labels.push((frame_label, icon_label));
     }
 
@@ -465,8 +476,9 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
 /// strips; `0x0072B340/0x0072B380` provide LDSCRN/SPLDBR palettes. The progress
 /// source is SPLDBR with that same SPLDBR palette, without a house-color remap.
 /// Missing title/bar shapes remain optional so the drawing owner can fill the
-/// corresponding native rectangles. Empty background names return no atlas;
-/// the caller must preserve the campaign family and its empty-art branch.
+/// corresponding native rectangles. Campaigns without a background retain
+/// their empty-art branch. An authored multiplayer load can still use this
+/// chrome and meter if an optional background is missing.
 pub fn build_campaign_loading_screen_atlas(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -483,10 +495,11 @@ pub fn build_campaign_loading_screen_atlas(
         .map(|entry| entry.label.clone())
         .zip(packed)
         .collect();
+    let progress_frame0 = *by_label.get(CAMPAIGN_PROGRESS_LABEL)?;
     Some(LoadingScreenAtlas {
         texture,
-        background: Some(*by_label.get(CAMPAIGN_BACKGROUND_LABEL)?),
-        progress_frame0: *by_label.get(CAMPAIGN_PROGRESS_LABEL)?,
+        background: by_label.get(CAMPAIGN_BACKGROUND_LABEL).copied(),
+        progress_frame0,
         participants: Vec::new(),
         title_bar: by_label.get(CAMPAIGN_TITLE_LABEL).copied(),
         progress_background: by_label.get(CAMPAIGN_BAR_BACKGROUND_LABEL).copied(),
@@ -504,23 +517,24 @@ fn render_campaign_entries(
     background_name: &str,
     background_palette_name: &str,
 ) -> Option<Vec<ChromePiece>> {
-    if background_name.is_empty() {
-        return None;
-    }
-    let background_palette = load_named_ui_palette(assets, background_palette_name)?;
     let title_palette = load_named_ui_palette(assets, "LDSCRN.PAL")?;
     let bar_palette = load_named_ui_palette(assets, "SPLDBR.PAL")?;
-    let mut background = mandatory_shp(
-        assets,
-        background_name,
-        &background_palette,
-        0,
-        background_palette_name,
-    )?;
-    background.label = CAMPAIGN_BACKGROUND_LABEL.to_owned();
+    let mut rendered = Vec::new();
+    if !background_name.is_empty() {
+        let palette = load_named_ui_palette(assets, background_palette_name)?;
+        let mut background = mandatory_shp(
+            assets,
+            background_name,
+            &palette,
+            0,
+            background_palette_name,
+        )?;
+        background.label = CAMPAIGN_BACKGROUND_LABEL.to_owned();
+        rendered.push(background);
+    }
     let mut progress = mandatory_shp(assets, "SPLDBR.SHP", &bar_palette, 0, "SPLDBR.PAL")?;
     progress.label = CAMPAIGN_PROGRESS_LABEL.to_owned();
-    let mut rendered = vec![background, progress, solid_texel_entry()];
+    rendered.extend([progress, solid_texel_entry()]);
     let (title_name, bar_name) = match width {
         LoadingScreenWidth::W640 => ("TTLBR640.SHP", "SPLDBRS.SHP"),
         LoadingScreenWidth::W800 => ("TTLBR800.SHP", "SPLDBRL.SHP"),

@@ -10,10 +10,13 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 
 use crate::sim::game_options::GameOptions;
+use crate::sim::house_diplomacy::PlayerAllianceAdmission;
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 use crate::util::native_x87::{MaskedX87Chop53, NativeF32Bits, NativeF64Bits};
+
+use super::authored_outcome::AuthoredOutcomes;
 
 #[path = "scenario_countdown.rs"]
 mod countdown;
@@ -868,6 +871,23 @@ pub struct ScenarioSession {
     /// identity, like `current_house`.
     #[serde(default)]
     local_shared_house_source: Option<i8>,
+    /// The frozen start's control grants for the live match, in House array order.
+    /// Authored mid-match persistence has its own integration stage.
+    #[serde(skip)]
+    house_control_grants: Vec<(u16, u16)>,
+    /// Frozen authored start input, like its control grants. Authored mid-match
+    /// persistence has its own integration stage.
+    #[serde(skip)]
+    authored_ai_difficulty: HouseDifficulty,
+    /// Authored maps may opt into the multiplayer computer enemy-selection pass.
+    #[serde(skip)]
+    authored_auto_enemy_selection: bool,
+    /// Present for admitted authored network scenarios. The policy affects
+    /// match completion, while completed verdicts are a result-page receipt.
+    #[serde(skip)]
+    authored_outcomes: Option<AuthoredOutcomes>,
+    #[serde(skip)]
+    player_alliance_admission: PlayerAllianceAdmission,
     /// VERA watching (docs/Networking.md "Watching"): this process watches
     /// the match and sends no command records, so no record's sender is its
     /// own, not even the followed player's. Local identity, like
@@ -1437,6 +1457,21 @@ impl ScenarioSession {
         !self.shared_house_sources.is_empty()
     }
 
+    pub(crate) fn install_house_control_grants(&mut self, mut grants: Vec<(u16, u16)>) {
+        debug_assert!(
+            !self.started,
+            "control grants come from fresh match admission"
+        );
+        grants.sort_unstable();
+        grants.dedup();
+        self.house_control_grants = grants;
+    }
+
+    /// Frozen (controller House, target House) pairs in native array indices.
+    pub fn house_control_grants(&self) -> &[(u16, u16)] {
+        &self.house_control_grants
+    }
+
     /// The House index a command record's sender controls. VERA shared
     /// control: a sender is a network source, which is its House index
     /// unless players share Houses.
@@ -1563,6 +1598,10 @@ impl ScenarioSession {
         observers: Vec<InternedId>,
     ) {
         self.multiplayer_mode_class = Some(class);
+        self.install_network_observers(observers);
+    }
+
+    pub(super) fn install_network_observers(&mut self, observers: Vec<InternedId>) {
         self.observer_houses = observers;
     }
 
@@ -1664,6 +1703,10 @@ impl ScenarioSession {
         &self,
     ) -> &crate::sim::superweapon::chrono_screen::ChronoScreenState {
         &self.chrono_screen
+    }
+
+    pub fn chrono_screen_active(&self) -> bool {
+        self.chrono_screen.active()
     }
 
     pub(crate) fn start_chrono_screen_state(&mut self, duration: i32) -> bool {
@@ -1791,6 +1834,87 @@ impl ScenarioSession {
             .map(|campaign| (campaign.player_difficulty, campaign.computer_difficulty))
     }
 
+    pub(super) fn install_authored_ai_difficulty(&mut self, difficulty: HouseDifficulty) {
+        self.authored_ai_difficulty = difficulty;
+    }
+
+    pub(super) const fn authored_ai_difficulty(&self) -> HouseDifficulty {
+        self.authored_ai_difficulty
+    }
+
+    pub const fn is_authored_campaign(&self) -> bool {
+        self.authored_outcomes.is_some()
+    }
+
+    /// Campaign-specific gameplay behavior is independent of the clock and transport.
+    pub fn uses_campaign_rules(&self) -> bool {
+        !self.game_mode_nonzero() || self.is_authored_campaign()
+    }
+
+    pub fn uses_auto_enemy_selection(&self) -> bool {
+        !self.uses_campaign_rules() || self.authored_auto_enemy_selection
+    }
+
+    pub(super) fn set_authored_auto_enemy_selection(&mut self, allowed: bool) {
+        self.authored_auto_enemy_selection = allowed;
+    }
+
+    pub(crate) fn install_authored_campaign(&mut self, primary_house_indices: Vec<u16>) {
+        debug_assert!(
+            !self.started,
+            "authored campaign participants come from fresh admission"
+        );
+        self.authored_outcomes = Some(AuthoredOutcomes::new(primary_house_indices));
+    }
+
+    pub(super) fn authored_primary_house_indices(&self) -> &[u16] {
+        self.authored_outcomes
+            .as_ref()
+            .map_or(&[], |outcomes| outcomes.primary_house_indices.as_slice())
+    }
+
+    pub(crate) fn install_player_alliance_admission(&mut self, admission: PlayerAllianceAdmission) {
+        debug_assert!(
+            !self.started,
+            "alliance admission comes from frozen room rules"
+        );
+        self.player_alliance_admission = admission;
+    }
+
+    pub const fn player_alliance_admission(&self) -> PlayerAllianceAdmission {
+        self.player_alliance_admission
+    }
+
+    pub(super) fn complete_authored_house_outcome(
+        &mut self,
+        owner: InternedId,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+    ) {
+        if let Some(outcomes) = &mut self.authored_outcomes {
+            outcomes.complete(owner, kind);
+        }
+    }
+
+    pub(super) fn completed_authored_house_outcome(
+        &self,
+        owner: InternedId,
+    ) -> Option<crate::sim::house_state::HouseOutcomeKind> {
+        self.authored_outcomes.as_ref()?.completed(owner)
+    }
+
+    pub(super) fn lock_authored_outcome(&mut self) -> bool {
+        self.authored_outcomes
+            .as_mut()
+            .is_some_and(AuthoredOutcomes::lock)
+    }
+
+    pub(super) fn scenario_trigger_difficulty(&self) -> usize {
+        self.campaign_house_difficulties().map_or_else(
+            || 2 - self.authored_ai_difficulty.table_index(),
+            |(player, _)| player.table_index(),
+        )
+    }
+
     pub fn current_house(&self) -> Option<InternedId> {
         self.current_house
     }
@@ -1845,6 +1969,11 @@ impl ScenarioSession {
             b"network-command-timing-v1".hash(hasher);
             timing.hash(hasher);
         }
+        let control_grants = s.house_control_grants();
+        if !control_grants.is_empty() {
+            b"house-move-grants-v1".hash(hasher);
+            control_grants.hash(hasher);
+        }
         s.start_header.hash(hasher);
         // observer_houses, like current_house, selects process-local presentation
         // and accepted outcome, and skips the observer's terminal score draw
@@ -1856,6 +1985,22 @@ impl ScenarioSession {
         if let Some(campaign) = s.campaign {
             b"scenario-campaign-startup-v1".hash(hasher);
             campaign.hash(hasher);
+        }
+        if s.authored_ai_difficulty != HouseDifficulty::Normal {
+            b"authored-ai-difficulty".hash(hasher);
+            s.authored_ai_difficulty.hash(hasher);
+        }
+        if s.authored_auto_enemy_selection {
+            b"authored-auto-enemy-selection".hash(hasher);
+        }
+        if let Some(outcomes) = &s.authored_outcomes {
+            b"authored-campaign-outcome-v1".hash(hasher);
+            outcomes.primary_house_indices.hash(hasher);
+            outcomes.is_locked().hash(hasher);
+        }
+        if s.player_alliance_admission != PlayerAllianceAdmission::Retail {
+            b"player-alliance-admission".hash(hasher);
+            s.player_alliance_admission.hash(hasher);
         }
         if s.campaign_map_stage != 0 {
             b"scenario-map-stage-v1".hash(hasher);
@@ -2114,6 +2259,11 @@ impl ScenarioSession {
             network_command_timing: None,
             shared_house_sources: Vec::new(),
             local_shared_house_source: None,
+            house_control_grants: Vec::new(),
+            authored_ai_difficulty: HouseDifficulty::Normal,
+            authored_auto_enemy_selection: false,
+            authored_outcomes: None,
+            player_alliance_admission: PlayerAllianceAdmission::default(),
             watcher: false,
             watcher_observes: false,
             start_header: crate::map::preview::ScenarioStartHeader::default(),

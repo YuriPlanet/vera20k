@@ -11,6 +11,7 @@ use std::sync::Arc;
 use super::{App, AppState};
 use crate::app::frontend::credits_roll::{
     CreditsInput, CreditsReturn, CreditsRoll, CreditsRollSession, CreditsViewport,
+    centered_credit_lines,
 };
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn, movie_stem};
 use crate::app::shell_route::ShellRoute;
@@ -260,7 +261,7 @@ impl App {
                 .match_state
                 .sim_runtime
                 .runtime()
-                .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
+                .is_some_and(|runtime| !runtime.simulation.session().uses_campaign_rules())
         {
             return;
         }
@@ -438,26 +439,44 @@ impl App {
     /// State `0xF`, or a won campaign's EndOfGame (`0x006859EE`):
     /// Show_Credits `0x004C3E30`.
     pub(super) fn start_credits_roll(state: &mut AppState, return_to: CreditsReturn) {
+        Self::start_credits_roll_with_text(state, return_to, None);
+    }
+
+    pub(super) fn start_credits_roll_with_text(
+        state: &mut AppState,
+        return_to: CreditsReturn,
+        custom_text: Option<&str>,
+    ) {
         Self::destroy_current_shell_dialog(state);
-        let bytes = state
-            .process_assets
-            .manager()
-            .and_then(|assets| assets.get_ref(CREDITS_FILE).map(<[u8]>::to_vec));
-        let Some(bytes) = bytes else {
-            log::info!("Show_Credits: {CREDITS_FILE} is not installed");
-            Self::finish_credits_roll_return(state, return_to);
-            return;
-        };
-        let lookup = |key: &str| Self::csf_label(state, key, &format!("MISSING:'{key}'"));
         let viewport = CreditsViewport::new(
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
         );
-        let lines = crate::ui::movies_credits_shell::parse_credits(
-            &bytes,
-            viewport.surface_height,
-            &lookup,
-        );
+        let custom_lines = custom_text
+            .map(|text| {
+                centered_credit_lines(text, viewport.surface_height, &state.renderer.bit_font)
+            })
+            .filter(|lines| !lines.is_empty());
+        let lines = match custom_lines {
+            Some(lines) => lines,
+            None => {
+                let bytes = state
+                    .process_assets
+                    .manager()
+                    .and_then(|assets| assets.get_ref(CREDITS_FILE).map(<[u8]>::to_vec));
+                let Some(bytes) = bytes else {
+                    log::info!("Show_Credits: {CREDITS_FILE} is not installed");
+                    Self::finish_credits_roll_return(state, return_to);
+                    return;
+                };
+                let lookup = |key: &str| Self::csf_label(state, key, &format!("MISSING:'{key}'"));
+                crate::ui::movies_credits_shell::parse_credits(
+                    &bytes,
+                    viewport.surface_height,
+                    &lookup,
+                )
+            }
+        };
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         // ThemeClass::Stop(0), then a silent ScoreVolume is lifted to 0.4 for
         // the CREDITS theme; the saved value is restored afterwards.
@@ -525,6 +544,7 @@ impl App {
                 state.frontend.shell_route = ShellRoute::MainMenu;
                 Self::resume_shell_after_match(state);
             }
+            CreditsReturn::LanRoom => Self::return_to_lan_room_after_score(state, false),
         }
     }
 }

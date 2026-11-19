@@ -2,7 +2,7 @@
 //! title, Return and status line in the right-panel places, the rows and
 //! headers as ordinary children.
 
-use super::chrome::push_flag_entry_clipped_centered;
+use super::chrome::{push_entry_fitted, push_flag_entry_clipped_centered};
 use super::controls::{ControlPaint, paint_control};
 use super::in_game_shell::{self, InGameShellFrame};
 use super::pause_menu::{button_frame, button_text_rect};
@@ -12,7 +12,7 @@ use crate::app::AppState;
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::button::CheckboxFace;
 use crate::ui::shell::diplomacy::{
-    DiplomacyButton, DiplomacyHeader, RETURN_LABEL, TITLE_LABEL, diplomacy_layout,
+    DiplomacyButton, DiplomacyHeader, DiplomacyRelation, RETURN_LABEL, TITLE_LABEL,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
@@ -26,9 +26,9 @@ pub(crate) fn render_diplomacy_shell(
         width,
         height,
         layout: shell,
-        button_size,
+        ..
     } = in_game_shell::current_in_game_shell_layout(state).expect("active 0x73 geometry");
-    let layout = diplomacy_layout(width, height, shell, button_size);
+    let layout = crate::app::input::diplomacy::layout(state).expect("active 0x73 controls");
     let view = crate::app::input::diplomacy::view(state);
     let interaction = state.match_state.match_presentation.diplomacy;
     let screen = RectPx::new(0, 0, width, height);
@@ -58,9 +58,15 @@ pub(crate) fn render_diplomacy_shell(
     if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
         in_game_shell::push_art(&mut art, entry, layout.return_button, screen);
     }
+    let authored = layout.faction_heading.is_some();
+    let return_label = if authored {
+        crate::i18n::tr("VERA:DiplomacyBackToBriefing")
+    } else {
+        localized_label(state, RETURN_LABEL.0, RETURN_LABEL.1)
+    };
     text(
         &mut texts,
-        &localized_label(state, RETURN_LABEL.0, RETURN_LABEL.1),
+        &return_label,
         button_text_rect(layout.return_button, pressed),
         SHELL_LABEL_TEXT_RGB,
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
@@ -112,12 +118,7 @@ pub(crate) fn render_diplomacy_shell(
         ShellAlign::PANEL_TITLE,
     );
     for header in DiplomacyHeader::ALL {
-        let shown = match header {
-            DiplomacyHeader::Allies => view.allies_header,
-            DiplomacyHeader::Chat => view.chat_header,
-            DiplomacyHeader::Player | DiplomacyHeader::Kills => true,
-        };
-        if shown {
+        if view.header_visible(header, authored) {
             let (key, fallback) = header.label();
             text(
                 &mut texts,
@@ -128,11 +129,30 @@ pub(crate) fn render_diplomacy_shell(
             );
         }
     }
+    for (heading, key) in [
+        (layout.role_heading, "VERA:DiplomacyRole"),
+        (layout.faction_heading, "VERA:DiplomacyFactionColumn"),
+    ] {
+        if let Some(rect) = heading {
+            text(
+                &mut texts,
+                &crate::i18n::tr(key),
+                rect,
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::NONE,
+            );
+        }
+    }
 
     let chrome = state.frontend.skirmish_shell_chrome.as_ref();
     let control_chrome = chrome
         .map(|atlas| atlas.control_chrome())
         .unwrap_or_default();
+    let push_flag = if authored {
+        push_entry_fitted
+    } else {
+        push_flag_entry_clipped_centered
+    };
     for (row, shown) in view.rows.iter().enumerate() {
         let Some(shown) = shown else {
             continue;
@@ -142,7 +162,7 @@ pub(crate) fn render_diplomacy_shell(
             .as_deref()
             .and_then(|name| chrome.and_then(|atlas| atlas.lan_player_side(name)))
         {
-            push_flag_entry_clipped_centered(
+            push_flag(
                 &mut controls,
                 entry,
                 layout.insignia[row],
@@ -158,6 +178,33 @@ pub(crate) fn render_diplomacy_shell(
             rgb,
             ShellAlign::NONE,
         );
+        if let Some(role) = &shown.role {
+            text(&mut texts, role, layout.roles[row], rgb, ShellAlign::NONE);
+        }
+        if let Some(faction) = &shown.faction {
+            text(
+                &mut texts,
+                faction,
+                layout.factions[row],
+                rgb,
+                ShellAlign::NONE,
+            );
+        }
+        if let Some(relation) = shown.relation {
+            let label = crate::i18n::tr(match relation {
+                DiplomacyRelation::Mutual => "VERA:DiplomacyMutual",
+                DiplomacyRelation::Ours => "VERA:DiplomacyOurs",
+                DiplomacyRelation::Theirs => "VERA:DiplomacyTheirs",
+                DiplomacyRelation::Neither => "VERA:DiplomacyNeither",
+            });
+            text(
+                &mut texts,
+                &label,
+                layout.relations[row],
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::NONE,
+            );
+        }
         if let Some(kills) = shown.kills {
             text(
                 &mut texts,
@@ -234,10 +281,18 @@ pub(crate) fn render_diplomacy_shell(
         SHELL_LABEL_TEXT_RGB,
         ShellAlign::NONE,
     );
-    if let Some(key) = interaction.hovered.and_then(|control| control.help_key()) {
+    let status = if view.map_locks_alliances {
+        Some(crate::i18n::tr("VERA:DiplomacyMapLocked"))
+    } else {
+        interaction
+            .hovered
+            .and_then(|control| control.help_key())
+            .map(|key| localized_label(state, key, ""))
+    };
+    if let Some(status) = status {
         text(
             &mut texts,
-            &localized_label(state, key, ""),
+            &status,
             layout.status_line,
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::NONE,

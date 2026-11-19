@@ -1490,10 +1490,10 @@ fn evaluate_foot_hunt(
     }
     // 0x004D54EE..0x004D557C: IsControlledByHuman (0x0050B730) or a nonzero
     // g_GameMode (0x00A8B238) takes the class idle receiver before the
-    // mission-rate jitter, so every owner in a non-campaign match idles. Only
-    // a campaign computer house reaches the march on the player.
+    // mission-rate jitter. Authored campaigns also take the campaign branch
+    // for computer Houses and substitute a shared target for PlayerPtr.
     if no_target_arm {
-        if sim.session.game_mode_nonzero()
+        if !sim.session.uses_campaign_rules()
             || sim
                 .substrate
                 .entities
@@ -1515,21 +1515,27 @@ fn evaluate_foot_hunt(
 }
 
 /// Foot4D5506..5576: a campaign hunter with no target heads for the current
-/// player's base. House50DEF0 owns alternate/primary selection; Map5657A0
-/// resolves the returned cell before the class destination setter runs.
+/// player's base. Authored campaigns use the first participating House with
+/// a base in map registry order. House50DEF0 owns alternate/primary selection;
+/// Map5657A0 resolves the returned cell before the class destination setter.
 fn hunt_march_on_player(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
     ctx: super::ObjectAiCtx<'_>,
 ) {
-    let Some(cell) = sim
-        .session
-        .current_house()
-        .and_then(|owner| sim.houses.get(&owner))
-        .map(|house| house.base_origin())
-        .filter(|cell| *cell != (0, 0))
-    else {
+    let base = |owner| {
+        sim.houses
+            .get(&owner)
+            .map(|house| house.base_origin())
+            .filter(|cell| *cell != (0, 0))
+    };
+    let cell = if sim.session.is_authored_campaign() {
+        sim.authored_campaign_players().find_map(base)
+    } else {
+        sim.session.current_house().and_then(base)
+    };
+    let Some(cell) = cell else {
         return;
     };
     sim.reset_slave_manager(id, rules, ctx.effects);

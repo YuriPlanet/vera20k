@@ -1699,6 +1699,53 @@ fn loading_scope_bridge_survives_lost_progress_before_both_peers_activate() {
 }
 
 #[test]
+fn lan_reload_acknowledges_the_old_handoff_without_delivering_old_data() {
+    let mut host = transport();
+    let mut guest = transport();
+    let guest_address = guest.primary_addr().unwrap();
+    let old = SessionScope {
+        epoch: [41; 16],
+        revision: 6,
+    };
+    host.set_lan_scope(old).unwrap();
+    guest.set_lan_scope(old).unwrap();
+
+    assert!(host.global_mut().send(
+        b"start reload",
+        GlobalDestination::direct(guest_address),
+        Delivery::Reliable,
+        0,
+    ));
+    host.service(1);
+    let start = take_wire_datagrams(&guest, 1).remove(0);
+    host.lock().primary.send_to(&start, guest_address).unwrap();
+    assert_eq!(malformed_after_receipt(&mut guest, 1, 1), 0);
+    assert_eq!(
+        guest.pop_global_received().unwrap().payload,
+        b"start reload"
+    );
+    let lost_ack = take_wire_datagrams(&host, 1).remove(0);
+    assert_eq!(host.global().queued_send_count(), 1);
+
+    let next = SessionScope { revision: 7, ..old };
+    guest.prepare_lan_reload(next).unwrap();
+    host.lock().primary.send_to(&start, guest_address).unwrap();
+    // An old ACK must not retire new traffic, even if its sequence is known.
+    host.lock()
+        .primary
+        .send_to(&lost_ack, guest_address)
+        .unwrap();
+    assert_eq!(malformed_after_receipt(&mut guest, 2, 2), 1);
+    assert!(guest.pop_global_received().is_none());
+    assert_eq!(malformed_after_receipt(&mut host, 2, 1), 0);
+    assert_eq!(host.global().queued_send_count(), 0);
+
+    guest.set_lan_scope(next).unwrap();
+    host.lock().primary.send_to(&start, guest_address).unwrap();
+    assert_eq!(malformed_after_receipt(&mut guest, 3, 1), 1);
+}
+
+#[test]
 fn rematch_rejects_old_ack_data_and_frame_sync_before_reliable_state() {
     use crate::net::event_packet::encode_live_frame_sync;
     use crate::sim::command_queue::FrameInfo;

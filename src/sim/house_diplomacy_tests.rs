@@ -9,6 +9,7 @@ use crate::map::houses::HouseAllianceMap;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
+use crate::sim::house_diplomacy::PlayerAllianceAdmission;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -556,6 +557,62 @@ fn the_ally_event_toggles_and_announces_for_the_local_house() {
         announced(&mut sim, 0, "A", 1),
         [(a, b, true, true, Some(AllianceEva::Formed))]
     );
+}
+
+#[test]
+fn authored_room_ally_records_obey_the_frozen_permission_and_sender() {
+    use std::cell::Cell;
+
+    use crate::sim::command::CommandRecord;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let mut rules = rules();
+    rules.general.allies_allowed = false;
+    rules.general.ally_change_allowed = false;
+    for (room_scoped, room_allows_changes, sender_observes, expected) in [
+        (false, false, false, true),
+        (true, false, false, false),
+        (true, true, false, true),
+        (true, true, true, false),
+    ] {
+        let (mut sim, ids) = sim_with(
+            &rules,
+            &[
+                ("A", "Americans", true),
+                ("B", "Russians", true),
+                ("Enemy", "Russians", false),
+            ],
+        );
+        sim.session.set_game_mode(ScenarioGameMode::Lan);
+        sim.session.set_current_house_for_test(Some(ids[1]));
+        sim.session.game_options_mut_for_test().ally_change_allowed = room_allows_changes;
+        if room_scoped {
+            sim.session
+                .install_player_alliance_admission(PlayerAllianceAdmission::RoomParticipants);
+        } else {
+            sim.session.install_authored_campaign(vec![0, 1]);
+        }
+        if sender_observes {
+            sim.session.install_observer_houses_for_test(vec![ids[0]]);
+        }
+        let record = sim.encode_ally_record(ids[0], 1).unwrap();
+        assert!(sim.admit_native_command_record(record.clone()));
+        let observed = Cell::new(None);
+        let observe = |_: &Simulation, applied_record: &CommandRecord, applied| {
+            assert_eq!(applied_record, &record);
+            observed.set(Some(applied));
+        };
+        sim.apply_due_commands(
+            &[],
+            &rules,
+            0,
+            None,
+            FrameEffects::default().with_command_applied(&observe),
+        );
+        assert_eq!(observed.get(), Some(expected));
+        assert_eq!(allies(&sim, "A").contains("B"), expected);
+        assert!(allies(&sim, "B").is_empty());
+    }
 }
 
 /// Without the announcement (Paranoid, triggers) a human sender still gets

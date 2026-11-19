@@ -1,5 +1,5 @@
 use super::*;
-use crate::ui::skirmish_shell::SkirmishShellDialog;
+use crate::ui::skirmish_shell::{ChooseMapChoice, SkirmishShellDialog};
 
 /// The mouse event [`App::route_game_options_mouse`] hands the open box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -680,6 +680,7 @@ impl App {
                 modal.add_online_maps_row();
             }
         }
+        crate::app::shell_network_setup::local_scenarios::add_choose_map_rows(state, &layout);
         Self::list_cooperative_campaigns(state, false);
     }
 
@@ -774,6 +775,7 @@ impl App {
             .skirmish_shell_state
             .choose_map_modal
             .as_ref()
+            .filter(|modal| !modal.local_scenario_list_selected())
             .map(|modal| {
                 (
                     modal.selected_mode.id,
@@ -1034,19 +1036,24 @@ impl App {
         // `ShellDialog__SlideOutAndWait`); its result runs afterwards.
         let then = match fired_button {
             crate::ui::skirmish_shell::ChooseMapModalButton::UseMap0x6c5 => {
-                // No map selected: Use Map does nothing (`0x005E7160`).
-                let Some(selection) = modal.accept_selection() else {
-                    return true;
+                let choice = if let Some(key) = modal.accept_local_scenario() {
+                    ChooseMapChoice::Local(key.clone())
+                } else {
+                    // No map selected: Use Map does nothing (`0x005E7160`).
+                    let Some(selection) = modal.accept_selection() else {
+                        return true;
+                    };
+                    // VERA: an Online map is downloaded first; the rest of Use
+                    // Map runs once it is here (`map_library`).
+                    if crate::app::map_library::prompt_download(state, selection) {
+                        return true;
+                    }
+                    if Self::prompt_choose_map_eject(state, selection) {
+                        return true;
+                    }
+                    ChooseMapChoice::Standard(selection)
                 };
-                // VERA: an Online map is downloaded first; the rest of Use
-                // Map runs once it is here (`map_library`).
-                if crate::app::map_library::prompt_download(state, selection) {
-                    return true;
-                }
-                if Self::prompt_choose_map_eject(state, selection) {
-                    return true;
-                }
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(selection)
+                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(choice)
             }
             crate::ui::skirmish_shell::ChooseMapModalButton::Cancel0x5c0 => {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel
@@ -1224,7 +1231,7 @@ impl App {
                 Self::leave_shell_dialog(
                     state,
                     crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(
-                        prompt.selection,
+                        ChooseMapChoice::Standard(prompt.selection),
                     ),
                 );
             }
@@ -1332,10 +1339,15 @@ impl App {
     /// hides it): commit the selection, close the chooser; `0x102` shows
     /// again and replays its entry slide. A selection that cannot commit
     /// keeps the chooser, which shows again if it was hidden.
-    pub(super) fn commit_choose_map_use(
-        state: &mut AppState,
-        selection: crate::ui::skirmish_shell::ChooseMapSelection,
-    ) {
+    pub(super) fn commit_choose_map_use(state: &mut AppState, choice: ChooseMapChoice) {
+        let selection = match choice {
+            ChooseMapChoice::Standard(selection) => selection,
+            ChooseMapChoice::Local(key) => {
+                crate::app::shell_network_setup::local_scenarios::choose(state, &key);
+                Self::close_choose_map_modal(state);
+                return;
+            }
+        };
         if Self::commit_choose_map_selection(state, selection) {
             Self::close_choose_map_modal(state);
         } else if let Some(modal) = state

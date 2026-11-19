@@ -15,6 +15,7 @@ pub(crate) mod mods_render;
 pub(crate) mod movies_credits_render;
 pub(crate) mod preview_zoom;
 pub(crate) mod quit_cascade;
+pub(crate) mod score_overlay;
 pub(crate) mod score_shell_render;
 pub(crate) mod shell_layout;
 pub(crate) mod shell_pass;

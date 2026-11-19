@@ -15,12 +15,13 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 /// The room's page in the window, before VERA's roster is placed in it.
 fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
     let (w, h) = shell_layout::shell_screen_size(state);
-    MultiplayerSetupLayout::new(
-        crate::app::shell_network_setup::dialog(state),
-        w as i32,
-        h as i32,
-        shell_layout::fills_window(state),
-    )
+    let dialog = crate::app::shell_network_setup::dialog(state);
+    let fills = shell_layout::fills_window(state);
+    if state.match_state.session.local_scenario_lobby().is_some() && !dialog.wol() {
+        MultiplayerSetupLayout::for_scenario_room(dialog, w as i32, h as i32)
+    } else {
+        MultiplayerSetupLayout::new(dialog, w as i32, h as i32, fills)
+    }
 }
 
 /// Where VERA's roster's entries end in this window, in 800x600 pixels:
@@ -39,6 +40,14 @@ pub(crate) fn roster_bottom(state: &AppState, teams: bool, room_size: bool) -> i
 pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
     let dialog = crate::app::shell_network_setup::dialog(state);
     let mut layout = page_layout(state);
+    if let Some(scenario) = &layout.scenario {
+        if crate::app::shell_lan::waiting_for_room(state) {
+            let bottom = scenario.waiting.y + scenario.waiting.h;
+            layout.chat_log.h -= (bottom - layout.chat_log.y).max(0);
+            layout.chat_log.y = bottom;
+        }
+        return layout;
+    }
     if dialog.modern {
         if let Some(listing) = crate::app::shell_network_setup::view::room_listing(state) {
             layout.arrange_roster(&listing.places);
@@ -231,6 +240,24 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
             Some(KeyCode::Escape) => Some(SetupAction::MapOffer { download: false }),
             _ => None,
         }
+    } else if matches!(
+        ui.open_box,
+        Some(RoomBox::Briefing | RoomBox::RoleDetails(_))
+    ) {
+        match code {
+            Some(KeyCode::PageDown | KeyCode::ArrowDown | KeyCode::ArrowRight) => {
+                ui.page_description(1)
+            }
+            Some(KeyCode::PageUp | KeyCode::ArrowUp | KeyCode::ArrowLeft) => {
+                ui.page_description(-1)
+            }
+            _ => {}
+        }
+        matches!(
+            code,
+            Some(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
+        )
+        .then_some(SetupAction::OpenBox(None))
     } else if ui.open_box.is_some() {
         matches!(
             code,
@@ -513,6 +540,15 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 ACCEPT => Some(SetupAction::Accept),
                 BACK => Some(SetupAction::Back),
                 CHOOSE_MAP => Some(SetupAction::ChooseMap),
+                SCENARIO_BRIEFING => Some(SetupAction::OpenBox(Some(RoomBox::Briefing))),
+                SCENARIO_DESCRIPTION_PREVIOUS => {
+                    ui.page_description(-1);
+                    None
+                }
+                SCENARIO_DESCRIPTION_NEXT => {
+                    ui.page_description(1);
+                    None
+                }
                 EMOTE => Some(SetupAction::Emote),
                 PAGE => Some(SetupAction::Page),
                 PREVIOUS_ROWS => Some(SetupAction::RosterPage { forward: false }),
@@ -526,7 +562,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),
                 control if team_join_row(control).is_some() => Some(SetupAction::Join { control }),
-                _ => None,
+                id => scenario_details_row(id)
+                    .map(|row| SetupAction::OpenBox(Some(RoomBox::RoleDetails(row)))),
             };
         }
     }
@@ -607,5 +644,13 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return false;
     };
+    if matches!(
+        ui.open_box,
+        Some(RoomBox::Briefing | RoomBox::RoleDetails(_))
+    ) {
+        ui.page_description(if lines > 0.0 { -1 } else { 1 });
+        state.platform.window.request_redraw();
+        return true;
+    }
     ui.wheel(&view, &layout, x, y, lines)
 }

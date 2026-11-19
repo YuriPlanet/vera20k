@@ -82,11 +82,25 @@ pub struct PreparedMatchStartup {
     pub session: AcceptedBattleSession,
 }
 
+/// Configuration and admitted seat assignments of a local authored network scenario.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AuthoredNetworkStart {
+    pub(crate) selection: crate::map::scenario_menu::LocalScenario,
+    pub(crate) configuration_sha256: String,
+    pub(crate) players: Vec<crate::app::match_runtime::session::LocalScenarioPlayer>,
+    pub(crate) observers: Vec<crate::app::match_runtime::session::LocalScenarioObserver>,
+    pub(crate) ai_difficulty: crate::sim::house_state::HouseDifficulty,
+    pub(crate) alliance_admission: crate::sim::house_diplomacy::PlayerAllianceAdmission,
+    pub(crate) auto_enemy_selection: bool,
+    pub(crate) carry_over: Option<crate::sim::campaign_carry_over::AuthoredCampaignCarryOver>,
+}
+
 /// Immutable accepted network handoff, shared with the live session owner.
 /// No UI or loading phase keeps a second mutable roster after this freeze.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreparedNetworkStartup {
     launch: SkirmishLaunchSession,
+    authored: Option<AuthoredNetworkStart>,
     /// Physical local bytes, independent of the logical map name folded into
     /// shared scenario state. Cache paths differ legitimately across machines.
     local_map_source: Option<crate::map::source::LoadedMapSource>,
@@ -116,6 +130,7 @@ impl PreparedNetworkStartup {
             crate::sim::native_identity::network_native_id_prefix(mode, launch.humans.len());
         Self {
             launch,
+            authored: None,
             local_map_source: None,
             local_map_effective_digest: None,
             local_random_map_preview: None,
@@ -136,6 +151,47 @@ impl PreparedNetworkStartup {
     pub(crate) fn with_carry_over(mut self, record: CampaignCarryOver) -> Self {
         self.carry_over = Some(record);
         self
+    }
+
+    pub(crate) fn with_authored_scenario(mut self, authored: AuthoredNetworkStart) -> Self {
+        self.authored = Some(authored);
+        self
+    }
+
+    pub(crate) fn authored_scenario(&self) -> Option<&AuthoredNetworkStart> {
+        self.authored.as_ref()
+    }
+
+    pub(crate) fn authored_local_player(
+        &self,
+    ) -> Option<&crate::app::match_runtime::session::LocalScenarioPlayer> {
+        self.authored_player(self.launch.local_player_index)
+    }
+
+    pub(crate) fn authored_player(
+        &self,
+        source: usize,
+    ) -> Option<&crate::app::match_runtime::session::LocalScenarioPlayer> {
+        let row = self.launch.humans.get(source)?.raw_slot_index?;
+        self.authored_scenario()?
+            .players
+            .iter()
+            .find(|player| player.raw_slot_index == row)
+    }
+
+    pub(crate) fn authored_owner(&self, source: usize) -> Option<&str> {
+        let human = self.launch.humans.get(source)?;
+        if human.is_observer() {
+            let row = human.raw_slot_index?;
+            return self
+                .authored_scenario()?
+                .observers
+                .iter()
+                .find(|observer| observer.raw_slot_index == row)
+                .map(|observer| observer.house.as_str());
+        }
+        self.authored_player(source)
+            .map(|player| player.house.as_str())
     }
 
     pub(crate) fn with_local_map_source(
@@ -559,10 +615,13 @@ impl LoadingStartup {
         }
     }
 
+    /// Launch slots for loaders and presentation that use the stock setup.
     pub fn launch_session(&self) -> Option<&SkirmishLaunchSession> {
         match self {
-            Self::Network(startup) => Some(startup.launch_session()),
-            Self::Campaign(_) => None,
+            Self::Network(startup) if startup.authored_scenario().is_none() => {
+                Some(startup.launch_session())
+            }
+            Self::Network(_) | Self::Campaign(_) => None,
             Self::Accepted(startup) => Some(startup.session.launch_session()),
             Self::Replay { session, .. } => Some(session),
             Self::UnverifiedLegacy { session, .. } => Some(session),

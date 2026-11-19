@@ -32,6 +32,8 @@ use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::geom::RectPx;
 use crate::util::time::Instant;
 
+mod scenario_room;
+
 pub(crate) fn render_multiplayer_setup(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -54,15 +56,29 @@ pub(crate) fn render_multiplayer_setup(
     let leaving = exit.is_some();
     let wave = exit.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
-    if let Some(index) = view.selected_map_index {
+    if view.scenario_room.is_some() && view.preview_hidden {
+        state.frontend.skirmish_preview_texture = None;
+    } else if let Some(room) = &view.scenario_room
+        && let Some(key) = state
+            .match_state
+            .session
+            .local_network_scenario()
+            .map(|scenario| scenario.key.clone())
+    {
+        super::preview::ensure_local_scenario_preview(state, &key, room.presentation.as_deref());
+    } else if let Some(index) = view.selected_map_index {
         ensure_map_preview_texture(state, index, layout.map_preview);
     } else if !view.host {
         super::preview::ensure_received_preview_texture(state);
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
-    let zoom_layout = ensure_zoom_texture(state, scale, !sliding);
-    let heading = localized_label(state, view.page().title_key, view.page().title_key);
+    let zoom_layout = ensure_zoom_texture(state, scale, !sliding && !view.preview_hidden);
+    let heading = view.scenario_room.as_ref().map_or_else(
+        || localized_label(state, view.page().title_key, view.page().title_key),
+        |room| crate::i18n::tr(room.caption),
+    );
+    let description = scenario_room::description(state, &view, &layout);
     let accept_highlight = state
         .frontend
         .multiplayer_setup
@@ -70,23 +86,40 @@ pub(crate) fn render_multiplayer_setup(
         .expect("active setup")
         .accept_highlight(!view.host && view.start_requested, now);
     let labels = {
+        let [mode_label, map_label] = [
+            (view.mode_label.as_str(), layout.mode_label),
+            (view.map_label.as_str(), layout.map_label),
+        ]
+        .map(|(title, rect)| {
+            if layout.scenario.is_some() {
+                state
+                    .renderer
+                    .bit_font
+                    .truncate_to_width(title, scale.base_rect(rect).w.max(0) as u32)
+            } else {
+                std::borrow::Cow::Borrowed(title)
+            }
+        });
+        let map_align = if layout.scenario.is_some() {
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER
+        } else {
+            ShellAlign::H_CENTER
+        };
         let ui = state
             .frontend
             .multiplayer_setup
             .as_mut()
             .expect("active setup");
         if !sliding && !ui.shown {
-            ui.statics
-                .show(&heading, &view.mode_label, &view.map_label, now);
+            ui.statics.show(&heading, &mode_label, &map_label, now);
             ui.shown = true;
         }
-        ui.statics
-            .set_map_labels(&view.mode_label, &view.map_label, now);
+        ui.statics.set_map_labels(&mode_label, &map_label, now);
         let shown = ui.statics.paint(now, sliding);
         [
             (shown.heading, layout.page.title, ShellAlign::PANEL_TITLE),
-            (shown.game_type, layout.mode_label, ShellAlign::H_CENTER),
-            (shown.map_label, layout.map_label, ShellAlign::H_CENTER),
+            (shown.game_type, layout.mode_label, map_align),
+            (shown.map_label, layout.map_label, map_align),
         ]
         .into_iter()
         .filter_map(|(shown, rect, align)| shown.map(|shown| static_label(shown, rect, align)))
@@ -202,6 +235,7 @@ pub(crate) fn render_multiplayer_setup(
         SHELL_LABEL_TEXT_RGB
     };
     if !leaving && ui.notice.is_none() {
+        scenario_room::draw_fields(state, &view, &layout, &mut controls, &mut texts);
         for (key, rect) in layout
             .labels
             .iter()
@@ -490,6 +524,12 @@ pub(crate) fn render_multiplayer_setup(
             }
         }
         for combo in view.combos.iter().filter(|combo| combo.visible) {
+            if layout.scenario.is_some()
+                && SetupColumn::decode(combo.id)
+                    .is_some_and(|(column, _)| column == SetupColumn::Player)
+            {
+                continue;
+            }
             let Some(rect) = layout.control_rect(combo.id) else {
                 continue;
             };
@@ -528,16 +568,40 @@ pub(crate) fn render_multiplayer_setup(
                 if let Some((_, badge)) = player_badge(atlas, &view, &layout, combo.id) {
                     face.w = badge.x - face.x;
                 }
+                let assigned_color = SetupColumn::decode(combo.id)
+                    .filter(|(column, _)| *column == SetupColumn::Team)
+                    .and_then(|(_, row)| view.scenario_room.as_ref()?.rows.get(row)?.color);
+                let role_rgb = assigned_color.map_or_else(
+                    || {
+                        if layout.scenario.is_some() && !view.enabled(combo.id) {
+                            scenario_room::READ_ONLY_TEXT
+                        } else {
+                            super::text::combo_face_text_color(!view.enabled(combo.id))
+                        }
+                    },
+                    |rgb| rgb.map(|channel| f32::from(channel) / 255.0),
+                );
+                let value = if layout.scenario.is_some() {
+                    font.truncate_to_width(
+                        &item.text,
+                        (face.w.max(0) as f32 / scale.factor()) as u32,
+                    )
+                } else {
+                    std::borrow::Cow::Borrowed(item.text.as_str())
+                };
                 texts.push(text(
-                    &item.text,
+                    &value,
                     face,
                     ShellAlign::V_CENTER,
-                    super::text::combo_face_text_color(!view.enabled(combo.id)),
+                    role_rgb,
                     SHELL_CONTROL_TEXT_DEPTH,
                 ));
             }
         }
         for (row, icon) in view.row_icons.iter().enumerate() {
+            if layout.scenario.is_some() {
+                break;
+            }
             let Some(icon) = icon else {
                 continue;
             };
@@ -599,7 +663,10 @@ pub(crate) fn render_multiplayer_setup(
             );
         }
         for bar in view.trackbars.iter().filter(|bar| {
-            bar.visible && !OPTION_TRACKBARS.contains(&bar.id) && bar.id != SUPERWEAPON_LIMIT
+            bar.visible
+                && !OPTION_TRACKBARS.contains(&bar.id)
+                && bar.id != SUPERWEAPON_LIMIT
+                && !layout.options_trackbar(bar.id)
         }) {
             push_trackbar(
                 &mut controls,
@@ -707,34 +774,52 @@ pub(crate) fn render_multiplayer_setup(
                         .then(|| state.frontend.random_map_retention.generated_header()),
                     entry.and_then(|entry| entry.preview_source_bounds.as_ref()),
                 );
-                let bounds = state
-                    .frontend
-                    .network_setup_protocol
-                    .as_ref()
-                    .and_then(|protocol| protocol.received_preview_bounds())
-                    .or(received_bounds.as_ref())
-                    .or(own_bounds.as_ref());
+                let authored = view.scenario_room.as_ref();
+                let bounds = if let Some(room) = authored {
+                    room.presentation
+                        .as_ref()
+                        .and_then(|presentation| presentation.starts.as_ref())
+                } else {
+                    state
+                        .frontend
+                        .network_setup_protocol
+                        .as_ref()
+                        .and_then(|protocol| protocol.received_preview_bounds())
+                        .or(received_bounds.as_ref())
+                        .or(own_bounds.as_ref())
+                };
                 overlay.zoom = zoom_layout
                     .as_ref()
                     .map(|zoom_layout| zoom_draws(state, atlas, zoom_layout, bounds, scale));
                 if let Some(bounds) = bounds {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);
-                    push_start_marker_sprites(&mut controls, atlas, &positions, scale, 0.00056);
-                    // BC5DE644/BD5E1D51 call shared DrawStartPositions640710:
-                    // 6409D7..640A15 draws1-based numbers after STARTBUT, using
-                    // the destination surface clip, not the thumbnail bounds.
-                    let mut instances = Vec::new();
-                    push_start_marker_labels(&mut instances, state, &positions, scale, 0.00040);
-                    texts.push(shell_text::ShellTextDraw {
-                        instances,
-                        scissor: shell_text::ScissorRect {
-                            x: 0,
-                            y: 0,
-                            w: width,
-                            h: height,
-                        },
-                    });
+                    if let Some(room) = authored {
+                        super::preview::push_role_start_markers(
+                            &mut controls,
+                            atlas,
+                            &positions,
+                            &room.role_colors,
+                            fitted,
+                            scale,
+                        );
+                    } else {
+                        push_start_marker_sprites(&mut controls, atlas, &positions, scale, 0.00056);
+                        // BC5DE644/BD5E1D51 call shared DrawStartPositions640710:
+                        // 6409D7..640A15 draws1-based numbers after STARTBUT, using
+                        // the destination surface clip, not the thumbnail bounds.
+                        let mut instances = Vec::new();
+                        push_start_marker_labels(&mut instances, state, &positions, scale, 0.00040);
+                        texts.push(shell_text::ShellTextDraw {
+                            instances,
+                            scissor: shell_text::ScissorRect {
+                                x: 0,
+                                y: 0,
+                                w: width,
+                                h: height,
+                            },
+                        });
+                    }
                 }
             }
             for button in &layout.page.buttons {
@@ -753,10 +838,12 @@ pub(crate) fn render_multiplayer_setup(
                 if let Some(spec) = view.page().button(button.id) {
                     texts.push(shell_text::draw_in_rect_scaled(
                         font,
-                        &view.dialog.button_label(button.id).map_or_else(
-                            || localized_label(state, spec.csf_key, spec.csf_key),
-                            crate::i18n::tr,
-                        ),
+                        &scenario_room::button_label(&view, button.id)
+                            .or_else(|| view.dialog.button_label(button.id))
+                            .map_or_else(
+                                || localized_label(state, spec.csf_key, spec.csf_key),
+                                crate::i18n::tr,
+                            ),
                         button_text_rect(button.rect, pressed, scale),
                         super::text::button_label_color_for_disabled(!view.enabled(button.id)),
                         ShellAlign::BUTTON_CAPTION,
@@ -893,6 +980,9 @@ pub(crate) fn render_multiplayer_setup(
                 &layout,
                 super::wol_lobby::POPUP_DEPTHS.text,
             );
+        }
+        if let Some(description) = description.as_ref() {
+            scenario_room::draw_description(state, &layout, description, &mut overlay);
         }
         // VERA asks a guest before downloading a map it does not have, then
         // shows the download, on the art of VERA's other online-service boxes.
@@ -1247,24 +1337,27 @@ fn push_option_controls(
         return;
     };
     let scale = layout.page.scale;
-    let text = |value: &str, rect: RectPx, align: ShellAlign| {
+    let text = |value: &str, rect: RectPx, align: ShellAlign, rgb| {
         shell_text::draw_in_rect_scaled(
             &state.renderer.bit_font,
             value,
             rect_to_text_rect(rect),
-            SHELL_LABEL_TEXT_RGB,
+            rgb,
             align,
             [0.0; 2],
             text_depth,
             scale.factor(),
         )
     };
-    for (key, rect) in &layout.option_labels {
-        texts.push(text(
-            &localized_label(state, key, key),
-            *rect,
-            ShellAlign::NONE,
-        ));
+    if view.stock_controls {
+        for (key, rect) in &layout.option_labels {
+            texts.push(text(
+                &localized_label(state, key, key),
+                *rect,
+                ShellAlign::NONE,
+                SHELL_LABEL_TEXT_RGB,
+            ));
+        }
     }
     for (index, key) in [
         "GUI:ShortGame",
@@ -1276,6 +1369,9 @@ fn push_option_controls(
     .into_iter()
     .enumerate()
     {
+        if view.checkbox_policy[index] == SetupCheckboxPolicy::Hidden {
+            continue;
+        }
         let rect = layout.checkboxes[index];
         paint_control(
             controls,
@@ -1290,10 +1386,17 @@ fn push_option_controls(
             &localized_label(state, key, key),
             crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
             ShellAlign::V_CENTER,
+            if view.stock_controls || view.enabled(CHECKBOXES[index]) {
+                SHELL_LABEL_TEXT_RGB
+            } else if layout.scenario.is_some() {
+                scenario_room::READ_ONLY_TEXT
+            } else {
+                SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+            },
         ));
     }
     // VERA's own checkboxes, only in its Game Options.
-    if layout.game_options.is_some() {
+    if layout.game_options.is_some() && view.stock_controls {
         for (index, label) in crate::ui::multiplayer_setup::ROOM_CHECKBOX_LABELS
             .into_iter()
             .enumerate()
@@ -1312,12 +1415,14 @@ fn push_option_controls(
                 &crate::i18n::tr(label),
                 crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
                 ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
             ));
         }
         texts.push(text(
             &crate::i18n::tr(crate::ui::skirmish_shell::game_options::SUPERWEAPON_LIMIT_LABEL),
             layout.superweapon_limit_label,
             ShellAlign::NONE,
+            SHELL_LABEL_TEXT_RGB,
         ));
         if let Some(bar) = view
             .trackbars
@@ -1327,11 +1432,11 @@ fn push_option_controls(
             push_trackbar(controls, texts, state, view, layout, bar, text_depth);
         }
     }
-    for bar in view
-        .trackbars
-        .iter()
-        .filter(|bar| bar.visible && OPTION_TRACKBARS.contains(&bar.id))
-    {
+    for bar in view.trackbars.iter().filter(|bar| {
+        bar.visible
+            && (OPTION_TRACKBARS.contains(&bar.id)
+                || (bar.id == DIFFICULTY && layout.options_trackbar(bar.id)))
+    }) {
         push_trackbar(controls, texts, state, view, layout, bar, text_depth);
     }
 }
@@ -1359,6 +1464,14 @@ fn push_trackbar(
     } else {
         layout.page.scale.factor() * ROSTER_TEXT_SCALE
     };
+    let enabled = view.enabled(bar.id);
+    let caption_color = if enabled {
+        SHELL_LABEL_TEXT_RGB
+    } else if layout.scenario.is_some() {
+        scenario_room::READ_ONLY_TEXT
+    } else {
+        SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+    };
     paint_control(
         controls,
         &atlas.control_chrome(),
@@ -1367,7 +1480,7 @@ fn push_trackbar(
             thumb_left: bar.thumb_left(rect, scale),
             plaque: bar.id != DIFFICULTY,
             // A guest's are disabled windows (`0x005E30EB..0x005E30F4`).
-            disabled: !view.enabled(bar.id),
+            disabled: !enabled,
         },
         scale,
     );
@@ -1394,12 +1507,19 @@ fn push_trackbar(
             &state.renderer.bit_font,
             &value,
             rect_to_text_rect(crate::ui::shell::trackbar::value_text_rect(rect, scale)),
-            if view.enabled(bar.id) {
-                SHELL_LABEL_TEXT_RGB
-            } else {
-                SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-            },
+            caption_color,
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            [0.0; 2],
+            text_depth,
+            text_factor,
+        ));
+    } else if let Some(label) = &view.difficulty_label {
+        texts.push(shell_text::draw_in_rect_scaled(
+            &state.renderer.bit_font,
+            label,
+            rect_to_text_rect(layout.difficulty_label_rect(rect)),
+            caption_color,
+            ShellAlign::V_CENTER,
             [0.0; 2],
             text_depth,
             text_factor,

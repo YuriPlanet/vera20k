@@ -74,14 +74,20 @@ pub(crate) trait PickSource: Copy {
     /// `+0x1EC` IsHuman (`0x0050B6F9`) or `+0x1ED` PlayerControl
     /// (`0x0050B703`). A bare EntityStore has no house table and answers
     /// `None`; its fixtures keep exact local-owner identity.
-    fn owner_is_human_player(&self, _owner: InternedId) -> Option<bool> {
+    fn object_joins_player_selection(
+        &self,
+        _entity: &crate::sim::game_entity::GameEntity,
+    ) -> Option<bool> {
         None
     }
-    /// [`crate::sim::world::Simulation::house_controls_selection`], the
+    /// [`crate::sim::world::Simulation::player_controls_object_selection`], the
     /// owner test of the T key's predicates (`0x00732580`, `0x00732770`,
     /// `0x006DA770`). A bare EntityStore answers `None`; its fixtures keep
     /// exact local-owner identity.
-    fn owner_controls_selection(&self, _owner: InternedId) -> Option<bool> {
+    fn player_controls_object_selection(
+        &self,
+        _entity: &crate::sim::game_entity::GameEntity,
+    ) -> Option<bool> {
         None
     }
 }
@@ -115,11 +121,17 @@ impl PickSource for &crate::sim::world::Simulation {
             crate::sim::movement::locomotor::MovementLayer::Ground,
         )
     }
-    fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
-        Some(self.house_is_human_player(owner))
+    fn object_joins_player_selection(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> Option<bool> {
+        Some(crate::sim::world::Simulation::object_joins_player_selection(self, entity))
     }
-    fn owner_controls_selection(&self, owner: InternedId) -> Option<bool> {
-        Some(self.house_controls_selection(owner))
+    fn player_controls_object_selection(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> Option<bool> {
+        Some(crate::sim::world::Simulation::player_controls_object_selection(self, entity))
     }
 }
 impl PickWorld for &crate::sim::world::Simulation {
@@ -171,11 +183,17 @@ impl PickSource for PresentedWorld<'_> {
             )
         })
     }
-    fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
-        Some(self.sim.house_is_human_player(owner))
+    fn object_joins_player_selection(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> Option<bool> {
+        PickSource::object_joins_player_selection(&self.sim, entity)
     }
-    fn owner_controls_selection(&self, owner: InternedId) -> Option<bool> {
-        Some(self.sim.house_controls_selection(owner))
+    fn player_controls_object_selection(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> Option<bool> {
+        PickSource::player_controls_object_selection(&self.sim, entity)
     }
 }
 impl PickWorld for PresentedWorld<'_> {
@@ -598,7 +616,7 @@ fn first_selected_is_players(
         .and_then(|id| source.entities().get(*id))
         .is_some_and(|entity| match (local_owner, interner) {
             (Some(owner), Some(names)) => source
-                .owner_is_human_player(entity.owner())
+                .object_joins_player_selection(entity)
                 .unwrap_or_else(|| names.resolve(entity.owner()).eq_ignore_ascii_case(owner)),
             _ => true,
         })
@@ -1046,7 +1064,7 @@ fn type_select_candidates(
 }
 
 /// The owner arm of the T key's predicates, asked of the object's House
-/// ([`PickSource::owner_controls_selection`]). A world without a local player
+/// ([`PickSource::player_controls_object_selection`]). A world without a local player
 /// keeps every owner, as the headless fixtures always have; a source without
 /// a house table falls back to exact local-owner identity.
 fn type_select_owner_admits(
@@ -1057,7 +1075,7 @@ fn type_select_owner_admits(
 ) -> bool {
     local_owner.is_none_or(|local| {
         source
-            .owner_controls_selection(entity.owner())
+            .player_controls_object_selection(entity)
             .unwrap_or_else(|| {
                 interner
                     .map_or("", |i| i.resolve(entity.owner()))
@@ -1370,7 +1388,7 @@ pub(crate) fn is_local_player_selectable_object(
         && entity.category() != EntityCategory::Structure
         && entity.discovery.discovered_by_current_house()
         && type_is_selectable(sim.interner().resolve(entity.type_ref()), rules)
-        && sim.house_is_human_player(entity.owner())
+        && sim.object_joins_player_selection(entity)
 }
 
 /// Does a building's footprint cover this cell? The native lookup asks the cell
@@ -1566,7 +1584,7 @@ pub(crate) fn no_selection_refuses_select(
 /// Final object admission shared by selection callers. Ownership and the
 /// band/TypeSelect dynamic virtual are caller gates: an ordinary discovered
 /// nonlocal click may reach this gate, the band collects the candidates whose
-/// House `IsHumanPlayer` admits ([`PickSource::owner_is_human_player`]), and
+/// House `IsHumanPlayer` or frozen control grant admits, and
 /// TypeSelect collects only exact-local candidates. Newly selected objects
 /// still have to be alive, present, statically selectable, and outside
 /// active warp-out.
@@ -1594,7 +1612,7 @@ fn type_is_selectable(entity_type: &str, rules: Option<&RuleSet>) -> bool {
 }
 
 /// The band callback `0x004AC2B0` in VERA's order: the owning House's
-/// `IsHumanPlayer` (`0x004AC2BE`, see [`PickSource::owner_is_human_player`])
+/// `IsHumanPlayer` (`0x004AC2BE`, see [`PickSource::object_joins_player_selection`])
 /// and then the static admission. A world without a local player keeps the
 /// band open to every owner, as the headless fixtures always have; a source
 /// without a house table falls back to exact local-owner identity.
@@ -1609,7 +1627,7 @@ fn is_local_band_candidate(
 ) -> bool {
     local_owner.is_none_or(|local| {
         source
-            .owner_is_human_player(entity.owner())
+            .object_joins_player_selection(entity)
             .unwrap_or_else(|| entity_owner.eq_ignore_ascii_case(local))
     }) && static_selection_gate(entity, entity_type, rules, require_playfield_membership)
 }

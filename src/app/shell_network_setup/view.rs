@@ -128,14 +128,14 @@ pub(crate) struct RoomListing {
     listed: Vec<Listed>,
     row_count: usize,
     /// The first row of each page.
-    pages: Vec<usize>,
-    first_row: usize,
+    pub(super) pages: Vec<usize>,
+    pub(super) first_row: usize,
     /// The rows (headers too) on the page showing.
-    page_len: usize,
+    pub(super) page_len: usize,
     /// In VERA's room, where each of them stands ([`roster_page`]).
     pub(crate) places: Vec<RosterPlace>,
     /// In VERA's room, how many places it scrolls through and the last.
-    roster_scroll: (usize, usize),
+    pub(super) roster_scroll: (usize, usize),
 }
 impl RoomListing {
     /// Index in the full listing, including for a team's pinned header.
@@ -161,13 +161,14 @@ impl RoomListing {
 /// has none.
 pub(crate) fn room_size_shown(state: &AppState) -> bool {
     let session = &state.match_state.session;
-    session.host() && session.network_people_limit().is_some() && !super::quick_match(state)
+    session.host()
+        && session.network_several_observers()
+        && session.network_people_limit().is_some()
+        && !super::quick_match(state)
 }
 
 pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     let session = &state.match_state.session;
-    let launch = session.network_setup()?;
-    mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
     let capacity = session
         .network_setup_capacity()?
         .clamp(0, crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
@@ -182,7 +183,9 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     // VERA's rooms list their seats, the map's players, whether taken or
     // Open, then the spectators. A seat the host removed (Closed) stays
     // hidden until the host's Add slot row, after the seats, opens it.
-    let several = session.network_several_observers() && observer_row.is_some();
+    let authored_rows = session.local_scenario_row_count();
+    let several =
+        authored_rows.is_none() && session.network_several_observers() && observer_row.is_some();
     let visible_limit = if several {
         usize::from(session.network_player_row_limit())
     } else {
@@ -210,6 +213,8 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     };
     let row_count = if several {
         listed.len()
+    } else if let Some(rows) = authored_rows {
+        rows
     } else {
         visible_limit
             .max(observer_row.map_or(0, |row| row + 1))
@@ -232,7 +237,7 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     };
     let dialog = super::dialog(state);
     let ui = state.frontend.multiplayer_setup.as_ref();
-    if dialog.modern {
+    if dialog.modern && authored_rows.is_none() {
         let items: Vec<RosterItem> = (0..row_count)
             .map(|position| match listing.row_at(position) {
                 Some(Listed::Header(group, _)) => RosterItem::Header(group),
@@ -254,7 +259,11 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
         listing.pages = vec![0];
         listing.roster_scroll = (scroll.stops.len(), scroll.max_top);
     } else {
-        let rows = dialog.rows_per_page();
+        let rows = if authored_rows.is_some() {
+            SCENARIO_ROWS_PER_PAGE
+        } else {
+            dialog.rows_per_page()
+        };
         listing.pages = (0..row_count.max(1)).step_by(rows).collect();
         listing.first_row = ui.map_or(0, |ui| ui.first_row(&listing.pages));
         listing.page_len = rows.min(row_count.saturating_sub(listing.first_row));
@@ -263,6 +272,9 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
 }
 
 pub(crate) fn view(state: &AppState) -> Option<SetupView> {
+    if let Some(view) = super::local_scenarios::view(state) {
+        return Some(view);
+    }
     let session = &state.match_state.session;
     let launch = session.network_setup()?;
     let protocol = state.frontend.network_setup_protocol.as_ref()?;
@@ -900,15 +912,16 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         dialog,
         host,
         locked: protocol.locked,
-        // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
-        // checked and disabled in a tournament or clan room.
-        short_game_locked: host && dialog.wol() && room.tournament_or_clan(),
+        stock_controls: true,
+        start_enabled: host,
+        choose_map_enabled: host,
         team_header: !no_team_lists,
         accept_enabled: accept_enabled(state),
         start_requested: protocol.start_requested
             && !session.network_player_ready(launch.local_player_index),
         combos,
         trackbars,
+        difficulty_label: None,
         checks: [
             options.short_game,
             options.mcv_redeploy,
@@ -916,6 +929,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             options.super_weapons,
             options.build_off_ally,
         ],
+        checkbox_policy: CHECKBOXES.map(|id| {
+            // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1).
+            if id == SHORT_GAME && host && dialog.wol() && room.tournament_or_clan() {
+                SetupCheckboxPolicy::Locked
+            } else {
+                SetupCheckboxPolicy::Editable
+            }
+        }),
         room_checks: [
             options.bridges_destroyable,
             options.ally_change_allowed,
@@ -954,7 +975,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         map_label: super::map_display_name(state)
             .map_or_else(|| label(state, "GUI:None"), str::to_owned),
         selected_map_index: map_index,
+        preview_hidden: false,
         cooperative,
+        scenario_room: None,
         cooperative_description: coop.as_ref().and_then(|coop| coop.description).map(
             |(campaign, stage)| {
                 label(

@@ -146,7 +146,10 @@ impl MatchSession {
             .network
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no network visit"))?;
-        let NetworkPhase::Frozen { startup, connected } = &network.phase else {
+        let NetworkPhase::Frozen {
+            startup, connected, ..
+        } = &network.phase
+        else {
             anyhow::bail!("the co-op round follows a frozen match");
         };
         let mut launch = startup.launch_session().clone();
@@ -481,6 +484,8 @@ impl MatchSession {
         network.phase = NetworkPhase::Frozen {
             startup: Arc::clone(&startup),
             connected,
+            local_lobby: None,
+            show_lobby_on_return: false,
         };
         self.latency_fudge = latency_fudge;
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(

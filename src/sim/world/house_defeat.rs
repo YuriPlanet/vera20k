@@ -285,6 +285,7 @@ impl Simulation {
         // 0x004F8E86..0x004F8EB7: not a campaign, past frame zero.
         let defeat_gate = defeat_pass
             && self.session.game_mode_nonzero()
+            && !self.session.is_authored_campaign()
             && (self.session.binary_frame() as i32) > 0;
         // Logic55B68D reloads the live House count after each complete body.
         // A House's power/radar and activation must precede its own teams,
@@ -325,6 +326,7 @@ impl Simulation {
                     }
                 }
                 self.houses.get_mut(&owner).unwrap().complete_outcome(kind);
+                self.session.complete_authored_house_outcome(owner, kind);
                 self.admit_house_outcome(owner, kind);
             }
             // Original4F87C2..4F87FA runs even on frame zero and before
@@ -400,6 +402,7 @@ impl Simulation {
         kind: crate::sim::house_state::HouseOutcomeKind,
     ) {
         use crate::sim::house_state::HouseOutcomeKind;
+        self.follow_authored_participant_outcome(owner, kind);
         if !self.handles_house_outcome_locally(owner) {
             return;
         }
@@ -432,7 +435,9 @@ impl Simulation {
     /// viewpoints in one lockstep world, through the same House flags and
     /// shared +298 timer; nonhuman House behavior is not broadened.
     fn outcome_viewpoints(&self) -> Vec<InternedId> {
-        if self.session.game_mode().is_network() {
+        if self.session.is_authored_campaign() {
+            self.authored_campaign_players().collect()
+        } else if self.session.game_mode().is_network() {
             self.houses
                 .order()
                 .iter()
@@ -614,6 +619,16 @@ impl Simulation {
         if !self.session.game_mode().is_network() {
             return None;
         }
+        if self.session.is_authored_campaign() {
+            self.terminal_score_snapshot()?;
+            return Some(
+                self.authored_campaign_players()
+                    .filter(|&owner| {
+                        self.authored_house_outcome(owner) == Some(HouseOutcomeKind::Victory)
+                    })
+                    .collect(),
+            );
+        }
         let decision = self.multiplayer_decision()?;
         Some(
             decision
@@ -621,6 +636,22 @@ impl Simulation {
                 .filter_map(|(owner, won)| won.then_some(owner))
                 .collect(),
         )
+    }
+
+    /// Project the House's accepted authored result across the native flag's
+    /// completion. Observers do not occupy a participant result row.
+    pub fn authored_house_outcome(&self, owner: InternedId) -> Option<HouseOutcomeKind> {
+        if !self
+            .authored_campaign_players()
+            .any(|player| player == owner)
+        {
+            return None;
+        }
+        self.houses
+            .get(&owner)?
+            .outcome()
+            .map(|outcome| outcome.kind)
+            .or_else(|| self.session.completed_authored_house_outcome(owner))
     }
 
     /// VERA: a network match in which every human watches, as VERA's room
@@ -638,6 +669,9 @@ impl Simulation {
     /// survivors and a human remain, else each outcome viewpoint and whether
     /// it wins.
     fn multiplayer_decision(&self) -> Option<Vec<(InternedId, bool)>> {
+        if self.session.is_authored_campaign() {
+            return None;
+        }
         let alive: Vec<_> = self
             .houses
             .order()
@@ -798,13 +832,7 @@ impl Simulation {
             return;
         }
         if campaign {
-            let was_locked = self.session.lock_input();
-            self.publish_trigger_effects(vec![
-                crate::sim::trigger_runtime::TriggerEffect::InputLockChanged {
-                    locked: true,
-                    was_locked,
-                },
-            ]);
+            self.lock_outcome_input();
         }
         if kind == crate::sim::house_state::HouseOutcomeKind::Defeat
             && self.session.is_observer_house(owner)
@@ -817,33 +845,78 @@ impl Simulation {
         effects.flush_sound(self, rules);
     }
 
+    fn lock_outcome_input(&mut self) {
+        let was_locked = self.session.lock_input();
+        self.publish_trigger_effects(vec![
+            crate::sim::trigger_runtime::TriggerEffect::InputLockChanged {
+                locked: true,
+                was_locked,
+            },
+        ]);
+    }
+
+    pub(in crate::sim) fn outcome_country_index(
+        &self,
+        owner: InternedId,
+        rules: &RuleSet,
+    ) -> Option<i32> {
+        let country = self.houses.get(&owner)?.country()?;
+        let index = rules.country_index(self.interner.resolve(country))?;
+        Some(i32::from(index.0))
+    }
+
     /// TAction1/2/67/68/69 dispatch6DEA37/6DEA67/6DDD77/6DDD93/6DDDAF
     /// and TeamAI Script7/23 at6E98C9/6E98E5. All target PlayerPtr, not
     /// the caller's House. Country compares +90 with its HouseType ordinal;
     /// Flag preserves the caller's skip-timer argument (scripts pass false).
     /// In a VERA network world the same decision runs for each represented
     /// human viewpoint; current-only effects and app routing stay separate.
+    /// Authored campaigns extend actions 1/2 to direct reciprocal allies and
+    /// lock the first collective result. Scripts 7/23 still affect every seat.
     pub(crate) fn request_player_outcome(
         &mut self,
         request: PlayerOutcomeRequest,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
+        let players = self.outcome_viewpoints();
+        if players.is_empty() {
+            return false;
+        }
+        let authored = self.session.is_authored_campaign();
+        let already_decided = authored && !self.session.lock_authored_outcome();
+        if already_decided && !matches!(request, PlayerOutcomeRequest::EndScenario) {
+            return true;
+        }
+        if authored && !already_decided {
+            // Match the campaign Flag bodies' input lock (0x00684240) at
+            // the shared decision, independent of each client's local result.
+            self.lock_outcome_input();
+        }
+        let authored_country_recipients = match request {
+            PlayerOutcomeRequest::Country { country_index, .. } if authored => {
+                Some(self.authored_country_outcome_recipients(&players, country_index, rules))
+            }
+            _ => None,
+        };
         let mut handled = false;
-        for owner in self.outcome_viewpoints() {
+        for owner in players {
             let (kind, skip_timer) = match request {
                 PlayerOutcomeRequest::Country {
                     country_index,
                     win_on_match,
                 } => {
-                    let native_country = self.houses[&owner]
-                        .country()
-                        .and_then(|country| rules.country_index(self.interner.resolve(country)))
-                        .map(|index| i32::from(index.0));
-                    let Some(native_country) = native_country else {
-                        continue;
+                    let matches = match &authored_country_recipients {
+                        Some(recipients) => recipients.contains(&owner),
+                        None => {
+                            let Some(native_country) = self.outcome_country_index(owner, rules)
+                            else {
+                                continue;
+                            };
+                            native_country == country_index
+                        }
                     };
-                    let kind = if (native_country == country_index) == win_on_match {
+                    let kind = if matches == win_on_match {
                         HouseOutcomeKind::Victory
                     } else {
                         HouseOutcomeKind::Defeat
@@ -854,11 +927,17 @@ impl Simulation {
                 PlayerOutcomeRequest::EndScenario => {
                     //4FCDC0 calls the existing FlagWin(0) if neither result is
                     //set; otherwise only resume the same timer's paused anchor.
-                    if self.houses[&owner].has_won() || self.houses[&owner].has_lost() {
+                    if self.houses[&owner].outcome().is_some() {
                         self.houses
                             .get_mut(&owner)
                             .unwrap()
                             .resume_result_timer(self.session.binary_frame() as i32);
+                        handled = true;
+                        continue;
+                    }
+                    if already_decided {
+                        // The local Win flag can have cleared while this frame
+                        // was still running. Action 69 cannot restart that win.
                         handled = true;
                         continue;
                     }

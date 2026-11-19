@@ -1593,7 +1593,7 @@ fn prepare_scenario_rules(
     prefix: crate::rules::process_owner::NativeScenarioRulesPrefix<'_>,
     map_ini: &crate::rules::ini_parser::IniFile,
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
-    game_mode_nonzero: bool,
+    use_multiplayer_ai_rules: bool,
 ) -> Result<PreparedScenarioRules> {
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
         let (loaded, (ai, rules_at_read)) = owner
@@ -1602,7 +1602,7 @@ fn prepare_scenario_rules(
                     crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
                         assets,
                         map_ini,
-                        game_mode_nonzero,
+                        use_multiplayer_ai_rules,
                     ),
                     rules_at_read,
                 )
@@ -1616,7 +1616,7 @@ fn prepare_scenario_rules(
         let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
             assets,
             map_ini,
-            game_mode_nonzero,
+            use_multiplayer_ai_rules,
         )
         .map_err(anyhow::Error::msg)?;
         (loaded, ai, None)
@@ -3043,36 +3043,52 @@ fn load_map_first_step(
         signed_new_ini_format,
     )?;
     let full_init_entry_mode = startup.session_mode();
-    let (materialization, match_seed, match_launch_descriptor, scenario_prefix_plan, campaign) =
-        match fresh_scenario_context.into_parts() {
-            FreshScenarioParts::StockOffline(parts) => {
-                debug_assert_eq!(&parts.physical_source, &map_source);
-                debug_assert_eq!(parts.signed_new_ini_format, signed_new_ini_format);
-                let _startup_provenance = parts.startup_provenance;
-                (
-                    parts.materialization,
-                    parts.match_seed,
-                    Some(parts.launch),
-                    Some(parts.scenario_prefix),
-                    None,
-                )
-            }
-            FreshScenarioParts::Campaign {
-                physical_source,
-                signed_new_ini_format: admitted_format,
-                startup,
-            } => {
-                debug_assert_eq!(physical_source, map_source);
-                debug_assert_eq!(admitted_format, signed_new_ini_format);
-                (
-                    FreshMapMaterialization::Authored,
-                    startup.seed.value,
-                    None,
-                    None,
-                    Some(startup),
-                )
-            }
-        };
+    let (
+        materialization,
+        match_seed,
+        match_launch_descriptor,
+        scenario_prefix_plan,
+        campaign,
+        authored_network,
+    ) = match fresh_scenario_context.into_parts() {
+        FreshScenarioParts::StockOffline(parts) => {
+            debug_assert_eq!(&parts.physical_source, &map_source);
+            debug_assert_eq!(parts.signed_new_ini_format, signed_new_ini_format);
+            let _startup_provenance = parts.startup_provenance;
+            (
+                parts.materialization,
+                parts.match_seed,
+                Some(parts.launch),
+                Some(parts.scenario_prefix),
+                None,
+                None,
+            )
+        }
+        FreshScenarioParts::Campaign {
+            physical_source,
+            signed_new_ini_format: admitted_format,
+            startup,
+        } => {
+            debug_assert_eq!(physical_source, map_source);
+            debug_assert_eq!(admitted_format, signed_new_ini_format);
+            (
+                FreshMapMaterialization::Authored,
+                startup.seed.value,
+                None,
+                None,
+                Some(startup),
+                None,
+            )
+        }
+        FreshScenarioParts::AuthoredNetwork(startup) => (
+            FreshMapMaterialization::Authored,
+            startup.seed.value,
+            None,
+            None,
+            None,
+            Some(startup),
+        ),
+    };
     validate_fresh_transport_before_effects(
         materialization,
         mapgen_rng_continuation.is_some(),
@@ -3189,7 +3205,9 @@ fn load_map_first_step(
                     rules_prefix,
                     &map_data.ini,
                     tmcj4f_ini.as_ref(),
-                    game_mode_nonzero,
+                    // Authored campaigns use the mode-zero AI enable and team
+                    // TechLevel reads while keeping their network load prefix.
+                    game_mode_nonzero && authored_network.is_none(),
                 )?
             };
             let (
@@ -3268,6 +3286,56 @@ fn load_map_first_step(
                             let campaign_game_options = campaign
                                 .as_ref()
                                 .and_then(|campaign| campaign.game_options());
+                            let role_camera_waypoint = authored_network.as_ref().and_then(|start| {
+                                if start.mode() != crate::app::match_runtime::session::SessionMode::Lan {
+                                    return None;
+                                }
+                                let house = &start.authored_local_player()?.house;
+                                let selection = &start.authored_scenario()?.selection;
+                                selection.presentation.as_ref()?.role_camera_waypoints.get(house).copied()
+                            });
+                            let authored_terms = authored_network
+                                .as_ref()
+                                .map(|start| -> anyhow::Result<_> {
+                                    let authored = start.authored_scenario().ok_or_else(|| {
+                                        anyhow::anyhow!("authored start has no frozen assignments")
+                                    })?;
+                                    let launch = start.launch_session();
+                                    let local = start.authored_owner(launch.local_player_index).ok_or_else(|| {
+                                        anyhow::anyhow!(
+                                            "authored start has no admitted local House"
+                                        )
+                                    })?;
+                                    let players = authored
+                                        .players
+                                        .iter()
+                                        .map(|player| {
+                                            crate::sim::scenario_bootstrap::AuthoredNetworkPlayer {
+                                                house: &player.house,
+                                                shared_control_houses: &player.shared_control_houses,
+                                            }
+                                        })
+                                        .collect::<Vec<_>>();
+                                    let observers = authored.observers.iter().map(|observer| {
+                                        let human = launch.humans.iter().find(|human| {
+                                            human.is_observer() && human.raw_slot_index == Some(observer.raw_slot_index)
+                                        }).ok_or_else(|| anyhow::anyhow!("no admitted observer at the frozen row"))?;
+                                        Ok(crate::sim::scenario_bootstrap::AuthoredNetworkObserver {
+                                            house: &observer.house,
+                                            handle: &human.name,
+                                        })
+                                    }).collect::<anyhow::Result<Vec<_>>>()?;
+                                    Ok((
+                                        local,
+                                        players,
+                                        observers,
+                                        launch.options.to_game_options(0),
+                                        authored.ai_difficulty,
+                                        authored.alliance_admission,
+                                        authored.auto_enemy_selection,
+                                    ))
+                                })
+                                .transpose()?;
                             let fresh_prefix = if let Some(plan) = scenario_prefix_plan {
                                 FreshScenarioPrefix::StockOffline(
                                     plan.bind_native_rules_receipt(
@@ -3278,6 +3346,30 @@ fn load_map_first_step(
                                         &rules,
                                     )?,
                                 )
+                            } else if let Some((
+                                local,
+                                players,
+                                observers,
+                                game_options,
+                                ai_difficulty,
+                                alliance_admission,
+                                auto_enemy_selection,
+                            )) = &authored_terms
+                            {
+                                FreshScenarioPrefix::AuthoredNetwork {
+                                    native_rules_receipt,
+                                    rules: &rules,
+                                    map_data: &map_data,
+                                    house_roster: &house_roster,
+                                    player_house: local,
+                                    players,
+                                    observers,
+                                    game_options,
+                                    ai_difficulty: *ai_difficulty,
+                                    alliance_admission: *alliance_admission,
+                                    auto_enemy_selection: *auto_enemy_selection,
+                                    native_id_start: startup.native_id_prefix(),
+                                }
                             } else {
                                 let campaign = campaign
                                     .as_ref()
@@ -3301,6 +3393,10 @@ fn load_map_first_step(
                         map_name: skirmish_launch_session
                             .and_then(|launch| launch.selected_map_file.clone())
                             .or_else(|| {
+                                authored_network.as_ref()
+                                    .map(|_| startup.selected_map_file().to_owned())
+                            })
+                            .or_else(|| {
                                 campaign
                                     .as_ref()
                                     .map(|startup| startup.scenario().to_owned())
@@ -3309,9 +3405,9 @@ fn load_map_first_step(
                             .unwrap_or_default(),
                         theater: map_data.header.theater.clone(),
                         game_mode_nonzero,
-                        // Campaign/editor reads `[SpecialFlags] Inert=`. Nonzero game modes
-                        // replace active SpecialFlags from session staging.
-                        no_damage: !game_mode_nonzero
+                        // A stock multiplayer launch replaces authored SpecialFlags
+                        // with its session staging.
+                        no_damage: skirmish_launch_session.is_none()
                             && map_data.special_flags.inert.unwrap_or(false),
                         // Scenario bit 0x800: campaign reads the map's `[SpecialFlags]
                         // HarvesterImmune=`; a nonzero game mode replaces the map's flags
@@ -3320,12 +3416,10 @@ fn load_map_first_step(
                         // (`0x00A8B31D`) in the bit (`0x005E7495..0x005E74D4`). The skirmish
                         // lobby never sets the truce (`0x006AD89D` clears it), so every
                         // skirmish leaves the bit off.
-                        harvester_immune: if game_mode_nonzero {
-                            skirmish_launch_session
-                                .is_some_and(|launch| launch.options.harvester_truce)
-                        } else {
-                            map_data.special_flags.harvester_immune.unwrap_or(false)
-                        },
+                        harvester_immune: skirmish_launch_session.map_or_else(
+                            || map_data.special_flags.harvester_immune.unwrap_or(false),
+                            |launch| launch.options.harvester_truce,
+                        ),
                         free_radar: map_data.basic.free_radar.unwrap_or(false),
                         ignore_global_ai_triggers: map_data
                             .basic
@@ -3340,9 +3434,9 @@ fn load_map_first_step(
                         vein_growth_enabled: map_data.basic.vein_growth_enabled,
                         // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
                         // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-                        tiberium_grows_flag: game_mode_nonzero
+                        tiberium_grows_flag: skirmish_launch_session.is_some()
                             || map_data.special_flags.tiberium_grows.unwrap_or(false),
-                        tiberium_spreads_flag: game_mode_nonzero
+                        tiberium_spreads_flag: skirmish_launch_session.is_some()
                             || map_data.special_flags.tiberium_spreads.unwrap_or(true),
                         // Native Resize constructs a square cell-array extent of SizeW+SizeH.
                         map_width: scenario_cell_extent,
@@ -3353,7 +3447,8 @@ fn load_map_first_step(
                                 FreshScenarioPrefix::StockOffline(bound) => {
                                     Some(bound.projection())
                                 }
-                                FreshScenarioPrefix::Campaign { .. } => None,
+                                FreshScenarioPrefix::Campaign { .. }
+                                | FreshScenarioPrefix::AuthoredNetwork { .. } => None,
                             },
                         ),
                         pixel_conversion_bounds: Default::default(),
@@ -3367,7 +3462,9 @@ fn load_map_first_step(
                             let (mut staged_simulation, scenario_prefix_projection) = bootstrap_rng
                                 .into_fresh_staged_simulation(&scenario_descriptor, fresh_prefix)?;
                             install_startup_session_mode(&mut staged_simulation, &startup);
-                            if let Some(native_id_prefix) = startup.native_id_prefix() {
+                            if authored_terms.is_none()
+                                && let Some(native_id_prefix) = startup.native_id_prefix()
+                            {
                                 staged_simulation
                                     .install_accepted_native_id_prefix(native_id_prefix)?;
                             }
@@ -3995,6 +4092,15 @@ fn load_map_first_step(
                                                                         } else {
                                                                             (None, None)
                                                                         };
+
+                                                                    // A role camera changes only the local view. Keep the shared
+                                                                    // post-map pass and fall back if its waypoint has no map cell.
+                                                                    let role_camera_cell = role_camera_waypoint
+                                                                        .and_then(|index| map_data.waypoints.get(&index))
+                                                                        .filter(|waypoint| resolved_terrain.cell(waypoint.rx, waypoint.ry).is_some())
+                                                                        .map(|waypoint| (waypoint.rx, waypoint.ry));
+                                                                    let opening_view_cell = role_camera_cell.or(opening_view_cell);
+                                                                    let opening_view_coord = opening_view_coord.filter(|_| role_camera_cell.is_none());
 
                                                                     // Campaigns open on the shared post-map owner's HomeCell (684C30,
                                                                     // through `RadarClass::SetTacticalPosition @ 0x00653F70`, a plain

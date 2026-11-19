@@ -3746,3 +3746,271 @@ mod launch_alliance_tests {
         );
     }
 }
+
+#[cfg(all(test, tests_scenario))]
+mod vmce_minimal_map_tests {
+    use super::*;
+    use crate::map::playfield::PlayfieldBounds;
+    use crate::rules::overlay_types::OverlayTypeRegistry;
+    use crate::sim::combat::TargetKind;
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::scenario_bootstrap::{
+        FreshScenarioPrefix, NativeStartBounds, ScenarioBootstrapRng,
+    };
+
+    const MINIMAL_STAGE_PATH: &str = "tests/fixtures/vmce/minimal_stage01.map";
+
+    #[test]
+    fn vmce_minimal_map_parses_one_player_house_and_straight_waypoints() {
+        let text = crate::test_fixture::text("tests/fixtures/vmce/minimal_stage01.map");
+        let map = MapFile::from_bytes(text.as_bytes()).expect("parse VMCE minimal map");
+        let bounds = PlayfieldBounds::from_map_header(&map.header);
+        let wp0 = map.waypoints.get(&0).expect("start waypoint 0");
+        let wp1 = map.waypoints.get(&1).expect("destination waypoint 1");
+        assert_ne!((wp0.rx, wp0.ry), (wp1.rx, wp1.ry));
+
+        assert!(bounds.contains_geometry_packed(i32::from(wp0.rx), i32::from(wp0.ry)));
+        assert!(bounds.contains_geometry_packed(i32::from(wp1.rx), i32::from(wp1.ry)));
+
+        let roster = crate::map::houses::parse_house_roster(&map.ini, &[], None);
+        assert_eq!(roster.houses.len(), 1, "expected a single primary House");
+        assert_eq!(roster.houses[0].name, "HouseAlpha");
+        assert_eq!(roster.houses[0].player_control, Some(true));
+
+        assert_eq!(map.entities.len(), 1, "expected one placed retail unit");
+        let tank = &map.entities[0];
+        assert_eq!(tank.owner, "HouseAlpha");
+        assert_eq!(tank.type_id, "MTNK");
+        assert_eq!((tank.cell_x, tank.cell_y), (wp0.rx, wp0.ry));
+    }
+
+    #[test]
+    fn vmce_minimal_map_loads_through_authored_loader_and_walks_retail_unit() {
+        let Some((root, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let path = crate::test_fixture::checkout_root().join(MINIMAL_STAGE_PATH);
+        let path_str = path.to_str().expect("UTF-8 fixture path");
+        let mut map =
+            crate::map::source::load_map_by_name_or_path_with_assets(&root, path_str, &assets)
+                .expect("production loader reads minimal VMCE fixture")
+                .map;
+
+        let audio = crate::rules::audio_sources::AudioDefinitions::select(&assets);
+        let mut native_rules = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let (mut rules, rules_ini, art_ini, native_rules_receipt) = native_rules
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(None),
+                &map.ini,
+            )
+            .expect("retail rules load for VMCE minimal stage")
+            .into_parts();
+        let teams =
+            crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
+                .expect("AI registry load");
+        let theater = theater::load_theater(&mut assets, &map.header.theater)
+            .expect("TEMPERATE theater load");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+        let overlays = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art_ini));
+        let roster =
+            crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+        let lighting = crate::map::lighting::parse_lighting_profiles(&map.ini);
+        let bounds =
+            NativeStartBounds::from_map_header(&map.header).expect("valid map cell bounds");
+        map.special_flags.resolve_campaign_defaults(None);
+
+        let descriptor = ScenarioDescriptor {
+            seed: 0x564D_4345,
+            map_name: MINIMAL_STAGE_PATH.into(),
+            theater: map.header.theater.clone(),
+            map_width: bounds.min_rx + bounds.width,
+            map_height: bounds.min_rx + bounds.width,
+            lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&lighting),
+            ..Default::default()
+        };
+        let (mut sim, projection) = ScenarioBootstrapRng::new(descriptor.seed)
+            .into_fresh_staged_simulation(
+                &descriptor,
+                FreshScenarioPrefix::Campaign {
+                    native_rules_receipt,
+                    rules: &rules,
+                    map_data: &map,
+                    house_roster: &roster,
+                    difficulty: 1,
+                    mission_counter: 1,
+                    game_options: None,
+                    campaign_index: 0,
+                    restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                },
+            )
+            .expect("authored VMCE stage House construction");
+        assert!(projection.is_none());
+
+        let dummy = crate::map::resolved_terrain::SharedCellDummy::fresh();
+        dummy.reconstruct_for_map_resize();
+        sim.bind_shared_cell_dummy(dummy.clone());
+        sim.session.install_waypoints(&map.waypoints);
+        sim.initialize_trigger_definitions(
+            &map,
+            &teams,
+            Some(audio.eva()),
+            Some(audio.sounds().as_ref()),
+            None,
+        );
+        let (mut fill_rng, main_rng) = sim.terrain_load_draws();
+        let mut fill_draw = |lo, hi| fill_rng.next_range_u32_inclusive(lo, hi);
+        let mut variant_draw = move || main_rng.next_u32();
+        let mut cache = TileVariantSelectorCache::default();
+        let mut selector = cache.begin_load(&mut variant_draw);
+        let terrain_fill =
+            ResolvedTerrainGrid::build_pending_authored_with_variant_selector_and_shared_dummy(
+                &map,
+                Some(&theater),
+                Some(&assets),
+                Some(&rules.terrain_rules),
+                Some(&overlays),
+                true,
+                rules.general.cliff_back_impassability,
+                &mut fill_draw,
+                &mut selector,
+                dummy,
+            );
+        drop(variant_draw);
+        let roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlays, &[]);
+        rules.bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater);
+        let tolerant = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+        rules.bind_anim_class_assets(&tolerant, &assets, theater.extension, &map.header.theater);
+        rules.populate_anim_frame_dims(&assets, theater.extension, &map.header.theater);
+        rules.bind_effect_assets(&assets, theater.extension, &map.header.theater);
+        rules.bind_building_buildup_assets(&assets, &map.header.theater);
+        rules.bind_building_rubble_assets(&assets, theater.extension, &map.header.theater);
+        rules.bind_terrain_assets(
+            &assets,
+            theater.extension,
+            crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
+        );
+        let overlay_shps = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
+            &overlays,
+            &assets,
+            theater.extension,
+            &map.header.theater,
+        );
+        sim.construct_native_map_tubes(&map.ini)
+            .expect("authored Tubes");
+        let format = map.basic.new_ini_format.unwrap_or(0);
+        let cliff = rules.general.cliff_back_impassability;
+        let output = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
+            &mut sim,
+            &mut map,
+            terrain_fill,
+            &theater,
+            &assets,
+            &mut rules,
+            &mut native_rules,
+            &overlays,
+            &overlay_shps,
+            format,
+            true,
+            cliff,
+            theater.extension,
+            &descriptor.theater,
+            crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
+            &descriptor,
+            |_, _| {},
+        )
+        .expect("populate VMCE minimal scenario");
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.install_team_ai_registry(&teams, &rules);
+        let post = crate::sim::runtime::finalize_constructed_scenario(
+            &mut sim,
+            &map,
+            &rules,
+            &overlays,
+            output.overlay_grid,
+            &roster,
+            None,
+        )
+        .expect("publish VMCE minimal pathing");
+        assert!(post.navigation_published && sim.path_grid().is_some());
+        sim.session.publish_started();
+
+        let wp0 = map.waypoints.get(&0).expect("start waypoint 0");
+        let wp1 = map.waypoints.get(&1).expect("goal waypoint 1");
+        let player = sim.session.current_house().expect("primary House");
+        assert_eq!(sim.interner.resolve(player), "HouseAlpha");
+        assert!(sim.houses[&player].is_controlled_by_human(false));
+
+        let mtnk_id = sim
+            .entities()
+            .iter_sorted()
+            .find_map(|(id, entity)| {
+                (entity.owner() == player
+                    && sim.interner.resolve(entity.type_ref()) == "MTNK"
+                    && (entity.position.rx(), entity.position.ry()) == (wp0.rx, wp0.ry))
+                    .then_some(id)
+            })
+            .expect("spawned MTNK owned by HouseAlpha at start waypoint");
+
+        assert_eq!(
+            sim.foot_is_in_same_zone_as(mtnk_id, TargetKind::Cell(wp1.rx, wp1.ry), &rules),
+            Ok(true),
+            "start waypoint and goal waypoint must share a connected ground path zone"
+        );
+
+        let record = sim
+            .encode_megamission_record(
+                player,
+                &Command::Move {
+                    entity_id: mtnk_id,
+                    target_rx: wp1.rx,
+                    target_ry: wp1.ry,
+                },
+            )
+            .expect("encode Move command");
+        let exec_frame = sim.session.tick();
+
+        let mut runtime = crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
+                overlay_registry: overlays,
+                terrain_template: None,
+                rules,
+            }),
+        };
+        runtime
+            .advance_frame(
+                &[CommandEnvelope::synchronized(record, exec_frame)],
+                SIM_TICK_MS,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("deliver Move command");
+
+        let mut arrived = false;
+        for _ in 0..160 {
+            runtime
+                .advance_frame(
+                    &[],
+                    SIM_TICK_MS,
+                    crate::sim::world::TickLane::Ordinary,
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .expect("advance simulation tick");
+            let entity = runtime
+                .simulation
+                .entities()
+                .get(mtnk_id)
+                .expect("MTNK stays alive");
+            if (entity.position.rx(), entity.position.ry()) == (wp1.rx, wp1.ry) {
+                arrived = true;
+                break;
+            }
+        }
+        assert!(
+            arrived,
+            "MTNK must walk cleanly from waypoint 0 ({},{}) to waypoint 1 ({},{})",
+            wp0.rx, wp0.ry, wp1.rx, wp1.ry
+        );
+    }
+}

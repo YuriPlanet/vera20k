@@ -6,6 +6,7 @@ use crate::app::match_runtime::sim_host::SimWrite;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::app::loading::init;
+use crate::app::match_bootstrap::LoadingStartup;
 use crate::app::presentation::render;
 use crate::map::basic::BasicSection;
 use crate::map::houses::HouseRoster;
@@ -593,7 +594,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.audio.cancel_scenario_theme_request();
     crate::app::reset_scenario_exit_runtime(state);
     let startup = result.scenario.startup;
-    let returns_scenario_rng_to_multiplayer_shell = startup.launch_session().is_some();
+    let returns_scenario_rng_to_multiplayer_shell =
+        matches!(startup, LoadingStartup::Network(_)) || startup.launch_session().is_some();
     // A loaded world is not timed until the launch handoff reaches InGame.
     state.match_state.scenario_elapsed_clock.reset();
     #[cfg(feature = "telemetry-dashboard")]
@@ -853,6 +855,14 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 runtime
                     .simulation
                     .restore_campaign_carry_over(record, &runtime.resources.rules);
+            } else if let Some(authored) = prepared.authored_scenario()
+                && let Some(record) = authored.carry_over.as_ref()
+                && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle)
+            {
+                runtime.simulation.restore_authored_campaign_carry_over(
+                    record,
+                    authored.players.iter().map(|player| player.house.as_str()),
+                );
             }
             let installed = crate::app::lan_service::install_gameplay(state);
             if installed.is_ok() {
@@ -900,6 +910,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // Main_Game 0x0048CE7E: State_Machine's admission latch.
             state.match_state.match_presentation.modal_latch = true;
             state.frontend.screen = GameScreen::InGame;
+            crate::app::match_runtime::authored_narrative::queue_opening(state, now_ms);
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             crate::web::match_started();
             if returns_scenario_rng_to_multiplayer_shell {

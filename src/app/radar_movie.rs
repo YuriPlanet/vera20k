@@ -137,14 +137,14 @@ impl RadarMovies {
 
 /// Request5BF390: campaign mode0, fixed catalogue ordinal, unlock progress
 /// before the asset check, source-preserving YR media resolution, then append.
-pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) {
+pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) -> bool {
     if state
         .match_state
         .sim_runtime
         .runtime()
-        .is_none_or(|rt| rt.simulation.session().game_mode_nonzero())
+        .is_none_or(|rt| !rt.simulation.session().uses_campaign_rules())
     {
-        return;
+        return false;
     }
     let Some(name) = state
         .process_assets
@@ -152,7 +152,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
         .and_then(|rules| rules.movies().name(index))
         .map(str::to_owned)
     else {
-        return;
+        return false;
     };
     let stem = crate::app::frontend::fullscreen_movie::movie_stem(&name);
     state
@@ -160,7 +160,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
         .options_profile
         .movie_progress
         .note_played(stem);
-    enqueue_file(state, stem, pause_simulation);
+    enqueue_file(state, stem, pause_simulation)
 }
 
 /// The tail of [`enqueue`], for a caller that already knows the clip's file
@@ -227,6 +227,43 @@ pub(crate) fn has_pending(state: &AppState) -> bool {
         .radar_movies
         .queue
         .is_empty()
+}
+
+pub(crate) fn has_pending_pause(state: &AppState) -> bool {
+    state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .queue
+        .iter()
+        .any(|movie| movie.pause_simulation)
+}
+
+/// A bare Escape release may skip the current blocking VMCE transmission.
+/// It retires the same clip as successful playback and leaves the shared
+/// presentation gate active while other peers still watch their copies.
+pub(crate) fn can_skip_authored_pause(state: &AppState) -> bool {
+    crate::app::match_runtime::authored_narrative::enabled(state)
+        && !state.match_state.match_presentation.in_game_menu.is_open()
+        && state
+            .match_state
+            .match_presentation
+            .radar_movies
+            .playing
+            .is_some()
+        && state
+            .match_state
+            .match_presentation
+            .radar_movies
+            .queue
+            .front()
+            .is_some_and(|movie| movie.pause_simulation)
+}
+
+pub(crate) fn skip_authored_pause(state: &mut AppState) {
+    let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+    finish_head(state, wall_ms);
+    state.platform.window.request_redraw();
 }
 
 /// Reconcile117's pause with an open modal. The existing clock is idempotent;
@@ -483,11 +520,14 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
         .as_mut()
         .expect("radar admission")
         .set_movie_pause(pause);
+    // LAN peers can decode/play different lengths. The shared authored gate
+    // owns this block; only the stock path mutates a local Scenario credit.
+    let local_pause = pause && !crate::app::match_runtime::authored_narrative::enabled(state);
     if let Some(input) = state
         .match_state
         .match_presentation
         .radar_movies
-        .set_scenario_pause(pause)
+        .set_scenario_pause(local_pause)
     {
         crate::app::match_runtime::scenario_pause::apply_service(state, input);
     }
@@ -574,34 +614,34 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
         crate::app::input::messages::post_movie_subtitle(state, &text, duration);
     }
     if completed {
-        let (has_next, service) = state
-            .match_state
-            .match_presentation
-            .radar_movies
-            .finish_playing();
-        state
-            .match_state
-            .match_presentation
-            .radar_anim
-            .as_mut()
-            .expect("radar retirement")
-            .finish_movie(has_next);
-        if has_next {
-            //657BB9..657BE1: EndLooping, MovieOn, phase4 frame25.
-            play_radar_sound_loop(state, true);
-        }
-        if let Some(input) = service {
-            crate::app::match_runtime::scenario_pause::apply_service(state, input);
-        }
-        if !has_next {
-            //657C2C..657C5B: ResumeAfterMovie, EndLooping, MovieOff.
-            state.audio.retire_movie_audio(wall_ms);
-            play_radar_sound_loop(state, false);
-            set_detail_floor(state, false);
-            reconcile_pause_clock(state, wall_ms);
-        }
+        finish_head(state, wall_ms);
     }
     state.platform.window.request_redraw();
+}
+
+fn finish_head(state: &mut AppState, wall_ms: u64) {
+    let (has_next, service) = state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .finish_playing();
+    if let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() {
+        radar.finish_movie(has_next);
+    }
+    if has_next {
+        //657BB9..657BE1: EndLooping, MovieOn, phase4 frame25.
+        play_radar_sound_loop(state, true);
+    }
+    if let Some(input) = service {
+        crate::app::match_runtime::scenario_pause::apply_service(state, input);
+    }
+    if !has_next {
+        //657C2C..657C5B: ResumeAfterMovie, EndLooping, MovieOff.
+        state.audio.retire_movie_audio(wall_ms);
+        play_radar_sound_loop(state, false);
+        set_detail_floor(state, false);
+        reconcile_pause_clock(state, wall_ms);
+    }
 }
 
 /// The detail floor a radar movie sets: `PlayRadarMovie` stage 2 calls

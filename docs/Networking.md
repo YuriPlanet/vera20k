@@ -657,6 +657,138 @@ wins on the host. Online, a game sends its room commands to the lobby one at a t
 newer options, map-status or ready command replaces an older one of the same kind that
 is still waiting, and goes out after whatever was queued before it.
 
+### Authored scenario setup
+
+#### Admission, roles and local files
+
+VMCE uses the regular LAN Join, roster and extended Options exchange. Join and
+Options check the gameplay build and enabled features. The tested mixed-build
+Join returns the version mismatch message. Clients that predate scoped Join
+may time out while joining. For a rollback, use matching older builds and a
+room type they support.
+
+The LAN directory reads the optional `VLA1` marker at offset `0x80` of a
+Type 1 Advertisement for its Mode column and VMCE filter. Legacy receivers
+read the ordinary advertisement fields. Rooms advertising without the marker
+appear in the unfiltered list. Admission continues through the version and
+scenario checks above.
+
+The Options snapshot carries `scenario` with a logical stage selection,
+source digests, the accepted settings, the host seed and the named seats. The
+ordinary player-choices message submits a role for its admitted sender.
+VMCE reserves explicit picks first, then uses the host seed to shuffle the
+remaining roles for Random seats in lobby-row order. A solo Random pick takes
+the first authored role. When the stage allows Watch, an observer uses a spare
+connection row beyond the playing rows and verifies the stage for the same
+revision. Playing limits, role assignments, command grants and result rows use
+the playing seats.
+
+Each client checks the raw SHA-256 of its `campaign.ini` and selected map, as
+well as the effective gameplay map and rules agreements. `scenario.settings`
+carries the easiest-first `lobby_difficulty`, its lock flag, observer and
+alliance permissions, and the author's auto-enemy-selection option. An optional
+`scenario.carry_over` contains the host's terminal globals, countdown and
+funds keyed by the receiving stage's primary House. It belongs to the
+preselected successor. A different selection removes it. Local title lookup
+uses the series CSF, then the running game's CSF and the configured fallback.
+Translations affect display only.
+
+Map, role, roster and settings changes invalidate old MapStatus and Ready.
+The VMCE guest first clicks Ready after verification. The local Ready intent
+restores readiness after a successful same-stage recheck. A stage switch,
+Cancel Ready or a return after the score screen clears that intent. Valid
+Options can leave a guest at `MapStatus 0` when its local files are missing or
+changed. Restore the exact files and have the host reselect the stage. An
+unrecognized mode or settings that conflict with the installed stage refuse
+the update and revoke readiness. A later compatible snapshot can restore it.
+
+#### GO, loading and departures
+
+At GO and ReadyToGo, the host and guests recheck the correlated revision,
+seated names, role choices, settings and local files. The loader receives the
+frozen seats, grants, options, difficulty, carry-over and seed. A host
+file refusal keeps setup editable for reselection. A guest that acknowledges
+a final file refusal sends a regular LAN Departure. An unanswered GO can
+expire while the room is still in setup.
+
+The VMCE loading screen uses the campaign art and briefing with one local
+progress bar. Its waiting message reads the admitted remote sources from the
+existing scoped loading progress records.
+A valid Departure received while the loader is active cancels the attempt
+through the failed-load path and returns to the LAN shell. VMCE proceeds to
+scenario install after the local load. The standard LAN load-progress wait
+treats incomplete sources at expiry as frame-zero losses.
+When an admitted peer stalls after GO and a VMCE client hits a frame-zero
+connection failure, acknowledging the modal retires the failed admission.
+The host opens the same stage with a fresh room epoch and the stalled seat
+available. A healthy guest rejoins through the LAN list and restores its prior
+Ready choice after verifying the same stage in the new admission.
+[Authored startup](../src/app/match_bootstrap.rs) · [Loading wait](../src/app/loading/pump.rs)
+
+#### Narrative playback
+
+Opening clips hold the first authored simulation tick. A blocking trigger
+movie or timed scenario pause holds entry to the next tick at the committed
+frame boundary. The admitted endpoints periodically exchange directed
+`VMP1` records containing the active SessionScope and the latest cumulative
+ready generation as a little-endian `u64`. Each connected player and observer
+must finish, skip, or fail local playback before that client reports ready.
+Unreachable players are retired using the normal LAN lost-connection timeout.
+During a narrative hold, a confirmed quit uses the existing reliable LAN
+Departure exchange because a synchronized EXIT would wait for a gameplay tick.
+The opening movie precedes the first LAN frame certificate. A departure
+before that certificate follows the same frame-zero recovery described above.
+Starting or retrying a match resets the readiness state. The in-game menu and
+nonblocking radar movies use ordinary live gameplay timing.
+
+#### Commands, diplomacy and result rows
+
+An authored grant admits an existing synchronized sender to move or attack
+with a listed House's mobile units, use compatible transport and deploy or
+unload actions, and set a cell rally for a building with a rally line. The
+receiver checks the sender and the object's live ownership. Primary House
+authority covers repair, sale, factory priority, production, superweapons and
+construction yard repack. The map and its alliances govern vision. The TAB
+Diplomacy controls and the received `ALLY` record use the frozen alliance
+permission for active participating Houses.
+
+Departure retires a live source and preserves the authored House and its units.
+Trigger outcomes still use the entire starting playing roster. Settlement
+uses the remaining playing seats in lobby order and each primary House's
+statistics. If the original room host departs, the remaining players can
+finish and then return to the LAN list.
+[Result projection](../src/app/match_runtime/vmce_result.rs)
+
+#### Results, room return and Retry
+
+After a victory, each player can choose Continue independently. The LAN host
+reopens at the same discovery endpoint and publishes the preselected stage
+under the existing room epoch with a fresh setup revision. A guest can enter
+early and chat for up to two minutes while waiting for the host. Rejoining
+requires the original host name, endpoint and room epoch.
+New Options must verify before Ready and GO. A host victory preselects the
+alternate stage when its configured terminal global is set, or the ordinary
+successor otherwise. Those Options carry the terminal continuation record.
+At the end of a series, the credits play before the current stage is
+preselected in the room. An available role is restored by its primary House
+in the selected stage. A host loss keeps the current stage and its verified
+room rules. Returning guests click Ready again.
+
+Defeat Retry requires a common defeat and the complete frozen connection roster,
+including any observers. The host collects one Retry intent per playing endpoint.
+Prepare and confirmation recheck each client's local stage and manifest. Observers
+confirm their files and follow the new launch. The reliable start record hands
+the original stage, assignments, options, seed and incoming carry-over to each
+loader. Return to Room before confirmation cancels the agreement. A refusal
+shows its reason and offers Return to Room for a fresh start.
+
+Retry records carry the completed match scope. The Retry reload advances its
+revision so the next private channels reject former match packets. During the
+handoff, the global transport can acknowledge an already received retransmission
+from the previous scope to cover a lost start ACK.
+
+[VMCE LAN player and author guide](vmce.md)
+
 ### Build check
 
 Two games play together only on one build: their `shell_network_setup::agreement::version()`,

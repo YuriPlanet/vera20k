@@ -212,6 +212,94 @@ impl NetworkMapMetadata {
 struct ParticipantAdmission {
     ready: bool,
     map_status: u8,
+    scenario_role: Option<u8>,
+}
+
+/// An authored player's fixed assignment at an admitted lobby row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LocalScenarioPlayer {
+    pub(crate) raw_slot_index: u8,
+    pub(crate) role: String,
+    pub(crate) house: String,
+    pub(crate) shared_control_houses: Vec<String>,
+}
+
+/// A network slot with a view House and no role or command grants.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LocalScenarioObserver {
+    pub(crate) raw_slot_index: u8,
+    pub(crate) house: String,
+}
+
+/// Physical inputs accepted when a local scenario was selected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LocalScenarioSource {
+    pub(crate) configuration_sha256: String,
+    pub(crate) map: crate::map::source::LoadedMapSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalScenarioSetup {
+    selection: crate::map::scenario_menu::LocalScenario,
+    source: Option<LocalScenarioSource>,
+    lobby: LocalScenarioLobby,
+    carry_over: Option<crate::sim::campaign_carry_over::AuthoredCampaignCarryOver>,
+}
+
+/// Room settings admitted for the selected authored scenario. Stock settings
+/// in the launch session stay available when the room returns to a stock map.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct LocalScenarioRules {
+    pub(crate) options: SkirmishLaunchOptions,
+    pub(crate) ai_difficulty: crate::sim::house_state::HouseDifficulty,
+    pub(crate) difficulty_locked: bool,
+    pub(crate) alliance_admission: crate::sim::house_diplomacy::PlayerAllianceAdmission,
+    pub(crate) auto_enemy_selection: bool,
+}
+
+/// The seats, roles and rules offered by an authored scenario's setup owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LocalScenarioLobby {
+    pub(crate) minimum_players: u8,
+    pub(crate) capacity: u8,
+    pub(crate) roles: Vec<String>,
+    pub(crate) allows_observers: bool,
+    pub(crate) rules: LocalScenarioRules,
+}
+
+impl LocalScenarioLobby {
+    pub(crate) fn admits_row(&self, row: u8, observer: bool) -> bool {
+        usize::from(row) < NETWORK_PLAYER_SLOT_COUNT
+            && if observer {
+                self.allows_observers && row >= self.capacity
+            } else {
+                row < self.capacity
+            }
+    }
+
+    pub(crate) fn player_count_range(&self) -> std::ops::RangeInclusive<usize> {
+        usize::from(self.minimum_players)..=usize::from(self.capacity)
+    }
+
+    pub(crate) fn validate_picks(&self, picks: &[(String, u8)]) -> anyhow::Result<()> {
+        let capacity = usize::from(self.capacity);
+        // A selection stays editable even if its authored minimum cannot
+        // fit. Its empty start range keeps Start disabled.
+        anyhow::ensure!(
+            (1..=NETWORK_PLAYER_SLOT_COUNT).contains(&self.roles.len())
+                && (1..=self.roles.len()).contains(&capacity)
+                && (1..=NETWORK_PLAYER_SLOT_COUNT).contains(&usize::from(self.minimum_players))
+                && picks.len() <= capacity
+                && picks.iter().enumerate().all(|(index, (name, role))| {
+                    usize::from(*role) < self.roles.len()
+                        && picks[..index].iter().all(|(previous, occupied)| {
+                            occupied != role && !previous.eq_ignore_ascii_case(name)
+                        })
+                }),
+            "invalid scenario seat or role limits"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,6 +307,9 @@ enum NetworkPhase {
     Lobby,
     Setup {
         launch: SkirmishLaunchSession,
+        /// An authored scenario uses a separate chooser source. The stock
+        /// mode is retained for choosing a stock map again.
+        local_scenario: Option<LocalScenarioSetup>,
         admission: Vec<ParticipantAdmission>,
         vacancies: [NetworkVacancy; NETWORK_PLAYER_SLOT_COUNT],
         /// Authoritative only while the corresponding row is vacant. Entering
@@ -253,6 +344,9 @@ enum NetworkPhase {
         startup: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
         /// Live source membership indexes the immutable historical launch.
         connected: Vec<usize>,
+        /// Read-only authored room settings for the post-match waiting room.
+        local_lobby: Option<LocalScenarioLobby>,
+        show_lobby_on_return: bool,
     },
     /// The co-op result dialog BC6 between missions: the finished start,
     /// the round's own roster (the next mission's, which the master's
@@ -599,12 +693,14 @@ impl MatchSession {
             .map(|index| ParticipantAdmission {
                 ready: false,
                 map_status: u8::from(index == launch.local_player_index),
+                scenario_role: None,
             })
             .collect();
         let inactive_choices =
             std::array::from_fn(|_| native_network_row_defaults(&launch.mode, false));
         let display_ai = display_ai_rows(&launch);
         network.phase = NetworkPhase::Setup {
+            local_scenario: None,
             display_ai,
             capacity: 8,
             observer_row,
@@ -695,6 +791,479 @@ impl MatchSession {
         }
     }
 
+    pub(crate) fn local_network_scenario(
+        &self,
+    ) -> Option<&crate::map::scenario_menu::LocalScenario> {
+        match &self.network.as_ref()?.phase {
+            NetworkPhase::Setup { local_scenario, .. } => {
+                local_scenario.as_ref().map(|setup| &setup.selection)
+            }
+            NetworkPhase::Frozen { startup, .. } => startup
+                .authored_scenario()
+                .map(|scenario| &scenario.selection),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn network_allows_peers(&self) -> bool {
+        if self.frozen_authored_start().is_some() {
+            return false;
+        }
+        match self.local_scenario_lobby() {
+            Some(lobby) => lobby.capacity > 1 || self.network_observer_row().is_some(),
+            None => self.local_network_scenario().is_none(),
+        }
+    }
+
+    pub(crate) fn show_frozen_lan_room(&mut self) -> bool {
+        let Some(NetworkPhase::Frozen {
+            local_lobby: Some(_),
+            show_lobby_on_return,
+            ..
+        }) = self.network.as_mut().map(|network| &mut network.phase)
+        else {
+            return false;
+        };
+        *show_lobby_on_return = true;
+        true
+    }
+
+    pub(crate) fn local_scenario_lobby(&self) -> Option<&LocalScenarioLobby> {
+        match &self.network.as_ref()?.phase {
+            NetworkPhase::Setup { local_scenario, .. } => Some(&local_scenario.as_ref()?.lobby),
+            NetworkPhase::Frozen {
+                local_lobby,
+                show_lobby_on_return: true,
+                ..
+            } => local_lobby.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn local_scenario_row_count(&self) -> Option<usize> {
+        let lobby = self.local_scenario_lobby()?;
+        let launch = self.network_setup()?;
+        Some(
+            launch
+                .humans
+                .iter()
+                .filter_map(|human| human.raw_slot_index)
+                .chain(self.network_observer_row())
+                .map(|row| usize::from(row) + 1)
+                .max()
+                .unwrap_or(0)
+                .max(usize::from(lobby.capacity)),
+        )
+    }
+
+    /// Replace the selected scenario's accepted settings while the host can
+    /// still edit the room. The scenario owner admits the proposed values.
+    pub(crate) fn set_local_scenario_rules(
+        &mut self,
+        rules: LocalScenarioRules,
+    ) -> anyhow::Result<bool> {
+        anyhow::ensure!(self.host, "only the host may edit scenario settings");
+        let Some(NetworkPhase::Setup {
+            local_scenario: Some(setup),
+            ..
+        }) = self.network.as_mut().map(|network| &mut network.phase)
+        else {
+            anyhow::bail!("no editable authored scenario");
+        };
+        if setup.lobby.rules == rules {
+            return Ok(false);
+        }
+        setup.lobby.rules = rules;
+        Ok(true)
+    }
+
+    pub(crate) fn local_scenario_role(&self, source: usize) -> Option<u8> {
+        match &self.network.as_ref()?.phase {
+            NetworkPhase::Setup { admission, .. } => admission.get(source)?.scenario_role,
+            NetworkPhase::Frozen {
+                local_lobby: Some(lobby),
+                show_lobby_on_return: true,
+                ..
+            } => {
+                let player = self.frozen_authored_player(source)?;
+                lobby
+                    .roles
+                    .iter()
+                    .position(|house| house.eq_ignore_ascii_case(&player.house))
+                    .and_then(|index| u8::try_from(index).ok())
+            }
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn local_scenario_player(&self) -> Option<&LocalScenarioPlayer> {
+        self.frozen_authored_start()?.authored_local_player()
+    }
+
+    pub(crate) fn frozen_authored_player(&self, source: usize) -> Option<&LocalScenarioPlayer> {
+        self.frozen_authored_start()?.authored_player(source)
+    }
+
+    pub(crate) fn frozen_local_scenario_settings(
+        &self,
+    ) -> Option<(LocalScenarioSource, &LocalScenarioRules)> {
+        let NetworkPhase::Frozen {
+            startup,
+            local_lobby: Some(lobby),
+            ..
+        } = &self.network.as_ref()?.phase
+        else {
+            return None;
+        };
+        let source = LocalScenarioSource {
+            configuration_sha256: startup.authored_scenario()?.configuration_sha256.clone(),
+            map: startup.local_map_source()?.clone(),
+        };
+        Some((source, &lobby.rules))
+    }
+
+    pub(super) fn frozen_authored_start(
+        &self,
+    ) -> Option<&Arc<crate::app::match_bootstrap::PreparedNetworkStartup>> {
+        let NetworkPhase::Frozen { startup, .. } = &self.network.as_ref()?.phase else {
+            return None;
+        };
+        startup.authored_scenario().map(|_| startup)
+    }
+
+    pub(crate) fn verify_local_scenario_source(
+        &self,
+        key: &crate::map::scenario_menu::LocalScenarioKey,
+        source: &LocalScenarioSource,
+    ) -> anyhow::Result<()> {
+        let Some(NetworkPhase::Setup {
+            local_scenario: Some(setup),
+            ..
+        }) = self.network.as_ref().map(|network| &network.phase)
+        else {
+            anyhow::bail!("no editable local scenario is selected");
+        };
+        anyhow::ensure!(&setup.selection.key == key, "the selected scenario changed");
+        let accepted = setup
+            .source
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("the scenario source has not been verified locally"))?;
+        anyhow::ensure!(
+            accepted.configuration_sha256 == source.configuration_sha256,
+            "the scenario manifest changed since map selection"
+        );
+        anyhow::ensure!(
+            accepted.map.physical_identity() == source.map.physical_identity(),
+            "the current map changed since map selection"
+        );
+        Ok(())
+    }
+
+    /// An authored start hands the loader one immutable, admitted roster, without
+    /// resolving country, colour or start slots for an authored House.
+    pub(crate) fn freeze_authored_network_start(
+        &mut self,
+        key: &crate::map::scenario_menu::LocalScenarioKey,
+        source: LocalScenarioSource,
+        effective_digest: String,
+        players: Vec<LocalScenarioPlayer>,
+        observers: Vec<LocalScenarioObserver>,
+    ) -> anyhow::Result<Arc<crate::app::match_bootstrap::PreparedNetworkStartup>> {
+        use crate::app::match_bootstrap::{AuthoredNetworkStart, PreparedNetworkStartup};
+        self.verify_local_scenario_source(key, &source)?;
+        let network = self
+            .network
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no network visit"))?;
+        let NetworkSession {
+            return_context: NetworkReturnContext::LanLobby,
+            proposed_seed: Some(seed),
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    local_scenario: Some(setup),
+                    ..
+                },
+            max_ahead_frames,
+            ..
+        } = network
+        else {
+            anyhow::bail!("a local start requires an editable LAN room and its admitted seed");
+        };
+        let mut players_rows = Vec::new();
+        let mut observer_rows = Vec::new();
+        for human in &launch.humans {
+            let observer = human.is_observer();
+            let row = human
+                .raw_slot_index
+                .filter(|&row| setup.lobby.admits_row(row, observer))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("an authored start requires an admitted row for every source")
+                })?;
+            if observer {
+                observer_rows.push(row);
+            } else {
+                players_rows.push(row);
+            }
+        }
+        players_rows.sort_unstable();
+        observer_rows.sort_unstable();
+        anyhow::ensure!(
+            launch.opponents.is_empty()
+                && launch.humans.get(launch.local_player_index).is_some()
+                && setup
+                    .lobby
+                    .player_count_range()
+                    .contains(&players_rows.len())
+                && players
+                    .iter()
+                    .map(|player| player.raw_slot_index)
+                    .eq(players_rows)
+                && observers
+                    .iter()
+                    .map(|observer| observer.raw_slot_index)
+                    .eq(observer_rows)
+                && observers.iter().all(|observer| !observer.house.is_empty())
+                && players
+                    .iter()
+                    .all(|player| !player.role.is_empty() && !player.house.is_empty()),
+            "the authored assignments do not cover the admitted room"
+        );
+        let authored = AuthoredNetworkStart {
+            selection: setup.selection.clone(),
+            configuration_sha256: source.configuration_sha256,
+            players,
+            observers,
+            ai_difficulty: setup.lobby.rules.ai_difficulty,
+            alliance_admission: setup.lobby.rules.alliance_admission,
+            auto_enemy_selection: setup.lobby.rules.auto_enemy_selection,
+            carry_over: setup.carry_over.clone(),
+        };
+        let mut launch = launch.clone();
+        launch.selected_map_file = Some(key.path.clone());
+        launch.options = setup.lobby.rules.options.clone();
+        launch.ai_player_count = 0;
+        let ahead = if launch.humans.len() == 1 {
+            anyhow::ensure!(self.host, "an authored solo start requires the host");
+            // LAN protocol 2's existing timing floor with no remote observations.
+            self.latency_fudge = 0;
+            crate::net::lockstep::initial_multiplayer_max_ahead(2, || 0)
+        } else {
+            max_ahead_frames
+                .ok_or_else(|| anyhow::anyhow!("network start requires accepted timing"))?
+        };
+        let startup = Arc::new(
+            PreparedNetworkStartup::new(
+                launch,
+                *seed,
+                SessionMode::Lan,
+                self.host,
+                ahead,
+                Default::default(),
+            )
+            .with_local_map_source(Some(source.map), Some(effective_digest))
+            .with_authored_scenario(authored),
+        );
+        *max_ahead_frames = Some(ahead);
+        network.phase = NetworkPhase::Frozen {
+            connected: (0..startup.launch_session().humans.len()).collect(),
+            startup: Arc::clone(&startup),
+            local_lobby: Some(setup.lobby.clone()),
+            show_lobby_on_return: false,
+        };
+        Ok(startup)
+    }
+
+    pub(crate) fn select_local_network_scenario(
+        &mut self,
+        scenario: crate::map::scenario_menu::LocalScenario,
+        source: LocalScenarioSource,
+        lobby: LocalScenarioLobby,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(self.host, "only the host may select the local scenario");
+        anyhow::ensure!(
+            source.map.physical_identity().is_some(),
+            "a local scenario requires an exact map source"
+        );
+        self.install_local_network_scenario(scenario, Some(source), lobby, &[])
+    }
+
+    pub(crate) fn accept_remote_local_scenario(
+        &mut self,
+        scenario: crate::map::scenario_menu::LocalScenario,
+        lobby: LocalScenarioLobby,
+        roles: &[(String, u8)],
+        agreed_seed: u32,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.host, "the host owns scenario selection");
+        self.install_local_network_scenario(scenario, None, lobby, roles)?;
+        self.set_network_start_seed(agreed_seed)
+    }
+
+    fn install_local_network_scenario(
+        &mut self,
+        scenario: crate::map::scenario_menu::LocalScenario,
+        source: Option<LocalScenarioSource>,
+        lobby: LocalScenarioLobby,
+        roles: &[(String, u8)],
+    ) -> anyhow::Result<()> {
+        let Some(NetworkSession {
+            return_context: NetworkReturnContext::LanLobby,
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    local_scenario,
+                    admission,
+                    display_ai,
+                    ..
+                },
+            map_metadata,
+            local_map_source,
+            local_map_effective_digest,
+            local_random_map_preview,
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        lobby.validate_picks(roles)?;
+        anyhow::ensure!(
+            launch.humans.iter().all(|human| {
+                human.raw_slot_index.map_or(
+                    !self.host && (!human.is_observer() || lobby.allows_observers),
+                    |row| lobby.admits_row(row, human.is_observer()),
+                ) && (!human.is_observer()
+                    || !roles
+                        .iter()
+                        .any(|(name, _)| name.eq_ignore_ascii_case(&human.name)))
+            }) && (!self.host || launch.opponents.is_empty()),
+            "the current roster does not fit the scenario's seats"
+        );
+        for (human, entry) in launch.humans.iter().zip(admission) {
+            entry.ready = false;
+            entry.map_status = 0;
+            entry.scenario_role = roles
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(&human.name))
+                .map(|(_, role)| *role);
+        }
+        let carry_over = local_scenario
+            .take()
+            .filter(|old| old.selection.key == scenario.key && old.source == source)
+            .and_then(|old| old.carry_over);
+        *local_scenario = Some(LocalScenarioSetup {
+            selection: scenario,
+            source,
+            lobby,
+            carry_over,
+        });
+        launch.selected_map_file = None;
+        if !launch.opponents.is_empty() {
+            launch.opponents.clear();
+            launch.ai_player_count = 0;
+        }
+        *display_ai = [None; NETWORK_PLAYER_SLOT_COUNT];
+        *map_metadata = None;
+        *local_map_source = None;
+        *local_map_effective_digest = None;
+        *local_random_map_preview = None;
+        Ok(())
+    }
+
+    pub(crate) fn local_scenario_carry_over(
+        &self,
+    ) -> Option<&crate::sim::campaign_carry_over::AuthoredCampaignCarryOver> {
+        match &self.network.as_ref()?.phase {
+            NetworkPhase::Setup { local_scenario, .. } => {
+                local_scenario.as_ref()?.carry_over.as_ref()
+            }
+            NetworkPhase::Frozen { startup, .. } => {
+                startup.authored_scenario()?.carry_over.as_ref()
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_local_scenario_carry_over(
+        &mut self,
+        key: &crate::map::scenario_menu::LocalScenarioKey,
+        record: Option<crate::sim::campaign_carry_over::AuthoredCampaignCarryOver>,
+    ) -> anyhow::Result<()> {
+        let Some(NetworkPhase::Setup {
+            local_scenario: Some(setup),
+            ..
+        }) = self.network.as_mut().map(|network| &mut network.phase)
+        else {
+            anyhow::bail!("carry-over requires an editable authored stage");
+        };
+        anyhow::ensure!(
+            &setup.selection.key == key
+                && record
+                    .as_ref()
+                    .is_none_or(|record| record.matches_roles(&setup.lobby.roles)),
+            "carry-over does not match the selected stage's roles"
+        );
+        setup.carry_over = record;
+        Ok(())
+    }
+
+    pub(crate) fn validate_local_scenario_role(
+        &self,
+        source: usize,
+        role: Option<u8>,
+    ) -> anyhow::Result<()> {
+        let Some(NetworkPhase::Setup {
+            launch,
+            admission,
+            local_scenario: Some(setup),
+            ..
+        }) = self.network.as_ref().map(|network| &network.phase)
+        else {
+            anyhow::bail!("no editable authored scenario");
+        };
+        anyhow::ensure!(
+            admission.get(source).is_some()
+                && launch.humans.get(source).is_some_and(|human| {
+                    !human.is_observer()
+                        && human
+                            .raw_slot_index
+                            .is_some_and(|row| row < setup.lobby.capacity)
+                }),
+            "the player has no admitted scenario seat"
+        );
+        if let Some(role) = role {
+            anyhow::ensure!(
+                usize::from(role) < setup.lobby.roles.len(),
+                "role out of range"
+            );
+            anyhow::ensure!(
+                !admission
+                    .iter()
+                    .enumerate()
+                    .any(|(index, entry)| { index != source && entry.scenario_role == Some(role) }),
+                "the role is already taken"
+            );
+        }
+        Ok(())
+    }
+
+    pub(crate) fn accept_local_scenario_role(
+        &mut self,
+        source: usize,
+        role: Option<u8>,
+    ) -> anyhow::Result<bool> {
+        anyhow::ensure!(self.host, "the host accepts scenario roles");
+        self.validate_local_scenario_role(source, role)?;
+        let Some(NetworkPhase::Setup { admission, .. }) =
+            self.network.as_mut().map(|network| &mut network.phase)
+        else {
+            anyhow::bail!("no editable authored scenario");
+        };
+        let entry = &mut admission[source];
+        Ok(std::mem::replace(&mut entry.scenario_role, role) != role)
+    }
+
     fn editable_network_setup(&mut self) -> anyhow::Result<&mut SkirmishLaunchSession> {
         match self.network.as_mut().map(|network| &mut network.phase) {
             Some(
@@ -763,6 +1332,7 @@ impl MatchSession {
             phase:
                 NetworkPhase::Setup {
                     launch,
+                    local_scenario,
                     admission,
                     display_ai,
                     ..
@@ -772,6 +1342,14 @@ impl MatchSession {
         else {
             anyhow::bail!("network setup is not editable");
         };
+        if let Some(setup) = local_scenario {
+            anyhow::ensure!(
+                human
+                    .raw_slot_index
+                    .is_some_and(|row| setup.lobby.admits_row(row, human.is_observer())),
+                "the participant has no scenario seat"
+            );
+        }
         anyhow::ensure!(
             launch.humans.len() + if host { launch.opponents.len() } else { 0 }
                 < NETWORK_PLAYER_SLOT_COUNT,
@@ -796,6 +1374,7 @@ impl MatchSession {
         admission.push(ParticipantAdmission {
             ready: false,
             map_status: 0,
+            scenario_role: None,
         });
         self.keep_spectator_row()?;
         // A newcomer who gets a seat in a VERA room with teams joins the
@@ -1051,6 +1630,8 @@ impl MatchSession {
             launch,
             vacancies,
             display_ai,
+            local_scenario,
+            several_observers,
             ..
         } = &self.network.as_ref()?.phase
         else {
@@ -1064,6 +1645,17 @@ impl MatchSession {
             || display_ai[usize::from(row)].is_some()
         {
             return None;
+        }
+        if let Some(setup) = local_scenario {
+            return Some(if setup.lobby.admits_row(row, false) {
+                NetworkVacancy::Open
+            } else if setup.lobby.admits_row(row, true)
+                && (*several_observers || self.network_observer_row() == Some(row))
+            {
+                NetworkVacancy::OpenObserver
+            } else {
+                NetworkVacancy::Closed
+            });
         }
         Some(vacancies[usize::from(row)])
     }
@@ -1664,6 +2256,40 @@ impl MatchSession {
         Ok(())
     }
 
+    pub(crate) fn accept_verified_local_scenario_source(
+        &mut self,
+        key: &crate::map::scenario_menu::LocalScenarioKey,
+        source: LocalScenarioSource,
+        effective_digest: String,
+    ) -> anyhow::Result<()> {
+        if self.host {
+            self.verify_local_scenario_source(key, &source)?;
+        }
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    local_scenario: Some(setup),
+                    ..
+                },
+            local_map_source,
+            local_map_effective_digest,
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("no editable authored scenario");
+        };
+        anyhow::ensure!(&setup.selection.key == key, "the selected scenario changed");
+        anyhow::ensure!(
+            source.map.physical_identity().is_some()
+                && crate::map::source::valid_source_sha256(&effective_digest),
+            "the scenario needs verified physical and effective map identities"
+        );
+        setup.source = Some(source.clone());
+        *local_map_source = Some(source.map);
+        *local_map_effective_digest = Some(effective_digest);
+        Ok(())
+    }
+
     pub(crate) fn network_local_map_effective_digest(&self) -> Option<&str> {
         self.network.as_ref()?.local_map_effective_digest.as_deref()
     }
@@ -1748,6 +2374,8 @@ impl MatchSession {
                 NetworkPhase::Setup {
                     launch,
                     vacancies,
+                    local_scenario,
+                    admission,
                     display_ai,
                     capacity: retained_capacity,
                     observer_row: retained_observer_row,
@@ -1803,6 +2431,10 @@ impl MatchSession {
             }
         }
         *launch = incoming;
+        *local_scenario = None;
+        for entry in admission {
+            entry.scenario_role = None;
+        }
         *vacancies = [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT];
         vacancies[..N].copy_from_slice(&incoming_vacancies);
         if return_context.session_mode() == SessionMode::Wol {
@@ -1842,7 +2474,20 @@ impl MatchSession {
 
     pub(crate) fn network_setup_capacity(&self) -> Option<i32> {
         match &self.network.as_ref()?.phase {
-            NetworkPhase::Setup { capacity, .. } => Some(*capacity),
+            NetworkPhase::Setup {
+                capacity,
+                local_scenario,
+                ..
+            } => Some(
+                local_scenario
+                    .as_ref()
+                    .map_or(*capacity, |setup| i32::from(setup.lobby.capacity)),
+            ),
+            NetworkPhase::Frozen {
+                local_lobby: Some(lobby),
+                show_lobby_on_return: true,
+                ..
+            } => Some(i32::from(lobby.capacity)),
             _ => None,
         }
     }
@@ -1880,7 +2525,33 @@ impl MatchSession {
 
     pub(crate) fn network_observer_row(&self) -> Option<u8> {
         match &self.network.as_ref()?.phase {
-            NetworkPhase::Setup { observer_row, .. } => *observer_row,
+            NetworkPhase::Setup {
+                launch,
+                local_scenario: Some(setup),
+                several_observers,
+                ..
+            } => {
+                let lobby = &setup.lobby;
+                let limit = if *several_observers || lobby.capacity > 8 {
+                    NETWORK_PLAYER_SLOT_COUNT as u8
+                } else {
+                    8
+                };
+                (lobby.allows_observers && lobby.capacity < limit).then(|| {
+                    launch
+                        .humans
+                        .iter()
+                        .filter(|human| human.is_observer())
+                        .filter_map(|human| human.raw_slot_index)
+                        .min()
+                        .unwrap_or(lobby.capacity)
+                })
+            }
+            NetworkPhase::Setup {
+                observer_row,
+                local_scenario: None,
+                ..
+            } => *observer_row,
             _ => None,
         }
     }
@@ -1893,6 +2564,7 @@ impl MatchSession {
                 network.phase,
                 NetworkPhase::Setup {
                     several_observers: true,
+                    local_scenario: None,
                     ..
                 }
             )
@@ -2041,6 +2713,7 @@ impl MatchSession {
         let Some(NetworkPhase::Setup {
             launch,
             several_observers: true,
+            local_scenario: None,
             ..
         }) = self.network.as_ref().map(|network| &network.phase)
         else {
@@ -2444,6 +3117,7 @@ impl MatchSession {
                 NetworkPhase::Setup {
                     launch,
                     several_observers: true,
+                    local_scenario: None,
                     ..
                 },
             ..
@@ -2554,7 +3228,19 @@ impl MatchSession {
             "map requires a valid participant capacity"
         );
         let mut candidate = self.clone();
-        let several = self.network_several_observers();
+        if let Some(NetworkPhase::Setup {
+            local_scenario,
+            admission,
+            ..
+        }) = candidate.network.as_mut().map(|network| &mut network.phase)
+            && local_scenario.take().is_some()
+        {
+            for entry in admission {
+                entry.scenario_role = None;
+            }
+        }
+        let several = candidate.network_several_observers();
+        let previous_rows = candidate.network_player_row_limit();
         let (old_capacity, observer_row, host_extra, new_capacity) = {
             let Some(NetworkSession {
                 phase:
@@ -2604,7 +3290,7 @@ impl MatchSession {
         candidate.keep_to_map_seats()?;
         let (old_rows, new_rows) = if several {
             (
-                i32::from(self.network_player_row_limit()),
+                i32::from(previous_rows),
                 i32::from(candidate.network_player_row_limit()),
             )
         } else {
@@ -2893,18 +3579,28 @@ impl MatchSession {
         );
         self.clear_guest_readiness()?;
         let Some(NetworkSession {
-            phase: NetworkPhase::Setup {
-                launch, admission, ..
-            },
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    admission,
+                    local_scenario,
+                    ..
+                },
+            local_map_source,
+            local_map_effective_digest,
             ..
         }) = self.network.as_mut()
         else {
             anyhow::bail!("network setup is not editable");
         };
         for (index, entry) in admission.iter_mut().enumerate() {
-            if index != launch.local_player_index {
+            if index != launch.local_player_index || local_scenario.is_some() {
                 entry.map_status = 0;
             }
+        }
+        if local_scenario.is_some() {
+            *local_map_source = None;
+            *local_map_effective_digest = None;
         }
         Ok(())
     }
@@ -2962,12 +3658,9 @@ impl MatchSession {
     /// adding a player, up to the active eight/30-slot allocation (all 30 in
     /// VERA's rooms, whose spectator rows follow the players).
     pub(crate) fn network_player_row_limit(&self) -> u8 {
-        let Some(NetworkPhase::Setup { capacity, .. }) =
-            self.network.as_ref().map(|network| &network.phase)
-        else {
+        let Some(capacity) = self.network_setup_capacity() else {
             return 0;
         };
-        let capacity = *capacity;
         let allocation = if capacity > 8 || self.network_several_observers() {
             NETWORK_PLAYER_SLOT_COUNT as i32
         } else {
@@ -2990,6 +3683,15 @@ impl MatchSession {
     /// A room sharing bases then seats a player in a spare row past the
     /// map's seats ([`Self::network_spare_seats`]).
     pub(crate) fn network_free_row(&self, observer: bool) -> Option<u8> {
+        if self.local_scenario_lobby().is_some() {
+            let vacancy = if observer {
+                NetworkVacancy::OpenObserver
+            } else {
+                NetworkVacancy::Open
+            };
+            return (0..NETWORK_PLAYER_SLOT_COUNT as u8)
+                .find(|&row| self.network_vacancy(row) == Some(vacancy));
+        }
         if !observer {
             return self
                 .network_open_seat()
@@ -3054,6 +3756,9 @@ impl MatchSession {
         if self.network_room_full() {
             return None;
         }
+        if self.local_scenario_lobby().is_some() {
+            return self.network_free_row(observer).map(|row| (row, observer));
+        }
         let observer = observer || self.network_teams().is_some();
         let other = || {
             self.network_several_observers()
@@ -3073,6 +3778,14 @@ impl MatchSession {
         let Some(launch) = self.network_setup() else {
             return false;
         };
+        if let Some(lobby) = self.local_scenario_lobby() {
+            return launch
+                .humans
+                .iter()
+                .filter(|human| !human.is_observer())
+                .count()
+                > usize::from(lobby.capacity);
+        }
         if self.network_shares_bases() {
             return false;
         }
@@ -3254,6 +3967,8 @@ impl MatchSession {
         network.phase = NetworkPhase::Frozen {
             connected: (0..startup.launch_session().humans.len()).collect(),
             startup: Arc::clone(&startup),
+            local_lobby: None,
+            show_lobby_on_return: false,
         };
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(
             startup,
@@ -3356,6 +4071,9 @@ impl MatchSession {
     /// `source_index` controls, its own or one it shares.
     pub(crate) fn network_source_owner(&self, source_index: usize) -> Option<String> {
         let launch = self.network_setup()?;
+        if let Some(startup) = self.frozen_authored_start() {
+            return startup.authored_owner(source_index).map(str::to_owned);
+        }
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .into_iter()
             .find(|slot| slot.is_controlled_by(source_index))
@@ -3367,6 +4085,11 @@ impl MatchSession {
         let Some(launch) = self.network_setup() else {
             return Vec::new();
         };
+        if let Some(startup) = self.frozen_authored_start() {
+            return (0..launch.humans.len())
+                .filter(|source| startup.authored_owner(*source) == Some(owner))
+                .collect();
+        }
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .into_iter()
             .find(|slot| slot.owner_name == owner)
@@ -3379,9 +4102,12 @@ impl MatchSession {
     }
 
     /// Network participant `source_index`'s command sender: the header byte
-    /// of its records and its timing row. That is its House's index unless
-    /// players share Houses.
+    /// of its records and its timing row in the multiplayer slot projection.
+    /// An authored scenario gets its sender from the constructed House table.
     pub(crate) fn network_source_sender(&self, source_index: usize) -> Option<i8> {
+        if self.frozen_authored_start().is_some() {
+            return None;
+        }
         let launch = self.network_setup()?;
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .iter()
@@ -3390,8 +4116,11 @@ impl MatchSession {
             .map(|controller| controller.source)
     }
 
-    /// The network participant sending as `sender`.
+    /// The network participant sending as `sender` in the slot projection.
     pub(crate) fn network_sender_source(&self, sender: i8) -> Option<usize> {
+        if self.frozen_authored_start().is_some() {
+            return None;
+        }
         let launch = self.network_setup()?;
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .iter()
@@ -3403,6 +4132,9 @@ impl MatchSession {
     /// VERA shared control: whether another connected participant controls
     /// the House participant `source_index` controls.
     pub(crate) fn network_teammate_connected(&self, source_index: usize) -> bool {
+        if self.frozen_authored_start().is_some() {
+            return false;
+        }
         let Some(launch) = self.network_setup() else {
             return false;
         };
@@ -3427,7 +4159,10 @@ impl MatchSession {
         let Some(network) = self.network.as_mut() else {
             return false;
         };
-        let NetworkPhase::Frozen { startup, connected } = &mut network.phase else {
+        let NetworkPhase::Frozen {
+            startup, connected, ..
+        } = &mut network.phase
+        else {
             return false;
         };
         if source_index == startup.launch_session().local_player_index {

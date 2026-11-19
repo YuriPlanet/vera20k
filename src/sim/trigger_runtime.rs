@@ -23,6 +23,8 @@ use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 use crate::util::state_hasher::hash_indices;
 
+pub use crate::map::triggers::SCENARIO_GLOBAL_COUNT;
+
 const ACTION_PLAY_SOUND: i32 = 19;
 const ACTION_FORCE_TRIGGER: i32 = 22;
 const ACTION_SET_GLOBAL: i32 = 28;
@@ -1287,9 +1289,6 @@ struct TriggerActionContext {
     input: TagEventInput,
 }
 
-/// Scenario global variables: SetGlobal689670 rejects indices from 0x32.
-pub const SCENARIO_GLOBAL_COUNT: usize = 50;
-
 impl Simulation {
     /// `TalkBubble::SetObjectAndFrame @ 0x0070F120`, called by trigger
     /// action 105 and team script action 52. A null object or frame 0 clears
@@ -1637,9 +1636,7 @@ impl Simulation {
         if let Some(difficulty) = self.trigger_runtime.fixture_difficulty {
             return difficulty;
         }
-        self.session
-            .campaign_house_difficulties()
-            .map_or(1, |(player, _)| player.table_index() as i32)
+        self.session.scenario_trigger_difficulty() as i32
     }
 
     /// Original Tag6E52A0 includes pending-but-not-yet-destroyed instances.

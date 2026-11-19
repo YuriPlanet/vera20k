@@ -43,10 +43,12 @@ fn secondary_for(
         live_humans,
         local_defeated,
     );
-    // VERA shared control: Observe would leave this player controlling the
-    // House their teammate still plays, so B6 offers a plain Leave (EXIT).
+    // Shared or authored control leaves the House in play. B6 offers a plain
+    // EXIT, rather than the Observe and destructive Leave pair.
     if secondary == AbortSecondary::Observe
-        && sim.is_some_and(crate::sim::world::Simulation::local_house_has_teammate)
+        && sim.is_some_and(|sim| {
+            sim.session().is_authored_campaign() || sim.local_house_has_teammate()
+        })
     {
         AbortSecondary::Hidden
     } else {

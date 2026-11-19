@@ -295,6 +295,81 @@ fn failed_network_load_retries_its_shell_without_installing_an_offline_fallback(
     assert!(session.network_setup().is_none());
 }
 
+#[test]
+fn authored_progress_tracks_remote_readiness_independently_of_local_slot() {
+    use crate::app::match_bootstrap::{AuthoredNetworkStart, PreparedNetworkStartup};
+    use crate::app::match_runtime::session::{
+        LocalScenarioObserver, LocalScenarioPlayer, SessionMode,
+    };
+    use crate::map::scenario_menu::{LocalScenario, LocalScenarioKey, LocalScenarioPresentation};
+    use crate::skirmish_launch::LaunchHumanRole;
+
+    let mut launch = test_launch_session(LaunchCountry::America);
+    let mut observer = launch.humans[0].clone();
+    observer.name = "Viewer".into();
+    observer.raw_slot_index = Some(29);
+    observer.role = LaunchHumanRole::Observer;
+    launch.humans.insert(0, observer);
+    launch.humans[1].name = "Commander".into();
+    launch.local_player_index = 1;
+    launch.opponents.clear();
+    launch.ai_player_count = 0;
+    let startup = std::sync::Arc::new(
+        PreparedNetworkStartup::new(launch, 77, SessionMode::Lan, true, 12, Default::default())
+            .with_authored_scenario(AuthoredNetworkStart {
+                selection: LocalScenario {
+                    key: LocalScenarioKey {
+                        source: "authored-test",
+                        path: "Series/entry.map".into(),
+                    },
+                    mode_label: "Authored",
+                    title: "Series / Crossing".into(),
+                    presentation: Some(std::sync::Arc::new(LocalScenarioPresentation {
+                        series_title: "Series".into(),
+                        stage_title: "Crossing".into(),
+                        briefing: None,
+                        report_strings: Default::default(),
+                        role_titles: vec![None, Some("Forward Guard".into())],
+                        role_appearances: Vec::new(),
+                        role_camera_waypoints: Default::default(),
+                        preview: None,
+                        starts: None,
+                    })),
+                },
+                configuration_sha256: String::new(),
+                players: vec![LocalScenarioPlayer {
+                    raw_slot_index: 0,
+                    role: "Player2".into(),
+                    house: "GuardHouse".into(),
+                    shared_control_houses: Vec::new(),
+                }],
+                observers: vec![LocalScenarioObserver {
+                    raw_slot_index: 29,
+                    house: "ViewHouse".into(),
+                }],
+                ai_difficulty: Default::default(),
+                alliance_admission: Default::default(),
+                auto_enemy_selection: false,
+                carry_over: None,
+            }),
+    );
+    let loading = LoadingStartup::Network(startup.clone());
+    assert!(!stock_network_loading(&loading));
+    assert!(loading.launch_session().is_none());
+    let attempt = LoadingSession::from_request(LoadingRequest::network(loading));
+    let mut native = attempt
+        .native
+        .expect("authored loading now has native artwork");
+    assert_eq!(native.variant, NativeLoadingArt::Authored);
+    assert!(native.progress_row.update_remote_progress(0, 64));
+    assert_eq!(native.progress_row.local_player_index, 1);
+    assert_eq!(native.progress_row.incomplete_remote_indices(), vec![0]);
+    assert!(native.progress_row.update_remote_progress(0, 100));
+    assert!(!native.progress_row.update_remote_progress(0, 90));
+    assert!(native.progress_row.incomplete_remote_indices().is_empty());
+    assert_eq!(native.progress.current_percent(), 0.0);
+}
+
 struct TestClock(u32);
 
 impl crate::app::match_bootstrap::MatchSeedClock for TestClock {

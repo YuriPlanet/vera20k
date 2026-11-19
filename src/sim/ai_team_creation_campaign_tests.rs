@@ -8,10 +8,18 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::FrameEffects;
 
 fn campaign(difficulty: i32) -> (Simulation, RuleSet, InternedId, InternedId) {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    campaign_with_trigger(Some(difficulty), true, 1)
+}
+
+fn campaign_with_trigger(
+    difficulty: Option<i32>,
+    enabled: bool,
+    tech_level: i32,
+) -> (Simulation, RuleSet, InternedId, InternedId) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nTeamDelays=120,120,120\nTotalAITeamCap=30,30,30\n\
-         [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nTechLevel=1\n",
-    ))
+         [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nTechLevel={tech_level}\n",
+    )))
     .unwrap();
     let fixed = IniFile::from_str(&format!(
         "[TeamTypes]\n0=TT\n[TT]\nScript=S\nTaskForce=F\nIsBaseDefense=yes\nMax=1\n\
@@ -20,28 +28,53 @@ fn campaign(difficulty: i32) -> (Simulation, RuleSet, InternedId, InternedId) {
          [AITriggerTypes]\nA=Guard,TT,<all>,0,-1,<none>,{},40,10,60,0,0,1,0,<none>,1,0,0\n",
         "00".repeat(32)
     ));
-    let map = IniFile::from_str("[AITriggerTypesEnable]\nA=yes\n");
+    let enable = if enabled { "yes" } else { "no" };
+    let map = IniFile::from_str(&format!("[AITriggerTypesEnable]\nA={enable}\n"));
     let registry = TeamAiIniRegistry::from_sources(&fixed, &map, false);
     let mut sim = Simulation::with_seed(0xA11CE);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&registry, &rules);
-    sim.session
-        .initialize_campaign_startup(
-            difficulty,
-            1,
-            None,
-            0,
-            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
-        )
-        .unwrap();
+    if let Some(difficulty) = difficulty {
+        sim.session
+            .initialize_campaign_startup(
+                difficulty,
+                1,
+                None,
+                0,
+                crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            )
+            .unwrap();
+    } else {
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+        sim.session.install_authored_campaign(vec![]);
+        sim.session
+            .install_authored_ai_difficulty(crate::sim::house_state::HouseDifficulty::Easy);
+    }
     let owner = sim.interner.intern("Computer");
     let mut house = HouseState::new(owner, 0, None, false, 0, 10);
     house.set_ai_triggers_active(true);
     sim.houses.register(house);
     let team_type = sim.interner.get("TT").unwrap();
     (sim, rules, owner, team_type)
+}
+
+#[test]
+fn authored_lan_trigger_requires_enable_but_accepts_campaign_only_recruits() {
+    for enabled in [true, false] {
+        let (mut sim, rules, owner, _) = campaign_with_trigger(None, enabled, -1);
+        sim.spawn_object("E1", "Computer", 10, 10, 0, &rules)
+            .unwrap();
+        let (trigger, _) = sim.team_script_vm.ai_triggers_in_order().next().unwrap();
+        assert!(!trigger.multiplayer);
+        assert_eq!(trigger.threshold, 0);
+        assert_eq!(
+            is_eligible(&sim, &rules, trigger, owner, None, false),
+            enabled
+        );
+    }
 }
 
 #[test]

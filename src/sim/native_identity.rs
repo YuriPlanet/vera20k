@@ -54,31 +54,36 @@ pub struct NativeUniqueIdCursor {
 }
 
 impl NativeUniqueIdCursor {
-    /// Campaign Full_Init686B20 runs optional named-INI Process and final
-    /// root/LANG/map Process before its one actual House generation. Reset
-    /// destroys registries without rewinding Scenario+214. Subsequent House,
-    /// Super and Resize constructors use this same cursor before it is saved.
-    pub(crate) fn begin_campaign_prefix(
+    /// Start the ID cursor for one authored House generation after the two
+    /// Rules phases. Campaign Full_Init686B20 demonstrates that reset destroys
+    /// registries without rewinding Scenario+214. House, Super and Resize then
+    /// use the same cursor before it is saved.
+    /// In an admitted multiplayer start, begin those allocations at the
+    /// shared checkpoint so local Rules history cannot change their IDs.
+    pub(crate) fn begin_authored_prefix(
         early_type_count: usize,
         rebuilt_type_count: usize,
+        native_id_start: Option<u32>,
     ) -> Self {
-        let value = advance(
-            advance(FRESH_SCENARIO_NATIVE_ID_SEED, early_type_count),
-            rebuilt_type_count,
-        );
+        let value = native_id_start.unwrap_or_else(|| {
+            advance(
+                advance(FRESH_SCENARIO_NATIVE_ID_SEED, early_type_count),
+                rebuilt_type_count,
+            )
+        });
         Self {
             value,
-            saved_after_fresh_prefix: FRESH_SCENARIO_NATIVE_ID_SEED,
+            saved_after_fresh_prefix: native_id_start.unwrap_or(FRESH_SCENARIO_NATIVE_ID_SEED),
             phase: NativeFreshIdPhase::BuildingPrefix,
         }
     }
 
-    /// The campaign's one MapClass::Resize565C10 follows House Read_INI.
-    /// InitializeScenarioFromINI's call at `0x006874E2` goes through
+    /// The authored prefix's one Resize follows House Read_INI.
+    /// Campaign InitializeScenarioFromINI's call at `0x006874E2` goes through
     /// `RadarClass::CreateEmptyMap @ 0x00653F50`, which only forwards to it.
     /// Fill consumes no native IDs; mapreader4AD026 then saves this checkpoint
     /// before theater construction and the saved+0x2710 overwrite.
-    pub(crate) fn finish_campaign_prefix_after_resize(
+    pub(crate) fn finish_authored_prefix_after_resize(
         &mut self,
         map_width: u32,
         map_height: u32,
@@ -430,7 +435,7 @@ mod tests {
 
     #[test]
     fn campaign_prefix_requires_one_resize_checkpoint_before_one_map_reservation() {
-        let mut cursor = NativeUniqueIdCursor::begin_campaign_prefix(2, 5);
+        let mut cursor = NativeUniqueIdCursor::begin_authored_prefix(2, 5, None);
         assert_eq!(
             cursor.current_raw(),
             1_000_007,
@@ -442,11 +447,11 @@ mod tests {
         );
         cursor.next_id();
         cursor.next_id();
-        cursor.finish_campaign_prefix_after_resize(2, 3).unwrap();
+        cursor.finish_authored_prefix_after_resize(2, 3).unwrap();
         let saved = cursor.saved_after_fresh_prefix();
         assert_eq!(saved, cursor.current_raw());
         assert_eq!(
-            cursor.finish_campaign_prefix_after_resize(2, 3),
+            cursor.finish_authored_prefix_after_resize(2, 3),
             Err(super::NativeIdentityError::FreshPrefixAlreadyFinished)
         );
         assert_eq!(

@@ -24,7 +24,7 @@ use crate::render::shell_surface_present::ShellSurfacePresenter;
 use crate::render::shell_text::{
     ScissorRect, ShellAlign, ShellTextDraw, TextRect, draw_in_rect_scaled,
 };
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::geom::{RectPx, ShellScale};
 
 const BACKGROUND_DEPTH: f32 = 0.90;
 const PREVIEW_DEPTH: f32 = 0.80;
@@ -170,7 +170,7 @@ fn native_loading_row_layout(
     source_index: usize,
     participant_count: usize,
 ) -> Option<LoadingProgressRowLayout> {
-    if progress.current_value() == 0.0 {
+    if progress.current_value() == 0.0 && campaign.is_none_or(|page| !page.authored) {
         return None;
     }
     let placement = campaign.map_or(
@@ -216,28 +216,32 @@ fn build_native_loading_text_draws(
         // BitText_Print434B90 call has no width/height limit and clips to the
         // screen, unlike the briefing's rectangle-relative Path-A flags.
         if let Some(text) = campaign.title.as_deref() {
+            let [x, y] = campaign.title_origin;
+            let title = campaign.layout.title;
+            let rect = if campaign.authored {
+                RectPx::new(x, y, title.x + title.w - x, title.y + title.h - y)
+            } else {
+                RectPx::new(x, y, 0, 0)
+            };
             let mut draw = build_native_loading_text_draw(
                 font,
                 solid_texel,
                 text,
-                crate::ui::shell::geom::RectPx::new(
-                    campaign.title_origin[0],
-                    campaign.title_origin[1],
-                    0,
-                    0,
-                ),
+                rect,
                 text_rgb,
                 ShellAlign::NONE,
                 None,
                 CAMPAIGN_TITLE_TEXT_DEPTH,
                 scale.factor(),
             );
-            draw.text.scissor = ScissorRect {
-                x: 0,
-                y: 0,
-                w: render_size[0],
-                h: render_size[1],
-            };
+            if !campaign.authored {
+                draw.text.scissor = ScissorRect {
+                    x: 0,
+                    y: 0,
+                    w: render_size[0],
+                    h: render_size[1],
+                };
+            }
             draws.push(draw);
         }
         if let Some(text) = campaign.briefing.as_deref() {
@@ -251,18 +255,27 @@ fn build_native_loading_text_draws(
             // The measured box is authored; the draw divides its rect back by the
             // glyph scale, so the stretched copy lands in the same box.
             let grow = |px: i32| (px as f32 * scale.factor()).round() as i32;
+            let [x, y] = campaign.briefing_origin;
+            let height = grow(measured.height as i32);
+            let height = if campaign.authored {
+                height.min(campaign.layout.bar.y - y - grow(8))
+            } else {
+                height
+            };
+            if height <= 0 {
+                return draws;
+            }
             draws.push(build_native_loading_text_draw(
                 font,
                 solid_texel,
                 text,
-                crate::ui::shell::geom::RectPx::new(
-                    campaign.briefing_origin[0],
-                    campaign.briefing_origin[1],
-                    grow(measured.width as i32),
-                    grow(measured.height as i32),
-                ),
+                RectPx::new(x, y, grow(measured.width as i32), height),
                 text_rgb,
-                ShellAlign::V_CENTER,
+                if campaign.authored {
+                    ShellAlign::NONE
+                } else {
+                    ShellAlign::V_CENTER
+                },
                 Some(CampaignLoadingPresentation::BRIEFING_BACKING_PADDING as f32),
                 TEXT_DEPTH,
                 scale.factor(),
@@ -441,9 +454,7 @@ fn build_native_loading_instances(
         push_campaign_loading_chrome(
             &mut instances,
             &campaign.layout,
-            atlas
-                .background
-                .expect("campaign atlas has its required background"),
+            atlas.background,
             atlas.title_bar,
             atlas.progress_background,
             atlas.solid_texel,
@@ -549,7 +560,7 @@ fn push_loading_participant_row(
 fn push_campaign_loading_chrome(
     out: &mut Vec<SpriteInstance>,
     layout: &CampaignLoadingLayout,
-    background: LoadingScreenEntry,
+    background: Option<LoadingScreenEntry>,
     title_bar: Option<LoadingScreenEntry>,
     progress_background: Option<LoadingScreenEntry>,
     solid_texel: LoadingScreenEntry,
@@ -557,7 +568,7 @@ fn push_campaign_loading_chrome(
 ) {
     for (entry, rect) in [
         (title_bar, layout.title),
-        (Some(background), layout.body),
+        (background, layout.body),
         (progress_background, layout.bar),
     ] {
         if let Some(entry) = entry {
@@ -585,6 +596,7 @@ fn push_campaign_loading_chrome(
 /// `ProgressMeterClass__DrawFill @ 0x00643400` emits the optional house-colour
 /// outline (`+0x71`), then the one clipped shape span. The existing progress owner
 /// supplies native ftol; both loading families use this same submission body.
+#[allow(clippy::too_many_arguments)]
 fn push_loading_progress_span(
     out: &mut Vec<SpriteInstance>,
     frame: LoadingScreenEntry,
@@ -676,7 +688,7 @@ fn build_native_loading_frame_plan(
         render_size,
         scale,
     );
-    if campaign.is_some() {
+    if let Some(campaign_page) = campaign {
         // Redraw643BB9 hands this row the AlliedLoad/SovietLoad scheme, which
         // Ares ProgressScreenClass_UpdateSingleProgressBar (1002F890, hook
         // 0x643BB9) swaps for the cached load text colour. Nothing here shows
@@ -703,6 +715,24 @@ fn build_native_loading_frame_plan(
                 &layout,
                 scale,
             );
+            if campaign_page.authored && !progress_row.incomplete_remote_indices().is_empty() {
+                let [x, y] = layout.bar_origin;
+                let [width, height] = scale.art_size(
+                    atlas.progress_frame0.pixel_size[0],
+                    atlas.progress_frame0.pixel_size[1],
+                );
+                text_draws.push(build_native_loading_text_draw(
+                    font,
+                    atlas.solid_texel,
+                    &crate::i18n::tr("VERA:LoadingWaitingForPlayers"),
+                    RectPx::new(x, y, width.round() as i32, height.round() as i32),
+                    [1.0; 3],
+                    ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                    None,
+                    ROW_LABEL_DEPTH,
+                    scale.factor(),
+                ));
+            }
         }
     } else {
         // Redraw643C0B..36 draws every source-node row, including a peer at0%.
@@ -1021,9 +1051,10 @@ fn push_progress_fill(
     let full_width = entry.pixel_size[0].max(1.0);
     let width = (source_width as f32).min(full_width);
     let fraction = width / full_width;
+    let size = scale.art_size(width, entry.pixel_size[1]);
     out.push(SpriteInstance {
         position,
-        size: scale.art_size(width, entry.pixel_size[1]),
+        size,
         uv_origin: entry.uv_origin,
         uv_size: [entry.uv_size[0] * fraction, entry.uv_size[1]],
         depth,
@@ -1111,7 +1142,7 @@ mod tests {
                 push_campaign_loading_chrome(
                     &mut instances,
                     &CampaignLoadingLayout::for_authored_size(size),
-                    background,
+                    Some(background),
                     Some(title),
                     Some(bar),
                     solid,

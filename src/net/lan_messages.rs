@@ -17,6 +17,10 @@ const SERIAL_OFFSET: usize = 0x18;
 const SERIAL_LEN: usize = 23;
 const COUNTRY_OFFSET: usize = 0x2f;
 const COLOR_OFFSET: usize = 0x33;
+// Type 1's native body ends at the flags. The unused tail carries a discovery
+// hint only. A receiver without this extension sees the normal advertisement.
+const ADVERTISED_MODE_OFFSET: usize = 0x80;
+const AUTHORED_ADVERTISEMENT: [u8; 4] = *b"VLA1";
 
 /// `0x005DAC00`: copy the UTF-16 game name, uppercase ASCII in the native
 /// startup C locale (`0x007DDCD6`), then fold each remaining non-NUL u16 with
@@ -293,6 +297,12 @@ impl LanMessage {
         (self.kind() == LanMessageKind::Advertisement).then(|| self.u32(COUNTRY_OFFSET))
     }
 
+    pub fn advertises_authored_scenario(&self) -> bool {
+        self.kind() == LanMessageKind::Advertisement
+            && self.bytes[ADVERTISED_MODE_OFFSET..ADVERTISED_MODE_OFFSET + 4]
+                == AUTHORED_ADVERTISEMENT
+    }
+
     pub fn presence_fields(&self) -> Option<(i32, i32)> {
         (self.kind() == LanMessageKind::Presence).then(|| self.country_color())
     }
@@ -358,6 +368,19 @@ impl LanMessage {
     pub fn advertisement(game_name: &str, open: bool) -> Result<Self, LanMessageError> {
         let mut message = Self::with_name(LanMessageKind::Advertisement, game_name)?;
         message.put_u32(COUNTRY_OFFSET, u32::from(open));
+        Ok(message)
+    }
+
+    pub fn scenario_advertisement(
+        game_name: &str,
+        open: bool,
+        authored: bool,
+    ) -> Result<Self, LanMessageError> {
+        let mut message = Self::advertisement(game_name, open)?;
+        if authored {
+            message.bytes[ADVERTISED_MODE_OFFSET..ADVERTISED_MODE_OFFSET + 4]
+                .copy_from_slice(&AUTHORED_ADVERTISEMENT);
+        }
         Ok(message)
     }
 

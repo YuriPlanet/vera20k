@@ -342,6 +342,275 @@ fn network_match_winners_are_the_humans_the_completion_flags_to_win() {
     assert_eq!(sim.network_match_winners(), Some(vec![owners[0]]));
 }
 
+#[test]
+fn authored_triggers_keep_shared_move_after_the_primary_loses_its_army() {
+    use crate::map::houses::HouseAllianceMap;
+    use crate::sim::command::Command;
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::house_diplomacy::HouseAllianceAdmission;
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=MOVER\n[MOVER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let [primary, peer, attached, empty_ai] =
+        ["Primary", "Peer", "Attached", "EmptyAi"].map(|name| sim.interner.intern(name));
+    for (index, house) in [primary, peer, attached, empty_ai].into_iter().enumerate() {
+        sim.houses
+            .register(HouseState::new(house, index as u8, None, index < 2, 0, 10));
+    }
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.install_network_timing(10);
+    sim.session.set_current_house_for_test(Some(primary));
+    sim.session.set_binary_frame_for_test(100);
+    sim.session.install_authored_campaign(vec![0, 1]);
+    sim.session.install_house_control_grants(vec![(0, 2)]);
+    sim.session
+        .install_game_options(crate::sim::game_options::GameOptions {
+            short_game: false,
+            ..Default::default()
+        });
+    sim.install_house_alliances(
+        HouseAllianceAdmission::Admitted(HouseAllianceMap::from([
+            ("PEER".into(), ["ATTACHED".into()].into()),
+            ("ATTACHED".into(), ["PEER".into()].into()),
+        ])),
+        &rules,
+    );
+    sim.spawn_object_with_overlay_registry("MOVER", "Peer", 12, 12, 0, &rules, &overlays)
+        .unwrap();
+    let actor = sim
+        .spawn_object_with_overlay_registry("MOVER", "Attached", 10, 12, 0, &rules, &overlays)
+        .unwrap();
+
+    fn advance(
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
+    ) -> bool {
+        sim.advance_master_frame(
+            &[],
+            rules,
+            Some(overlays),
+            33,
+            TickLane::Ordinary,
+            false,
+            FrameEffects::empty(),
+        )
+        .unwrap()
+        .tick
+        .frame_committed
+    }
+
+    sim.check_defeat(Some(&rules), Some(&overlays));
+    assert!(!sim.local_player_defeated());
+    assert!(!sim.houses[&primary].map_is_clear());
+    assert!(!sim.houses[&empty_ai].is_defeated());
+    assert!(sim.lifecycle_outputs.take().into_iter().all(|output| {
+        !matches!(
+            output,
+            crate::sim::world::LifecycleOutput::MultiplayerHouseDefeated { .. }
+        )
+    }));
+    assert!(sim.houses[&primary].outcome().is_none());
+    assert!(sim.houses[&peer].outcome().is_none());
+    assert_eq!(sim.network_match_winners(), None);
+    let record = sim
+        .encode_megamission_record(
+            primary,
+            &Command::Move {
+                entity_id: actor,
+                target_rx: 19,
+                target_ry: 17,
+            },
+        )
+        .unwrap();
+    assert!(sim.network_command_queues().admit_received(record));
+    assert!(advance(&mut sim, &rules, &overlays));
+    assert_eq!(
+        sim.entities().get(actor).unwrap().navigation.nav_com(),
+        Some(NavTargetRef::cell(19, 17))
+    );
+
+    assert!(sim.request_player_outcome(
+        PlayerOutcomeRequest::Flag {
+            kind: HouseOutcomeKind::Victory,
+            skip_timer: true
+        },
+        &rules,
+        FrameEffects::empty(),
+    ));
+    assert!(!advance(&mut sim, &rules, &overlays));
+    assert!(sim.terminal_score_snapshot().is_some());
+    assert_eq!(sim.network_match_winners(), Some(vec![primary, peer]));
+}
+
+#[test]
+fn authored_country_outcomes_expand_to_direct_reciprocal_allies_and_then_lock() {
+    use crate::map::houses::HouseAllianceMap;
+    use crate::sim::command::Command;
+    use crate::sim::house_diplomacy::HouseAllianceAdmission;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let rules = rules(4);
+    for win_on_match in [true, false] {
+        let (mut sim, owners) = sim_with_houses(&[0, 0, 1, 2, 0]);
+        let [departed, country_peer, ally, other, observer] =
+            <[InternedId; 5]>::try_from(owners).unwrap();
+        sim.session.set_game_mode(ScenarioGameMode::Lan);
+        sim.session.install_network_timing(10);
+        sim.session.set_current_house_for_test(Some(ally));
+        sim.session.install_authored_campaign(vec![3, 0, 2, 1]);
+        sim.session.install_multiplayer_house_identity(
+            crate::skirmish_modes::MpModeClass::Battle,
+            vec![observer],
+        );
+        for owner in [departed, country_peer, ally, other, observer] {
+            sim.houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_is_human_for_test(true);
+        }
+        // House3 is a one-way ally of a matching House, and a reciprocal
+        // ally only of House2. Neither qualifies House3 for the same result.
+        sim.install_house_alliances(
+            HouseAllianceAdmission::Admitted(HouseAllianceMap::from([
+                ("HOUSE0".into(), ["HOUSE2".into()].into()),
+                ("HOUSE2".into(), ["HOUSE0".into(), "HOUSE3".into()].into()),
+                ("HOUSE3".into(), ["HOUSE1".into(), "HOUSE2".into()].into()),
+            ])),
+            &rules,
+        );
+        // A lost source and a voluntary exit leave their Houses intact.
+        assert!(sim.apply_command("house2", &Command::RemovePlayer { source: 0 }, Some(&rules)));
+        assert!(sim.apply_command("house3", &Command::Destruct, Some(&rules)));
+        assert!(sim.apply_command("house3", &Command::ExitMatch, Some(&rules)));
+        assert!(sim.houses[&departed].left_game());
+        assert!(!sim.houses[&departed].is_to_die());
+        assert!(sim.houses[&other].left_game());
+        assert!(!sim.houses[&other].is_to_die());
+        sim.houses
+            .get_mut(&ally)
+            .unwrap()
+            .register_allow_win_tag_type();
+        assert!(sim.request_player_outcome(
+            PlayerOutcomeRequest::Country {
+                country_index: 0,
+                win_on_match
+            },
+            &rules,
+            Default::default(),
+        ));
+        let specified = if win_on_match {
+            HouseOutcomeKind::Victory
+        } else {
+            HouseOutcomeKind::Defeat
+        };
+        let opposite = if win_on_match {
+            HouseOutcomeKind::Defeat
+        } else {
+            HouseOutcomeKind::Victory
+        };
+        let outcomes = |sim: &Simulation| {
+            [departed, country_peer, ally, other, observer]
+                .map(|owner| sim.authored_house_outcome(owner))
+        };
+        let expected = [
+            Some(specified),
+            Some(specified),
+            Some(specified),
+            Some(opposite),
+            None,
+        ];
+        assert_eq!(outcomes(&sim), expected);
+        assert!(sim.request_player_outcome(
+            PlayerOutcomeRequest::Country {
+                country_index: 0,
+                win_on_match: !win_on_match
+            },
+            &rules,
+            Default::default(),
+        ));
+        assert_eq!(outcomes(&sim), expected);
+        assert_eq!(
+            sim.authored_campaign_players().collect::<Vec<_>>(),
+            [departed, country_peer, ally, other]
+        );
+        let timer = sim.houses[&ally].outcome_timer();
+        sim.session
+            .set_binary_frame_for_test(timer.start_frame().wrapping_add(timer.duration()) as u32);
+        sim.check_defeat(Some(&rules), None);
+        assert_eq!(sim.ready_outcome_for_owner(ally).unwrap().kind, specified);
+        assert_eq!(outcomes(&sim), expected);
+    }
+}
+
+#[test]
+fn authored_country_action_with_no_matching_player_gives_everyone_the_opposite_result() {
+    let rules = rules(3);
+    for (win_on_match, expected) in [
+        (true, HouseOutcomeKind::Defeat),
+        (false, HouseOutcomeKind::Victory),
+    ] {
+        let (mut sim, owners) = network_result_world(1);
+        sim.session.install_authored_campaign(vec![0, 1]);
+        // Country2 exists, but its House is computer-controlled.
+        assert!(sim.request_player_outcome(
+            PlayerOutcomeRequest::Country {
+                country_index: 2,
+                win_on_match
+            },
+            &rules,
+            Default::default(),
+        ));
+        assert_eq!(sim.authored_house_outcome(owners[0]), Some(expected));
+        assert_eq!(sim.authored_house_outcome(owners[1]), Some(expected));
+        assert_eq!(sim.authored_house_outcome(owners[2]), None);
+    }
+}
+
+#[test]
+fn authored_observer_follows_the_scripted_participant_result_without_a_country_verdict() {
+    use crate::sim::world::FrameEffects;
+
+    let rules = rules(3);
+    let (mut sim, owners) = network_result_world(2);
+    let observer = owners[2];
+    sim.houses
+        .get_mut(&observer)
+        .unwrap()
+        .set_is_human_for_test(true);
+    sim.session.install_authored_campaign(vec![0, 1]);
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![observer],
+    );
+    // The dummy observer's Country2 differs from the first participant's
+    // winning Country0. Country comparison only judges the actual players.
+    assert!(sim.request_player_outcome(
+        PlayerOutcomeRequest::Country {
+            country_index: 0,
+            win_on_match: true
+        },
+        &rules,
+        FrameEffects::empty(),
+    ));
+    assert!(sim.houses[&owners[0]].has_won());
+    assert!(sim.houses[&owners[1]].has_lost());
+    assert!(sim.houses[&observer].outcome().is_none());
+    assert!(sim.ready_outcome_for_owner(observer).is_none());
+    let timer = sim.houses[&owners[0]].outcome_timer();
+    sim.session
+        .set_binary_frame_for_test(timer.start_frame().wrapping_add(timer.duration()) as u32);
+    sim.check_defeat(Some(&rules), None);
+    assert_eq!(
+        sim.ready_outcome_for_owner(observer).unwrap().kind,
+        HouseOutcomeKind::Victory
+    );
+    assert!(sim.authored_house_outcome(observer).is_none());
+}
+
 /// VERA's match where only AI play (`Simulation::network_ai_alone`): the
 /// spectators' defeat decides nothing, a fallen computer turns none of the
 /// three left paranoid (two of them would gang up on the third: Can_Ally

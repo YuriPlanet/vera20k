@@ -95,6 +95,8 @@ pub mod telemetry;
 pub(crate) mod vehicle_theft;
 // A wasm build has no threads (the browser package, the headless WASI run)
 // unless the browser package opts into its Web Worker pool.
+#[path = "vmce_outcome.rs"]
+mod authored_outcome;
 #[cfg_attr(
     all(target_arch = "wasm32", not(feature = "wasm-threads")),
     path = "parallel_web.rs"

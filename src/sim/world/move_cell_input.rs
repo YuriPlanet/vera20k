@@ -149,7 +149,11 @@ impl Simulation {
         if entity.category() == EntityCategory::Structure {
             return self.building_cell_move_action(viewer, id, cell, query, rules, registry);
         }
-        if !self.house_is_human_player(entity.owner()) {
+        let native_control = self.house_is_human_player(entity.owner());
+        let shared_move = !native_control
+            && self.session.current_house() == Some(viewer)
+            && self.has_foot_control_grant(viewer, id);
+        if !native_control && !shared_move {
             return Ok(MoveAction::None);
         }
         let object = self
@@ -168,7 +172,7 @@ impl Simulation {
             Some(terrain),
             Some(&cells),
         );
-        let controllable = self.techno_player_controllable(id, rules);
+        let controllable = self.foot_accepts_player_orders(entity, object, rules);
         let mut action = if entity.berserk.is_active()
             || entity.is_warped_out()
             || entity.is_warping_in()
@@ -200,7 +204,10 @@ impl Simulation {
             // Unit asks IsShrouded again at the same Cell centre; the harvest
             // rungs return before the deploy rung.
             EntityCategory::Unit if action == MoveAction::Move => {
-                if !shrouded && unit_harvests_land(object, cells.land_type(cells.lookup(clicked))) {
+                if !shared_move
+                    && !shrouded
+                    && unit_harvests_land(object, cells.land_type(cells.lookup(clicked)))
+                {
                     action = MoveAction::Harvest;
                 } else if entity.is_deployed() {
                     action = MoveAction::None;
@@ -507,7 +514,7 @@ impl Simulation {
         if entity.berserk.is_active()
             || entity.is_warped_out()
             || entity.is_warping_in()
-            || !self.house_is_human_player(entity.owner())
+            || !self.object_joins_player_selection(entity)
         {
             return false;
         }
@@ -907,7 +914,7 @@ impl Simulation {
         if entity.category() == EntityCategory::Aircraft {
             return self.aircraft_object_class_action(viewer, id, target, action, rules, registry);
         }
-        let human = self.house_is_human_player(entity.owner());
+        let human = self.object_joins_player_selection(entity);
         let action = match (entity.category(), action) {
             // Returns at once (`0x0051EBCB..0x0051EBD7`), before the rung below.
             (EntityCategory::Infantry, MoveAction::Move)
@@ -921,7 +928,7 @@ impl Simulation {
                 MoveAction::NoMove
             }
             (EntityCategory::Unit | EntityCategory::Infantry, MoveAction::None)
-                if human && self.techno_player_controllable(id, rules) =>
+                if human && self.techno_can_take_local_order(id, rules) =>
             {
                 MoveAction::NoMove
             }
@@ -1087,7 +1094,7 @@ impl Simulation {
         {
             return Ok(None);
         }
-        if !self.techno_player_controllable(id, rules) {
+        if !self.techno_can_take_local_order(id, rules) {
             return Ok(None);
         }
         let raised = DriveCoord {

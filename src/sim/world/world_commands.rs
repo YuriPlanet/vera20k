@@ -22,7 +22,7 @@ use crate::sim::command::{
     PaidSuperAction, PaidSuperRecord, PlaceRecord, ProductionEvent, ProductionRecord, RepairRecord,
     ScatterRecord, SellWallAtCellRecord, SpecialPlaceRecord, StopRecord,
 };
-use crate::sim::house_diplomacy::HouseAlliances;
+use crate::sim::house_diplomacy::{HouseAlliances, PlayerAllianceAdmission};
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
 use crate::sim::overlay_grid::OverlayGrid;
@@ -457,16 +457,24 @@ impl Simulation {
     }
 
     /// SetRallyPoint4439C5 and object-click44367B ask the actor's vt+38
-    /// (Techno6F9DB0), not PlayerPtr. Preserve that House and both tokens
-    /// at issue; send-time retiming remains the packet codec's responsibility.
+    /// (Techno6F9DB0). A shared rally carries the controller's network
+    /// identity so the receiver can check the grant against that sender.
     /// Source: original gamemd.exe constructor4C6780.
     pub(super) fn encode_archive_record(
         &self,
+        issuer: InternedId,
         entity_id: u64,
         target: MegaMissionTarget,
     ) -> Option<CommandRecord> {
-        let owner = self.substrate.entities.get(entity_id)?.owner();
-        let mut record = self.encode_header_event(owner, crate::sim::command::ARCHIVE_OPCODE)?;
+        let actor_owner = self.substrate.entities.get(entity_id)?.owner();
+        let sender = if matches!(target, MegaMissionTarget::Cell { .. })
+            && self.has_house_control_grant(issuer, actor_owner)
+        {
+            issuer
+        } else {
+            actor_owner
+        };
+        let mut record = self.encode_header_event(sender, crate::sim::command::ARCHIVE_OPCODE)?;
         ArchiveRecord {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
@@ -1626,7 +1634,18 @@ impl Simulation {
         } else {
             cmd
         };
-        if self.network_command_actor_foreign(command_owner, cmd, rules.ares()) {
+        if self.network_command_actor_foreign(command_owner, cmd, rules.ares())
+            && (planned
+                || auxiliary != MegaMissionTarget::Null
+                || !self.executing_record_sender.is_some_and(|sender| {
+                    self.session
+                        .network_command_timing()
+                        .is_none_or(|timing| timing.admits_source(sender))
+                        && self.command_sender_owner(sender).is_some_and(|controller| {
+                            self.granted_command_allowed(controller, cmd, rules)
+                        })
+                }))
+        {
             return false;
         }
         let ordinary_actor = match cmd {
@@ -2317,6 +2336,11 @@ impl Simulation {
                 true
             }
             Command::Destruct => {
+                // Authored roles and their units remain in the scenario when
+                // a player leaves. Old resign/observe requests cannot kill them.
+                if self.session.is_authored_campaign() {
+                    return true;
+                }
                 let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
@@ -2362,7 +2386,10 @@ impl Simulation {
                 if let Some(sender) = sender {
                     self.session.retire_network_command_source(sender);
                 }
-                if house_left && self.other_undefeated_humans(owner) == 0 {
+                if house_left
+                    && !self.session.is_authored_campaign()
+                    && self.other_undefeated_humans(owner) == 0
+                {
                     self.flag_house_to_die(owner);
                 }
                 // A Simulation without a current House (diagnostic and replay
@@ -2391,7 +2418,10 @@ impl Simulation {
                     // Its WOL tournament tail (0x005DA8F7..0x005DA90F) kills
                     // the leaver's House here, where replays run it too; the
                     // app runs the connection and message work.
-                    if house_left && self.session.wol_tournament_game() {
+                    if house_left
+                        && !self.session.is_authored_campaign()
+                        && self.session.wol_tournament_game()
+                    {
                         self.flag_house_to_die(owner);
                     }
                     self.departed_senders.extend(sender);
@@ -2400,8 +2430,8 @@ impl Simulation {
             }
             Command::MoveFlash { rx, ry } => self.spawn_move_flash(rules, (*rx, *ry)),
             Command::Ally { house_index } => {
-                // EventClass::Execute 0x004C6DEE..0x004C6E23: no admission
-                // gate; the sender toggles on its own mask, announced.
+                // Stock EventClass::Execute 0x004C6DEE..0x004C6E23
+                // toggles on its sender's mask without an admission gate.
                 let (Some(owner), Some(other)) = (
                     self.interner.get(command_owner),
                     usize::try_from(*house_index)
@@ -2410,6 +2440,12 @@ impl Simulation {
                 ) else {
                     return false;
                 };
+                if self.session.player_alliance_admission()
+                    == PlayerAllianceAdmission::RoomParticipants
+                    && !self.player_alliance_change_allowed(owner, other, rules)
+                {
+                    return false;
+                }
                 if crate::sim::combat::combat_weapon::is_ally_by_object(
                     Some(self.house_alliances()),
                     &self.interner,
@@ -2445,7 +2481,14 @@ impl Simulation {
                 }
                 // VERA shared control: a House another player still controls
                 // survives losing one of them.
-                if !self.house_keeps_other_sender(owner, source) {
+                if self.session.is_authored_campaign() {
+                    // Authored primary Houses remain participants for scripted
+                    // outcomes, with the same units and alliances. The flag
+                    // records their absence for the result projection.
+                    if let Some(house) = self.houses.get_mut(&owner) {
+                        house.mark_left_game();
+                    }
+                } else if !self.house_keeps_other_sender(owner, source) {
                     self.flag_house_to_die(owner);
                 }
                 // REMOVEPLAYER is synchronized source loss, distinct from
@@ -2907,14 +2950,15 @@ impl Simulation {
     /// (Sell_Back `0x00447110` queues Selling unless already Selling), and a
     /// repack's MCV then drives to the new cell.
     pub fn takes_rally_point(&self, stable_id: u64, owner: &str, rules: &RuleSet) -> bool {
-        self.substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| {
-                entity.category() == crate::map::entities::EntityCategory::Structure
-                    && owner.eq_ignore_ascii_case(self.interner.resolve(entity.owner()))
-            })
-            && self.techno_player_controllable(stable_id, rules)
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return false;
+        };
+        entity.category() == EntityCategory::Structure
+            && (owner.eq_ignore_ascii_case(self.interner.resolve(entity.owner()))
+                && self.techno_player_controllable(stable_id, rules)
+                || self.interner.get(owner).is_some_and(|controller| {
+                    self.has_rally_control_grant(controller, stable_id, rules)
+                }))
     }
 
     /// Replace the current selection with exactly the given stable entity IDs.
@@ -3056,7 +3100,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| self.house_is_human_player(entity.owner()))
+                .is_some_and(|entity| self.object_joins_player_selection(entity))
         };
         let first_human = human(first);
         first_human != human(new) || !first_human
@@ -3202,6 +3246,182 @@ impl Simulation {
             .is_some_and(|e| command_owner.eq_ignore_ascii_case(self.interner.resolve(e.owner())))
     }
 
+    /// Match-local control authority for a House other than the sender's own.
+    /// The executing command and the local view supply their own sender.
+    pub(super) fn has_house_control_grant(
+        &self,
+        controller: InternedId,
+        owner: InternedId,
+    ) -> bool {
+        let grants = self.session.house_control_grants();
+        if grants.is_empty() || !self.session.game_mode().is_network() {
+            return false;
+        }
+        let house_index = |house| {
+            self.houses
+                .index_of(house)
+                .and_then(|index| u16::try_from(index).ok())
+        };
+        let (Some(controller), Some(owner)) = (house_index(controller), house_index(owner)) else {
+            return false;
+        };
+        grants.binary_search(&(controller, owner)).is_ok()
+    }
+
+    /// A frozen control grant covers a Foot owned by the listed House.
+    pub(super) fn has_foot_control_grant(&self, controller: InternedId, entity_id: u64) -> bool {
+        self.substrate
+            .entities
+            .get(entity_id)
+            .is_some_and(|entity| {
+                entity.category().is_foot()
+                    && self.has_house_control_grant(controller, entity.owner())
+            })
+    }
+
+    /// A control grant allows selection once the local House discovers the
+    /// Foot. Discovery and ownership stay with their ordinary owners.
+    pub fn local_foot_control_granted(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
+        entity.category().is_foot()
+            && entity.discovery.discovered_by_current_house()
+            && self
+                .session
+                .current_house()
+                .is_some_and(|controller| self.has_house_control_grant(controller, entity.owner()))
+    }
+
+    /// Local ownership projection used by the band and additive selection.
+    pub fn object_joins_player_selection(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> bool {
+        self.house_is_human_player(entity.owner()) || self.local_foot_control_granted(entity)
+    }
+
+    /// Authority to set and view the cell rally of an attached building.
+    pub fn has_rally_control_grant(
+        &self,
+        controller: InternedId,
+        id: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.category() == EntityCategory::Structure
+                && self.has_house_control_grant(controller, entity.owner())
+                && self
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.has_rally_line())
+        })
+    }
+
+    /// Producer-side projection. The same allowed verbs are checked against
+    /// the native record's authenticated sender and live ownership on receipt.
+    pub fn permits_local_granted_order(
+        &self,
+        controller: InternedId,
+        cmd: &Command,
+        rules: &RuleSet,
+        planning: bool,
+    ) -> bool {
+        if self.session.house_control_grants().is_empty() {
+            return true;
+        }
+        let actor = cmd.megamission_actor().or(match cmd {
+            Command::DeployMcv { entity_id } => Some(*entity_id),
+            _ => None,
+        });
+        let needs_grant = actor.is_some_and(|id| self.has_foot_control_grant(controller, id))
+            || matches!(cmd, Command::SetRally { producer_ids, .. }
+                if producer_ids.iter().any(|&id| self.has_rally_control_grant(controller, id, rules)));
+        !needs_grant || (!planning && self.granted_command_allowed(controller, cmd, rules))
+    }
+
+    /// VERA's authored authority for a synchronized order. Each accepted
+    /// payload continues through the same native order handler as an own-House
+    /// order. ARCHIVE at `0x004C6DC4` is accepted only with a Cell token and a
+    /// rally-capable building. A grant cannot run SELL or select a primary.
+    fn granted_command_allowed(
+        &self,
+        controller: InternedId,
+        cmd: &Command,
+        rules: &RuleSet,
+    ) -> bool {
+        let foot = |id| self.has_foot_control_grant(controller, id);
+        let deploy = |id| foot(id) && self.can_deploy_slash_unload(id, rules);
+        let unload = |id| {
+            deploy(id)
+                || (foot(id)
+                    && self.substrate.entities.get(id).is_some_and(|entity| {
+                        // Aircraft417DCD uses the actual hold for the self-click
+                        // Unload mission. Event9 / the deploy key use the type.
+                        entity.category() == EntityCategory::Aircraft
+                            && entity
+                                .passenger_role()
+                                .cargo()
+                                .is_some_and(|cargo| !cargo.is_empty())
+                            && self
+                                .object_type(entity.type_ref(), rules)
+                                .is_some_and(|object| !object.no_manual_unload())
+                    }))
+        };
+        let rally = |id| self.has_rally_control_grant(controller, id, rules);
+        match cmd {
+            Command::Move { entity_id, .. }
+            | Command::MoveToObject { entity_id, .. }
+            | Command::AttackMove { entity_id, .. } => foot(*entity_id),
+            Command::Attack { attacker_id, .. } | Command::ForceAttackCell { attacker_id, .. } => {
+                foot(*attacker_id)
+            }
+            Command::DeployMcv { entity_id } => deploy(*entity_id),
+            Command::MegaMission {
+                entity_id,
+                mission: MissionType::Unload,
+                target: None,
+                destination: None,
+            } => unload(*entity_id),
+            Command::ToggleInfantryDeploy { entity_id } => deploy(*entity_id),
+            Command::UnloadPassengers { transport_id } => unload(*transport_id),
+            Command::MegaMission {
+                entity_id,
+                mission: MissionType::Enter,
+                target: None,
+                destination: Some(combat::TargetKind::Entity(transport)),
+            } => {
+                foot(*entity_id)
+                    && self
+                        .substrate
+                        .entities
+                        .get(*transport)
+                        .is_some_and(|entity| {
+                            entity.category().is_foot()
+                                && (!rules.ares()
+                                    || self.object_type(entity.type_ref(), rules).is_some_and(
+                                        |object| {
+                                            !object.techno_combat().movement().no_manual_enter()
+                                        },
+                                    ))
+                                && crate::sim::passenger::can_enter_transport(
+                                    self, rules, *entity_id, *transport,
+                                )
+                        })
+            }
+            Command::SetRally { producer_ids, .. } => producer_ids.iter().all(|&id| {
+                self.substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| entity.owner() == controller)
+                    || rally(id)
+            }),
+            Command::SynchronizedRecord { record } => {
+                ArchiveRecord::decode(record).is_some_and(|event| {
+                    matches!(event.target, MegaMissionTarget::Cell { .. })
+                        && u64::try_from(event.entity_id).is_ok_and(rally)
+                })
+            }
+            _ => false,
+        }
+    }
+
     /// VERA-only network admission, not a native receiver test: refuse an
     /// event whose acting object exists and belongs to another House.
     ///
@@ -3223,7 +3443,7 @@ impl Simulation {
     ///   and execution is dropped, including its planning detach, where
     ///   retail runs it on the new owner's object. The flag-2 planning
     ///   acknowledge stays ahead of this gate, so that actor's latch clears.
-    ///   The group spread (`0x0064CDA0`) leaves that actor out as well, so
+    ///   The group spread (`0x0064CDA0`) leaves refused actors out as well, so
     ///   the sender's other units spread as if it had not been ordered, where
     ///   retail spreads it with them;
     /// * a DETONATE whose carrier by execution holds another House's bomb, or
@@ -4003,6 +4223,8 @@ mod tests {
         };
         let wall = |sim: &Simulation| sim.overlay_grid.as_ref().unwrap().cell(1, 1).overlay_id;
 
+        assert!(!sell(&mut sim, "British"));
+        sim.session.install_house_control_grants(vec![(1, 0)]);
         assert!(!sell(&mut sim, "British"));
         assert!(wall(&sim).is_some());
         assert!(sell(&mut sim, "Americans"));

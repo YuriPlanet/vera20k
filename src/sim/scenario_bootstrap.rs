@@ -1,8 +1,8 @@
 //! Simulation-owned fresh Scenario bootstrap.
 //!
 //! Fresh families share one staged Simulation before terrain Fill. Active-stock
-//! offline startup resolves its two House/start-callback passes; campaign startup
-//! constructs and reads its authored House/Super array once. The same Scenario
+//! offline startup resolves its two House/start-callback passes. Authored
+//! startup constructs and reads its House/Super array once. The same Scenario
 //! RNG and native-ID owners then continue through terrain and map objects.
 //! Opening forces, shroud, AI credits and diplomacy retain their shared owners.
 
@@ -30,10 +30,10 @@ mod scenario_special_money_retail_tests;
 #[path = "building_ai_sale_tag_retail_tests.rs"]
 mod building_ai_sale_tag_retail_tests;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::{HouseRoster, normalize_house_name};
+use crate::map::houses::{HouseDefinition, HouseRoster, normalize_house_name};
 use crate::map::map_file::{MapFile, MapHeader};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::waypoints::Waypoint;
@@ -403,9 +403,20 @@ pub struct BoundStockOfflineFreshPrefixPlan {
     native_ids: crate::sim::native_identity::NativeFreshIdPrefixReceipt,
 }
 
-/// Family-specific inputs to the one pre-Fill Simulation handoff. Campaigns
-/// construct the authored House array on this owner; they never synthesize an
-/// offline start assignment or a draw-free projection of that assignment.
+/// One admitted human House and its authored control grants.
+pub struct AuthoredNetworkPlayer<'a> {
+    pub house: &'a str,
+    pub shared_control_houses: &'a [String],
+}
+
+/// A live network connection whose House is used only to watch the map.
+pub struct AuthoredNetworkObserver<'a> {
+    pub house: &'a str,
+    pub handle: &'a str,
+}
+
+/// Family-specific inputs to the one pre-Fill Simulation handoff. Authored
+/// starts construct their House array here before the map objects are read.
 #[allow(
     clippy::large_enum_variant,
     reason = "built once per scenario load and consumed immediately"
@@ -423,6 +434,20 @@ pub enum FreshScenarioPrefix<'a> {
         campaign_index: i32,
         restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver,
     },
+    AuthoredNetwork {
+        native_rules_receipt: crate::rules::process_owner::NativeScenarioRulesReceipt,
+        rules: &'a RuleSet,
+        map_data: &'a MapFile,
+        house_roster: &'a HouseRoster,
+        player_house: &'a str,
+        players: &'a [AuthoredNetworkPlayer<'a>],
+        observers: &'a [AuthoredNetworkObserver<'a>],
+        game_options: &'a crate::sim::game_options::GameOptions,
+        ai_difficulty: HouseDifficulty,
+        alliance_admission: crate::sim::house_diplomacy::PlayerAllianceAdmission,
+        auto_enemy_selection: bool,
+        native_id_start: Option<u32>,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -433,14 +458,26 @@ pub enum FreshScenarioPrefixError {
     Campaign(#[from] crate::sim::scenario_session::CampaignScenarioStartupError),
     #[error(transparent)]
     Identity(#[from] crate::sim::native_identity::NativeIdentityError),
-    #[error("campaign House construction requires an authored [Houses] roster")]
-    MissingCampaignHouseRoster,
-    #[error("campaign House construction requires a registered entry0 Country")]
-    MissingCampaignCountryRegistry,
-    #[error("campaign House {house} requires unsupported Country constructor {country}")]
-    UnsupportedCampaignCountryConstructor { house: String, country: String },
+    #[error("an authored scenario requires a [Houses] roster")]
+    MissingAuthoredHouseRoster,
+    #[error("the authored roster has more than one House named {0}")]
+    DuplicateAuthoredHouse(String),
+    #[error("the authored observer Houses exceed the network House index range")]
+    AuthoredObserverHouseLimit,
+    #[error("the selected House {0} is absent from the authored roster")]
+    MissingAuthoredPlayerHouse(String),
+    #[error("House {0} has more than one authored player")]
+    DuplicateAuthoredPlayerHouse(String),
+    #[error("House {0} is not an eligible authored Move target")]
+    InvalidAuthoredMoveTarget(String),
+    #[error("authored network startup requires a nonzero game mode")]
+    InvalidAuthoredNetworkMode,
+    #[error("authored House construction requires a registered entry0 Country")]
+    MissingAuthoredCountryRegistry,
+    #[error("authored House {house} requires unsupported Country constructor {country}")]
+    UnsupportedAuthoredCountryConstructor { house: String, country: String },
     #[error(
-        "campaign Super constructors have {allocated} native types but {projected} registry identities"
+        "authored Super constructors have {allocated} native types but {projected} registry identities"
     )]
     SuperWeaponRegistryMismatch { allocated: usize, projected: usize },
 }
@@ -3299,20 +3336,19 @@ impl ScenarioBootstrapRng {
         Ok((simulation, projection))
     }
 
-    /// Consume every fresh family through the same staged Simulation, before
-    /// terrain Fill can draw or construct any map object. The campaign arm
-    /// follows original Full_Init686B20: E/P types, one actual House/Super
-    /// generation, current-House selection, then one Resize checkpoint.
+    /// Consume every fresh family through the same staged Simulation before
+    /// terrain Fill can draw or construct any map object. Authored starts
+    /// use one House/Super generation, one current House and one Resize.
     pub fn into_fresh_staged_simulation(
         self,
         descriptor: &ScenarioDescriptor,
         prefix: FreshScenarioPrefix<'_>,
     ) -> Result<(Simulation, Option<StockOfflinePrefixProjection>), FreshScenarioPrefixError> {
-        match prefix {
+        let (mut simulation, map_data) = match prefix {
             FreshScenarioPrefix::StockOffline(bound_prefix) => {
                 let (simulation, projection) =
                     self.into_stock_offline_staged_simulation(descriptor, bound_prefix)?;
-                Ok((simulation, Some(projection)))
+                return Ok((simulation, Some(projection)));
             }
             FreshScenarioPrefix::Campaign {
                 native_rules_receipt,
@@ -3325,51 +3361,14 @@ impl ScenarioBootstrapRng {
                 campaign_index,
                 restart_carry_over,
             } => {
-                NativeStartBounds::from_map_header(&map_data.header)
-                    .ok_or(PreFillScenarioPrefixPlanError::InvalidMapCellExtent)?;
-                if house_roster.houses.is_empty() {
-                    return Err(FreshScenarioPrefixError::MissingCampaignHouseRoster);
-                }
-                // ReadHouseType475540 can allocate an unknown nonempty
-                // Country at4755B8. That path must extend the live Rules
-                // registry/ID owner; the selected stock route has only known
-                // or missing tokens. Reject it before any House IDs/RNG,
-                // rather than silently binding another Country's defaults.
-                for house in &house_roster.houses {
-                    if rules
-                        .scenario_country_name(house.country.as_deref())
-                        .is_none()
-                    {
-                        return Err(match &house.country {
-                            Some(country) => {
-                                FreshScenarioPrefixError::UnsupportedCampaignCountryConstructor {
-                                    house: house.name.clone(),
-                                    country: country.clone(),
-                                }
-                            }
-                            None => FreshScenarioPrefixError::MissingCampaignCountryRegistry,
-                        });
-                    }
-                }
-                let (early, rebuilt) = native_rules_receipt.into_parts();
-                let (early_events, _) = early.into_parts();
-                let (rebuilt_events, super_weapon_type_count) = rebuilt.into_parts();
-                if super_weapon_type_count != rules.super_weapon_order.len() {
-                    return Err(FreshScenarioPrefixError::SuperWeaponRegistryMismatch {
-                        allocated: super_weapon_type_count,
-                        projected: rules.super_weapon_order.len(),
-                    });
-                }
-                // House4F6202..4F6290 constructs every registered Super via
-                // 6CAF90, even when Type+B4 is -1 or has no implemented
-                // dispatch body. The instance owner already uses this order;
-                // launch support is not a prerequisite for House admission.
-                // Evidence: input_oracle/campaign_start.py --houses (native
-                // SuperType registration without its later body reader).
-                let mut simulation = self.into_simulation(descriptor);
-                let mut start_header = crate::map::preview::ScenarioStartHeader::default();
-                start_header.read_ini(&map_data.ini);
-                simulation.session.install_start_header(start_header);
+                let mut simulation = self.into_authored_simulation(
+                    descriptor,
+                    native_rules_receipt,
+                    rules,
+                    map_data,
+                    house_roster,
+                    None,
+                )?;
                 simulation.session.initialize_campaign_startup(
                     difficulty,
                     mission_counter,
@@ -3379,12 +3378,6 @@ impl ScenarioBootstrapRng {
                 )?;
                 simulation.session.install_campaign_fog_of_war(
                     map_data.special_flags.fog_of_war.unwrap_or(false),
-                );
-                simulation.install_native_unique_id_cursor(
-                    crate::sim::native_identity::NativeUniqueIdCursor::begin_campaign_prefix(
-                        early_events.len(),
-                        rebuilt_events.len(),
-                    ),
                 );
                 initialize_map_roster_houses(
                     &mut simulation,
@@ -3398,17 +3391,240 @@ impl ScenarioBootstrapRng {
                     &map_data.ini,
                 );
                 initialize_campaign_scenario_side(&mut simulation, &map_data.ini, rules);
+                (simulation, map_data)
+            }
+            FreshScenarioPrefix::AuthoredNetwork {
+                native_rules_receipt,
+                rules,
+                map_data,
+                house_roster,
+                player_house,
+                players,
+                observers,
+                game_options,
+                ai_difficulty,
+                alliance_admission,
+                auto_enemy_selection,
+                native_id_start,
+            } => {
+                if !descriptor.game_mode_nonzero {
+                    return Err(FreshScenarioPrefixError::InvalidAuthoredNetworkMode);
+                }
+                let house_index = |name| {
+                    crate::map::houses::find_house_index(
+                        house_roster.houses.iter().map(|house| house.name.as_str()),
+                        name,
+                    )
+                    .and_then(|index| u16::try_from(index).ok())
+                };
+                let mut player_indices = Vec::with_capacity(players.len());
+                let mut control_grants = Vec::new();
+                for player in players {
+                    let index = house_index(player.house).ok_or_else(|| {
+                        FreshScenarioPrefixError::MissingAuthoredPlayerHouse(
+                            player.house.to_owned(),
+                        )
+                    })?;
+                    if player_indices.contains(&index) {
+                        return Err(FreshScenarioPrefixError::DuplicateAuthoredPlayerHouse(
+                            player.house.to_owned(),
+                        ));
+                    }
+                    player_indices.push(index);
+                    for target in player.shared_control_houses {
+                        let target_index = house_index(target)
+                            .filter(|target_index| *target_index != index)
+                            .ok_or_else(|| {
+                                FreshScenarioPrefixError::InvalidAuthoredMoveTarget(target.clone())
+                            })?;
+                        control_grants.push((index, target_index));
+                    }
+                }
+                let primary_house_indices = player_indices.clone();
+                let mut match_roster = std::borrow::Cow::Borrowed(house_roster);
+                let first_observer = match_roster.houses.len();
+                if !observers.is_empty() {
+                    // Observer Houses follow the map roster in the connection
+                    // array. Only map Houses supply a Country and INI identity.
+                    let mut used: HashSet<_> = match_roster
+                        .houses
+                        .iter()
+                        .map(|house| normalize_house_name(&house.name))
+                        .collect();
+                    for observer in observers {
+                        if !used.insert(normalize_house_name(observer.house)) {
+                            return Err(FreshScenarioPrefixError::DuplicateAuthoredHouse(
+                                observer.house.to_owned(),
+                            ));
+                        }
+                        let index = i8::try_from(match_roster.houses.len())
+                            .map_err(|_| FreshScenarioPrefixError::AuthoredObserverHouseLimit)?;
+                        player_indices.push(index as u16);
+                        match_roster.to_mut().houses.push(HouseDefinition {
+                            name: observer.house.to_owned(),
+                            color: crate::rules::house_colors::HouseColorIndex(
+                                crate::rules::house_colors::DEFAULT_SCHEME_ENTRY as u8,
+                            ),
+                            country: None,
+                            side: None,
+                            player_control: None,
+                            iq: 0,
+                            ui_name: None,
+                            allies: 0,
+                            base_plan: Default::default(),
+                        });
+                    }
+                }
+                let player_index = crate::map::houses::find_house_index(
+                    match_roster.houses.iter().map(|house| house.name.as_str()),
+                    player_house,
+                )
+                .and_then(|index| u16::try_from(index).ok())
+                .filter(|index| player_indices.contains(index))
+                .ok_or_else(|| {
+                    FreshScenarioPrefixError::MissingAuthoredPlayerHouse(player_house.to_owned())
+                })?;
+                let mut simulation = self.into_authored_simulation(
+                    descriptor,
+                    native_rules_receipt,
+                    rules,
+                    map_data,
+                    house_roster,
+                    native_id_start,
+                )?;
                 simulation
-                    .native_unique_ids
-                    .as_mut()
-                    .expect("campaign prefix installed the sole native-ID cursor")
-                    .finish_campaign_prefix_after_resize(
-                        map_data.header.width,
-                        map_data.header.height,
-                    )?;
-                Ok((simulation, None))
+                    .session
+                    .install_game_options(game_options.clone());
+                simulation
+                    .session
+                    .install_authored_ai_difficulty(ai_difficulty);
+                simulation
+                    .session
+                    .install_player_alliance_admission(alliance_admission);
+                simulation
+                    .session
+                    .install_authored_campaign(primary_house_indices);
+                simulation
+                    .session
+                    .set_authored_auto_enemy_selection(auto_enemy_selection);
+                initialize_map_roster_houses_with_players(
+                    &mut simulation,
+                    &match_roster,
+                    rules,
+                    Some(&map_data.ini),
+                    &player_indices,
+                    first_observer,
+                );
+                let player = simulation
+                    .houses
+                    .order()
+                    .get(usize::from(player_index))
+                    .copied()
+                    .ok_or_else(|| {
+                        FreshScenarioPrefixError::MissingAuthoredPlayerHouse(
+                            player_house.to_owned(),
+                        )
+                    })?;
+                simulation.session.install_current_house(Some(player));
+                let observer_ids = simulation.houses.order()[first_observer..].to_vec();
+                for (observer, &id) in observers.iter().zip(&observer_ids) {
+                    let house = simulation
+                        .houses
+                        .get_mut(&id)
+                        .expect("constructed observer House");
+                    house.set_ui_name(crate::sim::house_state::HouseUiName::handle(
+                        observer.handle,
+                    ));
+                    house.assign_player_control(id == player);
+                }
+                simulation.session.install_network_observers(observer_ids);
+                simulation
+                    .session
+                    .install_house_control_grants(control_grants);
+                simulation
+                    .session
+                    .install_scenario_side(simulation.houses[&player].side_index());
+                simulation.install_house_alliances(
+                    crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(
+                        house_roster.alliance_map(),
+                    ),
+                    rules,
+                );
+                (simulation, map_data)
+            }
+        };
+        simulation
+            .native_unique_ids
+            .as_mut()
+            .expect("authored prefix installed the sole native-ID cursor")
+            .finish_authored_prefix_after_resize(map_data.header.width, map_data.header.height)?;
+        Ok((simulation, None))
+    }
+
+    fn into_authored_simulation(
+        self,
+        descriptor: &ScenarioDescriptor,
+        native_rules_receipt: crate::rules::process_owner::NativeScenarioRulesReceipt,
+        rules: &RuleSet,
+        map_data: &MapFile,
+        house_roster: &HouseRoster,
+        native_id_start: Option<u32>,
+    ) -> Result<Simulation, FreshScenarioPrefixError> {
+        NativeStartBounds::from_map_header(&map_data.header)
+            .ok_or(PreFillScenarioPrefixPlanError::InvalidMapCellExtent)?;
+        if house_roster.houses.is_empty() {
+            return Err(FreshScenarioPrefixError::MissingAuthoredHouseRoster);
+        }
+        let mut names = HashSet::with_capacity(house_roster.houses.len());
+        for house in &house_roster.houses {
+            // The House owner folds the keys it interns. A collision would
+            // make two map rows address the same registered House.
+            if !names.insert(house.name.to_ascii_uppercase()) {
+                return Err(FreshScenarioPrefixError::DuplicateAuthoredHouse(
+                    house.name.clone(),
+                ));
+            }
+            // ReadHouseType475540 can allocate an unknown nonempty Country at
+            // 4755B8. The admitted path requires the live Rules registry to
+            // contain the Country before any House constructors run.
+            if rules
+                .scenario_country_name(house.country.as_deref())
+                .is_none()
+            {
+                return Err(match &house.country {
+                    Some(country) => {
+                        FreshScenarioPrefixError::UnsupportedAuthoredCountryConstructor {
+                            house: house.name.clone(),
+                            country: country.clone(),
+                        }
+                    }
+                    None => FreshScenarioPrefixError::MissingAuthoredCountryRegistry,
+                });
             }
         }
+        let (early, rebuilt) = native_rules_receipt.into_parts();
+        let (early_events, _) = early.into_parts();
+        let (rebuilt_events, super_weapon_type_count) = rebuilt.into_parts();
+        // House4F6202..4F6290 constructs every registered Super via 6CAF90.
+        // The registry is authoritative even for types with no launch body.
+        if super_weapon_type_count != rules.super_weapon_order.len() {
+            return Err(FreshScenarioPrefixError::SuperWeaponRegistryMismatch {
+                allocated: super_weapon_type_count,
+                projected: rules.super_weapon_order.len(),
+            });
+        }
+        let mut simulation = self.into_simulation(descriptor);
+        let mut start_header = crate::map::preview::ScenarioStartHeader::default();
+        start_header.read_ini(&map_data.ini);
+        simulation.session.install_start_header(start_header);
+        simulation.install_native_unique_id_cursor(
+            crate::sim::native_identity::NativeUniqueIdCursor::begin_authored_prefix(
+                early_events.len(),
+                rebuilt_events.len(),
+                native_id_start,
+            ),
+        );
+        Ok(simulation)
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3620,6 +3836,24 @@ pub fn initialize_map_roster_houses(
     rules: &RuleSet,
     map_ini: Option<&crate::rules::ini_parser::IniFile>,
 ) {
+    initialize_map_roster_houses_with_players(
+        sim,
+        house_roster,
+        rules,
+        map_ini,
+        &[],
+        house_roster.houses.len(),
+    );
+}
+
+fn initialize_map_roster_houses_with_players(
+    sim: &mut Simulation,
+    house_roster: &HouseRoster,
+    rules: &RuleSet,
+    map_ini: Option<&crate::rules::ini_parser::IniFile>,
+    network_players: &[u16],
+    map_house_count: usize,
+) {
     assert!(
         sim.houses.is_empty()
             && sim.houses.order().is_empty()
@@ -3628,22 +3862,45 @@ pub fn initialize_map_roster_houses(
         "scenario houses must be initialized before map objects"
     );
     let campaign_difficulties = sim.session.campaign_house_difficulties();
-    if campaign_difficulties.is_some() {
+    let network = !network_players.is_empty();
+    let authored_campaign = sim.session.is_authored_campaign();
+    let house_difficulties = campaign_difficulties.or_else(|| {
+        network.then(|| {
+            let computer = sim.session.authored_ai_difficulty();
+            let player = if authored_campaign {
+                computer.opposite()
+            } else {
+                HouseDifficulty::Normal
+            };
+            (player, computer)
+        })
+    });
+    if house_difficulties.is_some() {
         assert!(
             map_ini.is_some(),
-            "campaign Houses require admitted map/rules"
+            "authored Houses require admitted map/rules"
         );
         assert!(
             sim.super_weapons.is_empty(),
-            "campaign House Supers are constructed once"
+            "authored House Supers are constructed once"
         );
     }
     let frame = sim.session.binary_frame() as i32;
-    let mission_counter = sim.session.campaign_mission_counter().unwrap_or(1);
-    for house in &house_roster.houses {
-        let country_name = rules
-            .scenario_country_name(house.country.as_deref())
-            .or(house.country.as_deref());
+    // The authored reader can override the default for each House. Campaign
+    // uses its mission counter and an authored network start uses room tech.
+    let default_tech_level = if network {
+        sim.session.game_options().tech_level
+    } else {
+        sim.session.campaign_mission_counter().unwrap_or(1)
+    };
+    for (index, house) in house_roster.houses.iter().enumerate() {
+        let country_name = if index < map_house_count {
+            rules
+                .scenario_country_name(house.country.as_deref())
+                .or(house.country.as_deref())
+        } else {
+            None
+        };
         let fallback_side = crate::sim::house_state::side_index_from_name(house.side.as_deref());
         let side_idx = crate::sim::house_state::resolve_house_side_index(
             rules,
@@ -3657,26 +3914,28 @@ pub fn initialize_map_roster_houses(
             name_id,
             side_idx,
             country_id,
-            false,
+            u16::try_from(index).is_ok_and(|index| network_players.contains(&index)),
             sim.session.game_options().starting_credits,
             sim.session.game_options().tech_level,
         );
-        let campaign_house_id = campaign_difficulties.map(|_| {
+        let native_house_id = house_difficulties.map(|_| {
             sim.next_native_load_id()
-                .expect("admitted campaign native-ID cursor")
+                .expect("admitted authored native-ID cursor")
         });
         // Every native House constructs its whole Supers vector before map
-        // objects. Only the admitted campaign prefix has a measured ID cursor.
+        // objects. The admitted authored prefix has a single ID cursor.
         crate::sim::superweapon::construct_house_supers(
             sim,
             rules,
             name_id,
-            campaign_house_id.is_some(),
+            native_house_id.is_some(),
         );
-        if let Some((_, computer_difficulty)) = campaign_difficulties {
+        if let Some((native_house_id, (_, computer_difficulty))) =
+            native_house_id.zip(house_difficulties)
+        {
             let draw = draw_house_constructor_timer(&mut sim.scenario_rng);
             house_state.bind_native_construction(
-                campaign_house_id.expect("admitted campaign House ID"),
+                native_house_id,
                 computer_difficulty,
                 frame,
                 draw,
@@ -3685,7 +3944,9 @@ pub fn initialize_map_roster_houses(
         }
         // HouseReadINI500A62..500A7B overwrites the constructor's country ID
         // with the bounded roster entry before any object reader runs.
-        house_state.initialize_scenario_name(&house.name);
+        if index < map_house_count {
+            house_state.initialize_scenario_name(&house.name);
+        }
         // Read_Scenario_INI 500C5D..500D05: a non-empty `UIName=` names the
         // House through the string table, else the type's UIName stays.
         // Residual: native copies with wcsncpy(.., 0x20), whose zero padding
@@ -3706,7 +3967,7 @@ pub fn initialize_map_roster_houses(
     // Original5009B0 constructs the whole House/Super array before its
     // second loop calls ReadScenarioINI500B40 and SetDifficulty4F6EC0.
     // Cross-House map reads must therefore see every constructor at once.
-    for (index, house) in house_roster.houses.iter().enumerate() {
+    for (index, house) in house_roster.houses.iter().take(map_house_count).enumerate() {
         let name_id = sim.houses.order()[index];
         let house_state = sim
             .houses
@@ -3720,11 +3981,18 @@ pub fn initialize_map_roster_houses(
                 crate::sim::factory_owners::parent_or_self_country(rules, country)
             }));
         }
-        house_state.assign_player_control(house.player_control == Some(true));
+        if !network {
+            house_state.assign_player_control(house.player_control == Some(true));
+        }
         if let Some(ini) = map_ini {
             house_state.initialize_scenario_parameters(
-                house.read_scenario_parameters(ini, mission_counter),
-                campaign_difficulties.map(|(player, _)| player),
+                house.read_scenario_parameters(ini, default_tech_level),
+                // ReadScenarioINI500B40 applies a mode-zero credit delta only
+                // to PlayerControl Houses. Here the admitted primaries carry
+                // that flag, while the map's PlayerControl is ignored online.
+                house_difficulties
+                    .filter(|_| campaign_difficulties.is_some() || authored_campaign)
+                    .map(|(player, _)| player),
                 Some(&rules.general),
             );
             house_state
@@ -3755,8 +4023,8 @@ pub fn initialize_map_roster_houses(
         // MaxIQLevels to literal one before storing it as both the authored
         // IQ (+0x1D0) and CurrentIQ (+0x24C) (0x00500DBA..0x00500DC0).
         house_state.install_scenario_iq(house.scenario_current_iq(rules.general.max_iq_levels));
-        if let Some((player, computer)) = campaign_difficulties {
-            let difficulty = if house_state.is_controlled_by_human(false) {
+        if let Some((player, computer)) = house_difficulties {
+            let difficulty = if house_state.is_controlled_by_human(network) {
                 player
             } else {
                 computer
@@ -3767,7 +4035,7 @@ pub fn initialize_map_roster_houses(
                 country_name.map_or_else(Default::default, |name| {
                     rules.country_difficulty_biases(name)
                 }),
-                false,
+                network && !authored_campaign,
                 index as i32,
                 frame,
             );
@@ -3786,6 +4054,8 @@ pub fn initialize_map_roster_houses(
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+    use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+    use crate::sim::game_options::GameOptions;
 
     // Each stock Country reaches its section, so its ParentCountry defaults to
     // its own ID as in retail; a sectionless Country keeps ctor-empty
@@ -3799,6 +4069,236 @@ mod tests {
         let mut ini = IniFile::from_str(CONTROLLED_STOCK_COUNTRIES);
         ini.merge(&IniFile::from_str(source));
         ini
+    }
+
+    fn authored_network_bootstrap(
+        house_ini: &str,
+        player_house: &str,
+        players: &[AuthoredNetworkPlayer<'_>],
+        game_options: &GameOptions,
+        ai_difficulty: HouseDifficulty,
+    ) -> Result<(Simulation, Option<StockOfflinePrefixProjection>), FreshScenarioPrefixError> {
+        let map = MapFile::from_bytes(
+            format!("[Map]\nSize=0,0,4,4\n[IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n{house_ini}")
+                .as_bytes(),
+        )
+        .unwrap();
+        let mut rules_owner = NativeRulesProcessOwner::from_cold_start_sources(
+            IniFile::from_str(CONTROLLED_STOCK_COUNTRIES),
+            None,
+            IniFile::empty(),
+            std::sync::Arc::default(),
+            Default::default(),
+        )
+        .unwrap();
+        let (rules, _, _, native_rules_receipt) = rules_owner
+            .load_scenario(NativeScenarioRulesPrefix::NonCampaign(None), &map.ini)
+            .unwrap()
+            .into_parts();
+        let house_roster =
+            crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+        let descriptor = ScenarioDescriptor {
+            seed: 31,
+            game_mode_nonzero: true,
+            ..Default::default()
+        };
+        ScenarioBootstrapRng::new(descriptor.seed).into_fresh_staged_simulation(
+            &descriptor,
+            FreshScenarioPrefix::AuthoredNetwork {
+                native_rules_receipt,
+                rules: &rules,
+                map_data: &map,
+                house_roster: &house_roster,
+                player_house,
+                players,
+                observers: &[],
+                game_options,
+                ai_difficulty,
+                alliance_admission: Default::default(),
+                auto_enemy_selection: false,
+                native_id_start: crate::sim::native_identity::network_native_id_prefix(
+                    crate::sim::scenario_session::ScenarioGameMode::Lan,
+                    players.len(),
+                ),
+            },
+        )
+    }
+
+    #[test]
+    fn authored_network_bootstrap_binds_selected_house_and_frozen_options() {
+        let options = GameOptions {
+            short_game: false,
+            crates: false,
+            ally_change_allowed: false,
+            tech_level: 7,
+            ..Default::default()
+        };
+        let (sim, projection) = authored_network_bootstrap(
+            "[Basic]\nPlayer=Alpha\n[General]\nCampaignMoneyDeltaHard=-200\n\
+             [Houses]\n0=Alpha\n1=Bravo\n2=Charlie\n\
+             [Alpha]\nCountry=Americans\nPlayerControl=yes\nTechLevel=4\nCredits=9\nAllies=Bravo\n\
+             [Bravo]\nCountry=Russians\nPlayerControl=no\nCredits=3\n\
+             [Charlie]\nCountry=British\nCredits=7\n",
+            "Bravo",
+            &[
+                AuthoredNetworkPlayer {
+                    house: "Bravo",
+                    shared_control_houses: &[],
+                },
+                AuthoredNetworkPlayer {
+                    house: "Charlie",
+                    shared_control_houses: &[],
+                },
+            ],
+            &options,
+            HouseDifficulty::Hard,
+        )
+        .unwrap();
+        let alpha = sim.interner.get("Alpha").unwrap();
+        let bravo = sim.interner.get("Bravo").unwrap();
+        let charlie = sim.interner.get("Charlie").unwrap();
+        assert_eq!(sim.houses.order(), &[alpha, bravo, charlie]);
+        assert_eq!(sim.session.current_house(), Some(bravo));
+        assert_eq!(sim.session.scenario_side(), sim.houses[&bravo].side_index());
+        assert!(sim.houses[&bravo].is_human() && sim.houses[&bravo].player_control());
+        assert!(!sim.houses[&alpha].is_human() && !sim.houses[&alpha].player_control());
+        assert_eq!(sim.houses[&alpha].tech_level(), 4);
+        assert_eq!(sim.houses[&alpha].difficulty(), HouseDifficulty::Hard);
+        assert_eq!(sim.session.scenario_trigger_difficulty(), 2);
+        assert_eq!(sim.houses[&bravo].tech_level(), 7);
+        assert_eq!(sim.houses[&alpha].economy().credits(), 900);
+        for (owner, base_credits, adjusted_credits) in [(bravo, 300, 100), (charlie, 700, 500)] {
+            assert_eq!(sim.houses[&owner].difficulty(), HouseDifficulty::Easy);
+            assert_eq!(
+                sim.houses[&owner].economy().scenario_credits(),
+                base_credits
+            );
+            assert_eq!(sim.houses[&owner].economy().credits(), adjusted_credits);
+        }
+        assert!(sim.house_alliances.is_allied(&sim.interner, alpha, bravo));
+        assert!(!sim.house_alliances.is_allied(&sim.interner, bravo, alpha));
+        assert_eq!(sim.session.seed(), 31);
+        assert!(sim.session.game_mode_nonzero());
+        assert_eq!(sim.session.campaign_mission_counter(), None);
+        assert!(projection.is_none());
+        let installed_options = sim.session.game_options();
+        assert!(!installed_options.short_game);
+        assert!(!installed_options.crates);
+        assert!(!installed_options.ally_change_allowed);
+    }
+
+    #[test]
+    fn authored_network_installs_shared_roster_from_both_local_views() {
+        let ini = "[Houses]\n0=Alpha\n1=Bravo\n2=Charlie\n\
+                   [Alpha]\nCountry=Americans\n[Bravo]\nCountry=Russians\n[Charlie]\nCountry=British\n";
+        let grants = ["Charlie".to_owned()];
+        let players = [
+            AuthoredNetworkPlayer {
+                house: "Alpha",
+                shared_control_houses: &grants,
+            },
+            AuthoredNetworkPlayer {
+                house: "Bravo",
+                shared_control_houses: &[],
+            },
+        ];
+        let options = GameOptions::default();
+        let (host, _) =
+            authored_network_bootstrap(ini, "Alpha", &players, &options, HouseDifficulty::Normal)
+                .unwrap();
+        let (guest, _) =
+            authored_network_bootstrap(ini, "Bravo", &players, &options, HouseDifficulty::Normal)
+                .unwrap();
+        let agreed_native_start = crate::sim::native_identity::network_native_id_prefix(
+            crate::sim::scenario_session::ScenarioGameMode::Lan,
+            players.len(),
+        )
+        .unwrap();
+        for (sim, local) in [(&host, "Alpha"), (&guest, "Bravo")] {
+            let alpha = sim.interner.get("Alpha").unwrap();
+            let bravo = sim.interner.get("Bravo").unwrap();
+            let charlie = sim.interner.get("Charlie").unwrap();
+            assert_eq!(sim.session.current_house(), sim.interner.get(local));
+            assert_eq!(
+                sim.houses[&alpha].native_unique_id(),
+                Some(agreed_native_start.wrapping_add(1) as i32),
+                "the agreed ID cursor starts before the first authored House",
+            );
+            assert!(sim.houses[&alpha].is_human() && sim.houses[&bravo].is_human());
+            assert!(!sim.houses[&charlie].is_human());
+            assert_eq!(sim.session.house_control_grants(), &[(0, 2)]);
+        }
+        assert_eq!(host.state_hash(), guest.state_hash());
+    }
+
+    #[test]
+    fn authored_network_bootstrap_rejects_missing_and_duplicate_houses() {
+        let options = GameOptions::default();
+        let missing = authored_network_bootstrap(
+            "[Houses]\n0=Alpha\n[Alpha]\nCountry=Americans\n",
+            "alpha",
+            &[],
+            &options,
+            HouseDifficulty::Normal,
+        );
+        assert!(matches!(
+            missing,
+            Err(FreshScenarioPrefixError::MissingAuthoredPlayerHouse(name)) if name == "alpha"
+        ));
+        let duplicate = authored_network_bootstrap(
+            "[Houses]\n0=Alpha\n1=alpha\n[Alpha]\nCountry=Americans\n",
+            "Alpha",
+            &[AuthoredNetworkPlayer {
+                house: "Alpha",
+                shared_control_houses: &[],
+            }],
+            &options,
+            HouseDifficulty::Normal,
+        );
+        assert!(matches!(
+            duplicate,
+            Err(FreshScenarioPrefixError::DuplicateAuthoredHouse(name)) if name == "alpha"
+        ));
+        let missing_target = authored_network_bootstrap(
+            "[Houses]\n0=Alpha\n[Alpha]\nCountry=Americans\n",
+            "Alpha",
+            &[AuthoredNetworkPlayer {
+                house: "Alpha",
+                shared_control_houses: &["Missing".into()],
+            }],
+            &options,
+            HouseDifficulty::Normal,
+        );
+        assert!(matches!(
+            missing_target,
+            Err(FreshScenarioPrefixError::InvalidAuthoredMoveTarget(name)) if name == "Missing"
+        ));
+    }
+
+    #[test]
+    fn authored_network_control_grants_hash_shared_house_indices_only() {
+        let (mut sim, _) = authored_network_bootstrap(
+            "[Houses]\n0=Alpha\n1=Bravo\n2=Charlie\n\
+             [Alpha]\nCountry=Americans\n[Bravo]\nCountry=Russians\n[Charlie]\nCountry=British\n",
+            "Bravo",
+            &[AuthoredNetworkPlayer {
+                house: "Bravo",
+                shared_control_houses: &["Charlie".into(), "Alpha".into()],
+            }],
+            &GameOptions::default(),
+            HouseDifficulty::Normal,
+        )
+        .unwrap();
+        assert_eq!(sim.session.house_control_grants(), &[(1, 0), (1, 2)]);
+        let accepted = sim.state_hash();
+        let alpha = sim.interner.get("Alpha").unwrap();
+        sim.session.install_current_house(Some(alpha));
+        sim.session
+            .install_house_control_grants(vec![(1, 2), (1, 0), (1, 2)]);
+        assert_eq!(sim.state_hash(), accepted);
+
+        sim.session.install_house_control_grants(vec![(1, 2)]);
+        assert_ne!(sim.state_hash(), accepted);
     }
 
     fn starting_country_native_fixture(passive: bool) -> (serde_json::Value, RuleSet) {
@@ -4698,12 +5198,13 @@ mod tests {
         );
     }
 
+    const NETWORK_ZERO_SIGHT_INFANTRY: &str = "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSight=0\nOwner=Americans\nSpeed=4\nMovementZone=Normal\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n";
+
     #[test]
     fn network_zero_sight_discovery_uses_each_human_admission_and_retains_shared_hash() {
         use crate::sim::world::UninitContext;
-        let extra = "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSight=0\nOwner=Americans\nSpeed=4\nMovementZone=Normal\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n";
-        let (mut left, _) = network_vision_perspective(0, 2, None, extra);
-        let (mut right, _) = network_vision_perspective(1, 2, None, extra);
+        let (mut left, _) = network_vision_perspective(0, 2, None, NETWORK_ZERO_SIGHT_INFANTRY);
+        let (mut right, _) = network_vision_perspective(1, 2, None, NETWORK_ZERO_SIGHT_INFANTRY);
         let host = left.simulation.interner.get("Host").unwrap();
         let guest = left.simulation.interner.get("Guest").unwrap();
         let mut ids = Vec::new();
@@ -4739,6 +5240,58 @@ mod tests {
         );
         assert!(left.simulation.houses[&guest].discovered_by_current_house());
         assert!(right.simulation.houses[&guest].discovered_by_current_house());
+    }
+
+    #[test]
+    fn authored_network_house_discovery_requires_a_playing_view_to_open_the_cell() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::sim::world::UninitContext;
+        let (mut host_view, _) =
+            network_vision_perspective(0, 3, Some(2), NETWORK_ZERO_SIGHT_INFANTRY);
+        let (mut guest_view, _) =
+            network_vision_perspective(1, 3, Some(2), NETWORK_ZERO_SIGHT_INFANTRY);
+        for runtime in [&mut host_view, &mut guest_view] {
+            let sim = &mut runtime.simulation;
+            let host = sim.interner.get("Host").unwrap();
+            let guest = sim.interner.get("Guest").unwrap();
+            let observer = sim.session.observer_houses()[0];
+            let primaries = [host, guest].map(|owner| {
+                let index = sim.houses.order().iter().position(|&house| house == owner);
+                u16::try_from(index.unwrap()).unwrap()
+            });
+            sim.session.set_game_mode(ScenarioGameMode::Lan);
+            sim.session.install_authored_campaign(primaries.to_vec());
+            // The skirmish fixture constructed the starting tanks before
+            // authored rules were installed. Give discovery a fresh target.
+            let hidden = sim.interner.intern("Hidden");
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    hidden, 0, None, false, 0, 10,
+                ));
+            let cell = (16, 16);
+            let rules = &runtime.resources.rules;
+            let target = sim
+                .spawn_object("E1", "Hidden", cell.0, cell.1, 0, rules)
+                .unwrap();
+            let context = UninitContext::with_rules(rules);
+            assert!(!sim.techno_discovered_by_viewer(target, guest));
+            assert!(!sim.techno_discovered_by_viewer(target, observer));
+
+            sim.fog.reveal_cells_for_owner(observer, [cell]);
+            sim.discover_by_player(target, Some(cell), context);
+            assert!(sim.techno_discovered_by_viewer(target, observer));
+            assert!(!sim.techno_discovered_by_viewer(target, guest));
+            assert!(!sim.houses[&hidden].discovered_by_current_house());
+
+            sim.fog.reveal_cells_for_owner(guest, [cell]);
+            sim.discover_by_player(target, Some(cell), context);
+            assert!(sim.techno_discovered_by_viewer(target, guest));
+            assert!(sim.houses[&hidden].discovered_by_current_house());
+        }
+        assert_eq!(
+            host_view.simulation.state_hash(),
+            guest_view.simulation.state_hash()
+        );
     }
 
     #[test]

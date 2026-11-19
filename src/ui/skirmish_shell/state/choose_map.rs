@@ -8,6 +8,7 @@
 
 use crate::util::time::{Duration, Instant};
 
+use crate::map::scenario_menu::{LocalScenarioKey, LocalScenarioMenuEntry};
 use crate::map::skirmish_scenarios::{
     SkirmishScenarioRecord, SkirmishScenarioSource, filter_records_for_mode, is_valid_map,
     upsert_random_map_sentinel,
@@ -48,6 +49,12 @@ impl SkirmishModeSelection {
 pub struct ChooseMapSelection {
     pub mode: SkirmishModeSelection,
     pub record_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ChooseMapChoice {
+    Standard(ChooseMapSelection),
+    Local(LocalScenarioKey),
 }
 
 /// What a press on the chooser's lists did.
@@ -174,6 +181,11 @@ pub fn favorite_key(record: &SkirmishScenarioRecord) -> Option<String> {
     }
 }
 
+fn local_scenario_favorite_key(key: &LocalScenarioKey) -> String {
+    let path = crate::util::sha256::sha256_hex(key.path.as_bytes());
+    format!("local:{}:{path}", key.source)
+}
+
 /// Longest search text the chooser takes.
 pub const SEARCH_MAX_CHARS: usize = 32;
 
@@ -198,6 +210,7 @@ pub struct ChooseMapModalState {
     /// Favorites and Online Maps only: the game type each row's map is
     /// played with, the first listed one that admits it.
     row_modes: Vec<SkirmishModeSelection>,
+    local_scenarios: Option<LocalScenarioList>,
     /// VERA: typed text; every list shows only maps whose name holds it.
     pub search: String,
     /// VERA: the maps the player starred, by [`favorite_key`]: a copy of
@@ -240,6 +253,21 @@ pub struct ChooseMapModalState {
 enum ChooseMapList {
     Mode,
     Map,
+}
+
+#[derive(Debug, Clone)]
+struct LocalScenarioList {
+    mode: SkirmishModeSelection,
+    label: &'static str,
+    caption: String,
+    rows: Vec<LocalScenarioRow>,
+    collapsed: std::collections::BTreeSet<String>,
+}
+
+#[derive(Debug, Clone)]
+enum LocalScenarioRow {
+    Group { key: String, title: String },
+    Stage(Box<LocalScenarioMenuEntry>),
 }
 
 /// Native chooser admission depends on its caller: offline requires mode
@@ -332,6 +360,7 @@ impl ChooseMapModalState {
             official_only: context.official_only(),
             filtered_record_indices: Vec::new(),
             row_modes: Vec::new(),
+            local_scenarios: None,
             search: String::new(),
             favorites: Default::default(),
             row_labels: None,
@@ -365,6 +394,135 @@ impl ChooseMapModalState {
     /// The listed game types, top row first.
     pub fn mode_rows(&self) -> &[SkirmishModeSelection] {
         &self.mode_rows
+    }
+
+    pub(crate) fn add_local_scenarios(
+        &mut self,
+        label: &'static str,
+        caption: String,
+        maps: Vec<LocalScenarioMenuEntry>,
+        current: Option<&LocalScenarioKey>,
+        layout: &ChooseMapModalLayout,
+    ) {
+        if self.local_scenarios.is_some() || (maps.is_empty() && current.is_none()) {
+            return;
+        }
+        // A synthetic chooser row only needs a free id for this dialog.
+        let Some(row_id) = (i32::MIN..0)
+            .find(|&id| !is_own_row(id) && self.mode_rows.iter().all(|mode| mode.id != id))
+        else {
+            return;
+        };
+        let mode = SkirmishModeSelection::from(row_id);
+        let mut rows = Vec::new();
+        let mut group = String::new();
+        for map in maps {
+            if group != map.group {
+                group.clone_from(&map.group);
+                rows.push(LocalScenarioRow::Group {
+                    key: group.clone(),
+                    title: map.group_title.clone(),
+                });
+            }
+            rows.push(LocalScenarioRow::Stage(Box::new(map)));
+        }
+        self.local_scenarios = Some(LocalScenarioList {
+            mode,
+            label,
+            caption,
+            rows,
+            collapsed: Default::default(),
+        });
+        let row = self
+            .mode_rows
+            .iter()
+            .position(|row| row.id == FAVORITES_ROW)
+            .unwrap_or(self.mode_rows.len());
+        self.mode_rows.insert(row, mode);
+        if current.is_some() {
+            self.selected_mode = mode;
+            self.build_local_scenario_rows();
+            self.highlighted_filtered_index = current
+                .and_then(|key| self.local_scenario_row(key))
+                .or_else(|| self.first_available_row());
+            self.scroll_map_selection_to_top(layout);
+        }
+    }
+
+    pub(crate) fn local_scenario_caption(&self, mode: SkirmishModeSelection) -> Option<&str> {
+        self.local_scenarios
+            .as_ref()
+            .filter(|list| list.mode == mode)
+            .map(|list| list.caption.as_str())
+    }
+
+    pub(crate) fn local_scenario_label(&self, mode: SkirmishModeSelection) -> Option<&str> {
+        self.local_scenarios
+            .as_ref()
+            .filter(|list| list.mode == mode)
+            .map(|list| list.label)
+    }
+
+    pub(crate) fn local_scenario_list_selected(&self) -> bool {
+        self.local_scenario_label(self.selected_mode).is_some()
+    }
+
+    pub(crate) fn accept_local_scenario(&self) -> Option<&LocalScenarioKey> {
+        self.selected_local_stage()
+            .filter(|map| map.unavailable.is_none())
+            .map(|map| &map.selection.key)
+    }
+
+    fn local_row(&self, index: usize) -> Option<&LocalScenarioRow> {
+        let list = self.local_scenarios.as_ref().filter(|list| {
+            list.mode == self.selected_mode || self.row_modes.get(index) == Some(&list.mode)
+        })?;
+        list.rows.get(*self.filtered_record_indices.get(index)?)
+    }
+
+    pub(crate) fn selected_local_stage(&self) -> Option<&LocalScenarioMenuEntry> {
+        if let LocalScenarioRow::Stage(map) = self.local_row(self.highlighted_filtered_index?)? {
+            Some(map)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn local_scenario_row(&self, key: &LocalScenarioKey) -> Option<usize> {
+        (0..self.filtered_record_indices.len()).find(|&row| {
+            matches!(self.local_row(row), Some(LocalScenarioRow::Stage(map)) if &map.selection.key == key)
+        })
+    }
+
+    pub(crate) fn local_scenario_disabled_row(&self, row: usize) -> bool {
+        matches!(self.local_row(row), Some(LocalScenarioRow::Stage(map)) if map.unavailable.is_some())
+    }
+
+    fn local_favorite(&self) -> Option<(String, bool)> {
+        let map = self.selected_local_stage()?;
+        let key = local_scenario_favorite_key(&map.selection.key);
+        let starred = self.favorites.contains(&key);
+        (starred || map.unavailable.is_none()).then_some((key, starred))
+    }
+
+    pub(crate) fn local_favorite_label(&self, row: usize) -> Option<String> {
+        if self.favorites_selected()
+            && let Some(LocalScenarioRow::Stage(map)) = self.local_row(row)
+        {
+            Some(format!("{} · {}", map.selection.title, map.players))
+        } else {
+            None
+        }
+    }
+
+    fn first_available_row(&self) -> Option<usize> {
+        let rows = 0..self.filtered_record_indices.len();
+        if !self.local_scenario_list_selected() {
+            return rows.into_iter().next();
+        }
+        rows.clone().find(|&row| {
+            matches!(self.local_row(row), Some(LocalScenarioRow::Stage(map)) if map.unavailable.is_none())
+        }).or_else(|| rows.into_iter().find(|&row| matches!(self.local_row(row), Some(LocalScenarioRow::Stage(_)))))
     }
 
     /// VERA: list the Favorites row after the game types, with the
@@ -443,7 +601,8 @@ impl ChooseMapModalState {
 
     pub fn selected_record_index(&self) -> Option<usize> {
         self.highlighted_filtered_index
-            .and_then(|idx| self.filtered_record_indices.get(idx).copied())
+            .filter(|&row| self.local_row(row).is_none())
+            .and_then(|row| self.filtered_record_indices.get(row).copied())
     }
 
     /// The row of the selected game type in the game-type list.
@@ -454,12 +613,69 @@ impl ChooseMapModalState {
     }
 
     fn build_map_list(&mut self, modes: &[SkirmishGameMode], records: &[SkirmishScenarioRecord]) {
+        if self.local_scenario_list_selected() {
+            self.build_local_scenario_rows();
+            return;
+        }
         self.build_map_rows(modes, records);
         self.starrable_rows = self
             .filtered_record_indices
             .iter()
-            .map(|index| records.get(*index).and_then(favorite_key).is_some())
+            .enumerate()
+            .map(|(row, index)| {
+                self.local_row(row).is_some()
+                    || records.get(*index).and_then(favorite_key).is_some()
+            })
             .collect();
+    }
+
+    fn build_local_scenario_rows(&mut self) {
+        let Some(list) = &self.local_scenarios else {
+            return;
+        };
+        let search = self.search.to_lowercase();
+        let matches = |map: &LocalScenarioMenuEntry| Self::matches_local_search(&search, map);
+        let groups: std::collections::BTreeSet<_> = list
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                LocalScenarioRow::Stage(map) if matches(map) => Some(map.group.as_str()),
+                _ => None,
+            })
+            .collect();
+        let (indices, labels) = list
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, row)| match row {
+                LocalScenarioRow::Group { key, title } if groups.contains(key.as_str()) => {
+                    let collapsed = search.is_empty() && list.collapsed.contains(key);
+                    Some((
+                        index,
+                        format!("{} {title}", if collapsed { '+' } else { '–' }),
+                    ))
+                }
+                LocalScenarioRow::Stage(map)
+                    if matches(map)
+                        && (!search.is_empty() || !list.collapsed.contains(&map.group)) =>
+                {
+                    let starred = self
+                        .favorites
+                        .contains(&local_scenario_favorite_key(&map.selection.key));
+                    Some((
+                        index,
+                        format!("  {}{}", if starred { "* " } else { "" }, map.label),
+                    ))
+                }
+                _ => None,
+            })
+            .unzip();
+        self.filtered_record_indices = indices;
+        self.row_labels = Some(labels);
+        self.row_modes.clear();
+        self.starrable_rows.clear();
+        self.random_maps_allowed = false;
+        self.map_scroll.cancel();
     }
 
     fn build_map_rows(&mut self, modes: &[SkirmishGameMode], records: &[SkirmishScenarioRecord]) {
@@ -499,6 +715,18 @@ impl ChooseMapModalState {
                 .collect();
             if !favorites {
                 rows.sort_by_key(|(index, _)| !self.is_favorite(&records[*index]));
+            } else if let Some(list) = &self.local_scenarios {
+                let search = self.search.to_lowercase();
+                rows.extend(list.rows.iter().enumerate().filter_map(|(index, row)| {
+                    let LocalScenarioRow::Stage(map) = row else {
+                        return None;
+                    };
+                    (Self::matches_local_search(&search, map)
+                        && self
+                            .favorites
+                            .contains(&local_scenario_favorite_key(&map.selection.key)))
+                    .then_some((index, list.mode))
+                }));
             }
             (self.filtered_record_indices, self.row_modes) = rows.into_iter().unzip();
             self.random_maps_allowed = false;
@@ -515,6 +743,12 @@ impl ChooseMapModalState {
             .collect();
         self.random_maps_allowed = mode.is_some_and(|mode| mode.random_maps_allowed);
         self.map_scroll.cancel();
+    }
+
+    fn matches_local_search(search: &str, map: &LocalScenarioMenuEntry) -> bool {
+        search.is_empty()
+            || map.group_title.to_lowercase().contains(search)
+            || map.stage_title.to_lowercase().contains(search)
     }
 
     /// `LB_SETTOPINDEX(selection)`, clamped by the list.
@@ -534,7 +768,10 @@ impl ChooseMapModalState {
         layout: &ChooseMapModalLayout,
     ) -> bool {
         let mode = mode.into();
-        if !is_own_row(mode.id) && mode.resolve(modes).is_none() {
+        if self.local_scenario_label(mode).is_none()
+            && !is_own_row(mode.id)
+            && mode.resolve(modes).is_none()
+        {
             return false;
         }
         self.reselect_name = self
@@ -550,13 +787,20 @@ impl ChooseMapModalState {
 
     fn reselect(&mut self, records: &[SkirmishScenarioRecord], layout: &ChooseMapModalLayout) {
         let name = &self.reselect_name;
-        let matched = self.filtered_record_indices.iter().rposition(|record| {
-            records
-                .get(*record)
-                .is_some_and(|record| &record.display_name == name)
-        });
-        self.highlighted_filtered_index =
-            matched.or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
+        let matched = if self.local_scenario_list_selected() {
+            None
+        } else {
+            self.filtered_record_indices
+                .iter()
+                .enumerate()
+                .rposition(|(row, record)| {
+                    self.local_row(row).is_none()
+                        && records
+                            .get(*record)
+                            .is_some_and(|record| &record.display_name == name)
+                })
+        };
+        self.highlighted_filtered_index = matched.or_else(|| self.first_available_row());
         self.scroll_map_selection_to_top(layout);
     }
 
@@ -570,7 +814,7 @@ impl ChooseMapModalState {
         layout: &ChooseMapModalLayout,
     ) {
         self.search = text.chars().take(SEARCH_MAX_CHARS).collect();
-        if self.row_labels.is_none() {
+        if self.local_scenario_list_selected() || self.row_labels.is_none() {
             self.rebuild_keeping_highlight(modes, records, layout);
         }
     }
@@ -597,9 +841,12 @@ impl ChooseMapModalState {
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) -> Option<(String, bool)> {
-        let key = self
-            .favorite_button(records)
-            .and_then(|_| favorite_key(records.get(self.selected_record_index()?)?))?;
+        let key = if self.selected_local_stage().is_some() {
+            self.local_favorite()?.0
+        } else {
+            self.favorite_button(records)
+                .and_then(|_| favorite_key(records.get(self.selected_record_index()?)?))?
+        };
         let starred = !self.favorites.remove(&key);
         if starred {
             self.favorites.insert(key.clone());
@@ -612,6 +859,9 @@ impl ChooseMapModalState {
     /// be starred is highlighted. A list the mode fills itself
     /// (Cooperative) and a random map have none.
     pub fn favorite_button(&self, records: &[SkirmishScenarioRecord]) -> Option<bool> {
+        if self.selected_local_stage().is_some() {
+            return self.local_favorite().map(|(_, starred)| starred);
+        }
         if self.row_labels.is_some() {
             return None;
         }
@@ -625,15 +875,23 @@ impl ChooseMapModalState {
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) {
+        let local = self
+            .selected_local_stage()
+            .map(|map| map.selection.key.clone());
         let highlighted = self.selected_record_index();
         self.build_map_list(modes, records);
-        self.highlighted_filtered_index = highlighted
-            .and_then(|record| {
-                self.filtered_record_indices
-                    .iter()
-                    .position(|row| *row == record)
+        self.highlighted_filtered_index = local
+            .as_ref()
+            .and_then(|key| self.local_scenario_row(key))
+            .or_else(|| {
+                highlighted.and_then(|record| {
+                    self.filtered_record_indices
+                        .iter()
+                        .enumerate()
+                        .position(|(row, index)| *index == record && self.local_row(row).is_none())
+                })
             })
-            .or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
+            .or_else(|| self.first_available_row());
         // The highlighted map stays in view.
         let geometry = self.map_geometry(layout);
         let mut top = self.map_top_index;
@@ -760,8 +1018,14 @@ impl ChooseMapModalState {
             let mode = self.mode_rows[row];
             let changes_catalog_entry = self.selected_mode != mode
                 && (self.selected_mode.catalog_index.is_some() || mode.catalog_index.is_some());
-            self.selected_mode = mode;
-            if *last_mode_row == Some(row) && !is_own_row(mode.id) && !changes_catalog_entry {
+            let changes_list =
+                self.local_scenario_list_selected() != self.local_scenario_label(mode).is_some();
+            if *last_mode_row == Some(row)
+                && !is_own_row(mode.id)
+                && !changes_catalog_entry
+                && !changes_list
+            {
+                self.selected_mode = mode;
                 return ChooseMapListPress::RowClicked { rebuilt: false };
             }
             *last_mode_row = Some(row);
@@ -773,6 +1037,18 @@ impl ChooseMapModalState {
             let Some(row) = map_geometry.row_at(count, self.map_top_index, x, y) else {
                 return ChooseMapListPress::Consumed;
             };
+            if let Some(LocalScenarioRow::Group { key, .. }) = self.local_row(row) {
+                let key = key.clone();
+                if self.search.is_empty()
+                    && let Some(list) = self.local_scenarios.as_mut()
+                {
+                    if !list.collapsed.remove(&key) {
+                        list.collapsed.insert(key);
+                    }
+                    self.rebuild_keeping_highlight(modes, records, layout);
+                }
+                return ChooseMapListPress::RowClicked { rebuilt: false };
+            }
             self.highlighted_filtered_index = Some(row);
             return ChooseMapListPress::RowClicked { rebuilt: false };
         }
@@ -847,6 +1123,14 @@ impl ChooseMapModalState {
     pub fn button_enabled(&self, button: ChooseMapModalButton) -> bool {
         match button {
             ChooseMapModalButton::CreateRandomMap0x583 => self.random_map_button_enabled(),
+            ChooseMapModalButton::UseMap0x6c5
+                if self.local_scenario_list_selected() || self.selected_local_stage().is_some() =>
+            {
+                self.accept_local_scenario().is_some()
+            }
+            ChooseMapModalButton::Favorite if self.selected_local_stage().is_some() => {
+                self.local_favorite().is_some()
+            }
             ChooseMapModalButton::Favorite => {
                 self.row_labels.is_none()
                     && self

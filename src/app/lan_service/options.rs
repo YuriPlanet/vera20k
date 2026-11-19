@@ -7,14 +7,14 @@
 
 use std::net::SocketAddrV4;
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Context, Result, anyhow, ensure};
 
 use crate::app::AppState;
 use crate::app::match_runtime::session::{
     MatchSession, NetworkAiOptions, NetworkMapMetadata, NetworkRosterEntry, NetworkVacancy,
 };
 use crate::app::shell_network_setup::agreement::MultiplayerAgreement;
-use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
+use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent, local_scenarios};
 use crate::net::lan_messages::game_name_hash;
 use crate::net::lan_messages::setup;
 use crate::skirmish_launch::{
@@ -36,26 +36,29 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
     {
         return Ok(false);
     }
-    let agreement = crate::app::shell_network_setup::agreement::local(state)?;
-    let random_map = crate::app::shell_network_setup::maps::host_generated_manifest(state)?;
+    ensure!(
+        state.match_state.session.host(),
+        "only the host publishes full LAN options"
+    );
+    let (body, local_source) =
+        if let Some((scenario, source)) = local_scenarios::publish_options(state)? {
+            (
+                OptionsBody::Authored {
+                    agreement: crate::app::shell_network_setup::agreement::local(state)?,
+                    scenario,
+                },
+                Some(source),
+            )
+        } else {
+            (OptionsBody::Stock(stock_options(state)?), None)
+        };
+    let agreement = body.agreement().clone();
     let session = &state.match_state.session;
-    ensure!(session.host(), "only the host publishes full LAN options");
-    let room = projected_room(
-        session,
-        state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .game_speed,
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .cooperative_difficulty(),
-    )?;
     let service = state.match_state.lan_service.as_ref().expect("LAN visit");
-    let admissions = session
+    let launch = session
         .network_setup()
-        .expect("projected setup")
+        .ok_or_else(|| anyhow!("no admitted setup"))?;
+    let admissions = launch
         .humans
         .iter()
         .enumerate()
@@ -68,42 +71,128 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
             })
         })
         .collect();
-    let payload = serde_json::to_vec(&ExtendedOptions {
-        agreement: agreement.clone(),
-        random_map: random_map.clone(),
-        admissions,
-        room,
-    })?;
+    let snapshot = ExtendedOptions { body, admissions };
+    let payload = serde_json::to_vec(&snapshot)?;
     let admitted = queue_payload(
         state,
         crate::net::lan_messages::extended_setup::SetupKind::Options,
         payload,
     )?;
     if admitted {
-        crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+        super::invalidate_setup_options(state)?;
         let service = state.match_state.lan_service.as_mut().expect("visit");
-        service.deferred_setup.retain(|request| {
-            !matches!(
-                request,
-                crate::app::shell_network_setup::NetworkSetupRequest::Ready(_)
-                    | crate::app::shell_network_setup::NetworkSetupRequest::MapStatus(_)
-            )
-        });
         service.setup_agreement = Some(agreement);
         let scope = service.setup_scope().expect("admitted options scope");
-        super::maps::received_options(state, scope, random_map)?;
+        if matches!(&snapshot.body, OptionsBody::Authored { .. }) {
+            service.setup_options = Some(ScopedOptions {
+                scope,
+                body: snapshot.body.clone(),
+            });
+        }
+        match snapshot.body {
+            OptionsBody::Stock(stock) => {
+                super::maps::received_options(state, scope, stock.random_map)?
+            }
+            OptionsBody::Authored { scenario, .. } => {
+                scenario.accept_map(
+                    state,
+                    local_source.ok_or_else(|| anyhow!("no verified scenario source"))?,
+                )?;
+            }
+        }
     }
     Ok(admitted)
 }
 
-/// The host's full options (`SetupKind::Options`), replaced whole on every
-/// revision. Only a game of the same build reads them: the join refuses any
-/// other (reason 8), and a guest checks `agreement` again before the rest.
+fn stock_options(state: &mut AppState) -> Result<StockOptions> {
+    let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+    let random_map = crate::app::shell_network_setup::maps::host_generated_manifest(state)?;
+    let session = &state.match_state.session;
+    let room = projected_room(
+        session,
+        state
+            .match_state
+            .match_presentation
+            .in_game_options
+            .game_speed,
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .cooperative_difficulty(),
+    )?;
+    Ok(StockOptions {
+        agreement,
+        random_map,
+        room,
+    })
+}
+
+/// Full options are replaced whole on every accepted revision. Guests check
+/// the agreement before decoding the room body.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ExtendedOptions {
+    #[serde(flatten)]
+    body: OptionsBody,
+    admissions: Vec<ExtendedAdmission>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+enum OptionsBody {
+    Authored {
+        agreement: MultiplayerAgreement,
+        scenario: local_scenarios::ScenarioOptions,
+    },
+    Stock(StockOptions),
+}
+
+impl OptionsBody {
+    fn agreement(&self) -> &MultiplayerAgreement {
+        match self {
+            Self::Authored { agreement, .. } => agreement,
+            Self::Stock(options) => &options.agreement,
+        }
+    }
+
+    fn check_local_scenario(
+        &self,
+        state: &AppState,
+    ) -> Result<Option<local_scenarios::LocalMapCheck>> {
+        match self {
+            Self::Authored { scenario, .. } => scenario.check_guest_map(state).map(Some),
+            Self::Stock(_) => Ok(None),
+        }
+    }
+
+    fn apply(
+        self,
+        state: &mut AppState,
+        map_scope: Option<crate::net::lan_messages::SessionScope>,
+        local_check: Option<local_scenarios::LocalMapCheck>,
+    ) -> Result<()> {
+        match self {
+            Self::Authored { scenario, .. } => scenario.apply(
+                state,
+                local_check.ok_or_else(|| anyhow!("no authored map check"))?,
+            ),
+            Self::Stock(options) => {
+                apply_host_room(state, &options.room)?;
+                if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+                    protocol.finish_return_verification(None);
+                }
+                if let Some(scope) = map_scope {
+                    super::maps::received_options(state, scope, options.random_map)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct StockOptions {
     agreement: MultiplayerAgreement,
     random_map: Option<crate::app::shell_network_setup::maps::GeneratedMapManifest>,
-    admissions: Vec<ExtendedAdmission>,
     room: HostRoom,
 }
 
@@ -147,21 +236,60 @@ struct ExtendedAdmission {
     identity: super::PeerAdmission,
 }
 
-/// The host's last admitted room, kept for a player whose Type3 comes after
-/// it; replaced on every revision and cleared with the visit.
-pub(super) struct ReceivedOptions {
+/// Effective options for this revision. The session retains the editable
+/// room and roster. The host's authored options are also checked at GO,
+/// and the guest reapplies the last body if a player's Type3 arrives later.
+pub(super) struct ScopedOptions {
     scope: crate::net::lan_messages::SessionScope,
-    room: HostRoom,
+    body: OptionsBody,
+}
+
+pub(crate) fn authored_start_options(
+    state: &AppState,
+    scope: crate::net::lan_messages::SessionScope,
+) -> Result<&local_scenarios::ScenarioOptions> {
+    let service = state
+        .match_state
+        .lan_service
+        .as_ref()
+        .context("no LAN setup")?;
+    let session = &state.match_state.session;
+    ensure!(
+        service.setup_scope() == Some(scope) && service.setup_agreement.is_some(),
+        "the accepted options revision changed"
+    );
+    ensure!(
+        service.setup_roster_complete(session) && service.setup_maps_verified(session),
+        "the current LAN roster or local map is not verified"
+    );
+    match service
+        .setup_options
+        .as_ref()
+        .filter(|options| options.scope == scope)
+    {
+        Some(ScopedOptions {
+            body: OptionsBody::Authored { scenario, .. },
+            ..
+        }) => Ok(scenario),
+        _ => anyhow::bail!("this revision has no accepted authored options"),
+    }
 }
 
 pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
-    let Some(room) = state.match_state.lan_service.as_ref().and_then(|service| {
-        let received = service.received_options.as_ref()?;
-        (service.setup_scope() == Some(received.scope)).then(|| received.room.clone())
+    if state.match_state.session.host() {
+        return Ok(());
+    }
+    let Some(options) = state.match_state.lan_service.as_ref().and_then(|service| {
+        let received = service.setup_options.as_ref()?;
+        (service.setup_scope() == Some(received.scope)).then(|| received.body.clone())
     }) else {
         return Ok(());
     };
-    apply_host_room(state, &room)
+    let check = match options.check_local_scenario(state) {
+        Ok(check) => check,
+        Err(error) => return refuse_options(state, error),
+    };
+    options.apply(state, None, check)
 }
 
 fn queue_payload(
@@ -300,61 +428,52 @@ pub(super) fn receive_extended(
     let bytes = &bytes[4..];
     match kind {
         crate::net::lan_messages::extended_setup::SetupKind::Options => {
-            // The build check reads the agreement alone, so a host of
-            // another build is named whatever the rest of its options hold.
+            if state
+                .match_state
+                .lan_service
+                .as_ref()
+                .and_then(super::LanService::setup_scope)
+                .is_some_and(|current| scope.revision < current.revision)
+            {
+                return Ok(());
+            }
+            // The build check reads the agreement before decoding either body.
             #[derive(serde::Deserialize)]
             struct Agreement {
                 agreement: MultiplayerAgreement,
             }
-            let Agreement { agreement } = serde_json::from_slice(bytes)?;
+            let Agreement { agreement } = match serde_json::from_slice(bytes) {
+                Ok(agreement) => agreement,
+                Err(error) => return refuse_options(state, error.into()),
+            };
             if agreement.version != crate::app::shell_network_setup::agreement::version() {
+                super::invalidate_setup_options(state)?;
                 super::reject_setup_compatibility(
                     state,
                     &crate::i18n::tr("VERA:LanHostBuildDiffers"),
                 );
                 anyhow::bail!("LAN gameplay build mismatch");
             }
-            let options: ExtendedOptions = serde_json::from_slice(bytes)?;
-            ensure!(
-                crate::map::source::valid_source_sha256(&options.agreement.rules_digest),
-                "invalid LAN rules agreement"
-            );
-            ensure!(
-                options.admissions.len() <= NETWORK_PLAYER_SLOT_COUNT,
-                "too many LAN admission proofs"
-            );
-            let mut endpoints = std::collections::BTreeSet::new();
-            let mut names = std::collections::BTreeSet::new();
-            for admission in &options.admissions {
-                ensure!(
-                    endpoints.insert(admission.endpoint)
-                        && names.insert(admission.name.to_ascii_lowercase())
-                        && !admission.name.eq_ignore_ascii_case(&host.0)
-                        && admission.identity.join_nonce != [0; 16]
-                        && admission.identity.admission_nonce != [0; 16],
-                    "invalid LAN admission proof projection"
-                );
-            }
+            let options: ExtendedOptions = match serde_json::from_slice(bytes) {
+                Ok(options) => options,
+                Err(error) => return refuse_options(state, error.into()),
+            };
+            let departed = match validate_options(&state.match_state.session, &options, &host) {
+                Ok(departed) => departed,
+                Err(error) => return refuse_options(state, error),
+            };
+            let check = match options.body.check_local_scenario(state) {
+                Ok(check) => check,
+                Err(error) => return refuse_options(state, error),
+            };
+            super::invalidate_setup_options(state)?;
             {
                 let service = state.match_state.lan_service.as_mut().expect("visit");
-                if service
-                    .setup_scope
-                    .is_some_and(|current| scope.revision < current.revision)
-                {
-                    return Ok(());
-                }
                 service.setup_scope = Some(scope);
-                service.deferred_setup.retain(|request| {
-                    !matches!(
-                        request,
-                        crate::app::shell_network_setup::NetworkSetupRequest::Ready(_)
-                            | crate::app::shell_network_setup::NetworkSetupRequest::MapStatus(_)
-                    )
-                });
-                service.setup_agreement = Some(options.agreement.clone());
-                service.received_options = Some(ReceivedOptions {
+                service.setup_agreement = Some(agreement);
+                service.setup_options = Some(ScopedOptions {
                     scope,
-                    room: options.room.clone(),
+                    body: options.body.clone(),
                 });
                 service.replace_peer_admissions(
                     options
@@ -380,31 +499,6 @@ pub(super) fn receive_extended(
             // A full host snapshot also retires an old endpoint through the
             // same ParticipantLeft owner as Type10. Otherwise a lost departure
             // could retain a peer while its stale Type3 is correctly refused.
-            let launch = state
-                .match_state
-                .session
-                .network_setup()
-                .ok_or_else(|| anyhow!("no setup"))?;
-            let departed = launch
-                .humans
-                .iter()
-                .enumerate()
-                .filter_map(|(source, human)| {
-                    if source == launch.local_player_index {
-                        return None;
-                    }
-                    let endpoint = state.match_state.session.network_endpoint(source)?;
-                    let retained = state
-                        .match_state
-                        .lan_service
-                        .as_ref()
-                        .expect("visit")
-                        .peer_admissions
-                        .get(&endpoint)
-                        .is_some_and(|record| record.name.eq_ignore_ascii_case(&human.name));
-                    (!retained).then_some(endpoint)
-                })
-                .collect::<Vec<_>>();
             for endpoint in departed {
                 if let Some(index) = state.match_state.session.network_endpoint_source(endpoint) {
                     crate::app::shell_network_setup::service_event(
@@ -413,9 +507,7 @@ pub(super) fn receive_extended(
                     )?;
                 }
             }
-            crate::app::shell_network_setup::invalidate_network_agreement(state)?;
-            apply_host_room(state, &options.room)?;
-            super::maps::received_options(state, scope, options.random_map)
+            options.body.apply(state, Some(scope), check)
         }
         crate::net::lan_messages::extended_setup::SetupKind::Roster => {
             let names: Vec<String> = serde_json::from_slice(bytes)?;
@@ -425,6 +517,77 @@ pub(super) fn receive_extended(
             Ok(())
         }
     }
+}
+
+fn validate_options(
+    session: &MatchSession,
+    options: &ExtendedOptions,
+    host: &(String, SocketAddrV4),
+) -> Result<Vec<SocketAddrV4>> {
+    ensure!(
+        crate::map::source::valid_source_sha256(&options.body.agreement().rules_digest),
+        "invalid LAN rules agreement"
+    );
+    ensure!(
+        options.admissions.len() <= NETWORK_PLAYER_SLOT_COUNT,
+        "too many LAN admission proofs"
+    );
+    let mut endpoints = std::collections::BTreeSet::from([host.1]);
+    let mut names = std::collections::BTreeSet::from([host.0.to_ascii_lowercase()]);
+    for admission in &options.admissions {
+        ensure!(
+            endpoints.insert(admission.endpoint)
+                && names.insert(admission.name.to_ascii_lowercase())
+                && admission.identity.join_nonce != [0; 16]
+                && admission.identity.admission_nonce != [0; 16],
+            "invalid LAN admission proof projection"
+        );
+    }
+    let launch = session.network_setup().ok_or_else(|| anyhow!("no setup"))?;
+    let departed = launch
+        .humans
+        .iter()
+        .enumerate()
+        .filter_map(|(source, human)| {
+            if source == launch.local_player_index {
+                return None;
+            }
+            let endpoint = session.network_endpoint(source)?;
+            let retained = if endpoint == host.1 {
+                host.0.eq_ignore_ascii_case(&human.name)
+            } else {
+                options.admissions.iter().any(|admission| {
+                    admission.endpoint == endpoint
+                        && admission.name.eq_ignore_ascii_case(&human.name)
+                })
+            };
+            (!retained).then_some(endpoint)
+        })
+        .collect::<Vec<_>>();
+    if let OptionsBody::Authored { scenario, .. } = &options.body {
+        scenario.validate()?;
+        scenario.validate_seat_names(names.iter().map(String::as_str))?;
+        // Validate the projected roster and scenario before replacing the
+        // admitted revision or retiring endpoints on the active session.
+        let mut candidate = session.clone();
+        for endpoint in &departed {
+            if let Some(index) = candidate.network_endpoint_source(*endpoint) {
+                candidate.remove_network_participant(index)?;
+            }
+        }
+        scenario.install(&mut candidate, None)?;
+    }
+    Ok(departed)
+}
+
+fn refuse_options(state: &mut AppState, error: anyhow::Error) -> Result<()> {
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        protocol.finish_return_verification(None);
+    }
+    super::invalidate_setup_options(state)?;
+    crate::app::shell_network_setup::refuse_local_acceptance(state)?;
+    super::setup_compatibility_notice(state, &format!("LAN host options refused. {error:#}."));
+    Err(error)
 }
 
 fn validate_host_endpoint(

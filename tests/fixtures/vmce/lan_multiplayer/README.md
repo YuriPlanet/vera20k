@@ -1,0 +1,7 @@
+# VMCE LAN multiplayer fixture
+
+Copy this directory to `Maps/VMCE/M5-Acceptance` under each client's settings directory. Use matching game builds and create a LAN room. Choose VMCE and `VMCE M5 Entry`. Four roles are available and two to four players can start. For the two-player case, the host picks `Player1` and the guest picks `Player2`. This leaves `Player3` and `Player4` under the map's control.
+
+In the first stage, `Player1` can move the tank belonging to `HouseBravo`. Move it to cell `(30, 36)` to trigger victory. Continue as host and rejoin the reopened room as guest. The room preselects `VMCE M5 Refill`. A third player can join then. Put the two guests in `Player2` and `Player3`. In this stage `Player1` and `Player3` can both control `HouseBravo`. Use `Player2` to check that the room refuses an unauthorized order. Leave through the in-game menu after the checks. `refill.map` sets global 24 and provides a control test without an authored terminal trigger.
+
+For a fixed and random role mix, reserve `Player1` and put at least two other players on Random. The synchronized diagnostic receipts expose the role-to-House assignment and checksum for the same simulation frame on every client. In ordinary play, each client can check the assigned Houses and the shared tank's orders. To check stage-local availability, keep the common manifest and selected map on every client and omit the other stage file on one guest. [VMCE manual](../../../../docs/vmce.md) · [Interface walkthrough](../../../../docs/vmce.md#interface-walkthrough)

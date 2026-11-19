@@ -1669,6 +1669,10 @@ pub(crate) fn advance_camera_ai(state: &mut AppState, mouse: (f32, f32), frame: 
 /// SetViewToCoordInstant6D6070. Coordinates are resolved by simulation before
 /// its hash, including the canonical CellClass Dummy query effects.
 pub(crate) fn apply_trigger_camera(state: &mut AppState, coord: [i32; 3], velocity: Option<i32>) {
+    if crate::app::match_runtime::authored_narrative::enabled(state) {
+        // A locally followed object must not override the map's shared view.
+        state.match_state.input.follow_target = None;
+    }
     let (width, height) = tactical_centring_size(state);
     let viewport = (width as f32, height as f32);
     let current = (

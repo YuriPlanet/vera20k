@@ -2362,7 +2362,7 @@ pub(crate) fn commit_hide(state: &mut AppState) {
 /// Create's slide has run: `UI__BeginDialog(0xC2)` over a hidden `0x113`.
 pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
     commit_hide(state);
-    if App::open_host_setup(state, observe) && modern_lobby(state) {
+    if App::open_host_setup(state, observe, None) && modern_lobby(state) {
         message_line(state, crate::i18n::tr(HOST_ROOM_LINE));
     }
 }
@@ -3620,7 +3620,7 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             if quick_match {
                 // 0x0078A36C..0x0078A386: modes 1-3 skip C2; the game
                 // channel's nodes run without a dialog.
-                let opened = App::open_host_setup(state, false);
+                let opened = App::open_host_setup(state, false, None);
                 super::quick_match::created(state, opened);
             } else if buddy {
                 // 0x116 has ended: C2 opens over the empty backdrop.

@@ -1,4 +1,4 @@
-//! Script22 -> Map580BC0, using the process-current player's shroud.
+//! Script22 -> Map580BC0 with the campaign's selected visibility plane.
 
 use super::*;
 use crate::sim::runtime::SimRuntime;
@@ -120,6 +120,59 @@ fn a_revealed_player_map_returns_the_scout_to_its_center_without_a_search_draw()
             .lifecycle
             .object_alive()
     );
+}
+
+#[test]
+fn authored_lan_scout_uses_first_primary_even_on_a_guest_view() {
+    let Some((mut runtime, member, ty)) = campaign_scene("0=22,0", "E2") else {
+        return;
+    };
+    let sim = &mut runtime.simulation;
+    let rules = &runtime.resources.rules;
+    let first = sim.houses.order()[0];
+    let guest = sim.houses.order()[1];
+    sim.session.retire_started();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    sim.session.install_authored_campaign(vec![1, 0]);
+    sim.session.install_current_house(Some(guest));
+    for owner in [first, guest] {
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_human_for_test(true);
+    }
+    let terrain = sim.resolved_terrain().unwrap();
+    sim.fog = crate::sim::vision::FogState::new(terrain.width(), terrain.height());
+    sim.reveal_entire_map(Some(guest), UninitContext::with_rules(rules));
+
+    let team = sim.create_team(ty, Some(first), rules).unwrap();
+    assert!(sim.team_add_member(team, member, false, rules, None, FrameEffects::default()));
+    let before = sim.scenario_rng.logical_state();
+    sim.team_run_action(
+        team,
+        TeamScriptAction {
+            action_id: 22,
+            argument: 0,
+        },
+        true,
+        rules,
+        None,
+        FrameEffects::default(),
+    );
+
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert!(state.refusal().is_none());
+    assert_ne!(sim.scenario_rng.logical_state(), before);
+    let target = state.mission_target.unwrap();
+    let point = sim.team_target_coord(target).unwrap();
+    let cells = NativeCellQuery::canonical(sim.resolved_terrain().unwrap());
+    assert!(crate::sim::vision::point_is_shrouded(
+        &sim.fog, &cells, first, point
+    ));
+    assert!(!crate::sim::vision::point_is_shrouded(
+        &sim.fog, &cells, guest, point
+    ));
 }
 
 pub(super) fn campaign_scene(

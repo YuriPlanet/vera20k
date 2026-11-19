@@ -1,14 +1,17 @@
 //! Match runtime owner (F12): the per-frame simulation advance transaction,
 //! the local frame pacer, and the scenario exit cascade.
 
+pub(crate) mod authored_narrative;
+#[path = "vmce_result.rs"]
+pub(crate) mod authored_result;
 pub(crate) mod beacons;
 mod deferred_effects;
 pub(crate) mod eva_producers;
 mod frame_effects;
 pub(crate) mod frame_pacer;
+pub(crate) mod network_failure;
 pub(crate) mod network_match;
 pub(crate) mod network_quality;
-pub(crate) mod network_failure;
 pub(crate) mod redraw_gate;
 pub(crate) mod scenario_exit;
 pub(crate) mod scenario_pause;

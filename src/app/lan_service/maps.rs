@@ -907,6 +907,7 @@ pub(super) fn poll(state: &mut AppState) {
         };
         if state.frontend.network_setup_protocol.is_none()
             || state.match_state.session.network_setup().is_none()
+            || state.match_state.session.local_scenario_lobby().is_some()
         {
             if maps.key.is_some() || maps.worker.is_some() {
                 maps.cancel();

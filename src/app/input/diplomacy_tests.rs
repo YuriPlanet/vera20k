@@ -22,9 +22,15 @@ fn entry_follows_the_native_gadget_and_tab_rules_per_mode() {
         (SidebarButton, SessionMode::Skirmish, coop, Diplomacy),
     ] {
         assert_eq!(
-            requested_state(request, mode, class),
+            requested_state(request, mode, class, false),
             expected,
             "{request:?} in {mode:?} with {class:?}"
+        );
+    }
+    for request in [SidebarButton, Hotkey] {
+        assert_eq!(
+            requested_state(request, SessionMode::Lan, battle, true),
+            MissionBriefing
         );
     }
 }
@@ -94,6 +100,7 @@ const SKIRMISH: DiplomacyRules<'static> = DiplomacyRules {
     quick_coop: false,
     local_inactive: false,
     game_mode_nonzero: true,
+    authored_players_only: false,
     listeners: &[true; 8],
 };
 
@@ -109,7 +116,45 @@ fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
             colors: &fixture.colors,
         },
         |_| None,
+        |_| None,
     )
+}
+
+#[test]
+fn authored_roster_omits_computers_without_retargeting_the_listener_row() {
+    let mut fixture = fixture();
+    let peer = fixture.first_ai;
+    let mut human = fixture.sim.houses().get(&peer).unwrap().clone();
+    human.set_is_human_for_test(true);
+    fixture.sim.houses_mut_for_test().replace_for_test(human);
+    let resolved = resolve_rows(
+        &fixture.sim,
+        &fixture.rules,
+        DiplomacyRules {
+            authored_players_only: true,
+            listeners: &[true, false, false, false],
+            ..SKIRMISH
+        },
+        &HouseUiSources {
+            csf: None,
+            computer: "Computer",
+            schemes: &fixture.schemes,
+            colors: &fixture.colors,
+        },
+        |_| None,
+        |house| {
+            (house == fixture.player || house == peer).then(|| RoleIdentity {
+                player: "Player".into(),
+                role: "Role".into(),
+                faction: Some("Faction".into()),
+            })
+        },
+    );
+    assert_eq!(resolved.rows.len(), 2);
+    let peer = resolved.rows[1].as_ref().unwrap();
+    assert_eq!(peer.house_index, 0);
+    assert!(peer.chat.unwrap().checked);
+    assert_eq!(peer.kills, None);
 }
 
 fn ally(sim: &mut Simulation, asker: &str, other: &str) {

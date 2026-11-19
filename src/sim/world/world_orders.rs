@@ -7,8 +7,10 @@ use crate::sim::world::FrameEffects;
 
 use super::{SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
+use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -894,7 +896,8 @@ impl Simulation {
             &self.interner,
             actor.owner(),
             target.owner(),
-        ) || !self.house_is_human_player(actor.owner())
+        ) || !(self.house_is_human_player(actor.owner())
+            || (target.category().is_foot() && self.local_foot_control_granted(actor)))
             || target.is_warped_out()
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
@@ -916,7 +919,7 @@ impl Simulation {
             return None;
         }
         if infantry {
-            if !self.techno_player_controllable(actor_id, rules) {
+            if !self.techno_can_take_local_order(actor_id, rules) {
                 return None;
             }
             if self.object_type(actor.type_ref(), rules)?.balloon_hover {
@@ -1091,6 +1094,12 @@ impl Simulation {
         }
     }
 
+    /// Selection-key admission, including discovered units in an authored
+    /// control grant. The native campaign ownership gate remains above.
+    pub fn player_controls_object_selection(&self, entity: &GameEntity) -> bool {
+        self.house_controls_selection(entity.owner()) || self.local_foot_control_granted(entity)
+    }
+
     /// gamemd.exe TeamAssign731060/TeamClear7310D0: owner admission precedes
     /// both stores. Selected eligible objects take the requested raw group;
     /// other eligible objects in that group return to -1. No life/limbo gate.
@@ -1102,7 +1111,7 @@ impl Simulation {
         group: i32,
         selected: &std::collections::HashSet<u64>,
     ) -> i32 {
-        if !(0..10).contains(&group) || !self.house_controls_selection(entity.owner()) {
+        if !(0..10).contains(&group) || !self.player_controls_object_selection(entity) {
             current
         } else if selected.contains(&entity.stable_id()) {
             group
@@ -1180,12 +1189,31 @@ impl Simulation {
             }
             return crate::sim::production::undeploy_target(rules, &object.id).is_some();
         }
-        if !self.house_is_human_player(actor.owner())
-            || actor.bunker.link().installed_in().is_some()
-        {
-            return false;
-        }
-        if object.spawned
+        self.house_is_human_player(actor.owner())
+            && self.foot_accepts_player_orders(actor, object, rules)
+    }
+
+    /// Manual Move, Attack, Enter and Deploy input can use an authored Foot
+    /// grant. Callers still run the command's ordinary ability checks.
+    pub fn techno_can_take_local_order(&self, id: u64, rules: &RuleSet) -> bool {
+        self.techno_player_controllable(id, rules)
+            || self.substrate.entities.get(id).is_some_and(|actor| {
+                self.local_foot_control_granted(actor)
+                    && self
+                        .object_type(actor.type_ref(), rules)
+                        .is_some_and(|object| self.foot_accepts_player_orders(actor, object, rules))
+            })
+    }
+
+    /// The Foot conditions of vt+0xA0 after the caller established authority.
+    pub(super) fn foot_accepts_player_orders(
+        &self,
+        actor: &GameEntity,
+        object: &ObjectType,
+        rules: &RuleSet,
+    ) -> bool {
+        if actor.bunker.link().installed_in().is_some()
+            || object.spawned
             || actor.parasite.is_paralyzed(self.session.binary_frame())
             || actor.is_warped_out()
             || actor.is_warping_in()
@@ -1211,12 +1239,22 @@ impl Simulation {
     /// its current weapon (vt+0x3F4) typed and not vt+0x37C
     /// (`GameEntity::is_under_emp`). `is_armed` stands in for the weapon test.
     pub fn techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
+        self.techno_activity(id, rules, false)
+    }
+
+    /// Attack and deploy ask the same activity gate for discovered granted Foot.
+    pub fn local_order_actor_is_active(&self, id: u64, rules: &RuleSet) -> bool {
+        self.techno_activity(id, rules, true)
+    }
+
+    fn techno_activity(&self, id: u64, rules: &RuleSet, allow_grant: bool) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         !actor.deactivated.is_offline()
             && !actor.is_under_emp()
-            && self.house_is_human_player(actor.owner())
+            && (self.house_is_human_player(actor.owner())
+                || (allow_grant && self.local_foot_control_granted(actor)))
             && self
                 .object_type(actor.type_ref(), rules)
                 .is_some_and(|object| {

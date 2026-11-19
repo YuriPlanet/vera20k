@@ -10658,7 +10658,7 @@ impl RuleSet {
     /// caller-1 to entry0; known tokens use the shared alias-before-ID5117D0
     /// lookup. Unknown nonempty tokens need the native factory branch and
     /// return None here, never an invented entry0 binding.
-    pub(crate) fn scenario_country_name(&self, country: Option<&str>) -> Option<&str> {
+    pub fn scenario_country_name(&self, country: Option<&str>) -> Option<&str> {
         let index = match country {
             Some(name) => self.country_index_of_name(name)?,
             None => CountryIdx(0),

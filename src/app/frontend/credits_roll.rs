@@ -31,6 +31,35 @@ const SCROLL_STEP: i32 = 2;
 /// A line is deleted once its y is `<= -0x15` (`while (-0x15 < y)`).
 const DELETE_BELOW: i32 = -0x15;
 
+/// Layout for a local series's UTF-8 subtitles in the native scroll surface.
+pub(crate) fn centered_credit_lines(
+    text: &str,
+    surface_height: i32,
+    font: &BitFont,
+) -> Vec<CreditLine> {
+    // Show_Credits starts two pixels below the screen, then advances 16 per line.
+    let mut y = surface_height + 2;
+    let mut lines = Vec::new();
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() {
+            y += 16;
+            continue;
+        }
+        for span in font.wrap_layout(line, CREDITS_BOX_WIDTH as u32).lines {
+            if let Some(text) = line.get(span.start_byte..span.end_byte) {
+                lines.push(CreditLine {
+                    text: text.to_owned(),
+                    column: 0,
+                    y,
+                    flags: CreditsLayoutFlags(CreditsLayoutFlags::CENTER),
+                });
+                y += 16;
+            }
+        }
+    }
+    lines
+}
+
 /// Show_Credits (0x004C3D00) dimensions are logical pixels, like the other
 /// shell pages. Keep its full-window scroll surface while scaling the text,
 /// 520-pixel clip box and 32-row fade together with the shell.
@@ -298,6 +327,8 @@ pub(crate) enum CreditsReturn {
     MoviesAndCredits,
     /// A won campaign's EndOfGame leaves Main_Game for the main menu.
     MainMenu,
+    /// An authored LAN campaign continues in its original room.
+    LanRoom,
 }
 
 /// Line x inside the 520 px box: left at the box, centered at

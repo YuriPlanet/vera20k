@@ -175,6 +175,7 @@ impl CampaignScoreCapture {
                     synthetic_campaign_score_model(),
                     "Synthetic campaign score capture".into(),
                     "Synthetic UI fixture; not native-parity evidence.".into(),
+                    None,
                 );
                 self.route.push(json!({
                     "dialog": 0x103,
@@ -229,6 +230,7 @@ impl CampaignScoreCapture {
                         synthetic_campaign_score_model(),
                         "Synthetic campaign score animation capture".into(),
                         "Synthetic UI fixture; not native-parity evidence.".into(),
+                        None,
                     );
                     ensure!(
                         state
@@ -307,6 +309,7 @@ impl CampaignScoreCapture {
                         synthetic_campaign_score_model(),
                         "Synthetic campaign score animation reopen".into(),
                         "Synthetic UI fixture; not native-parity evidence.".into(),
+                        None,
                     );
                     ensure!(
                         state
