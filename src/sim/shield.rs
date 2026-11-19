@@ -1690,6 +1690,26 @@ fn create_idle_anim(
     Some(anim)
 }
 
+/// `ShieldClass::AreAnimsHidden` as the tunnel hooks write it: the owner's
+/// `Tunnel` locomotor is in `DugIn` or `Digging` (`FootExt::UpdateOnTunnelEnter`
+/// from `TunnelLocomotionClass_Process_KillAnims @ 0x728F74`); the hook at
+/// `0x728E5F` clears it as soon as `State` becomes `PreDigOut`.
+#[cfg(feature = "phobos")]
+fn owner_is_hidden_in_tunnel(sim: &Simulation, id: u64) -> bool {
+    sim.substrate
+        .entities
+        .get(id)
+        .and_then(|entity| entity.locomotor.as_ref())
+        .and_then(|locomotor| locomotor.tunnel_runtime())
+        .is_some_and(|runtime| {
+            matches!(
+                runtime.state(),
+                crate::sim::movement::TunnelState::DugIn
+                    | crate::sim::movement::TunnelState::Digging
+            )
+        })
+}
+
 /// Phobos `ShieldClass`'s idle-animation maintenance: `CloakCheck`
 /// (`ShieldClass.cpp:491..500`), `BreakShield`'s `KillAnim` (`:849`) and the
 /// `AI` create/retype tail (`:466..482`).
@@ -1736,6 +1756,16 @@ fn update_idle_anim(
 
     // `CloakCheck` before the create/retype tail.
     cloak_check_idle_anim(sim, rules, id, state);
+
+    // `AreAnimsHidden` (`ShieldClass.h:82-86`, `ShieldClass.cpp:481`/`:1078`):
+    // `SetAnimationVisibility(false)` kills the anim and blocks the create
+    // gate. `FootExt::UpdateOnTunnelEnter/Exit` drives it from the tunnel
+    // hooks `0x728F74`/`0x728E5F` (`Ext/Techno/Hooks.Misc.cpp:487-527`), so the
+    // shield animation is hidden while the owner is sunk or travelling.
+    if owner_is_hidden_in_tunnel(sim, id) {
+        kill_idle_anim(sim, rules, state);
+        return;
+    }
 
     // `UpdateIdleAnim` only runs for a type with damaged value sets; the
     // plain `CreateAnim` tail applies the selection either way.

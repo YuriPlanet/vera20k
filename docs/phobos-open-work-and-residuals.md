@@ -321,6 +321,15 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   与本臂的 `GetLevel()` 行为一致；该路径由
   `type_conversion_in_air_tests::an_airborne_conversion_lands_on_a_bridge_deck_over_water`
   锁定。
+- **盾的 idle anim 与 tunnel（2026-11-19）**：`ShieldClass::AreAnimsHidden`
+  （`New/Entity/ShieldClass.h:82-86`）只有一个写者进入本链：`FootExt::
+  UpdateOnTunnelEnter/Exit` 由 `0x728F74` / `0x728E5F` 驱动
+  （`Ext/Techno/Hooks.Misc.cpp:487-527`）。`sim/shield.rs` 的 `update_idle_anim`
+  每帧读业主 `Tunnel` locomotor 的 `TunnelState`，`DugIn | Digging` 时
+  `kill_idle_anim` 并跳过 `ShieldClass.cpp:481` 的创建门，`PreDigOut` 起下一趟
+  AI 重建；`DiggingIn` 仍显示。测试
+  `a_tunnel_owner_hides_and_restores_the_shield_idle_anim`。残余：该标志的
+  其余写者（盾自身的 `ShowShield`/解除武装路径）仍未接线，按 false 处理。
 - **AE 的 tunnel 动画（2026-11-19）**：Phobos
   `TunnelLocomotionClass_Process_KillAnims @ 0x728F74`
   （`Ext/Techno/Hooks.Misc.cpp:487-504`，进入 `DugIn` 时对每个 AE 调
