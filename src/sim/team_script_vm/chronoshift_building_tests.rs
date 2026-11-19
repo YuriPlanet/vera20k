@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::{OWNER, Replay, replay};
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::{TeamAiDefinitionSource, TeamAiIniRegistry};
 use crate::sim::house_state::HouseState;
 use crate::sim::superweapon::SuperWeaponInstance;
@@ -83,11 +83,8 @@ fn scene_with_members(argument: i32, plant: bool, members: Value) -> Replay {
     let ini = IniFile::from_str(&format!(
         "[ScriptTypes]\n0=SCRIPT\n[SCRIPT]\n0=56,{argument}\n1=5,10\n"
     ));
-    let parsed = TeamAiIniRegistry::from_sources(
-        &ini,
-        &IniFile::from_str(""),
-        BootstrapRuleProfile::Campaign,
-    );
+    let parsed =
+        TeamAiIniRegistry::from_sources(&ini, &IniFile::from_str(""), RulePolicy::stock_campaign());
     assert!(parsed.diagnostics.is_empty());
     let script = scene.sim.team_script_vm.teams[&scene.team].script_id;
     scene

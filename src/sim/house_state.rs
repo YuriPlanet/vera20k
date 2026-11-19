@@ -2650,7 +2650,7 @@ impl HouseState {
         difficulty: HouseDifficulty,
         general: &crate::rules::ruleset::GeneralRules,
         country: crate::rules::ruleset::CountryDifficultyBiases,
-        game_mode_nonzero: bool,
+        policy: RulePolicy,
         array_index: i32,
         frame: i32,
     ) {
@@ -2664,7 +2664,7 @@ impl HouseState {
             if speed_scaled {
                 value = X::mul(value, X::load_f64(bias));
             }
-            if game_mode_nonzero {
+            if policy.uses_country_difficulty_biases() {
                 value = X::mul(value, X::load_f64(country));
             }
             X::store_f64_masked_chop(value)
@@ -2777,8 +2777,8 @@ impl HouseState {
     /// Unlimbo BasePlan satisfaction and the early House-update activation.
     /// `HouseClass::IsControlledByHuman @ 0x0050B730` supplies the former;
     /// `HouseClass__Update @ 0x004F8440` inlines the same branch shape.
-    pub const fn is_controlled_by_human(&self, game_mode_nonzero: bool) -> bool {
-        self.is_human || (!game_mode_nonzero && self.player_control)
+    pub const fn is_controlled_by_human(&self, policy: RulePolicy) -> bool {
+        self.is_human || (policy.counts_player_control_as_human() && self.player_control)
     }
 
     /// HouseClass's power (AI_AssessPower508CBD..508CF0), radar
@@ -2787,11 +2787,8 @@ impl HouseState {
     /// Source: original gamemd instructions. Noncampaign scans admit hidden
     /// providers, including the current player's; campaign computer Houses
     /// do too. Only controlled campaign Houses require Techno+41B.
-    pub(crate) const fn building_services_require_discovery(
-        &self,
-        game_mode_nonzero: bool,
-    ) -> bool {
-        !game_mode_nonzero && self.is_controlled_by_human(game_mode_nonzero)
+    pub(crate) const fn building_services_require_discovery(&self, policy: RulePolicy) -> bool {
+        policy.building_services_use_discovery() && self.is_controlled_by_human(policy)
     }
 
     /// The cell the house bases itself around: the alternate base centre
@@ -2871,8 +2868,8 @@ impl HouseState {
     /// accepts any nonzero AutoBaseBuilding or signed `CurrentIQ >=
     /// Rules+0x143C`, then writes AutoBaseBuilding, Production, and
     /// AutocreateAllowed in that order without touching AITriggersActive.
-    pub(crate) fn update_ai_activation(&mut self, game_mode_nonzero: bool, iq_production: i32) {
-        if self.is_controlled_by_human(game_mode_nonzero)
+    pub(crate) fn update_ai_activation(&mut self, policy: RulePolicy, iq_production: i32) {
+        if self.is_controlled_by_human(policy)
             || (!self.ai_activation.auto_base_building && self.current_iq < iq_production)
         {
             return;
@@ -3437,7 +3434,10 @@ mod ai_activation_latch_tests {
             house.ai_activation.ai_triggers_active = true;
             house.ai_activation.auto_base_building = auto_base;
 
-            house.update_ai_activation(true, threshold);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                threshold,
+            );
 
             assert_eq!(house.ai_activation.production, expected);
             assert_eq!(house.ai_activation.autocreate_allowed, expected);
@@ -3453,7 +3453,8 @@ mod ai_activation_latch_tests {
     fn house_ai_activation_uses_mode_sensitive_control_predicate() {
         let mut campaign_current = HouseState::new(Default::default(), 0, None, true, 0, 10);
         campaign_current.current_iq = 5;
-        campaign_current.update_ai_activation(false, 5);
+        campaign_current
+            .update_ai_activation(crate::rules::rule_policy::RulePolicy::stock_campaign(), 5);
         assert_eq!(
             campaign_current.ai_activation,
             HouseAiActivationLatches::default()
@@ -3463,21 +3464,28 @@ mod ai_activation_latch_tests {
             HouseState::new(Default::default(), 0, None, false, 0, 10);
         campaign_player_control.player_control = true;
         campaign_player_control.current_iq = 5;
-        campaign_player_control.update_ai_activation(false, 5);
+        campaign_player_control
+            .update_ai_activation(crate::rules::rule_policy::RulePolicy::stock_campaign(), 5);
         assert_eq!(
             campaign_player_control.ai_activation,
             HouseAiActivationLatches::default()
         );
 
         let mut skirmish_player_control = campaign_player_control.clone();
-        skirmish_player_control.update_ai_activation(true, 5);
+        skirmish_player_control.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert!(skirmish_player_control.ai_activation.production);
         assert!(skirmish_player_control.ai_activation.autocreate_allowed);
         assert!(skirmish_player_control.ai_activation.auto_base_building);
 
         let mut skirmish_current = HouseState::new(Default::default(), 0, None, true, 0, 10);
         skirmish_current.current_iq = 5;
-        skirmish_current.update_ai_activation(true, 5);
+        skirmish_current.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             skirmish_current.ai_activation,
             HouseAiActivationLatches::default()
@@ -3495,11 +3503,17 @@ mod ai_activation_latch_tests {
             auto_base_building: false,
         };
         let below_threshold = split.ai_activation;
-        split.update_ai_activation(true, 5);
+        split.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(split.ai_activation, below_threshold);
 
         split.current_iq = 5;
-        split.update_ai_activation(true, 5);
+        split.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             split.ai_activation,
             HouseAiActivationLatches {
@@ -3514,7 +3528,10 @@ mod ai_activation_latch_tests {
         deployed.current_iq = i32::MIN;
         deployed.enable_ai_deploy_latches();
         assert!(!deployed.ai_activation.autocreate_allowed);
-        deployed.update_ai_activation(true, 5);
+        deployed.update_ai_activation(
+            crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            5,
+        );
         assert_eq!(
             deployed.ai_activation,
             HouseAiActivationLatches {
@@ -3536,9 +3553,15 @@ mod ai_activation_latch_tests {
             house.difficulty = difficulty;
             house.economy.add_credits(4321);
 
-            house.update_ai_activation(true, 5);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                5,
+            );
             let once = house.ai_activation;
-            house.update_ai_activation(true, 5);
+            house.update_ai_activation(
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+                5,
+            );
 
             assert_eq!(house.ai_activation, once);
             assert_eq!(
@@ -3780,7 +3803,10 @@ mod difficulty_tests {
                         build_time: scalar("build_time"),
                     }
                 },
-                input["mode"].as_i64().unwrap() != 0,
+                crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                    input["mode"].as_i64().unwrap() as i32,
+                )
+                .stock_rule_policy(None),
                 input["array_index"].as_i64().unwrap() as i32,
                 100,
             );

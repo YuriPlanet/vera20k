@@ -32,7 +32,7 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
     sim.resolve_type_handles(&rules);
     sim.fog = vision::FogState::new(33, 33);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
@@ -56,7 +56,10 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
     sim.fog.ensure_viewer(player);
     sim.fog.ensure_viewer(remote);
     assert_eq!(sim.session.current_house(), Some(player));
-    assert!(sim.houses[&remote].is_controlled_by_human(false));
+    assert!(
+        sim.houses[&remote]
+            .is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+    );
     assert!(!sim.houses[&remote].is_human());
     assert!(
         !sim.house_alliances()

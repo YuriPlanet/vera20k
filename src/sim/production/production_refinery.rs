@@ -58,7 +58,7 @@ pub(crate) fn spawn_building_free_unit(
             let human = sim
                 .houses
                 .get(&entity.owner())
-                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
             if human
                 && entity.production_start_price() != 0
                 && entity.production_start_price() <= rules.type_cost(object)
@@ -315,14 +315,9 @@ fn refund_free_unit(
         houses.get(&owner_id),
         Simulation::house_cost_factors(houses, owner_id),
     ) {
-        (Some(object), Some(house), Some(factors)) => super::type_refund(
-            rules,
-            object,
-            house,
-            &factors,
-            session.game_mode_nonzero(),
-            true,
-        ),
+        (Some(object), Some(house), Some(factors)) => {
+            super::type_refund(rules, object, house, &factors, session.rule_policy(), true)
+        }
         _ => return 0,
     };
     crate::sim::credit_income::add_credits(houses, owner_id, refund);

@@ -165,7 +165,7 @@ impl Simulation {
     /// RESIDUAL: online, a map's nonzero `CarryOverMoney=` carries no money.
     /// No retail map reaches it: the 50 that set the key set it to 0.
     fn restore_player_carry_over(&mut self, record: &CampaignCarryOver, rules: &RuleSet) {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             return;
         }
         let Some(player) = self.session.current_house() else {
@@ -207,7 +207,7 @@ impl Simulation {
                 record.player_difficulty,
                 &rules.general,
                 biases,
-                self.session.game_mode_nonzero(),
+                self.session.rule_policy(),
                 array_index as i32,
                 frame,
             );
@@ -454,7 +454,14 @@ mod tests {
             let house = sim.houses.get_or_register_for_test(name, || {
                 crate::sim::house_state::HouseState::new(name, 0, None, false, 0, 10)
             });
-            house.set_difficulty(row, &rules.general, Default::default(), false, 0, 0);
+            house.set_difficulty(
+                row,
+                &rules.general,
+                Default::default(),
+                crate::rules::rule_policy::RulePolicy::stock_campaign(),
+                0,
+                0,
+            );
         }
         sim.session.set_current_house_for_test(Some(player));
         let mut globals = [false; SCENARIO_GLOBAL_COUNT];

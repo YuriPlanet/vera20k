@@ -4,7 +4,7 @@
 use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit};
 use super::*;
 use crate::map::waypoints::Waypoint;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
@@ -647,7 +647,7 @@ fn retail_infantry_map_event(
         &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map.ini,
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         ),
         &rules,
     );
@@ -1276,6 +1276,7 @@ fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
                 None,
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         sim.session.game_options_mut_for_test().short_game = false;

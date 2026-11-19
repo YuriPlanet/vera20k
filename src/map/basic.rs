@@ -157,9 +157,6 @@ impl SpecialFlagsSection {
     /// initializes0x8088: Inert/grows false, spreads/destroyable bridges true.
     /// The passed snapshot is a projection of the existing live authorities.
     pub fn resolve_campaign_defaults(&mut self, prior: Option<&Self>) {
-        // Full_Init686BA2 clears this bit before Read_SpecialFlags, even
-        // when the outgoing campaign retained FogOfWar=yes.
-        self.fog_of_war.get_or_insert(false);
         self.inert
             .get_or_insert(prior.and_then(|flags| flags.inert).unwrap_or(false));
         self.tiberium_grows.get_or_insert(

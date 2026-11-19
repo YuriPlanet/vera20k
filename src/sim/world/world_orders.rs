@@ -1065,12 +1065,12 @@ impl Simulation {
     ) -> bool {
         // House50B6F0: nonzero session mode compares exactly to PlayerPtr;
         // mode zero uses the two native human/control flags.
-        if session.game_mode_nonzero() {
+        if !session.uses_local_player_shroud() {
             player == Some(owner)
         } else {
-            houses
-                .get(&owner)
-                .is_some_and(|h| h.is_controlled_by_human(false))
+            houses.get(&owner).is_some_and(|h| {
+                h.is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+            })
         }
     }
 
@@ -1130,7 +1130,7 @@ impl Simulation {
             .collect();
         // VERA network adaptation: the key's store is local to one client, so
         // a network game keeps it in the local player's slot, off +214.
-        let local = self.session.game_mode().is_network();
+        let local = self.session.execution_topology().is_lockstep();
         for (id, group) in changes {
             let entity = self.substrate.entities.get_mut(id).unwrap();
             if local {
@@ -1172,7 +1172,10 @@ impl Simulation {
             }
             if object.construction_yard
                 && !(self.owner_is_human(actor.owner())
-                    && self.session.game_mode_nonzero()
+                    && self
+                        .session
+                        .rule_policy()
+                        .allows_construction_yard_redeploy()
                     && self.session.game_options().mcv_redeploy
                     && actor.mind_control.controller().is_none())
             {

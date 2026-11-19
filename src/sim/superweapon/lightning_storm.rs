@@ -350,7 +350,7 @@ pub(crate) fn start(
     // suppress other Houses' retained outages. Their own Defeated test below
     // remains authoritative. Source: original gamemd.exe539FD3..53A002.
     let local_player_defeated =
-        !sim.session.game_mode().is_network() && sim.local_player_defeated();
+        !sim.session.execution_topology().is_lockstep() && sim.local_player_defeated();
     // HouseClass::Array, in creation order.
     for index in 0..sim.houses.order().len() {
         let house = sim.houses.order()[index];
@@ -383,7 +383,7 @@ pub(crate) fn start(
 /// redirect. A network game rechecks every human House's radar, so no
 /// peer's state depends on which House is its own.
 fn recheck_viewer_radar(sim: &mut Simulation) {
-    let radar_viewers = if sim.session.game_mode().is_network() {
+    let radar_viewers = if sim.session.execution_topology().is_lockstep() {
         sim.houses
             .order()
             .iter()

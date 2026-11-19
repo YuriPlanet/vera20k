@@ -57,7 +57,9 @@ impl Simulation {
         overlays: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        if rules.ares_form() && rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id)) {
+        if rules.ares_form()
+            && rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id))
+        {
             let launched = super::ai_fire::fire_extension_automatic(
                 self, rules, owner, sw_type_id, overlays, effects, true,
             );
@@ -399,7 +401,7 @@ fn click_fire(
         let Some(house) = sim.houses.get(&owner) else {
             return false;
         };
-        let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+        let human = house.is_controlled_by_human(sim.session.rule_policy());
         // Ares ClickFire10035130 drops the computer's FirestormActive branch:
         // every House toggles with the type's GetChargeToDrainRatio.
         let toggles = ares || human;
@@ -895,7 +897,7 @@ fn launch(
             let is_player = sim
                 .houses
                 .get(&owner)
-                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
             super::firewall::activate(
                 sim,
                 rules,

@@ -2021,7 +2021,7 @@ impl Simulation {
                 reason: "observer House is absent",
             });
         }
-        if self.session.game_mode().is_network()
+        if self.session.execution_topology().is_lockstep()
             && self.session.network_max_ahead_frames().is_none()
         {
             return Err(SnapshotRestoreError::InvalidMultiplayerSession {
@@ -2346,7 +2346,7 @@ impl Simulation {
             if !terrain.in_logic_vector()
                 && terrain.joins_logic_on_unlimbo(
                     terrain_type,
-                    self.session.game_mode(),
+                    self.session.rule_policy(),
                     rules.ares_form(),
                 )
             {

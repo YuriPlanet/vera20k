@@ -634,7 +634,7 @@ impl Simulation {
         if !rules.ares_form() {
             return Some(TiberiumGift::Stock { value, income });
         }
-        if self.session.game_mode_nonzero() && !house.is_human() {
+        if !self.session.rule_policy().ares_ai_stores_tiberium() && !house.is_human() {
             return Some(TiberiumGift::AresCash { value, income });
         }
         let silos = house

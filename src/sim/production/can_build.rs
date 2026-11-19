@@ -110,7 +110,7 @@ pub fn can_build(
     let Some(house) = sim.houses.get(&owner) else {
         return CanBuild::No;
     };
-    let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let controlled_by_human = house.is_controlled_by_human(sim.session.rule_policy());
     let ares = rules.ares_form();
     let status = requirements_met(sim, rules, owner, house, obj);
     let bypass_prerequisites = status == RequirementStatus::Overridden;
@@ -177,7 +177,7 @@ pub(crate) fn requirements_met(
     let trainer = sim.debug_flags_for(owner);
     #[cfg(not(feature = "debug-tools"))]
     let _ = owner;
-    let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let controlled_by_human = house.is_controlled_by_human(sim.session.rule_policy());
     let override_on_map = obj.prerequisite_override.iter().any(|&entry| {
         if rules.ares_form() {
             // Ares3.0 qualification10021FF0 calls
@@ -252,7 +252,11 @@ pub(crate) fn requirements_met(
     }
     // Ares disabled-shell predicate10021A00..10021A6A bypasses this
     // skirmish-shell restriction in mode0, before inspecting the Type.
-    if (!rules.ares_form() || sim.session.game_mode_nonzero())
+    if (!rules.ares_form()
+        || sim
+            .session
+            .rule_policy()
+            .ares_applies_superweapon_shell_setting())
         && !sim.session.game_options().super_weapons
         && obj.category == ObjectCategory::Building
         && let Some(super_weapon) = obj.super_weapon.as_deref()
@@ -570,7 +574,7 @@ fn build_limit(
     let ares = rules.ares_form();
     if ares
         && sim.houses.get(&owner).is_some_and(|house| {
-            !house.is_controlled_by_human(sim.session.game_mode_nonzero())
+            !house.is_controlled_by_human(sim.session.rule_policy())
                 && rules.ares_ai_bypasses_build_limit(house.difficulty().table_index())
         })
     {

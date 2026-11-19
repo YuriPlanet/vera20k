@@ -1,7 +1,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules_for_map};
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::components::NavTargetRef;
 use crate::sim::house_state::HouseState;
@@ -133,7 +133,7 @@ impl Fixture {
             )));
         }
         let registry =
-            TeamAiIniRegistry::load_retail(&assets, &scenario, BootstrapRuleProfile::Multiplayer)
+            TeamAiIniRegistry::load_retail(&assets, &scenario, RulePolicy::stock_multiplayer())
                 .unwrap();
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4DBFD0);
         if water {

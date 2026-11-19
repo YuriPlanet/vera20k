@@ -355,7 +355,12 @@ fn original_state10_rows() {
                 ammo: ammo.current(),
                 target: get("target").as_bool().unwrap(),
                 leaves_map: get("flag_3d4").as_i64().unwrap() != 0,
-                human: house.is_controlled_by_human(get("game_mode").as_i64().unwrap() != 0),
+                human: house.is_controlled_by_human(
+                    crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                        get("game_mode").as_i64().unwrap() as i32,
+                    )
+                    .stock_rule_policy(None),
+                ),
                 airstrike: get("airstrike").as_bool().unwrap(),
             };
             let mut host = ExitReplay {

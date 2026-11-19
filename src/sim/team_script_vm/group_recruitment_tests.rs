@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use crate::map::entities::EntityCategory;
 use crate::map::map_file::MapFile;
 use crate::rules::process_owner::NativeScenarioRulesPrefix;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::campaign_carry_over::CampaignCarryOver;
 use crate::sim::snapshot::GameSnapshot;
@@ -31,7 +31,7 @@ fn sov07_discovery_recruits_the_nine_authored_group_members_after_reload() {
         .unwrap()
         .into_parts();
     let teams =
-        TeamAiIniRegistry::load_retail(&assets, &map.ini, BootstrapRuleProfile::Campaign).unwrap();
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_campaign()).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x6EAA90);
@@ -39,7 +39,7 @@ fn sov07_discovery_recruits_the_nine_authored_group_members_after_reload() {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session
-        .initialize_campaign_startup(1, 7, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 7, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,

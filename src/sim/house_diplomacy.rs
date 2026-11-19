@@ -449,7 +449,6 @@ impl Simulation {
         if self.network_ai_alone() {
             return;
         }
-        let game_mode_nonzero = self.session.game_mode_nonzero();
         // Each bracket's walks visit only the maps that may change.
         let mut maps = ParanoidMaps::default();
         // Both walks reload the House count after each call (0x005016DB,
@@ -459,7 +458,7 @@ impl Simulation {
             let owner = self.houses.order()[index];
             index += 1;
             if !self.houses.get(&owner).is_some_and(|house| {
-                !house.is_defeated() && !house.is_controlled_by_human(game_mode_nonzero)
+                !house.is_defeated() && !house.is_controlled_by_human(self.session.rule_policy())
             }) {
                 continue;
             }
@@ -472,7 +471,7 @@ impl Simulation {
                 };
                 // Itself too: CanAlly refuses it.
                 let maps = Some(&mut maps);
-                if peer.is_controlled_by_human(game_mode_nonzero) {
+                if peer.is_controlled_by_human(self.session.rule_policy()) {
                     self.make_enemy_with(owner, other, rules, registry, effects, false, maps);
                 } else {
                     self.make_ally_with(owner, other, rules, registry, effects, false, maps);
@@ -581,9 +580,10 @@ impl Simulation {
         // 0x004F9B9A. Its write adds `other` to `owner`'s mask. Of the live
         // tail only Paranoid and Assign_Target write state the walks read.
         let quiet = paranoid.is_some()
-            && !self.houses.get(&owner).is_some_and(|house| {
-                house.is_controlled_by_human(self.session.game_mode_nonzero())
-            })
+            && !self
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()))
             && !self.may_drop_targets(owner);
         let edge_maps = self.maps_keyed_like(other);
         let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, quiet, context);
@@ -611,7 +611,7 @@ impl Simulation {
             owner,
             other,
             anger.wrapping_neg(),
-            self.session.game_mode_nonzero(),
+            self.session.rule_policy(),
             rules.ares_form(),
             rules.general.ai_nearest_enemy,
         );
@@ -759,7 +759,7 @@ impl Simulation {
             owner,
             other,
             1,
-            self.session.game_mode_nonzero(),
+            self.session.rule_policy(),
             rules.ares_form(),
             rules.general.ai_nearest_enemy,
         );
@@ -795,7 +795,7 @@ impl Simulation {
                     other,
                     other,
                     1,
-                    self.session.game_mode_nonzero(),
+                    self.session.rule_policy(),
                     rules.ares_form(),
                     rules.general.ai_nearest_enemy,
                 );
@@ -826,7 +826,7 @@ impl Simulation {
         let human = self
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         let passive_target = self
             .houses
             .get(&other)

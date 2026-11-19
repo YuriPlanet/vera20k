@@ -13,7 +13,7 @@ use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 use crate::rules::ini_value::{
     crt_atoi, parse_leading_f64, scan_decimal_i32, strtrim_ascii, truncate_native_bytes,
 };
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::util::native_x87::NativeF64Bits;
 
 const SCRIPT_ACTION_CAPACITY: usize = 50;
@@ -216,7 +216,7 @@ pub struct TeamAiIniRegistry {
     fixed_definitions: FixedTeamAiDefinitions,
     team_type_read_transactions: Vec<TeamTypeReadTransaction>,
     fixed_team_type_read_count: usize,
-    bootstrap_rule_profile: BootstrapRuleProfile,
+    uses_default_task_force_member_tech_level: bool,
 }
 
 impl TeamAiIniRegistry {
@@ -229,7 +229,7 @@ impl TeamAiIniRegistry {
     pub fn load_retail(
         assets: &AssetManager,
         scenario: &IniFile,
-        bootstrap_rule_profile: BootstrapRuleProfile,
+        rule_policy: RulePolicy,
     ) -> Result<Self, String> {
         let name = assets.ini_roots().ai();
         let mut fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
@@ -237,7 +237,7 @@ impl TeamAiIniRegistry {
         // checkDigest=1 before Full_Init68797F..6879DA consumes its registries.
         // Raw source inspection and metadata keep their unchecked INI view.
         fixed.remove_digest_for_checked_load();
-        let registry = Self::from_sources(&fixed, scenario, bootstrap_rule_profile);
+        let registry = Self::from_sources(&fixed, scenario, rule_policy);
         // Only a root that is not an AI INI at all is refused. A listed type
         // with no section, or a TaskForce entry that does not scan, is a
         // diagnostic: TeamTypeClass::LoadFromINIList (`0x006F19B0`) allocates
@@ -261,13 +261,10 @@ impl TeamAiIniRegistry {
     ///
     /// Retail provenance: `ScenarioClass::Full_Init @ 0x00686B20`, exact
     /// calls `0x0068797A..0x006879E3`.
-    pub fn from_sources(
-        fixed_aimd: &IniFile,
-        scenario: &IniFile,
-        bootstrap_rule_profile: BootstrapRuleProfile,
-    ) -> Self {
+    pub fn from_sources(fixed_aimd: &IniFile, scenario: &IniFile, rule_policy: RulePolicy) -> Self {
         let mut registry = Self {
-            bootstrap_rule_profile,
+            uses_default_task_force_member_tech_level: rule_policy
+                .uses_default_task_force_member_tech_level(),
             ..Self::default()
         };
 
@@ -291,7 +288,7 @@ impl TeamAiIniRegistry {
         registry.fixed_counts.ai_triggers = registry.ai_triggers.len();
         registry.fixed_definitions.ai_triggers = registry.ai_triggers.clone();
         registry.read_ai_triggers(scenario, TeamAiDefinitionSource::Scenario);
-        registry.read_ai_trigger_enables(scenario);
+        registry.read_ai_trigger_enables(scenario, rule_policy.forces_listed_ai_trigger_enables());
 
         registry
     }
@@ -347,12 +344,13 @@ impl TeamAiIniRegistry {
                 [..self.fixed_team_type_read_count]
                 .to_vec(),
             fixed_team_type_read_count: self.fixed_team_type_read_count,
-            bootstrap_rule_profile: self.bootstrap_rule_profile,
+            uses_default_task_force_member_tech_level: self
+                .uses_default_task_force_member_tech_level,
         }
     }
 
-    pub(crate) const fn bootstrap_rule_profile(&self) -> BootstrapRuleProfile {
-        self.bootstrap_rule_profile
+    pub(crate) const fn uses_default_task_force_member_tech_level(&self) -> bool {
+        self.uses_default_task_force_member_tech_level
     }
 
     /// TeamTypes are read from fixed AIMD and then from the map before either
@@ -662,13 +660,10 @@ impl TeamAiIniRegistry {
         }
     }
 
-    fn read_ai_trigger_enables(&mut self, scenario: &IniFile) {
+    fn read_ai_trigger_enables(&mut self, scenario: &IniFile, force_enabled: bool) {
         let Some(section) = scenario.section("AITriggerTypesEnable") else {
             return;
         };
-        let force_enabled = self
-            .bootstrap_rule_profile
-            .forces_listed_ai_trigger_enables();
         let index = identity_index(self.ai_triggers.iter().map(|entry| entry.id.as_str()));
         for id in section.keys() {
             let Some(position) = index.get(&canonical_identity(id)).copied() else {
@@ -827,7 +822,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let trigger = &loaded.ai_triggers[0];
 
@@ -853,7 +848,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let trigger = &loaded.ai_triggers[0];
 
@@ -869,7 +864,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &complete_fixed_aimd(),
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
 
         assert_eq!(
@@ -907,7 +902,7 @@ mod tests {
         ));
 
         let loaded =
-            TeamAiIniRegistry::from_sources(&fixed, &scenario, BootstrapRuleProfile::Campaign);
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, RulePolicy::stock_campaign());
 
         assert_eq!(loaded.team_types.len(), 2);
         assert_eq!(loaded.scripts.len(), 2);
@@ -934,7 +929,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &complete_fixed_aimd(),
             &scenario,
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
 
         assert!(loaded.fixed_source_is_complete());
@@ -970,7 +965,7 @@ mod tests {
             eighteen_tokens("Map append", "THIRD")
         ));
 
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Campaign);
+        let loaded = TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_campaign());
 
         assert_eq!(
             loaded
@@ -1046,11 +1041,17 @@ mod tests {
         assert!(loaded.diagnostics.is_empty());
 
         let skirmish =
-            TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Multiplayer);
+            TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_multiplayer());
         assert!(
             skirmish.ai_triggers.iter().all(|trigger| trigger.enabled),
             "listed map enable keys force enabled when g_GameMode is nonzero"
         );
+
+        let policy = RulePolicy::stock_multiplayer().with_forces_listed_ai_trigger_enables(false);
+        let skirmish_respecting_authored_enables =
+            TeamAiIniRegistry::from_sources(&fixed, &map, policy);
+        assert!(!skirmish_respecting_authored_enables.ai_triggers[0].enabled);
+        assert!(skirmish_respecting_authored_enables.ai_triggers[1].enabled);
     }
 
     #[test]
@@ -1069,7 +1070,7 @@ mod tests {
         ));
 
         let campaign =
-            TeamAiIniRegistry::from_sources(&fixed, &scenario, BootstrapRuleProfile::Campaign);
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, RulePolicy::stock_campaign());
         let by_id = |id: &str| {
             campaign
                 .ai_triggers
@@ -1093,7 +1094,7 @@ mod tests {
         );
 
         let skirmish =
-            TeamAiIniRegistry::from_sources(&fixed, &scenario, BootstrapRuleProfile::Multiplayer);
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, RulePolicy::stock_multiplayer());
         assert!(
             skirmish
                 .ai_triggers
@@ -1123,7 +1124,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
 
         assert_eq!(
@@ -1164,7 +1165,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
 
         assert!(loaded.ai_triggers.is_empty());
@@ -1191,7 +1192,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
 
         assert!(loaded.ai_triggers.is_empty());
@@ -1212,7 +1213,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
 
         assert!(loaded.task_forces[0].entries.is_empty());
@@ -1238,7 +1239,7 @@ mod tests {
         let loaded = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
 
         assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);

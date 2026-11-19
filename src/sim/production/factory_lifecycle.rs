@@ -448,10 +448,9 @@ pub(super) fn settle_abandoned(
     sim.production
         .edit_factories()
         .reset_for_abandon(holder, sim.session.binary_frame());
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     if let Some(category) = category
         && let Some(house) = sim.houses.get_mut(&owner_id)
-        && !house.is_controlled_by_human(game_mode_nonzero)
+        && !house.is_controlled_by_human(sim.session.rule_policy())
     {
         match UnitChoiceKind::of(category, naval) {
             Some(kind) => house.ai_unit_choices_mut().clear(kind),

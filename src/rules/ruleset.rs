@@ -13987,7 +13987,7 @@ MutateWarhead=MyMutate\n\
         assert_eq!(prior.fog_of_war, Some(true));
         let mut fresh = parse_special_flags_section(&IniFile::empty());
         fresh.resolve_campaign_defaults(Some(&prior));
-        assert_eq!(fresh.fog_of_war, Some(false));
+        assert_eq!(fresh.fog_of_war, None);
         let mut authored = prior.clone();
         authored.resolve_campaign_defaults(Some(&fresh));
         assert_eq!(authored.fog_of_war, Some(true));

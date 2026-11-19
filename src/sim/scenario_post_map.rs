@@ -11,6 +11,7 @@
 
 use crate::map::houses::HouseRoster;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::crates::CratePlacement;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -24,6 +25,8 @@ pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) rules: &'a RuleSet,
     pub(crate) overlay_registry: &'a OverlayTypeRegistry,
     pub(crate) house_roster: &'a HouseRoster,
+    /// Fresh map rules, which can differ from a legacy replay's live rules.
+    pub(crate) construction_rules: RulePolicy,
     pub(crate) skirmish_session: Option<&'a crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
     /// Every fresh campaign installation, including continuation and retry.
     pub(crate) campaign_map: Option<&'a crate::map::map_file::MapFile>,
@@ -105,7 +108,9 @@ impl Simulation {
 
         #[cfg(any(test, feature = "test-support"))]
         let mut skirmish_order = [None; 4];
-        let crates = if input.skirmish_session.is_some() {
+        let crates = if input.skirmish_session.is_some()
+            && input.construction_rules.crates_use_runtime_slots()
+        {
             let player_count = crate::sim::crates::human_player_count(self);
             #[cfg(any(test, feature = "test-support"))]
             {
@@ -126,7 +131,7 @@ impl Simulation {
             None
         };
 
-        if self.session.game_mode_nonzero() {
+        if self.session.rule_policy().ai_searches_for_enemy() {
             // ScenarioClass::Post_Map_Init006869EA..00686A2B starts every
             // nonhuman/nonpassive House's timer, before its credit grant.
             // The timer writes consume no RNG and do not affect credits or
@@ -174,7 +179,7 @@ impl Simulation {
         // and alliances after it change no owner or Limbo state it reads. The
         // base query is PlayerPtr's, so a network game stamps no shared Dummy.
         let player_view = if self.session.game_mode_nonzero() {
-            let network = self.session.game_mode().is_network();
+            let network = self.session.execution_topology().is_lockstep();
             let cells = self.resolved_terrain.as_ref().map(|terrain| {
                 crate::map::resolved_terrain::NativeCellQuery::for_local_input(terrain, network)
             });
@@ -576,6 +581,7 @@ mod tests {
             rules,
             overlay_registry: overlays,
             house_roster,
+            construction_rules: RulePolicy::stock_campaign(),
             skirmish_session: None,
             campaign_map: None,
         }
@@ -841,7 +847,7 @@ mod tests {
             let record = previous.save_campaign_carry_over();
             let mut sim = Simulation::from_descriptor(&Default::default());
             sim.session
-                .initialize_campaign_startup(1, 7, None, 1, record)
+                .initialize_campaign_startup(1, 7, None, 1, record, None)
                 .unwrap();
             Simulation::set_trigger_variable(
                 &sim.session,
@@ -911,6 +917,7 @@ mod tests {
                     None,
                     0,
                     crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                    None,
                 )
                 .unwrap();
             let before = sim.rng_state();
@@ -967,6 +974,7 @@ mod tests {
                 None,
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(

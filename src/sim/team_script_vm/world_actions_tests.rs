@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::ore_growth::{OreGrowthConfig, OreGrowthState};
 use crate::sim::overlay_grid::OverlayGrid;
@@ -42,11 +42,8 @@ fn scene(scripts: &str) -> (Simulation, RuleSet, InternedId) {
          [OLDTEAM]\nHouse=Americans\nScript=RUN\nTaskForce=TRUCKS\nMax=1\n\
          [NEWTEAM]\nHouse=Americans\nScript=IDLE\nTaskForce=TRUCKS\nMax=0\n"
     ));
-    let registry = TeamAiIniRegistry::from_sources(
-        &IniFile::from_str(""),
-        &map,
-        BootstrapRuleProfile::Campaign,
-    );
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map, RulePolicy::stock_campaign());
     sim.install_team_ai_registry(&registry, &rules);
     (sim, rules, owner)
 }

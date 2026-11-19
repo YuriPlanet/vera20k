@@ -12,6 +12,7 @@
 //! audio/ or net/.
 
 use crate::map::resolved_terrain::TerrainTileAnimation;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::{AnimDrawRuntime, AnimWorldCoord};
 use crate::sim::components::AnimClassSpawnDescriptor;
@@ -957,7 +958,7 @@ where
         let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map_data.ini,
-            descriptor.rule_policy.bootstrap(),
+            descriptor.rule_policy,
         );
         sim.initialize_trigger_definitions(map_data, &teams, None, None, None);
     }
@@ -1447,6 +1448,7 @@ pub fn finalize_constructed_scenario(
     map_data: &crate::map::map_file::MapFile,
     rules: &RuleSet,
     house_roster: &crate::map::houses::HouseRoster,
+    construction_rules: RulePolicy,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
 ) -> Result<
     crate::sim::scenario_post_map::ScenarioPostMapOutput,
@@ -1549,6 +1551,7 @@ pub fn finalize_constructed_scenario(
             rules,
             overlay_registry,
             house_roster,
+            construction_rules,
             skirmish_session,
             campaign_map,
         })?;
@@ -1588,7 +1591,15 @@ fn finalization_keeps_populated_neighbor_counts() {
         .unwrap()
         .retained_neighbor_counts()
         .to_vec();
-    finalize_constructed_scenario(&mut sim, &map, &rules, &roster, None).unwrap();
+    finalize_constructed_scenario(
+        &mut sim,
+        &map,
+        &rules,
+        &roster,
+        RulePolicy::stock_campaign(),
+        None,
+    )
+    .unwrap();
     assert_eq!(
         sim.overlay_grid
             .as_ref()

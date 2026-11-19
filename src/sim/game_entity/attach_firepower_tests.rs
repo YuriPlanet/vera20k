@@ -48,7 +48,7 @@ fn scene(discard: bool, veteran: bool) -> (Simulation, RuleSet, u64, u64, u64) {
         HouseDifficulty::Normal,
         &general,
         CountryDifficultyBiases::default(),
-        false,
+        crate::rules::rule_policy::RulePolicy::stock_campaign(),
         0,
         0,
     );

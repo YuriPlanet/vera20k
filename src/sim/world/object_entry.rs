@@ -566,7 +566,7 @@ impl Simulation {
                 return 0;
             }
         }
-        if self.session.game_mode_nonzero()
+        if !self.session.uses_local_player_shroud()
             || !e.discovery.owned_by_current_house()
             || e.is_mission_only()
         {
@@ -1119,8 +1119,10 @@ fn full_foot_entry<'a>(
             .registry
             .and_then(|r| r.flags(overlay))
             .ok_or("repair overlay receiver lacks registered type")?;
+        // Infantry51C193..51C1AF always checks computer ownership.
+        // Unit73F3EC..73F41D also gates crate avoidance at 0x0073F405.
         if flags.crate_type
-            && (infantry || !live.sim.session.game_mode_nonzero())
+            && (infantry || live.sim.session.rule_policy().ai_vehicles_avoid_crates())
             && !live.sim.owner_is_human(e.owner())
         {
             return Ok(7);
@@ -2024,7 +2026,26 @@ mod tests {
             assert_eq!(
                 probe(&sim, valid),
                 Ok(7),
-                "a valid shrouded cell continues after the Team outside-playfield test"
+                "mode 0 refuses a valid shrouded cell after the Team outside-playfield test"
+            );
+            use crate::sim::scenario_session::ScenarioGameMode;
+            sim.session
+                .set_game_mode(ScenarioGameMode::from_game_mode(5));
+            assert_eq!(
+                probe(&sim, valid),
+                Ok(0),
+                "mode 5 also executes locally and admits the shrouded cell"
+            );
+            sim.session.set_game_mode(ScenarioGameMode::Lan);
+            assert_eq!(
+                probe(&sim, valid),
+                Ok(0),
+                "lockstep ignores the local shroud"
+            );
+            sim.session
+                .set_game_mode(ScenarioGameMode::from_game_mode(0));
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
+                sim.resolved_terrain.as_ref().unwrap(),
             );
 
             let outside = cells.lookup((0, 0));
@@ -2039,6 +2060,60 @@ mod tests {
                 "only a cell outside the playfield is rejected by the Team branch"
             );
         }
+    }
+
+    #[test]
+    fn live_crate_entry_combines_vehicle_policy_with_infantry_and_house_checks() {
+        use crate::rules::rule_policy::AuthoredCratePolicy;
+        use crate::sim::{house_state::HouseState, scenario_session::ScenarioGameMode};
+
+        let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=TRUCK\n[TRUCK]\nStrength=100\nSpeedType=Wheel\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n[O37]\nCrate=yes\n",
+        );
+        let owner = sim.intern("Americans");
+        sim.houses
+            .register(HouseState::new(owner, 0, Some(owner), false, 0, 10));
+        let truck = sim
+            .spawn_object("TRUCK", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let infantry = sim
+            .spawn_object("ENGINEER", "Americans", 15, 16, 0, &rules)
+            .unwrap();
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .place_overlay(16, 15, 37, u8::MAX);
+        let cell = sim
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .native_cell_identity((16, 15));
+        let probe = |sim: &Simulation, id| {
+            sim.foot_can_enter(
+                id,
+                cell,
+                crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+                &rules,
+                Some(&overlays),
+            )
+        };
+
+        sim.session
+            .set_game_mode(ScenarioGameMode::from_game_mode(0));
+        assert_eq!(probe(&sim, truck), Ok(7));
+        let skirmish = ScenarioGameMode::from_game_mode(5);
+        sim.session.set_game_mode(skirmish);
+        assert_eq!(probe(&sim, truck), Ok(0));
+        assert_eq!(probe(&sim, infantry), Ok(7));
+
+        let policy = sim
+            .session
+            .rule_policy()
+            .with_ai_vehicles_avoid_crates(true);
+        assert_eq!(policy.crates(), AuthoredCratePolicy::Skip);
+        sim.install_session_admission(skirmish, None, policy);
+        assert_eq!(probe(&sim, truck), Ok(7));
     }
 
     #[test]

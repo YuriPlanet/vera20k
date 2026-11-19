@@ -72,6 +72,98 @@ fn production_dependency_edges_match_frozen_ledger_inventory() {
     );
 }
 
+/// The Phase 1 chains and construction layers read admitted rules and topology.
+/// Freeze the remaining raw simulation reads until their compatibility callers
+/// can move to the corresponding owner. The budget must fall with removals.
+#[test]
+fn production_scenario_mode_reads_stay_behind_admission() {
+    const COMPLETED_CHAINS: &[&str] = &[
+        "sim/ai_base_building.rs",
+        "sim/ai_base_site.rs",
+        "sim/ai_team_creation.rs",
+        "sim/ares_tiberium_storage.rs",
+        "sim/base_plan.rs",
+        "sim/combat/base_defense_response/admission.rs",
+        "sim/combat/base_defense_response.rs",
+        "sim/combat/greatest_threat.rs",
+        "sim/combat/world_fire.rs",
+        "sim/crates/pickup.rs",
+        "sim/crates/runtime.rs",
+        "sim/house_strategy.rs",
+        "sim/hunter_seeker.rs",
+        "sim/light_sources.rs",
+        "sim/mcv_deploy.rs",
+        "sim/miner/miner_system.rs",
+        "sim/miner/ore_scan.rs",
+        "sim/ore_growth.rs",
+        "sim/production/can_build.rs",
+        "sim/production/production_repair.rs",
+        "sim/production/production_sell.rs",
+        "sim/team_script_vm/actions.rs",
+        "sim/team_script_vm/membership.rs",
+        "sim/team_script_vm/reinforcements.rs",
+        "sim/world/aircraft_fire_location.rs",
+        "sim/world/house_defeat.rs",
+        "sim/world/idle_sleep.rs",
+        "sim/world/lifecycle.rs",
+        "sim/world/object_entry.rs",
+        "sim/world/shroud_refresh.rs",
+        "sim/world/world_spawn.rs",
+    ];
+    const LEGACY_READ_COUNT: usize = 30;
+
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut forbidden = Vec::new();
+    let mut remaining = Vec::new();
+    for file in source_files(&src_root) {
+        let Some(production) = &file.production else {
+            continue;
+        };
+        let no_raw_reads = file.rel.starts_with("rules/")
+            || file.rel.starts_with("map/")
+            || COMPLETED_CHAINS.contains(&file.rel.as_str());
+        let output = if no_raw_reads {
+            &mut forbidden
+        } else if file.rel.starts_with("sim/") {
+            &mut remaining
+        } else {
+            continue;
+        };
+        for (line, method) in raw_scenario_mode_reads(production) {
+            output.push(format!("{}:{line}: {method}", file.rel));
+        }
+    }
+    let fix = "Use ScenarioSession::rule_policy() for gameplay, \
+               execution_topology() for lockstep and the session's local-view owner for PlayerPtr. \
+               Keep exact legacy mode reads at compatibility boundaries.";
+    assert!(forbidden.is_empty(), "{fix}\n{}", forbidden.join("\n"));
+    assert_eq!(
+        remaining.len(),
+        LEGACY_READ_COUNT,
+        "{fix}\nReduce the raw-mode budget when removing a legacy read.\n{}",
+        remaining.join("\n"),
+    );
+}
+
+fn raw_scenario_mode_reads(production: &str) -> impl Iterator<Item = (usize, &'static str)> {
+    ["game_mode", "game_mode_nonzero"]
+        .into_iter()
+        .flat_map(move |method| {
+            production.match_indices(method).filter_map(move |(at, _)| {
+                let before = production[..at].trim_end();
+                let after = production[at + method.len()..].trim_start();
+                if !(before.ends_with('.') || before.ends_with("::")) || !after.starts_with('(') {
+                    return None;
+                }
+                let line = production.as_bytes()[..at]
+                    .iter()
+                    .filter(|&&byte| byte == b'\n')
+                    .count();
+                Some((line + 1, method))
+            })
+        })
+}
+
 /// Production and tooling advance through `SimRuntime`, which supplies the
 /// match rules to the app frame. The rules supply its overlay types. Only
 /// fixture adapters drive a frame with explicitly substituted inputs. Pin the
@@ -1007,8 +1099,8 @@ fn strip_test_items(source: &str, text: &str) -> String {
         }
         if emit {
             out.push_str(line);
-            out.push('\n');
         }
+        out.push('\n');
     }
     out
 }

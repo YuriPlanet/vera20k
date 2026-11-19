@@ -4,7 +4,7 @@
 //! coefficient/Team reader/getter controls are pinned in astar_threat_inputs.
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::snapshot::GameSnapshot;
@@ -117,7 +117,7 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
     let team_registry = TeamAiIniRegistry::from_sources(
         &aimd,
         &IniFile::from_str(""),
-        BootstrapRuleProfile::Multiplayer,
+        RulePolicy::stock_multiplayer(),
     );
     let (vm, diagnostics) =
         TeamScriptVm::from_ini_registry(&team_registry, &mut sim.interner, &rules);

@@ -143,7 +143,7 @@ impl Simulation {
             || self
                 .houses
                 .get(&unit.owner())
-                .is_none_or(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()))
+                .is_none_or(|house| house.is_controlled_by_human(self.session.rule_policy()))
             || unit.mission.queued() != MissionId::NONE
         {
             return;

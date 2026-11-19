@@ -3,7 +3,7 @@
 use super::*;
 use crate::headless_scenario::{HeadlessScenario, battle_session, load_session};
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
@@ -275,7 +275,7 @@ fn a_team_only_dummy_target_makes_its_live_coordinate_part_of_the_hash() {
         "[TeamTypes]\n0=TEAM\n[TEAM]\nScript=SCRIPT\nTaskForce=FORCE\n[ScriptTypes]\n0=SCRIPT\n[SCRIPT]\n0=2,0\n[TaskForces]\n0=FORCE\n[FORCE]\n0=1,E2\n",
     );
     let registry =
-        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, BootstrapRuleProfile::Campaign);
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, RulePolicy::stock_campaign());
     sim.install_team_ai_registry(&registry, &rules);
     let team_type = sim.interner.get("TEAM").unwrap();
     let team = sim.create_team(team_type, Some(owner), &rules).unwrap();

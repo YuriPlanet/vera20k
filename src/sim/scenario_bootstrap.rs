@@ -2046,7 +2046,7 @@ pub fn populate_launch_houses(
             difficulty,
             &rules.general,
             rules.country_difficulty_biases(country_name),
-            sim.session.game_mode_nonzero(),
+            sim.session.rule_policy(),
             sim.houses.order().len() as i32,
             sim.session.binary_frame() as i32,
         );
@@ -2454,7 +2454,7 @@ fn ares_place_starting_construction_yard(
     if width > 2 || height > 2 {
         house.set_base_center((spawn_rx.wrapping_sub(1), spawn_ry.wrapping_sub(1)));
     }
-    if !house.is_controlled_by_human(sim.session.game_mode_nonzero()) {
+    if !house.is_controlled_by_human(sim.session.rule_policy()) {
         let cell = house.base_origin();
         sim.refresh_ai_base_after_deploy(
             owner_id,
@@ -3377,10 +3377,8 @@ impl ScenarioBootstrapRng {
                     game_options,
                     campaign_index,
                     restart_carry_over,
+                    map_data.special_flags.fog_of_war,
                 )?;
-                simulation.session.install_campaign_fog_of_war(
-                    map_data.special_flags.fog_of_war.unwrap_or(false),
-                );
                 simulation.install_native_unique_id_cursor(
                     crate::sim::native_identity::NativeUniqueIdCursor::begin_campaign_prefix(
                         early_events.len(),
@@ -3757,7 +3755,8 @@ pub fn initialize_map_roster_houses(
         // IQ (+0x1D0) and CurrentIQ (+0x24C) (0x00500DBA..0x00500DC0).
         house_state.install_scenario_iq(house.scenario_current_iq(rules.general.max_iq_levels));
         if let Some((player, computer)) = campaign_difficulties {
-            let difficulty = if house_state.is_controlled_by_human(false) {
+            let policy = sim.session.rule_policy();
+            let difficulty = if house_state.is_controlled_by_human(policy) {
                 player
             } else {
                 computer
@@ -3768,7 +3767,7 @@ pub fn initialize_map_roster_houses(
                 country_name.map_or_else(Default::default, |name| {
                     rules.country_difficulty_biases(name)
                 }),
-                false,
+                policy,
                 index as i32,
                 frame,
             );
@@ -4587,6 +4586,7 @@ mod tests {
             rules: &rules,
             overlay_registry: rules.overlay_registry(),
             house_roster: &HouseRoster::default(),
+            construction_rules: sim.session.rule_policy(),
             skirmish_session: Some(&launch),
             campaign_map: None,
         })
@@ -4603,7 +4603,7 @@ mod tests {
 
     #[test]
     fn scripted_result_network_views_keep_both_humans_and_local_exit_consistent() {
-        use crate::rules::rule_policy::BootstrapRuleProfile;
+        use crate::rules::rule_policy::RulePolicy;
         use crate::rules::team_ai_ini::TeamAiIniRegistry;
         use crate::sim::house_state::HouseOutcomeKind;
         let mut finals = Vec::new();
@@ -4621,7 +4621,7 @@ mod tests {
             let registry = TeamAiIniRegistry::from_sources(
                 &IniFile::empty(),
                 &ini,
-                BootstrapRuleProfile::Multiplayer,
+                RulePolicy::stock_multiplayer(),
             );
             sim.install_team_ai_registry(&registry, rules);
             let ty = sim.interner.get("RESULT-TEAM").unwrap();
@@ -7408,18 +7408,24 @@ mod tests {
             &overlays,
             (SIZE, SIZE),
         );
-        let output = sim
-            .finalize_scenario_post_map(ScenarioPostMapInput {
-                map_width: SIZE,
-                map_height: SIZE,
-                fill_silos: false,
-                rules: &rules,
-                overlay_registry: &overlays,
-                house_roster: &house_roster,
-                skirmish_session: Some(&launch),
-                campaign_map: None,
-            })
+        let post_map = |construction_rules| ScenarioPostMapInput {
+            map_width: SIZE,
+            map_height: SIZE,
+            fill_silos: false,
+            rules: &rules,
+            overlay_registry: &overlays,
+            house_roster: &house_roster,
+            construction_rules,
+            skirmish_session: Some(&launch),
+            campaign_map: None,
+        };
+        let stock = sim.session.rule_policy();
+        let no_slots = sim
+            .clone()
+            .finalize_scenario_post_map(post_map(stock.with_crates_use_runtime_slots(false)))
             .unwrap();
+        assert!(no_slots.crates.is_none());
+        let output = sim.finalize_scenario_post_map(post_map(stock)).unwrap();
         assert_eq!(
             output.crates,
             Some(crate::sim::crates::CratePlacement {

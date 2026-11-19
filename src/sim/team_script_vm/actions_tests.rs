@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
@@ -53,7 +53,7 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     sim.resolve_type_handles(&rules);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let roster = crate::map::houses::parse_house_roster(&map, &rules.color_schemes, Some(&rules));
@@ -72,7 +72,7 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
         .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
         .unwrap();
     let registry =
-        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, BootstrapRuleProfile::Campaign);
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, RulePolicy::stock_campaign());
     sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Russians").unwrap();
     let ty = sim.interner.get("TREE-TEAM").unwrap();
@@ -728,7 +728,7 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
     let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &map.ini,
-        BootstrapRuleProfile::Campaign,
+        RulePolicy::stock_campaign(),
     )
     .unwrap();
     assert_eq!(
@@ -909,7 +909,7 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &map.ini,
-        BootstrapRuleProfile::Campaign,
+        RulePolicy::stock_campaign(),
     )
     .unwrap();
     let mut sim = Simulation::new();
@@ -1369,7 +1369,7 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &map.ini,
-        BootstrapRuleProfile::Campaign,
+        RulePolicy::stock_campaign(),
     )
     .unwrap();
     let mut sim = Simulation::new();
@@ -1518,7 +1518,7 @@ fn the_retail_scatter_script_runs_ported_actions() {
     let registry = TeamAiIniRegistry::from_sources(
         &aimd,
         &IniFile::from_str(""),
-        BootstrapRuleProfile::Multiplayer,
+        RulePolicy::stock_multiplayer(),
     );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
@@ -1839,7 +1839,7 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
     let registry = TeamAiIniRegistry::from_sources(
         &aimd,
         &IniFile::from_str(""),
-        BootstrapRuleProfile::Multiplayer,
+        RulePolicy::stock_multiplayer(),
     );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);

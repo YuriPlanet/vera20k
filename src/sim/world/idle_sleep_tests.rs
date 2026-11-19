@@ -94,7 +94,8 @@ fn every_turn_sleeping_would_skip_changes_only_the_owed_counters() {
 }
 
 #[test]
-fn a_write_wakes_a_sleeper_with_its_owed_visits() {
+fn starting_repair_wakes_the_building_with_its_owed_visits() {
+    use crate::sim::production::{RepairControl, toggle_repair};
     let rules = rules();
     let (mut asleep, grid) = power_plant(&rules, true);
     let (mut awake, awake_grid) = power_plant(&rules, false);
@@ -103,18 +104,16 @@ fn a_write_wakes_a_sleeper_with_its_owed_visits() {
         tick(&mut awake, &rules, &awake_grid);
     }
     assert_eq!(asleep.idle_sleep_counts().0, 1, "the plant is asleep");
+    assert!(toggle_repair(&mut asleep, &rules, 1, RepairControl::Start));
+    assert!(toggle_repair(&mut awake, &rules, 1, RepairControl::Start));
+    assert_eq!(asleep.idle_sleep_counts().0, 0, "repair wakes the building");
     let woken = asleep
         .substrate
         .entities
-        .get_mut(1)
+        .get(1)
         .unwrap()
         .mission
         .ai_counter();
-    assert_eq!(
-        asleep.idle_sleep_counts().0,
-        0,
-        "a mutable hand-out wakes it"
-    );
     assert_eq!(
         woken,
         awake

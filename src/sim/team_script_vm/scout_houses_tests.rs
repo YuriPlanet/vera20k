@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::house_state::HouseState;
 use crate::sim::rng::SimRng;
 use crate::sim::snapshot::GameSnapshot;
@@ -113,7 +113,7 @@ fn retail_coop_scout_action_moves_after_reload_and_releases_its_team_slot() {
     let map =
         IniFile::from_bytes(assets.get_ref("C2S01MD.MAP").expect("retail co-op map")).unwrap();
     let registry =
-        TeamAiIniRegistry::load_retail(&assets, &map, BootstrapRuleProfile::Multiplayer).unwrap();
+        TeamAiIniRegistry::load_retail(&assets, &map, RulePolicy::stock_multiplayer()).unwrap();
     let script = registry
         .scripts
         .iter()

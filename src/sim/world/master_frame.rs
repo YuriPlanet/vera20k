@@ -613,7 +613,8 @@ impl Simulation {
         // (`0x00647684`, history `0x00B04474[Frame & 0xFF]`) before any
         // command transfer or dispatch; the single-player body never does.
         // VERA appends money, health and trigger terms to the native fold.
-        if self.session.game_mode().command_queue_route() == CommandQueueRoute::Multiplayer {
+        if self.session.execution_topology().command_queue_route() == CommandQueueRoute::Multiplayer
+        {
             self.frame_sync_checksum = Some(FrameSyncChecksum {
                 frame: self.session.binary_frame(),
                 checksum: self.compute_multiplayer_frame_checksum(),

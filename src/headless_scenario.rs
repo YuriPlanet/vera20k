@@ -323,11 +323,8 @@ fn load_with_assets(
     // installs the live mode and rules of a campaign.
     let mode_class = Some(launch.session().mode.class);
     let rule_policy = ScenarioGameMode::Skirmish.stock_rule_policy(mode_class);
-    let team_ai_registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
-        &assets,
-        &map.ini,
-        rule_policy.bootstrap(),
-    )?;
+    let team_ai_registry =
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
     let theater = theater::load_theater(assets, &map.header.theater)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
@@ -532,6 +529,7 @@ fn load_with_assets(
         &map,
         &rules,
         &house_roster,
+        descriptor.rule_policy,
         Some(&launch),
     )
     .map_err(|error| error.to_string())?;
@@ -1456,7 +1454,7 @@ mod retail_construction_tests {
             .sim()
             .houses
             .iter()
-            .filter(|(_, house)| !house.is_controlled_by_human(true) && !house.multiplay_passive())
+            .filter(|(_, house)| !house.is_human() && !house.multiplay_passive())
             .map(|(&id, _)| id)
             .collect();
         assert_eq!(computers.len(), opponents.len());
@@ -1842,7 +1840,7 @@ mod retail_construction_tests {
             let human = sim
                 .houses
                 .iter()
-                .find(|(_, house)| house.is_controlled_by_human(true))
+                .find(|(_, house)| house.is_human())
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim
@@ -2093,7 +2091,7 @@ mod retail_construction_tests {
             let human = sim
                 .houses
                 .iter()
-                .find(|(_, house)| house.is_controlled_by_human(true))
+                .find(|(_, house)| house.is_human())
                 .map(|(&id, _)| id)
                 .expect("the local house");
             let mcv = sim

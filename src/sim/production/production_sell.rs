@@ -62,6 +62,7 @@
 //!   receiver building-only.
 
 use crate::map::entities::EntityCategory;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{KillCallback, KillSource};
 use crate::sim::components::BuildingDown;
@@ -110,7 +111,7 @@ pub(crate) fn type_refund(
     object: &crate::rules::object_type::ObjectType,
     house: &crate::sim::house_state::HouseState,
     factors: &crate::rules::ruleset::HouseCostFactors,
-    game_mode_nonzero: bool,
+    policy: RulePolicy,
     full: bool,
 ) -> i32 {
     use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits};
@@ -138,7 +139,7 @@ pub(crate) fn type_refund(
         X87::mul(X87::load_i32(rules.type_cost(object)), X87::load_f32(m2)),
         X87::load_f32(m1),
     ));
-    if house.is_controlled_by_human(game_mode_nonzero) {
+    if house.is_controlled_by_human(policy) {
         X87::ftol_i32_low_masked(X87::mul(X87::load_i32(value), X87::load_f32(pct)))
     } else {
         value
@@ -157,7 +158,7 @@ pub fn techno_refund(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<i32> 
         object,
         sim.houses.get(&owner)?,
         &Simulation::house_cost_factors(&sim.houses, owner)?,
-        sim.session.game_mode_nonzero(),
+        sim.session.rule_policy(),
         false,
     ))
 }
@@ -188,7 +189,7 @@ pub(crate) fn sell_useless_repair_contact(
         || sim
             .houses
             .get(&owner)
-            .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()))
+            .is_none_or(|house| house.is_controlled_by_human(sim.session.rule_policy()))
     {
         return false;
     }
@@ -336,7 +337,7 @@ pub(crate) fn sell_after_owner_change(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    if !sim.session.game_mode_nonzero() {
+    if !sim.session.rule_policy().allows_ai_sale_after_capture() {
         return;
     }
     let Some(building) = sim
@@ -353,7 +354,7 @@ pub(crate) fn sell_after_owner_change(
         || sim
             .houses
             .get(&owner)
-            .is_none_or(|house| house.is_controlled_by_human(true))
+            .is_none_or(|house| house.is_controlled_by_human(sim.session.rule_policy()))
         || sim
             .houses
             .get(&initial_owner)
@@ -389,7 +390,14 @@ pub(crate) fn sell_after_owner_change(
         // 449310..44935D: type GetRefund(owner,1), GiveMoney, then
         // RemoveLastUpgrade451690 and the owner's power/radar dirty bytes.
         // Unlike Selling stage0, this constructs no temporary upgrade object.
-        let refund = type_refund(rules, upgrade, house, &factors, true, true);
+        let refund = type_refund(
+            rules,
+            upgrade,
+            house,
+            &factors,
+            sim.session.rule_policy(),
+            true,
+        );
         crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
         let _ = sim.power_down_building_upgrade(
             id,
@@ -610,7 +618,9 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     if !object.construction_yard {
         return true;
     }
-    sim.session.game_mode_nonzero()
+    sim.session
+        .rule_policy()
+        .allows_construction_yard_redeploy()
         && sale_archive(entity)
         && sim.owner_is_human(entity.owner())
         && sim.session.game_options().mcv_redeploy

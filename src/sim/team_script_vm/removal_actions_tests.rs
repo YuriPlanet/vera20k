@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::house_state::HouseState;
 use crate::sim::team_script_vm::TeamScriptDefinition;
@@ -41,7 +41,7 @@ fn self_destruct_scene() -> Option<(Simulation, RuleSet, InternedId)> {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
         &IniFile::from_str(""),
         &map,
-        BootstrapRuleProfile::Campaign,
+        RulePolicy::stock_campaign(),
     );
     sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.intern("Russians");
@@ -367,7 +367,7 @@ fn retail_all01_return_programs_bind_script37_and_their_locomotor_types() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &map.ini,
-        BootstrapRuleProfile::Campaign,
+        RulePolicy::stock_campaign(),
     )
     .unwrap();
     for id in ["0B7D63DC", "0AB4A90C", "0B1646CC", "0962056C"] {

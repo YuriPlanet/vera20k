@@ -4,7 +4,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::components::DriveCoord;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -240,7 +240,7 @@ fn retail_all01_facing_scripts_reach_the_shared_turn_owner() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &map.ini,
-        BootstrapRuleProfile::Campaign,
+        RulePolicy::stock_campaign(),
     )
     .unwrap();
     let scripts: Vec<_> = registry

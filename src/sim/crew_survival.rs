@@ -379,7 +379,7 @@ impl Simulation {
             object,
             house,
             &factors,
-            self.session.game_mode_nonzero(),
+            self.session.rule_policy(),
             false,
         );
         refund.checked_div(divisor).unwrap_or(0).clamp(1, 5)

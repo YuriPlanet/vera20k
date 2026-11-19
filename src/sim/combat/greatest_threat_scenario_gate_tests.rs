@@ -5,7 +5,9 @@
 //! area-damage receiver skip (`0x00489710..0x00489759`).
 
 use super::*;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::combat::threat_range::ScanMission;
+use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::world::Simulation;
 
 /// A guarding MTNK on the rival arena with one enemy candidate of
@@ -48,10 +50,7 @@ fn campaign_player_scan_skips_an_enemy_the_player_has_not_discovered() {
     };
     let rules = &retail.rules;
     let (mut sim, tank, enemy) = rival_pair(rules, "MTNK", "HTNK");
-    assert!(
-        !sim.session.game_mode_nonzero(),
-        "the arena runs the campaign"
-    );
+    assert_eq!(sim.session.game_mode(), ScenarioGameMode::Campaign);
     assert_eq!(
         guard_pick(&mut sim, rules, tank),
         None,
@@ -70,13 +69,50 @@ fn campaign_player_scan_skips_an_enemy_the_player_has_not_discovered() {
     );
 
     let (mut sim, tank, enemy) = rival_pair(rules, "MTNK", "HTNK");
-    sim.session
-        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     assert_eq!(
         guard_pick(&mut sim, rules, tank),
         Some(enemy),
         "skirmish: no discovery gate"
     );
+
+    let rules_policy =
+        RulePolicy::stock_multiplayer().with_targeting_requires_player_discovery(true);
+    sim.session
+        .install_admission(ScenarioGameMode::Skirmish, None, rules_policy);
+    assert_eq!(guard_pick(&mut sim, rules, tank), None);
+
+    sim.session
+        .install_admission(ScenarioGameMode::Lan, None, rules_policy);
+    assert_eq!(
+        guard_pick(&mut sim, rules, tank),
+        Some(enemy),
+        "lockstep targeting must not depend on the local player's discovery bytes"
+    );
+}
+
+#[test]
+fn passive_house_targets_follow_the_admitted_policy() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, tank, target) = guard_scene(rules, "HTNK");
+    let opponent = sim.interner.get("Russians").unwrap();
+    sim.houses
+        .get_mut(&opponent)
+        .unwrap()
+        .set_multiplay_passive_for_test(true);
+
+    assert_eq!(guard_pick(&mut sim, rules, tank), Some(target));
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    assert_eq!(guard_pick(&mut sim, rules, tank), None);
+
+    let rules_policy =
+        RulePolicy::stock_multiplayer().with_targeting_respects_passive_houses(false);
+    sim.session
+        .install_admission(ScenarioGameMode::Skirmish, None, rules_policy);
+    assert_eq!(guard_pick(&mut sim, rules, tank), Some(target));
 }
 
 /// The production discovery the gate reads: with the campaign player

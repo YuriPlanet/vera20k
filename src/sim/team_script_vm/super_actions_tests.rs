@@ -11,7 +11,7 @@ use super::super::{
 };
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::MovementZone;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
@@ -452,7 +452,7 @@ fn retail_superweapon_scripts_run_ported_actions() {
     let registry = TeamAiIniRegistry::from_sources(
         &aimd,
         &IniFile::from_str(""),
-        BootstrapRuleProfile::Multiplayer,
+        RulePolicy::stock_multiplayer(),
     );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);

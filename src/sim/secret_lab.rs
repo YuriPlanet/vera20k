@@ -316,6 +316,8 @@ mod tests {
                             map_height: 0,
                             fill_silos: false,
                             rules: &rules,
+                            construction_rules:
+                                crate::rules::rule_policy::RulePolicy::stock_campaign(),
                             overlay_registry: &overlays,
                             house_roster: &roster,
                             skirmish_session: None,

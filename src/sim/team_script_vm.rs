@@ -1767,7 +1767,7 @@ mod tests {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
 
-    use crate::rules::rule_policy::BootstrapRuleProfile;
+    use crate::rules::rule_policy::RulePolicy;
     use crate::rules::ruleset::RuleSet;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::intern::StringInterner;
@@ -2031,7 +2031,7 @@ mod tests {
         ));
         let map = IniFile::from_str("[TaskForces]\n0=TF1\n[TF1]\n0=-2,E1\nGroup=9\n");
         let registry =
-            TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Multiplayer);
+            TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_multiplayer());
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2191,7 +2191,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2221,7 +2221,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2281,7 +2281,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2406,7 +2406,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2457,7 +2457,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2504,7 +2504,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2549,7 +2549,7 @@ mod tests {
              [EARLIER_TF]\n0=1,E1\n[LATER_TF]\n0=2,E1\n",
         );
         let registry =
-            TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Multiplayer);
+            TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_multiplayer());
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2597,7 +2597,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2638,7 +2638,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &fixed,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2687,7 +2687,7 @@ mod tests {
         let registry = TeamAiIniRegistry::from_sources(
             &aimd,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Multiplayer,
+            RulePolicy::stock_multiplayer(),
         );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
@@ -2813,7 +2813,7 @@ mod tests {
         let zero_mode_registry = TeamAiIniRegistry::from_sources(
             &aimd,
             &IniFile::from_str(""),
-            BootstrapRuleProfile::Campaign,
+            RulePolicy::stock_campaign(),
         );
         let mut zero_mode_interner = StringInterner::new();
         let (zero_mode_vm, zero_mode_diagnostics) =

@@ -52,16 +52,26 @@ impl crate::sim::world::Simulation {
         let policy = origin
             .and_then(|origin| rules.super_weapon_metadata(self.interner.resolve(origin.sw_type)))
             .map(|metadata| metadata.targeting());
-        let multiplayer = self.session.game_mode_nonzero();
-        let human = house.is_controlled_by_human(multiplayer);
-        let favourite_only = multiplayer && !human && house.enemy_house().is_some();
-        let prefer_players = multiplayer && human && settings.is_none_or(|s| !s.random_only);
+        // Ares AcquireHunterSeekerTarget 10042E40..10043171: the AI may
+        // substitute its designated enemy for AffectsHouse. Human launches
+        // may prune the pool to nonpassive Houses unless RandomOnly plays.
+        let rules_policy = self.session.rule_policy();
+        let human = house.is_controlled_by_human(rules_policy);
+        let designated_enemy =
+            if !human && rules_policy.hunter_seeker_limits_ai_to_designated_enemy() {
+                house.enemy_house()
+            } else {
+                None
+            };
+        let prefer_players = human
+            && rules_policy.hunter_seeker_humans_prefer_nonpassive_targets()
+            && settings.is_none_or(|s| !s.random_only);
         let mut preferred = false;
         let mut candidates = Vec::new();
         // EntityStore preserves TechnoClass::Array's construction order.
         for candidate in self.substrate.entities.values() {
-            if if favourite_only {
-                Some(candidate.owner()) != house.enemy_house()
+            if if let Some(enemy) = designated_enemy {
+                candidate.owner() != enemy
             } else {
                 !policy
                     .map_or(HouseMask::ENEMIES, |p| p.affects_house())

@@ -646,6 +646,14 @@ impl ExecutionTopology {
     pub const fn is_lockstep(self) -> bool {
         matches!(self, Self::LockstepNetwork)
     }
+
+    /// Queue_AI at 0x00647260 uses the multiplayer body for lockstep.
+    pub const fn command_queue_route(self) -> crate::sim::world::CommandQueueRoute {
+        match self {
+            Self::LockstepNetwork => crate::sim::world::CommandQueueRoute::Multiplayer,
+            Self::LocalOffline => crate::sim::world::CommandQueueRoute::SinglePlayer,
+        }
+    }
 }
 
 /// SessionClass GameMode A8B238. The exact active mode survives startup and
@@ -697,16 +705,18 @@ impl ScenarioGameMode {
         self,
         class: Option<crate::skirmish_modes::MpModeClass>,
     ) -> RulePolicy {
-        Self::stock_rule_policy_for_bootstrap(self.bootstrap_rule_profile(), class)
+        self.stock_rule_policy_for_bootstrap(self.bootstrap_rule_profile(), class)
     }
     pub const fn stock_rule_policy_for_bootstrap(
+        self,
         profile: BootstrapRuleProfile,
         class: Option<crate::skirmish_modes::MpModeClass>,
     ) -> RulePolicy {
         let rules = match profile {
             BootstrapRuleProfile::Campaign => RulePolicy::stock_campaign(),
             BootstrapRuleProfile::Multiplayer => RulePolicy::stock_multiplayer(),
-        };
+        }
+        .with_allows_ownerless_terrain_logic(self.is_single_player());
         match class {
             Some(class) => {
                 let policy = class.policy();
@@ -719,7 +729,13 @@ impl ScenarioGameMode {
                     .with_paranoid_ignores_allies_allowed(policy.permits_all_allied)
                     .with_network_diplomacy_briefing(policy.restates_mission_for_diplomacy)
                     .with_starting_house_role_alliances(policy.allies_starting_houses_by_role)
-                    .with_ares_psychic_reveal_exclusions(!policy.permits_all_allied)
+                    .with_ares_psychic_reveal_exclusions(
+                        rules.ares_psychic_reveal_exclusions() && !policy.permits_all_allied,
+                    )
+            }
+            // A legacy network startup can lack an MPGameMode object.
+            None if self.execution_topology().is_lockstep() => {
+                rules.with_ares_psychic_reveal_exclusions(false)
             }
             None => rules,
         }
@@ -744,14 +760,6 @@ impl ScenarioGameMode {
             Self::Wol => "wol",
             Self::Skirmish => "skirmish",
             Self::Other => "other",
-        }
-    }
-    /// Queue_AI647260 routes the active LAN/WOL values to its multiplayer body.
-    pub const fn command_queue_route(self) -> crate::sim::world::CommandQueueRoute {
-        if self.is_network() {
-            crate::sim::world::CommandQueueRoute::Multiplayer
-        } else {
-            crate::sim::world::CommandQueueRoute::SinglePlayer
         }
     }
 }
@@ -1394,12 +1402,6 @@ impl ScenarioSession {
         self.game_options = options;
     }
 
-    /// Full_Init686BA2 clears the campaign bit before the map's
-    /// Read_SpecialFlags6B8E69..6B8E89 installs its override.
-    pub(super) fn install_campaign_fog_of_war(&mut self, enabled: bool) {
-        self.game_options.fog_of_war = enabled;
-    }
-
     /// LogicClass::AI55B2DF..55B323: test against the native frame and
     /// restart before the caller runs RegrowFog. Flag/rate admission belongs
     /// to that caller, so a disabled flag/rate leaves this timer untouched.
@@ -1572,6 +1574,18 @@ impl ScenarioSession {
     pub const fn execution_topology(&self) -> ExecutionTopology {
         self.game_mode.execution_topology()
     }
+
+    /// The original campaign uses PlayerPtr discovery for local physics.
+    /// Offline Skirmish has its own vision path even though it runs locally.
+    pub(crate) const fn uses_local_player_shroud(&self) -> bool {
+        !self.execution_topology().is_lockstep()
+            && matches!(self.game_mode, ScenarioGameMode::Campaign)
+    }
+
+    /// Script 22 searches the process-local fog only in native modes 0 and 5.
+    pub(crate) const fn supports_local_team_shroud_search(&self) -> bool {
+        !self.execution_topology().is_lockstep() && self.game_mode.is_single_player()
+    }
     pub const fn rule_policy(&self) -> RulePolicy {
         self.rule_policy
     }
@@ -1596,8 +1610,15 @@ impl ScenarioSession {
     ) {
         self.game_mode = mode;
         self.multiplayer_mode_class = class;
-        self.rule_policy = rule_policy;
-        if !mode.is_network() {
+        let lockstep = mode.execution_topology().is_lockstep();
+        // The authored PlayerControl byte can be local to the launcher in a
+        // network match and is excluded from its shared hash.
+        self.rule_policy = if lockstep {
+            rule_policy.with_counts_player_control_as_human(false)
+        } else {
+            rule_policy
+        };
+        if !lockstep {
             self.network_max_ahead_frames = None;
             self.network_command_timing = None;
         }
@@ -1968,6 +1989,7 @@ impl ScenarioSession {
         game_options: Option<&GameOptions>,
         campaign_index: i32,
         restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver,
+        authored_fog_of_war: Option<bool>,
     ) -> Result<(), CampaignScenarioStartupError> {
         if self.game_mode_nonzero() {
             return Err(CampaignScenarioStartupError::NonCampaignMode);
@@ -1984,14 +2006,8 @@ impl ScenarioSession {
         // RESIDUAL: gamemd's BuildOffAlly (0x00A8B264) is a process global that only
         // option setup writes (e.g. `0x0052D20D`, the skirmish dialog's `0x006AD803`),
         // so a campaign inherits the last game's value; VERA keeps this session's.
-        if let Some(options) = game_options {
-            self.game_options = options.clone();
-        } else {
-            // Main_Tick55D767..55D796 forces ordinary campaigns to two
-            // 16-ms buckets, independently of the multiplayer default.
-            // Explicit external launch settings retain their selected speed.
-            self.game_options.game_speed = 2;
-        }
+        self.game_options
+            .install_campaign_startup(game_options, authored_fog_of_war);
         self.campaign = Some(CampaignScenarioState {
             campaign_index,
             restart_carry_over,
@@ -2033,7 +2049,7 @@ impl ScenarioSession {
         counter: i32,
         record: crate::sim::campaign_carry_over::CampaignCarryOver,
     ) {
-        self.initialize_campaign_startup(1, counter, None, index, record)
+        self.initialize_campaign_startup(1, counter, None, index, record, None)
             .expect("synthetic campaign admission");
     }
 
@@ -2444,6 +2460,7 @@ mod tests {
                     None,
                     0,
                     crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                    None,
                 )
                 .unwrap();
             assert_eq!(
@@ -2474,7 +2491,8 @@ mod tests {
                     1,
                     None,
                     0,
-                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED
+                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                    None,
                 ),
                 Err(CampaignScenarioStartupError::AlreadyInstalled)
             );
@@ -2504,7 +2522,8 @@ mod tests {
                 1,
                 None,
                 0,
-                crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED
+                crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             ),
             Err(CampaignScenarioStartupError::NonCampaignMode)
         );
@@ -2524,7 +2543,8 @@ mod tests {
                     1,
                     None,
                     0,
-                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED
+                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                    None,
                 ),
                 Err(CampaignScenarioStartupError::InvalidDifficulty(difficulty))
             );
@@ -2548,6 +2568,7 @@ mod tests {
                 Some(&options),
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         assert_eq!(sim.projected_in_game_options_speed(), Some(5));
@@ -2568,7 +2589,8 @@ mod tests {
                     1,
                     Some(&other),
                     0,
-                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED
+                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                    None,
                 )
                 .is_err()
         );
@@ -2577,6 +2599,47 @@ mod tests {
             hash,
             "failed admission must not overwrite live options"
         );
+    }
+
+    #[test]
+    fn campaign_startup_resets_fog_and_reads_the_authored_special_flag() {
+        let options = GameOptions {
+            game_speed: 5,
+            fog_of_war: true,
+            ..Default::default()
+        };
+        for (body, expected) in [("", false), ("FogOfWar=yes", true)] {
+            let mut sim = Simulation::from_descriptor(&ScenarioDescriptor::default());
+            let map =
+                crate::rules::ini_parser::IniFile::from_str(&format!("[SpecialFlags]\n{body}"));
+            let flags = crate::map::basic::parse_special_flags_section(&map);
+            sim.session
+                .initialize_campaign_startup(
+                    1,
+                    1,
+                    Some(&options),
+                    0,
+                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                    flags.fog_of_war,
+                )
+                .unwrap();
+            assert_eq!(sim.session.game_options().fog_of_war, expected);
+            assert_eq!(sim.session.game_options().game_speed, 5);
+        }
+    }
+
+    #[test]
+    fn house_classification_cannot_read_local_player_control_in_lockstep() {
+        let mut session = ScenarioSession::from_descriptor(&ScenarioDescriptor::default());
+        let mode = ScenarioGameMode::Skirmish;
+        let policy = mode
+            .stock_rule_policy(None)
+            .with_counts_player_control_as_human(true);
+        session.install_admission(mode, None, policy);
+        assert!(session.rule_policy().counts_player_control_as_human());
+
+        session.install_admission(ScenarioGameMode::Lan, None, policy);
+        assert!(!session.rule_policy().counts_player_control_as_human());
     }
 
     #[test]

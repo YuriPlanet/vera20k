@@ -411,7 +411,7 @@ fn place(
     }
     if !building {
         let mission =
-            if sim.houses[&request.owner].is_controlled_by_human(sim.session.game_mode_nonzero()) {
+            if sim.houses[&request.owner].is_controlled_by_human(sim.session.rule_policy()) {
                 MissionType::AreaGuard
             } else {
                 MissionType::Hunt

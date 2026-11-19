@@ -80,12 +80,11 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
 pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
     let ares = rules.ares_form();
     let now = sim.session.binary_frame() as i32;
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let delay = speak_delay_frames(rules, sim.session.game_options());
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if !house.is_controlled_by_human(game_mode_nonzero) {
+    if !house.is_controlled_by_human(sim.session.rule_policy()) {
         return;
     }
     let available = house.economy().available_money();

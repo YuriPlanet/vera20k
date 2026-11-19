@@ -46,7 +46,7 @@ impl Simulation {
             || globals.toggle_power_iq > house.current_iq()
             || buildings.is_empty()
             || power.has_drained_power_source()
-            || house.is_controlled_by_human(self.session.game_mode_nonzero())
+            || house.is_controlled_by_human(self.session.rule_policy())
             || power.blackout_remaining(frame) > 0
         {
             return;

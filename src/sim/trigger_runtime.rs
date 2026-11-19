@@ -1617,7 +1617,7 @@ impl Simulation {
             }
         }
         let mut definitions = RuntimeDefinitions::read_map(map, teams, eva, sounds, themes);
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             for trigger in &mut definitions.trigger_types {
                 for action in &mut trigger.actions {
                     action.retain_network_playback();
@@ -2079,7 +2079,7 @@ impl Simulation {
                 // to PlayerPtr, which differs per client and now feeds the
                 // match checksum, so a network game compares the worn
                 // identity alone.
-                let viewer = (!self.session.game_mode().is_network())
+                let viewer = (!self.session.execution_topology().is_lockstep())
                     .then(|| self.session.current_house())
                     .flatten();
                 let displayed = actor.disguise_house(true, viewer, false);
@@ -4227,7 +4227,8 @@ impl Simulation {
                 // Offline type8 reads retain From_Name's index. Network
                 // playback keeps the authored name independent of the local
                 // playlist. Numeric sentinels pass unchanged. No RNG/timer/detach.
-                let request = if (self.session.game_mode().is_network() || value.is_none())
+                let request = if (self.session.execution_topology().is_lockstep()
+                    || value.is_none())
                     && action.params.first().map_or(0, |v| crt_atoi(v)) == 8
                 {
                     ThemeRequest::Name(action.params.get(1).cloned().unwrap_or_default())
@@ -5109,7 +5110,7 @@ impl Simulation {
                 let Some(index) = value else {
                     return false;
                 };
-                if self.session.game_mode().is_network()
+                if self.session.execution_topology().is_lockstep()
                     && action.params.first().map_or(0, |v| crt_atoi(v)) != 7
                     && action.params.first().map_or(0, |v| crt_atoi(v)) != 8
                 {
@@ -5481,7 +5482,7 @@ impl Simulation {
                 // of the incoming House/value. Resolve coordinates before
                 // the frame hash, including House50DF30's Dummy effects.
                 let coord = {
-                    let network = self.session.game_mode().is_network();
+                    let network = self.session.execution_topology().is_lockstep();
                     let cells = self.resolved_terrain.as_ref().map(|terrain| {
                         crate::map::resolved_terrain::NativeCellQuery::for_local_input(
                             terrain, network,

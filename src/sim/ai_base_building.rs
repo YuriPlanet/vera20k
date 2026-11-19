@@ -326,13 +326,13 @@ pub(crate) fn economy_state_machine(
     owner: InternedId,
     building_exit: bool,
 ) {
-    let game_mode_nonzero = session.game_mode_nonzero();
+    let policy = session.rule_policy();
     let Some(house) = houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(game_mode_nonzero)
+    if house.is_controlled_by_human(policy)
         || house.command_driven()
-        || !game_mode_nonzero
+        || !session.rule_policy().uses_ai_production_modes()
     {
         return;
     }
@@ -400,11 +400,11 @@ pub(crate) fn update_production_choices(
     owner: InternedId,
     registry: Option<&OverlayTypeRegistry>,
 ) {
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let policy = sim.session.rule_policy();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(game_mode_nonzero) || house.multiplay_passive() {
+    if house.is_controlled_by_human(policy) || house.multiplay_passive() {
         return;
     }
     if (sim.session.binary_frame() as i32) % 8 != 0 {
@@ -427,7 +427,7 @@ pub(crate) fn update_production_choices(
         UnitChoiceKind::Aircraft,
     ];
     // A campaign runs mode 0's choices (`0x004F9099..0x004F90A1`).
-    let mode = if game_mode_nonzero {
+    let mode = if sim.session.rule_policy().uses_ai_production_modes() {
         house.ai_production().mode
     } else {
         0
@@ -950,12 +950,12 @@ pub(crate) fn exit_building(
     let Some(owner) = sim.substrate.entities.get(factory).map(|yard| yard.owner()) else {
         return BuildingExit::Failed;
     };
-    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let policy = sim.session.rule_policy();
     // `0x00444F19..0x00444F2A` (`0x0050B730`).
     if sim
         .houses
         .get(&owner)
-        .is_none_or(|house| house.is_controlled_by_human(game_mode_nonzero))
+        .is_none_or(|house| house.is_controlled_by_human(policy))
     {
         return BuildingExit::Failed;
     }

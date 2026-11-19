@@ -1844,7 +1844,7 @@ pub(crate) fn tick_house_superweapon_instances(
         && sim
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+            .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     for type_id in house_super_order(sim, rules, owner) {
         let sw = rules.super_weapon(sim.interner.resolve(type_id));
         let (fade, ready, drain_ended) = {
@@ -2221,8 +2221,7 @@ pub fn super_weapon_available(
         let Some(house) = sim.houses.get(&owner) else {
             return false;
         };
-        if !policy.allows_controller(house.is_controlled_by_human(sim.session.game_mode_nonzero()))
-        {
+        if !policy.allows_controller(house.is_controlled_by_human(sim.session.rule_policy())) {
             return false;
         }
         if metadata

@@ -805,7 +805,7 @@ impl Simulation {
     /// it to select hashed overlay IDs. This reaches the state hash the start
     /// agreement compares, not the per-frame sync checksum.
     fn hash_network_mapgen(&self, hasher: &mut impl Hasher) {
-        if self.session.game_mode().is_network() {
+        if self.session.execution_topology().is_lockstep() {
             b"network-mapgen-v1".hash(hasher);
             self.mapgen_rng.hash_state(hasher);
         }
@@ -1336,7 +1336,7 @@ impl Simulation {
             }
             house.side_index().hash(hasher);
             house.is_human().hash(hasher);
-            if self.session.game_mode().is_network() {
+            if self.session.execution_topology().is_lockstep() {
                 // Lifecycle discovery projects every represented human before
                 // shared Event5 reads this notification; it is no longer a
                 // process-local cache in a network world.
@@ -1347,7 +1347,7 @@ impl Simulation {
             // that local input/EVA selector; IsHuman remains shared authority.
             // Campaign admission/initial credits still read PlayerControl.
             // Source: original gamemd.exe instructions.
-            if !self.session.game_mode().is_network() {
+            if !self.session.execution_topology().is_lockstep() {
                 house.player_control().hash(hasher);
             }
             (house.difficulty() as i32).hash(hasher);
@@ -1740,7 +1740,7 @@ impl Simulation {
     /// spread over threads in large worlds.
     fn entity_digests(&self, entities: &[&GameEntity]) -> Vec<u64> {
         let frame = self.session.binary_frame();
-        let network = self.session.game_mode().is_network();
+        let network = self.session.execution_topology().is_lockstep();
         // The visits each sleeper is owed, beside the entities: the callers
         // pass the whole store in its own order. A partial list looks each
         // one up instead.
@@ -3750,35 +3750,36 @@ mod state_hash_field_tests {
         {
             // Same stored difficulty, different bias: only the game-mode arm of
             // `set_difficulty` folds the country's ROF into `HouseClass+0x1A8`.
-            let hashes: Vec<u64> = [false, true]
-                .into_iter()
-                .map(|game_mode_nonzero| {
-                    let mut sim = Simulation::new();
-                    let owner = sim.interner.intern("Computer1");
-                    let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-                    let mut general = crate::rules::ruleset::GeneralRules::default();
-                    general.difficulty_rows =
-                        [0.8, 1.0, 1.2].map(|rof| crate::rules::ruleset::DifficultyRules {
-                            rof,
-                            ..Default::default()
-                        });
-                    house.set_difficulty(
-                        HouseDifficulty::Hard,
-                        &general,
-                        crate::rules::ruleset::CountryDifficultyBiases {
-                            rof: crate::util::native_x87::NativeF64Bits::from_bits(
-                                0.9_f64.to_bits(),
-                            ),
-                            ..Default::default()
-                        },
-                        game_mode_nonzero,
-                        0,
-                        0,
-                    );
-                    sim.houses.register(house);
-                    sim.state_hash()
-                })
-                .collect();
+            let hashes: Vec<u64> = [
+                crate::rules::rule_policy::RulePolicy::stock_campaign(),
+                crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
+            ]
+            .into_iter()
+            .map(|policy| {
+                let mut sim = Simulation::new();
+                let owner = sim.interner.intern("Computer1");
+                let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+                let mut general = crate::rules::ruleset::GeneralRules::default();
+                general.difficulty_rows =
+                    [0.8, 1.0, 1.2].map(|rof| crate::rules::ruleset::DifficultyRules {
+                        rof,
+                        ..Default::default()
+                    });
+                house.set_difficulty(
+                    HouseDifficulty::Hard,
+                    &general,
+                    crate::rules::ruleset::CountryDifficultyBiases {
+                        rof: crate::util::native_x87::NativeF64Bits::from_bits(0.9_f64.to_bits()),
+                        ..Default::default()
+                    },
+                    policy,
+                    0,
+                    0,
+                );
+                sim.houses.register(house);
+                sim.state_hash()
+            })
+            .collect();
             assert_ne!(hashes[0], hashes[1]);
         }
         {

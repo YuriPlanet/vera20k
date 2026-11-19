@@ -5,7 +5,7 @@
 use super::*;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::combat::TargetKind;
 use crate::sim::mission::MissionDispatchTimer;
@@ -388,11 +388,8 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         .into_parts();
     rules.install_art_data(ArtRegistry::from_ini(&art));
     let aimd = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI").unwrap();
-    let teams = TeamAiIniRegistry::from_sources(
-        &aimd.ini,
-        &authored.ini,
-        BootstrapRuleProfile::Multiplayer,
-    );
+    let teams =
+        TeamAiIniRegistry::from_sources(&aimd.ini, &authored.ini, RulePolicy::stock_multiplayer());
     // The actual AA civilian origin is beside this Neutral building. Keep
     // that relationship in the flat crop so Action80 must also exercise
     // reinforcement65D8E0's generic building ExitObject path.
@@ -803,7 +800,7 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
     let teams = TeamAiIniRegistry::from_sources(
         &IniFile::from_str(""),
         &map.ini,
-        BootstrapRuleProfile::Campaign,
+        RulePolicy::stock_campaign(),
     );
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.classify_map_triggers(&rules);

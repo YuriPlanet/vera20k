@@ -51,7 +51,7 @@ fn in_game_speed_command(
     // ApplyFromInGameDialog4E1E28..4E1E59 queues GAMESPEED in active
     // modes 1..4; campaign/skirmish store it locally.
     Some(
-        if sim.session().game_mode().command_queue_route()
+        if sim.session().execution_topology().command_queue_route()
             == crate::sim::world::CommandQueueRoute::Multiplayer
         {
             crate::sim::command::Command::LiveGameSpeed { speed }

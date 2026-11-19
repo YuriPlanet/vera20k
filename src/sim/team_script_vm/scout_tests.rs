@@ -1,7 +1,7 @@
 //! Script22 -> Map580BC0, using the process-current player's shroud.
 
 use super::*;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::runtime::SimRuntime;
 use crate::sim::team_script_vm::packed_cell_tests::{frame, reload, scene};
 use crate::sim::world::UninitContext;
@@ -157,7 +157,7 @@ pub(super) fn campaign_scene(
     // before actors; the sequence binder resolves each type through that ART.
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let teams =
-        TeamAiIniRegistry::load_retail(&assets, &map.ini, BootstrapRuleProfile::Campaign).unwrap();
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_campaign()).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x580BC0);
@@ -165,7 +165,7 @@ pub(super) fn campaign_scene(
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map.ini));
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map.ini);

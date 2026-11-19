@@ -394,7 +394,7 @@ impl Simulation {
         let human = self
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()));
         self.mission_queue_exact(
             target_id,
             crate::sim::mission::MissionId::from_known(if human {

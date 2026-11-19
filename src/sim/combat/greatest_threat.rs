@@ -987,7 +987,7 @@ impl ScanContext<'_> {
         candidate_obj: &ObjectType,
     ) -> bool {
         if self.standing.human
-            || !self.standing.game_mode_nonzero
+            || !self.standing.respects_passive_houses
             || candidate.category() != EntityCategory::Structure
             || self.attacker.category != EntityCategory::Infantry
             || self.standing.team == Some(true)
@@ -1063,8 +1063,10 @@ struct ScannerStanding<'a> {
     house: Option<&'a crate::sim::house_state::HouseState>,
     /// `HouseClass::IsControlledByHuman @ 0x0050B730` of the owner.
     human: bool,
-    /// `GameMode != 0` (`[0x00A8B238]`): every mode but the campaign.
-    game_mode_nonzero: bool,
+    /// The local player's discovery bytes may filter acquisition.
+    requires_player_discovery: bool,
+    /// Native passive-owner restrictions and their building exception.
+    respects_passive_houses: bool,
     /// A Foot in a team (`+0x14 & 4`, `FootClass+0x5D4`), and whether its
     /// TeamType is `IsBaseDefense=` (`+0xF6`).
     team: Option<bool>,
@@ -1081,17 +1083,19 @@ impl<'a> ScannerStanding<'a> {
             return Self {
                 house: None,
                 human: true,
-                game_mode_nonzero: true,
+                requires_player_discovery: false,
+                respects_passive_houses: true,
                 team: None,
             };
         };
         let house = world.houses.get(&attacker.owner);
+        let policy = world.session.rule_policy();
         Self {
             house,
-            human: house.is_none_or(|house| {
-                house.is_controlled_by_human(world.session.game_mode_nonzero())
-            }),
-            game_mode_nonzero: world.session.game_mode_nonzero(),
+            human: house.is_none_or(|house| house.is_controlled_by_human(policy)),
+            requires_player_discovery: policy.targeting_requires_player_discovery()
+                && !world.session.execution_topology().is_lockstep(),
+            respects_passive_houses: policy.targeting_respects_passive_houses(),
             team: (attacker.category != EntityCategory::Structure)
                 .then(|| world.team_script_vm.team_for_member(attacker.stable_id))
                 .flatten()
@@ -2649,7 +2653,7 @@ fn evaluate_candidate(
     // is an aircraft (WhatAmI 2): the player's units do not acquire enemies
     // in ground the player has not explored.
     if ctx.standing.human
-        && !ctx.standing.game_mode_nonzero
+        && ctx.standing.requires_player_discovery
         && !candidate.discovery.owned_by_current_house()
         && !candidate.discovery.discovered_by_current_house()
         && candidate.category() != EntityCategory::Aircraft
@@ -2700,8 +2704,9 @@ fn evaluate_candidate(
 
     // `0x006F826E..0x006F835E`: outside the campaign, a `MultiplayPassive`
     // house's objects are off limits but for the building exception.
-    let passive_owner =
-        !considered_enemy && ctx.standing.game_mode_nonzero && ctx.owner_is_passive(candidate);
+    let passive_owner = !considered_enemy
+        && ctx.standing.respects_passive_houses
+        && ctx.owner_is_passive(candidate);
     if passive_owner && !ctx.passive_building_exception(candidate, candidate_obj) {
         return None;
     }
