@@ -6,6 +6,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::AiBasePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{CellRect, resolve_reservation_real_cell, scan_cell_rect};
 use crate::sim::combat::TargetKind;
@@ -2446,7 +2447,7 @@ impl Simulation {
     /// Techno/Object concealment path. VERA has no map-editor runtime; every
     /// call to this lifecycle seam is therefore outside editor mode.
     fn invalidate_base_plan_from_building_limbo(
-        session: &ScenarioSession,
+        policy: AiBasePolicy,
         substrate: &ObjectSubstrate,
         houses: &mut Houses,
         stable_id: u64,
@@ -2477,7 +2478,7 @@ impl Simulation {
                 type_index,
                 packed_cell,
                 is_base_defense,
-                session.game_mode_nonzero(),
+                policy,
             );
         }
     }
@@ -4473,7 +4474,7 @@ impl Simulation {
         // BuildingClass owns this pass before the common TechnoClass Limbo can
         // clear committed type/cell facts or broadcast another expiry callback.
         Self::invalidate_base_plan_from_building_limbo(
-            &self.session,
+            self.session.rule_policy().ai_base,
             &self.substrate,
             &mut self.houses,
             stable_id,

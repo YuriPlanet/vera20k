@@ -499,6 +499,39 @@ fn check_build_limit_matches_the_original() {
     }
 }
 
+#[test]
+fn double_owned_opens_a_foreign_factory_only_outside_campaign() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let patch =
+        IniFile::from_str("[E1]\nOwner=Russians\nDoubleOwned=yes\n[GAPILE]\nOwner=Americans\n");
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    let product = rules.object("E1").unwrap();
+    let building = rules.object("GAPILE").unwrap();
+    assert!(product.double_owned);
+    assert!(!building.double_owned);
+    assert_eq!(product.owner_mask(&rules) & building.owner_mask(&rules), 0);
+
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Self");
+    let factory = 1;
+    crate::sim::production::tests::spawn_structure(
+        &mut sim, &rules, factory, "Self", "GAPILE", 20, 20,
+    );
+    let query = |sim: &Simulation| find_factory(sim, &rules, owner, product, false, false, false);
+
+    sim.session.set_game_mode(ScenarioGameMode::Campaign);
+    assert_eq!(query(&sim), None);
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    assert_eq!(query(&sim), Some(factory));
+}
+
 /// House4F78E4..4F7925 consults its captured labs before TechLevel,
 /// country and ordinary prerequisites, then still asks the build limit.
 /// The declared SecretInfantry override isolates this gate from the separate

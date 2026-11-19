@@ -347,7 +347,11 @@ impl Simulation {
             .get_mut(&owner)
             .expect("retained owner")
             .set_base_center(cell);
-        if self.session.game_mode_nonzero() && !self.houses[&owner].is_controlled_by_human(true) {
+        // 0x0050C2F0: Trigger 30 requests Paranoid for the computer before
+        // re-reading the base plan, independently of [AI] Paranoid.
+        if self.session.rule_policy().permits_paranoid_reactions()
+            && !self.houses[&owner].is_human()
+        {
             self.computer_paranoid(rules, registry, effects);
         }
         // 0x0050C2F5 rereads the plan after the diplomacy callbacks. Keep Recalc's

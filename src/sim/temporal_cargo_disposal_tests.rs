@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::map::map_file::MapFile;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
@@ -62,7 +63,12 @@ impl Scene {
                 .reveal_all_for_owner(sim.interner.get(name).unwrap());
         }
         if let Some(map) = map {
-            let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+            let teams = TeamAiIniRegistry::load_retail(
+                &assets,
+                &map.ini,
+                BootstrapRuleProfile::Multiplayer,
+            )
+            .unwrap();
             sim.initialize_trigger_definitions(map, &teams, None, None, None);
             let terrain = sim.resolved_terrain().unwrap().clone();
             assert_eq!(

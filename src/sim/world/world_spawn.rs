@@ -2499,7 +2499,9 @@ impl Simulation {
         let Some(house) = self.houses.get(&owner_id) else {
             return;
         };
-        if self.session.game_mode_nonzero() && !house.is_controlled_by_human(true) {
+        // 0x005051AF: the computer's deploy requests Paranoid before base
+        // recalculation, independently of [AI] Paranoid.
+        if self.session.rule_policy().permits_paranoid_reactions() && !house.is_human() {
             self.computer_paranoid(rules, registry, frame_effects);
         }
         let house = &self.houses[&owner_id];

@@ -12,21 +12,8 @@ pub enum BootstrapRuleProfile {
 }
 
 impl BootstrapRuleProfile {
-    pub(crate) const fn from_nonzero(nonzero: bool) -> Self {
-        if nonzero {
-            Self::Multiplayer
-        } else {
-            Self::Campaign
-        }
-    }
-
     pub const fn uses_multiplayer_rules(self) -> bool {
         matches!(self, Self::Multiplayer)
-    }
-
-    /// The mode-zero arm of `ReadMapOverlayPacks` keeps authored crate rows.
-    pub(crate) const fn loads_authored_crates(self) -> bool {
-        matches!(self, Self::Campaign)
     }
 
     pub(crate) const fn forces_listed_ai_trigger_enables(self) -> bool {
@@ -38,45 +25,121 @@ impl BootstrapRuleProfile {
     }
 }
 
-// Existing engine fixtures describe startup with a zero/nonzero flag.
-#[cfg(any(test, feature = "test-support"))]
-impl From<bool> for BootstrapRuleProfile {
-    fn from(nonzero: bool) -> Self {
-        Self::from_nonzero(nonzero)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum AllowWinTagsPolicy {
+    RequireClear,
+    Ignore,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum ComputerParanoidPolicy {
+    Disabled,
+    React,
+}
+
+/// Admission of map-authored crate overlays at load time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum AuthoredCratePolicy {
+    Keep,
+    Skip,
+}
+
+/// Whether the AI may replace unavailable or invalidated base-plan nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum AiBasePolicy {
+    RetainAuthoredNodes,
+    ReplaceUnavailableNodes,
+}
+
+/// How factory selection interprets `DoubleOwned=`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum DoubleOwnedPolicy {
+    OwnerMask,
+    AllCountries,
 }
 
 /// The set of live TeamClass instances that count toward a TeamType's `Max=`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
 pub(crate) enum TeamLimitScope {
     AllHouses,
     PerHouse,
 }
 
-/// Built-in rules are derived from the saved session mode and mode class.
-/// The session persists and hashes those inputs once. Network-only behavior
-/// also checks the session's execution topology at the point of use.
+/// Independently selectable rules. Stock live sessions derive their preset
+/// from the saved mode and mode class. Network-only behavior separately
+/// checks the session's execution topology at the point of use. Offline
+/// Skirmish (GameMode 5) uses the multiplayer preset with local execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[repr(C)]
 pub struct RulePolicy {
     bootstrap: BootstrapRuleProfile,
+    pub allow_win_tags: AllowWinTagsPolicy,
+    pub computer_paranoid: ComputerParanoidPolicy,
+    pub crates: AuthoredCratePolicy,
+    pub ai_base: AiBasePolicy,
+    pub double_owned: DoubleOwnedPolicy,
+    pub mod_map_additions: bool,
+    team_limit: TeamLimitScope,
+    dissolve_unfilled_teams: bool,
     shared_allied_victory: bool,
     skips_network_score_dialog: bool,
 }
 
 const _: () = assert!(std::mem::size_of::<RulePolicy>() <= 16);
 
+impl Default for RulePolicy {
+    fn default() -> Self {
+        Self::stock_campaign()
+    }
+}
+
 impl RulePolicy {
-    pub(crate) const fn new(
-        bootstrap: BootstrapRuleProfile,
+    pub const fn stock_campaign() -> Self {
+        Self {
+            bootstrap: BootstrapRuleProfile::Campaign,
+            allow_win_tags: AllowWinTagsPolicy::RequireClear,
+            computer_paranoid: ComputerParanoidPolicy::Disabled,
+            crates: AuthoredCratePolicy::Keep,
+            ai_base: AiBasePolicy::RetainAuthoredNodes,
+            double_owned: DoubleOwnedPolicy::OwnerMask,
+            mod_map_additions: false,
+            team_limit: TeamLimitScope::AllHouses,
+            dissolve_unfilled_teams: false,
+            shared_allied_victory: false,
+            skips_network_score_dialog: false,
+        }
+    }
+
+    pub const fn stock_multiplayer() -> Self {
+        Self {
+            bootstrap: BootstrapRuleProfile::Multiplayer,
+            allow_win_tags: AllowWinTagsPolicy::Ignore,
+            computer_paranoid: ComputerParanoidPolicy::React,
+            crates: AuthoredCratePolicy::Skip,
+            ai_base: AiBasePolicy::ReplaceUnavailableNodes,
+            double_owned: DoubleOwnedPolicy::AllCountries,
+            mod_map_additions: true,
+            team_limit: TeamLimitScope::PerHouse,
+            dissolve_unfilled_teams: true,
+            shared_allied_victory: false,
+            skips_network_score_dialog: false,
+        }
+    }
+
+    pub(crate) const fn with_mode_outcomes(
+        mut self,
         shared_allied_victory: bool,
         skips_network_score_dialog: bool,
     ) -> Self {
-        Self {
-            bootstrap,
-            shared_allied_victory,
-            skips_network_score_dialog,
-        }
+        self.shared_allied_victory = shared_allied_victory;
+        self.skips_network_score_dialog = skips_network_score_dialog;
+        self
     }
 
     pub const fn bootstrap(self) -> BootstrapRuleProfile {
@@ -94,23 +157,27 @@ impl RulePolicy {
     /// `HouseClass::Update @ 0x004F8440` checks the AllowWin count only
     /// in the mode-zero victory arm (`0x004F85F7..0x004F8605`).
     pub(crate) const fn victory_requires_cleared_allow_win_tags(self) -> bool {
-        matches!(self.bootstrap, BootstrapRuleProfile::Campaign)
+        matches!(self.allow_win_tags, AllowWinTagsPolicy::RequireClear)
+    }
+
+    /// Admission of diplomacy and base requests into `Computer_Paranoid @
+    /// 0x00501640`. Each caller applies its own House and Rules checks.
+    pub(crate) const fn permits_paranoid_reactions(self) -> bool {
+        matches!(self.computer_paranoid, ComputerParanoidPolicy::React)
     }
 
     /// `TeamTypeClass::Create_Team @ 0x006F09C0` checks mode at 0x006F0A16.
     pub(crate) const fn team_creation_limit_scope(self) -> TeamLimitScope {
-        match self.bootstrap {
-            BootstrapRuleProfile::Campaign => TeamLimitScope::AllHouses,
-            BootstrapRuleProfile::Multiplayer => TeamLimitScope::PerHouse,
-        }
+        self.team_limit
     }
 
     /// `TeamClass::AI @ 0x006E9140` uses `DissolveUnfilledTeamDelay=` for
     /// never-full empty teams in the nonzero mode arm at `0x006E92AD`.
     pub(crate) const fn unfilled_team_timeout(self, delay: i32) -> Option<i32> {
-        match self.bootstrap {
-            BootstrapRuleProfile::Campaign => None,
-            BootstrapRuleProfile::Multiplayer => Some(delay),
+        if self.dissolve_unfilled_teams {
+            Some(delay)
+        } else {
+            None
         }
     }
 }

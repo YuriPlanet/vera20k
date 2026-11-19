@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::map::entities::EntityCategory;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::projectile::{
     ProjectileCollisionPolicy, ProjectileCoord, ProjectilePayload, ProjectileSpawn,
@@ -166,7 +167,11 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
                  [Waypoints]\n0=16014\n"
             ),
         );
-        let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
+        let teams = TeamAiIniRegistry::from_sources(
+            &IniFile::from_str(""),
+            &map.ini,
+            BootstrapRuleProfile::Campaign,
+        );
         sim.install_team_ai_registry(&teams, &rules);
         // The shared simple-map fixture initially has no Team registry.
         // Re-enter the real definition reader with the authored Team inputs.
@@ -1523,7 +1528,7 @@ fn retail_sov01_script_context() -> Option<(
         crate::util::sha256::sha256_hex(&raw_map),
         "498b989a4b6f579dee0904a77f1fabf982c14786db21a46c41900fc8344ec72b"
     );
-    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, BootstrapRuleProfile::Campaign);
     // The map's Rules over the retail root depend on those files alone, so
     // they are processed once per test process; each caller gets copies.
     let (rules, water, overlay) = crate::test_fixture::once_per_process("SOV01 rules", || {
@@ -1718,7 +1723,7 @@ fn script20_retail_sov01_transport_tails_set_the_authored_landing_flags() {
         let registry = TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::from_str(""),
             &map.ini,
-            false,
+            BootstrapRuleProfile::Campaign,
         );
         let stock = registry
             .scripts
@@ -2644,7 +2649,7 @@ fn install_map_triggers(sim: &mut Simulation, map: &crate::map::map_file::MapFil
         &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map.ini,
-            true,
+            BootstrapRuleProfile::Multiplayer,
         ),
         None,
         None,

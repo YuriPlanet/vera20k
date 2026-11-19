@@ -4,6 +4,7 @@
 use super::{FrameEffects, Simulation, TickLane, UninitContext};
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -99,7 +100,11 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
          [Actions]\nTRANSFER=1,14,0,{country},0,0,0,0,A\n\
          [Tags]\nTRANSFER_TAG=0,Transfer linked units,TRANSFER\n"
     ));
-    let teams = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map.ini, true);
+    let teams = TeamAiIniRegistry::from_sources(
+        &IniFile::empty(),
+        &map.ini,
+        BootstrapRuleProfile::Multiplayer,
+    );
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(rules)), 3);
     sim.classify_map_triggers(rules);

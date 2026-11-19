@@ -548,6 +548,11 @@ map has seats; the host's game then drops the Superweapon Limit, the host rules 
 queue, then Teams, one at a time and saying so each time, after which the people past the
 seats watch. A rollback of the game seats no more players than the map has starts.
 
+The planned cross-House authority table is indexed by source and target House. Two
+sources sharing a starting House can hold different `FullControl` or `UnitsOnly`
+grants over a third House. Command admission, replay and save restoration must retain
+the source identity. Existing shared-House rooms keep their current command authority.
+
 AI play in a VERA room while people watch, unlike in gamemd's room (`0x5EC9F0`'s
 TXT_NO_AI_WITH_OBSERVER, and WOL's TXT_NO_AI_OBSERVATION at Start Game): the host keeps
 the spectator seat open with AI in the room, and a guest may watch beside them. Nothing new
@@ -702,6 +707,11 @@ in a release), which the hash already covers; they are refused as any other buil
   reports it ([external launches](spawn.md#probe)).
 
 ### Room rules
+
+LAN carries two speed values. `HostRoom.current_speed` applies to the guest's live
+OptionsClass (`0x005E4DE1`), while `room.options.game_speed` is the selected setup
+value (`0x005E4E01`) copied at launch (`0x005E74AA`). A new room envelope must preserve
+both through receipt and launch, with a compatibility case where the values differ.
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
 Terrain Deformation box and [Superweapon Limit](superweapon-limit.md). They open as the

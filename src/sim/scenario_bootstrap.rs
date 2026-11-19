@@ -4559,6 +4559,7 @@ mod tests {
 
     #[test]
     fn scripted_result_network_views_keep_both_humans_and_local_exit_consistent() {
+        use crate::rules::rule_policy::BootstrapRuleProfile;
         use crate::rules::team_ai_ini::TeamAiIniRegistry;
         use crate::sim::house_state::HouseOutcomeKind;
         let mut finals = Vec::new();
@@ -4573,7 +4574,11 @@ mod tests {
                 [ScriptTypes]\n0=RESULT-SCRIPT\n[RESULT-SCRIPT]\n0=23,77\n\
                 [TaskForces]\n0=RESULT-FORCE\n[RESULT-FORCE]\nGroup=-1\n0=1,MTNK\n",
             );
-            let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &ini, true);
+            let registry = TeamAiIniRegistry::from_sources(
+                &IniFile::empty(),
+                &ini,
+                BootstrapRuleProfile::Multiplayer,
+            );
             sim.install_team_ai_registry(&registry, rules);
             let ty = sim.interner.get("RESULT-TEAM").unwrap();
             let team = sim.create_team(ty, Some(owner), rules).unwrap();
@@ -5724,7 +5729,7 @@ mod tests {
             }
             for block_placement in [false, true] {
                 let mut scenario = descriptor(0xA83D4C);
-                scenario.game_mode_nonzero = true;
+                scenario.rule_policy = crate::rules::rule_policy::RulePolicy::stock_multiplayer();
                 scenario.map_width = 96;
                 scenario.map_height = 96;
                 scenario.mp_start_waypoints.insert(0, (40, 40));
@@ -7228,7 +7233,7 @@ mod tests {
         let mut scenario = descriptor(seed);
         scenario.map_name = "RandMap.SED".to_string();
         scenario.theater = "TEMPERATE".to_string();
-        scenario.game_mode_nonzero = true;
+        scenario.rule_policy = crate::rules::rule_policy::RulePolicy::stock_multiplayer();
         scenario.map_width = SIZE;
         scenario.map_height = SIZE;
         scenario.mp_start_waypoints.insert(0, (start.rx, start.ry));

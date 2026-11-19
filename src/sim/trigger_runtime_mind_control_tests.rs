@@ -4,6 +4,7 @@
 //! does not replay the Engineer acquisition/base-building campaign opening.
 
 use super::*;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 
 #[test]
 fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
@@ -42,7 +43,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
     let ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .expect("retail AIMD parses")
         .ini;
-    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, BootstrapRuleProfile::Campaign);
     let discovered_actions = map.actions["065C3EDC"].entries();
     assert_eq!(
         discovered_actions

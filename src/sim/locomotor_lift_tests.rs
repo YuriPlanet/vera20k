@@ -6,6 +6,7 @@
 
 use super::LocomotorShotTarget;
 use crate::rules::locomotor_type::LocomotorKind;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::game_entity::GameEntity;
@@ -64,7 +65,11 @@ fn magnetron_ground_release_change_house_at_touchdown() {
              [CellTags]\n16017=TRANSFER_TAG\n"
         );
         let map = crate::map::map_file::MapFile::from_bytes(map_text.as_bytes()).unwrap();
-        let teams = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map.ini, true);
+        let teams = TeamAiIniRegistry::from_sources(
+            &IniFile::empty(),
+            &map.ini,
+            BootstrapRuleProfile::Multiplayer,
+        );
         sim.initialize_trigger_definitions(&map, &teams, None, None, None);
         sim.install_authored_cell_trigger_tags(&map);
         sim.attach_object_trigger_tag(tank, Some("TRANSFER_TAG"));

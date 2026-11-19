@@ -3551,6 +3551,7 @@ mod ai_activation_latch_tests {
 #[cfg(all(test, tests_sim_h_o))]
 mod outcome_tests {
     use super::{HouseOutcomeKind, HouseState};
+    use crate::rules::rule_policy::AllowWinTagsPolicy;
     use crate::sim::scenario_session::ScenarioGameMode;
 
     #[test]
@@ -3667,6 +3668,12 @@ mod outcome_tests {
         assert!(
             house.pending_outcome(1060, policy).is_none(),
             "AllowWin count blocks Win"
+        );
+        let mut ungated = policy;
+        ungated.allow_win_tags = AllowWinTagsPolicy::Ignore;
+        assert_eq!(
+            house.pending_outcome(1060, ungated),
+            Some(HouseOutcomeKind::Victory)
         );
         house.removed_allow_win_tag(1060);
         assert!(house.pending_outcome(1119, policy).is_none());

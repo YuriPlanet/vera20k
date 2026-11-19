@@ -82,15 +82,8 @@ const NOTES: [&str; 10] = [
 /// cooperative one too, or on a random map, which reads its rules while it is
 /// made.
 pub(crate) fn reach(startup: &crate::app::match_bootstrap::LoadingStartup) -> bool {
-    startup
-        .match_spec()
-        .rules()
-        .bootstrap()
-        .uses_multiplayer_rules()
+    startup.match_spec().rules().mod_map_additions
         && !crate::map::rmg::is_seed_selection(startup.physical_map_file())
-        && !startup.launch_session().is_some_and(|launch| {
-            launch.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
-        })
 }
 
 /// What a mod's folder adds to each map, in the order the game lists the

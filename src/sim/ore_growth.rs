@@ -2730,7 +2730,7 @@ SpreadPercentage=.06
         let basic = BasicSection::default();
 
         let skirmish = ScenarioSession::from_descriptor(&ScenarioDescriptor {
-            game_mode_nonzero: true,
+            rule_policy: crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
             tiberium_grows_flag: true,
             tiberium_spreads_flag: true,
             ..ScenarioDescriptor::default()

@@ -958,7 +958,7 @@ where
         let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map_data.ini,
-            descriptor.bootstrap_rule_profile(),
+            descriptor.rule_policy.bootstrap(),
         );
         sim.initialize_trigger_definitions(map_data, &teams, None, None, None);
     }
@@ -1287,7 +1287,7 @@ where
             &tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            descriptor.bootstrap_rule_profile(),
+            descriptor.rule_policy.crates,
             &mut host,
         )
         .run(packs)?

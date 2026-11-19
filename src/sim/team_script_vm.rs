@@ -1767,6 +1767,7 @@ mod tests {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
 
+    use crate::rules::rule_policy::BootstrapRuleProfile;
     use crate::rules::ruleset::RuleSet;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::intern::StringInterner;
@@ -2029,7 +2030,8 @@ mod tests {
              [AITriggerTypes]\nAT=Trigger,TT1,British,2,4,E1,{comparison},40,10,40,1,0,1,0,TT2,1,0,1\n"
         ));
         let map = IniFile::from_str("[TaskForces]\n0=TF1\n[TF1]\n0=-2,E1\nGroup=9\n");
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &map, true);
+        let registry =
+            TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Multiplayer);
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2186,7 +2188,11 @@ mod tests {
              AT2=Threshold up,UP,<all>,99,0,<none>,{comparison},1,1,1,1,0,1,0,<none>,1,1,1\n\
              AT3=Missing default,DEFAULTED,<all>,99,0,<none>,{comparison},1,1,1,1,0,1,0,<none>,1,1,1\n"
         ));
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2212,7 +2218,11 @@ mod tests {
             "an omitted TechLevel keeps the native constructor value in nonzero modes"
         );
 
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -2268,7 +2278,11 @@ mod tests {
              [BUILDING_TF]\n0=1,BLD\n\
              [DUP_TF]\n0=1,DUP\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2389,7 +2403,11 @@ mod tests {
             "[AITriggerTypes]\n\
              AT=Duplicate,<none>,<all>,0,0,DUP,{comparison},1,1,1,1,0,1,0,<none>,1,1,1\n"
         ));
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2436,7 +2454,11 @@ mod tests {
              [ScriptTypes]\n0=FIRST_SCRIPT\n[FIRST_SCRIPT]\n0=2,0\n\
              [TaskForces]\n0=FIRST_TF\n[FIRST_TF]\n0=1,E1\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2479,7 +2501,11 @@ mod tests {
         .expect("minimal rules");
         let fixed =
             IniFile::from_str("[TaskForces]\n0=PARTIAL_TF\n[PARTIAL_TF]\n0=1,E1\n1=2,GHOST\n");
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2522,7 +2548,8 @@ mod tests {
              [TaskForces]\n0=LATER_TF\n1=EARLIER_TF\n\
              [EARLIER_TF]\n0=1,E1\n[LATER_TF]\n0=2,E1\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &map, true);
+        let registry =
+            TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Multiplayer);
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2567,7 +2594,11 @@ mod tests {
              [ScriptTypes]\n0=FIRST_SCRIPT\n[FIRST_SCRIPT]\n0=2,0\n\
              [TaskForces]\n0=FIRST_TF\n[FIRST_TF]\n0=1,E1\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2604,7 +2635,11 @@ mod tests {
         .expect("minimal rules");
         let fixed =
             IniFile::from_str("[TeamTypes]\n0=ONLY\n[ONLY]\nScript=NONE\nTaskForce=<NONE>\n");
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2649,7 +2684,11 @@ mod tests {
         let aimd = IniFile::from_bytes(&aimd_bytes).expect("parse aimd.ini");
         let rules_ini = IniFile::from_bytes(&rules_bytes).expect("parse rulesmd.ini");
         let rules = RuleSet::from_ini(&rules_ini).expect("load retail rules");
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let mut interner = StringInterner::new();
         let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut interner, &rules);
 
@@ -2771,8 +2810,11 @@ mod tests {
             "every game-mode-nonzero retail AITrigger threshold must match the native oracle"
         );
 
-        let zero_mode_registry =
-            TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), false);
+        let zero_mode_registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
         let mut zero_mode_interner = StringInterner::new();
         let (zero_mode_vm, zero_mode_diagnostics) =
             TeamScriptVm::from_ini_registry(&zero_mode_registry, &mut zero_mode_interner, &rules);

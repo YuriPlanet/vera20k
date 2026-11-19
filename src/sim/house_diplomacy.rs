@@ -45,6 +45,9 @@
 //! - The radar redraw (`0x004F42F0`) is presentation; the app re-reads the
 //!   graph and fog each frame.
 //! - IsParanoid (`+0x24A`, `0x005016D5`) has no reader and is not stored.
+//! - Native player takeover on network EXIT also calls Computer_Paranoid
+//!   (`0x0064CA0D`, `0x0050A7B4`). The current EXIT route has no such call.
+//!   On a takeover, the remaining computer alliances can therefore differ.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, OnceLock};
@@ -630,13 +633,12 @@ impl Simulation {
             }
             // 0x004F9C37..0x004F9C7A: a human house allying with a house type
             // that is not MultiplayPassive turns the computers paranoid.
-            let game_mode_nonzero = self.session.game_mode_nonzero();
-            if game_mode_nonzero
+            if self.session.rule_policy().permits_paranoid_reactions()
                 && rules.general.paranoid
                 && self
                     .houses
                     .get(&owner)
-                    .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero))
+                    .is_some_and(|house| house.is_human())
                 && self
                     .houses
                     .get(&other)

@@ -229,7 +229,7 @@ impl TeamAiIniRegistry {
     pub fn load_retail(
         assets: &AssetManager,
         scenario: &IniFile,
-        bootstrap_rule_profile: impl Into<BootstrapRuleProfile>,
+        bootstrap_rule_profile: BootstrapRuleProfile,
     ) -> Result<Self, String> {
         let name = assets.ini_roots().ai();
         let mut fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
@@ -264,10 +264,10 @@ impl TeamAiIniRegistry {
     pub fn from_sources(
         fixed_aimd: &IniFile,
         scenario: &IniFile,
-        bootstrap_rule_profile: impl Into<BootstrapRuleProfile>,
+        bootstrap_rule_profile: BootstrapRuleProfile,
     ) -> Self {
         let mut registry = Self {
-            bootstrap_rule_profile: bootstrap_rule_profile.into(),
+            bootstrap_rule_profile,
             ..Self::default()
         };
 
@@ -824,7 +824,11 @@ mod tests {
         let row = eighteen_tokens("Team buffers", "  ABCDEFGHIJKLMNOPQRSTUsuffix")
             .replace(",<none>,1,1,1", ",  x  ,1,1,1");
         let fixed = IniFile::from_str(&format!("[AITriggerTypes]\nA={row}\n"));
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let trigger = &loaded.ai_triggers[0];
 
         assert_eq!(
@@ -846,7 +850,11 @@ mod tests {
         let row = eighteen_tokens("Team names", "<team>")
             .replace(",<none>,1,1,1", ",\u{a0}TEAM\u{a0},1,1,1");
         let fixed = IniFile::from_str(&format!("[AITriggerTypes]\nA={row}\n"));
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         let trigger = &loaded.ai_triggers[0];
 
         assert_eq!(trigger.primary_team_type.as_deref(), Some("<team>"));
@@ -858,8 +866,11 @@ mod tests {
 
     #[test]
     fn complete_fixed_source_requires_all_four_nonempty_clean_registries() {
-        let loaded =
-            TeamAiIniRegistry::from_sources(&complete_fixed_aimd(), &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &complete_fixed_aimd(),
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
 
         assert_eq!(
             loaded.fixed_counts,
@@ -895,7 +906,8 @@ mod tests {
             eighteen_tokens("Repaired", "MISSING_TEAM")
         ));
 
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &scenario, false);
+        let loaded =
+            TeamAiIniRegistry::from_sources(&fixed, &scenario, BootstrapRuleProfile::Campaign);
 
         assert_eq!(loaded.team_types.len(), 2);
         assert_eq!(loaded.scripts.len(), 2);
@@ -919,7 +931,11 @@ mod tests {
     #[test]
     fn refused_scenario_definition_does_not_invalidate_clean_fixed_source() {
         let scenario = IniFile::from_str("[ScriptTypes]\n0=MISSING_MAP_SCRIPT\n");
-        let loaded = TeamAiIniRegistry::from_sources(&complete_fixed_aimd(), &scenario, false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &complete_fixed_aimd(),
+            &scenario,
+            BootstrapRuleProfile::Campaign,
+        );
 
         assert!(loaded.fixed_source_is_complete());
         assert_eq!(
@@ -954,7 +970,7 @@ mod tests {
             eighteen_tokens("Map append", "THIRD")
         ));
 
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &map, false);
+        let loaded = TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Campaign);
 
         assert_eq!(
             loaded
@@ -1029,7 +1045,8 @@ mod tests {
         assert_eq!(trigger.difficulty_enabled, [true, true, true]);
         assert!(loaded.diagnostics.is_empty());
 
-        let skirmish = TeamAiIniRegistry::from_sources(&fixed, &map, true);
+        let skirmish =
+            TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Multiplayer);
         assert!(
             skirmish.ai_triggers.iter().all(|trigger| trigger.enabled),
             "listed map enable keys force enabled when g_GameMode is nonzero"
@@ -1103,7 +1120,11 @@ mod tests {
             "[ScriptTypes]\n0=S\n[S]\n0=2,0\n3=-1,9\n49=64,-7\n50=6,2\n\
              [TaskForces]\n0=T\n[T]\n0=-2,E0\n5=3,E5\n6=4,E6\nGroup=-1\n",
         );
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
 
         assert_eq!(
             loaded.scripts[0].actions,
@@ -1140,7 +1161,11 @@ mod tests {
     #[test]
     fn malformed_ai_trigger_is_refused_without_padding() {
         let fixed = IniFile::from_str("[AITriggerTypes]\nBAD=a,b,c\n");
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
 
         assert!(loaded.ai_triggers.is_empty());
         assert_eq!(
@@ -1163,7 +1188,11 @@ mod tests {
             ]
             .join(",")
         ));
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
 
         assert!(loaded.ai_triggers.is_empty());
         assert_eq!(
@@ -1180,7 +1209,11 @@ mod tests {
     #[test]
     fn sentinel_task_force_member_is_a_source_tagged_refusal() {
         let fixed = IniFile::from_str("[TaskForces]\n0=BAD_FORCE\n[BAD_FORCE]\n0=1,<none>\n");
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
 
         assert!(loaded.task_forces[0].entries.is_empty());
         assert_eq!(
@@ -1202,7 +1235,11 @@ mod tests {
             .expect("set VERA20K_RETAIL_AIMD to extracted retail aimd.ini");
         let bytes = std::fs::read(path).expect("read retail aimd.ini");
         let fixed = IniFile::from_bytes(&bytes).expect("parse retail aimd.ini");
-        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let loaded = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
 
         assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
         assert_eq!(loaded.task_forces.len(), 132);
