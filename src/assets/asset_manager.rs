@@ -1539,12 +1539,7 @@ impl AssetManager {
     /// Retail provenance: Append-before-tail registration — `MixFileClass` registered constructor @ `0x005B3C20`.
     fn append_registered_archive(&mut self, named: NamedArchive) {
         let archive_index = self.archives.len();
-        for entry in named.archive.entries() {
-            self.lookup_index.entry(entry.id).or_insert(AssetLocation {
-                archive_index,
-                entry_id: entry.id,
-            });
-        }
+        index_first_matches(&mut self.lookup_index, archive_index, &named.archive);
         log::info!(
             "Registered {} at priority {} ({} entries)",
             named.name,
@@ -2037,13 +2032,24 @@ impl AssetManager {
         self.lookup_index.clear();
 
         for (archive_index, named) in self.archives.iter().enumerate() {
-            for entry in named.archive.entries() {
-                self.lookup_index.entry(entry.id).or_insert(AssetLocation {
-                    archive_index,
-                    entry_id: entry.id,
-                });
-            }
+            index_first_matches(&mut self.lookup_index, archive_index, &named.archive);
         }
+    }
+}
+
+/// Index `archive`, mounted at `archive_index`, behind the archives `index`
+/// already holds: an entry id an earlier archive holds keeps that archive, as
+/// first-match resolution (`MixFileSystem__Resolve_First @ 0x005B4430`) finds.
+fn index_first_matches(
+    index: &mut HashMap<i32, AssetLocation>,
+    archive_index: usize,
+    archive: &MixArchive,
+) {
+    for entry in archive.entries() {
+        index.entry(entry.id).or_insert(AssetLocation {
+            archive_index,
+            entry_id: entry.id,
+        });
     }
 }
 
