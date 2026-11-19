@@ -1,6 +1,7 @@
 //! Campaign House team selection through its production recruitment and script owners.
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::rng::SimRng;
@@ -21,7 +22,7 @@ fn campaign(difficulty: i32) -> (Simulation, RuleSet, InternedId, InternedId) {
         "00".repeat(32)
     ));
     let map = IniFile::from_str("[AITriggerTypesEnable]\nA=yes\n");
-    let registry = TeamAiIniRegistry::from_sources(&fixed, &map, false);
+    let registry = TeamAiIniRegistry::from_sources(&fixed, &map, BootstrapRuleProfile::Campaign);
     let mut sim = Simulation::with_seed(0xA11CE);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
@@ -184,7 +185,8 @@ fn retail_all05_initiate_team_accepts_its_campaign_barracks() {
         )
         .unwrap()
         .into_parts();
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, BootstrapRuleProfile::Campaign).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(31);
@@ -239,7 +241,11 @@ fn ares_team_factory_admission_honours_the_entry_count_build_limit() {
              [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
              [TaskForces]\n0=F\n[F]\n0=2,E1\n",
         );
-        let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), false);
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
         let mut sim = Simulation::with_seed(0x50965E);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.intern_rule_type_ids(&rules);

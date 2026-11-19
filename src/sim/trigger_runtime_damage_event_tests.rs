@@ -5,6 +5,7 @@ use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event
 use super::*;
 use crate::map::map_file::MapFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::util::save_codec;
@@ -628,7 +629,8 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, false);
+    let teams =
+        TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, BootstrapRuleProfile::Campaign);
     if let Some(team_id) = route["team_id"].as_str() {
         let team = teams
             .team_types

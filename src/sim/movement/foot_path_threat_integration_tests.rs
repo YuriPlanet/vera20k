@@ -4,6 +4,7 @@
 //! coefficient/Team reader/getter controls are pinned in astar_threat_inputs.
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::snapshot::GameSnapshot;
@@ -113,7 +114,11 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
     let aimd = IniFile::from_str(
         "[TeamTypes]\n0=AVOID\n[AVOID]\nScript=MOVE\nTaskForce=TANK\nAvoidThreats=yes\n[ScriptTypes]\n0=MOVE\n[MOVE]\n0=0,0\n[TaskForces]\n0=TANK\n[TANK]\n0=1,MTNK\n",
     );
-    let team_registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let team_registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        BootstrapRuleProfile::Multiplayer,
+    );
     let (vm, diagnostics) =
         TeamScriptVm::from_ini_registry(&team_registry, &mut sim.interner, &rules);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");

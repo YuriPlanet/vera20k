@@ -59,6 +59,8 @@ pub struct ModePolicy {
     /// contenders are allied and a human survives, defeated human allies win
     /// too.
     pub shared_allied_victory: bool,
+    /// Whether VERA's mod additions apply to authored maps in this mode.
+    pub allows_mod_map_additions: bool,
 }
 
 impl MpModeClass {
@@ -84,6 +86,7 @@ impl MpModeClass {
                 shared_start_positions: true,
                 skips_network_score_dialog: false,
                 shared_allied_victory: false,
+                allows_mod_map_additions: true,
             },
             Self::ManBattle | Self::Siege | Self::Unholy => ModePolicy {
                 lists_in_skirmish: false,
@@ -95,6 +98,7 @@ impl MpModeClass {
                 shared_start_positions: true,
                 skips_network_score_dialog: false,
                 shared_allied_victory: false,
+                allows_mod_map_additions: true,
             },
             Self::Cooperative => ModePolicy {
                 lists_in_skirmish: false,
@@ -106,6 +110,7 @@ impl MpModeClass {
                 shared_start_positions: false,
                 skips_network_score_dialog: true,
                 shared_allied_victory: true,
+                allows_mod_map_additions: false,
             },
         }
     }

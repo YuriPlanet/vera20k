@@ -61,7 +61,7 @@ use crate::rules::effect_asset_catalog::resolved_overlay_shp_ids;
 #[cfg(test)]
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
-use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 
@@ -1594,8 +1594,9 @@ fn prepare_scenario_rules(
     prefix: crate::rules::process_owner::NativeScenarioRulesPrefix<'_>,
     map_ini: &crate::rules::ini_parser::IniFile,
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
-    bootstrap_rule_profile: BootstrapRuleProfile,
+    rule_policy: RulePolicy,
 ) -> Result<PreparedScenarioRules> {
+    let bootstrap_rule_profile = rule_policy.bootstrap();
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
         let (loaded, (ai, rules_at_read)) = owner
             .load_scenario_with_post_map(prefix, map_ini, tmcj4f, |rules_at_read| {
@@ -2211,7 +2212,7 @@ impl MapLoadInitial {
                 .or_else(|| map_data.basic.name.clone())
                 .unwrap_or_default(),
             theater: map_data.header.theater.clone(),
-            game_mode_nonzero: true,
+            rule_policy: RulePolicy::stock_multiplayer(),
             no_damage: false,
             // Same nonzero-mode replacement as the match load: the launch
             // session's Harvester Truce byte, not the map's key.
@@ -2651,7 +2652,7 @@ pub(crate) fn load_map_initial_with_assets(
             crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(mode_rules.as_ref()),
             &synthetic_ini,
             tmcj4f.as_ref(),
-            full_init_entry_mode.bootstrap_rule_profile(),
+            full_init_entry_mode.stock_rule_policy(None),
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
@@ -3081,11 +3082,15 @@ fn load_map_first_step(
     )?;
     // Fresh construction follows the admitted scenario family. A replay's
     // recorded session mode is installed later for the simulation.
-    let bootstrap_rule_profile = if campaign.is_some() {
+    let construction_profile = if campaign.is_some() {
         BootstrapRuleProfile::Campaign
     } else {
         BootstrapRuleProfile::Multiplayer
     };
+    let rule_policy = startup
+        .match_spec_for_construction(construction_profile)
+        .rules();
+    let bootstrap_rule_profile = rule_policy.bootstrap();
     if bootstrap_rule_profile == BootstrapRuleProfile::Campaign {
         map_data
             .special_flags
@@ -3196,7 +3201,7 @@ fn load_map_first_step(
                     rules_prefix,
                     &map_data.ini,
                     tmcj4f_ini.as_ref(),
-                    bootstrap_rule_profile,
+                    rule_policy,
                 )?
             };
             let (
@@ -3315,7 +3320,7 @@ fn load_map_first_step(
                             .or_else(|| map_data.basic.name.clone())
                             .unwrap_or_default(),
                         theater: map_data.header.theater.clone(),
-                        game_mode_nonzero: bootstrap_rule_profile.uses_multiplayer_rules(),
+                        rule_policy,
                         // Campaign/editor reads `[SpecialFlags] Inert=`. Nonzero game modes
                         // replace active SpecialFlags from session staging.
                         no_damage: bootstrap_rule_profile == BootstrapRuleProfile::Campaign

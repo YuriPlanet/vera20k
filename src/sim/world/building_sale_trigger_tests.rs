@@ -10,6 +10,7 @@ use super::{DefinitionReference, TagAttachment};
 use crate::headless_scenario::HeadlessScenario;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, SharedCellDummy};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::mission::MissionType;
 use crate::sim::scenario_bootstrap::{
@@ -54,8 +55,12 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         )
         .expect("campaign Rules process prefix")
         .into_parts();
-    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-        .expect("campaign AI definitions");
+    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        BootstrapRuleProfile::Campaign,
+    )
+    .expect("campaign AI definitions");
     let theater =
         crate::map::theater::load_theater(&mut assets, &map.header.theater).expect("ALL01 theater");
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
@@ -68,7 +73,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         seed: 0x44A1_EF,
         map_name: map_name.into(),
         theater: map.header.theater.clone(),
-        game_mode_nonzero: false,
+        rule_policy: crate::rules::rule_policy::RulePolicy::stock_campaign(),
         free_radar: map.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
         train_crate: map.basic.train_crate.unwrap_or(false),

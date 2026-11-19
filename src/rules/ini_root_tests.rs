@@ -1,6 +1,7 @@
 //! Test root selection through the retained VFS and actual Rules/AI readers.
 use super::*;
 use crate::map::source::test_support::TestDirectory;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::util::ini_roots::{IniProfile, IniRootConfig};
 
 fn ai(tag: &str) -> Vec<u8> {
@@ -58,7 +59,7 @@ fn ini_roots_mo_triplet_reaches_rules_art_and_standalone_ai_without_yr_mixing() 
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &IniFile::empty(),
-        false,
+        BootstrapRuleProfile::Campaign,
     )
     .unwrap();
     assert_eq!(registry.team_types[0].id, "TEAMMO");
@@ -229,7 +230,7 @@ fn ini_roots_custom_sources_use_the_same_physical_selector() {
     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &IniFile::empty(),
-        false,
+        BootstrapRuleProfile::Campaign,
     )
     .unwrap();
     assert_eq!(registry.team_types[0].id, "TEAMCUSTOM");

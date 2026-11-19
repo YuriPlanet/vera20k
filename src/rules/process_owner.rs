@@ -1411,6 +1411,7 @@ mod tests {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::native_processing::RulesLayerStack;
     use crate::rules::retail_sources::RetailRulesSources;
+    use crate::rules::rule_policy::BootstrapRuleProfile;
 
     #[test]
     fn retail_class_lights_convert_omitted_keys_only_in_reached_sections() {
@@ -2561,7 +2562,7 @@ mod tests {
                     let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
                         &IniFile::empty(),
                         &ai_ini,
-                        true,
+                        BootstrapRuleProfile::Multiplayer,
                     );
                     let mut interner = crate::sim::intern::StringInterner::default();
                     crate::sim::team_script_vm::TeamScriptVm::from_ini_registry(

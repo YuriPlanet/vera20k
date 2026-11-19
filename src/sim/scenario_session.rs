@@ -697,24 +697,38 @@ impl ScenarioGameMode {
         self,
         class: Option<crate::skirmish_modes::MpModeClass>,
     ) -> RulePolicy {
-        let bootstrap = self.bootstrap_rule_profile();
+        Self::stock_rule_policy_for_bootstrap(self.bootstrap_rule_profile(), class)
+    }
+    pub const fn stock_rule_policy_for_bootstrap(
+        profile: BootstrapRuleProfile,
+        class: Option<crate::skirmish_modes::MpModeClass>,
+    ) -> RulePolicy {
+        let mut rules = match profile {
+            BootstrapRuleProfile::Campaign => RulePolicy::stock_campaign(),
+            BootstrapRuleProfile::Multiplayer => RulePolicy::stock_multiplayer(),
+        };
         match class {
             Some(class) => {
                 let policy = class.policy();
-                RulePolicy::new(
-                    bootstrap,
+                rules.mod_map_additions &= policy.allows_mod_map_additions;
+                rules.with_mode_outcomes(
                     policy.shared_allied_victory,
                     policy.skips_network_score_dialog,
                 )
             }
-            None => RulePolicy::new(bootstrap, false, false),
+            None => rules,
         }
     }
     pub const fn is_nonzero(self) -> bool {
         !matches!(self, Self::Campaign)
     }
     pub const fn bootstrap_rule_profile(self) -> BootstrapRuleProfile {
-        BootstrapRuleProfile::from_nonzero(self.is_nonzero())
+        match self {
+            Self::Campaign => BootstrapRuleProfile::Campaign,
+            Self::Lan | Self::Wol | Self::Skirmish | Self::Other => {
+                BootstrapRuleProfile::Multiplayer
+            }
+        }
     }
     /// The stable wire spelling shared by every consumer that names a session's
     /// `GameMode` as text (dashboard telemetry).
@@ -752,9 +766,9 @@ pub struct ScenarioDescriptor {
     pub map_name: String,
     /// Theater name from the map header (e.g. "TEMPERATE").
     pub theater: String,
-    /// Native GameMode classification used by EventClass receiver gates:
-    /// false is mode 0; true represents every nonzero mode.
-    pub game_mode_nonzero: bool,
+    /// Rules admitted for fresh construction. The exact live native mode
+    /// is installed separately and owns the stock policy on save/restore.
+    pub rule_policy: RulePolicy,
     /// Native `ScenarioClass` flags bit `0x20`. The shared direct and area
     /// damage entries return before any receiver or terrain mutation while set.
     pub no_damage: bool,
@@ -820,10 +834,6 @@ pub struct ScenarioDescriptor {
 }
 
 impl ScenarioDescriptor {
-    pub(crate) const fn bootstrap_rule_profile(&self) -> BootstrapRuleProfile {
-        BootstrapRuleProfile::from_nonzero(self.game_mode_nonzero)
-    }
-
     /// Seed normal scenario initialization from a native recording header.
     ///
     /// Map bounds, theater, objects, and active registration order are rebuilt
@@ -2177,7 +2187,10 @@ impl ScenarioSession {
             seed: u64::from(desc.seed),
             map_name: crate::map::source::portable_map_name(&desc.map_name).to_owned(),
             theater: desc.theater.clone(),
-            game_mode: ScenarioGameMode::from_legacy_nonzero(desc.game_mode_nonzero),
+            game_mode: match desc.rule_policy.bootstrap() {
+                BootstrapRuleProfile::Campaign => ScenarioGameMode::Campaign,
+                BootstrapRuleProfile::Multiplayer => ScenarioGameMode::Skirmish,
+            },
             multiplayer_mode_class: None,
             observer_houses: Vec::new(),
             network_max_ahead_frames: None,
@@ -2299,7 +2312,7 @@ mod tests {
     #[test]
     fn campaign_startup_rejects_wrong_family_and_outside_ui_rows_without_mutation() {
         let mut offline = Simulation::from_descriptor(&ScenarioDescriptor {
-            game_mode_nonzero: true,
+            rule_policy: RulePolicy::stock_multiplayer(),
             ..Default::default()
         });
         let hash = offline.state_hash();

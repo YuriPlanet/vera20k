@@ -4,6 +4,7 @@
 use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit};
 use super::*;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::rule_policy::TeamLimitScope;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
@@ -646,7 +647,7 @@ fn retail_infantry_map_event(
         &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
             &crate::rules::ini_parser::IniFile::empty(),
             &map.ini,
-            true,
+            BootstrapRuleProfile::Multiplayer,
         ),
         &rules,
     );

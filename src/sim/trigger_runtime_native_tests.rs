@@ -22,7 +22,8 @@ fn team_lookup_events_preserve_names_order_and_do_not_allocate() {
          [Actions]\nT=1,7,1,LATE,0,0,0,0,A\n"
     )))
     .unwrap();
-    let teams = TeamAiIniRegistry::from_sources(&fixed, &map.ini, true);
+    let teams =
+        TeamAiIniRegistry::from_sources(&fixed, &map.ini, BootstrapRuleProfile::Multiplayer);
     let definitions = RuntimeDefinitions::read_map(&map, &teams, None, None, None);
 
     // 6F19B0 constructs MISSING even though its section read fails; Event
@@ -48,6 +49,7 @@ fn team_lookup_events_preserve_names_order_and_do_not_allocate() {
         [None, Some("SECOND"), None, None, Some("FIRST")]
     );
 }
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::world::{DeferredDeleteQueue, DeferredDeleteTicket};
 use crate::util::save_codec;
 use serde_json::{Value, json};
@@ -182,7 +184,8 @@ fn loss_threshold_events_bind_retail_all04_reinforcement_operands() {
     let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, false);
+    let teams =
+        TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, BootstrapRuleProfile::Campaign);
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(31);
@@ -1709,7 +1712,7 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         Some(&map.ini),
     );
     let aimd = IniFile::from_bytes(assets.get_ref("AIMD.INI").unwrap()).unwrap();
-    let teams = TeamAiIniRegistry::from_sources(&aimd, &map.ini, false);
+    let teams = TeamAiIniRegistry::from_sources(&aimd, &map.ini, BootstrapRuleProfile::Campaign);
     let audio = crate::rules::audio_sources::AudioDefinitions::select(&assets);
     sim.initialize_trigger_definitions(
         &map,
@@ -3100,7 +3103,8 @@ fn physical_team_tag_references_match_original_retention_and_long_id_controls() 
                 format!("{MAP_PREFIX}{}", team_source(&control["values"][1]))
             };
             let map = crate::map::map_file::MapFile::from_bytes(scenario.as_bytes()).unwrap();
-            let teams = TeamAiIniRegistry::from_sources(&fixed, &map.ini, false);
+            let teams =
+                TeamAiIniRegistry::from_sources(&fixed, &map.ini, BootstrapRuleProfile::Campaign);
             let definitions = RuntimeDefinitions::read_map(&map, &teams, None, None, None);
             assert_eq!(definitions.team_types, ["TT"]);
             assert_eq!(
@@ -3217,7 +3221,11 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
                 "no"
             }
         ));
-        let registry = TeamAiIniRegistry::from_sources(&definitions, &IniFile::from_str(""), false);
+        let registry = TeamAiIniRegistry::from_sources(
+            &definitions,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Campaign,
+        );
         sim.install_team_ai_registry(&registry, &rules);
         let author_type = sim.trigger_runtime.definitions.tag_type("author").unwrap();
         let team_type = sim.trigger_runtime.definitions.tag_type("team").unwrap();
@@ -3515,7 +3523,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
     let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
         &IniFile::from_bytes(&raw_ai).unwrap(),
         &map.ini,
-        false,
+        BootstrapRuleProfile::Campaign,
     );
     let eva =
         crate::rules::sound_ini::EvaRegistry::from_ini(&IniFile::from_bytes(&raw_eva).unwrap());

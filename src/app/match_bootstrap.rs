@@ -4,9 +4,9 @@
 //! sessions, reads the ordinary Windows seed once, and observes an already
 //! initialized `Simulation` without mutating it.
 
-use crate::rules::rule_policy::RulePolicy;
+use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
 use crate::sim::campaign_carry_over::CampaignCarryOver;
-use crate::sim::scenario_session::ExecutionTopology;
+use crate::sim::scenario_session::{ExecutionTopology, ScenarioGameMode};
 use crate::sim::world::{Simulation, SimulationRngState};
 use crate::skirmish_launch::{LaunchStartPosition, SKIRMISH_AI_SLOT_COUNT, SkirmishLaunchSession};
 
@@ -560,11 +560,16 @@ impl MatchSpec {
 
 impl LoadingStartup {
     pub(crate) fn match_spec(&self) -> MatchSpec {
-        let mode = self.session_mode();
+        self.match_spec_for_construction(self.session_mode().bootstrap_rule_profile())
+    }
+
+    /// The admitted map family controls construction even when a replay's
+    /// recorded session mode is different. Execution still follows the record.
+    pub(crate) fn match_spec_for_construction(&self, profile: BootstrapRuleProfile) -> MatchSpec {
         let class = self.launch_session().map(|launch| launch.mode.class);
         MatchSpec {
-            topology: mode.execution_topology(),
-            rules: mode.stock_rule_policy(class),
+            topology: self.session_mode().execution_topology(),
+            rules: ScenarioGameMode::stock_rule_policy_for_bootstrap(profile, class),
         }
     }
 
@@ -652,8 +657,8 @@ impl LoadingStartup {
 
     /// The `GameMode` admitted before construction: campaign 0 (`0x0052E175`),
     /// offline Battle 5 (`0x0052E10F`), or the exact network/recorded mode.
-    /// A generic map load has no campaign, matching the simulation's own
-    /// `game_mode_nonzero = campaign.is_none()` classification.
+    /// A generic map load uses skirmish mode; the admitted map family
+    /// separately sets the rules for fresh construction.
     pub(crate) fn session_mode(&self) -> crate::app::match_runtime::session::SessionMode {
         use crate::app::match_runtime::session::SessionMode;
         match self {
@@ -1038,32 +1043,45 @@ mod tests {
     #[test]
     fn stock_startups_project_rules_independently_of_live_transport() {
         use crate::app::match_runtime::session::{SessionMode, WolStartTerms};
-        use crate::rules::rule_policy::BootstrapRuleProfile;
 
-        let offline = LoadingStartup::Accepted(prepared(73)).match_spec();
-        assert_eq!(offline.topology(), ExecutionTopology::LocalOffline);
+        let offline_startup = LoadingStartup::Accepted(prepared(73));
         assert_eq!(
-            offline.rules().bootstrap(),
-            BootstrapRuleProfile::Multiplayer
+            offline_startup.session_mode(),
+            SessionMode::from_game_mode(5)
         );
-        assert!(!offline.rules().shared_allied_victory());
+        assert!(crate::app::mod_additions::reach(&offline_startup));
+        let offline = offline_startup.match_spec();
+        assert_eq!(offline.topology(), ExecutionTopology::LocalOffline);
+        assert_eq!(offline.rules(), RulePolicy::stock_multiplayer());
 
         let mut session = explicit_session();
-        let replay = LoadingStartup::Replay {
+        let replay = |game_mode| LoadingStartup::Replay {
             session: session.clone(),
             seed: MatchSeed {
                 value: 73,
                 source: MatchSeedSource::SavedScenario,
                 seed_authority_certifying: false,
             },
-            game_mode: SessionMode::Wol,
+            game_mode,
             native_id_prefix: 0,
         };
+        let wol_replay = replay(SessionMode::Wol);
         assert_eq!(
-            replay.match_spec().topology(),
+            wol_replay.match_spec().topology(),
             ExecutionTopology::LockstepNetwork
         );
-        assert_eq!(replay.match_spec().rules(), offline.rules());
+        assert_eq!(wol_replay.match_spec().rules(), offline.rules());
+
+        let mode_zero_replay = replay(SessionMode::Campaign);
+        assert_eq!(
+            mode_zero_replay.match_spec().rules(),
+            RulePolicy::stock_campaign()
+        );
+        assert_eq!(
+            mode_zero_replay.match_spec_for_construction(BootstrapRuleProfile::Multiplayer),
+            offline,
+            "the recorded mode zero does not turn an authored skirmish map into a campaign"
+        );
 
         session.mode = SkirmishLaunchMode::stock(3).unwrap();
         let network = LoadingStartup::Network(std::sync::Arc::new(PreparedNetworkStartup::new(
@@ -1079,6 +1097,7 @@ mod tests {
         assert_eq!(co_op.rules().bootstrap(), BootstrapRuleProfile::Multiplayer);
         assert!(co_op.rules().shared_allied_victory());
         assert!(co_op.rules().skips_network_score_dialog());
+        assert!(!crate::app::mod_additions::reach(&network));
 
         let spec = serde_json::to_value(co_op).unwrap();
         assert_eq!(spec.as_object().unwrap().len(), 2);

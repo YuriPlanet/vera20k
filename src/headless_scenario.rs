@@ -28,10 +28,9 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
-use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::intern::InternedId;
 use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
-use crate::sim::scenario_session::ScenarioDescriptor;
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
 use crate::sim::world::Simulation;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession};
 
@@ -322,11 +321,12 @@ fn load_with_assets(
         .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
     // This entry constructs a noncampaign scenario. The exact replay mode
     // is installed separately for the simulation.
-    let bootstrap_rule_profile = BootstrapRuleProfile::Multiplayer;
+    let rule_policy =
+        ScenarioGameMode::Skirmish.stock_rule_policy(Some(launch.session().mode.class));
     let team_ai_registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
         &assets,
         &map.ini,
-        bootstrap_rule_profile,
+        rule_policy.bootstrap(),
     )?;
     let theater = theater::load_theater(assets, &map.header.theater)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
@@ -348,7 +348,7 @@ fn load_with_assets(
         seed,
         map_name: map_file_name.to_string(),
         theater: map.header.theater.clone(),
-        game_mode_nonzero: bootstrap_rule_profile.uses_multiplayer_rules(),
+        rule_policy,
         no_damage: false,
         // Non-campaign: the session staging word's Harvester Truce byte
         // (`0x005E7495..0x005E74D4`) replaces the map's bit at

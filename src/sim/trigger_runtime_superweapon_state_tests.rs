@@ -5,6 +5,7 @@
 use super::*;
 use crate::map::map_file::MapFile;
 use crate::map::waypoints::Waypoint;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
@@ -118,7 +119,8 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
     let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, false);
+    let teams =
+        TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, BootstrapRuleProfile::Campaign);
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let route = data["retail_inputs"]["routes"]

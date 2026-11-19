@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::house_state::HouseState;
 use crate::sim::passenger::PassengerRole;
@@ -40,7 +41,8 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
         )
         .unwrap()
         .into_parts();
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, BootstrapRuleProfile::Campaign).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x6E9ACF);
@@ -253,7 +255,11 @@ impl Fixture {
              [TaskForces]\n0=CARRY_TF\n[CARRY_TF]\n0=1,APC\n1=2,E1\n",
             if returns { "yes" } else { "no" },
         ));
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_team_ai_registry(&registry, &rules);
@@ -455,7 +461,11 @@ fn retail_team_ai() -> Option<(RuleSet, Simulation)> {
     use crate::rules::retail_ini_fixture::retail_ini;
     let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        BootstrapRuleProfile::Multiplayer,
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -746,7 +756,11 @@ impl OracleTeam {
              [TaskForces]\n0=ROW_TF\n[ROW_TF]\n{entries}",
             if returns { "yes" } else { "no" },
         ));
-        let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+        let registry = TeamAiIniRegistry::from_sources(
+            &aimd,
+            &IniFile::from_str(""),
+            BootstrapRuleProfile::Multiplayer,
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_team_ai_registry(&registry, &rules);

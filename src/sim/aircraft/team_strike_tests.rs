@@ -1,5 +1,6 @@
 //! A computer house's Harrier team running its retail AIMD script.
 
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::combat::TargetKind;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::air_movement;
@@ -49,7 +50,8 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
         crate::map::source::load_map_ini_by_name_or_path_with_assets(&retail, "Death.mmx", &assets)
             .unwrap()
             .ini;
-    let ai = TeamAiIniRegistry::load_retail(&assets, &map, true).unwrap();
+    let ai =
+        TeamAiIniRegistry::load_retail(&assets, &map, BootstrapRuleProfile::Multiplayer).unwrap();
     let trigger = ai
         .ai_triggers
         .iter()

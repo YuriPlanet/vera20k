@@ -516,13 +516,11 @@ impl Simulation {
         // 0x004FC0BC..0x004FC10D: a computer house at the skirmish IQ, defeated
         // under `[AI] Paranoid` in a nonzero game mode, turns the computers
         // left paranoid.
-        let game_mode_nonzero = self.session.game_mode_nonzero();
         let rules = context.rules();
-        if game_mode_nonzero
+        if self.session.rule_policy().permits_paranoid_reactions()
             && rules.general.paranoid
             && self.houses.get(&owner).is_some_and(|house| {
-                house.current_iq() == rules.general.max_iq_levels
-                    && !house.is_controlled_by_human(game_mode_nonzero)
+                house.current_iq() == rules.general.max_iq_levels && !house.is_human()
             })
         {
             self.computer_paranoid(rules, context.registry(), context.effects());
