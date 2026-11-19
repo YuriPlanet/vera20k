@@ -55,8 +55,7 @@ impl Simulation {
             return;
         }
         let (output, drain) = power.effective_totals();
-        // HasLowPower, inlined: a drain above the output.
-        let low_power = drain != 0 && drain > output;
+        let low_power = power.has_low_power();
         // (expendability, UniqueID, id, drain), sorted least expendable
         // first; the UniqueID tie-break makes the order total.
         let mut candidates: Vec<(i32, i32, u64, i32)> = buildings

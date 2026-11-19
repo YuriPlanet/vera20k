@@ -423,6 +423,17 @@ impl PowerState {
         (self.total_output, self.total_drain)
     }
 
+    /// YRpp's inline `HouseClass::HasLowPower`, `PowerOutput < PowerDrain &&
+    /// PowerDrain`, which Ares compiles into each of its callers: the degrade
+    /// (`HouseClass_Update_DamageDelay @ 100247A0`), the computer's power
+    /// balancing (`UpdateTogglePower @ 100228A0`) and a spy's superweapon
+    /// grant (`InfiltratedBy @ 10012000`). It reads the live totals, not the
+    /// retained [`Self::is_low_power`] flag.
+    pub(crate) fn has_low_power(&self) -> bool {
+        let (output, drain) = self.effective_totals();
+        output < drain && drain != 0
+    }
+
     pub fn low_power(&self) -> bool {
         #[cfg(feature = "debug-tools")]
         if self.debug_full_power {

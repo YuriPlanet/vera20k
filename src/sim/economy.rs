@@ -15,9 +15,10 @@
 //! Ares fills those stores (`Refinery.UseStorage`, Ares
 //! `HouseClass_GiveTiberium_Storage @ 10024290`), so the wallet also keeps
 //! them (`sim::ares_tiberium_storage::AresTiberiumStorage`), empty unless
-//! Ares plays. The two arms that read them are ported for it: Spend_Money's
-//! silo drain and Available_Money's storage value. They run in every game
-//! and keep the empty boundary while the stores are empty.
+//! the game's money takes its Ares form (`RuleSet::ares_form`). The two arms
+//! that read them are ported for it: Spend_Money's silo drain and
+//! Available_Money's storage value. They run in every game and keep the
+//! empty boundary while the stores are empty.
 //!
 //! `Fill_In_Data`'s exact `[Basic] FillSilos=` path (`0x00684F02..0x00684F7C`)
 //! is a fresh-start cash/score writer, not a storage fill: it retains
@@ -49,7 +50,7 @@ pub struct Economy {
     /// to it, and the score screen reads it.
     score: i32,
     /// The House store (`+0x2FC`) and its buildings' stores, which only
-    /// Ares fills; empty unless Ares plays.
+    /// Ares fills; empty unless the money takes its Ares form.
     #[serde(default)]
     storage: AresTiberiumStorage,
 }
@@ -70,7 +71,7 @@ impl Economy {
     }
 
     /// Ares' tiberium storage (`sim::ares_tiberium_storage`), empty unless
-    /// Ares plays.
+    /// the money takes its Ares form.
     pub(crate) fn ares_storage(&self) -> &AresTiberiumStorage {
         &self.storage
     }

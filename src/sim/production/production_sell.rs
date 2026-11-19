@@ -967,8 +967,9 @@ pub(crate) fn sell_complete(
     // Detach/HouseAbandon and post-Limbo queue callback must observe this
     // phase, before UnInit's earlier PointerExpired/Alive cleanup.
     sim.techno_limbo_with_context(id, context);
-    // When Ares plays: the store payout `0x0044A232..0x0044A285` through
-    // Ares' GiveTiberium (`10024290`, `sim::ares_tiberium_storage`).
+    // When the money takes its Ares form (`RuleSet::ares_form`): the store
+    // payout `0x0044A232..0x0044A285` through Ares' GiveTiberium
+    // (`10024290`, `sim::ares_tiberium_storage`).
     if rules.ares_form() {
         sim.ares_sale_storage_payout(id, rules);
     }

@@ -6375,9 +6375,10 @@ impl Simulation {
                     .add_building_drain(drain);
             }
         }
-        // With Ares: the building's store joins the House's (`0x00502B83`,
-        // `sim::ares_tiberium_storage`).
-        if rules.ares() {
+        // When the money takes its Ares form (`RuleSet::ares_form`, the one
+        // switch of Ares' stores): the building's store joins the House's
+        // (`0x00502B83`, `sim::ares_tiberium_storage`).
+        if rules.ares_form() {
             self.ares_storage_added_to_game(stable_id, rules);
         }
     }
@@ -6412,9 +6413,10 @@ impl Simulation {
         {
             house.remove_from_game_tracking(entity);
         }
-        // With Ares: the building's store leaves the House's
-        // (`0x00502801..0x00502821`, `sim::ares_tiberium_storage`).
-        if rules.ares() && structure {
+        // When the money takes its Ares form (`RuleSet::ares_form`): the
+        // building's store leaves the House's (`0x00502801..0x00502821`,
+        // `sim::ares_tiberium_storage`).
+        if rules.ares_form() && structure {
             self.ares_storage_removed_from_game(stable_id, owner);
         }
         if structure {

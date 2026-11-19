@@ -21,6 +21,12 @@
 //!   `BuildingClass::DestructionEffects @ 0x004415F0`) removes the store and
 //!   spills it with `TiberiumSpill`.
 //!
+//! One switch decides whether these stores are live: the game's money takes
+//! its Ares form ([`RuleSet::ares_form`]). The deposit, the sale's payout, the
+//! Added_To_Game merge, the Removed_From_Game withdrawal, the death's spill
+//! and the silo nag ask it; Spend_Money's drain and Available_Money's value
+//! run in every game, on stores that stay empty without it.
+//!
 //! The owner is [`AresTiberiumStorage`], kept in each House's wallet
 //! ([`crate::sim::economy::Economy`]) because Spend_Money, which drains the
 //! stores, is reached through the wallet alone. It holds the House store
@@ -100,7 +106,9 @@ impl TiberiumStore {
     /// `StorageClass::GetTotalAmount @ 0x006C9650`: each slot joins an
     /// integer total through `ftol`, so every slot truncates (Ares' own
     /// `OwnedTiberiumStruct::GetTotalAmount @ 10048830` truncates each slot
-    /// before adding: the same for the non-negative amounts stored).
+    /// before adding: the same for the non-negative amounts stored). The one
+    /// port: the refinery and silo art read their store through it too
+    /// (`sim::building_art_storage`).
     pub(crate) fn total_amount(self) -> i32 {
         self.0.iter().fold(0, |total, &amount| {
             X87::ftol_i32_low_masked(X87::add(X87::load_i32(total), X87::load_f32(amount)))

@@ -123,8 +123,9 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // minus `ftol(+0x2FC)` below 30, capacity above 50) re-arms it without a
     // line. The store stays empty in YR (`crate::sim::economy`), so capacity
     // would have to be both below 30 and above 50: it never re-arms.
-    // When Ares plays the store fills (`sim::ares_tiberium_storage`), and Ares
-    // 3.0 HouseClass_Update_SilosNeededEVA (10024AE0, hook 0x4F8C23) speaks
+    // When the money takes its Ares form (`RuleSet::ares_form`) the store
+    // fills (`sim::ares_tiberium_storage`), and Ares 3.0
+    // HouseClass_Update_SilosNeededEVA (10024AE0, hook 0x4F8C23) speaks
     // `EVA_SilosNeeded` before the re-arm. RESIDUAL (client): it also prints
     // `[General] Message.SilosNeeded` for MessageDelay in the House's colour.
     if timer.expired(now) && capacity.wrapping_sub(stored) < 30 && capacity > 50 {
