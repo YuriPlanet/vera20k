@@ -67,7 +67,9 @@ refused request records nothing. Responses and
 Sequences increase within a session. An event appears once logically even when
 responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`. The
 `kind=41` list leaves out game rooms whose host's game is on another version than the
-caller's ([sign-in headers](#sign-in-headers)).
+caller's ([sign-in headers](#sign-in-headers)). A game in the lobby asks for the
+`kind=41` list, and `GET /v1/matches` with it, every 5 seconds (30 before), and for
+`kind=0` every 53.
 Clients poll at most once per second. Responses contain at most 256 events and
 256 KiB of UTF-8 JSON.
 `GET /v1/events/stream?after=<cursor>` with a WebSocket upgrade and the bearer (400

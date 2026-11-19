@@ -51,8 +51,10 @@ const PUBLIC_LOBBY_TITLE: &str = "VERA20K Online";
 const PUBLIC_LOBBY_BASE: usize = 2;
 /// `0x00788800`/`0x00789B60`: at most 150 x 100 ms for the leave.
 const LEAVE_WAIT: Duration = Duration::from_millis(15_000);
-/// `SetTimer(0, 30000)`: the game list; `SetTimer(1, 53000)`: the lobbies.
-const GAMES_PERIOD: Duration = Duration::from_millis(30_000);
+/// The game list. VERA asks every 5 s, so a game someone creates shows up
+/// soon; native `SetTimer(0, 30000)` asked every 30.
+const GAMES_PERIOD: Duration = Duration::from_millis(5_000);
+/// `SetTimer(1, 53000)`: the lobbies.
 const LOBBIES_PERIOD: Duration = Duration::from_millis(53_000);
 /// Refresh `0x55D` disables itself for `SetTimer(0x55D, 3000)`.
 const REFRESH_HOLD: Duration = Duration::from_millis(3000);
@@ -5239,6 +5241,16 @@ mod tests {
 
     fn names(lobby: &WolLobby) -> Vec<&str> {
         lobby.members.iter().map(|m| m.name.as_str()).collect()
+    }
+
+    /// VERA lists the games again five seconds on, so a new game shows up
+    /// soon; the lobbies keep native `SetTimer(1, 53000)`.
+    #[test]
+    fn a_runner_lists_the_games_again_after_five_seconds() {
+        let now = Instant::now();
+        let lobby = new_runner(Runner::Lobby, false, false, now, true);
+        assert_eq!(lobby.games_at - now, Duration::from_secs(5));
+        assert_eq!(lobby.lobbies_at - now, Duration::from_secs(53));
     }
 
     /// The user-list sink sorts a chat lobby's users but keeps a game
