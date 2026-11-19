@@ -172,7 +172,7 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
 
     let (mut custom, custom_houses) = houses(false, 2);
     let custom_owner = custom_houses[0];
-    let policy = RulePolicy::stock_campaign().with_ai_searches_for_enemy(true);
+    let policy = RulePolicy::stock_campaign().with_runs_ai_strategy(true);
     custom
         .session
         .install_admission(ScenarioGameMode::Campaign, None, policy);

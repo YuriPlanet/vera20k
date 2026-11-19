@@ -106,7 +106,7 @@ fn computer_house(game_mode_nonzero: bool) -> (Simulation, InternedId) {
 }
 
 #[test]
-fn base_reservation_and_ai_production_modes_are_independent() {
+fn managed_ai_base_controls_reservation_and_production_together() {
     use crate::sim::scenario_session::ScenarioGameMode;
 
     let campaign = ScenarioGameMode::from_game_mode(0);
@@ -119,16 +119,11 @@ fn base_reservation_and_ai_production_modes_are_independent() {
         (skirmish, skirmish.stock_rule_policy(None), false, 2),
         (
             campaign,
-            campaign_rules.with_requires_ai_base_reservation_proximity(true),
+            campaign_rules.with_uses_managed_ai_base(true),
             false,
-            0,
-        ),
-        (
-            campaign,
-            campaign_rules.with_uses_ai_production_modes(true),
-            true,
             2,
         ),
+        (campaign, campaign_rules.with_uses_ai_economy(true), true, 0),
     ] {
         let (mut sim, owner) = computer_house(false);
         sim.install_session_admission(mode, None, policy);

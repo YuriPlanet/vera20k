@@ -216,7 +216,7 @@ pub struct TeamAiIniRegistry {
     fixed_definitions: FixedTeamAiDefinitions,
     team_type_read_transactions: Vec<TeamTypeReadTransaction>,
     fixed_team_type_read_count: usize,
-    uses_default_task_force_member_tech_level: bool,
+    uses_house_team_rules: bool,
 }
 
 impl TeamAiIniRegistry {
@@ -263,8 +263,7 @@ impl TeamAiIniRegistry {
     /// calls `0x0068797A..0x006879E3`.
     pub fn from_sources(fixed_aimd: &IniFile, scenario: &IniFile, rule_policy: RulePolicy) -> Self {
         let mut registry = Self {
-            uses_default_task_force_member_tech_level: rule_policy
-                .uses_default_task_force_member_tech_level(),
+            uses_house_team_rules: rule_policy.uses_house_team_rules(),
             ..Self::default()
         };
 
@@ -288,7 +287,7 @@ impl TeamAiIniRegistry {
         registry.fixed_counts.ai_triggers = registry.ai_triggers.len();
         registry.fixed_definitions.ai_triggers = registry.ai_triggers.clone();
         registry.read_ai_triggers(scenario, TeamAiDefinitionSource::Scenario);
-        registry.read_ai_trigger_enables(scenario, rule_policy.forces_listed_ai_trigger_enables());
+        registry.read_ai_trigger_enables(scenario, registry.uses_house_team_rules);
 
         registry
     }
@@ -344,13 +343,12 @@ impl TeamAiIniRegistry {
                 [..self.fixed_team_type_read_count]
                 .to_vec(),
             fixed_team_type_read_count: self.fixed_team_type_read_count,
-            uses_default_task_force_member_tech_level: self
-                .uses_default_task_force_member_tech_level,
+            uses_house_team_rules: self.uses_house_team_rules,
         }
     }
 
-    pub(crate) const fn uses_default_task_force_member_tech_level(&self) -> bool {
-        self.uses_default_task_force_member_tech_level
+    pub(crate) const fn uses_house_team_rules(&self) -> bool {
+        self.uses_house_team_rules
     }
 
     /// TeamTypes are read from fixed AIMD and then from the map before either
@@ -1047,7 +1045,7 @@ mod tests {
             "listed map enable keys force enabled when g_GameMode is nonzero"
         );
 
-        let policy = RulePolicy::stock_multiplayer().with_forces_listed_ai_trigger_enables(false);
+        let policy = RulePolicy::stock_multiplayer().with_uses_house_team_rules(false);
         let skirmish_respecting_authored_enables =
             TeamAiIniRegistry::from_sources(&fixed, &map, policy);
         assert!(!skirmish_respecting_authored_enables.ai_triggers[0].enabled);

@@ -735,6 +735,28 @@ fn native_defeat_gate_corpus() {
     }
 }
 
+#[test]
+fn elimination_policy_controls_the_automatic_house_defeat_gate() {
+    use crate::sim::scenario_session::ScenarioGameMode::{Campaign, Skirmish};
+
+    let rules = rules(3);
+    let stock_skirmish = Skirmish.stock_rule_policy(None);
+    for (mode, policy, defeated) in [
+        (Campaign, Campaign.stock_rule_policy(None), false),
+        (Skirmish, stock_skirmish, true),
+        (
+            Skirmish,
+            stock_skirmish.with_uses_elimination_results(false),
+            false,
+        ),
+    ] {
+        let (mut sim, houses) = sim_with_houses(&[0]);
+        sim.session.install_admission(mode, None, policy);
+        sim.check_defeat(Some(&rules), None);
+        assert_eq!(sim.houses[&houses[0]].is_defeated(), defeated);
+    }
+}
+
 /// Regression for the observed fourth-side opening: construction-to-destruction
 /// MCV tracking, even in limbo, reaches the real House rung. Retail deliberately
 /// considers only the first three BaseUnit slots; Ares considers the fourth too.

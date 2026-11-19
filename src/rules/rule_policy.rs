@@ -56,7 +56,7 @@ pub(crate) enum TeamLimitScope {
     PerHouse,
 }
 
-/// Independently selectable rules. Stock admission and legacy decoding choose
+/// Independently selectable rule domains. Stock admission and legacy decoding choose
 /// a preset from the mode and mode class. Live sessions retain the admitted
 /// value. Offline Skirmish (GameMode 5) uses multiplayer rules with local
 /// execution. Binary choices share one flag word; named selectors describe
@@ -90,73 +90,31 @@ impl RulePolicy {
     const NETWORK_DIPLOMACY_BRIEFING: u64 = 1 << 12;
     const STARTING_HOUSE_ROLE_ALLIANCES: u64 = 1 << 13;
     const ARES_PSYCHIC_REVEAL_EXCLUSIONS: u64 = 1 << 14;
-    const AI_MCV_DEPLOY_HUNT: u64 = 1 << 15;
-    const REQUIRES_AI_BASE_RESERVATION_PROXIMITY: u64 = 1 << 16;
-    const USES_AI_PRODUCTION_MODES: u64 = 1 << 17;
-    const IGNORES_AUTHORED_AI_SELLABLE: u64 = 1 << 18;
-    const ALLOWS_AI_SALE_AFTER_CAPTURE: u64 = 1 << 19;
-    const ALLOWS_CONSTRUCTION_YARD_REDEPLOY: u64 = 1 << 20;
-    const ALLOWS_AI_VIRTUAL_PURIFIERS: u64 = 1 << 21;
-    const AI_SEARCHES_FOR_ENEMY: u64 = 1 << 22;
-    const AI_IGNORES_SUPERWEAPON_IQ: u64 = 1 << 23;
-    const AI_SELLS_AND_HUNTS_WITHOUT_FACTORY: u64 = 1 << 24;
-    const AI_MANAGES_STRATEGY_BUILD_QUEUE: u64 = 1 << 25;
-    const ARES_SKIPS_PASSIVE_HOUSE_ANGER: u64 = 1 << 26;
-    const AI_TRIGGERS_REQUIRE_MULTIPLAYER_FLAG: u64 = 1 << 27;
-    const AI_TRIGGER_USES_HOUSE_DIFFICULTY: u64 = 1 << 28;
-    const TEAM_ADMITS_RECRUITS_WITHOUT_FACTORY: u64 = 1 << 29;
-    const TARGETING_REQUIRES_PLAYER_DISCOVERY: u64 = 1 << 30;
-    const TARGETING_RESPECTS_PASSIVE_HOUSES: u64 = 1 << 31;
-    const FORCES_LISTED_AI_TRIGGER_ENABLES: u64 = 1 << 32;
-    const USES_DEFAULT_TASK_FORCE_MEMBER_TECH_LEVEL: u64 = 1 << 33;
-    const REJECTS_DEFEATED_PLAYER_AT_REINFORCEMENTS: u64 = 1 << 34;
-    const AI_BUILDINGS_REPAIRABLE_ON_UNLIMBO: u64 = 1 << 35;
-    const AI_VEHICLES_AVOID_CRATES: u64 = 1 << 36;
-    const ARES_AI_STORES_TIBERIUM: u64 = 1 << 37;
-    const ARES_RETURNS_DEFEATED_STRUCTURES: u64 = 1 << 38;
-    const AUTOMATIC_HOUSE_DEFEAT: u64 = 1 << 39;
-    const OUTCOMES_FOLLOW_PLAYER_CONTROL: u64 = 1 << 40;
-    const ALLOWS_IDLE_OBJECT_SLEEP: u64 = 1 << 41;
-    const FORCE_TIBERIUM_FLAGS: u64 = 1 << 42;
-    const HONORS_AUTHORED_INERT: u64 = 1 << 43;
-    const USES_SESSION_HARVESTER_TRUCE: u64 = 1 << 44;
-    const ALLOWS_OWNERLESS_TERRAIN_LOGIC: u64 = 1 << 45;
-    const COUNTS_PLAYER_CONTROL_AS_HUMAN: u64 = 1 << 46;
-    const BUILDING_SERVICES_USE_DISCOVERY: u64 = 1 << 47;
-    const USES_COUNTRY_DIFFICULTY_BIASES: u64 = 1 << 48;
-    const ARES_APPLIES_SUPERWEAPON_SHELL_SETTING: u64 = 1 << 49;
-    const SKIPS_LOCAL_PLAYER_AUTHORED_BUILDINGS: u64 = 1 << 50;
-    const RECALCULATES_AI_BASE_AFTER_MCV_DEPLOY: u64 = 1 << 51;
-    const CRATES_USE_RUNTIME_SLOTS: u64 = 1 << 52;
-    const CRATES_ALLOW_PASSIVE_COLLECTORS: u64 = 1 << 53;
-    const CRATES_USE_AUTHORED_DEFAULT_PAYLOAD: u64 = 1 << 54;
-    const CRATES_VALIDATE_PICKUP_PAYLOAD: u64 = 1 << 55;
-    const CRATES_PAY_LOCAL_PLAYER: u64 = 1 << 56;
-    const PASSIVE_HOUSES_CAST_DIRECT_SIGHT: u64 = 1 << 57;
-    const ARMED_VICTIMS_DEFEND_WITHOUT_BASE_RESPONSE: u64 = 1 << 58;
-    const BASE_DEFENSE_REQUIRES_RECRUITABLE_MISSION: u64 = 1 << 59;
-    const FIRE_DISCLOSURE_USES_LOCAL_DISCOVERY: u64 = 1 << 60;
-    const HUNTER_SEEKER_LIMITS_AI_TO_DESIGNATED_ENEMY: u64 = 1 << 61;
-    const HUNTER_SEEKER_HUMANS_PREFER_NONPASSIVE_TARGETS: u64 = 1 << 62;
+    const ALLOWS_CONSTRUCTION_YARD_REDEPLOY: u64 = 1 << 15;
+    const ALLOWS_IDLE_OBJECT_SLEEP: u64 = 1 << 16;
+    const ALLOWS_OWNERLESS_TERRAIN_LOGIC: u64 = 1 << 17;
+    const COUNTS_PLAYER_CONTROL_AS_HUMAN: u64 = 1 << 18;
+    const USES_COUNTRY_DIFFICULTY_BIASES: u64 = 1 << 19;
+    const SKIPS_LOCAL_PLAYER_AUTHORED_BUILDINGS: u64 = 1 << 20;
+    const USES_MANAGED_AI_BASE: u64 = 1 << 21;
+    const USES_AI_ECONOMY: u64 = 1 << 22;
+    const RUNS_AI_STRATEGY: u64 = 1 << 23;
+    const USES_HOUSE_TEAM_RULES: u64 = 1 << 24;
+    const USES_CAMPAIGN_DISCOVERY: u64 = 1 << 25;
+    const USES_CAMPAIGN_BASE_DEFENSE: u64 = 1 << 26;
+    const USES_DIRECTED_HUNTER_SEEKER_TARGETING: u64 = 1 << 27;
+    const USES_MATCH_CRATES: u64 = 1 << 28;
+    const USES_ELIMINATION_RESULTS: u64 = 1 << 29;
+    const USES_ROOM_OPTIONS: u64 = 1 << 30;
+    const USES_CAMPAIGN_DIPLOMACY: u64 = 1 << 31;
 
     pub const fn stock_campaign() -> Self {
         Self { flags: 0 }
-            .with_team_admits_recruits_without_factory(true)
-            .with_targeting_requires_player_discovery(true)
-            .with_ai_vehicles_avoid_crates(true)
-            .with_ares_ai_stores_tiberium(true)
-            .with_outcomes_follow_player_control(true)
-            .with_honors_authored_inert(true)
             .with_allows_ownerless_terrain_logic(true)
             .with_counts_player_control_as_human(true)
-            .with_building_services_use_discovery(true)
-            .with_crates_allow_passive_collectors(true)
-            .with_crates_use_authored_default_payload(true)
-            .with_crates_pay_local_player(true)
-            .with_passive_houses_cast_direct_sight(true)
-            .with_armed_victims_defend_without_base_response(true)
-            .with_base_defense_requires_recruitable_mission(true)
-            .with_fire_disclosure_uses_local_discovery(true)
+            .with_uses_campaign_discovery(true)
+            .with_uses_campaign_base_defense(true)
+            .with_uses_campaign_diplomacy(true)
     }
 
     pub const fn stock_multiplayer() -> Self {
@@ -166,58 +124,27 @@ impl RulePolicy {
             .with_computer_paranoid(ComputerParanoidPolicy::React)
             .with_crates(AuthoredCratePolicy::Skip)
             .with_ai_base(AiBasePolicy::ReplaceUnavailableNodes)
-            .with_ai_mcv_deploy_hunt(true)
             .with_double_owned(DoubleOwnedPolicy::AllCountries)
             .with_mod_map_additions(true)
             .with_team_creation_limit_scope(TeamLimitScope::PerHouse)
             .with_dissolve_unfilled_teams(true)
             .with_ares_psychic_reveal_exclusions(true)
-            .with_requires_ai_base_reservation_proximity(true)
-            .with_uses_ai_production_modes(true)
-            .with_ignores_authored_ai_sellable(true)
-            .with_allows_ai_sale_after_capture(true)
             .with_allows_construction_yard_redeploy(true)
-            .with_allows_ai_virtual_purifiers(true)
-            .with_ai_searches_for_enemy(true)
-            .with_ai_ignores_superweapon_iq(true)
-            .with_ai_sells_and_hunts_without_factory(true)
-            .with_ai_manages_strategy_build_queue(true)
-            .with_ares_skips_passive_house_anger(true)
-            .with_ai_triggers_require_multiplayer_flag(true)
-            .with_ai_trigger_uses_house_difficulty(true)
-            .with_team_admits_recruits_without_factory(false)
-            .with_targeting_requires_player_discovery(false)
-            .with_targeting_respects_passive_houses(true)
-            .with_forces_listed_ai_trigger_enables(true)
-            .with_uses_default_task_force_member_tech_level(true)
-            .with_rejects_defeated_player_at_reinforcements(true)
-            .with_ai_buildings_repairable_on_unlimbo(true)
-            .with_ai_vehicles_avoid_crates(false)
-            .with_ares_ai_stores_tiberium(false)
-            .with_ares_returns_defeated_structures(true)
-            .with_automatic_house_defeat(true)
-            .with_outcomes_follow_player_control(false)
             .with_allows_idle_object_sleep(true)
-            .with_force_tiberium_flags(true)
-            .with_honors_authored_inert(false)
-            .with_uses_session_harvester_truce(true)
             .with_counts_player_control_as_human(false)
-            .with_building_services_use_discovery(false)
             .with_uses_country_difficulty_biases(true)
-            .with_ares_applies_superweapon_shell_setting(true)
             .with_skips_local_player_authored_buildings(true)
-            .with_recalculates_ai_base_after_mcv_deploy(true)
-            .with_crates_use_runtime_slots(true)
-            .with_crates_allow_passive_collectors(false)
-            .with_crates_use_authored_default_payload(false)
-            .with_crates_validate_pickup_payload(true)
-            .with_crates_pay_local_player(false)
-            .with_passive_houses_cast_direct_sight(false)
-            .with_armed_victims_defend_without_base_response(false)
-            .with_base_defense_requires_recruitable_mission(false)
-            .with_fire_disclosure_uses_local_discovery(false)
-            .with_hunter_seeker_limits_ai_to_designated_enemy(true)
-            .with_hunter_seeker_humans_prefer_nonpassive_targets(true)
+            .with_uses_managed_ai_base(true)
+            .with_uses_ai_economy(true)
+            .with_runs_ai_strategy(true)
+            .with_uses_house_team_rules(true)
+            .with_uses_campaign_discovery(false)
+            .with_uses_campaign_base_defense(false)
+            .with_uses_directed_hunter_seeker_targeting(true)
+            .with_uses_match_crates(true)
+            .with_uses_elimination_results(true)
+            .with_uses_room_options(true)
+            .with_uses_campaign_diplomacy(false)
     }
 
     const fn has_flag(self, flag: u64) -> bool {
@@ -233,42 +160,6 @@ impl RulePolicy {
         self
     }
 
-    /// HouseClass::IsCenterOfBase (0x0050B760) uses base-node proximity.
-    pub const fn requires_ai_base_reservation_proximity(self) -> bool {
-        self.has_flag(Self::REQUIRES_AI_BASE_RESERVATION_PROXIMITY)
-    }
-
-    pub const fn with_requires_ai_base_reservation_proximity(self, enabled: bool) -> Self {
-        self.with_flag(Self::REQUIRES_AI_BASE_RESERVATION_PROXIMITY, enabled)
-    }
-
-    /// Use the production economy paths at 0x00509700 and 0x004F9099.
-    pub const fn uses_ai_production_modes(self) -> bool {
-        self.has_flag(Self::USES_AI_PRODUCTION_MODES)
-    }
-
-    pub const fn with_uses_ai_production_modes(self, enabled: bool) -> Self {
-        self.with_flag(Self::USES_AI_PRODUCTION_MODES, enabled)
-    }
-
-    /// Allow a low-credit AI House to sell beyond the map's Sellable list (0x00450781).
-    pub const fn ignores_authored_ai_sellable(self) -> bool {
-        self.has_flag(Self::IGNORES_AUTHORED_AI_SELLABLE)
-    }
-
-    pub const fn with_ignores_authored_ai_sellable(self, enabled: bool) -> Self {
-        self.with_flag(Self::IGNORES_AUTHORED_AI_SELLABLE, enabled)
-    }
-
-    /// Allow the AI to sell certain newly captured buildings (0x004492D7).
-    pub const fn allows_ai_sale_after_capture(self) -> bool {
-        self.has_flag(Self::ALLOWS_AI_SALE_AFTER_CAPTURE)
-    }
-
-    pub const fn with_allows_ai_sale_after_capture(self, enabled: bool) -> Self {
-        self.with_flag(Self::ALLOWS_AI_SALE_AFTER_CAPTURE, enabled)
-    }
-
     /// Admit eligible player yard pack-up orders (0x0044A8DF, 0x0044F602, 0x0044375E).
     pub const fn allows_construction_yard_redeploy(self) -> bool {
         self.has_flag(Self::ALLOWS_CONSTRUCTION_YARD_REDEPLOY)
@@ -278,186 +169,6 @@ impl RulePolicy {
         self.with_flag(Self::ALLOWS_CONSTRUCTION_YARD_REDEPLOY, enabled)
     }
 
-    /// Let computer Houses calculate virtual ore purifiers (0x0073E3D5).
-    pub const fn allows_ai_virtual_purifiers(self) -> bool {
-        self.has_flag(Self::ALLOWS_AI_VIRTUAL_PURIFIERS)
-    }
-
-    pub const fn with_allows_ai_virtual_purifiers(self, enabled: bool) -> Self {
-        self.with_flag(Self::ALLOWS_AI_VIRTUAL_PURIFIERS, enabled)
-    }
-
-    /// Initialize and service the AI enemy search timer (0x006869EA, 0x004FD538).
-    pub const fn ai_searches_for_enemy(self) -> bool {
-        self.has_flag(Self::AI_SEARCHES_FOR_ENEMY)
-    }
-
-    pub const fn with_ai_searches_for_enemy(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_SEARCHES_FOR_ENEMY, enabled)
-    }
-
-    /// Permit AI superweapon use before meeting its IQ threshold (0x004FD77C).
-    pub const fn ai_ignores_superweapon_iq(self) -> bool {
-        self.has_flag(Self::AI_IGNORES_SUPERWEAPON_IQ)
-    }
-
-    pub const fn with_ai_ignores_superweapon_iq(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_IGNORES_SUPERWEAPON_IQ, enabled)
-    }
-
-    /// Let the AI give up its factory-less base (0x004FD848).
-    pub const fn ai_sells_and_hunts_without_factory(self) -> bool {
-        self.has_flag(Self::AI_SELLS_AND_HUNTS_WITHOUT_FACTORY)
-    }
-
-    pub const fn with_ai_sells_and_hunts_without_factory(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_SELLS_AND_HUNTS_WITHOUT_FACTORY, enabled)
-    }
-
-    /// Let the AI strategy loop ask for replacement factories (0x004FD848).
-    pub const fn ai_manages_strategy_build_queue(self) -> bool {
-        self.has_flag(Self::AI_MANAGES_STRATEGY_BUILD_QUEUE)
-    }
-
-    pub const fn with_ai_manages_strategy_build_queue(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_MANAGES_STRATEGY_BUILD_QUEUE, enabled)
-    }
-
-    /// Ares anger recalculation skips passive Houses (HouseClass at 0x00504796).
-    pub const fn ares_skips_passive_house_anger(self) -> bool {
-        self.has_flag(Self::ARES_SKIPS_PASSIVE_HOUSE_ANGER)
-    }
-
-    pub const fn with_ares_skips_passive_house_anger(self, enabled: bool) -> Self {
-        self.with_flag(Self::ARES_SKIPS_PASSIVE_HOUSE_ANGER, enabled)
-    }
-
-    /// Filter authored AI triggers by their multiplayer flag (0x0041E7D7).
-    pub const fn ai_triggers_require_multiplayer_flag(self) -> bool {
-        self.has_flag(Self::AI_TRIGGERS_REQUIRE_MULTIPLAYER_FLAG)
-    }
-
-    pub const fn with_ai_triggers_require_multiplayer_flag(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_TRIGGERS_REQUIRE_MULTIPLAYER_FLAG, enabled)
-    }
-
-    /// Match AI trigger difficulty against its owning House (0x0041E7D7).
-    pub const fn ai_trigger_uses_house_difficulty(self) -> bool {
-        self.has_flag(Self::AI_TRIGGER_USES_HOUSE_DIFFICULTY)
-    }
-
-    pub const fn with_ai_trigger_uses_house_difficulty(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_TRIGGER_USES_HOUSE_DIFFICULTY, enabled)
-    }
-
-    /// Allow TeamClass to select a fallback recruit without a factory (0x0050965E).
-    pub const fn team_admits_recruits_without_factory(self) -> bool {
-        self.has_flag(Self::TEAM_ADMITS_RECRUITS_WITHOUT_FACTORY)
-    }
-
-    pub const fn with_team_admits_recruits_without_factory(self, enabled: bool) -> Self {
-        self.with_flag(Self::TEAM_ADMITS_RECRUITS_WITHOUT_FACTORY, enabled)
-    }
-
-    /// Use local discovery in greatest-threat selection where the topology permits it (0x006F81BE).
-    pub const fn targeting_requires_player_discovery(self) -> bool {
-        self.has_flag(Self::TARGETING_REQUIRES_PLAYER_DISCOVERY)
-    }
-
-    pub const fn with_targeting_requires_player_discovery(self, enabled: bool) -> Self {
-        self.with_flag(Self::TARGETING_REQUIRES_PLAYER_DISCOVERY, enabled)
-    }
-
-    /// Target selection applies the passive-House tests (0x006F826E).
-    pub const fn targeting_respects_passive_houses(self) -> bool {
-        self.has_flag(Self::TARGETING_RESPECTS_PASSIVE_HOUSES)
-    }
-
-    pub const fn with_targeting_respects_passive_houses(self, enabled: bool) -> Self {
-        self.with_flag(Self::TARGETING_RESPECTS_PASSIVE_HOUSES, enabled)
-    }
-
-    /// Force listed AITriggerTypesEnable entries on at registry load (0x0041F451).
-    pub const fn forces_listed_ai_trigger_enables(self) -> bool {
-        self.has_flag(Self::FORCES_LISTED_AI_TRIGGER_ENABLES)
-    }
-
-    pub const fn with_forces_listed_ai_trigger_enables(self, enabled: bool) -> Self {
-        self.with_flag(Self::FORCES_LISTED_AI_TRIGGER_ENABLES, enabled)
-    }
-
-    /// Include the default member tech level in the ordered TaskForce fold (0x006E8780).
-    pub const fn uses_default_task_force_member_tech_level(self) -> bool {
-        self.has_flag(Self::USES_DEFAULT_TASK_FORCE_MEMBER_TECH_LEVEL)
-    }
-
-    pub const fn with_uses_default_task_force_member_tech_level(self, enabled: bool) -> Self {
-        self.with_flag(Self::USES_DEFAULT_TASK_FORCE_MEMBER_TECH_LEVEL, enabled)
-    }
-
-    /// Ares validates defeated PlayerAt Houses for reinforcements (0x0065D8FB).
-    pub const fn rejects_defeated_player_at_reinforcements(self) -> bool {
-        self.has_flag(Self::REJECTS_DEFEATED_PLAYER_AT_REINFORCEMENTS)
-    }
-
-    pub const fn with_rejects_defeated_player_at_reinforcements(self, enabled: bool) -> Self {
-        self.with_flag(Self::REJECTS_DEFEATED_PLAYER_AT_REINFORCEMENTS, enabled)
-    }
-
-    /// Grant AI repair on placement (0x00440B4F).
-    pub const fn ai_buildings_repairable_on_unlimbo(self) -> bool {
-        self.has_flag(Self::AI_BUILDINGS_REPAIRABLE_ON_UNLIMBO)
-    }
-
-    pub const fn with_ai_buildings_repairable_on_unlimbo(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_BUILDINGS_REPAIRABLE_ON_UNLIMBO, enabled)
-    }
-
-    /// Make AI vehicles avoid crate cells (0x0073F405).
-    pub const fn ai_vehicles_avoid_crates(self) -> bool {
-        self.has_flag(Self::AI_VEHICLES_AVOID_CRATES)
-    }
-
-    pub const fn with_ai_vehicles_avoid_crates(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_VEHICLES_AVOID_CRATES, enabled)
-    }
-
-    /// Ares may store AI ore instead of paying immediate credits (0x10024290).
-    pub const fn ares_ai_stores_tiberium(self) -> bool {
-        self.has_flag(Self::ARES_AI_STORES_TIBERIUM)
-    }
-
-    pub const fn with_ares_ai_stores_tiberium(self, enabled: bool) -> Self {
-        self.with_flag(Self::ARES_AI_STORES_TIBERIUM, enabled)
-    }
-
-    /// Ares may return defeated structures to their original owners (0x10024150).
-    pub const fn ares_returns_defeated_structures(self) -> bool {
-        self.has_flag(Self::ARES_RETURNS_DEFEATED_STRUCTURES)
-    }
-
-    pub const fn with_ares_returns_defeated_structures(self, enabled: bool) -> Self {
-        self.with_flag(Self::ARES_RETURNS_DEFEATED_STRUCTURES, enabled)
-    }
-
-    /// Run automatic defeat checks each House turn (0x004F8E86).
-    pub const fn automatic_house_defeat(self) -> bool {
-        self.has_flag(Self::AUTOMATIC_HOUSE_DEFEAT)
-    }
-
-    pub const fn with_automatic_house_defeat(self, enabled: bool) -> Self {
-        self.with_flag(Self::AUTOMATIC_HOUSE_DEFEAT, enabled)
-    }
-
-    /// Route the authored scenario outcome through its controlled Houses.
-    pub const fn outcomes_follow_player_control(self) -> bool {
-        self.has_flag(Self::OUTCOMES_FOLLOW_PLAYER_CONTROL)
-    }
-
-    pub const fn with_outcomes_follow_player_control(self, enabled: bool) -> Self {
-        self.with_flag(Self::OUTCOMES_FOLLOW_PLAYER_CONTROL, enabled)
-    }
-
     /// Use VERA's idle-object sleep under its trigger and repair guards.
     pub const fn allows_idle_object_sleep(self) -> bool {
         self.has_flag(Self::ALLOWS_IDLE_OBJECT_SLEEP)
@@ -465,33 +176,6 @@ impl RulePolicy {
 
     pub const fn with_allows_idle_object_sleep(self, enabled: bool) -> Self {
         self.with_flag(Self::ALLOWS_IDLE_OBJECT_SLEEP, enabled)
-    }
-
-    /// PregameSetup forces the paired ore growth and spread flags (0x005E74CD).
-    pub const fn force_tiberium_flags(self) -> bool {
-        self.has_flag(Self::FORCE_TIBERIUM_FLAGS)
-    }
-
-    pub const fn with_force_tiberium_flags(self, enabled: bool) -> Self {
-        self.with_flag(Self::FORCE_TIBERIUM_FLAGS, enabled)
-    }
-
-    /// Apply the map's Inert setting at startup (0x006B8EB1).
-    pub const fn honors_authored_inert(self) -> bool {
-        self.has_flag(Self::HONORS_AUTHORED_INERT)
-    }
-
-    pub const fn with_honors_authored_inert(self, enabled: bool) -> Self {
-        self.with_flag(Self::HONORS_AUTHORED_INERT, enabled)
-    }
-
-    /// Take HarvesterImmune from the accepted room option (0x005E7495).
-    pub const fn uses_session_harvester_truce(self) -> bool {
-        self.has_flag(Self::USES_SESSION_HARVESTER_TRUCE)
-    }
-
-    pub const fn with_uses_session_harvester_truce(self, enabled: bool) -> Self {
-        self.with_flag(Self::USES_SESSION_HARVESTER_TRUCE, enabled)
     }
 
     /// Admit ownerless terrain to logic without the identity test (0x005F501B).
@@ -512,15 +196,6 @@ impl RulePolicy {
         self.with_flag(Self::COUNTS_PLAYER_CONTROL_AS_HUMAN, enabled)
     }
 
-    /// Power, radar and SpySat check discovery for a controlled House (0x00508CBD).
-    pub const fn building_services_use_discovery(self) -> bool {
-        self.has_flag(Self::BUILDING_SERVICES_USE_DISCOVERY)
-    }
-
-    pub const fn with_building_services_use_discovery(self, enabled: bool) -> Self {
-        self.with_flag(Self::BUILDING_SERVICES_USE_DISCOVERY, enabled)
-    }
-
     /// Multiply House difficulty biases by the selected country's values (0x004F6EC0).
     pub const fn uses_country_difficulty_biases(self) -> bool {
         self.has_flag(Self::USES_COUNTRY_DIFFICULTY_BIASES)
@@ -528,15 +203,6 @@ impl RulePolicy {
 
     pub const fn with_uses_country_difficulty_biases(self, enabled: bool) -> Self {
         self.with_flag(Self::USES_COUNTRY_DIFFICULTY_BIASES, enabled)
-    }
-
-    /// Ares applies the lobby Super Weapons switch to factories (0x10021A00).
-    pub const fn ares_applies_superweapon_shell_setting(self) -> bool {
-        self.has_flag(Self::ARES_APPLIES_SUPERWEAPON_SHELL_SETTING)
-    }
-
-    pub const fn with_ares_applies_superweapon_shell_setting(self, enabled: bool) -> Self {
-        self.with_flag(Self::ARES_APPLIES_SUPERWEAPON_SHELL_SETTING, enabled)
     }
 
     /// Skip the local player's authored structures in local multiplayer setup (0x0044F8CB).
@@ -548,115 +214,103 @@ impl RulePolicy {
         self.with_flag(Self::SKIPS_LOCAL_PLAYER_AUTHORED_BUILDINGS, enabled)
     }
 
-    /// Start a new AI base plan after MCV deployment (0x0073987C).
-    pub const fn recalculates_ai_base_after_mcv_deploy(self) -> bool {
-        self.has_flag(Self::RECALCULATES_AI_BASE_AFTER_MCV_DEPLOY)
+    /// Use the AI's automatic base construction and deployment cycle.
+    pub const fn uses_managed_ai_base(self) -> bool {
+        self.has_flag(Self::USES_MANAGED_AI_BASE)
     }
 
-    pub const fn with_recalculates_ai_base_after_mcv_deploy(self, enabled: bool) -> Self {
-        self.with_flag(Self::RECALCULATES_AI_BASE_AFTER_MCV_DEPLOY, enabled)
+    pub const fn with_uses_managed_ai_base(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_MANAGED_AI_BASE, enabled)
     }
 
-    /// Enable live crate-slot placement and regeneration (0x0056C020).
-    pub const fn crates_use_runtime_slots(self) -> bool {
-        self.has_flag(Self::CRATES_USE_RUNTIME_SLOTS)
+    /// Use the AI's multiplayer sale and ore-payment rules.
+    pub const fn uses_ai_economy(self) -> bool {
+        self.has_flag(Self::USES_AI_ECONOMY)
     }
 
-    pub const fn with_crates_use_runtime_slots(self, enabled: bool) -> Self {
-        self.with_flag(Self::CRATES_USE_RUNTIME_SLOTS, enabled)
+    pub const fn with_uses_ai_economy(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_AI_ECONOMY, enabled)
     }
 
-    /// Allow a passive House to collect a crate (0x00481A3F).
-    pub const fn crates_allow_passive_collectors(self) -> bool {
-        self.has_flag(Self::CRATES_ALLOW_PASSIVE_COLLECTORS)
+    /// Run the AI's periodic enemy search and autonomous strategy decisions.
+    pub const fn runs_ai_strategy(self) -> bool {
+        self.has_flag(Self::RUNS_AI_STRATEGY)
     }
 
-    pub const fn with_crates_allow_passive_collectors(self, enabled: bool) -> Self {
-        self.with_flag(Self::CRATES_ALLOW_PASSIVE_COLLECTORS, enabled)
+    pub const fn with_runs_ai_strategy(self, enabled: bool) -> Self {
+        self.with_flag(Self::RUNS_AI_STRATEGY, enabled)
     }
 
-    /// Allow a crate overlay to supply the default payload (0x00481B3D).
-    pub const fn crates_use_authored_default_payload(self) -> bool {
-        self.has_flag(Self::CRATES_USE_AUTHORED_DEFAULT_PAYLOAD)
+    /// Load and run AI team definitions under their owning House's rules.
+    pub const fn uses_house_team_rules(self) -> bool {
+        self.has_flag(Self::USES_HOUSE_TEAM_RULES)
     }
 
-    pub const fn with_crates_use_authored_default_payload(self, enabled: bool) -> Self {
-        self.with_flag(Self::CRATES_USE_AUTHORED_DEFAULT_PAYLOAD, enabled)
+    pub const fn with_uses_house_team_rules(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_HOUSE_TEAM_RULES, enabled)
     }
 
-    /// Validate and normalize crate payloads on collection (0x00481B99).
-    pub const fn crates_validate_pickup_payload(self) -> bool {
-        self.has_flag(Self::CRATES_VALIDATE_PICKUP_PAYLOAD)
+    /// Use campaign discovery rules for sight, services and targeting.
+    pub const fn uses_campaign_discovery(self) -> bool {
+        self.has_flag(Self::USES_CAMPAIGN_DISCOVERY)
     }
 
-    pub const fn with_crates_validate_pickup_payload(self, enabled: bool) -> Self {
-        self.with_flag(Self::CRATES_VALIDATE_PICKUP_PAYLOAD, enabled)
+    pub const fn with_uses_campaign_discovery(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_CAMPAIGN_DISCOVERY, enabled)
     }
 
-    /// Credit the local player when the campaign money crate qualifies (0x004824A7).
-    pub const fn crates_pay_local_player(self) -> bool {
-        self.has_flag(Self::CRATES_PAY_LOCAL_PLAYER)
+    /// Use the campaign response rules for armed victims and eligible defenders.
+    pub const fn uses_campaign_base_defense(self) -> bool {
+        self.has_flag(Self::USES_CAMPAIGN_BASE_DEFENSE)
     }
 
-    pub const fn with_crates_pay_local_player(self, enabled: bool) -> Self {
-        self.with_flag(Self::CRATES_PAY_LOCAL_PLAYER, enabled)
+    pub const fn with_uses_campaign_base_defense(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_CAMPAIGN_BASE_DEFENSE, enabled)
     }
 
-    /// Allow a passive House to cast direct sight (0x0070ADDE).
-    pub const fn passive_houses_cast_direct_sight(self) -> bool {
-        self.has_flag(Self::PASSIVE_HOUSES_CAST_DIRECT_SIGHT)
+    /// Direct Ares Hunter Seekers by the controlling House's role and enemy.
+    pub const fn uses_directed_hunter_seeker_targeting(self) -> bool {
+        self.has_flag(Self::USES_DIRECTED_HUNTER_SEEKER_TARGETING)
     }
 
-    pub const fn with_passive_houses_cast_direct_sight(self, enabled: bool) -> Self {
-        self.with_flag(Self::PASSIVE_HOUSES_CAST_DIRECT_SIGHT, enabled)
+    pub const fn with_uses_directed_hunter_seeker_targeting(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_DIRECTED_HUNTER_SEEKER_TARGETING, enabled)
     }
 
-    /// Skip base response when an armed victim can defend itself (0x00708114).
-    pub const fn armed_victims_defend_without_base_response(self) -> bool {
-        self.has_flag(Self::ARMED_VICTIMS_DEFEND_WITHOUT_BASE_RESPONSE)
+    /// Use the match crate lifecycle, including timed slots and validated payloads.
+    pub const fn uses_match_crates(self) -> bool {
+        self.has_flag(Self::USES_MATCH_CRATES)
     }
 
-    pub const fn with_armed_victims_defend_without_base_response(self, enabled: bool) -> Self {
-        self.with_flag(Self::ARMED_VICTIMS_DEFEND_WITHOUT_BASE_RESPONSE, enabled)
+    pub const fn with_uses_match_crates(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_MATCH_CRATES, enabled)
     }
 
-    /// Apply the recruitable-mission table to base defenders (0x007081D4).
-    pub const fn base_defense_requires_recruitable_mission(self) -> bool {
-        self.has_flag(Self::BASE_DEFENSE_REQUIRES_RECRUITABLE_MISSION)
+    /// Resolve match outcomes through House elimination and its cleanup rules.
+    pub const fn uses_elimination_results(self) -> bool {
+        self.has_flag(Self::USES_ELIMINATION_RESULTS)
     }
 
-    pub const fn with_base_defense_requires_recruitable_mission(self, enabled: bool) -> Self {
-        self.with_flag(Self::BASE_DEFENSE_REQUIRES_RECRUITABLE_MISSION, enabled)
+    pub const fn with_uses_elimination_results(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_ELIMINATION_RESULTS, enabled)
     }
 
-    /// Use local discovery when deciding to reveal an attacker (0x006FDE73).
-    pub const fn fire_disclosure_uses_local_discovery(self) -> bool {
-        self.has_flag(Self::FIRE_DISCLOSURE_USES_LOCAL_DISCOVERY)
+    /// Use room options and the native pregame flags in scenario setup.
+    pub const fn uses_room_options(self) -> bool {
+        self.has_flag(Self::USES_ROOM_OPTIONS)
     }
 
-    pub const fn with_fire_disclosure_uses_local_discovery(self, enabled: bool) -> Self {
-        self.with_flag(Self::FIRE_DISCLOSURE_USES_LOCAL_DISCOVERY, enabled)
+    pub const fn with_uses_room_options(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_ROOM_OPTIONS, enabled)
     }
 
-    /// Prefer the AI's designated enemy for Ares Hunter Seeker (0x10042E40).
-    pub const fn hunter_seeker_limits_ai_to_designated_enemy(self) -> bool {
-        self.has_flag(Self::HUNTER_SEEKER_LIMITS_AI_TO_DESIGNATED_ENEMY)
+    /// Show the mission briefing instead of the diplomacy panel in campaign UI.
+    pub const fn uses_campaign_diplomacy(self) -> bool {
+        self.has_flag(Self::USES_CAMPAIGN_DIPLOMACY)
     }
 
-    pub const fn with_hunter_seeker_limits_ai_to_designated_enemy(self, enabled: bool) -> Self {
-        self.with_flag(Self::HUNTER_SEEKER_LIMITS_AI_TO_DESIGNATED_ENEMY, enabled)
-    }
-
-    /// Prefer nonpassive targets for human Ares Hunter Seekers (0x10042E40).
-    pub const fn hunter_seeker_humans_prefer_nonpassive_targets(self) -> bool {
-        self.has_flag(Self::HUNTER_SEEKER_HUMANS_PREFER_NONPASSIVE_TARGETS)
-    }
-
-    pub const fn with_hunter_seeker_humans_prefer_nonpassive_targets(self, enabled: bool) -> Self {
-        self.with_flag(
-            Self::HUNTER_SEEKER_HUMANS_PREFER_NONPASSIVE_TARGETS,
-            enabled,
-        )
+    pub const fn with_uses_campaign_diplomacy(self, enabled: bool) -> Self {
+        self.with_flag(Self::USES_CAMPAIGN_DIPLOMACY, enabled)
     }
 
     pub const fn bootstrap(self) -> BootstrapRuleProfile {
@@ -732,17 +386,6 @@ impl RulePolicy {
             Self::REPLACE_UNAVAILABLE_BASE_NODES,
             matches!(policy, AiBasePolicy::ReplaceUnavailableNodes),
         )
-    }
-
-    /// A computer's construction-yard maker can hunt to deploy, both from
-    /// UnitClass::AI (0x007363DE..0x0073645B) and after an initial Unload
-    /// attempt without a pending deploy (0x0073DDCB..0x0073DE1E).
-    pub(crate) const fn allows_ai_mcv_deploy_hunt(self) -> bool {
-        self.has_flag(Self::AI_MCV_DEPLOY_HUNT)
-    }
-
-    pub const fn with_ai_mcv_deploy_hunt(self, enabled: bool) -> Self {
-        self.with_flag(Self::AI_MCV_DEPLOY_HUNT, enabled)
     }
 
     pub const fn double_owned(self) -> DoubleOwnedPolicy {

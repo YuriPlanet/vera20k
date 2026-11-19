@@ -252,11 +252,7 @@ pub(crate) fn requirements_met(
     }
     // Ares disabled-shell predicate10021A00..10021A6A bypasses this
     // skirmish-shell restriction in mode0, before inspecting the Type.
-    if (!rules.ares_form()
-        || sim
-            .session
-            .rule_policy()
-            .ares_applies_superweapon_shell_setting())
+    if (!rules.ares_form() || sim.session.rule_policy().uses_room_options())
         && !sim.session.game_options().super_weapons
         && obj.category == ObjectCategory::Building
         && let Some(super_weapon) = obj.super_weapon.as_deref()

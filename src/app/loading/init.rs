@@ -2229,8 +2229,8 @@ impl MapLoadInitial {
             vein_growth_enabled: map_data.basic.vein_growth_enabled,
             // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
             // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-            tiberium_grows_flag: rule_policy.force_tiberium_flags(),
-            tiberium_spreads_flag: rule_policy.force_tiberium_flags(),
+            tiberium_grows_flag: rule_policy.uses_room_options(),
+            tiberium_spreads_flag: rule_policy.uses_room_options(),
             // Native Resize constructs a square cell-array extent of SizeW+SizeH.
             map_width: scenario_cell_extent,
             map_height: scenario_cell_extent,
@@ -3325,7 +3325,7 @@ fn load_map_first_step(
                         rule_policy,
                         // Campaign/editor reads `[SpecialFlags] Inert=`. Nonzero game modes
                         // replace active SpecialFlags from session staging.
-                        no_damage: rule_policy.honors_authored_inert()
+                        no_damage: !rule_policy.uses_room_options()
                             && map_data.special_flags.inert.unwrap_or(false),
                         // Scenario bit 0x800: campaign reads the map's `[SpecialFlags]
                         // HarvesterImmune=`; a nonzero game mode replaces the map's flags
@@ -3334,7 +3334,7 @@ fn load_map_first_step(
                         // (`0x00A8B31D`) in the bit (`0x005E7495..0x005E74D4`). The skirmish
                         // lobby never sets the truce (`0x006AD89D` clears it), so every
                         // skirmish leaves the bit off.
-                        harvester_immune: if rule_policy.uses_session_harvester_truce() {
+                        harvester_immune: if rule_policy.uses_room_options() {
                             skirmish_launch_session
                                 .is_some_and(|launch| launch.options.harvester_truce)
                         } else {
@@ -3354,9 +3354,9 @@ fn load_map_first_step(
                         vein_growth_enabled: map_data.basic.vein_growth_enabled,
                         // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
                         // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-                        tiberium_grows_flag: rule_policy.force_tiberium_flags()
+                        tiberium_grows_flag: rule_policy.uses_room_options()
                             || map_data.special_flags.tiberium_grows.unwrap_or(false),
-                        tiberium_spreads_flag: rule_policy.force_tiberium_flags()
+                        tiberium_spreads_flag: rule_policy.uses_room_options()
                             || map_data.special_flags.tiberium_spreads.unwrap_or(true),
                         // Native Resize constructs a square cell-array extent of SizeW+SizeH.
                         map_width: scenario_cell_extent,

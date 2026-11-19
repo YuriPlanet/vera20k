@@ -2717,7 +2717,7 @@ impl Simulation {
         let policy = self.session.rule_policy();
         let recalc_context = self.houses.get(&owner_id).and_then(|house| {
             (is_construction_yard
-                && policy.recalculates_ai_base_after_mcv_deploy()
+                && policy.uses_managed_ai_base()
                 && !house.is_controlled_by_human(policy))
             .then(|| {
                 let country_name = house

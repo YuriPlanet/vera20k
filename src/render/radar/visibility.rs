@@ -8,6 +8,7 @@ use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::intern::InternedId;
+use crate::sim::scenario_session::NativePlayerIdentity;
 use crate::sim::vision::FogState;
 
 use super::helpers::{parse_foundation_size, world_to_minimap_pixel};
@@ -299,7 +300,7 @@ pub(super) fn build_radar_object_update(
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    player_ptr_arm: bool,
+    player_identity: NativePlayerIdentity,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     projection: RadarProjectionFacts,
@@ -336,7 +337,7 @@ pub(super) fn build_radar_object_update(
     let foundation = facts.foundation;
     let owner_is_human_player = local_owner.is_none_or(|local_owner| {
         crate::sim::world::Simulation::is_human_player_on(
-            player_ptr_arm,
+            player_identity,
             houses,
             entity.owner(),
             Some(local_owner),
@@ -583,7 +584,7 @@ mod tests {
             &FogState::default(),
             &Default::default(),
             true,
-            false,
+            NativePlayerIdentity::HouseFlags,
             None,
             None,
             projection,
@@ -625,7 +626,7 @@ mod tests {
                 sim.fog(),
                 sim.house_alliances(),
                 true,
-                false,
+                sim.session().native_player_identity(),
                 Some(&rules),
                 Some(sim.interner()),
                 visibility_projection(),
@@ -965,7 +966,7 @@ mod tests {
             &FogState::default(),
             &Default::default(),
             true,
-            false,
+            NativePlayerIdentity::HouseFlags,
             None,
             None,
             projection,
@@ -1031,7 +1032,7 @@ mod tests {
                 fog,
                 &Default::default(),
                 false,
-                true,
+                NativePlayerIdentity::PlayerPointer,
                 None,
                 None,
                 visibility_projection(),
@@ -1076,7 +1077,7 @@ mod tests {
                 &fog,
                 &Default::default(),
                 false,
-                true,
+                NativePlayerIdentity::PlayerPointer,
                 None,
                 None,
                 visibility_projection(),
@@ -1141,7 +1142,7 @@ mod tests {
                 &fog,
                 &super::super::helpers::test_alliances(alliances),
                 false,
-                true,
+                NativePlayerIdentity::PlayerPointer,
                 Some(&rules),
                 Some(&interner),
                 visibility_projection(),
@@ -1182,7 +1183,7 @@ mod tests {
             &fog,
             &Default::default(),
             false,
-            true,
+            NativePlayerIdentity::PlayerPointer,
             Some(&rules),
             Some(&interner),
             visibility_projection(),

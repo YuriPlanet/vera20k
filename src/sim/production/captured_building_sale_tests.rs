@@ -273,7 +273,7 @@ fn ai_capture_sale_uses_admitted_rules_on_the_owner_transition() {
     let campaign = ScenarioGameMode::from_game_mode(0);
     let skirmish = ScenarioGameMode::from_game_mode(5);
     let campaign_rules = campaign.stock_rule_policy(None);
-    let campaign_with_sale = campaign_rules.with_allows_ai_sale_after_capture(true);
+    let campaign_with_sale = campaign_rules.with_uses_ai_economy(true);
     for (mode, policy, player_control, expect_sale) in [
         (campaign, campaign_rules, false, false),
         (skirmish, skirmish.stock_rule_policy(None), true, true),

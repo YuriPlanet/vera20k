@@ -202,10 +202,7 @@ pub(crate) fn find_base_building_site(
             width,
             height,
             extra_border: ty.protect_with_wall || ty.wants_extra_space,
-            requires_reservation_proximity: sim
-                .session
-                .rule_policy()
-                .requires_ai_base_reservation_proximity(),
+            requires_reservation_proximity: sim.session.rule_policy().uses_managed_ai_base(),
             key,
         },
     )
@@ -221,11 +218,7 @@ pub(crate) fn reserved_near(
     ty: &ObjectType,
     cell: (i16, i16),
 ) -> bool {
-    if !sim
-        .session
-        .rule_policy()
-        .requires_ai_base_reservation_proximity()
-    {
+    if !sim.session.rule_policy().uses_managed_ai_base() {
         return true;
     }
     let mut world = SimSiteWorld::new(sim, rules, owner, ty);
