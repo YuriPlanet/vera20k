@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC version | 0.0.13 |
+| RFC version | 0.0.14 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -182,7 +182,7 @@ onScenarioStart((): void => {
 | Runs on | Every machine in lockstep | Local machine only |
 | Deterministic | Yes | No |
 | Can change | Gameplay state through its engine owner | UI nodes, camera, cursor, local settings and sound |
-| Affects gameplay through | Actions, property writes and variables | Standard player orders and messages through the command stream |
+| Affects gameplay through | Actions, property writes, variables and orders for computer houses | Standard player orders and messages through the command stream |
 | Engine side | `sim/` | `ui/`, `render/`, `audio/` |
 
 The existing dependency rule applies. `sim/` never depends on `render/`, `ui/`, `audio/` or `net/`. The loader rejects a simulation module that imports `client_*` functions and a client module that imports simulation functions.
@@ -259,7 +259,7 @@ Clients use the same operation-based meter, which also works on a browser's main
 
 **Disabled simulation module.** The match continues.
 
-- Disable triggers it created. Other triggers (map triggers or triggers bound through `Wasm.Tags`) skip just its module actions. Discard its queued module actions.
+- Disable triggers it created. Other triggers (map triggers or triggers bound through `Wasm.Tags`) skip just its module actions. Discard its queued module actions and orders (section 6g).
 - Skip its decision-chain link, including the call that failed. Pass the preceding result to the next link, using the native value for the first link.
 - Projectiles on its module-controlled trajectories switch to a straight line toward their targets.
 - Preserve completed effects, including modifiers (which expire normally), variables and properties written, rules and in-match `rules_set` overrides, AI definitions, triggers it created (disabled), and work already completed by the failing call.
@@ -320,6 +320,7 @@ Simulation modules run only during simulation. UI, rendering and audio read comm
 
 - Stock and atomic actions (section 6b) run when the trigger fires, as stock actions do in the original game, even when the trigger includes a module action. Queue only module actions. For [stock A, module B, atomic C], run A and C first and B later that frame. For strict sequencing, implement all actions in module code and use `action` for each stock action.
 - Module code executes `action`, property writes, `modify` and `var_set` immediately.
+- `order` only queues. The order executes in the next frame's command step (section 6g).
 - A trigger firing during the module phase runs its stock and atomic actions immediately. Queue its module actions for the next frame's module phase to prevent same-frame module loops.
 
 **Safe points.** Raise each new VERA delivery event after a calculation (`TakeDamage` after damage commits), before a calculation (`HouseTransfer` before transfer), or immediately after a batch commits. Run stock and atomic trigger actions immediately at that point. After an event raised before a calculation, recheck the calculation.
@@ -392,7 +393,7 @@ The module contract is the Wasm interface of functions and tables in the appendi
 | Objects and properties | `get`, `get_many`, `set`, `modify`, `unmodify`, `find`, `rules_get`, `rules_set` | [Properties](0001-wasm-extension-modules-api.md#7-properties) |
 | Variables | `var_get`, `var_set`; declarations in `vera.vars` | [Custom sections](0001-wasm-extension-modules-api.md#custom-sections) |
 | Events, including decidable events | `trigger_create`, `trigger_remove`, `trigger_bind`, `trigger_unbind`; exports `on_events` and `on_decide` | [Event kinds](0001-wasm-extension-modules-api.md#4-event-kinds) |
-| Actions | `action`, `send_notify` | [Action kinds](0001-wasm-extension-modules-api.md#5-action-kinds) |
+| Actions | `action`, `send_notify`, `order` | [Action kinds](0001-wasm-extension-modules-api.md#5-action-kinds) |
 | UI nodes (client) | `client_node_create`, `client_node_remove`, `client_node_find`, `client_set`, `client_set_bytes` | [Client nodes](0001-wasm-extension-modules-api.md#710-client-nodes) |
 
 The infrastructure functions are `frame`, `random`, `log`, `has_kind`, `lookup` and `name_of`.
@@ -535,7 +536,7 @@ Computer houses keep their AI. The existing concepts cover AI:
 - **State** is exposed as properties: team type, script, script cursor and success flag, AI trigger enabled flag and the house-wide AI trigger switch. Writing `Script` or `Cursor` changes a running team's script or jumps to a line.
 - **Team script actions** remain a numbered table ([appendix 6.2](0001-wasm-extension-modules-api.md#62-team-script-actions)) used as data in `[ScriptTypes]`.
 
-All AI operations use the existing AI owner.
+All AI operations use the existing AI owner. A module can also command a computer house as a player would with `order` (section 6g). Orders go through the command owner, and the native AI keeps running beside them.
 
 ### 6e. Variables
 
@@ -563,6 +564,24 @@ Decidable events replace the former override points. The event table identifies 
 - Local or frequent readers, including the sidebar and AI, read cached results. For example, `ProductionAllowed` is decided once per frame for each house and bound type, and the sidebar displays that result.
 
 The first two or three decidable events for v1 are open question 10. Candidates are `TakeDamage` (damage), `TargetChanged` (target selection), `ProductionAllowed`, `ProductionQueued` (production enqueue), `Fire` (take over a shot, section 9), `CommandAllowed`, `FatalDamage` (death mode) and `Defeat` (veto engine defeat for custom victory conditions).
+
+### 6g. House orders
+
+`order(house, ptr, len)` lets a simulation module command a computer house the way a player commands their own. It takes the `Order` layout and [command table](0001-wasm-extension-modules-api.md#83-enums) that client modules pass to `client_send_order` (section 10), covering unit orders, production, building placement, rally points, repair, selling and superweapons.
+
+An action performs an operation directly. An order asks the house to do what its player could, at a player's cost and under a player's checks. `CreateObject` makes a unit for free, while a `QueueProduction` order pays for it and waits for a factory.
+
+- **Houses.** `house` must be a house no player controls (`IsHuman` is 0 and no campaign player controls it) that is not defeated. Otherwise `order` returns `Refused`. A player's house takes orders only from that player, including the player's client module. Modules move a player's units with `SetMission`. A null or non-house reference is an invalid argument (section 3).
+- **Timing.** The engine queues the order. An order issued in frame F executes in frame F + 1, in the step that executes received player commands, wherever the module phase falls (open question 8). That step executes the frame's player commands first, then the mod module's orders, then the map module's, each in issue order. Orders have no network command delay. Every machine issues them in lockstep, and the native AI that runs beside them has no delay either.
+- **Admission.** Natively the command step accepts commands only for houses a player controls. It also accepts module orders for computer houses. Stock play never sends a command for a computer house, so stock play is unchanged.
+- **Validation.** At execution an order passes the same checks as the identical command from the house's player, against the state at that moment, such as unit ownership, prerequisites and building placement. Units that ignore player orders (`IgnoreOrders`) also ignore module orders. Units that are gone or no longer belong to the house drop out of the order. An order that fails does nothing, as for a player. Production spends credits and build time as it does for a player. At issue time `order` checks only the house, the command table (target and value kinds, every unit entry an object handle, a unit list only where the table lists one) and the per-frame limit. A violation returns `Refused` and queues nothing. An unknown command returns `Unsupported`.
+- **Results.** An executed order raises the same events and decisions as the identical player command, including `Commanded`, `CommandAllowed`, `ProductionQueued` and `ProductionCancelled`. `order` executes nothing during the call and raises no events. The module sees the outcome through properties, searches and events in later frames.
+- **Costs and limits.** Charge each call per order and per unit entry. Cap orders and unit entries per module per frame (open question 7).
+- **Saves, replays and reconnects.** Orders never enter the network command stream. Save and hash orders waiting for the next frame. Replays and reconnecting players resimulate the modules, which issue the same orders again, so replays need not record them.
+- **Native AI.** The house's native AI keeps running (section 6d). It may retask the same units or queue other production. Modules can narrow it with existing switches (`AiTriggersActive`, `AutoBaseBuilding`, refusing `ProductionQueued`) but cannot stand it down. Handing a house's decisions to a module is open question 18.
+- **Disabled module.** Discard its queued orders (section 3).
+
+The SDK builds orders with the builders `Client.order` uses ([appendix section 3](0001-wasm-extension-modules-api.md#3-sdk-mappings)).
 
 ### 7. Runtime triggers and tags
 
@@ -658,7 +677,7 @@ See [client nodes](0001-wasm-extension-modules-api.md#710-client-nodes) for INI 
 - Local actions (`client_action`) play sounds and EVA voices, move the camera, select locally, flash an object, display a message or register a hotkey. Camera, cursor and local settings are also client-owned references. `Camera.cell()` reads the camera cell and `Camera.jumpTo(cell)` jumps to a cell. Lepton-precision `X` and `Y` remain writable (both `v1?`). Writable local settings are open question 14.
 - Clicks on clickable nodes do not reach the map. Map clicks reach the module as `MapClick` client events and normally also reach the game. Setting the cursor's `CaptureMapClick` to 1 sends map clicks exclusively to the module. Game hotkeys take precedence over conflicting module hotkeys. The client may read the cursor's screen position and the cell beneath it (appendix 7.10).
 - Unit selection and button clicks are client events. To change the game, send a message for the simulation module's `on_message`, keeping multiplayer and replays consistent.
-- Client modules can issue standard player orders (move, attack, deploy, build, etc.) through `client_send_order`. The engine validates these like all player input. Messages carry custom logic.
+- Client modules can issue standard player orders (move, attack, deploy, build, etc.) through `client_send_order`. The engine validates these like all player input. Simulation modules use the same command table for computer houses (section 6g). Messages carry custom logic.
 - Images, animations and models are referenced by name, independent of file format, allowing future asset formats (a separate RFC) without API changes.
 - `client_log` writes to the in-game console.
 - Player-installed UI modules are deferred. The mod or room may prohibit them.
@@ -862,7 +881,7 @@ Outside version 1. Each item gets a follow-up RFC or a new minor version.
 4. **INI format.** Use named sections as illustrated, the original comma-separated trigger encoding so FinalAlert2 can edit bindings, or both? How should filter clauses (`Where1=`), decision handler names and atomic actions be written? Which key prefix works for bindings, clauses and atomic actions that also work without modules?
 5. **Event and action numbers.** Which ranges avoid collisions with Ares and Phobos?
 6. **FinalAlert2.** Does saving a map preserve unknown sections such as `[VeraWasmRulesPack]`?
-7. **Limits.** Set mod and map embedding sizes, memory, load-time shape limits, per-frame operation budget, cost per host function, one-off budgets for initialization, `on_rules` and `on_scenario_start`, per-frame queue cap, records per `on_events` call, backlog cap, N filter clauses per event, client operations per render frame, minimum polling interval, message size and rate, notification size and count per frame, and result area size per decidable event. Section 10 gives storage limits. Proposed defaults are about 2 ms of operations per frame on the slowest supported platform, 16 MiB per map module, 32 MiB per mod module and 64 MiB absolute memory cap (section 15). Limits are fixed per API major (section 12).
+7. **Limits.** Set mod and map embedding sizes, memory, load-time shape limits, per-frame operation budget, cost per host function, one-off budgets for initialization, `on_rules` and `on_scenario_start`, per-frame queue cap, records per `on_events` call, backlog cap, N filter clauses per event, client operations per render frame, minimum polling interval, message size and rate, notification size and count per frame, orders and unit entries per module per frame, and result area size per decidable event. Section 10 gives storage limits. Proposed defaults are about 2 ms of operations per frame on the slowest supported platform, 16 MiB per map module, 32 MiB per mod module and 64 MiB absolute memory cap (section 15). Limits are fixed per API major (section 12).
 8. **Frame phases.** Where does the module phase fit in the simulation frame, and where does the module trajectory branch fit relative to collision and detonation checks? `ProjectileFrame` runs during engine advancement before each projectile moves. Its order relative to collision and detonation checks remains open.
 9. **Save size.** Which compression for snapshot module memory? Compressing only used nonzero pages is estimated to add less than 1 MiB for a typical module. Measure this.
 10. **First decidable events.** Which two or three section 6f candidates enter v1?
@@ -873,9 +892,11 @@ Outside version 1. Each item gets a follow-up RFC or a new minor version.
 15. **Map text.** Maps cannot ship string tables. How should map module text be translated?
 16. **Campaigns.** Do modules start fresh each mission or carry state (including variables) from the previous mission?
 17. **Chain bounds.** Set per-frame depth and total firing limits for chains involving module triggers, new VERA events or atomic actions (section 5).
+18. **House control.** Should a module be able to take a computer house's decisions from its native AI (base building, production, team creation, MCV deployment) while the house stays a computer house, and should the lobby choose such a module per slot? Until then `order` and the native AI share the house (section 6g).
 
 ## Revision history
 
+- **0.0.14** (2026-11-19): Added `order` (section 6g), which lets simulation modules command computer houses through the shared command table, and the `Scatter`, `TogglePrimaryFactory` and `Enter` commands. Added open question 18 on house control.
 - **0.0.13** (2026-11-18): Aligned triggers, query return values, default event fields and client visibility. Corrected binding examples and load-time validation order.
 - **0.0.12** (2026-11-18): Streamlined appendix table columns and consolidated shared rules and exceptions.
 - **0.0.11** (2026-11-18): Consolidated repeated examples and interface descriptions. Centralized signatures, layouts, numbers and version tiers in the appendix.

@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.13. Update both documents in the same commit. The main RFC defines the rules and takes precedence in a conflict. Open question 12 covers the version 1 inventory.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.14. Update both documents in the same commit. The main RFC defines the rules and takes precedence in a conflict. Open question 12 covers the version 1 inventory.
 
 ## Contents
 
@@ -255,7 +255,7 @@ struct PropValue {        // 16 bytes: initial property for client_node_create
     reserved: i32,        // 4  0
     value: i64,           // 8
 }
-struct Order {            // 24 bytes followed by count unit handles (i64): input to client_send_order
+struct Order {            // 24 bytes followed by count unit handles (i64): input to order and client_send_order
     kind: i32,            // 0   Command (8.3)
     count: i32,           // 4   Number of units following
     target: i64,          // 8   Object or cell reference, 0 for none
@@ -376,9 +376,10 @@ In the availability column, `init` means `vera_init`, `rules` means `on_rules`, 
 | 20 | `trigger_unbind` | `(t: i64, ref: i64) -> i32` | Remove one binding | all |
 | 21 | `action` | `(kind: i32, target: i64, params: ptr, len) -> (i64, i32)` | Execute an action (section 5, `ActionParams`). Return the created object, otherwise 0. | all |
 | 22 | `send_notify` | `(to: i64, id: i32, ptr, len) -> i32` | Notify players of house `to`, or observers when `to` is 0. Exceeding the size or per-frame count limit returns `Refused`. | all |
+| 23 | `order` | `(house: i64, ptr, len) -> i32` | Queue a standard player command (`Order`) for computer house `house`. It executes next frame, validated like that house's player input ([RFC 6g](0001-wasm-extension-modules.md#6g-house-orders)). | all |
 
 - In `on_rules`, `set` on type and global rules references is equivalent to `rules_set` with the value in INI text form. `get` reads values processed up to that point in the current layer. Trigger, action, variable, modifier and `find` calls and reads or writes on other references return `Unsupported`.
-- Write functions are `set`, `modify`, `unmodify`, `rules_set`, `var_set`, `trigger_create`, `trigger_remove`, `trigger_bind`, `trigger_unbind`, `action` and `send_notify`.
+- Write functions are `set`, `modify`, `unmodify`, `rules_set`, `var_set`, `trigger_create`, `trigger_remove`, `trigger_bind`, `trigger_unbind`, `action`, `send_notify` and `order`.
 
 ### 1.2 Exports
 
@@ -452,6 +453,7 @@ The table uses TypeScript. Rust uses newtypes and snake case (`where_prop`). Nam
 | String property | `House.name(h)` returns `string` | `get` plus `name_of` |
 | Modifiers | `Modifier.multiply(t, Prop.SpeedMultiplier, fixed(0.5), 150)`. Add with `Modifier.add`, override with `Modifier.override`, remove early with `Modifier.remove(m)`. | `modify`, `unmodify` |
 | Actions | One function per kind, e.g. `Action.nukeStrike(cell, house)`, `Action.launchSuperWeapon(house, type, cell)`, `Action.createObject(cell, type, house)`, `Action.addMoney(house, amount)` | `action` |
+| House orders | `House.order(h, Order.queueProduction(Rules.technoType("HTNK")))`, `House.order(h, Order.attackMove(units, cell))`. `Client.order` takes the same builders | `order` |
 | Trigger actions | `ActionDef.damage(Target.Other, warhead, 50)`, `ActionDef.setVar(Target.Subject, v, 1)` only construct an `ActionDef` | — |
 | Triggers | `Trigger.on(event).bind(ref).immediate(def).enqueue(fn).done()`, `.decideSync(fn)` | `.decideSync` and `.done` call `trigger_create`, then `trigger_bind` for each `.bind` |
 | Property polling | `Trigger.onProperty(prop, op, value, interval)` | Constructs an `EventDef` for `PropertyPoll` (4.4) |
@@ -1406,7 +1408,7 @@ Where numbers are omitted, the interface definition assigns values in declaratio
 | 21 | `Hold` | `TopLeft`, `Top`, `TopRight`, `Left`, `Middle`, `Right`, `BottomLeft`, `Bottom`, `BottomRight` (`Hold` values in `veraui.ini`) |
 | 22 | `PathKind` | 0 `Bezier`, 1 `Parabola`, 2 `Spiral`, 3 `Waypoints` |
 
-**Commands** (`Command` and the fields of `Order`). Fields marked — are zero. An order that violates this table returns `Refused`.
+**Commands** (`Command` and the fields of `Order`, for `order` and `client_send_order`). Fields marked — are zero. An order that violates this table returns `Refused`. Entries 23 to 25 are `v1?`.
 
 | # | Command | `target` | `value` | Unit list |
 | --- | --- | --- | --- | --- |
@@ -1433,3 +1435,8 @@ Where numbers are omitted, the interface definition assigns values in declaratio
 | 20 | `ToggleInfantryDeploy` | — | — | Infantry |
 | 21 | `ForceAttackCell` | Cell | — | Units |
 | 22 | `SellWallAtCell` | Cell | — | None |
+| 23 | `Scatter` | — | — | Units |
+| 24 | `TogglePrimaryFactory` | — | — | Factory building |
+| 25 | `Enter` | Object | — | Units |
+
+`Scatter` moves units a short distance aside, as the scatter key does. `TogglePrimaryFactory` toggles a factory's primary flag, as clicking a factory that is not primary does. `Enter` boards a transport or enters a bunker, repair depot, refinery or Grinder, as clicking it does.

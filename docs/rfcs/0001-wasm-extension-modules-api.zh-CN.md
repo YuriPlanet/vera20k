@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.13，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单是待定问题 12。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.14，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单是待定问题 12。
 
 ## 目录
 
@@ -255,7 +255,7 @@ struct PropValue {        // 16 字节：client_node_create 的初始属性
     reserved: i32,        // 4  0
     value: i64,           // 8
 }
-struct Order {            // 24 字节，后接 count 个单位句柄（i64）：client_send_order 的输入
+struct Order {            // 24 字节，后接 count 个单位句柄（i64）：order 和 client_send_order 的输入
     kind: i32,            // 0   Command（8.3）
     count: i32,           // 4   后面的单位数
     target: i64,          // 8   对象或格子引用；0 为没有
@@ -376,9 +376,10 @@ bytes: u32,               // 投递区的字节数
 | 20 | `trigger_unbind` | `(t: i64, ref: i64) -> i32` | 解除一个绑定 | all |
 | 21 | `action` | `(kind: i32, target: i64, params: ptr, len) -> (i64, i32)` | 执行动作（第 5 节，`ActionParams`）；返回创建的对象，否则为 0 | all |
 | 22 | `send_notify` | `(to: i64, id: i32, ptr, len) -> i32` | 通知所属方 `to` 的玩家；`to` 为 0 时发给观战者；超出大小或每帧条数为 `Refused` | all |
+| 23 | `order` | `(house: i64, ptr, len) -> i32` | 为电脑所属方 `house` 排入一条标准玩家指令（`Order`），下一帧执行，像该所属方的玩家输入一样校验（[RFC 6g](0001-wasm-extension-modules.zh-CN.md#6g-所属方指令)） | all |
 
 - `on_rules` 中对类型引用和全局规则引用的 `set` 等于以值的 INI 文本调用 `rules_set`；`get` 读到本层之前处理过的值。触发器、动作、变量、修饰器、`find` 和其他引用的读写返回 `Unsupported`。
-- 写入函数：`set`、`modify`、`unmodify`、`rules_set`、`var_set`、`trigger_create`、`trigger_remove`、`trigger_bind`、`trigger_unbind`、`action`、`send_notify`。
+- 写入函数：`set`、`modify`、`unmodify`、`rules_set`、`var_set`、`trigger_create`、`trigger_remove`、`trigger_bind`、`trigger_unbind`、`action`、`send_notify`、`order`。
 
 ### 1.2 导出
 
@@ -452,6 +453,7 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 字符串属性 | `House.name(h)` 返回 `string` | `get` 加 `name_of` |
 | 修饰器 | `Modifier.multiply(t, Prop.SpeedMultiplier, fixed(0.5), 150)`；加值用 `Modifier.add`，覆盖用 `Modifier.override`，提前移除用 `Modifier.remove(m)` | `modify`、`unmodify` |
 | 动作 | 每个动作种类一个函数：`Action.nukeStrike(cell, house)`、`Action.launchSuperWeapon(house, type, cell)`、`Action.createObject(cell, type, house)`、`Action.addMoney(house, amount)` | `action` |
+| 所属方指令 | `House.order(h, Order.queueProduction(Rules.technoType("HTNK")))`、`House.order(h, Order.attackMove(units, cell))`；`Client.order` 使用同样的构造器 | `order` |
 | 触发器中的动作 | `ActionDef.damage(Target.Other, warhead, 50)`、`ActionDef.setVar(Target.Subject, v, 1)`：只构造 `ActionDef` | — |
 | 触发器 | `Trigger.on(event).bind(ref).immediate(def).enqueue(fn).done()`、`.decideSync(fn)` | `.decideSync`、`.done` 调用 `trigger_create`，再对每个 `.bind` 调用 `trigger_bind` |
 | 属性轮询 | `Trigger.onProperty(prop, op, value, interval)` | 构造一个 `PropertyPoll` 的 `EventDef`（4.4） |
@@ -1406,7 +1408,7 @@ Ares 和 Phobos 的键尚未分类。
 | 21 | `Hold` | `TopLeft`、`Top`、`TopRight`、`Left`、`Middle`、`Right`、`BottomLeft`、`Bottom`、`BottomRight`（`veraui.ini` 的 `Hold` 取值） |
 | 22 | `PathKind` | 0 `Bezier`、1 `Parabola`、2 `Spiral`、3 `Waypoints` |
 
-**指令**（`Command`，`Order` 的字段）；`—` 的字段为 0，不符合本表的指令为 `Refused`：
+**指令**（`Command`，`Order` 的字段，用于 `order` 和 `client_send_order`）；`—` 的字段为 0，不符合本表的指令为 `Refused`；23 至 25 为 `v1?`：
 
 | # | 指令 | `target` | `value` | 单位列表 |
 | --- | --- | --- | --- | --- |
@@ -1433,3 +1435,8 @@ Ares 和 Phobos 的键尚未分类。
 | 20 | `ToggleInfantryDeploy` | — | — | 步兵 |
 | 21 | `ForceAttackCell` | 格子 | — | 单位 |
 | 22 | `SellWallAtCell` | 格子 | — | 无 |
+| 23 | `Scatter` | — | — | 单位 |
+| 24 | `TogglePrimaryFactory` | — | — | 工厂建筑 |
+| 25 | `Enter` | 对象 | — | 单位 |
+
+`Scatter` 让单位向旁边让开一小段，和散开键一样。`TogglePrimaryFactory` 切换工厂的主工厂标记，和点击一座非主工厂一样。`Enter` 登上运输载具，或进入碉堡、维修厂、矿石精炼厂、回收厂（Grinder），和点击目标一样。
