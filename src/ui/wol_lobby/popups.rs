@@ -53,12 +53,13 @@ pub(crate) fn create_tooltip_key(control: u16) -> Option<&'static str> {
 /// watch the room's games, and how far behind its players. The lobby still
 /// lets everyone watch Quick Match and ranked games 2 minutes behind, and
 /// nobody a room with a password (docs/lobby-protocol.md "Watching").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RoomWatching {
-    /// Everyone, 2 minutes behind the players: the first choice.
+    /// Everyone, 2 minutes behind the players.
     Delayed,
     Off,
-    /// Everyone, with no delay.
+    /// Everyone, with no delay. A host starts with this choice.
+    #[default]
     Live,
 }
 
@@ -412,7 +413,12 @@ mod tests {
         );
         assert!(matches!(
             modern.activate(POPUP_OK),
-            Some(WolPopupAction::CreateConfirmed { room: Some(room), ranked: Some(true), .. }) if room == limits
+            Some(WolPopupAction::CreateConfirmed {
+                room: Some(room),
+                ranked: Some(true),
+                watching: Some(RoomWatching::Delayed),
+                ..
+            }) if room == limits
         ));
         // Its Ranked game box toggles; the native popup has none.
         assert!(modern.toggle(CREATE_RANKED));
@@ -492,29 +498,27 @@ mod tests {
         );
     }
 
-    /// VERA's Watching starts on the host's last choice, and each press
-    /// steps it to Off, Live and back to 2 minutes behind; OK sends it. The
-    /// native popup has none.
+    /// A fresh host can confirm Live immediately or cycle through every
+    /// Watching choice. The native popup has none.
     #[test]
     fn watching_steps_through_its_three_values() {
         let room = (
             RoomLimits::default(),
             "Boris's game",
             true,
-            RoomWatching::Delayed,
+            RoomWatching::default(),
         );
         let mut popup = WolLobbyPopup::create(1024, false, 0, false, Some(room));
         let sent = |popup: &mut WolLobbyPopup| match popup.activate(POPUP_OK) {
             Some(WolPopupAction::CreateConfirmed { watching, .. }) => watching,
             other => panic!("{other:?}"),
         };
-        let mut steps = Vec::new();
-        for _ in 0..3 {
-            assert!(popup.toggle(CREATE_WATCHING));
-            steps.push(sent(&mut popup));
-        }
         use RoomWatching::*;
-        assert_eq!(steps, [Some(Off), Some(Live), Some(Delayed)]);
+        assert_eq!(sent(&mut popup), Some(Live));
+        for choice in [Delayed, Off, Live] {
+            assert!(popup.toggle(CREATE_WATCHING));
+            assert_eq!(sent(&mut popup), Some(choice));
+        }
         let mut native = WolLobbyPopup::create(1024, false, 0, false, None);
         assert!(!native.toggle(CREATE_WATCHING));
         assert_eq!(sent(&mut native), None);

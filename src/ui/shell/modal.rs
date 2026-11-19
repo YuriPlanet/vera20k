@@ -466,6 +466,9 @@ fn new_edit_window(rect: RectPx) -> RectPx {
 /// The online popup's status line inset from each side of the box art's frame.
 const ONLINE_STATUS_INSET: i32 = 10;
 
+/// Width of the online Create Room player slider, including its value plaque.
+pub(crate) const ONLINE_CREATE_PLAYERS_WIDTH: i32 = 161;
+
 /// VERA's online lobby uses the in-room Game Options columns for its
 /// labels and controls. The native lobby uses the 0xC3 template.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
@@ -516,7 +519,10 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         limit: check(3),
         room: Some(crate::ui::room_limits::RoomLimitsLayout {
             players_label,
-            players,
+            players: RectPx {
+                w: ONLINE_CREATE_PLAYERS_WIDTH,
+                ..players
+            },
             spectators: check(4),
         }),
         name: Some((name_label, field(name))),
@@ -1316,7 +1322,7 @@ mod tests {
         assert_eq!(name_label, options.option_labels[0].1);
         assert_eq!(online.password_label, options.option_labels[1].1);
         assert_eq!(room.players_label, options.option_labels[2].1);
-        assert_eq!(room.players.w, bar.w);
+        assert!(bar.w < room.players.w && room.players.w < name.w);
         let rows = [
             name,
             online.password,
