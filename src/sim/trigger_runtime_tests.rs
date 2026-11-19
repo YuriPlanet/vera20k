@@ -2811,7 +2811,7 @@ fn destroyed_house_predicates_match_original_independent_signed_counters() {
                 sim.houses
                     .get_mut(&owner)
                     .unwrap()
-                    .tracking_mut()
+                    .tracking_mut_for_test()
                     .set_for_test(
                         totals[0].as_i64().unwrap() as i32,
                         &[],

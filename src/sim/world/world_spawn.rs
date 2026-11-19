@@ -8,8 +8,10 @@
 mod authored_health;
 mod construction;
 mod wall_unlimbo;
+pub(in crate::sim) use construction::TypeProjectionWrite;
 pub(crate) use construction::{CrushableFacts, MoverFacts, TypeFacts};
 
+use crate::sim::house_tracking::HouseTracking;
 use crate::sim::world::FrameEffects;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -1994,12 +1996,7 @@ impl Simulation {
             houses.request_house_tech_tree_recheck(entity.owner());
         }
         // The class constructors and InitFromType call Add_Tracking.
-        Self::update_house_tracking(
-            substrate,
-            houses,
-            stable_id,
-            crate::sim::house_tracking::HouseTracking::add_tracking,
-        );
+        HouseTracking::register_object(substrate, houses, stable_id);
         stable_id
     }
 

@@ -1360,6 +1360,7 @@ impl App {
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
                 terrain_picture: Default::default(),
+                native_z_seed: Default::default(),
             },
             process_assets,
             audio: startup_audio_runtime,

@@ -69,6 +69,8 @@ use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::ui::sidebar::SidebarView;
 
+pub(crate) use build_instances::tactical_world_view;
+#[cfg(test)]
 pub(crate) use build_instances::tactical_world_viewport;
 use build_instances::{DebugInstances, SidebarInstances, UiInstances, WorldInstances};
 
@@ -104,7 +106,16 @@ impl GameRenderInstanceCounts {
 /// readers only ever see a window's totals or means, never one frame's spans.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RenderPhases {
-    /// Phase 1 — terrain, overlays, entities.
+    /// Capturing the presentation frame of the home world before the draw
+    /// (`SimHost::ensure_frame`); zero while a lent tick keeps its own.
+    pub snapshot: Duration,
+    /// Phase 1's visible terrain tiles.
+    pub terrain: Duration,
+    /// Phase 1's Display object walk: units, infantry, buildings, debris and
+    /// bullets, voxel image renders included.
+    pub objects: Duration,
+    /// The rest of phase 1: overlays, bridges, smudges, anims, particles,
+    /// selection brackets and health bars.
     pub world: Duration,
     /// Phase 2 — pathgrid / cell grid / heightmap overlays.
     pub debug: Duration,
@@ -135,11 +146,14 @@ pub(crate) struct RenderPhases {
 }
 
 impl RenderPhases {
-    pub(crate) const COUNT: usize = 11;
+    pub(crate) const COUNT: usize = 14;
 
     /// The spans in declaration order, for the meter and the wire.
     pub(crate) fn spans(&self) -> [Duration; Self::COUNT] {
         [
+            self.snapshot,
+            self.terrain,
+            self.objects,
             self.world,
             self.debug,
             self.shroud,
@@ -184,6 +198,9 @@ pub(crate) struct GameRenderTimes {
 /// The perf recorder uses these as CSV column names.
 #[cfg(feature = "perf")]
 pub(crate) const RENDER_PHASE_KEYS: [&str; RenderPhases::COUNT] = [
+    "snapshot",
+    "terrain",
+    "objects",
     "world",
     "debug",
     "shroud",
@@ -227,6 +244,7 @@ pub(crate) fn render_game(
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
+    let after_snapshot = render_started.map(|_| Instant::now());
 
     // Trigger action 0x28 mutates scroll/radar authority inside the committed
     // sim frame. Install and clamp it before constructing any world instances,
@@ -249,6 +267,7 @@ pub(crate) fn render_game(
         state.match_state.input.zoom_level,
         crate::app::presentation::instances::depth_axis(state),
     );
+    update_native_z_origin(state);
 
     let local_owner = preferred_local_owner_name(state);
     let translucent_fog = state.translucent_fog_enabled();
@@ -510,14 +529,6 @@ pub(crate) fn render_game(
     );
     let after_lights = render_started.map(|_| Instant::now());
     let composition_view = state.renderer.combat_light_renderer.composition_view();
-    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
-    // Shader row coordinates are unscaled world pixels; scissor uses target
-    // pixels. Native zoom1 is exact, and scaled views preserve that unit frame.
-    let native_z_origin_y = (tactical_y as f32 / z).floor();
-    state
-        .renderer
-        .batch_renderer
-        .update_native_z_origin(&state.renderer.gpu.queue, native_z_origin_y);
     // The sidebar and its bar draw into their own surfaces at the Sidebar
     // size.
     let sidebar_frame = state.sidebar_frame();
@@ -840,7 +851,13 @@ pub(crate) fn render_game(
     // the frame owner adds its final submission and present.
     let submitted = state.renderer.terrain_draw_renderer.frame_submit_time();
     let phases = render_started.map(|render_started| RenderPhases {
-        world: after_world.unwrap().duration_since(phase1_started.unwrap()),
+        snapshot: after_snapshot.unwrap().duration_since(render_started),
+        terrain: world.spans.terrain,
+        objects: world.spans.objects,
+        world: after_world
+            .unwrap()
+            .duration_since(phase1_started.unwrap())
+            .saturating_sub(world.spans.terrain + world.spans.objects),
         debug: after_debug.unwrap().duration_since(after_world.unwrap()),
         shroud: after_shroud.unwrap().duration_since(after_debug.unwrap()),
         ui: after_ui.unwrap().duration_since(after_shroud.unwrap()),
@@ -855,7 +872,9 @@ pub(crate) fn render_game(
             .duration_since(after_effects.unwrap())
             .saturating_sub(submitted),
         handoff: submitted,
-        other: phase1_started.unwrap().duration_since(render_started)
+        other: phase1_started
+            .unwrap()
+            .duration_since(after_snapshot.unwrap())
             + effects_started
                 .unwrap()
                 .duration_since(after_lights.unwrap()),
@@ -874,6 +893,28 @@ pub(crate) fn render_game(
     })
 }
 
+/// Upload the Z buffer's row 0, the tactical view's top, and the rows the Z
+/// seed has panned with this frame's view, before any world instance takes
+/// them. Shader row coordinates are unscaled world pixels; scissor uses
+/// target pixels. Native zoom1 is exact, and scaled views preserve that unit
+/// frame.
+fn update_native_z_origin(state: &mut AppState) {
+    let (_, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+    let zoom = state.match_state.input.zoom_level;
+    let origin_y = (y as f32 / zoom).floor();
+    let camera = state.renderer.batch_renderer.camera_uniform().camera_pos;
+    let pan = state.renderer.native_z_seed.frame([
+        camera[0] as i32,
+        (camera[1] + origin_y) as i32,
+        (width as f32 / zoom) as i32,
+        (height as f32 / zoom) as i32,
+    ]);
+    let renderer = &state.renderer;
+    renderer
+        .batch_renderer
+        .update_native_z_origin(&renderer.gpu.queue, origin_y, pan);
+}
+
 /// The tactical surface object-layer DSurface stores address: logical
 /// (unzoomed) pixels from the floored camera, clipped to the tactical rect.
 ///
@@ -886,7 +927,8 @@ pub(crate) fn render_game(
 /// clip's row, on top of this origin (`4BEF03`). A sprite's depth goes by its
 /// row in the battlefield, so the origin carries the clip's row twice and a
 /// line keeps its depth against the objects wherever a layout puts the
-/// battlefield. The original's clip starts at row 0.
+/// battlefield. The original's clip starts at row 0. Its seed is the panned
+/// one (`native_z::ZSeed`).
 pub(crate) fn tactical_surface_line_viewport(
     state: &AppState,
 ) -> crate::render::surface_line::SurfaceLineViewport {
@@ -903,7 +945,7 @@ pub(crate) fn tactical_surface_line_viewport(
             z,
         ),
         clip,
-        z_origin_y: 2 * clip[1],
+        z_origin_y: (2 * clip[1]).wrapping_sub(state.renderer.native_z_seed.pan()),
         zoom: 1.0,
     }
 }

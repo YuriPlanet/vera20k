@@ -63,6 +63,9 @@ const SIM_AREAS: [&str; PHASE_COUNT] = [
 
 /// The labels of the render's phases, in `RenderPhases::spans` order.
 const RENDER_AREAS: [&str; RenderPhases::COUNT] = [
+    "VERA:CpuDrawSnapshot",
+    "VERA:CpuDrawTerrain",
+    "VERA:CpuDrawObjects",
     "VERA:CpuDrawWorld",
     "VERA:CpuDrawDebug",
     "VERA:CpuDrawShroud",
@@ -539,14 +542,49 @@ mod tests {
     }
 
     #[test]
+    fn world_drawing_parts_show_under_their_own_labels() {
+        let mut meter = RenderTimingMeter::default();
+        meter.record(RenderPhases {
+            snapshot: Duration::from_millis(50),
+            terrain: Duration::from_millis(100),
+            objects: Duration::from_millis(300),
+            world: Duration::from_millis(200),
+            other: Duration::from_millis(20),
+            ..RenderPhases::default()
+        });
+        let areas = most_cpu(Duration::from_secs(1), None, &meter.totals());
+        assert_eq!(
+            areas,
+            [
+                ("VERA:CpuDrawObjects", 30.0),
+                ("VERA:CpuDrawWorld", 20.0),
+                ("VERA:CpuDrawTerrain", 10.0),
+                ("VERA:CpuDrawSnapshot", 5.0),
+                ("VERA:CpuDrawOther", 2.0)
+            ]
+        );
+        let labels: Vec<_> = areas.iter().map(area).collect();
+        assert_eq!(
+            labels,
+            [
+                "Draw objects 30%",
+                "Draw world 20%",
+                "Draw terrain 10%",
+                "Frame snapshot 5%",
+                "Draw other 2%"
+            ]
+        );
+    }
+
+    #[test]
     fn most_cpu_ranks_sim_and_render_areas_and_skips_a_restarted_profile() {
         let mut sim = [0u128; PHASE_COUNT];
         sim[crate::sim::frame_profile::phase::MOVEMENT] = 300_000_000;
         sim[crate::sim::frame_profile::phase::VISION] = 5_000_000;
         let mut render = [Duration::ZERO; RenderPhases::COUNT];
-        render[0] = Duration::from_millis(200);
-        render[9] = Duration::from_millis(400);
-        render[10] = Duration::from_millis(5);
+        render[3] = Duration::from_millis(200);
+        render[12] = Duration::from_millis(400);
+        render[13] = Duration::from_millis(5);
         assert_eq!(
             most_cpu(Duration::from_secs(1), Some(&sim), &render),
             [

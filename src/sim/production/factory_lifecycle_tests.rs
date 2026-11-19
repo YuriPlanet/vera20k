@@ -3226,7 +3226,7 @@ fn missing_barracks_retains_completed_infantry_and_queued_successor() {
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_buildings_for_test(0);
     let credits = sim.houses[&owner].economy().credits();
     let rng = (

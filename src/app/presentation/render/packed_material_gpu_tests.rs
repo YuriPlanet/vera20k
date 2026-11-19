@@ -509,7 +509,8 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
     ] {
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
         let mut uniform = camera(size);
-        uniform.native_z_origin_y = int(&native["surface"]["depth_baseline"]) as f32 - 32768.;
+        // The capture's Z buffer seeds at its baseline (`native_z::ZSeed`).
+        uniform.native_z_pan = (32768 - int(&native["surface"]["depth_baseline"])) as f32;
         batch.write_camera(&gpu.queue, uniform);
         let palettes = PaletteSet::new_on_device(
             &gpu.device,
@@ -631,15 +632,8 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                             tint,
                             palette_light: light,
                             alpha: 1.,
-                            draw_state: {
-                                // The capture's seed baseline moves the native
-                                // Z origin up by `32768 - depth_baseline` rows;
-                                // its Bit_Blit still clipped to the surface.
-                                let mut state =
-                                    DrawState::from_native_selector(remap_row, selector);
-                                state.fx_params[3] = size[1] as f32 - uniform.native_z_origin_y;
-                                state
-                            },
+                            // Bit_Blit clipped to the whole surface.
+                            draw_state: DrawState::from_native_selector(remap_row, selector),
                             z_adjust: int(&row["prepared_z_adjust"][0]) as f32,
                             z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, false),
                             zshape_origin: [position[1], crop[3] as f32],

@@ -184,7 +184,39 @@ pub struct CameraUniform {
     /// Tactical viewport origin in unscaled native row units. Dirty-clip
     /// rebasing cancels the dirty origin (005F4CD9..CED /00437C49..5C).
     pub native_z_origin_y: f32,
-    pub _native_z_pad: f32,
+    /// Rows the Z seed has panned ([`native_z::ZSeed`]): Z rows count from
+    /// the view's top row less this, the world row the seed's
+    /// `DEFAULT_Z` meets. Clips keep the view's own top.
+    ///
+    /// [`native_z::ZSeed`]: super::native_z::ZSeed
+    pub native_z_pan: f32,
+}
+
+impl CameraUniform {
+    /// The view's top world row, the Z buffer's row 0, as the shaders round
+    /// it (WGSL `round` ties to even).
+    pub fn view_top_row(&self) -> i32 {
+        (self.camera_pos[1] + self.native_z_origin_y).round_ties_even() as i32
+    }
+
+    /// The view's world rows `[top, bottom)` for a tactical view
+    /// `view_height` world pixels high (`DrawState::fx_params` w; 0 takes the
+    /// whole target), as the shaders round them (native_z.wgsl `view_rows`).
+    pub fn view_rows(&self, view_height: f32) -> [i32; 2] {
+        let top = self.view_top_row();
+        let height = if view_height > 0.0 {
+            view_height
+        } else {
+            self.screen_size[1] / self.zoom
+        };
+        [top, top.saturating_add(height.round_ties_even() as i32)]
+    }
+
+    /// The world row whose Z is the seed's `DEFAULT_Z`: Z rows count from it
+    /// (`native_z_origin_row` in native_z.wgsl).
+    pub fn native_z_origin_row(&self) -> i32 {
+        self.view_top_row().wrapping_sub(self.native_z_pan as i32)
+    }
 }
 
 /// Legacy normalized world/sort scalar: `1 - (row - origin_y) / world_height`.
@@ -916,7 +948,7 @@ impl BatchRenderer {
             _pad: 0.0,
 
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            native_z_pan: 0.0,
         };
         let camera_buffer: wgpu::Buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1363,7 +1395,7 @@ impl BatchRenderer {
         );
         let zsprite_write_pipeline: wgpu::RenderPipeline = make_zsprite_pipeline(
             "ZSprite Pipeline (read + write)",
-            "fs_main",
+            "fs_write",
             &plain_target,
             true,
         );
@@ -1376,8 +1408,8 @@ impl BatchRenderer {
                     write_mask: wgpu::ColorWrites::ALL,
                 }),
             ];
-            [false, true].map(|write| {
-                make_zsprite_pipeline("ZSprite Pipeline (counted)", "fs_counted", &targets, write)
+            [("fs_counted", false), ("fs_counted_write", true)].map(|(fragment, write)| {
+                make_zsprite_pipeline("ZSprite Pipeline (counted)", fragment, &targets, write)
             })
         });
 
@@ -1478,7 +1510,10 @@ impl BatchRenderer {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &voxel_shader,
-                    entry_point: Some("fs_main"),
+                    entry_point: Some(match depth_compare {
+                        wgpu::CompareFunction::Always => "fs_unread",
+                        _ => "fs_main",
+                    }),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: surface_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -1948,32 +1983,32 @@ impl BatchRenderer {
             _pad: debug_depth_view,
 
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            native_z_pan: 0.0,
         };
         self.write_camera(queue, uniform);
     }
 
     /// Preserve the full tactical viewport origin separately from camera
-    /// scrolling. The argument uses unscaled native rows, not target pixels.
-    pub(crate) fn update_native_z_origin(&self, queue: &wgpu::Queue, origin_y: f32) {
-        let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
+    /// scrolling, with the rows the Z seed has panned. The origin uses
+    /// unscaled native rows, not target pixels.
+    pub(crate) fn update_native_z_origin(&self, queue: &wgpu::Queue, origin_y: f32, pan: i32) {
+        let mut guard = self.uploaded_camera.write().expect("camera owner lock");
+        let uploaded = &mut *guard;
+        let fields = [origin_y, pan as f32];
         // Each queue write costs a staging buffer, and a frame's origin is
         // usually the one `write_camera` already uploaded.
-        if [uploaded.world, uploaded.ui]
-            .iter()
-            .all(|camera| camera.native_z_origin_y.to_bits() == origin_y.to_bits())
-        {
+        if [uploaded.world, uploaded.ui].iter().all(|camera| {
+            bytemuck::bytes_of(&[camera.native_z_origin_y, camera.native_z_pan])
+                == bytemuck::bytes_of(&fields)
+        }) {
             return;
         }
-        uploaded.world.native_z_origin_y = origin_y;
-        uploaded.ui.native_z_origin_y = origin_y;
+        for camera in [&mut uploaded.world, &mut uploaded.ui] {
+            [camera.native_z_origin_y, camera.native_z_pan] = fields;
+        }
         let offset = std::mem::offset_of!(CameraUniform, native_z_origin_y) as u64;
-        queue.write_buffer(&self.camera_buffer, offset, bytemuck::bytes_of(&origin_y));
-        queue.write_buffer(
-            &self.ui_camera_buffer,
-            offset,
-            bytemuck::bytes_of(&origin_y),
-        );
+        queue.write_buffer(&self.camera_buffer, offset, bytemuck::bytes_of(&fields));
+        queue.write_buffer(&self.ui_camera_buffer, offset, bytemuck::bytes_of(&fields));
     }
 
     pub(crate) fn camera_uniform(&self) -> CameraUniform {

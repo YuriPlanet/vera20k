@@ -54,19 +54,37 @@ impl RenderTimingMeter {
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) fn report(&self) -> Option<crate::sim::telemetry::RenderTimingReport> {
         let means = self.mean_ms()?;
+        // The wire keeps schema v31's spans: phase 1's parts sum to
+        // `world_ms`, and the frame snapshot stays in `other_ms`.
+        let [
+            snapshot,
+            terrain,
+            objects,
+            world,
+            debug,
+            shroud,
+            ui,
+            sidebar,
+            upload,
+            lights,
+            effects,
+            draw_calls,
+            handoff,
+            other,
+        ] = means;
         Some(crate::sim::telemetry::RenderTimingReport {
             frames: self.frames,
-            world_ms: means[0],
-            debug_ms: means[1],
-            shroud_ms: means[2],
-            ui_ms: means[3],
-            sidebar_ms: means[4],
-            upload_ms: means[5],
-            lights_ms: means[6],
-            effects_ms: means[7],
-            draw_calls_ms: means[8],
-            handoff_ms: means[9],
-            other_ms: means[10],
+            world_ms: terrain + objects + world,
+            debug_ms: debug,
+            shroud_ms: shroud,
+            ui_ms: ui,
+            sidebar_ms: sidebar,
+            upload_ms: upload,
+            lights_ms: lights,
+            effects_ms: effects,
+            draw_calls_ms: draw_calls,
+            handoff_ms: handoff,
+            other_ms: snapshot + other,
         })
     }
 }

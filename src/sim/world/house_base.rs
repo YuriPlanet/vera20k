@@ -1546,7 +1546,9 @@ mod tests {
                 )
             });
             let house = sim.houses.get_mut(&owner).unwrap();
-            house.tracking_mut().set_buildings_for_test(tracked);
+            house
+                .tracking_mut_for_test()
+                .set_buildings_for_test(tracked);
             house.set_alternate_base_center_for_test(alternate);
             house.retain_base_geometry(Some((14, 14)), 9999);
             if let Some(bonus) = input["unit_bonus"].as_f64() {
