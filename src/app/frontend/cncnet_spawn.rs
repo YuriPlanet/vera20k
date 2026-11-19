@@ -26,8 +26,9 @@ use crate::rules::skirmish_colors::{FIRST_EXTRA_PRIORITY, MAX_EXTRA_COLORS, OBSE
 use crate::sim::game_options::is_selectable_game_speed;
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchHumanRole, LaunchStartPosition, LaunchTeam,
-    NETWORK_PLAYER_SLOT_COUNT, SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishHumanSlot,
-    SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
+    NETWORK_PLAYER_SLOT_COUNT, SKIRMISH_MAX_SLOT_COUNT, SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot,
+    SkirmishHumanSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession,
+    SkirmishLocalSlot,
 };
 use crate::skirmish_modes::{ModeStartEffect, SkirmishGameMode, mode_by_id};
 
@@ -570,22 +571,29 @@ fn skirmish(
         "SpecialHouseIsAlly=Yes is unsupported; use the VERA client profile"
     );
     let multiplayer = player_count > 1 || ini.section("Relay").is_some();
-    // *(VERA)* One human is admitted as a network room admits it, in any mode
-    // and with up to thirty houses, because a lobby plays every one-human
-    // game without a relay. Retail Skirmish lists only Battle and Free for All
-    // (`0x005D6263`), which VERA's Skirmish screen keeps.
+    // *(VERA)* One human is admitted as a network room admits it, in any mode,
+    // because a lobby plays every one-human game without a relay. Retail
+    // Skirmish lists only Battle and Free for All (`0x005D6263`), which VERA's
+    // Skirmish screen keeps. Without a relay that game seats as many houses
+    // as offline Skirmish (`SKIRMISH_MAX_SLOT_COUNT`); a network launch keeps
+    // the relay's thirty sources.
+    let house_limit = if multiplayer {
+        NETWORK_PLAYER_SLOT_COUNT
+    } else {
+        SKIRMISH_MAX_SLOT_COUNT
+    };
     let ai_count = ranged(
         settings,
         "AIPlayers",
         0,
         0,
-        (NETWORK_PLAYER_SLOT_COUNT - player_count) as i32,
+        (house_limit - player_count) as i32,
     )? as usize;
     let handicaps = ini.section_or_empty("HouseHandicaps");
     let mut active = Vec::new();
     let mut rows = Vec::new();
     let mut colors = Vec::new();
-    let mut used_starts = [false; NETWORK_PLAYER_SLOT_COUNT];
+    let mut used_starts = [false; SKIRMISH_MAX_SLOT_COUNT];
     let mut humans: Vec<Option<SkirmishHumanSlot>> = vec![None; player_count];
     let mut names = std::collections::BTreeSet::new();
     let mut local_player_index = 0;
@@ -629,7 +637,7 @@ fn skirmish(
         } else {
             (country(section, "Side")?, color(section, "Color")?)
         };
-        let start = start(ini, house, &mut used_starts)?;
+        let start = start(ini, house, house_limit, &mut used_starts)?;
         ensure!(
             !observer || start == LaunchStartPosition::Auto,
             "spectator Multi{} cannot have a start location",
@@ -671,7 +679,7 @@ fn skirmish(
         .collect();
 
     let mut opponents = Vec::new();
-    for raw_slot in player_count..NETWORK_PLAYER_SLOT_COUNT {
+    for raw_slot in player_count..house_limit {
         let key = format!("Multi{}", raw_slot + 1);
         let difficulty = integer(handicaps, &key, -1)?;
         ensure!(
@@ -698,7 +706,7 @@ fn skirmish(
             country_random: false,
             color_index,
             color_random: false,
-            start_position: start(ini, raw_slot, &mut used_starts)?,
+            start_position: start(ini, raw_slot, house_limit, &mut used_starts)?,
             team: LaunchTeam::None,
             difficulty: match difficulty {
                 0 => AiDifficulty::Hard,
@@ -739,7 +747,7 @@ fn skirmish(
         }
     }
     // `active` lists the humans' houses first, then the AI houses in order.
-    let teams = teams(ini, &active, &rows)?;
+    let teams = teams(ini, &active, &rows, house_limit)?;
     for (row, team) in rows.iter().zip(&teams).take(player_count) {
         let human = &mut humans[usize::from(*row)];
         ensure!(
@@ -902,12 +910,13 @@ fn color(section: &IniSection, key: &str) -> Result<u8> {
     Ok(priority as u8)
 }
 
-/// Waypoints 0..29, for one human as in network rooms; the map decides which
-/// exist.
+/// Waypoints below `house_limit`: 0..29 in network rooms, as for one human
+/// with a relay, and 0..119 offline; the map decides which exist.
 fn start(
     ini: &IniFile,
     raw_slot: usize,
-    used: &mut [bool; NETWORK_PLAYER_SLOT_COUNT],
+    house_limit: usize,
+    used: &mut [bool; SKIRMISH_MAX_SLOT_COUNT],
 ) -> Result<LaunchStartPosition> {
     let key = format!("Multi{}", raw_slot + 1);
     let value = ranged(
@@ -915,7 +924,7 @@ fn start(
         &key,
         -2,
         -2,
-        NETWORK_PLAYER_SLOT_COUNT as i32 - 1,
+        house_limit as i32 - 1,
     )?;
     if value < 0 {
         return Ok(LaunchStartPosition::Auto);
@@ -949,7 +958,13 @@ fn validate_house_extensions(ini: &IniFile, raw_slot: usize) -> Result<()> {
 
 /// `active` holds house slots (MultiN-1); `rows` the matching shared session
 /// rows, which name a team so that every participant derives the same value.
-fn teams(ini: &IniFile, active: &[usize], rows: &[u8]) -> Result<Vec<LaunchTeam>> {
+/// Houses and team numbers stay below `house_limit`.
+fn teams(
+    ini: &IniFile,
+    active: &[usize],
+    rows: &[u8],
+    house_limit: usize,
+) -> Result<Vec<LaunchTeam>> {
     const KEYS: [&str; 8] = [
         "HouseAllyOne",
         "HouseAllyTwo",
@@ -960,7 +975,7 @@ fn teams(ini: &IniFile, active: &[usize], rows: &[u8]) -> Result<Vec<LaunchTeam>
         "HouseAllySeven",
         "HouseAllyEight",
     ];
-    let legacy = (0..NETWORK_PLAYER_SLOT_COUNT).any(|slot| {
+    let legacy = (0..house_limit).any(|slot| {
         ini.section(&format!("Multi{}_Alliances", slot + 1))
             .is_some()
     });
@@ -971,7 +986,7 @@ fn teams(ini: &IniFile, active: &[usize], rows: &[u8]) -> Result<Vec<LaunchTeam>
             !legacy,
             "[HouseTeams] cannot be combined with [MultiN_Alliances]"
         );
-        for slot in 0..NETWORK_PLAYER_SLOT_COUNT {
+        for slot in 0..house_limit {
             let key = format!("Multi{}", slot + 1);
             ensure!(
                 active.contains(&slot) || !section.is_present(&key),
@@ -983,7 +998,7 @@ fn teams(ini: &IniFile, active: &[usize], rows: &[u8]) -> Result<Vec<LaunchTeam>
             .map(|slot| {
                 let key = format!("Multi{}", slot + 1);
                 Ok(if section.is_present(&key) {
-                    let last = NETWORK_PLAYER_SLOT_COUNT as i32 - 1;
+                    let last = house_limit as i32 - 1;
                     LaunchTeam::Team(ranged(section, &key, -1, 0, last)? as u8)
                 } else {
                     LaunchTeam::None
@@ -992,7 +1007,7 @@ fn teams(ini: &IniFile, active: &[usize], rows: &[u8]) -> Result<Vec<LaunchTeam>
             .collect();
     }
     // Spawner alliances name houses 1..8 only.
-    for slot in SKIRMISH_PLAYER_SLOT_COUNT..NETWORK_PLAYER_SLOT_COUNT {
+    for slot in SKIRMISH_PLAYER_SLOT_COUNT..house_limit {
         ensure!(
             ini.section(&format!("Multi{}_Alliances", slot + 1))
                 .is_none(),
@@ -1000,8 +1015,8 @@ fn teams(ini: &IniFile, active: &[usize], rows: &[u8]) -> Result<Vec<LaunchTeam>
             slot + 1
         );
     }
-    let mut allies = [[false; NETWORK_PLAYER_SLOT_COUNT]; NETWORK_PLAYER_SLOT_COUNT];
-    for raw_slot in 0..NETWORK_PLAYER_SLOT_COUNT {
+    let mut allies = vec![[false; SKIRMISH_MAX_SLOT_COUNT]; house_limit];
+    for raw_slot in 0..house_limit {
         allies[raw_slot][raw_slot] = true;
     }
     for raw_slot in 0..SKIRMISH_PLAYER_SLOT_COUNT {

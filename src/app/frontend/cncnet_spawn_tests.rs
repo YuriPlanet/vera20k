@@ -830,38 +830,81 @@ fn single_player_spawn_keeps_its_offline_admission() {
     for append in [relay_section(0, 1), "[Other12]\nName=Remote\n".into()] {
         assert!(SpawnRequest::parse(&format!("{SKIRMISH}\n{append}")).is_err());
     }
-    // A network room's thirty waypoints bound a single-player start too.
+    // A start past the eight retail waypoints is admitted.
     let far = SKIRMISH.replacen("Multi2=0\n[Multi1", "Multi2=8\n[Multi1", 1);
     assert!(SpawnRequest::parse(&far).is_ok());
 }
 
-/// One human against `ai` AI houses in `mode`, as a lobby writes it without a relay.
-fn one_human(mode: i32, ai: usize) -> String {
+/// `[HouseHandicaps]`, `[HouseCountries]` and `[HouseColors]` of `ai` AI
+/// houses after `humans` human houses.
+fn ai_houses(humans: usize, ai: usize) -> String {
     let rows = |value: fn(usize) -> usize| -> String {
-        (2..=ai + 1)
+        (humans + 1..=humans + ai)
             .map(|house| format!("Multi{house}={}\n", value(house)))
             .collect()
     };
     format!(
-        "[Settings]\nName=Solo\nScenario=spawnmap.ini\nPlayerCount=1\nGameMode={mode}\n\
-         Side=0\nColor=0\nAIPlayers={ai}\nSpecialHouseIsAlly=No\n\
-         [HouseHandicaps]\n{}[HouseCountries]\n{}[HouseColors]\n{}",
+        "[HouseHandicaps]\n{}[HouseCountries]\n{}[HouseColors]\n{}",
         rows(|_| 1),
         rows(|house| house % 9),
         rows(|house| house % 8),
     )
 }
 
+/// One human against `ai` AI houses in `mode`, as a lobby writes it without a relay.
+fn one_human(mode: i32, ai: usize) -> String {
+    format!(
+        "[Settings]\nName=Solo\nScenario=spawnmap.ini\nPlayerCount=1\nGameMode={mode}\n\
+         Side=0\nColor=0\nAIPlayers={ai}\nSpecialHouseIsAlly=No\n{}",
+        ai_houses(1, ai)
+    )
+}
+
+/// Source 0's file of a relay game of `humans` humans and `ai` AI houses.
+fn relayed(humans: usize, ai: usize) -> String {
+    let relay = relay_section(0, (1 << humans) - 1);
+    let text = network_spawn(humans, 0, &relay).replacen(
+        "[Settings]\n",
+        &format!("[Settings]\nAIPlayers={ai}\n"),
+        1,
+    );
+    format!("{text}\n{}", ai_houses(humans, ai))
+}
+
 /// A lobby plays every one-human game without a relay, so one human takes what
-/// a network room admits: thirty houses, and modes Skirmish does not list.
+/// offline Skirmish seats: 120 houses, with starts and teams to match, and
+/// modes Skirmish does not list. A relay keeps the network room's thirty.
 #[test]
-fn one_human_spawn_admits_thirty_houses_and_unlisted_modes() {
-    let SpawnGame::Skirmish(full) = SpawnRequest::parse(&one_human(1, 29)).unwrap().game else {
+fn one_human_spawn_admits_offline_skirmish_houses_and_unlisted_modes() {
+    let last = SKIRMISH_MAX_SLOT_COUNT;
+    let text = format!(
+        "{}[SpawnLocations]\nMulti{last}=119\n[HouseTeams]\nMulti1=119\nMulti{last}=119\n",
+        one_human(1, last - 1)
+    );
+    let SpawnGame::Skirmish(full) = SpawnRequest::parse(&text).unwrap().game else {
         panic!("one human stays a skirmish")
     };
-    assert_eq!(full.opponents.len(), 29);
+    assert_eq!(full.opponents.len(), 119);
+    let far = full.opponents.last().unwrap();
+    assert_eq!(far.raw_slot_index, 119);
+    assert_eq!(far.start_position, LaunchStartPosition::Position(119));
+    assert_eq!(far.team, LaunchTeam::Team(119));
+    assert_eq!(full.local_slot().team, LaunchTeam::Team(119));
     assert!(full.house_roster_is_consistent());
-    assert!(SpawnRequest::parse(&one_human(1, 30)).is_err());
+    assert!(SpawnRequest::parse(&one_human(1, last)).is_err());
+    for (humans, ai) in [(1, 29), (2, 28)] {
+        let request = SpawnRequest::parse(&relayed(humans, ai)).unwrap();
+        assert!(matches!(request.game, SpawnGame::Network(_)));
+    }
+    for (humans, ai) in [(1, 30), (2, 29)] {
+        assert!(
+            SpawnRequest::parse(&relayed(humans, ai)).is_err(),
+            "{humans} relay humans and {ai} AI"
+        );
+    }
+    let start = |waypoint: usize| format!("{}[SpawnLocations]\nMulti2={waypoint}\n", relayed(1, 1));
+    assert!(SpawnRequest::parse(&start(29)).is_ok());
+    assert!(SpawnRequest::parse(&start(30)).is_err());
     let SpawnGame::Skirmish(coop) = SpawnRequest::parse(&one_human(3, 2))
         .and_then(|request| request.admit_loaded_modes(&[]))
         .unwrap()
