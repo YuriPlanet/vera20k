@@ -897,6 +897,7 @@ mod tests {
     /// neither may end the game first. A driver's loss can't be staged;
     /// `destroy` loses the device through the same callback, at the next poll.
     #[test]
+    #[ignore = "requires a wgpu adapter; loses a real device"]
     fn a_lost_device_reaches_the_frame_loop_without_a_panic() {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
