@@ -1401,6 +1401,123 @@ fn a_tunnel_owner_hides_and_restores_the_shield_idle_anim() {
     );
 }
 
+/// `ShieldClass::ConvertCheck` (`New/Entity/ShieldClass.cpp:608-760`) through
+/// the conversion entry `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:186-187`):
+/// a `TEST` object whose `TestShield` (`Strength=100`) becomes `CHANGED`,
+/// whose `OtherShield` is twice as strong.
+#[cfg(feature = "phobos")]
+fn convert_rules(shield: &str, changed_shield: &str) -> RuleSet {
+    let ini = IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=TEST\n1=CHANGED\n\
+         [TEST]\nStrength=200\nArmor=heavy\nShieldType=TestShield\n\
+         [CHANGED]\nStrength=200\nArmor=heavy\n{changed_shield}\n\
+         [ShieldTypes]\n0=TestShield\n1=OtherShield\n\
+         [TestShield]\nStrength=100\nInitialStrength=100\nArmor=none\n{shield}\n\
+         [OtherShield]\nStrength=200\nInitialStrength=200\nArmor=none\n\
+         [Animations]\n0=IDLE\n1=IDLE2\n"
+    ));
+    let mut rules = RuleSet::from_ini(&ini).expect("convert fixture rules");
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+        "[IDLE]\nRate=1\n[IDLE2]\nRate=1\n",
+    ));
+    art.bind_anim_frame_count_for_test("IDLE", 20);
+    art.bind_anim_frame_count_for_test("IDLE2", 20);
+    rules.replace_art_registry_for_test(art);
+    rules
+}
+
+/// An unset `AllowTransfer` falls back to `Attached`, so a type-bound shield
+/// (`isAttached = false`) does not transfer and the destination type's shield
+/// takes over the instance, with `HP` rescaled by the strength ratio
+/// (`:712-725`).
+#[cfg(feature = "phobos")]
+#[test]
+fn a_conversion_rebinds_the_shield_and_rescales_its_hp() {
+    let rules = convert_rules("", "ShieldType=OtherShield");
+    let (mut sim, _) = scene(&rules);
+    sim.intern_rule_type_ids(&rules);
+    let destination = rules.object("CHANGED").expect("the destination type");
+    sim.phobos_shield_convert_check(1, destination, &rules);
+    let shield = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .shield
+        .as_ref()
+        .expect("the shield survives onto the new type");
+    assert_eq!(shield.type_name(), "OtherShield");
+    assert_eq!(shield.hp(), 200, "100 * 200 / 100");
+}
+
+/// `AllowTransfer.Convert=yes` (`ShieldTypeClass.h:54`) keeps the instance's
+/// own type, so the same-type arm returns without rescaling anything
+/// (`:705-706`).
+#[cfg(feature = "phobos")]
+#[test]
+fn an_allowed_conversion_keeps_the_shield_type() {
+    let rules = convert_rules("AllowTransfer.Convert=yes", "ShieldType=OtherShield");
+    let (mut sim, _) = scene(&rules);
+    sim.intern_rule_type_ids(&rules);
+    let destination = rules.object("CHANGED").expect("the destination type");
+    sim.phobos_shield_convert_check(1, destination, &rules);
+    let shield = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .shield
+        .as_ref()
+        .expect("the shield transfers");
+    assert_eq!(shield.type_name(), "TestShield", "the old type is kept");
+    assert_eq!(shield.hp(), 100, "the initial strength stays");
+}
+
+/// A conversion whose destination binds no shield type deletes the shield and
+/// kills its idle animation (`:615-626`, Case 1).
+#[cfg(feature = "phobos")]
+#[test]
+fn a_conversion_without_a_new_shield_type_deletes_the_shield() {
+    let rules = convert_rules("IdleAnim=IDLE", "");
+    let (mut sim, _) = scene(&rules);
+    sim.intern_rule_type_ids(&rules);
+    super::tick(&mut sim, 1, &rules);
+    assert_eq!(idle_anims(&sim, "IDLE").len(), 1, "the idle anim exists");
+    let destination = rules.object("CHANGED").expect("the destination type");
+    sim.phobos_shield_convert_check(1, destination, &rules);
+    sim.flush_pending_delete();
+    assert!(
+        sim.substrate.entities.get(1).unwrap().shield.is_none(),
+        "Case 1 removes the shield"
+    );
+    assert_eq!(
+        idle_anims(&sim, "IDLE").len(),
+        0,
+        "KillAnim runs before the removal"
+    );
+}
+
+/// `AllowTransfer=yes` (`ShieldTypeClass.h:53`) transfers a type-bound shield
+/// as well, which is the same-type arm again.
+#[cfg(feature = "phobos")]
+#[test]
+fn allow_transfer_alone_also_keeps_the_shield() {
+    let rules = convert_rules("AllowTransfer=yes", "ShieldType=OtherShield");
+    let (mut sim, _) = scene(&rules);
+    sim.intern_rule_type_ids(&rules);
+    let destination = rules.object("CHANGED").expect("the destination type");
+    sim.phobos_shield_convert_check(1, destination, &rules);
+    let shield = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .shield
+        .as_ref()
+        .expect("the shield transfers");
+    assert_eq!(shield.type_name(), "TestShield");
+}
+
 /// `CloakCheck` (`ShieldClass.cpp:493..500`): a cloaking object kills the
 /// idle anim when the anim type's `DetachOnCloak` is set (the default).
 #[cfg(feature = "phobos")]

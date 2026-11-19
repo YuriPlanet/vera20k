@@ -160,13 +160,22 @@ impl Simulation {
         // RESIDUAL: construction alone builds some Type-derived state, and
         // nothing here refreshes it: passenger capacity (PassengerCargo from
         // Passengers=/SizeLimit=), the SHP vehicle Animation component, the
-        // Phobos shield, the gunner weapon and voxel recoil. Trigger: an Ares
+        // gunner weapon and voxel recoil. Trigger: an Ares
         // Convert.Script, Convert.Water or Convert.Land between types that
         // differ in them (retail sets none); the surface keys fire on each
         // shoreline crossing. Effect: the object keeps the old type's values;
         // converting a transport is the visible case, keeping its old capacity.
         crate::sim::miner::Miner::change_type_binding(&mut actor.miner, destination);
         health.apply(actor);
+        // Phobos `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:186-187`):
+        // `pShield->ConvertCheck(pCurrentType)`, i.e.
+        // `ShieldClass::ConvertCheck` (`New/Entity/ShieldClass.cpp:608-760`)
+        // with no old shield. The transfer keys decide whether the shield
+        // survives; a surviving one is rebound to the destination type, with
+        // its HP rescaled by the strength ratio and its recovery timers
+        // rescaled toward the new type's rates.
+        #[cfg(feature = "phobos")]
+        self.phobos_shield_convert_check(id, destination, rules);
         // Phobos `FootExt::UpdateTypeData`'s capture-manager arm: rebuild the
         // manager's limits from the new type's weapons.
         #[cfg(feature = "phobos")]
