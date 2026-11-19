@@ -98,14 +98,16 @@ fn cncnet_campaign_spawn_explicit_scenario_keeps_first_record_and_physical_ident
             assert_eq!(restarted.scenario(), startup.scenario());
             assert_eq!(restarted.selected_map_file(), startup.selected_map_file());
             assert!(!restarted.plays_action_movie());
-            let next = restarted.next_mission(
-                "NEXT.Map".into(),
-                2,
-                1,
-                2,
-                crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
-                &mut clock,
-            );
+            let next = restarted
+                .next_mission(
+                    "NEXT.Map".into(),
+                    2,
+                    1,
+                    2,
+                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                    &mut clock,
+                )
+                .unwrap();
             assert_eq!(next.campaign_index(), 0);
             assert_eq!(next.campaign(), startup.campaign());
             assert_eq!(next.scenario(), "NEXT.MAP");

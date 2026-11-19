@@ -260,6 +260,12 @@ impl CampaignSpawn {
         // StartScenario(ScenarioName,1,0). Original683AB0 keeps this index
         // independently of the explicit filename; see campaign_start_prefix.json.
         // Do not infer a record from Scenario, Side or client CampaignID.
+        // An empty Scenario takes the record's own (Start_Scenario683AC8).
+        anyhow::ensure!(
+            self.scenario.is_empty() || crate::map::source::is_logical_name(&self.scenario),
+            "campaign Scenario {:?} is not a map name",
+            self.scenario
+        );
         let campaign_index = 0;
         crate::app::match_bootstrap::prepare_campaign_startup_at_index(
             catalog,
