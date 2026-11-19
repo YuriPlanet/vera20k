@@ -3532,8 +3532,10 @@ mod tests {
     fn construction_detection_uses_the_shared_extension_building_gate() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
+        // The Iron Curtain keeps its stock handler under Ares, so its line
+        // comes off the list index: slot 0 is EVA_NuclearSiloDetected.
         let ini = crate::sim::arena_fixture::clear_ground_ini(
-            "[BuildingTypes]\n0=AUX\n1=VETO\n[AUX]\nStrength=100\n[VETO]\nStrength=100\n[SuperWeaponTypes]\n0=Gate\n[Gate]\nType=PsychicReveal\nSW.AuxBuildings=AUX\nSW.NegBuildings=VETO\n",
+            "[BuildingTypes]\n0=AUX\n1=VETO\n[AUX]\nStrength=100\n[VETO]\nStrength=100\n[SuperWeaponTypes]\n0=Gate\n[Gate]\nType=IronCurtain\nSW.AuxBuildings=AUX\nSW.NegBuildings=VETO\n",
         );
         let rules = RuleSet::from_ini_with_fixed_art_for_test(
             &ini,

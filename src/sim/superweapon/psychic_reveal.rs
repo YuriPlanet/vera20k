@@ -149,6 +149,7 @@ pub(super) fn ares_launch(
     let center = vision::conceal_area_centre(super::deck_coords(sim, target));
     // 100751A1 also admits a radar spy through RadarVisibleTo (+0x54E4).
     // Its House state is the shared residual documented in sim::spy_infiltration.
+    let local = sim.session.current_house();
     let viewers: Vec<_> = vision::direct_reveal_viewers(
         sim.house_alliances.as_map(),
         owner,
@@ -157,16 +158,7 @@ pub(super) fn ares_launch(
         &sim.fog_viewers(),
     )
     .into_iter()
-    .map(|viewer| {
-        let notify = if sim.session.game_mode().is_network() {
-            sim.houses
-                .get(&viewer)
-                .is_some_and(|house| house.is_human())
-        } else {
-            sim.session.current_house() == Some(viewer)
-        };
-        (viewer, notify)
-    })
+    .map(|viewer| (viewer, sim.reveal_notifies_viewer(viewer, local)))
     .collect();
     if viewers.is_empty() {
         return;
