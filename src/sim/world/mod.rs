@@ -202,7 +202,6 @@ pub(crate) fn deploy_origin(
     world_spawn::deploy_origin_from_unit_cell(cell.0, cell.1, &yard.foundation)
 }
 
-#[cfg(test)]
 #[cfg(all(test, tests_sim_world_c_o))]
 mod custom_foundation_tests;
 mod world_orders;
