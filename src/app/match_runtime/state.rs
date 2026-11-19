@@ -94,9 +94,6 @@ pub(crate) struct MatchState {
     /// The debug pause (`J` hotkey): the simulation is frozen
     /// without an in-scenario modal. Every modal transition ends it.
     pub(crate) debug_pause: bool,
-    /// Effective simulation ticks per second — controls game speed.
-    /// Default follows retail/YR skirmish stored game speed 1.
-    pub(crate) sim_speed_tps: u32,
 }
 
 impl MatchState {

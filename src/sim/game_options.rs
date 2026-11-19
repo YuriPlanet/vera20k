@@ -214,7 +214,7 @@ impl GameOptions {
     /// `(value << 3) / (speed + 1)` (`0x005FB2FC..0x005FB301`, signed IDIV).
     ///
     /// For native presets the pacer admits one sim tick per `stored_speed * 16 ms` bucket
-    /// (`app::types::tps_for_game_speed`), the same clock native's
+    /// (`app::match_runtime::frame_pacer`), the same clock native's
     /// `FrameTimer` runs on, so dividing a frame count by `speed + 1` here
     /// reproduces native wall-clock cadence at every stored index.
     pub fn speed_normalize(&self, value: i32) -> i32 {
