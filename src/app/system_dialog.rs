@@ -160,13 +160,10 @@ pub(crate) struct GraphicsLost {
     pub(crate) error: String,
     /// The description the single-player match was saved under.
     pub(crate) saved: Option<String>,
-    /// Where the DirectX 12 box is, as the Options dialog and its page are
-    /// titled, for a Windows game that drew with another API.
-    pub(crate) directx12_box: Option<(String, String)>,
 }
 
-/// Tell the player that the graphics driver stopped, what was saved, what to
-/// try and where the log is. The game has left the screen by then.
+/// Tell the player that the graphics driver stopped, what was saved and
+/// where the log is. The game has left the screen by then.
 pub(crate) fn report_graphics_lost(lost: &GraphicsLost) {
     let (title, message) = graphics_lost_message(lost);
     show_fatal(&title, &message);
@@ -178,12 +175,6 @@ fn graphics_lost_message(lost: &GraphicsLost) -> (String, String) {
         text.push(crate::i18n::tr_fill(
             "VERA:GraphicsLostSaved",
             &[("name", name)],
-        ));
-    }
-    if let Some((options, page)) = &lost.directx12_box {
-        text.push(crate::i18n::tr_fill(
-            "VERA:GraphicsLostDirectX12",
-            &[("options", options), ("page", page)],
         ));
     }
     text.push(log_note());
@@ -461,25 +452,19 @@ mod tests {
     }
 
     #[test]
-    fn the_graphics_lost_message_names_the_save_and_the_directx12_box_only_when_there() {
+    fn the_graphics_lost_message_names_the_save_only_when_there() {
         let lost = GraphicsLost {
             error: "Device is lost".to_owned(),
             saved: Some("Skirmish Game".to_owned()),
-            directx12_box: Some(("Options".to_owned(), "Display Options".to_owned())),
         };
         let (title, text) = graphics_lost_message(&lost);
         assert!(!title.is_empty() && !title.contains("MISSING"), "{title}");
         assert!(text.contains("\"Skirmish Game\""), "{text}");
-        assert!(text.contains("Options, Display Options"), "{text}");
         assert!(text.ends_with("Device is lost"), "{text}");
         let (_, text) = graphics_lost_message(&GraphicsLost {
             saved: None,
-            directx12_box: None,
             ..lost
         });
-        assert!(
-            !text.contains("Skirmish Game") && !text.contains("DirectX 12"),
-            "{text}"
-        );
+        assert!(!text.contains("Skirmish Game"), "{text}");
     }
 }

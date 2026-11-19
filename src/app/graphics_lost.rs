@@ -27,20 +27,7 @@ impl App {
         };
         log::info!("Closing: the graphics device is lost");
         let saved = save_match(state);
-        // The box is under Options, Display Options, in the game's own words.
-        let directx12_box = (crate::render::gpu::HAS_DIRECTX12
-            && !state.renderer.gpu.draws_with_directx12())
-        .then(|| {
-            (
-                Self::csf_label(state, "GUI:OptionsMenu", "Options"),
-                Self::csf_label(state, "GUI:DisplayOptions", "Display Options"),
-            )
-        });
-        state.frontend.graphics_lost = Some(GraphicsLost {
-            error,
-            saved,
-            directx12_box,
-        });
+        state.frontend.graphics_lost = Some(GraphicsLost { error, saved });
         Self::close_game(state, event_loop);
         true
     }
