@@ -5073,8 +5073,7 @@ impl Simulation {
             127 => {
                 // Execute6DFABF -> ChronoScreen53B460. A nonpositive duration
                 // is a no-op there; the action still returns success.
-                self.session
-                    .start_chrono_screen_effect(value.unwrap_or(0), effects);
+                self.start_chrono_screen(value.unwrap_or(0), effects);
             }
             131 => {
                 // FlashBuildings6E4560..6E45DE: incoming House's live

@@ -1532,7 +1532,7 @@ fn after_simulation_pass(
         .throttle_tail(wall_ms);
 
     // Ordered native source/global operations were applied with the frame
-    // output. Reconcile the detail option and any explicit tool mutations.
+    // output; they alone relight cells. Follow the detail option.
     refresh_cell_lighting(state);
 
     crate::app::presentation::building_anim::update_radar_state(state);
@@ -3016,7 +3016,8 @@ fn atlas_check_finds_miss(state: &mut AppState) -> bool {
     miss
 }
 
-/// Refresh the presentation-owned light transaction from the committed runtime.
+/// The presentation-owned light transaction's pass work
+/// ([`MatchLighting::after_pass`](crate::app::presentation::lighting::MatchLighting::after_pass)).
 fn refresh_cell_lighting(state: &mut AppState) {
     let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
@@ -3025,7 +3026,7 @@ fn refresh_cell_lighting(state: &mut AppState) {
         return;
     };
     let presentation = &mut state.match_state.match_presentation;
-    presentation.lighting.refresh(
+    presentation.lighting.after_pass(
         terrain,
         &runtime.simulation,
         presentation.in_game_options.detail_level,

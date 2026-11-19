@@ -503,6 +503,11 @@ pub(super) fn ares_launch(
     state.owner = Some(owner);
     state.cell = (rx as i16, ry as i16);
     state.anim = None;
+    // PsyDom::Active holds from here, through SW.Deferment, before the
+    // machine's first step runs UpdateLighting: later relights read the
+    // Dominator's Ground/Level and LightConvert555DA0 its RGB, and no cell
+    // refreshes now.
+    sim.publish_relight_profile();
 }
 
 /// SW_PsychicDominator::AbortFire (Ares 3.0 `10070780`), from ClickFire

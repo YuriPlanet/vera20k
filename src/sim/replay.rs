@@ -719,7 +719,7 @@ impl ScenarioServiceInput {
             Self::Pause => sim.session.pause_scenario(0),
             Self::Resume => sim.session.resume_scenario(),
             Self::ExpireTimedPause => sim.session.expire_scenario_pause(),
-            Self::StepChronoScreen => sim.session.process_chrono_screen_effect(),
+            Self::StepChronoScreen => sim.step_chrono_screen(),
         }
     }
 }
