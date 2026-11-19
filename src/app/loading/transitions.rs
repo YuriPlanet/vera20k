@@ -24,24 +24,33 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
-/// Mirror the authoritative speed whenever a complete Simulation replaces the
-/// app's live match, including both fresh-map handoff and in-scenario load.
+/// Mirror the authoritative speed into BBB's copy: when a complete Simulation
+/// replaces the app's live match (fresh-map handoff and in-scenario load),
+/// after a local change, and before BBB's init or the LAN host's options read
+/// it, since another player's speed event changes only the world.
 pub(crate) fn sync_in_game_options_speed_from_sim(state: &mut AppState) {
-    let Some(game_speed) = state
+    let world = state
         .match_state
         .sim_runtime
         .runtime()
-        .map(|rt| &rt.simulation)
-        .and_then(crate::sim::world::Simulation::projected_in_game_options_speed)
-        .map(u32::from)
-    else {
-        return;
-    };
-    state
-        .match_state
-        .match_presentation
-        .in_game_options
-        .game_speed = game_speed;
+        .map(|rt| &rt.simulation);
+    mirror_world_speed(
+        &mut state.match_state.match_presentation.in_game_options,
+        world,
+    );
+}
+
+/// [`sync_in_game_options_speed_from_sim`] on `options`: `world`'s speed after
+/// its next frame's speed events, when it has a selectable one.
+pub(crate) fn mirror_world_speed(
+    options: &mut crate::ui::shell::in_game_options_state::InGameOptionsState,
+    world: Option<&crate::sim::world::Simulation>,
+) {
+    if let Some(game_speed) =
+        world.and_then(crate::sim::world::Simulation::projected_in_game_options_speed)
+    {
+        options.game_speed = u32::from(game_speed);
+    }
 }
 
 pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
