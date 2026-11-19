@@ -941,6 +941,15 @@ the rank and OS. Until the operator starts the first season no one has a rating,
 and `high_scores` gives every name asked for the Colonel's 251 points with `rank` 0; a
 lobby from before that sends none then. A lobby from before badges sends no `high_scores`, and the game
 then shows none; one from before `os` leaves it out, and the game shows the rounded OS.
+
+A game-room join sends the existing `ladder` event immediately before the
+membership event in the same transaction. The guest receives the roster's records
+before `joined`. Existing members receive the newcomer's records before
+`member_joined`. Creation and reopening send the roster's records before
+`created` and `room_reopened`. These ladder events have the same retention as the
+membership events. The transport delivers them in sequence, so the game already
+has the badges when it displays the names.
+
 After a ranked game each of its players hears from `VERA20k` how it counted: their new OS,
 their place in the season and the badge the game brought them, such as `Ranked game won:
 your OS is now 19.57 (+2.90), rank 1 of 2 in season 1. Promoted to Corporal.`, with why a

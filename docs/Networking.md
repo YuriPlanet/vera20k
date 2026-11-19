@@ -514,6 +514,11 @@ same build reads them: the join refuses any other with reason 8, so neither a re
 game nor a rollback meets them, and a guest checks the agreement first, saying the
 host's build differs whatever else the options hold.
 
+In VERA Online game rooms, the lobby sends rank badges as part of the join. The
+newcomer sees the room's badges, and everyone already there sees the newcomer's badge
+as their name appears. Released clients use the same ladder messages. After a lobby
+rollback the badge arrives with the client's usual lookup. [Lobby protocol](lobby-protocol.md#ranked-games)
+
 A VERA room's Teams count, which only its host sets, travels with the host's options:
 online as `launch.options.teams` ([lobby protocol](lobby-protocol.md)), on LAN as
 `room.options.teams`. With it set, the host keeps every seated player on one of the
