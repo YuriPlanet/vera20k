@@ -1175,6 +1175,7 @@ impl App {
                     house_roster: HouseRoster::default(),
                     relation_colors: false,
                     superweapon_building_timers: false,
+                    convenience_help: false,
                     relation_color_map: None,
                     relation_color_generation: 0,
                     lighting: Default::default(),

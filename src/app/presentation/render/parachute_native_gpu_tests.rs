@@ -217,7 +217,7 @@ impl Scene {
         let sim = &self.runtime.simulation;
         let presented = crate::app::presentation::frame::PresentationFrame::capture(
             &self.runtime,
-            &Default::default(),
+            &Default::default(), false,
         );
         let order = NativeDisplayOrder::from_world(&sim, None);
         let voxel_images = RefCell::new(VoxelImageCache::default());

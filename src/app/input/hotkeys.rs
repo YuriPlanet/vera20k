@@ -27,7 +27,7 @@ const VK_DELETE: u16 = 0x2e;
 /// Rotate Primary I.
 /// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
 /// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 12] = [
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 13] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::ThreadStats, CTRL_BIT | ALT_BIT | 0x47),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
@@ -35,6 +35,7 @@ const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 12] = [
     (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
     (HotkeyCommand::LayoutEdit, CTRL_BIT | ALT_BIT | 0x45),
     (HotkeyCommand::SuperweaponTimers, CTRL_BIT | ALT_BIT | 0x54),
+    (HotkeyCommand::ConvenienceHelp, CTRL_BIT | ALT_BIT | 0x48),
     (HotkeyCommand::FormationLine, FORMATION_LINE_KEY),
     (HotkeyCommand::FormationLock, 0x4f),
     (HotkeyCommand::Ferry, 0x4a),
@@ -139,6 +140,10 @@ pub(crate) enum HotkeyCommand {
     /// In a match: the selected factories of one kind take turns being the
     /// primary (`input::primary_rotation`). It comes with a default key.
     RotatePrimary,
+    /// VERA: toggle the convenience help rows (repair/reload countdowns and
+    /// more) above friendly buildings and units. Ctrl+Alt+H by default. Saved
+    /// in `[VERA] ConvenienceHelp=`. Pure presentation; match only.
+    ConvenienceHelp,
     /// VERA: toggle "relation colours" — recolour every house by its diplomatic
     /// relation to the local observer (self = blue, ally = green, enemy = red,
     /// neutral unchanged) to tell players apart in large melee matches. Pure
@@ -997,9 +1002,9 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        // The 87 retail rows, plus VERA's eight default keys above 0x256 and
+        // The 87 retail rows, plus VERA's nine default keys above 0x256 and
         // the two Formation keys, Ferry's J and Rotate Primary's I below 0x200.
-        assert_eq!(loaded.by_key.len(), 99);
+        assert_eq!(loaded.by_key.len(), 100);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -1007,7 +1012,7 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
-        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n");
+        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nConvenienceHelp=1608\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n");
         let ini = ini.replacen(
             "[Hotkey]\n",
             "[Hotkey]\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\n",
@@ -1140,9 +1145,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nConvenienceHelp=1608\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nConvenienceHelp=1608\nStringKeys=1611\nLockCursor=1612\nSuperweaponTimers=1620\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
