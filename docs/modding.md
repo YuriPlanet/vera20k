@@ -195,6 +195,9 @@ as **No mod**, then every folder in `Mods`. Pick one and press **Use This Mod**.
 restarts with the mod, and the main menu then shows the mod's name. To go back to the
 original game, pick **No mod** the same way. **Open Mods Folder** opens `Mods`.
 
+Skirmish keeps your saved choices where the selected game supports them. A saved
+faction that the current rules do not offer comes back as **Random**.
+
 The folder name is only the choice saved by the menu. Its loading rules come from
 `mod.ini`; no particular mod name selects special behavior.
 

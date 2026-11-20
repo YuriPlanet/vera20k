@@ -1061,8 +1061,8 @@ impl MultiplayerShellRuntime {
         crate::ui::skirmish_shell::initialize_rows_for_selected_map(state, maps);
         // VERA: the page left on this map comes back, with the rows past
         // `[Skirmish]`'s seven and every start and team. The player's side
-        // and colour stay as `[MultiPlayer]` gave them, which the network
-        // rooms share.
+        // and colour come from `[MultiPlayer]`, which the network rooms
+        // share. A country absent from this game's choices is repaired below.
         if let Some((_, setup)) = last {
             let shown = SkirmishSavedSetup::capture(state, maps).player;
             let mut setup = setup.clone();
@@ -1070,6 +1070,7 @@ impl MultiplayerShellRuntime {
             setup.player.color = shown.color;
             setup.apply(state, maps);
         }
+        state.repair_country_selections();
     }
 
     /// VERA's Setups page: each named setup's name and when it was saved.
@@ -4018,6 +4019,49 @@ WOLTaunts=junk
 
         assert_eq!(shell.selected_mode.id, 1);
         assert_eq!(shell.selected_map_idx, 0);
+    }
+
+    #[test]
+    fn opening_skirmish_replaces_unavailable_saved_countries_with_random() {
+        use crate::map::skirmish_scenarios::SkirmishScenarioRecord;
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]\n0=Base\n1=Hidden\n2=Custom\n\
+             [Base]\nMultiplay=yes\nUIName=NAME:Base\n\
+             [Hidden]\nMultiplay=no\nUIName=NAME:Hidden\n\
+             [Custom]\nMultiplay=yes\nUIName=NAME:Custom\n",
+        ))
+        .unwrap();
+        let mut snapshot =
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish);
+        snapshot.slots[0].country = 1;
+        snapshot.slots[1].country = 2;
+        let mut runtime = runtime(snapshot, 3);
+        runtime.local_preferences.side = 3;
+        runtime.local_preferences.side_ex = CONCRETE_ITEM_DATA;
+        let catalog =
+            ScenarioCatalog::from_records(vec![SkirmishScenarioRecord::from_map_menu_entry(
+                0,
+                &map(),
+            )]);
+        let mut shell = SkirmishShellState::default();
+        shell.refresh_country_catalog(&rules);
+
+        runtime.open_skirmish_page(&mut shell, &catalog, &[mode()]);
+
+        assert!(
+            shell.player_country_random,
+            "a removed mod country is Random"
+        );
+        assert!(
+            shell.opponents[0].country_random,
+            "a hidden country is Random"
+        );
+        assert!(!shell.opponents[1].country_random);
+        assert_eq!(shell.opponents[1].country.raw_index(), 2);
+        assert_eq!(
+            runtime.local_preferences.side, 3,
+            "projection keeps the raw cache"
+        );
     }
 
     /// A terminal exit has no Start/Back transaction, so the page's own values
