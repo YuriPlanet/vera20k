@@ -96,7 +96,7 @@ pub fn build_sw_sidebar_art(
 }
 
 fn load_pcx(asset_manager: &AssetManager, name: &str) -> Option<NativePcxImage> {
-    let image = crate::render::sidebar_cameo_atlas::decode_native_pcx(asset_manager.get_ref(name)?);
+    let image = crate::render::sidebar_cameo_atlas::load_native_pcx(asset_manager, name);
     if image.is_none() {
         log::warn!("SuperWeaponSidebar PCX {name} did not load");
     }

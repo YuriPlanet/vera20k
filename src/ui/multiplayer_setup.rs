@@ -45,6 +45,8 @@ pub(crate) const ROOM_SIZE: u16 = 0x7F10;
 /// VERA-only, in an online room: Lobby, to the public lobby while the room
 /// goes on hidden (docs/lobby-protocol.md "Visiting the lobby").
 pub(crate) const LOBBY: u16 = 0x7F16;
+pub(crate) const CAMPAIGN_SERIES: u16 = 0x7F17;
+pub(crate) const CAMPAIGN_STAGE: u16 = 0x7F18;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x40 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7000;
@@ -294,10 +296,12 @@ pub(crate) const NO_SPY: u16 = 0x7F0A;
 pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
 /// The room's Terrain Deformation ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const TERRAIN_DEFORMATION: u16 = 0x7F12;
+/// The room's Building Production Queue ([`HostRules`](crate::skirmish_launch::HostRules)).
+pub(crate) const BUILDING_QUEUE: u16 = 0x7F13;
 /// The room's Superweapon Limit, a trackbar in VERA's Game Options only
 /// ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const SUPERWEAPON_LIMIT: u16 = 0x7F14;
-pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
+pub(crate) const ROOM_CHECKBOXES: [u16; 8] = [
     BRIDGES,
     ALLYING,
     NO_YURI,
@@ -305,10 +309,11 @@ pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
     NO_SPY,
     NO_STOLEN_TECH,
     TERRAIN_DEFORMATION,
+    BUILDING_QUEUE,
 ];
 /// Their labels in VERA's language files; the retail string table has none
 /// for them.
-pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
+pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 8] = [
     "VERA:DestroyableBridges",
     "VERA:InGameAllying",
     "VERA:NoYuri",
@@ -316,6 +321,7 @@ pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
     "VERA:NoSpy",
     "VERA:NoStolenTech",
     "VERA:TerrainDeformation",
+    "VERA:BuildingProductionQueue",
 ];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
@@ -781,6 +787,7 @@ pub(crate) enum RoomBox {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SetupView {
+    pub(crate) campaign: bool,
     pub(crate) first_row: usize,
     pub(crate) row_count: usize,
     /// The first row of each page.
@@ -803,7 +810,7 @@ pub(crate) struct SetupView {
     pub(crate) trackbars: Vec<SetupTrackbar>,
     pub(crate) checks: [bool; 5],
     /// [`ROOM_CHECKBOXES`]' states.
-    pub(crate) room_checks: [bool; 7],
+    pub(crate) room_checks: [bool; 8],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// VERA's header rows, by the row on the page.
@@ -876,7 +883,8 @@ impl SetupView {
         match id {
             BACK | CHAT | CHAT_LOG | GAME_OPTIONS => true,
             LOBBY => self.lobby_enabled,
-            START | CHOOSE_MAP => self.host,
+            START => self.host,
+            CHOOSE_MAP => self.host && !self.campaign,
             TEAM_STARTS => self.team_starts_enabled,
             TEAM_COLORS => self.team_colors_enabled,
             BALANCE => self.balance_enabled,
@@ -885,7 +893,9 @@ impl SetupView {
             NEXT_ROWS => self.first_row + self.page_len < self.row_count,
             ACCEPT => !self.host && self.accept_enabled,
             0x54E if self.short_game_locked => false,
-            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.host,
+            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => {
+                self.host && !self.campaign
+            }
             id if team_join_row(id).is_some() => self
                 .header_button(id)
                 .is_some_and(|header| header.join_enabled),
@@ -1235,6 +1245,9 @@ impl MultiplayerSetupState {
         let cap = match SetupColumn::decode(id) {
             Some((SetupColumn::Player, _)) if view.dialog.modern => 0,
             Some((column, _)) => column.visible_rows(),
+            None if matches!(id, CAMPAIGN_SERIES | CAMPAIGN_STAGE) => {
+                SetupColumn::Country.visible_rows()
+            }
             None => {
                 team_add_ai_row(id)?;
                 0
@@ -1328,7 +1341,7 @@ pub(crate) struct MultiplayerSetupLayout {
     /// the trackbars of [`OPTION_TRACKBARS`] and [`Self::option_labels`].
     pub(crate) checkboxes: [RectPx; 5],
     /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
-    pub(crate) room_checkboxes: [RectPx; 7],
+    pub(crate) room_checkboxes: [RectPx; 8],
     /// [`SUPERWEAPON_LIMIT`]'s label, placed only in [`Self::game_options`].
     pub(crate) superweapon_limit_label: RectPx,
     /// VERA's team bar under the roster, with the Teams count's label, the
@@ -1498,7 +1511,7 @@ impl MultiplayerSetupLayout {
                 rect(checkbox_x, option_y[3], 151, 17),
                 rect(302, option_y[3], build_off_ally_width, 17),
             ],
-            room_checkboxes: [RectPx::new(0, 0, 0, 0); 7],
+            room_checkboxes: [RectPx::new(0, 0, 0, 0); 8],
             superweapon_limit_label: RectPx::new(0, 0, 0, 0),
             team_bar: None,
             teams_label: RectPx::new(0, 0, 0, 0),
@@ -1584,9 +1597,10 @@ impl MultiplayerSetupLayout {
             }
         }
         self.superweapon_limit_label = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).0);
-        // Two columns of six under the trackbars and Superweapon Limit, the
-        // left one over the art: the native five and Destroyable Bridges,
-        // then In-game Allying, the four bans and Terrain Deformation.
+        // Two columns under the trackbars and Superweapon Limit, the left one
+        // over the art: the native five, Destroyable Bridges and Building
+        // Production Queue, then In-game Allying, the four bans and Terrain
+        // Deformation.
         let row = |index: i32| 154 + 22 * index;
         let left_option = |index| popup(24, row(index), 185, 17);
         let right_option = |index| popup(215, row(index), 226, 17);
@@ -1601,6 +1615,7 @@ impl MultiplayerSetupLayout {
             right_option(3),
             right_option(4),
             right_option(5),
+            left_option(6),
         ];
         self.game_options = Some(GameOptionsLayout {
             dialog: popup(0, 0, options.w, options.h),
@@ -1821,6 +1836,8 @@ impl MultiplayerSetupLayout {
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
+            CAMPAIGN_SERIES => Some(self.mode_label),
+            CAMPAIGN_STAGE => Some(self.map_label),
             TEAM_STARTS => self.team_starts,
             TEAM_COLORS => self.team_colors,
             BALANCE => self.balance,
@@ -2063,6 +2080,7 @@ mod tests {
     /// VERA's online room for its host, with nothing in it.
     fn vera_room_view() -> SetupView {
         SetupView {
+            campaign: false,
             first_row: 0,
             row_count: 8,
             pages: vec![0],
@@ -2078,7 +2096,7 @@ mod tests {
             combos: Vec::new(),
             trackbars: Vec::new(),
             checks: [false; 5],
-            room_checks: [false; 7],
+            room_checks: [false; 8],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
             open_box: None,

@@ -357,6 +357,23 @@ fn the_super_weapon_readiness_matches_the_original() {
     }
 }
 
+/// `AIMinorSuperReadyPercent=1e999` reads as a binary32 infinity, so the
+/// threshold `1.0f - percent` is -inf and no finite charge ratio is below
+/// it; `-1e999` makes it +inf, which every finite ratio is below.
+#[test]
+fn an_infinite_ready_percent_loads_as_the_fpu_loads_it() {
+    let percent = |text: &str| {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nAIMinorSuperReadyPercent={text}\n"
+        )))
+        .unwrap()
+        .general
+        .ai_minor_super_ready_percent
+    };
+    assert!(!charge_nearly_full(0, 100, percent("1e999")));
+    assert!(charge_nearly_full(100, 100, percent("-1e999")));
+}
+
 fn rng_digest(rng: &SimRng) -> u64 {
     let mut hasher = DefaultHasher::new();
     rng.hash_state(&mut hasher);

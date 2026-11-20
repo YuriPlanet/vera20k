@@ -583,9 +583,8 @@ fn build_limit(
         type_id.is_some_and(|type_id| {
             sim.production
                 .factories()
-                .iter_insertion_ordered()
-                .into_iter()
-                .any(|factory| {
+                .holders_insertion_ordered()
+                .any(|(_, factory)| {
                     factory.owner() == owner
                         && factory.object().is_some_and(|object| {
                             object.type_id == type_id && object.entity_id.is_some()

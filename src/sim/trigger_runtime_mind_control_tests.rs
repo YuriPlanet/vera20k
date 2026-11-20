@@ -87,6 +87,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         .into_fresh_staged_simulation(
             &descriptor,
             FreshScenarioPrefix::Campaign {
+                network: None,
                 native_rules_receipt: receipt,
                 rules: &rules,
                 map_data: &map,

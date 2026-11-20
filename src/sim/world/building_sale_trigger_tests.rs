@@ -92,6 +92,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         .into_fresh_staged_simulation(
             &descriptor,
             FreshScenarioPrefix::Campaign {
+                network: None,
                 native_rules_receipt,
                 rules: &rules,
                 map_data: &map,
@@ -193,6 +194,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         &rules,
         &roster,
         crate::rules::rule_policy::RulePolicy::stock_campaign(),
+        None,
         None,
     )
     .unwrap();

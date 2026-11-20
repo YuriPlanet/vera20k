@@ -163,7 +163,7 @@ impl Simulation {
             self.substrate.entities.owe_visit(id);
             let hash = self.state_hash_owners();
             self.substrate.entities.forget_owed(id);
-            let expected = self
+            let mut expected = self
                 .substrate
                 .entities
                 .get(id)
@@ -202,7 +202,7 @@ impl Simulation {
     /// would have counted.
     pub(super) fn finish_sleep_check(&self, id: u64, check: SleepCheck) {
         let after = self.substrate.entities.get(id).map(|entity| {
-            let entity = entity.clone();
+            let mut entity = entity.clone();
             entity.settle_sleep(self.substrate.entities.owed_visits(id));
             serde_json::to_value(&entity).expect("an entity serializes")
         });

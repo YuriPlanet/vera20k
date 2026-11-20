@@ -43,7 +43,7 @@ use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 /// inner movement loop. This avoids repeated `entities.get()` calls and keeps
 /// the data available across the mutable/immutable borrow boundary.
 ///
-/// VERA-only: a per-visit copy of the mover's class, locomotor, SpeedType,
+/// VERA-only: a per-visit copy of the mover's class, locomotor kind, SpeedType,
 /// MovementZone, crusher flags and playfield facts. Nothing writes
 /// it back; the entity's records stay the source of truth.
 pub(super) fn snapshot_mover(
@@ -62,7 +62,7 @@ pub(super) fn snapshot_mover(
             .unwrap_or(MovementZone::Normal),
         omni_crusher: e.mover_facts.omni_crusher(),
         regular_crusher: e.mover_facts.regular_crusher(),
-        locomotor: e.locomotor.clone(),
+        locomotor_kind: e.locomotor.as_ref().map(|l| l.active_kind()),
         allow_zone_hierarchy: playfield_bounds.is_none() || e.in_playfield(),
     })
 }
@@ -425,11 +425,9 @@ fn advance_ordinary_mover(
         };
         // Walk tests CanEnter at 0x75B690 before its paid SetCoords calls
         // (0x75BDC0/0x75C12E). A refused prospective step keeps exact XY.
-        let walk_position_before_step = snap
-            .locomotor
-            .as_ref()
-            .filter(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk)
-            .and_then(|_| entities.get(entity_id).map(|entity| entity.position));
+        let walk_position_before_step = (snap.locomotor_kind == Some(LocomotorKind::Walk))
+            .then(|| entities.get(entity_id).map(|entity| entity.position))
+            .flatten();
         // The prone arm of `InfantryClass::GetMovementSpeed @ 0x00521D80`
         // reads the type's `Crawls=` and, under Phobos, its `ProneSpeed`.
         let prone_type = entities

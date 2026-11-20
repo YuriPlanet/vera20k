@@ -23,6 +23,17 @@ pub(crate) fn version() -> String {
 }
 
 pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
+    if state.match_state.session.campaign_room().is_some() {
+        state.process_assets.use_personal_rules(Default::default());
+        let rules_digest = state
+            .process_assets
+            .multiplayer_rules_digest("")
+            .map_err(anyhow::Error::msg)?;
+        return Ok(MultiplayerAgreement {
+            version: version(),
+            rules_digest,
+        });
+    }
     let setup = state
         .match_state
         .session

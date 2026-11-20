@@ -64,8 +64,15 @@ pub(crate) fn picture_for_map(state: &mut AppState, map_index: usize) -> Option<
         None => {
             let paths = &state.platform.game_config.as_ref()?.paths;
             let mods = &state.frontend.mods;
-            let folder =
-                super::generation_folder(&paths.map_pictures_dir(), &paths.ra2_dir, mods.dir());
+            let mod_folder = mods
+                .active
+                .as_ref()
+                .map(|active| paths.mods_dir().join(&active.folder));
+            let folder = super::generation_folder(
+                &paths.map_pictures_dir(),
+                &paths.ra2_dir,
+                mod_folder.as_deref(),
+            );
             state.frontend.map_pictures.mod_args = mods.child_args();
             state.frontend.map_pictures.folder = Some(folder.clone());
             folder
@@ -86,10 +93,14 @@ pub(crate) fn picture_for_map(state: &mut AppState, map_index: usize) -> Option<
         return Some(picture);
     }
     if let Some(map) = map {
-        want(
-            &mut state.frontend.map_pictures,
-            MapPictureRequest::for_menus(map, sha256, output),
-        );
+        let mut request = MapPictureRequest::for_menus(map, sha256, output);
+        request.prepared_mod = state.frontend.mods.active.as_ref().and_then(|active| {
+            active
+                .dir
+                .is_prepared()
+                .then(|| active.dir.path().to_path_buf())
+        });
+        want(&mut state.frontend.map_pictures, request);
     }
     None
 }

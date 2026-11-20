@@ -677,11 +677,8 @@ fn render_skirmish_shell_with_atlas(
     ensure_selected_preview_texture(state, preview_rect);
     let zoom_layout =
         ensure_zoom_texture(state, layout.scale, !sliding && !leaving && !message_box_up);
-    let selected_entry = state
-        .frontend
-        .scenario_catalog
-        .shell_maps()
-        .get(preview::preview_map_idx(state));
+    let selected_entry = preview::preview_map_idx(state)
+        .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index));
     // A generated preview carries its red squares (0x00641140) and also gets
     // the numbered markers from the last Generate's header: the setup dialog
     // paints them (0x00596ACD), and selecting the sentinel copies the header

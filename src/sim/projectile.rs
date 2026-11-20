@@ -2932,7 +2932,9 @@ pub fn projectile_gravity(
 ) -> crate::util::native_x87::NativeF64Bits {
     use crate::util::native_x87::{NativeF64Bits, X87Chop53};
     let gravity = match type_gravity {
-        Some(bits) => X87Chop53::load_f64(bits).expect("finite type gravity"),
+        Some(bits) => {
+            X87Chop53::load_f64(bits).expect("the Phobos Gravity= reader drops a non-finite value")
+        }
         None => X87Chop53::load_i32(rules_gravity),
     };
     let gravity = if floater {

@@ -11,7 +11,7 @@ use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
-use crate::ui::wol_account::{AccountDone, AccountFormAction, FORM_CANCEL, WolAccountForm};
+use crate::ui::wol_account::{AccountFormAction, AccountSuccess, FORM_CANCEL, WolAccountForm};
 use crate::ui::wol_login::*;
 use winit::keyboard::KeyCode;
 
@@ -154,7 +154,13 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
 fn form_action(state: &mut AppState, action: AccountFormAction) {
     match action {
         AccountFormAction::Send(request) => {
-            service::request(state, WolServiceRequest::Account(request));
+            if let Some(visit) = &mut state.frontend.wol {
+                visit.account_attempt = visit.account_attempt.wrapping_add(1);
+                visit.requests.push(WolServiceRequest::Account {
+                    attempt: visit.account_attempt,
+                    request,
+                });
+            }
         }
         // Only the page's own form signs in or forgets a sign-in.
         AccountFormAction::SignIn { .. } | AccountFormAction::ForgetSignIn => {}
@@ -167,16 +173,11 @@ fn form_action(state: &mut AppState, action: AccountFormAction) {
 /// The lobby answered the account popup: a refusal shows in it, a sent code
 /// moves it on, a confirmed account or new password signs in, and a deleted
 /// account's popup says so.
-pub(super) fn account_answered(state: &mut AppState, answer: Result<(), String>) {
+pub(super) fn account_answered(state: &mut AppState, answer: Result<AccountSuccess, String>) {
     let action = with_login(state, |login, globals, _| {
         let form = login.account.as_mut().filter(|form| form.busy)?;
-        match form.answered(answer)? {
-            AccountDone::SignIn(sign_in) => Some(login.signed_up(sign_in, globals)),
-            AccountDone::Deleted { name } => {
-                login.account_deleted(&name);
-                None
-            }
-        }
+        let sign_in = form.answered(answer)?;
+        Some(login.signed_up(sign_in, globals))
     })
     .flatten();
     update_geometry(state);

@@ -11,6 +11,7 @@
 //! `include_bytes!`. Determinism guards pin the engine files that read
 //! platform- or process-dependent values (libm math, clocks, environment,
 //! directory order, thread count) and the engine's per-client reads.
+//! A size guard keeps every source file under [`MAX_SOURCE_LINES`].
 //!
 //! The app pseudo-root matches crate::app paths and retired root app_* modules.
 //! The ui rule also forbids the retired skirmish_scenarios root. These checks
@@ -28,7 +29,7 @@ const LAYER_RULES: &[(&str, &[&str])] = &[
     ("assets", &["sim", "rules", "map", "render", "ui", "app"]),
     ("util", &["sim", "rules", "map", "render", "ui", "app"]),
     ("rules", &["sim", "map"]),
-    ("map", &["sim", "render", "app"]),
+    ("map", &["sim", "render", "app", "net", "ui"]),
     ("render", &["app"]),
     // render draws ui view models; ui stays render-agnostic.
     ("ui", &["app", "render", "skirmish_scenarios"]),
@@ -110,7 +111,7 @@ fn production_scenario_mode_reads_stay_behind_admission() {
         "sim/world/shroud_refresh.rs",
         "sim/world/world_spawn.rs",
     ];
-    const LEGACY_READ_COUNT: usize = 29;
+    const LEGACY_READ_COUNT: usize = 16;
 
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut forbidden = Vec::new();
@@ -218,15 +219,16 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 // A random map's `.yrm` export copies its sections as stored.
                 ("map/map_export.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
-                ("rules/native_processing.rs", 1),
+                ("rules/native_processing/pass_processor.rs", 1),
             ],
         ),
         (
             "registry_ids",
             &[
                 ("rules/ini_parser.rs", 1), // the definition
+                ("rules/ruleset/general.rs", 1),
                 // Includes parse_registry copying already resolved stored IDs.
-                ("rules/ruleset.rs", 3),
+                ("rules/ruleset/loading.rs", 2),
                 ("rules/smudge_type.rs", 1),
             ],
         ),
@@ -568,7 +570,7 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "current_house",
             &[
-                ("sim/anim_class.rs", 1),
+                ("sim/anim_class/spawn.rs", 1),
                 ("sim/campaign_carry_over.rs", 2),
                 ("sim/cheats.rs", 1),
                 ("sim/cloak_disguise.rs", 2),
@@ -583,12 +585,13 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/production/factory_lifecycle.rs", 4),
                 ("sim/production/production_placement.rs", 4),
                 ("sim/production/production_tech.rs", 1),
-                ("sim/scenario_bootstrap.rs", 5),
+                ("sim/scenario_bootstrap.rs", 3),
+                ("sim/scenario_bootstrap/launch_houses.rs", 2),
                 // Local identity owner, legacy restoration and its accessor.
                 ("sim/scenario_session.rs", 4),
                 // Cheat input reads the local player only in offline skirmish.
                 ("sim/skirmish_cheats.rs", 1),
-                ("sim/snapshot.rs", 2),
+                ("sim/snapshot/simulation_restore.rs", 2),
                 // Ares IsTimerVisible (10032E80): whether the local player
                 // sees a Super's timer line; only the timer drawing asks.
                 ("sim/superweapon/ares_presentation.rs", 1),
@@ -607,7 +610,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // House (0x0071B167). Every game client has one; only
                 // headless runs skip it, and the selection is per client.
                 ("sim/temporal.rs", 1),
-                ("sim/trigger_runtime.rs", 1),
+                ("sim/trigger_runtime/events.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
                 ("sim/world/camera_home.rs", 2),
                 ("sim/world/command_schedule.rs", 2),
@@ -615,17 +618,25 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/gap_generator.rs", 1),
                 ("sim/world/house_defeat.rs", 8),
                 ("sim/world/jumpjet_cruise.rs", 1),
-                ("sim/world/lifecycle.rs", 7),
-                ("sim/world/mod.rs", 7),
+                ("sim/world/lifecycle/discovery.rs", 5),
+                ("sim/world/lifecycle/limbo.rs", 1),
+                ("sim/world/lifecycle/reveal.rs", 1),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
                 ("sim/world/shroud_refresh.rs", 18),
-                ("sim/world/techno_ai.rs", 1),
+                ("sim/world/sim_combat_commit.rs", 1),
+                ("sim/world/sim_frame_upkeep.rs", 1),
+                ("sim/world/sim_house_ownership.rs", 3),
+                ("sim/world/sim_map_services.rs", 1),
+                ("sim/world/sim_state_access.rs", 1),
+                ("sim/world/techno_ai/common_body.rs", 1),
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
+                ("sim/world/world_commands.rs", 2),
                 // Includes the Ares Guard key's own-actor check (1005CAF0)
                 // in the input producer `area_guard_key_command`.
-                ("sim/world/world_commands.rs", 4),
+                ("sim/world/world_commands/records.rs", 1),
+                ("sim/world/world_commands/selection.rs", 1),
                 ("sim/world/world_orders.rs", 1),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
@@ -634,7 +645,10 @@ fn engine_per_client_reads_have_pinned_callers() {
         ),
         (
             "observer_houses",
-            &[("sim/scenario_session.rs", 1), ("sim/snapshot.rs", 1)],
+            &[
+                ("sim/scenario_session.rs", 1),
+                ("sim/snapshot/simulation_restore.rs", 1),
+            ],
         ),
         (
             "is_observer_house",
@@ -655,7 +669,7 @@ fn engine_per_client_reads_have_pinned_callers() {
             "is_human_player",
             &[
                 ("sim/world/crash.rs", 1),
-                ("sim/world/mod.rs", 1),
+                ("sim/world/sim_house_ownership.rs", 1),
                 ("sim/world/world_orders.rs", 2),
             ],
         ),
@@ -686,10 +700,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/reverse_engineering.rs", 1),
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/fly_process.rs", 1),
-                ("sim/world/lifecycle.rs", 1),
+                ("sim/world/lifecycle/detach.rs", 1),
                 ("sim/world/planning.rs", 1),
                 ("sim/world/shroud_refresh.rs", 2),
-                ("sim/world/techno_ai.rs", 1),
+                ("sim/world/techno_ai/common_body.rs", 1),
                 // Native Techno control/active checks and the infiltrate cue.
                 ("sim/world/world_orders.rs", 4),
             ],
@@ -702,7 +716,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/world/camera_home.rs", 1),
-                ("sim/world/lifecycle.rs", 9),
+                ("sim/world/lifecycle.rs", 7),
+                ("sim/world/lifecycle/discovery.rs", 2),
                 ("sim/world/object_entry.rs", 1),
             ],
         ),
@@ -714,11 +729,13 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/house_state.rs", 5),
                 ("sim/power_system.rs", 2),
                 ("sim/production/production_tech.rs", 1),
-                ("sim/trigger_runtime.rs", 1),
-                ("sim/world/lifecycle.rs", 12),
-                ("sim/world/mod.rs", 1),
+                ("sim/trigger_runtime/events.rs", 1),
+                ("sim/world/lifecycle.rs", 5),
+                ("sim/world/lifecycle/discovery.rs", 6),
+                ("sim/world/lifecycle/reveal.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
-                ("sim/world/world_commands.rs", 1),
+                ("sim/world/sim_frame_upkeep.rs", 1),
+                ("sim/world/world_commands/selection.rs", 1),
                 ("sim/world/world_hash.rs", 1),
             ],
         ),
@@ -739,7 +756,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/house_diplomacy.rs", 1),
                 ("sim/superweapon/lightning_storm.rs", 3),
                 ("sim/world/house_defeat.rs", 1),
-                ("sim/world/mod.rs", 1),
+                ("sim/world/sim_house_ownership.rs", 1),
             ],
         ),
     ];
@@ -1445,6 +1462,29 @@ fn sim_names_no_upper_layer_root_even_in_tests() {
 /// Embedded fixtures made up most of the test executable and recompiled the
 /// crate on every fixture edit. A literal fixture path must name a file, so a
 /// removed fixture fails here even when only ignored tests read it.
+/// The most lines one Rust source file may hold. An owner that outgrows it
+/// is split by responsibility into a parent module and private parts, and a
+/// test file into `*_tests.rs` children, so a reader can take the whole file
+/// in. The limit is a ceiling, not a target: most files are far smaller.
+const MAX_SOURCE_LINES: usize = 5_000;
+
+#[test]
+fn no_source_file_is_over_the_line_limit() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let over: Vec<String> = source_files(&src_root)
+        .iter()
+        .map(|file| (file.source.lines().count(), &file.rel))
+        .filter(|(lines, _)| *lines > MAX_SOURCE_LINES)
+        .map(|(lines, rel)| format!("{rel}: {lines} lines"))
+        .collect();
+    assert!(
+        over.is_empty(),
+        "source files over {MAX_SOURCE_LINES} lines: {over:#?}\n\
+         Split the file by responsibility: keep it as the parent, move each part to a private \
+         child module, and re-export what other modules name."
+    );
+}
+
 #[test]
 fn test_fixtures_are_read_at_run_time_from_existing_files() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -1591,6 +1631,18 @@ fn composition_root_slots_are_owner_types() {
             "building",
             "a Building's own fields stored apart from the record every turn reads; each \
              keeps its visibility and owning module, so the slot opens nothing that was closed",
+        ),
+        (
+            "ObjectSubstrate",
+            "anims",
+            "AnimStore's field is private to the `sim::anim_class` module, whose parts are \
+             separate files: `pub(super)` reaches only that module",
+        ),
+        (
+            "GameEntity",
+            "damage_fires",
+            "DamageFires' fields are private to the `sim::anim_class` module, whose parts are \
+             separate files: `pub(super)` reaches only that module",
         ),
     ];
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -1952,6 +2004,9 @@ fn mutable_handouts_and_setters_are_owner_operations() {
                           default; every Sparse is a field of its owner and holds an owner struct";
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
+    const ANIM_OBJECT: &str = "AnimObject's fields are private to the `sim::anim_class` module, \
+                               whose parts are separate files: `pub(super)` reaches only that \
+                               module, so the handout opens nothing outside it";
     const PINNED_HANDOUTS: &[(&str, &str, &str)] = &[
         ("map/resolved_terrain/terrain_cells.rs", "get_mut", TERRAIN),
         ("map/resolved_terrain/terrain_cells.rs", "iter_mut", TERRAIN),
@@ -1963,6 +2018,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),
+        ("map/rmg/grid.rs", "cells_in_native_order_mut", RMG),
         ("map/rmg/scratch.rs", "get_mut", RMG),
         ("map/rmg/scratch.rs", "cells_mut", RMG),
         (
@@ -1977,11 +2033,31 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              project the existing LanConnections and GlobalChannel owners, whose fields are private",
         ),
         (
+            "rules/native_processing/pass_processor.rs",
+            "family_mut",
+            "private to the `rules::native_processing` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose passes fill each family",
+        ),
+        (
+            "rules/ruleset/lookup.rs",
+            "warhead_mut",
+            "private to the `rules::ruleset` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose load fills the warheads",
+        ),
+        (
+            "rules/ruleset/lookup.rs",
+            "projectile_mut",
+            "private to the `rules::ruleset` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose load fills the projectiles",
+        ),
+        (
             "rules/art_data.rs",
             "get_mut",
             "art rules installed at load: the registry fills SHP frame sizes into its own \
              entries, and fixtures reach it through art_entry_mut_for_test",
         ),
+        ("sim/anim_class/store.rs", "get_mut", ANIM_OBJECT),
+        ("sim/anim_class/store.rs", "values_mut", ANIM_OBJECT),
         ("sim/command.rs", "payload_mut", PAYLOAD),
         (
             "sim/game_entity.rs",
@@ -2063,12 +2139,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              every private connection's +0x28..+0x30 (0x00540CBE..0x00540CE1)",
         ),
         (
-            "rules/object_type.rs",
+            "rules/object_type/queries.rs",
             "set_voxel_shadow_index",
             "runs only inside RuleSet's load",
         ),
         (
-            "rules/object_type.rs",
+            "rules/object_type/queries.rs",
             "set_secret_lab",
             "runs only inside RuleSet's load",
         ),
@@ -2348,7 +2424,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              64/67 (dispatcher 0x1003A110)",
         ),
         (
-            "sim/world/mod.rs",
+            "sim/world/sim_map_services.rs",
             "set_input_delay_ticks",
             "the match's configured input delay, installed by the app at match start",
         ),

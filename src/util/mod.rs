@@ -8,6 +8,7 @@
 //! - Any module may depend on util/.
 
 pub mod ares_launch;
+pub mod archive_names;
 pub mod base64;
 #[cfg(target_os = "android")]
 pub mod app_icon;
@@ -31,6 +32,8 @@ pub mod legacy_crt_rng;
 pub mod lepton;
 pub mod logging;
 pub mod lookup_hash;
+pub mod mod_definition;
+pub mod mod_package;
 pub mod lzo;
 pub(crate) mod native_ballistics;
 pub mod native_color;

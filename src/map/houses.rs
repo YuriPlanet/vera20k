@@ -232,6 +232,24 @@ pub fn parse_house_roster(
         let Some(house_name) = houses_section.read_name(key, 0x14) else {
             continue;
         };
+        // gamemd's campaign reader, `HouseClass::Read_INI @ 0x005009B0`,
+        // constructs a House for every entry, a repeated name included: the
+        // copy is a whole House read from the same section, at the next
+        // array index, so it shifts the index and ally bit of every later
+        // House and takes part in every walk of the House array, though
+        // `FindIndexByName @ 0x0050C170` returns the first of a name. VERA
+        // keys Houses by their case-folded name id, so it keeps the first
+        // entry and drops the copy. Residual: that second House (and one
+        // whose name differs from an earlier one only in ASCII case, which
+        // native keeps as its own House) is not constructed, so such a map
+        // has one House fewer here than in gamemd.
+        if houses
+            .iter()
+            .any(|house: &HouseDefinition| house.name.eq_ignore_ascii_case(house_name))
+        {
+            log::warn!("[Houses] {key}={house_name} repeats an earlier House; skipped");
+            continue;
+        }
         let house_name = house_name.to_string();
 
         // `HouseClass::Read_Scenario_INI @ 0x00500B40` reads the house's own
@@ -394,6 +412,20 @@ mod tests {
                 hsv: *hsv,
             })
             .collect()
+    }
+
+    #[test]
+    fn repeated_house_name_keeps_first_entry_and_its_index() {
+        let ini: IniFile = IniFile::from_str(
+            "[Houses]\n0=GDI\n1=gdi\n2=Nod\n\
+             [GDI]\nCountry=America\n\
+             [Nod]\nCountry=Russia\nAllies=GDI\n",
+        );
+        let roster = parse_house_roster(&ini, &test_schemes(), None);
+        let names: Vec<_> = roster.houses.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(names, ["GDI", "Nod"]);
+        // Allies resolves against the de-duplicated roster: GDI stays index 0.
+        assert_eq!(roster.houses[1].allies, 1);
     }
 
     #[test]

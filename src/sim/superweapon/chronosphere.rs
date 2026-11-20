@@ -604,7 +604,7 @@ pub(super) fn ares_launch_warp(
     };
     let launch = metadata.launch();
     let targeting = metadata.targeting();
-    let chrono = launch.chronosphere().clone();
+    let chrono = launch.chronosphere();
     if launch.radar_event() {
         for (rx, ry) in [source, target] {
             sim.sound_events.emit(SimSoundEvent::RadarEvent {
@@ -616,22 +616,22 @@ pub(super) fn ares_launch_warp(
     let height = source_sw.presentation.height;
     let blasts = [
         (
-            chrono.blast_src.clone(),
+            chrono.blast_src.as_ref(),
             &rules.general.chrono_blast_anim,
             source,
         ),
         (
-            chrono.blast_dest.clone(),
+            chrono.blast_dest.as_ref(),
             &rules.general.chrono_blast_dest_anim,
             target,
         ),
     ];
     for (custom, fallback, cell) in blasts {
-        let Some(animation) = custom.unwrap_or_else(|| Some(fallback.clone())) else {
+        let Some(animation) = custom.map_or(Some(fallback.as_str()), Option::as_deref) else {
             continue;
         };
         let [x, y, z] = deck_coords(sim, cell);
-        super::spawn_super_anim(sim, rules, &animation, [x, y, z.wrapping_add(height)]);
+        super::spawn_super_anim(sim, rules, animation, [x, y, z.wrapping_add(height)]);
     }
     let range = match launch.range() {
         (width, height) if width < 0.0 && height < 0 => (3.0, 3),
@@ -648,7 +648,7 @@ pub(super) fn ares_launch_warp(
             sim,
             rules,
             &warp,
-            &chrono,
+            chrono,
             targeting,
             id,
             overlay_registry,

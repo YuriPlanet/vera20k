@@ -874,7 +874,8 @@ fn a_killed_building_draws_its_death_anims_before_its_survivors() {
         let mut replay = sim.scenario_rng.clone();
         kill(&mut sim, &rules, depot);
 
-        let cells = crate::sim::crew_survival::foundation_cells(10, 20, &"2x2".into());
+        let cells: Vec<_> =
+            crate::sim::crew_survival::foundation_cells(10, 20, &"2x2".into()).collect();
         let mut expected = Vec::new();
         for &(rx, ry) in &cells {
             let (x, y) = super::super::inviso_scatter::random_direction_coord(

@@ -28,6 +28,14 @@ const MAIN_MENU_SHELL_PRELUDE: &[ShellFramePreludeStep] = &[
     ShellFramePreludeStep::ObserveEntry,
 ];
 
+fn match_screen_runs_while_hidden(
+    screen: &GameScreen,
+    campaign_result: bool,
+    active_in_game: impl FnOnce() -> bool,
+) -> bool {
+    campaign_result || (*screen == GameScreen::InGame && active_in_game())
+}
+
 /// The runtime admission belongs to the pass before Logic mutates pause state.
 #[derive(Default)]
 pub(super) struct RuntimeServiceResult {
@@ -422,6 +430,8 @@ impl App {
             };
         }
         crate::app::lan_service::poll(state, scenario_now_ms);
+        crate::app::match_runtime::narrative_sync::service(state, scenario_now_ms);
+        crate::app::match_runtime::stage_result::poll(state, scenario_now_ms);
         Self::poll_external_launch_progress(state);
         Self::poll_spawn_actions(state);
         // Resume receipts must release only the relay clock hold even while
@@ -723,12 +733,15 @@ impl App {
             && crate::app::lan_service::has_online_relay_route(state)
     }
 
-    /// Does a hidden window still have a running match to service? True while
-    /// in-game and the configured focus freeze is not holding the world; a
-    /// tactical capture never reaches the hidden service loop.
+    /// Keep transport live during campaign stage voting and handoff as well
+    /// as during an active match or a synchronized fullscreen cutscene.
     pub(super) fn match_runs_while_hidden(state: &AppState) -> bool {
-        state.frontend.screen == GameScreen::InGame
-            && (Self::house_outcome_wait_pending(state) || !state.focus_freeze_active())
+        crate::app::match_runtime::narrative_sync::owns_fullscreen(state)
+            || match_screen_runs_while_hidden(
+                &state.frontend.screen,
+                state.match_state.session.campaign_result().is_some(),
+                || Self::house_outcome_wait_pending(state) || !state.focus_freeze_active(),
+            )
     }
 
     /// The active-game shell `page` into `destination`.
@@ -1764,6 +1777,15 @@ impl App {
             // now, before the browser can recycle the canvas drawing buffer.
             crate::web::download_screenshot();
         }
+        if let Some(render_output) = &game_render_output
+            && screen_page == ScreenPage::Battlefield
+        {
+            state
+                .match_state
+                .match_presentation
+                .outcome_banner_presentation
+                .record_presented(render_output.rendered_verdict);
+        }
         let handoff_waited = state.renderer.gpu.take_handoff_wait();
         if let Some((mut phases, handoff_started)) = measured_phases {
             // What handing frames to the driver cost this thread: every
@@ -2007,6 +2029,18 @@ impl App {
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_campaign_result_polls_transport_during_stage_handoff() {
+        let screen = GameScreen::MainMenu;
+        assert!(match_screen_runs_while_hidden(&screen, true, || false));
+        assert!(!match_screen_runs_while_hidden(&screen, false, || true));
+        assert!(!match_screen_runs_while_hidden(
+            &GameScreen::InGame,
+            false,
+            || false,
+        ));
+    }
 
     #[test]
     fn teardown_commits_before_intro_and_entry_observation() {

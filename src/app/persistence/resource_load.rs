@@ -341,7 +341,8 @@ impl PreparedSavedGame {
             map.house_colors(),
             Some(&theater.unit_palette),
             Some(&theater.iso_palette),
-        );
+        )
+        .map_err(|error| PreparedLoadError::Resources(format!("{error:#}")))?;
         let overlays = crate::app::frontend::skirmish::build_overlay_presentation(
             &world.map_restore.occupied_overlays,
             map.terrain_objects(),

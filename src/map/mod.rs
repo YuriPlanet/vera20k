@@ -20,6 +20,7 @@ pub mod basic;
 pub mod bridge_facts;
 pub mod bridge_pavement;
 pub mod bridge_rim_tiles;
+pub mod campaign_manifest;
 pub mod cell_index;
 pub(crate) mod construction_trace;
 pub mod corner_heights;

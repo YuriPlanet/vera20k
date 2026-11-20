@@ -240,7 +240,14 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
             )
             .unwrap(),
     );
-    let gpu = GpuContext::new(window, events.owned_display_handle(), true).unwrap();
+    let gpu = GpuContext::new(
+        window,
+        events.owned_display_handle(),
+        true,
+        wgpu::Backends::PRIMARY,
+        |_| {},
+    )
+    .unwrap();
     let batch = BatchRenderer::new(&gpu);
     // Ask the production mission to select an actually reachable distant
     // stock ore cell; distance is fixture admission, not another scan port.

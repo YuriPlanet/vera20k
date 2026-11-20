@@ -84,6 +84,8 @@ pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
 pub(crate) mod mod_additions;
 pub(crate) mod mod_files;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod mod_import_picker;
 pub(crate) mod mods;
 pub(crate) mod movie_playback;
 pub(crate) mod new_mod;
@@ -110,6 +112,8 @@ pub(crate) mod shell_lan;
 mod shell_load_saved_game;
 mod shell_main_menu;
 mod shell_menu;
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+mod shell_mod_import;
 mod shell_mods;
 mod shell_movies_credits;
 pub(crate) mod shell_network_setup;
@@ -405,7 +409,7 @@ impl App {
     /// skips. The panic hook has already written the log and `except.txt`.
     pub fn save_replay_after_panic(&mut self) {
         if let Some(state) = self.state.as_mut() {
-            crate::app::match_runtime::sim_tick::flush_replay_log(state);
+            crate::app::match_runtime::sim_tick::preserve_replay_after_panic(state);
         }
     }
 }

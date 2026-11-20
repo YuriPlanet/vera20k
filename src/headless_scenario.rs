@@ -23,6 +23,7 @@ pub mod radiation_test_evidence;
 use std::path::Path;
 
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+use crate::map::campaign_manifest::{CampaignStage, ManifestError};
 use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
@@ -30,7 +31,10 @@ use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
 use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::intern::InternedId;
-use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
+use crate::sim::scenario_bootstrap::{
+    AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError, MatchLaunchDescriptor,
+    ScenarioBootstrapRng,
+};
 use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
 use crate::sim::world::Simulation;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession};
@@ -217,12 +221,174 @@ pub fn load_with_launch_and_ini(
         retail_dir,
         map_file_name,
         seed,
-        launch,
+        HeadlessLaunch::Slots(&launch),
         &mut assets,
         game_mode,
         accepted_native_id_prefix,
         process_rules,
     )
+    .map_err(|error| error.to_string())
+}
+
+/// Load a lockstep campaign from the map's own Houses and the accepted role
+/// roster. The launch is local tooling data and needs no live transport.
+pub fn load_campaign_stage(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'_>,
+    accepted_native_id_prefix: Option<u32>,
+    game_speed: Option<i32>,
+    logical_map: Option<&str>,
+) -> Result<HeadlessScenario, String> {
+    let mut assets =
+        AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
+            format!(
+                "open retail MIX archives in {}: {error}",
+                retail_dir.display()
+            )
+        })?;
+    load_with_assets(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest: None,
+            game_speed,
+            logical_map,
+        },
+        &mut assets,
+        launch.mode,
+        accepted_native_id_prefix,
+        None,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct CampaignStageCheck {
+    pub stage: String,
+    pub manifest_sha256: String,
+    pub map_sha256: String,
+    pub checked_frames: usize,
+    pub final_state_hash: String,
+}
+
+/// Author command: exercise both the production bootstrap and a separately
+/// reconstructed world loaded from the serialized diagnostic replay.
+pub fn check_campaign_stage(
+    retail_dir: &Path,
+    manifest_path: &Path,
+    stage_id: &str,
+    frames: u32,
+) -> anyhow::Result<CampaignStageCheck> {
+    use crate::map::campaign_manifest::CampaignManifest;
+    use crate::sim::replay::{ReplayLog, ReplayRunner};
+    use anyhow::Context;
+
+    anyhow::ensure!(frames != 0, "campaign-check requires at least one frame");
+    let manifest = CampaignManifest::load(manifest_path)?;
+    let index = manifest
+        .stage_index(stage_id)
+        .with_context(|| format!("no stage '{stage_id}' in {}", manifest_path.display()))?;
+    let stage = &manifest.stages[index];
+    let series = manifest_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()
+        .context("resolve campaign series directory")?;
+    let map = series.join(&stage.map).canonicalize().map_err(|error| {
+        stage.map_error(
+            format!("cannot open '{}': {error}", stage.map),
+            "Set Map to an existing map inside the series directory",
+        )
+    })?;
+    if !map.starts_with(&series) {
+        return Err(stage
+            .map_error(
+                "campaign map resolves outside the series directory",
+                "Set Map to a file contained in the series directory",
+            )
+            .into());
+    }
+    let map_path = map.to_str().ok_or_else(|| {
+        stage.map_error(
+            "campaign map path is not UTF-8",
+            "Use a UTF-8 path inside the series directory",
+        )
+    })?;
+    let start = AuthoredCampaignStart::from_stage(stage, index, 1, Default::default())?;
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)?;
+    let mut scene = load_with_assets(
+        retail_dir,
+        map_path,
+        1,
+        HeadlessLaunch::Campaign {
+            launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                start: &start,
+                mode: ScenarioGameMode::Lan,
+                local_source: Some(0),
+            },
+            manifest: Some(stage),
+            game_speed: None,
+            logical_map: None,
+        },
+        &mut assets,
+        ScenarioGameMode::Lan,
+        None,
+        None,
+    )
+    .map_err(|error| match error {
+        HeadlessLoadError::Runtime(message) => anyhow::Error::msg(message),
+        HeadlessLoadError::Manifest(error) => anyhow::Error::new(error),
+    })?;
+    let (_, map_sha256) = scene
+        .source
+        .physical_identity()
+        .context("campaign stage does not have an authored map digest")?;
+    let map_sha256 = map_sha256.to_owned();
+    let log = ReplayRunner::record_campaign_stage(&mut scene, &start, frames)?;
+    let mut bytes = Vec::new();
+    log.write_json(&mut bytes)?;
+    let recorded = ReplayLog::decode_json(&bytes)?;
+    let result = ReplayRunner::verify(retail_dir, &recorded, Some(map_path))?;
+    anyhow::ensure!(
+        result.checked_hashes == frames as usize,
+        "campaign replay is missing frame checks"
+    );
+    Ok(CampaignStageCheck {
+        stage: stage.id.clone(),
+        manifest_sha256: manifest.digest,
+        map_sha256,
+        checked_frames: result.checked_hashes,
+        final_state_hash: format!("{:016x}", result.final_state_hash),
+    })
+}
+
+enum HeadlessLaunch<'a> {
+    Slots(&'a MatchLaunchDescriptor),
+    Campaign {
+        launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'a>,
+        manifest: Option<&'a CampaignStage>,
+        game_speed: Option<i32>,
+        logical_map: Option<&'a str>,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+enum HeadlessLoadError {
+    #[error("{0}")]
+    Runtime(String),
+    #[error(transparent)]
+    Manifest(#[from] ManifestError),
+}
+
+impl From<String> for HeadlessLoadError {
+    fn from(message: String) -> Self {
+        Self::Runtime(message)
+    }
 }
 
 /// Reuse the production headless scenario load after retail scenario discovery
@@ -239,28 +405,53 @@ pub(crate) fn load_with_registered_scenario_assets(
         retail_dir,
         map_file_name,
         seed,
-        launch,
+        HeadlessLaunch::Slots(&launch),
         assets,
         crate::sim::scenario_session::ScenarioGameMode::Skirmish,
         None,
         None,
     )
+    .map_err(|error| error.to_string())
 }
 
 fn load_with_assets(
     retail_dir: &Path,
     map_file_name: &str,
     seed: u32,
-    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+    launch: HeadlessLaunch<'_>,
     assets: &mut AssetManager,
     game_mode: crate::sim::scenario_session::ScenarioGameMode,
     accepted_native_id_prefix: Option<u32>,
     process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
-) -> Result<HeadlessScenario, String> {
+) -> Result<HeadlessScenario, HeadlessLoadError> {
+    let (slot_launch, campaign, manifest, campaign_speed, logical_map) = match launch {
+        HeadlessLaunch::Slots(launch) => (Some(launch), None, None, None, None),
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest,
+            game_speed,
+            logical_map,
+        } => (None, Some(launch.start), manifest, game_speed, logical_map),
+    };
     let loaded_map =
         crate::map::source::load_map_by_name_or_path_with_assets(retail_dir, map_file_name, assets)
-            .map_err(|error| format!("load map {map_file_name}: {error}"))?;
+            .map_err(|error| match manifest {
+                Some(stage) => HeadlessLoadError::Manifest(stage.map_error(
+                    format!("cannot decode '{}': {error}", stage.map),
+                    "Set Map to a valid authored scenario",
+                )),
+                None => HeadlessLoadError::Runtime(format!("load map {map_file_name}: {error}")),
+            })?;
     let source = loaded_map.source;
+    if let Some(stage) = manifest {
+        let (_, digest) = source.physical_identity().ok_or_else(|| {
+            stage.map_error(
+                "map has no authored payload digest",
+                "Set Map to a loose authored scenario",
+            )
+        })?;
+        stage.verify_map_digest(digest)?;
+    }
     let mut map = loaded_map.map;
     // Preserve the process-owned cold Rules registry before theater archive
     // priority changes. The same owner then performs the active noncampaign
@@ -280,7 +471,15 @@ fn load_with_assets(
         cold_rules_owner = owner;
         &mut cold_rules_owner
     };
-    if game_mode.is_network() {
+    if let Some(launch) = slot_launch {
+        if let Some(rules) = launch.personal_rules() {
+            native_rules_owner.use_personal_rules(rules.clone());
+        } else if game_mode.execution_topology().is_lockstep() {
+            native_rules_owner
+                .use_personal_rules(launch.session().options.host_rules.personal_rules()?);
+        }
+    }
+    if game_mode.execution_topology().is_lockstep() {
         native_rules_owner
             .reset_for_network_match()
             .map_err(|error| format!("reset network Rules: {error}"))?;
@@ -290,43 +489,48 @@ fn load_with_assets(
     // RA2 THEME.MIX extension were mounted at startup; this route has no shell
     // neutral-archive activation. Resolve before scenario Rules/theater changes.
     let themes = crate::rules::theme_ini::ThemeCatalog::select(&assets);
-    let scenario_prefix_plan =
-        crate::sim::scenario_bootstrap::prepare_stock_offline_scenario_prefix_plan(
-            &launch,
-            &map,
-            &map.waypoints,
-            seed,
-        )
+    let scenario_prefix_plan = slot_launch
+        .map(|launch| {
+            crate::sim::scenario_bootstrap::prepare_stock_offline_scenario_prefix_plan(
+                launch,
+                &map,
+                &map.waypoints,
+                seed,
+            )
+        })
+        .transpose()
         .map_err(|error| format!("prepare stock-offline scenario prefix: {error}"))?;
     let mode_override = crate::rules::retail_sources::select_mode_ini(
         &assets,
-        Some(&launch.session().mode.override_file),
+        slot_launch.map(|launch| launch.session().mode.override_file.as_str()),
     )?;
+    let rules_prefix = match campaign {
+        Some(_) => crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(None),
+        None => crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+            mode_override.as_ref(),
+        ),
+    };
     // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
     // It shares the process Rules owner; this no-mod entry skips LANGRULE
     // and cannot admit Full_Init's mode-5 TMCJ4F route.
     let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
-        .load_scenario(
-            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                mode_override.as_ref(),
-            ),
-            &map.ini,
-        )
-        .map_err(|error| format!("load native noncampaign rules: {error}"))?
+        .load_scenario(rules_prefix, &map.ini)
+        .map_err(|error| format!("load native scenario rules: {error}"))?
         .into_parts();
     // The game's later readers (ARTMD, the asset closures) follow the way its
     // Rules were read (`ares_switch::ares_way`).
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
-    let bound_scenario_prefix = scenario_prefix_plan
-        .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
-        .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
-    // This entry constructs a noncampaign scenario even when a replay
-    // installs the live mode and rules of a campaign.
-    let mode_class = Some(launch.session().mode.class);
-    let rule_policy = launch
-        .rule_policy_override()
-        .map(|policy| policy.with_bootstrap(BootstrapRuleProfile::Multiplayer))
-        .unwrap_or_else(|| ScenarioGameMode::Skirmish.stock_rule_policy(mode_class));
+    let mode_class = slot_launch.map(|launch| launch.session().mode.class);
+    let rule_policy = if let Some(start) = campaign {
+        start.rule_policy()
+    } else {
+        // Slot launches keep their native constructor even with scripted rules.
+        let construction = BootstrapRuleProfile::Multiplayer;
+        slot_launch
+            .and_then(MatchLaunchDescriptor::rule_policy_override)
+            .map(|policy| policy.with_bootstrap(construction))
+            .unwrap_or_else(|| game_mode.stock_rule_policy_for_bootstrap(construction, mode_class))
+    };
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
     let theater = theater::load_theater(assets, &map.header.theater)
@@ -337,6 +541,32 @@ fn load_with_assets(
         rules.color_schemes.as_slice(),
         Some(&rules),
     );
+    if let Some(stage) = manifest {
+        stage.validate_house_names(house_roster.houses.iter().map(|house| house.name.as_str()))?;
+    }
+    let campaign_options = campaign_speed.map(|game_speed| crate::sim::game_options::GameOptions {
+        game_speed,
+        ..Default::default()
+    });
+    let prefix = match (launch, scenario_prefix_plan) {
+        (HeadlessLaunch::Slots(launch), Some(plan)) => FreshScenarioPrefix::StockOffline(
+            plan.bind_native_rules_receipt(native_rules_receipt, launch, &rules)
+                .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?,
+        ),
+        (HeadlessLaunch::Campaign { launch, .. }, None) => FreshScenarioPrefix::Campaign {
+            native_rules_receipt,
+            rules: &rules,
+            map_data: &map,
+            house_roster: &house_roster,
+            difficulty: launch.start.difficulty(),
+            mission_counter: launch.start.mission_counter(),
+            game_options: campaign_options.as_ref(),
+            campaign_index: 0,
+            restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            network: Some(launch),
+        },
+        _ => unreachable!("each launch uses its own prepared construction"),
+    };
     let lighting_profiles = crate::map::lighting::parse_lighting_profiles(&map.ini);
     let native_start_bounds =
         crate::sim::scenario_bootstrap::NativeStartBounds::from_map_header(&map.header)
@@ -347,7 +577,7 @@ fn load_with_assets(
         .ok_or_else(|| "fresh cell-array extent overflow".to_string())?;
     let descriptor = ScenarioDescriptor {
         seed,
-        map_name: map_file_name.to_string(),
+        map_name: logical_map.unwrap_or(map_file_name).to_string(),
         theater: map.header.theater.clone(),
         rule_policy,
         free_radar: map.basic.free_radar.unwrap_or(false),
@@ -361,34 +591,58 @@ fn load_with_assets(
         vein_growth_enabled: map.basic.vein_growth_enabled,
         map_width: scenario_cell_extent,
         map_height: scenario_cell_extent,
-        mp_start_waypoints: waypoints::multiplayer_start_waypoints(
-            bound_scenario_prefix
-                .projection()
-                .active_scenario_waypoints(),
-        )
-        .into_iter()
-        .map(|wp| (wp.index, (wp.rx, wp.ry)))
-        .collect(),
+        mp_start_waypoints: match &prefix {
+            FreshScenarioPrefix::StockOffline(bound) => waypoints::multiplayer_start_waypoints(
+                bound.projection().active_scenario_waypoints(),
+            )
+            .into_iter()
+            .map(|wp| (wp.index, (wp.rx, wp.ry)))
+            .collect(),
+            FreshScenarioPrefix::Campaign { .. } => Default::default(),
+        },
         pixel_conversion_bounds: Default::default(),
         lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&lighting_profiles),
         ..Default::default()
     }
-    .with_authored_special_flags(&map.special_flags, launch.session().options.harvester_truce);
+    .with_authored_special_flags(
+        &map.special_flags,
+        slot_launch.is_some_and(|launch| launch.session().options.harvester_truce),
+    );
     let bootstrap_rng = ScenarioBootstrapRng::new(seed);
     let (mut sim, scenario_prefix_projection) = bootstrap_rng
-        .into_stock_offline_staged_simulation(&descriptor, bound_scenario_prefix)
-        .map_err(|error| format!("stage stock-offline Simulation: {error}"))?;
+        .into_fresh_staged_simulation(&descriptor, prefix)
+        .map_err(|error| match (manifest, &error) {
+            (Some(stage), FreshScenarioPrefixError::DuplicateCampaignHouse(_)) => {
+                HeadlessLoadError::Manifest(stage.map_error(
+                    error.to_string(),
+                    "Give every entry in the map's [Houses] list a distinct name",
+                ))
+            }
+            _ => HeadlessLoadError::Runtime(format!("stage authored Simulation: {error}")),
+        })?;
     // CreateHouses687FCE..688092 gives WOL humans their node name; other
     // modes use "<human player>". The House owner hashes that native identity,
     // so restoring GameMode after construction cannot reconstruct a WOL start.
-    sim.install_session_admission(
-        game_mode,
-        mode_class,
-        launch
-            .rule_policy_override()
-            .unwrap_or_else(|| game_mode.stock_rule_policy(mode_class)),
-    );
-    if let Some(checkpoint) = accepted_native_id_prefix {
+    if let Some(launch) = slot_launch {
+        sim.install_session_admission(
+            game_mode,
+            mode_class,
+            launch
+                .rule_policy_override()
+                .unwrap_or_else(|| game_mode.stock_rule_policy(mode_class)),
+        );
+        if let Some(start) = launch.network_start() {
+            if !game_mode.execution_topology().is_lockstep() {
+                return Err("Offline launch has lockstep start settings"
+                    .to_owned()
+                    .into());
+            }
+            start.install(&mut sim);
+        }
+    }
+    if let Some(checkpoint) = accepted_native_id_prefix
+        && campaign.is_none()
+    {
         sim.install_accepted_native_id_prefix(checkpoint)
             .map_err(|error| format!("replay native-ID prefix: {error}"))?;
     }
@@ -477,8 +731,12 @@ fn load_with_assets(
     );
     sim.construct_native_map_tubes(&map.ini)
         .map_err(|error| format!("construct native [Tubes]: {error}"))?;
-    let bridge_mode = crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
-        bridge_destruction: true,
+    let bridge_mode = if campaign.is_some() {
+        crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor
+    } else {
+        crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
+            bridge_destruction: true,
+        }
     };
     let signed_new_ini_format = map.basic.new_ini_format.unwrap_or(0);
     let cliff_back_impassability = rules.general.cliff_back_impassability;
@@ -499,12 +757,14 @@ fn load_with_assets(
         bridge_mode,
         &descriptor,
         |sim, rules| {
-            crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
-                sim,
-                &house_roster,
-                rules,
-                &launch,
-            );
+            if let Some(launch) = slot_launch {
+                crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
+                    sim,
+                    &house_roster,
+                    rules,
+                    launch,
+                );
+            }
         },
     )
     .map_err(|error| format!("finalize authored headless load: {error}"))?;
@@ -513,30 +773,59 @@ fn load_with_assets(
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_team_ai_registry(&team_ai_registry, &rules);
-    let _launch_result =
+    if let (Some(launch), Some(projection)) = (slot_launch, scenario_prefix_projection.as_ref()) {
         crate::sim::scenario_bootstrap::apply_pre_fill_scenario_prefix_launch_session(
             &mut sim,
             &map,
             &house_roster,
             &rules,
             &resolved_terrain,
-            &launch,
-            &scenario_prefix_projection,
+            launch,
+            projection,
         );
+    }
     let post_map = crate::sim::runtime::finalize_constructed_scenario(
         &mut sim,
         &map,
         &rules,
         &house_roster,
         descriptor.rule_policy,
-        Some(&launch),
+        slot_launch,
+        campaign.map(AuthoredCampaignStart::carry_over),
     )
     .map_err(|error| error.to_string())?;
     if !post_map.navigation_published {
-        return Err("publish headless post-map navigation".to_string());
+        return Err("publish headless post-map navigation".to_owned().into());
     }
     if sim.path_grid().is_none() {
-        return Err("headless post-map navigation is unavailable".to_string());
+        return Err("headless post-map navigation is unavailable"
+            .to_owned()
+            .into());
+    }
+    // MapHouses has already spent its House and Super IDs before Resize.
+    // Replay must rebuild that prefix from the same rules, then check it at
+    // the map-read fence rather than replacing the live cursor afterwards.
+    if let Some(checkpoint) = accepted_native_id_prefix
+        && campaign.is_some()
+        && sim.native_identity_prefix_checkpoint() != Some(checkpoint)
+    {
+        return Err(
+            "replay campaign native-ID prefix differs from the reconstructed House roster"
+                .to_owned()
+                .into(),
+        );
+    }
+    if campaign.is_some() {
+        // The author runner dispatches the canonical source roster every
+        // logic frame without waiting for a transport or reserving a lead.
+        let sources: Vec<_> = sim
+            .session
+            .network_sources(sim.houses.len())
+            .map(|(source, _)| source)
+            .collect();
+        sim.install_network_timing(0);
+        sim.network_command_queues()
+            .install_timing(0, std::num::NonZeroU8::MIN, sources);
     }
     sim.session.publish_started();
     Ok(HeadlessScenario {

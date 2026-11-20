@@ -359,7 +359,7 @@ pub(crate) fn apply_building_radiation(
         let object = world.object_type(entity.type_ref(), rules)?;
         (
             (entity.position.rx(), entity.position.ry()),
-            object.foundation.clone(),
+            &object.foundation,
             object.immune_to_radiation,
         )
     };
@@ -376,7 +376,7 @@ pub(crate) fn apply_building_radiation(
         }
     }
     let mut last_receipt = None;
-    'cells: for cell in crate::sim::crew_survival::foundation_cells(origin.0, origin.1, &foundation)
+    'cells: for cell in crate::sim::crew_survival::foundation_cells(origin.0, origin.1, foundation)
     {
         let mut groups: Vec<(
             Option<String>,
@@ -2484,8 +2484,7 @@ pub(crate) fn handle_death(
             if callbacks_enabled(world) {
                 world.free_all_captures(dead_id, rules, overlay_registry, run.effects());
             }
-            let type_id_str = world.interner.resolve(type_id);
-            if let Some(obj) = rules.object(type_id_str) {
+            if let Some(obj) = world.interner.object_type(type_id, rules) {
                 // TechnoClass::ReceiveDamage70218B/7021FB: each selection is
                 // followed by direct7509E0 admission before the next choice,
                 // Stun and nested DeathWeapon receivers. House50B6F0 gates
@@ -3792,9 +3791,9 @@ fn ares_damage_occupants(
         return false;
     };
     let ext = object.building_type_ext();
-    let occupants = building.passenger_role().occupants().ids().to_vec();
+    let occupant_count = building.passenger_role().occupants().ids().len();
     let pass_through = f64::from_bits(ext.uc_pass_through.bits());
-    if occupants.is_empty() || pass_through <= 0.0 {
+    if occupant_count == 0 || pass_through <= 0.0 {
         return false;
     }
     let subject_to_trenches = current
@@ -3805,8 +3804,25 @@ fn ares_damage_occupants(
     if subject_to_trenches && world.scenario_rng.random_double() >= pass_through {
         return false;
     }
-    let last = occupants.len() as i32 - 1;
-    let victim = occupants[world.scenario_rng.next_range_i32_inclusive(0, last) as usize];
+    let last = occupant_count as i32 - 1;
+    let pick = world.scenario_rng.next_range_i32_inclusive(0, last) as usize;
+    // Nothing since the count changed the occupants: the draws above read
+    // only the Scenario stream and the projectile's type.
+    let Some(victim) = world
+        .substrate
+        .entities
+        .get(building_id)
+        .and_then(|building| {
+            building
+                .passenger_role()
+                .occupants()
+                .ids()
+                .get(pick)
+                .copied()
+        })
+    else {
+        return false;
+    };
     let fatal_rate = f64::from_bits(ext.uc_fatal_rate.bits());
     let multiplier = f64::from_bits(ext.uc_damage_multiplier.bits());
     let context = crate::sim::world::UninitContext::new(rules).with_effects(run.effects());

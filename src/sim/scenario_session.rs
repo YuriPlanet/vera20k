@@ -1457,8 +1457,23 @@ impl ScenarioSession {
     pub const fn rule_policy(&self) -> RulePolicy {
         self.rule_policy
     }
+
+    /// Map House construction and campaign presentation survive a lockstep
+    /// admission. A stock slot launch can independently use campaign rules.
+    pub const fn uses_campaign_world(&self) -> bool {
+        self.campaign.is_some()
+            || (self.multiplayer_mode_class.is_none()
+                && !self.rule_policy.bootstrap().uses_multiplayer_rules())
+    }
     pub(crate) const fn local_view_identity(&self) -> &LocalViewIdentity {
         &self.view
+    }
+
+    /// A campaign recording clears the process view. Playback keeps the view
+    /// supplied by the fresh loader while replacing the shared admission.
+    pub(super) fn with_replay_view(mut self, reconstructed: Option<&Self>) -> Self {
+        self.view = reconstructed.map_or_else(LocalViewIdentity::default, |session| session.view);
+        self
     }
     pub const fn game_mode_nonzero(&self) -> bool {
         self.game_mode.is_nonzero()
@@ -1663,11 +1678,18 @@ impl ScenarioSession {
             .scope(source, primary, subject, houses)
     }
 
-    pub(crate) fn control_scope_table(
+    /// The grant admitted `source` holds on `subject`'s House, its primary
+    /// House's own authority aside.
+    pub(crate) fn delegated_control_scope(
         &self,
         houses: &Houses,
-    ) -> Option<std::sync::Arc<crate::sim::control_authority::ControlScopeTable>> {
-        self.control_authority.scope_table(houses)
+        source: i8,
+        subject: InternedId,
+    ) -> ControlScope {
+        usize::try_from(source).map_or(ControlScope::None, |source| {
+            self.control_authority
+                .delegated_scope(source, subject, houses)
+        })
     }
 
     pub(crate) fn admitted_control_source_count(&self) -> Option<usize> {
@@ -1887,6 +1909,10 @@ impl ScenarioSession {
         self.game_mode == ScenarioGameMode::Wol && self.wol_tournament != 0
     }
 
+    pub(crate) const fn wol_tournament(&self) -> i32 {
+        self.wol_tournament
+    }
+
     pub(crate) fn wol_squad_lists(&self) -> &[Vec<String>; 2] {
         &self.wol_squad_lists
     }
@@ -1924,6 +1950,10 @@ impl ScenarioSession {
         &self,
     ) -> &crate::sim::superweapon::chrono_screen::ChronoScreenState {
         &self.chrono_screen
+    }
+
+    pub fn chrono_screen_active(&self) -> bool {
+        self.chrono_screen.active()
     }
 
     pub(crate) fn start_chrono_screen_state(&mut self, duration: i32) -> bool {
@@ -1970,7 +2000,7 @@ impl ScenarioSession {
         restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver,
         authored_fog_of_war: Option<bool>,
     ) -> Result<(), CampaignScenarioStartupError> {
-        if self.game_mode_nonzero() {
+        if self.rule_policy.bootstrap().uses_multiplayer_rules() {
             return Err(CampaignScenarioStartupError::NonCampaignMode);
         }
         if self.campaign.is_some() {

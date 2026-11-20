@@ -270,6 +270,10 @@ jobs:
           cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
           bash .github/release/languages.sh "dist/$name"
+          # Windows also gets Microsoft's DirectX Shader Compiler beside the game.
+          if [ "$RUNNER_OS" = Windows ]; then
+            pwsh -File .github/release/windows/fetch-dxc.ps1 -Package "dist/$name"
+          fi
           # The README names the version, build and commit, which stay true when
           # a release republishes this installer.
           sed -e "s/@VERSION@/${VERSION}/" -e "s/@BUILD@/${STAMP}/" -e "s/@COMMIT@/${SHA7}/" \
@@ -405,7 +409,8 @@ jobs:
             throw 'setup did not warn about optional music'
           }
           foreach ($f in 'vera20k.exe', 'config.toml', 'config.toml.example', 'README.txt',
-                         'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html', 'languages\vera20k.vi.ini',
+                         'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html', 'dxcompiler.dll',
+                         'LICENSE-DXC.txt', 'languages\vera20k.vi.ini',
                          'languages\NotoSansThai-VF.ttf') {
             if (-not (Test-Path (Join-Path $app $f))) { throw "setup did not install $f" }
           }

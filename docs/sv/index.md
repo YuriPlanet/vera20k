@@ -8,6 +8,8 @@ lang: sv
 
 **Svenska** · [简体中文](../zh-CN/) · [Deutsch](../de/) · [العربية](../ar/) · [Русский](../ru/) · [ไทย](../th/) · [Türkçe](../tr/) · [English](../)
 
+[Kampanjmanifest](campaign-manifest.md)
+
 Red Alert 2: Yuri's Revenge — omskrivet från grunden i Rust.
 
 En kort karta över koden. Om den säger emot koden är det koden som gäller. Kommentaren `//!` i början av varje modul beskriver vad modulen gör och vad den får bero på.

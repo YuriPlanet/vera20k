@@ -145,8 +145,8 @@ pub(crate) fn detonate(
                 i32::try_from(crit.active_chance_anims().len() - 1)
                     .expect("native anim count fits i32"),
             );
-            let name = crit.active_chance_anims()[index as usize].clone();
-            spawn_anim_at_world_coord(world, rules, &name, impact, house);
+            let name = &crit.active_chance_anims()[index as usize];
+            spawn_anim_at_world_coord(world, rules, name, impact, house);
         }
     }
     let invoker = (source_id != 0).then_some(source_id);
@@ -493,8 +493,8 @@ fn crit_effects(
             } else {
                 0
             };
-            let name = crit.anim_list()[index as usize].clone();
-            spawn_anim_at_coord(world, rules, &name, anim_coord, owner_house);
+            let name = &crit.anim_list()[index as usize];
+            spawn_anim_at_coord(world, rules, name, anim_coord, owner_house);
         }
     }
 

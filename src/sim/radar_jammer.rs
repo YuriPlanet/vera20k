@@ -96,24 +96,22 @@ impl Simulation {
         let buildings: Vec<u64> = self
             .substrate
             .entities
-            .keys_sorted()
-            .into_iter()
-            .filter(|&building| {
-                self.substrate.entities.get(building).is_some_and(|target| {
-                    target.category() == EntityCategory::Structure
-                        // IsEligible: the jammer's house is not allied with
-                        // the building's, which provides Radar or SpySat.
-                        && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                            Some(&self.house_alliances),
-                            &self.interner,
-                            owner,
-                            target.owner(),
-                        )
-                        && self
-                            .entity_object_type(target, rules)
-                            .is_some_and(|object| object.radar || object.spy_sat)
-                })
+            .iter_sorted()
+            .filter(|&(_, target)| {
+                target.category() == EntityCategory::Structure
+                    // IsEligible: the jammer's house is not allied with the
+                    // building's, which provides Radar or SpySat.
+                    && !crate::sim::combat::combat_weapon::is_ally_by_object(
+                        Some(&self.house_alliances),
+                        &self.interner,
+                        owner,
+                        target.owner(),
+                    )
+                    && self
+                        .entity_object_type(target, rules)
+                        .is_some_and(|object| object.radar || object.spy_sat)
             })
+            .map(|(building, _)| building)
             .collect();
         for building in buildings {
             let target = self.substrate.entities.get(building).expect("listed above");
@@ -194,15 +192,14 @@ impl Simulation {
             return;
         }
         state.registered = false;
-        for building in self.substrate.entities.keys_sorted() {
-            if self
-                .substrate
-                .entities
-                .get(building)
-                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-            {
-                self.unjam(jammer, building);
-            }
+        // Unjam neither adds nor removes an object nor changes a category, so
+        // the Structures listed first are the ones the walk would reach.
+        let buildings = self
+            .substrate
+            .entities
+            .ids_of_categories(|category| category == EntityCategory::Structure);
+        for building in buildings {
+            self.unjam(jammer, building);
         }
     }
 

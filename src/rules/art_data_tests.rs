@@ -155,6 +155,15 @@ fn test_object_shp_candidates_no_new_theater() {
 }
 
 #[test]
+fn object_shp_candidates_take_an_image_whose_second_byte_is_high() {
+    // INI byte 0xE9 widens to `é`, two UTF-8 bytes: the prefix test must not
+    // cut it.
+    let reg = ArtRegistry::empty();
+    let candidates = object_shp_candidates(Some(&reg), "A\u{e9}X", "tem", "TEMPERATE");
+    assert_eq!(candidates, ["A\u{c9}X.SHP", "A\u{c9}X.TEM"]);
+}
+
+#[test]
 fn test_object_shp_candidates_with_new_theater() {
     let reg: ArtRegistry = ArtRegistry::empty();
     let candidates: Vec<String> = object_shp_candidates(Some(&reg), "GAPOWR", "tem", "TEMPERATE");
@@ -1056,6 +1065,56 @@ fn a_theater_only_tile_anim_binds_as_an_unread_type_and_spawns() {
         &[tile("custom_falls"), tile("custom_f\u{e4}lls")],
     );
     assert!(ids.iter().all(|&id| sim.anim(id).is_some()));
+}
+
+/// A theater `Tile%02dAnim=` whose own ART makes it a `Bouncer=` with a
+/// launch velocity outside the x87 domain VERA models does not construct; the
+/// map still loads and its other tile anims spawn.
+#[test]
+fn a_tile_anim_that_cannot_construct_is_skipped() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+
+    let root = AnimDimTestRoot::new();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let art_ini =
+        IniFile::from_str("[BAD_BOUNCE]\nBouncer=yes\nMaxXYVel=1000000000000000000000000000000\n");
+    let processed = RulesLayerStack::new(IniFile::from_str("[General]\n"))
+        .process_with_fixed_art(&art_ini)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    rules.bind_scheduler_anim_assets(
+        &["BAD_BOUNCE".into(), "THEATER_ONLY".into()],
+        &assets,
+        "TEM",
+        "TEMPERATE",
+    );
+    assert!(
+        rules
+            .art()
+            .anim_runtime_config("BAD_BOUNCE")
+            .unwrap()
+            .bouncer
+    );
+
+    let mut sim = crate::sim::world::Simulation::new();
+    let tile = |anim_name: &str| crate::map::resolved_terrain::TerrainTileAnimation {
+        rx: 1,
+        ry: 1,
+        anim_name: anim_name.to_string(),
+        world_x: 384,
+        world_y: 384,
+        world_z: 0,
+        z_adjust: 0,
+    };
+    let ids = crate::sim::runtime::spawn_terrain_tile_animations(
+        &mut sim,
+        &rules,
+        &[tile("BAD_BOUNCE"), tile("THEATER_ONLY")],
+    );
+    assert_eq!(ids.len(), 1);
+    let type_id = sim.anim(ids[0]).expect("tile anim spawned").type_id();
+    assert_eq!(type_id, sim.intern("THEATER_ONLY"));
 }
 
 /// A `DamageFireOffset%d=` far past any building converts through the one

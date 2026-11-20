@@ -62,8 +62,8 @@ battlefield retail; writing only the verdict half leaves the score page retail
 with its side theme.
 
 **Music is a theme, not a track.** The name has to be declared in `[Themes]`
-(`theme.ini` for RA2's set, `thememd.ini` for Yuri's Revenge's, `thememo.ini`
-under the [`mo` profile](ini-roots.md)), and that entry's
+(`theme.ini` for RA2's set, `thememd.ini` for Yuri's Revenge's, or the
+mod's [declared theme catalog](ini-roots.md)), and that entry's
 `Sound=` names the audio. Retail's own end-of-match theme is `SCORE`; the
 in-match playlist themes (`Power`, `InDeep`, `Motorized`, ... — the full list is
 in `[Themes]`) work too and are what a distinct verdict theme usually wants.

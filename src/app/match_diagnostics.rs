@@ -318,7 +318,7 @@ impl MatchDiagnosticsState {
         runtime: &mut crate::sim::runtime::SimRuntime,
         source: &crate::map::source::LoadedMapSource,
         map_hash: u64,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<crate::sim::trigger_runtime::TriggerEffect>> {
         let replay = match self.replay_playback.take() {
             Some(ReplayPlaybackState::Loading(replay)) => replay,
             other => {
@@ -327,9 +327,10 @@ impl MatchDiagnosticsState {
             }
         };
         match crate::sim::replay::ReplayPlayback::prepare(runtime, replay, source, map_hash) {
-            Ok(playback) => {
+            Ok(mut playback) => {
+                let effects = playback.take_initial_effects();
                 self.replay_playback = Some(ReplayPlaybackState::Playing(playback));
-                Ok(())
+                Ok(effects)
             }
             Err(error) => {
                 self.replay_playback = Some(ReplayPlaybackState::Failed(format!("{error:#}")));
@@ -440,6 +441,12 @@ impl MatchDiagnosticsState {
             }
             _ => None,
         };
+        if let Some(verified) = &verification {
+            log::info!(
+                "Rendered replay verified {} checkpoints through frame {}, final state {:016x}",
+                verified.checked_hashes, verified.final_tick, verified.final_state_hash
+            );
+        }
         let receipt = serde_json::json!({
             "replay_sha256": self.replay_artifact_sha256,
             "png_sha256": crate::util::sha256::sha256_hex(&png),
@@ -520,10 +527,10 @@ impl MatchDiagnosticsState {
     pub(crate) fn retain_replay_startup(
         &mut self,
         runtime: &crate::sim::runtime::SimRuntime,
-        launch: Option<&crate::skirmish_launch::SkirmishLaunchSession>,
+        launch: Option<crate::sim::replay::ReplayLaunchInput<'_>>,
         source: Option<&crate::map::source::LoadedMapSource>,
         map_hash: Option<u64>,
-        every_frame_network: bool,
+        options: crate::sim::replay::ReplayStartOptions,
     ) {
         let Some(log) = self.replay_log.as_mut().filter(|log| {
             log.startup.is_none()
@@ -541,7 +548,7 @@ impl MatchDiagnosticsState {
             source,
             map_hash,
             crate::app::types::SIM_TICK_MS,
-            every_frame_network,
+            options,
         ) {
             Ok(startup) => {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;

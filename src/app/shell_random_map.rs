@@ -872,7 +872,7 @@ pub(super) fn prepare_random_map_generation(
     );
     let blocks =
         crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
-            asset_manager.get(name)
+            asset_manager.get_ref(name)
         });
     Some(PreparedRandomMapGeneration {
         theater,
@@ -1257,8 +1257,8 @@ impl App {
         }
     }
 
-    /// The folder of `RandMap.Sed`, `RandMap.img` and the saved seeds
-    /// (`map::source::random_map_dir`), never the game folder.
+    /// The Maps folder shared by the generator's working files and the
+    /// Random Maps subfolder where the player saves seeds.
     pub(super) fn random_map_dir(state: &AppState) -> Option<std::path::PathBuf> {
         state
             .platform
@@ -1276,24 +1276,6 @@ impl App {
         options: &crate::map::rmg::RmgOptions,
         accept_on_finish: bool,
     ) -> bool {
-        // The ordinary Generate path also stamps the localized working label
-        // immediately before generator construction (0x00595BC0).
-        let mut generation_options = options.clone();
-        generation_options.description = Self::csf_label(
-            state,
-            RANDOM_MAP_DESCRIPTION_KEY,
-            RANDOM_MAP_DESCRIPTION_FALLBACK,
-        )
-        .into();
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_mut()
-        {
-            modal.options.description = generation_options.description.clone();
-        }
-        let options = &generation_options;
         // A second Generate makes the previous dialog result stale immediately,
         // even when setup cannot progress far enough to spawn the worker.
         begin_random_map_generation_owners(
@@ -1983,12 +1965,11 @@ impl App {
             .manager()
             .map(crate::map::rmg::RmgSettings::load)
             .unwrap_or_default();
-        let description = state
-            .process_assets
-            .csf
-            .as_ref()
-            .map(|csf| csf.text(RANDOM_MAP_DESCRIPTION_KEY).into_owned())
-            .unwrap_or_else(|| RANDOM_MAP_DESCRIPTION_FALLBACK.to_string());
+        let description = Self::csf_label(
+            state,
+            RANDOM_MAP_DESCRIPTION_KEY,
+            RANDOM_MAP_DESCRIPTION_FALLBACK,
+        );
         // VERA: where the Extras view keeps the player's own presets.
         let preset_dir = Self::random_map_dir(state);
         let Some(modal) = state
@@ -2116,6 +2097,7 @@ impl App {
                 }
             }
             Control::Generate0x620 => {
+                modal.extras_note = None;
                 modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();
                 generate_requested = true;
@@ -2180,15 +2162,11 @@ impl App {
             return true;
         }
         if generate_requested {
-            let options = state
-                .frontend
-                .skirmish_shell_state
-                .random_map_setup_modal
-                .as_ref()
-                .map(|modal| modal.options.clone());
-            let started = options.is_some_and(|options| {
-                Self::start_random_map_generation(state, &options, accept_requested)
-            });
+            // Ordinary Generate stamps the working label (0x00595BC0).
+            // Using a saved map in Choose Map keeps the player's description.
+            modal.options.description = description.into();
+            let options = modal.options.clone();
+            let started = Self::start_random_map_generation(state, &options, accept_requested);
             if !started {
                 // Nothing will arrive, so the dialog must not be left sitting
                 // in its generating state with every control disabled.

@@ -1,7 +1,6 @@
 //! The player's own rule switches: Terrain Deformation and the Superweapon
-//! Limit of the skirmish page's Game Options, which a network room's host
-//! shares, and the Options page's Building Production Queue, which offline
-//! games play and no network room shares yet. VERA-only.
+//! Limit of the skirmish page's Game Options and the Options page's Building
+//! Production Queue, which a network room's host shares. VERA-only.
 //!
 //! VERARULES.INI, a file of the player's own rule keys, was read here until
 //! it was retired for New Mod (docs/modding.md); `persistence::rules_profile`
@@ -14,7 +13,8 @@ use std::borrow::Cow;
 
 use crate::rules::ini_parser::IniFile;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PersonalRules {
     /// The skirmish Game Options' Terrain Deformation box (`[VERA] TerrainDeformation=`
     /// in VERA.INI). Each new scenario's root reads it, so it needs no restart.
@@ -26,9 +26,8 @@ pub struct PersonalRules {
     /// The Options page's Building Production Queue box (`[VERA]
     /// BuildingProductionQueue=` in VERA.INI). It sets Phobos' `[General]
     /// BuildingProductionQueue=` in the scenario root, so the simulation
-    /// reads it from the rules every peer, save and replay reads.
-    /// [`HostRules`](crate::skirmish_launch::HostRules) does not carry it, so
-    /// a network room plays without it.
+    /// reads it from the rules every peer, save and replay reads. A network
+    /// room plays its host's ([`HostRules`](crate::skirmish_launch::HostRules)).
     building_production_queue: bool,
 }
 
@@ -55,7 +54,12 @@ impl PersonalRules {
         self.building_production_queue = on;
     }
 
-    /// A switch changes the game: [`Self::scenario_root`] composes it.
+    pub fn building_production_queue(&self) -> bool {
+        self.building_production_queue
+    }
+
+    /// A switch changes the game: [`Self::scenario_root`] composes it and
+    /// [`Self::compatibility_crc`] adds it to the network rules digest.
     pub fn in_effect(&self) -> bool {
         self.terrain_deformation || self.superweapon_limit != 0 || self.building_production_queue
     }
@@ -94,13 +98,11 @@ impl PersonalRules {
         Cow::Owned(root)
     }
 
-    /// What the shared switches add to the network rules digest; `None`
-    /// while both are off. The header keeps the words it had while
-    /// VERARULES.INI was read, so a game with only the switches on digests
-    /// as it did. Building Production Queue adds nothing: no network room
-    /// plays it, so it must not refuse a launcher's match.
+    /// What the switches add to the network rules digest; `None` while all
+    /// are off. The header keeps the words it had while VERARULES.INI was
+    /// read, so a game with only the switches on digests as it did.
     pub fn compatibility_crc(&self) -> Option<u32> {
-        if !self.terrain_deformation && self.superweapon_limit == 0 {
+        if !self.in_effect() {
             return None;
         }
         let mut header = String::from("[VERA]\nPersonalRulesVersion=1\nOverrideMapRules=no\n");
@@ -109,6 +111,9 @@ impl PersonalRules {
         }
         if self.superweapon_limit != 0 {
             header.push_str(&format!("SuperweaponLimit={}\n", self.superweapon_limit));
+        }
+        if self.building_production_queue {
+            header.push_str("BuildingProductionQueue=yes\n");
         }
         Some(IniFile::from_str(&header).native_crc())
     }
@@ -281,8 +286,8 @@ mod tests {
             )
         };
         assert_eq!(scenario(false), (false, 5, false));
-        // No room shares the box, so it leaves the network digest alone.
-        assert_eq!(scenario(true), (true, 5, false));
+        // A room shares it, so peers compare it.
+        assert_eq!(scenario(true), (true, 5, true));
     }
 
     #[test]

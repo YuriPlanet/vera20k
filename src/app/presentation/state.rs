@@ -69,6 +69,8 @@ pub(crate) struct MatchPresentationState {
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.
     pub(crate) end_game_banner: Option<crate::app::presentation::outcome_banner::EndGameBanner>,
+    pub(crate) outcome_banner_presentation:
+        crate::app::presentation::outcome_banner::OutcomeBannerPresentation,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     pub(crate) terrain_grid: Option<TerrainGrid>,
     /// Overlay entries from map for per-frame instance generation.
@@ -154,6 +156,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) commander_feedback: crate::app::commander_feedback::CommanderFeedback,
     pub(crate) chrono_screen: crate::app::chrono_screen::ChronoScreenPresentation,
     pub(crate) scenario_pause: crate::app::match_runtime::scenario_pause::ScenarioPauseClock,
+    pub(crate) narrative_sync: crate::app::match_runtime::narrative_sync::NarrativeSync,
     /// Requested-versus-resolved atlas identity used to construct `radar_anim`.
     ///
     /// Kept beside the animation so tactical evidence never reconstructs

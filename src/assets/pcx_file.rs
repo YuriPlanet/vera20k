@@ -17,17 +17,26 @@ pub struct PcxFile {
 
 impl PcxFile {
     pub fn from_bytes(data: &[u8]) -> Result<Self, AssetError> {
-        Self::from_bytes_with_policy(data, false)
+        Self::from_bytes_with_policy(data, false, None)
+    }
+
+    /// Bound the decompressed scan data of a presentation asset.
+    pub fn from_bytes_bounded(data: &[u8], max_scan_bytes: usize) -> Result<Self, AssetError> {
+        Self::from_bytes_with_policy(data, false, Some(max_scan_bytes))
     }
 
     /// Network previews may contain their encoded scan and optional VGA
     /// palette, but no ignored stream suffix or oversized final RLE run.
     /// Local/retail asset decoding retains its existing permissive behavior.
     pub(crate) fn from_transfer_bytes(data: &[u8]) -> Result<Self, AssetError> {
-        Self::from_bytes_with_policy(data, true)
+        Self::from_bytes_with_policy(data, true, None)
     }
 
-    fn from_bytes_with_policy(data: &[u8], transferred: bool) -> Result<Self, AssetError> {
+    fn from_bytes_with_policy(
+        data: &[u8],
+        transferred: bool,
+        max_scan_bytes: Option<usize>,
+    ) -> Result<Self, AssetError> {
         if data.len() < 128 {
             return Err(pcx_error("PCX too short"));
         }
@@ -62,6 +71,11 @@ impl PcxFile {
             .checked_mul(planes as usize)
             .and_then(|v| v.checked_mul(height as usize))
             .ok_or_else(|| pcx_error("PCX scan data too large"))?;
+        if max_scan_bytes.is_some_and(|maximum| expected_scan > maximum) {
+            return Err(pcx_error(
+                "Decoded scan exceeds the presentation byte budget",
+            ));
+        }
         let mut palette = [[0u8; 3]; 256];
         let has_trailing_palette = data.len() >= 128 + 769 && data[data.len() - 769] == 0x0C;
         let encoded = if planes == 1 {

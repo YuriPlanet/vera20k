@@ -71,7 +71,8 @@ fn threat_at_least(
 ) -> bool {
     use crate::util::native_x87::{X87Chop53, X87Ordering};
     let product = X87Chop53::mul(X87Chop53::load_i32(threat), coefficient);
-    let limit = X87Chop53::load_f64(threshold).expect("finite native finishing threshold");
+    let limit =
+        X87Chop53::load_f64(threshold).expect("callers pass the native 1.0 and 0.01 thresholds");
     X87Chop53::compare(product, limit) != X87Ordering::Less
 }
 

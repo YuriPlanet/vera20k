@@ -1,15 +1,14 @@
 //! Command permissions by admitted source and native House slot.
 //!
 //! A source's primary House comes from the session's source roster. The
-//! extra grants are fixed at admission. The lookup table is derived from
-//! those grants and the live House array.
+//! extra grants are fixed at admission. A lookup finds the subject's slot in
+//! the live House array, which grows during a match, and then its grant.
 
 use std::fmt;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::Arc;
 
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
-use crate::util::lookup_hash::LookupMap;
 
 const MAX_SOURCE_COUNT: usize = i8::MAX as usize + 1;
 
@@ -122,23 +121,9 @@ impl ControlScope {
     }
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ControlAuthority {
     delegated: Option<Box<ControlGrantTable>>,
-}
-
-impl Clone for ControlAuthority {
-    fn clone(&self) -> Self {
-        Self {
-            delegated: self.delegated.as_ref().map(|grants| {
-                Box::new(ControlGrantTable {
-                    entries: Arc::clone(&grants.entries),
-                    source_count: grants.source_count,
-                    scopes: RwLock::default(),
-                })
-            }),
-        }
-    }
 }
 
 impl ControlAuthority {
@@ -161,7 +146,6 @@ impl ControlAuthority {
             delegated: Some(Box::new(ControlGrantTable {
                 entries: grants.into(),
                 source_count,
-                scopes: RwLock::default(),
             })),
         })
     }
@@ -239,11 +223,20 @@ impl ControlAuthority {
         }
     }
 
-    /// Share a width-checked table with a projection for one immutable world read.
-    pub(crate) fn scope_table(&self, houses: &Houses) -> Option<Arc<ControlScopeTable>> {
+    /// The grant `source` holds on `subject`'s House, without the primary
+    /// House's own authority: `None` scope for a source outside the admitted
+    /// roster, a House without a grant, or no delegated grants at all.
+    pub(crate) fn delegated_scope(
+        &self,
+        source: usize,
+        subject: InternedId,
+        houses: &Houses,
+    ) -> ControlScope {
         self.delegated
-            .as_ref()?
-            .with_scope_table(houses, Arc::clone)
+            .as_ref()
+            .map_or(ControlScope::None, |grants| {
+                grants.scope(source, subject, houses)
+            })
     }
 
     /// The caller resolves the admitted source to its primary House before
@@ -267,16 +260,12 @@ impl ControlAuthority {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ControlGrantTable {
     #[serde(serialize_with = "save_grants", deserialize_with = "load_grants")]
     entries: Arc<[ControlGrant]>,
     #[serde(deserialize_with = "load_source_count")]
     source_count: usize,
-    // The live House registry owns the width. A restored table builds the
-    // corresponding scope cache only when it is first queried.
-    #[serde(skip)]
-    scopes: RwLock<Option<Arc<ControlScopeTable>>>,
 }
 
 fn save_grants<S: serde::Serializer>(
@@ -314,91 +303,26 @@ fn load_source_count<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Resul
 }
 
 impl ControlGrantTable {
+    /// `subject`'s grant from `source`. Grants address House slots, so the
+    /// subject's slot is looked up in the live registry, which is
+    /// append-only in a running match: a House registered after admission
+    /// holds no grant.
     fn scope(&self, source: usize, subject: InternedId, houses: &Houses) -> ControlScope {
-        self.with_scope_table(houses, |table| table.get(source, subject))
-            .unwrap_or(ControlScope::None)
-    }
-
-    fn with_scope_table<T>(
-        &self,
-        houses: &Houses,
-        read: impl FnOnce(&Arc<ControlScopeTable>) -> T,
-    ) -> Option<T> {
-        // House slots are append-only in a running match. A different live
-        // count requires a new stride and name-to-slot mapping.
-        let current_size = |table: &&Arc<ControlScopeTable>| table.house_count == houses.len();
-        let scopes = self.scopes.read().unwrap_or_else(PoisonError::into_inner);
-        if let Some(table) = scopes.as_ref().filter(current_size) {
-            return Some(read(table));
+        if source >= self.source_count {
+            return ControlScope::None;
         }
-        drop(scopes);
-
-        let mut scopes = self.scopes.write().unwrap_or_else(PoisonError::into_inner);
-        // Another reader may have refreshed it while we acquired the write lock.
-        if scopes.as_ref().filter(current_size).is_none() {
-            *scopes =
-                ControlScopeTable::build(&self.entries, self.source_count, houses).map(Arc::new);
-        }
-        scopes.as_ref().map(read)
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct ControlScopeTable {
-    house_count: usize,
-    columns: LookupMap<InternedId, usize>,
-    cells: Box<[ControlScope]>,
-}
-
-impl ControlScopeTable {
-    fn build(grants: &[ControlGrant], source_count: usize, houses: &Houses) -> Option<Self> {
-        let house_count = houses.len();
-        let mut cells = vec![ControlScope::None; source_count.checked_mul(house_count)?];
-        for &ControlGrant {
-            source,
-            house,
-            level,
-        } in grants
-        {
-            let source = usize::try_from(source).ok()?;
-            let house = usize::from(house);
-            // Both dimensions are checked so an absent House slot cannot
-            // address a cell in the next source's row.
-            if source < source_count && house < house_count {
-                cells[source * house_count + house] = level.scope();
-            }
-        }
-        let columns = houses
-            .order()
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(index, name)| (name, index))
-            .collect();
-        let table = Self {
-            house_count,
-            columns,
-            cells: cells.into_boxed_slice(),
-        };
-        debug_assert!(grants.iter().all(|grant| {
-            houses
-                .order()
-                .get(usize::from(grant.house))
-                .is_none_or(|&subject| {
-                    table.get(grant.source as usize, subject) == grant.level.scope()
-                })
-        }));
-        Some(table)
-    }
-
-    pub(crate) fn get(&self, source: usize, subject: InternedId) -> ControlScope {
-        let Some(&column) = self.columns.get(&subject) else {
+        let (Ok(source), Some(Ok(house))) = (
+            i8::try_from(source),
+            houses.index_of(subject).map(u8::try_from),
+        ) else {
             return ControlScope::None;
         };
-        self.cells
-            .get(source * self.house_count + column)
-            .copied()
-            .unwrap_or(ControlScope::None)
+        // Admission sorts the entries by source and House, one entry each.
+        self.entries
+            .binary_search_by_key(&(source, house), |grant| (grant.source, grant.house))
+            .map_or(ControlScope::None, |index| {
+                self.entries[index].level.scope()
+            })
     }
 }
 
@@ -477,20 +401,10 @@ mod tests {
             authority.scope(0, primary, second, &houses),
             ControlScope::FullControl
         );
-        let scopes = authority.delegated.as_ref().unwrap().scopes.read().unwrap();
-        let table = scopes.as_ref().unwrap();
-        assert_eq!(table.house_count, 4);
-        assert_eq!(table.cells.len(), 2 * table.house_count);
-        assert_eq!(table.columns.get(&late), Some(&3));
-        assert!(
-            authority
-                .clone()
-                .delegated
-                .unwrap()
-                .scopes
-                .into_inner()
-                .unwrap()
-                .is_none()
+        // A copy answers from the same grants against the grown registry.
+        assert_eq!(
+            authority.clone().scope(1, primary, first, &houses),
+            ControlScope::UnitsOnly
         );
     }
 

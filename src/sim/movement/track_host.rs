@@ -1075,7 +1075,10 @@ impl Simulation {
         put: bool,
         ares: bool,
     ) {
-        for coord in Self::track_occupation_coords(substrate, id, family, supplied) {
+        for coord in Self::track_occupation_coords(substrate, id, family, supplied)
+            .into_iter()
+            .flatten()
+        {
             Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put, ares);
         }
     }
@@ -1091,6 +1094,7 @@ impl Simulation {
         let supplied = head_or_null(self.substrate.entities.get(id), family);
         Self::track_occupation_coords(&self.substrate, id, family, supplied)
             .into_iter()
+            .flatten()
             .map(|coord| {
                 super::foot_mark::raw_occupation_plane(
                     coord,
@@ -1104,19 +1108,19 @@ impl Simulation {
 
     /// The coordinates Apply_Track_Occupation_Mode marks or clears for
     /// `supplied`, in its order: the RawTrack handoff point while the turn
-    /// has not passed it, then `supplied`. Empty without a track or for a
+    /// has not passed it, then `supplied`. Neither without a track or for a
     /// null `supplied`.
     fn track_occupation_coords(
         substrate: &ObjectSubstrate,
         id: u64,
         family: TrackFamily,
         supplied: DriveCoord,
-    ) -> Vec<DriveCoord> {
+    ) -> [Option<DriveCoord>; 2] {
         let Some((state, retained_head, current)) = Self::track_state(substrate, id, family) else {
-            return Vec::new();
+            return [None, None];
         };
         if supplied == (DriveCoord { x: 0, y: 0, z: 0 }) {
-            return Vec::new();
+            return [None, None];
         }
         let handoff = (!state.reversed() && state.turn_index() != -1)
             .then(|| {
@@ -1151,7 +1155,7 @@ impl Simulation {
                 })
             })
             .flatten();
-        handoff.into_iter().chain([supplied]).collect()
+        [handoff, Some(supplied)]
     }
 
     fn track_try_chain(

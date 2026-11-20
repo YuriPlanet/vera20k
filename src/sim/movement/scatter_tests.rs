@@ -379,8 +379,15 @@ fn cell_scatter_dispatch_matches_original_execution() {
             .map(|id| id.as_u64().unwrap())
             .collect();
         let no_kidding = flag(input, "dispatch_all", false);
-        let dispatched =
-            scatter_objects_admitted(&technos, no_kidding, &rules, &entities, &houses, &interner);
+        let mut dispatched = technos.clone();
+        retain_scatter_admitted(
+            &mut dispatched,
+            no_kidding,
+            &rules,
+            &entities,
+            &houses,
+            &interner,
+        );
         let expected_technos: Vec<u64> = expected
             .iter()
             .copied()
@@ -435,7 +442,9 @@ fn unforced_walk_reads_house_iq_ability_elite_and_player_scatter() {
                 houses: &crate::sim::houses::Houses,
                 rules: &RuleSet,
                 cell: &[u64]| {
-        scatter_objects_admitted(cell, false, rules, entities, houses, &interner)
+        let mut admitted = cell.to_vec();
+        retain_scatter_admitted(&mut admitted, false, rules, entities, houses, &interner);
+        admitted
     };
     for (iq, rank, expected) in [(1, 0, false), (2, 0, true), (1, 100, true)] {
         houses.get_mut(&owner).unwrap().set_current_iq_for_test(iq);

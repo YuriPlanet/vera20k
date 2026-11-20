@@ -36,9 +36,6 @@ pub(crate) fn transfer_outgoing_simulation_rules(
 pub(crate) struct ProcessAssets {
     /// Selected at launch, retained even if initial archive loading fails.
     media_archive_mode: MediaArchiveMode,
-    /// The launch's mod folder (`app::mods`): a manager rebuilt after a lost
-    /// lease reads the same files.
-    mod_dir: Option<std::path::PathBuf>,
     /// The launch's Ares setting (`util::ares_launch::AresSetting`), kept as
     /// the mod folder is.
     ares_setting: crate::util::ares_launch::AresSetting,
@@ -52,8 +49,8 @@ pub(crate) struct ProcessAssets {
     map_additions: std::sync::OnceLock<
         Result<Option<std::sync::Arc<crate::app::mod_additions::MapAdditions>>, String>,
     >,
-    /// Launch request and its first resolved names survive a lost asset lease.
-    ini_config: crate::util::ini_roots::IniRootConfig,
+    /// Frozen manifest and its first resolved names survive a lost asset lease.
+    resources: crate::util::mod_definition::ResourceConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
     /// The player's own rule switches, read at startup with VERA.INI and
     /// changed by the skirmish Game Options ([`Self::set_terrain_deformation`],
@@ -128,12 +125,11 @@ impl ProcessAssets {
     pub(crate) fn new(media_archive_mode: MediaArchiveMode, load_audio_index: bool) -> Self {
         Self {
             media_archive_mode,
-            mod_dir: None,
             ares_setting: Default::default(),
             mod_files: Default::default(),
             mod_files_ahead: Default::default(),
             map_additions: Default::default(),
-            ini_config: Default::default(),
+            resources: Default::default(),
             selected_ini_roots: None,
             personal_rules: Default::default(),
             manager: None,
@@ -151,14 +147,16 @@ impl ProcessAssets {
         }
     }
 
-    pub(crate) fn new_with_ini_config(
-        media: MediaArchiveMode,
-        audio: bool,
-        config: crate::util::ini_roots::IniRootConfig,
+    pub(crate) fn with_resources(
+        mut self,
+        resources: crate::util::mod_definition::ResourceConfig,
     ) -> Self {
-        let mut process = Self::new(media, audio);
-        process.ini_config = config;
-        process
+        self.resources = resources;
+        self
+    }
+
+    pub(crate) fn uses_client_catalog(&self) -> bool {
+        self.resources.client_install.is_some()
     }
 
     pub(crate) fn with_personal_rules(
@@ -166,11 +164,6 @@ impl ProcessAssets {
         rules: crate::rules::personal_rules::PersonalRules,
     ) -> Self {
         self.personal_rules = rules;
-        self
-    }
-
-    pub(crate) fn with_mod_dir(mut self, mod_dir: Option<std::path::PathBuf>) -> Self {
-        self.mod_dir = mod_dir;
         self
     }
 
@@ -194,7 +187,7 @@ impl ProcessAssets {
     /// Where no thread starts, that check reads them itself.
     pub(crate) fn read_mod_files_ahead(&self) {
         use std::sync::atomic::Ordering;
-        let Some(dir) = self.mod_dir.clone() else {
+        let Some(dir) = self.resources.mod_folder.clone() else {
             return;
         };
         if self.mod_files_ahead.swap(true, Ordering::Relaxed) {
@@ -211,20 +204,20 @@ impl ProcessAssets {
     /// The launch's mod folder as one digest, or why it could not be read;
     /// `None` without a mod.
     fn mod_files(&self) -> Option<&Result<[u8; 32], String>> {
-        let dir = self.mod_dir.as_deref()?;
+        let dir = self.resources.mod_folder.as_deref()?;
         Some(self.mod_files.get_or_init(|| mod_files_digest(dir)))
     }
 
     /// The launch mod's map additions, which the matches they reach
     /// (`mod_additions::reach`) add to their maps, or why they could not be
     /// read; `None` without a mod or when its folder holds other files the
-    /// game reads. `assets` name the Rules, Art, AI, sound and theater INIs
-    /// this game reads.
+    /// game reads. `assets` names the selected roots and catalogs, including
+    /// the theater INIs this game reads.
     pub(crate) fn map_additions(
         &self,
         assets: &AssetManager,
     ) -> Result<Option<std::sync::Arc<crate::app::mod_additions::MapAdditions>>, String> {
-        let Some(dir) = self.mod_dir.as_deref() else {
+        let Some(dir) = self.resources.mod_folder.as_deref() else {
             return Ok(None);
         };
         self.map_additions
@@ -236,6 +229,12 @@ impl ProcessAssets {
                     roots.ai(),
                     roots.sound(),
                     roots.eva(),
+                    roots.theme(),
+                    roots.battle(),
+                    roots.mission(),
+                    roots.mapsel(),
+                    roots.modes(),
+                    roots.map_catalog(),
                 ]
                 .map(str::to_owned)
                 .to_vec();
@@ -297,10 +296,9 @@ impl ProcessAssets {
         self.use_personal_rules(self.personal_rules.clone());
     }
 
-    /// The Rules, Art and AI roots and the theater INI suffix are the stock YR
-    /// ones; config.toml's `[ini]` profiles, names and `theater_suffix` can
-    /// pick others. Any other suffix counts, even one that picks a shipped
-    /// theater INI under another theater's name.
+    /// Whether the gameplay roots, theater suffix and skirmish catalogs use
+    /// stock YR names. Host configuration or a selected mod can choose others;
+    /// even a suffix aliasing a shipped theater INI counts as a custom choice.
     pub(crate) fn stock_ini_roots(&self) -> bool {
         let stock = crate::util::ini_roots::IniRoots::default();
         self.selected_ini_roots.as_ref().is_none_or(|roots| {
@@ -309,6 +307,8 @@ impl ProcessAssets {
                 (roots.art(), stock.art()),
                 (roots.ai(), stock.ai()),
                 (roots.theater_suffix(), stock.theater_suffix()),
+                (roots.modes(), stock.modes()),
+                (roots.map_catalog(), stock.map_catalog()),
             ]
             .iter()
             .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
@@ -335,15 +335,16 @@ impl ProcessAssets {
     ) -> anyhow::Result<AssetManager> {
         let assets = AssetManager::with_mod_and_ares(
             root,
-            self.mod_dir.as_deref(),
+            self.resources.mod_folder.as_deref(),
             self.media_archive_mode,
             self.ares_setting,
-            crate::assets::asset_manager::ArchiveFamily::for_ini_profile(self.ini_config.profile),
-        )?;
+            &self.resources.archives,
+        )?
+        .with_mod_sources(&self.resources);
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {
-            assets.with_ini_roots(&self.ini_config)?
+            assets.with_ini_roots(&self.resources.ini)?
         })
     }
 
@@ -571,7 +572,7 @@ impl ProcessAssets {
         // Whether Ares plays (`rules::ares_switch`) follows these sources and
         // the map, which the map agreement covers, and whether the game is an
         // Ares game: the selected mod mounted `ares.mix`, or the player's Ares
-        // setting is On. Such a game adds the byte, so the same files read
+        // setting is On (including a selected mod requiring Ares). Such a game adds the byte, so the same files read
         // with and without Ares never agree; with no mod selected and the
         // setting on Auto the installed archive is ignored and adds nothing.
         if assets.ships_ares() {
@@ -589,6 +590,60 @@ impl ProcessAssets {
                 bytes.push(u8::from(assets.ares_mix_mounted()));
             }
             crate::util::ares_launch::AresSetting::Off => bytes.extend_from_slice(b"ares off\0"),
+        }
+        // mod.ini's display metadata is deliberately absent from the mod-file
+        // digest. Its effective loading declarations still select what plays;
+        // compare the frozen choice, not the mutable manifest on disk.
+        let roots = assets.ini_roots();
+        let stock = crate::util::ini_roots::IniRoots::default();
+        let root_names = [
+            (roots.rules(), stock.rules()),
+            (roots.art(), stock.art()),
+            (roots.ai(), stock.ai()),
+            (roots.sound(), stock.sound()),
+            (roots.eva(), stock.eva()),
+            (roots.theme(), stock.theme()),
+            (roots.battle(), stock.battle()),
+            (roots.mission(), stock.mission()),
+            (roots.mapsel(), stock.mapsel()),
+            (roots.modes(), stock.modes()),
+            (roots.map_catalog(), stock.map_catalog()),
+        ];
+        let archives = &self.resources.archives;
+        let stock_archives = crate::util::archive_names::ArchiveNames::default();
+        let archive_names = [
+            (
+                archives.expansion_prefix.as_str(),
+                stock_archives.expansion_prefix.as_str(),
+            ),
+            (
+                archives.map_prefix.as_str(),
+                stock_archives.map_prefix.as_str(),
+            ),
+            (
+                archives.multiplayer.as_str(),
+                stock_archives.multiplayer.as_str(),
+            ),
+            (archives.theme.as_str(), stock_archives.theme.as_str()),
+            (
+                archives.movie_prefix.as_str(),
+                stock_archives.movie_prefix.as_str(),
+            ),
+        ];
+        if self.resources.requires_ares
+            || root_names
+                .iter()
+                .chain(&archive_names)
+                .any(|(name, stock)| !name.eq_ignore_ascii_case(stock))
+        {
+            bytes.extend_from_slice(b"resource selection\0");
+            bytes.push(u8::from(self.resources.requires_ares));
+            bytes.extend_from_slice(assets.ares_setting().ini_value().as_bytes());
+            bytes.push(0);
+            for (name, _) in root_names.iter().chain(&archive_names) {
+                bytes.extend_from_slice(name.to_ascii_lowercase().as_bytes());
+                bytes.push(0);
+            }
         }
         // VERA: with a mod in use, its other files too (art, maps, archives),
         // so players whose copies of a mod differ never start a match. Without
@@ -648,8 +703,14 @@ impl ProcessAssets {
         use crate::rules::retail_sources::{select_ini, select_mode_ini};
         let roots = assets.ini_roots();
         let theater_inis = crate::map::theater::theater_ini_names(assets);
-        // MPModesMD.ini is the mode roster: which mode INIs the hash adds.
-        let mut compared = vec![roots.rules(), roots.art(), roots.ai(), "MPModesMD.ini"];
+        // The selected roster decides which mode INIs the hash adds.
+        let mut compared = vec![
+            roots.rules(),
+            roots.art(),
+            roots.ai(),
+            roots.modes(),
+            roots.map_catalog(),
+        ];
         // Match RetailRulesSources' selection: Original mode never consumes
         // the installation's optional LANGRULE, so it changes no game files.
         if assets.mod_selected() {
@@ -1112,7 +1173,12 @@ mod tests {
         let digest = |folder: Option<&str>| {
             let mod_dir = folder.map(|folder| mods.join(folder));
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_mod_dir(mod_dir.clone());
+                .with_resources(crate::util::mod_definition::ResourceConfig {
+                    mod_folder: mod_dir
+                        .clone()
+                        .map(crate::util::mod_package::ModFolder::loose),
+                    ..Default::default()
+                });
             let assets = AssetManager::with_mod(
                 dir.path(),
                 mod_dir.as_deref(),
@@ -1146,7 +1212,10 @@ mod tests {
         std::fs::write(hard.join("AI teams.ini"), "[AI]\nValue=2\n").unwrap();
         let start = || {
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_mod_dir(Some(hard.clone()));
+                .with_resources(crate::util::mod_definition::ResourceConfig {
+                    mod_folder: Some(crate::util::mod_package::ModFolder::loose(hard.clone())),
+                    ..Default::default()
+                });
             let assets =
                 AssetManager::with_mod(dir.path(), Some(&hard), MediaArchiveMode::STOCK_DIGITAL)
                     .unwrap();
@@ -1327,30 +1396,32 @@ mod tests {
     }
 
     #[test]
-    fn ini_roots_process_recovery_keeps_auto_choice_and_refuses_a_foreign_triplet() {
+    fn ini_roots_process_recovery_keeps_custom_choice_and_refuses_a_foreign_triplet() {
         use crate::util::ini_roots::{IniProfile, IniRootConfig};
         let dir =
             crate::assets::asset_manager::test_support::audio_test_install("ini-roots-process");
         std::fs::write(
-            dir.path().join("rulesmo.ini"),
+            dir.path().join("storm-rules.ini"),
             b"[General]\nBuildSpeed=.7\n",
         )
         .unwrap();
-        std::fs::write(dir.path().join("artmo.ini"), b"[TEST]\nVoxel=yes\n").unwrap();
-        std::fs::write(dir.path().join("aimo.ini"), b"[Marker]\nValue=MO\n").unwrap();
+        std::fs::write(dir.path().join("storm-art.ini"), b"[TEST]\nVoxel=yes\n").unwrap();
+        std::fs::write(dir.path().join("storm-ai.ini"), b"[Marker]\nValue=Storm\n").unwrap();
         let config = IniRootConfig {
-            profile: IniProfile::Auto,
+            profile: IniProfile::Custom,
+            rules: Some("storm-rules.ini".into()),
+            art: Some("storm-art.ini".into()),
+            ai: Some("storm-ai.ini".into()),
             ..Default::default()
         };
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
             .unwrap()
             .with_ini_roots(&config)
             .unwrap();
-        let mut process = ProcessAssets::new_with_ini_config(
-            MediaArchiveMode::STOCK_DIGITAL,
-            false,
-            config.clone(),
-        );
+        let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+            .with_resources(crate::util::mod_definition::ResourceConfig::from_ini(
+                config,
+            ));
         process.initialize_sources_if_needed(&manager).unwrap();
         process.return_from_loading(manager);
         drop(process.lease_for_loading().unwrap());
@@ -1360,30 +1431,24 @@ mod tests {
         }
         let fresh = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
         assert!(process.initialize_sources_if_needed(&fresh).is_err());
-        assert!(
-            fresh.with_ini_roots(&config).is_err(),
-            "new Auto choice would now be ambiguous"
-        );
         let recovered = process.reconstruct_manager(dir.path()).unwrap();
-        assert_eq!(recovered.ini_roots().profile(), IniProfile::Mo);
+        assert_eq!(recovered.ini_roots().profile(), IniProfile::Custom);
         process.initialize_sources_if_needed(&recovered).unwrap();
-        assert_eq!(
+        assert!(
             process
                 .native_rules()
                 .unwrap()
                 .fixed_art()
                 .section_or_empty("TEST")
-                .read_bool("Voxel", false),
-            true
+                .read_bool("Voxel", false)
         );
     }
 
-    /// MO's spawner renames BATTLEMD to BATTLEMO with the other MO roots.
     #[test]
-    fn mo_profile_reads_the_mo_campaign_catalog() {
+    fn custom_files_select_the_campaign_catalog() {
         use crate::util::ini_roots::{IniProfile, IniRootConfig};
-        let dir = crate::assets::asset_manager::test_support::audio_test_install("mo-battle");
-        for name in ["rulesmo.ini", "artmo.ini", "aimo.ini"] {
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("custom-battle");
+        for name in ["storm-rules.ini", "storm-art.ini", "storm-ai.ini"] {
             std::fs::write(dir.path().join(name), b"[General]\n").unwrap();
         }
         std::fs::write(
@@ -1392,23 +1457,31 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            dir.path().join("battlemo.ini"),
-            b"[Battles]\n1=MO\n[MO]\nScenario=ADEMON.MAP\n",
+            dir.path().join("storm-battle.ini"),
+            b"[Battles]\n1=Storm\n[Storm]\nScenario=STORM.MAP\n",
         )
         .unwrap();
         let config = IniRootConfig {
-            profile: IniProfile::Mo,
+            profile: IniProfile::Custom,
+            rules: Some("storm-rules.ini".into()),
+            art: Some("storm-art.ini".into()),
+            ai: Some("storm-ai.ini".into()),
+            battle: Some("storm-battle.ini".into()),
             ..Default::default()
         };
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
             .unwrap()
             .with_ini_roots(&config)
             .unwrap();
-        let mut process =
-            ProcessAssets::new_with_ini_config(MediaArchiveMode::STOCK_DIGITAL, false, config);
+        let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+            .with_resources(crate::util::mod_definition::ResourceConfig::from_ini(
+                config,
+            ));
         process.reload_campaigns(&manager);
-        let campaigns = process.campaigns().unwrap();
-        assert_eq!(campaigns.get(0).unwrap().scenario(), "ADEMON.MAP");
+        assert_eq!(
+            process.campaigns().unwrap().get(0).unwrap().scenario(),
+            "STORM.MAP"
+        );
     }
 
     /// The production install over the retail sources against the native
@@ -1419,11 +1492,7 @@ mod tests {
         let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let mut process = ProcessAssets::new_with_ini_config(
-            MediaArchiveMode::STOCK_DIGITAL,
-            false,
-            Default::default(),
-        );
+        let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
         process.initialize_sources_if_needed(&assets).unwrap();
         let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets).unwrap();
         process.install_native_ini_hashes(&assets, &modes);
