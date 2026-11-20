@@ -4,17 +4,17 @@
 #
 #     sh tools/game_files_setup.sh
 #     sh tools/game_files_setup.sh "<a Yuri's Revenge folder you already have>"
+#     sh tools/game_files_setup.sh "<the archive that folder came in>"
 #
-# The game files are EA's. The only source this script knows is a Steam
-# account with EA Play: EA publishes "Command & Conquer Red Alert 2 and
+# The game files are EA's. The only source this script downloads from is a
+# Steam account with EA Play: EA publishes "Command & Conquer Red Alert 2 and
 # Yuri's Revenge" (appid 2229850) through the EA Play subscription on Steam,
 # so steamcmd asks for that account and its password here, in your terminal.
 # Nothing is downloaded from any other place, and nothing leaves your machine:
 # the retail copy stays in the ignored game-files/ folder of this checkout.
 #
-# A retail folder you already have needs none of this:
-#
-#     python3 -m tools.game_files prepare --source "<Yuri's Revenge folder>" --target game-files/yr
+# A copy you already have needs none of this: pass its folder, or the archive
+# it came in, as the first argument.
 #
 # The copy is staged and checked before it replaces the target, so a source
 # that turns out to be incomplete leaves the working folder alone.
@@ -22,13 +22,15 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-install_dir=${1:-"$root/game-files/steam"}
+source=${1:-"$root/game-files/steam"}
 target=${2:-"$root/game-files/yr"}
 appid=2229850
 
-# A folder the player already has needs no download: use it as the source.
-if [ -f "$install_dir/ra2md.mix" ]; then
-    echo "using the retail folder $install_dir"
+# A copy the player already has needs no download: use it as the source.
+if [ -f "$source/ra2md.mix" ]; then
+    echo "using the retail folder $source"
+elif [ -f "$source" ]; then
+    echo "using the archive $source"
 else
     if ! command -v steamcmd >/dev/null 2>&1; then
         if command -v brew >/dev/null 2>&1; then
@@ -40,14 +42,14 @@ else
         fi
     fi
 
-    mkdir -p "$install_dir"
+    mkdir -p "$source"
     echo "logging in to Steam; EA Play carries this application, so the account needs it"
     echo "if steamcmd answers 'No subscription', subscribe to EA Play on Steam and run this again"
-    steamcmd "+force_install_dir $install_dir" "+login" "+app_update $appid" "+quit"
+    steamcmd "+force_install_dir $source" "+login" "+app_update $appid" "+quit"
 fi
 
 cd "$root"
-python3 -m tools.game_files prepare --source "$install_dir" --target "$target"
+python3 -m tools.game_files prepare --source "$source" --target "$target"
 
 echo
 echo "running a headless match on the prepared copy"

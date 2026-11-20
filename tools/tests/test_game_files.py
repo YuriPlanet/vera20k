@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -169,6 +170,50 @@ class FindGameFolderTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             self.assertEqual(game_files.find_game_folder(base), base)
+
+
+class UnpackTest(unittest.TestCase):
+    """A source that arrives as a download."""
+
+    def test_a_zip_holding_the_game_is_unpacked_and_found(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            archive = base / 'yr.zip'
+            with zipfile.ZipFile(archive, 'w') as bundle:
+                bundle.writestr('Yuri/ra2md.mix', b'archive')
+                bundle.writestr('Yuri/gamemd.exe', b'executable')
+            workdir = base / 'unpacked'
+            found = game_files.unpack(archive, workdir)
+            self.assertEqual(found, workdir / 'Yuri')
+            self.assertEqual((found / 'ra2md.mix').read_bytes(), b'archive')
+
+    def test_a_zip_that_would_write_outside_the_folder_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            archive = base / 'evil.zip'
+            with zipfile.ZipFile(archive, 'w') as bundle:
+                bundle.writestr('../escaped.mix', b'archive')
+            with self.assertRaises(SystemExit):
+                game_files.unpack(archive, base / 'unpacked')
+            self.assertFalse((base / 'escaped.mix').exists())
+
+    def test_a_prepared_archive_replaces_the_folder_and_clears_the_scratch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            archive = base / 'yr.zip'
+            with zipfile.ZipFile(archive, 'w') as bundle:
+                bundle.writestr('Yuri/ra2md.mix', b'archive')
+            target = base / 'target'
+            root = base / 'checkout'
+            root.mkdir()
+            (root / 'config.toml.example').write_text(
+                '[paths]\nra2_dir = "C:/Westwood/RA2"\n', encoding='utf-8')
+            with mock.patch.object(game_files, 'run_game_data_check', return_value=([], [], 0)):
+                lines, ready = game_files.prepare(archive, target, root)
+            self.assertTrue(ready)
+            self.assertEqual({path.name for path in target.iterdir()}, {'ra2md.mix'})
+            self.assertFalse(target.with_name(target.name + '.unpacked').exists())
+            self.assertIn('unpacked yr.zip', '\n'.join(lines))
 
 
 class SmokeTest(unittest.TestCase):

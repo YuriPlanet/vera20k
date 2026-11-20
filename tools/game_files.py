@@ -9,13 +9,14 @@ at the result.
 
     python -m tools.game_files verify --dir <folder>
     python -m tools.game_files slim --source <folder> --target <folder>
-    python -m tools.game_files prepare --source <folder> --target <folder>
+    python -m tools.game_files prepare --source <folder-or-archive> --target <folder>
     python -m tools.game_files steam --target <folder>
     python -m tools.game_files config --dir <folder>
 
 `prepare` is the command the setup script runs: it stages the copy, checks it,
-and only then replaces the working folder and writes `config.toml`. The
-executable the check uses can be named with `--binary` or with the
+and only then replaces the working folder and writes `config.toml`. A source
+that arrives as a download — a zip, a rar, a split rar — is unpacked first.
+The executable the check uses can be named with `--binary` or with the
 `VERA20K_GAME_BINARY` environment variable.
 
 What the game needs is not decided here. `verify` runs the engine's own
@@ -41,6 +42,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 if sys.version_info < (3, 12):
     sys.exit(f'Python 3.12 or newer is required; {sys.executable} is {sys.version.split()[0]}')
@@ -85,6 +87,12 @@ KEEP_SUFFIXES = (
     '.mmx',   # maps
     '.mpr',   # maps
     '.map',   # maps
+)
+
+# Sources that arrive as a download rather than as a folder. A file share
+# often splits one into parts; the first part carries the archive suffix.
+ARCHIVE_SUFFIXES = (
+    '.zip', '.rar', '.7z', '.001', '.tar', '.gz', '.tgz', '.bz2', '.xz',
 )
 
 
@@ -145,6 +153,8 @@ def verify(folder: Path, profile: str = 'fast',
     """Report lines for FOLDER, and whether its required data checks pass."""
     lines: list[str] = []
     if not folder.is_dir():
+        if folder.is_file():
+            return [f'problem  {folder} is an archive; `prepare` unpacks it'], False
         return [f'problem  {folder} is not a folder'], False
     folder = find_game_folder(folder)
     required, optional, code = run_game_data_check(folder, profile, binary)
@@ -168,7 +178,7 @@ def keep_file(path: Path) -> bool:
     return path.suffix.lower() in KEEP_SUFFIXES
 
 
-def find_game_folder(path: Path) -> Path:
+def find_game_folder(path: Path, depth: int = 3) -> Path:
     """The folder in PATH that holds the retail archives.
 
     A Steam installation keeps the game in a subfolder of the install
@@ -180,7 +190,7 @@ def find_game_folder(path: Path) -> Path:
     if not path.is_dir():
         return path
     frontier = [path]
-    for _ in range(3):
+    for _ in range(depth):
         children = []
         for parent in frontier:
             children += [child for child in sorted(parent.iterdir()) if child.is_dir()]
@@ -189,6 +199,46 @@ def find_game_folder(path: Path) -> Path:
                 return child
         frontier = children
     return path
+
+
+def unpack(archive: Path, workdir: Path) -> Path:
+    """Extract ARCHIVE into WORKDIR and return the folder that holds the game files.
+
+    A source that arrives as a download is often an archive, and a group
+    file share often splits it into parts. The extraction runs into a fresh
+    folder of its own, and only regular files below it are ever read.
+    """
+    workdir.mkdir(parents=True, exist_ok=True)
+    if archive.suffix.lower() == '.zip':
+        extract_zip(archive, workdir)
+    else:
+        extract_with_7z(archive, workdir)
+    return find_game_folder(workdir, depth=5)
+
+
+def extract_zip(archive: Path, workdir: Path) -> None:
+    """Extract a zip archive into WORKDIR, refusing entries that escape it."""
+    with zipfile.ZipFile(archive) as bundle:
+        for entry in bundle.infolist():
+            destination = workdir / entry.filename
+            if not destination.resolve().is_relative_to(workdir.resolve()):
+                raise SystemExit(f'{archive} holds a path that leaves the folder: {entry.filename}')
+        bundle.extractall(workdir)
+
+
+def extract_with_7z(archive: Path, workdir: Path) -> None:
+    """Extract a 7-Zip archive into WORKDIR with the `7zz` binary."""
+    seven = shutil.which('7zz') or shutil.which('7z')
+    if seven is None:
+        raise SystemExit(
+            f'{archive.name} needs an extractor; install one with `brew install p7zip`')
+    result = subprocess.run(
+        [seven, 'x', '-y', f'-o{workdir}', str(archive)],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or '').strip().splitlines()
+        message = detail[-1] if detail else f'exit code {result.returncode}'
+        raise SystemExit(f'could not extract {archive}: {message}')
 
 
 def slim(source: Path, target: Path) -> list[str]:
@@ -202,6 +252,10 @@ def slim(source: Path, target: Path) -> list[str]:
     skipped = 0
     skipped_bytes = 0
     for path in sorted(source.iterdir()):
+        if path.is_symlink():
+            # A link is not content: it points somewhere else on the machine.
+            skipped += 1
+            continue
         if not path.is_file():
             continue
         if keep_file(path):
@@ -221,19 +275,34 @@ def prepare(source: Path, target: Path, root: Path = REPO, profile: str = 'fast'
             binary: Path | None = None) -> tuple[list[str], bool]:
     """Fill TARGET from SOURCE, but only when the copy passes the data checks.
 
-    The copy is staged beside the target and checked there, so a source that
-    turns out to be incomplete leaves the working folder and the checkout's
-    configuration untouched.
+    SOURCE is a licensed folder or the archive it arrives in. The copy is
+    staged beside the target and checked there, so a source that turns out to
+    be incomplete leaves the working folder and the checkout's configuration
+    untouched.
     """
     lines: list[str] = []
-    if not source.is_dir():
+    unpacked: Path | None = None
+    folder = source
+    if source.is_file():
+        if source.suffix.lower() not in ARCHIVE_SUFFIXES:
+            return [f'problem  {source} is not a folder or an archive'], False
+        unpacked = target.with_name(target.name + '.unpacked')
+        if unpacked.exists():
+            shutil.rmtree(unpacked)
+        folder = unpack(source, unpacked)
+        lines.append(f'unpacked {source.name} into {unpacked}')
+    if not folder.is_dir():
+        if unpacked is not None:
+            shutil.rmtree(unpacked, ignore_errors=True)
         return [f'problem  {source} is not a folder'], False
     staging = target.with_name(target.name + '.staging')
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
-    lines += slim(source, staging)
+    lines += slim(folder, staging)
     required, optional, code = run_game_data_check(staging, profile, binary)
+    if unpacked is not None:
+        shutil.rmtree(unpacked, ignore_errors=True)
     if code != 0:
         shutil.rmtree(staging, ignore_errors=True)
         lines.append('')

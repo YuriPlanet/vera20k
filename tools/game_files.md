@@ -20,6 +20,7 @@ below is one the player already has:
 | --- | --- |
 | An EA Play subscription on Steam | EA publishes *Command & Conquer Red Alert 2 and Yuri's Revenge* (appid `2229850`) through the EA Play subscription on Steam, so the account that downloads it needs that subscription. `steamcmd` with that account installs the retail files; an anonymous session is refused with `No subscription`. |
 | A retail YR folder | Copy it, or point the checkout at it where it already is. |
+| The archive that folder came in | A download is often a zip or a split rar; `prepare` unpacks it. |
 | An unpacked disc | Extract it with the tool of your choice, then use the folder. |
 
 ### What the subscription costs
@@ -40,8 +41,9 @@ came from another machine works just as well: point the tool at the folder.
 python -m tools.game_files verify --dir "<Yuri's Revenge folder>"
 
 # 2. Fill the checkout's folder from it, check the copy, and point the
-#    checkout at the result.
-python -m tools.game_files prepare --source "<Yuri's Revenge folder>" --target game-files/yr
+#    checkout at the result. The source may be a folder or the archive it
+#    came in.
+python -m tools.game_files prepare --source "<Yuri's Revenge folder or archive>" --target game-files/yr
 ```
 
 `game-files/` is ignored by Git, so a retail copy never lands in a commit.
