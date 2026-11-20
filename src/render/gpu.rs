@@ -260,18 +260,28 @@ impl GpuContext {
         display: OwnedDisplayHandle,
         hidden_capture: bool,
         backends: wgpu::Backends,
+        on_adapter: impl FnOnce(&wgpu::AdapterInfo),
     ) -> Result<Self> {
-        block_on(Self::new_async(window, display, hidden_capture, backends))
-            .context(GraphicsUnavailable)
+        block_on(Self::new_async(
+            window,
+            display,
+            hidden_capture,
+            backends,
+            on_adapter,
+        ))
+        .context(GraphicsUnavailable)
     }
 
     /// Async initialization — called by new() via block_on(). `backends` is
-    /// what this start asks wgpu for (`persistence::startup_backend`).
+    /// what this start asks wgpu for, and `on_adapter` hears which adapter
+    /// was chosen before the driver is asked for a device, the call a driver
+    /// can hang in (`persistence::startup_backend::starting`).
     async fn new_async(
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
         backends: wgpu::Backends,
+        on_adapter: impl FnOnce(&wgpu::AdapterInfo),
     ) -> Result<Self> {
         // Where a driver offers Vulkan and DirectX 12, wgpu takes Vulkan, the
         // first API it lists; a start record asks for one alone
@@ -376,6 +386,7 @@ impl GpuContext {
             device: adapter_info.device,
             name: adapter_info.name.clone(),
         });
+        on_adapter(&adapter_info);
 
         // Atlas sizing is bounded by whatever limits we *request*, not by the hardware.
         let adapter_limits = adapter.limits();
@@ -422,6 +433,11 @@ impl GpuContext {
         } else {
             required_limits
         };
+        // The two calls below are the driver's, and an old one can hang in
+        // either: an Intel HD 620's 2017 Vulkan driver never returned from
+        // them, and its log ended at the limits line above. Each is named, so
+        // a log that stops here says which.
+        log::info!("Requesting the graphics device");
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("RA2 Device"),
@@ -517,6 +533,13 @@ impl GpuContext {
             // the pre-30 sRGB behaviour for every desktop and WebGL2 backend.
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
+        log::info!(
+            "Configuring the surface: {}x{} {:?}, {:?}",
+            config.width,
+            config.height,
+            config.format,
+            config.present_mode
+        );
         surface.configure(&device, &config);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let web_present = Arc::new(web_present::WebPresent::new(&device, &queue, &config));

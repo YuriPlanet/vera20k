@@ -567,6 +567,7 @@ impl App {
             game_config
                 .as_ref()
                 .map(|config| config.paths.settings_dir()),
+            options_profile.graphics_api.backend(),
         );
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let gpu = match GpuContext::new(
@@ -574,6 +575,7 @@ impl App {
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
             backends,
+            crate::app::persistence::startup_backend::starting,
         ) {
             // The API the start record asks for has no adapter here (DirectX
             // 12 on a Windows without it): the default set; the record stays.
@@ -586,6 +588,7 @@ impl App {
                     event_loop.owned_display_handle(),
                     capture || hidden_spawn_window,
                     wgpu::Backends::PRIMARY,
+                    crate::app::persistence::startup_backend::starting,
                 )?
             }
             result => result?,
