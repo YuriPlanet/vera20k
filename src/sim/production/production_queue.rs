@@ -1280,7 +1280,7 @@ pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> V
     // (category, stamp, type_id, state, progress); progress feeds only the
     // test-support view field.
     let mut items: Vec<(ProductionCategory, u64, InternedId, BuildQueueState, u16)> = Vec::new();
-    for f in sim.production.factories().iter_insertion_ordered() {
+    for (_, f) in sim.production.factories().holders_insertion_ordered() {
         if f.owner() != owner_id {
             continue;
         }
