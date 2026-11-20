@@ -257,10 +257,17 @@ pub enum ColorRange {
 
 impl BinkFrame {
     fn alloc(width: u32, height: u32, color_range: ColorRange) -> Self {
-        let stride_y = ((width + 7) & !7) as usize;
-        let stride_uv = (((width + 15) & !15) / 2) as usize;
-        let y_size = stride_y * ((height + 7) & !7) as usize;
-        let uv_size = stride_uv * (((height + 15) & !15) / 2) as usize;
+        // A scaled block writes 16x16 at an even block position
+        // (`scale_block_8x8_to_16x16`, `fill_block` with 16), so each plane
+        // holds whole 16-pixel blocks, as FFmpeg's padded frame buffers do. A
+        // plane of 8-pixel blocks ends eight rows short of a scaled block on
+        // an odd last block row (640x400 and 320x200 have one); retail movies
+        // never place one there, a damaged or re-encoded movie can, and the
+        // write then ran off the slice.
+        let stride_y = ((width + 15) & !15) as usize;
+        let stride_uv = (((width + 31) & !31) / 2) as usize;
+        let y_size = stride_y * ((height + 15) & !15) as usize;
+        let uv_size = stride_uv * (((height + 31) & !31) / 2) as usize;
         Self {
             width,
             height,
@@ -1719,6 +1726,23 @@ mod tests {
         d.init_bundle_lengths(320, bw);
         assert_eq!(d.bundles[Src::BlockTypes as usize].len_bits, 10);
         assert_eq!(d.bundles[Src::SubBlockTypes as usize].len_bits, 10);
+    }
+
+    /// A scaled block on the last block row of a 320x200 movie (25 luma and
+    /// 13 chroma block rows, both odd) must fit the planes.
+    #[test]
+    fn planes_hold_a_scaled_block_on_an_odd_last_block_row() {
+        let mut frame = BinkFrame::alloc(320, 200, ColorRange::Mpeg);
+        let luma_rows = (200u32 + 7) >> 3;
+        assert_eq!(luma_rows % 2, 1);
+        let base = ((luma_rows - 1) as usize) * 8 * frame.stride_y;
+        fill_block(&mut frame.y[base..], 7, frame.stride_y, 16);
+        assert_eq!(frame.y[base + 15 * frame.stride_y + 15], 7);
+        let chroma_rows = (200u32 + 15) >> 4;
+        assert_eq!(chroma_rows % 2, 1);
+        let base = ((chroma_rows - 1) as usize) * 8 * frame.stride_uv;
+        scale_block_8x8_to_16x16(&[9u8; 64], &mut frame.u[base..], frame.stride_uv);
+        assert_eq!(frame.u[base + 15 * frame.stride_uv + 15], 9);
     }
 
     #[test]
