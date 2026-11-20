@@ -818,7 +818,7 @@ use transitions::{StartCloakingResult, StartUncloakingResult};
 /// from different stack slots by the two reveal writers. It has no established
 /// behavioral meaning in this chain and is not deterministic cell state.
 /// Native controls: `tools/spatial_oracle/mirage_disguise.{py,json,md}`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DisguiseRuntime {
     disguised: bool,
     disguise_creation_frame: u32,
