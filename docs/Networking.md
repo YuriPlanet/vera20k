@@ -101,6 +101,9 @@ folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so 
 refused as on any rules difference. The effective file, catalog, archive and extension
 declarations from `mod.ini` also take part in this agreement; its display metadata does
 not. These choices are frozen at startup and reused when the asset manager is rebuilt.
+For [mods distributed in parts](modding.md#mods-distributed-in-parts), the check
+compares the assembled files. ZIPs and extracted folders with the same files
+and loading declarations give the same agreement.
 No packet fields change: released builds still meet the existing build check, a mixed
 room cannot start, and a rollback uses that build's loading rules and agreement.
 A mod that adds INI files to every map

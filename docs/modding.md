@@ -98,8 +98,7 @@ with a `README.txt` in it.
 3. [Pick the mod](#pick-a-mod).
 
 The game then reads the mod's files as if you had copied them on top of the game folder.
-Nothing is copied, and the game folder isn't touched. A mod made to be copied into the
-game folder works the same from its own folder.
+A mod made to be copied into the game folder works the same from its own folder.
 
 With **No mod** selected, an `ares.mix` already in the game folder is ignored, unless
 the [Ares setting](ares.md#the-ares-setting) is On; set to Off, no `ares.mix` is used.
@@ -125,6 +124,20 @@ it does not install new engine code.
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
 | `mod.ini` | Supplies display information, resource filenames and extension requirements. Optional. |
 | `mod-files.txt` | Lists the mod's files, so players can check their copy. The game writes it for you: see [Check a mod's files](#check-a-mods-files). Optional. |
+
+#### Mods distributed in parts
+
+In the desktop game, put the downloads for one mod inside one `Mods` folder
+entry. Each part can be a ZIP archive or a folder containing the files from
+that archive. For example, with ZIPs use `Mods/My Mod/01 Base.zip` and
+`Mods/My Mod/02 Patch.zip`. If already extracted, use `Mods/My Mod/01 Base/`
+and `Mods/My Mod/02 Patch/`.
+
+VERA sorts the parts by name, ignoring letter case and the `.zip` extension.
+A later part replaces files at matching paths. Keep the shipped names if
+they already sort in install order, or prefix the parts with `01`, `02`,
+and so on. Choose the containing mod in the **Mods** menu as usual. VERA
+assembles its files for the launch and keeps the downloads in place.
 
 #### mod.ini
 
@@ -268,6 +281,7 @@ a folder that is already there, and your original game isn't changed.
 
 Pick a mod in the Mods menu and press **Check Files**. The game reads every file in the
 mod's folder and tells you how many there are and their **code**, such as `4F2A-91C3`.
+For a mod distributed in parts, this checks the assembled files.
 Two copies with the same code hold the same compared data files. Also keep their
 `mod.ini` loading declarations in sync; the display metadata can differ.
 

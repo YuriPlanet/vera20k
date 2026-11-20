@@ -147,11 +147,13 @@ fn open_mod_manager_with_config_loader(
     load: impl FnOnce() -> anyhow::Result<GameConfig>,
 ) -> Result<AssetManager, String> {
     let base = resolve_ini_config(explicit, load)?;
-    let definition = crate::util::mod_definition::ModDefinition::read(mod_dir)?;
-    let resources = crate::assets::asset_manager::mod_resources(mod_dir, &definition, &base)?;
+    let folder = crate::util::mod_package::ModFolder::open(mod_dir, None)
+        .map_err(|error| format!("could not load mod {}: {error}", mod_dir.display()))?;
+    let definition = crate::util::mod_definition::ModDefinition::read(&folder)?;
+    let resources = crate::assets::asset_manager::mod_resources(&folder, &definition, &base)?;
     let mut manager = AssetManager::with_mod_and_ares(
         root,
-        Some(mod_dir),
+        Some(&folder),
         MediaArchiveMode::STOCK_DIGITAL,
         resources.effective_ares(ares)?,
         &resources.archives,
