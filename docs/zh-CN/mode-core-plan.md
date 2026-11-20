@@ -30,11 +30,25 @@ R07 守卫禁止 `rules/`、`map/` 和已迁移的玩法链读取原始模式，
 
 ## Phase 2 发令来源与阵营权限
 
-权限表按 `Source × House` 查找，目标是第三方 `House`，授权值区分 `FullControl` 和 `UnitsOnly`。N:1 共享主 `House` 的两个来源可持有不同授权。发令、锁步校验和回放恢复必须一直保留同一来源身份。验收时让两个来源共享一个主 `House`，对第一个目标分别授予 `FullControl` 和 `UnitsOnly`，对第二个目标仅授权其中一个来源，再从实际命令入口检查各自结果。
+权限按 `Source × House` 查找。`ControlGrantTable` 持有规范排序和去重后的权威授权，相同授权合并，同一键的冲突授权拒绝接纳。`ControlScopeTable` 是 O(1) 紧凑平面派生表。每次使用缓存都校验实时 `house_count`，阵营数变化时按新维度重建。空授权保留 `has_any_grants` 快路径，沿用原版判定且无需分配或读取派生表。
 
-`ControlScopeTable` 每次使用缓存都按实时 `house_count` 校验表的尺寸。对局中阵营数变化时，旧派生表失效，按新维度重建后再查表。验收覆盖对局中新增阵营后原有授权与新列的查询。
+权限结果为 `OwnFull`、`FullControl`、`UnitsOnly`、`None`。主体解析与能力映射均使用穷尽 `match`，禁止用 `_ =>` 兜底吞并新增命令。
 
-单人战役、遭遇战（含 Teams 共享）与原版合作是该模型的等价退化情形。控制授权检查保留原版规则和现有格式。`House` 供 AI、蓝图和原版玩法读取的人类属性仍由 `HouseState` 持有。
+- `OwnFull` 专属包括 `ExitMatch`、`Destruct`、`Ally`、`RemovePlayer`、`LiveGameSpeed`、`SetGameSpeed`、`OpenOptions`、`SetLatencyFudge`、`Cheer`。
+- `FullControl`（含 `OwnFull`）包括 `SellBuilding`、`ToggleRepair`、`SetBuildingOnLine`、`TogglePrimaryFactory`、`SellWallAtCell`、`UndeployBuilding` 及目标阵营的生产、放置与超武。卖墙按 `cell.wall_owner` 查表。实体绑定的出售和维修按 `entity.owner()` 结算。原版侧栏生产队列默认仍归来源的主 `House`。
+- `UnitsOnly` 允许 `Move`、`MoveToObject`、`Stop`、`Attack`、`AttackMove`、`ForceAttackCell`、`Guard`、`Scatter`、`DeployMcv`、`ToggleInfantryDeploy`、`UnloadPassengers`、`EjectBunker`、`CaptureBuilding`、`PlantC4`、`SetRally`、`ArchiveObject`、`MegaMission`、`PlanningRecord`、`DetonateRecord` 和 `AresTrenchRedirectRecord`。引爆按 `entity.bomb.house()` 查表。
+
+从发令、锁步验证到执行与回放复原保留同一来源身份。锁步直接把原生 `CommandRecord.house_id` 传入 `apply_command_with_overlays` 和鉴权入口，离线或无共享场景回退到主 `House` 索引。`CommandEnvelope` 保留现有序列化布局。
+
+单人战役（包括 `PlayerControl=yes`）、遭遇战（含 Teams 共享）与原版合作保留原有规则。`HouseState` 继续持有供 AI、蓝图和原版玩法使用的人类属性。空授权保持快照布局、共享哈希和旧回放编码。非空授权纳入共享哈希，在版本化持久化落地前明确拒绝写入旧存档和回放。
+
+按以下三笔独立 PR 依次落地。
+
+1. **2A 数据与缓存。** 将权威授权和派生表挂入 `ScenarioSession`，测试排序去重、对局中新增阵营后的重建、共享哈希与旧存档和回放边界。
+2. **2B 执行鉴权。** 显式传递来源。统一 `resolve_command_subject`、`CommandCapability` 与执行门控，迁移 `world_commands.rs` 外闸和内部全部七处 `entity_owned_by_id` 分支。
+3. **2C 输入与投影。** 将 `context_order.rs`、`dispatch.rs`、`move_cell_input.rs`、`selection_navigation.rs`、`house_controls_selection` 和 `NativePlayerIdentity` 的消费者（含 `render/radar`）收敛到同一只读投影。用 `architecture_guards.rs` 棘轮封住裸权限判断，原生可见性继续按所代表视角裁决。
+
+端到端验收让两个来源共享主 `House`，对第一个第三方目标分别授 `FullControl` 与 `UnitsOnly`，对第二个目标只授权一个来源，再于对局中新增阵营。通过真实命令入口与输入投影分别验证允许、拒绝和来源保留，同时核对三种原版形态、快照布局、旧回放编码和 20k `sim-bench` 共享哈希。
 
 ## R11–R12 回放依赖
 

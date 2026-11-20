@@ -3936,6 +3936,24 @@ impl Simulation {
         self.session.install_network_timing(max_ahead_frames);
     }
 
+    /// Admit explicit grants after House construction and before publication.
+    pub fn install_control_grants(
+        &mut self,
+        grants: Vec<crate::sim::control_authority::ControlGrant>,
+    ) -> Result<(), crate::sim::control_authority::ControlGrantError> {
+        self.session.install_control_grants(&self.houses, grants)
+    }
+
+    /// Lookup for a source in the launch roster and a registered House.
+    /// Execution and input validate live sender eligibility before querying.
+    pub fn control_scope_for_source(
+        &self,
+        source: i8,
+        house: InternedId,
+    ) -> crate::sim::control_authority::ControlScope {
+        self.session.control_scope_for_source(&self.houses, source, house)
+    }
+
     /// The WOL start's tournament value and clan lists
     /// ([`ScenarioSession::install_wol_start`]).
     pub fn install_wol_start(&mut self, tournament: i32, squad_lists: [Vec<String>; 2]) {

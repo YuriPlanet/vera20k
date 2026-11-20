@@ -491,11 +491,22 @@ impl MatchDiagnosticsState {
         if self.is_replay_playback() {
             return None;
         }
+        let sim = &runtime.simulation;
+        if sim.session().has_custom_control_grants() {
+            const REFUSAL: &str =
+                "Replay recording is unavailable for matches with source-specific control grants.";
+            self.replay_log = None;
+            if self.replay_startup_refusal.as_deref() != Some(REFUSAL) {
+                log::warn!("{REFUSAL}");
+                self.replay_startup_refusal = Some(REFUSAL.to_owned());
+            }
+            return None;
+        }
         // Trainer changes are deliberately outside the ordinary command log.
         // The caller closes the valid prefix before the first such mutation;
         // never emit an apparently replayable continuation afterward.
         #[cfg(feature = "debug-tools")]
-        if runtime.simulation.trainer_modified() {
+        if sim.trainer_modified() {
             self.replay_log = None;
             return None;
         }
@@ -503,7 +514,6 @@ impl MatchDiagnosticsState {
             self.replay_startup_refusal = None;
         }
         Some(self.replay_log.get_or_insert_with(|| {
-            let sim = &runtime.simulation;
             ReplayLog::new(crate::sim::replay::ReplayHeader {
                 pixel_conversion_bounds: sim.session().pixel_conversion_bounds(),
                 version: crate::sim::replay::REPLAY_VERSION,
@@ -895,6 +905,40 @@ mod tests {
         diagnostics.replay_log = None;
         diagnostics.get_or_begin_replay(&runtime).unwrap();
         assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
+    }
+
+    #[test]
+    fn source_grants_prevent_an_automatic_replay_segment() {
+        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+        use crate::sim::house_state::HouseState;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        for (name, human) in [("Shared", true), ("Third", false)] {
+            let owner = sim.intern(name);
+            sim.register_house(HouseState::new(owner, 0, None, human, 0, 1));
+        }
+        sim.install_session_mode(ScenarioGameMode::Lan);
+        sim.session_mut_for_test()
+            .install_shared_house_sources_for_test(vec![0, 0], Some(0));
+        sim.install_control_grants(vec![ControlGrant {
+            source: 0,
+            house: 1,
+            level: ControlGrantLevel::FullControl,
+        }])
+        .unwrap();
+
+        let runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+        let mut diagnostics = MatchDiagnosticsState::default();
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_none());
+        assert!(diagnostics.replay_log.is_none());
+        assert!(
+            diagnostics
+                .replay_startup_refusal
+                .as_deref()
+                .is_some_and(|reason| reason.contains("source-specific control grants"))
+        );
     }
 
     #[test]
