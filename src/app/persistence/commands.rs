@@ -571,21 +571,30 @@ fn restore_save_file(
     let prepared = prepared?;
     crate::app::match_runtime::restore::commit_prepared_load(state, path, prepared, from_menu);
     if from_menu {
-        // Main52E619 initializes Scenario/Main only on this route; in-game
-        // options resume never enters it. The ordinary offline clock owner
-        // keeps Windows GetTickCount distinct from the non-Windows fallback.
-        let seed = crate::app::match_bootstrap::read_match_seed(
-            &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
-        );
-        state
+        let runtime = state
             .match_state
             .sim_runtime
             .write_sim(SimWrite::Lifecycle)
-            .expect("saved world committed")
-            .simulation
-            .initialize_random_number_system(seed.value);
+            .expect("saved world committed");
+        resume_menu_saved_game_rng(
+            &mut runtime.simulation,
+            &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
+        );
     }
     Ok(())
+}
+
+/// Main52E619 initializes the stock Scenario/Main streams after loading
+/// from the menu. The custom snapshot path retains its saved continuation.
+pub(super) fn resume_menu_saved_game_rng(
+    simulation: &mut crate::sim::world::Simulation,
+    clock: &mut impl crate::app::match_bootstrap::MatchSeedClock,
+) {
+    if simulation.retains_snapshot_continuation() {
+        return;
+    }
+    let seed = crate::app::match_bootstrap::read_match_seed(clock);
+    simulation.initialize_random_number_system(seed.value);
 }
 
 #[cfg(feature = "dev-overlays")]

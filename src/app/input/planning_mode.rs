@@ -534,7 +534,9 @@ fn selected_planning_actors(state: &AppState) -> Vec<u64> {
     if let Some(rt) = state.match_state.sim_runtime.runtime()
         && rt.simulation.session().has_custom_control_grants()
     {
-        selected.retain(|&id| rt.simulation.local_actor_can_order(id));
+        let sim = &rt.simulation;
+        let control = sim.control_projection();
+        selected.retain(|&id| super::context_order::projected_actor_can_order(sim, &control, id));
     }
     selected
 }

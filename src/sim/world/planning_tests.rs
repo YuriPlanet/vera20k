@@ -306,6 +306,35 @@ fn append_shared(
 }
 
 #[test]
+fn custom_snapshot_resumes_a_shared_plan_through_source_scoped_commands() {
+    use crate::sim::mission::{MissionId, MissionType};
+    use crate::sim::snapshot::GameSnapshot;
+
+    let (mut sim, rules, primary) = shared_plan_world();
+    for actor in [1, 2] {
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+    }
+    append_shared(&mut sim, &rules, primary, 0, 1, (12, 15));
+    append_shared(&mut sim, &rules, primary, 1, 2, (12, 15));
+
+    let bytes = GameSnapshot::save_validated(&sim, 17, 19, "shared plan", 0);
+    let snapshot = GameSnapshot::load_validated(&bytes, 17, 19, sim.session.map_name()).unwrap();
+    let mut restored = snapshot.restore_references_for_test().unwrap();
+    assert_eq!(restored.state_hash(), sim.state_hash());
+
+    let commit = sim.encode_plan_commit_record(primary).unwrap();
+    execute_shared_plan(&mut restored, &rules, 1, commit.clone());
+    execute_shared_plan(&mut sim, &rules, 1, commit);
+    assert!(restored.planning.paths[&1].executing && restored.planning.paths[&2].executing);
+    assert_eq!(restored.state_hash(), sim.state_hash());
+}
+
+#[test]
 fn shared_plan_commit_and_delete_use_source_scope_and_live_actor_charges() {
     use crate::sim::command::MegaMissionRecord;
     use crate::sim::mission::{MissionId, MissionType};

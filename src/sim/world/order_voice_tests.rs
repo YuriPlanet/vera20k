@@ -83,6 +83,60 @@ fn retail_attack_acknowledgement_spends_the_original_singleton_main_draw() {
     assert_eq!(sim.mapgen_rng.logical_state(), mapgen);
 }
 
+#[test]
+fn delegated_voice_follows_the_local_source_without_changing_the_shared_hash() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let (mut sim, rules, actor) = scene_with_input(
+        "VoiceSelect=Move\nVoiceMove=Move\nVoiceAttack=Attack\nVoiceDeploy=Enter\n",
+        &serde_json::json!({"actor_owner": "other"}),
+    );
+    sim.install_session_mode(ScenarioGameMode::Lan);
+    sim.install_network_timing(10);
+    sim.network_command_queues()
+        .install_timing(0, std::num::NonZeroU8::new(5).unwrap(), [0, 1]);
+    sim.session
+        .install_shared_house_sources(vec![0, 0], Some(0));
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+    let shared = sim.state_hash();
+
+    let (selected, draws) = trace_draws(|| sim.selection_voice_request(&rules, actor, true));
+    assert_eq!((selected, draws.len()), (Some("Move"), 1));
+    let (moving, draws) =
+        trace_draws(|| sim.order_voice_request(&rules, actor, "VoiceMove", None, true));
+    assert_eq!((moving, draws.len()), (Some("Move"), 1));
+    let (attacking, draws) =
+        trace_draws(|| sim.order_voice_request(&rules, actor, "VoiceAttack", None, true));
+    assert_eq!((attacking, draws.len()), (Some("Attack"), 1));
+    let (deploying, draws) = trace_draws(|| sim.deploy_voice_request(&rules, actor, true));
+    assert_eq!((deploying, draws.len()), (Some("Enter"), 0));
+    assert_eq!(sim.state_hash(), shared);
+
+    sim.session
+        .install_shared_house_sources(vec![0, 0], Some(1));
+    let (selected, draws) = trace_draws(|| sim.selection_voice_request(&rules, actor, true));
+    assert_eq!((selected, draws.len()), (None, 0));
+    let (moving, draws) =
+        trace_draws(|| sim.order_voice_request(&rules, actor, "VoiceMove", None, true));
+    assert_eq!((moving, draws.len()), (None, 1));
+    assert_eq!(sim.deploy_voice_request(&rules, actor, true), None);
+    assert_eq!(sim.state_hash(), shared);
+
+    let neutral = sim.interner.get("Other").unwrap();
+    sim.houses
+        .get_mut(&neutral)
+        .unwrap()
+        .set_multiplay_passive_for_test(true);
+    let (selected, draws) = trace_draws(|| sim.selection_voice_request(&rules, actor, true));
+    assert_eq!((selected, draws.len()), (None, 1));
+}
+
 fn scene(body: &str) -> (Simulation, RuleSet, u64) {
     scene_with_input(body, &serde_json::json!({}))
 }

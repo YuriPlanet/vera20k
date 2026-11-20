@@ -9,7 +9,7 @@ use super::{SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat;
-use crate::sim::control_authority::{CommandCapability, ControlScope};
+use crate::sim::control_authority::{CommandCapability, ControlScope, ControlScopeTable};
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
@@ -18,12 +18,14 @@ use crate::sim::scenario_session::{NativePlayerIdentity, ScenarioSession};
 
 /// Read-only control queries over the current session and House slots.
 /// The admitted seat authorizes orders. Native represented-viewer queries
-/// continue to use the original House flags and PlayerPtr.
-#[derive(Clone, Copy)]
+/// continue to use the original House flags and PlayerPtr. The borrowed
+/// world holds its House roster fixed while this projection uses the table.
+#[derive(Clone)]
 pub struct ControlProjection<'a> {
     session: &'a ScenarioSession,
     houses: &'a Houses,
     source: Option<(i8, InternedId)>,
+    scopes: Option<std::sync::Arc<ControlScopeTable>>,
 }
 
 impl<'a> ControlProjection<'a> {
@@ -33,6 +35,7 @@ impl<'a> ControlProjection<'a> {
             session,
             houses,
             source: None,
+            scopes: None,
         }
     }
 
@@ -67,16 +70,27 @@ impl<'a> ControlProjection<'a> {
         self.native_player_on(owner, self.native_player_pointer())
     }
 
-    fn granted_scope(&self, owner: InternedId) -> Option<ControlScope> {
-        self.session.has_custom_control_grants().then(|| {
-            self.source.map_or(ControlScope::None, |(source, _)| {
-                self.session
-                    .control_scope_for_source(self.houses, source, owner)
-            })
-        })
+    pub(super) const fn source(&self) -> Option<(i8, InternedId)> {
+        self.source
     }
 
-    fn permits(&self, owner: InternedId, capability: CommandCapability) -> Option<bool> {
+    fn granted_scope(&self, owner: InternedId) -> Option<ControlScope> {
+        self.session
+            .has_custom_control_grants()
+            .then(|| match self.source {
+                Some((_, primary)) if primary == owner => ControlScope::OwnFull,
+                Some((source, _)) => self.scopes.as_ref().map_or(ControlScope::None, |table| {
+                    table.get(source as usize, owner)
+                }),
+                None => ControlScope::None,
+            })
+    }
+
+    pub(super) fn has_delegated_full_control(&self, owner: InternedId) -> bool {
+        self.granted_scope(owner) == Some(ControlScope::FullControl)
+    }
+
+    pub(super) fn permits(&self, owner: InternedId, capability: CommandCapability) -> Option<bool> {
         self.granted_scope(owner)
             .map(|scope| scope.permits(capability))
     }
@@ -90,6 +104,12 @@ impl<'a> ControlProjection<'a> {
     /// Orders whose stock producer compares the acting object's exact owner.
     pub fn can_order_from(&self, owner: InternedId, player: InternedId) -> bool {
         self.permits(owner, CommandCapability::Tactical)
+            .unwrap_or(owner == player)
+    }
+
+    /// Authority for an input feature scoped to the sender's own production queue.
+    pub fn can_manage_primary_house(&self, owner: InternedId, player: InternedId) -> bool {
+        self.permits(owner, CommandCapability::PrimaryHouse)
             .unwrap_or(owner == player)
     }
 
@@ -536,12 +556,29 @@ impl Simulation {
         keys: HealArmKeys,
         rules: &RuleSet,
     ) -> Option<UnitRepairAction> {
+        self.unit_repair_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            issuing_house,
+            keys,
+            rules,
+        )
+    }
+
+    pub fn unit_repair_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        issuing_house: InternedId,
+        keys: HealArmKeys,
+        rules: &RuleSet,
+    ) -> Option<UnitRepairAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let actor_type = self.object_type(actor.type_ref(), rules)?;
         if actor.category() != EntityCategory::Unit
-            || !self
-                .control_projection()
-                .can_order_as_native_owner(actor.owner(), issuing_house)
+            || !control.can_order_as_native_owner(actor.owner(), issuing_house)
             || combat::combat_weapon::weapon_damage_value(
                 actor,
                 actor_type,
@@ -741,15 +778,32 @@ impl Simulation {
         keys: HealArmKeys,
         rules: &RuleSet,
     ) -> Option<AresHeal> {
+        self.ares_infantry_heal_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            issuing_house,
+            keys,
+            rules,
+        )
+    }
+
+    pub fn ares_infantry_heal_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        issuing_house: InternedId,
+        keys: HealArmKeys,
+        rules: &RuleSet,
+    ) -> Option<AresHeal> {
         let actor = self.substrate.entities.get(actor_id)?;
         let actor_type = self.object_type(actor.type_ref(), rules)?;
         let target = self.substrate.entities.get(target_id)?;
         let target_type = self.object_type(target.type_ref(), rules)?;
         if actor.category() != EntityCategory::Infantry
             || target_id == actor_id
-            || !self
-                .control_projection()
-                .can_order_as_native_owner(actor.owner(), issuing_house)
+            || !control.can_order_as_native_owner(actor.owner(), issuing_house)
             || combat::combat_weapon::weapon_damage_value(
                 actor,
                 actor_type,
@@ -786,10 +840,20 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
+        self.unit_building_click_action_with(&self.control_projection(), actor_id, target_id, rules)
+    }
+
+    fn unit_building_click_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+    ) -> Option<EntryClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
         if actor.category() != EntityCategory::Unit
-            || !self.control_projection().can_order(actor.owner())
+            || !control.can_order(actor.owner())
             || !combat::combat_weapon::is_ally_by_object(
                 Some(&self.house_alliances),
                 &self.interner,
@@ -876,34 +940,53 @@ impl Simulation {
         base: EntryBaseAction,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
+        self.entry_click_action_with(&self.control_projection(), actor_id, target_id, base, rules)
+    }
+
+    pub fn entry_click_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        base: EntryBaseAction,
+        rules: &RuleSet,
+    ) -> Option<EntryClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
         let select = base == EntryBaseAction::Select;
         match actor.category() {
             EntityCategory::Unit => {
                 let building = if select {
-                    self.unit_building_click_action(actor_id, target_id, rules)
+                    self.unit_building_click_action_with(control, actor_id, target_id, rules)
                 } else {
                     None
                 };
                 if building == Some(EntryClickAction::NoEnter) {
                     return building;
                 }
-                self.passenger_click_action(actor_id, target_id, rules)
+                self.passenger_click_action(control, actor_id, target_id, rules)
                     .or(building)
             }
             EntityCategory::Infantry => {
-                if let Some(action) = self.passenger_click_action(actor_id, target_id, rules) {
+                if let Some(action) =
+                    self.passenger_click_action(control, actor_id, target_id, rules)
+                {
                     return Some(action);
                 }
                 let target_obj = self.object_type(target.type_ref(), rules)?;
                 (select
                     && target.category() == EntityCategory::Structure
                     && target_obj.grinding
-                    && self.control_projection().can_order(actor.owner())
+                    && control.can_order(actor.owner())
                     && !target_obj.is_1x1_with_undeploy())
                 .then(|| {
-                    if self.session.current_house() == Some(target.owner()) {
+                    // The delegated form of the 0x0051F0AF ownership check
+                    // keeps the infantry and its Grinder in the same House.
+                    if actor.owner() == target.owner()
+                        && control
+                            .local_command_house()
+                            .is_some_and(|player| control.can_order_from(target.owner(), player))
+                    {
                         EntryClickAction::Grind
                     } else {
                         EntryClickAction::NoEnter
@@ -923,7 +1006,7 @@ impl Simulation {
                 }
                 let target_obj = self.object_type(target.type_ref(), rules)?;
                 if !select
-                    || !self.control_projection().can_order(actor.owner())
+                    || !control.can_order(actor.owner())
                     || target.category() != EntityCategory::Structure
                 {
                     return None;
@@ -989,6 +1072,7 @@ impl Simulation {
     /// [`can_load_query`]: crate::sim::radio::receive::can_load_query
     fn passenger_click_action(
         &self,
+        control: &ControlProjection<'_>,
         actor_id: u64,
         target_id: u64,
         rules: &RuleSet,
@@ -1008,7 +1092,7 @@ impl Simulation {
             &self.interner,
             actor.owner(),
             target.owner(),
-        ) || !self.control_projection().can_order(actor.owner())
+        ) || !control.can_order(actor.owner())
             || target.is_warped_out()
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
@@ -1030,7 +1114,7 @@ impl Simulation {
             return None;
         }
         if infantry {
-            if !self.local_techno_controllable(actor_id, rules) {
+            if !self.local_techno_controllable_with(control, actor_id, rules) {
                 return None;
             }
             if self.object_type(actor.type_ref(), rules)?.balloon_hover {
@@ -1153,14 +1237,16 @@ impl Simulation {
     }
 
     pub fn control_projection(&self) -> ControlProjection<'_> {
+        let source = self
+            .session
+            .has_custom_control_grants()
+            .then(|| self.local_grant_source())
+            .flatten();
         ControlProjection {
             session: &self.session,
             houses: &self.houses,
-            source: self
-                .session
-                .has_custom_control_grants()
-                .then(|| self.local_grant_source())
-                .flatten(),
+            source,
+            scopes: source.and_then(|_| self.session.control_scope_table(&self.houses)),
         }
     }
 
@@ -1190,13 +1276,13 @@ impl Simulation {
     /// other eligible objects in that group return to -1. No life/limbo gate.
     /// Shared by the committed command and its pending input projection.
     pub(super) fn assigned_control_group(
-        &self,
+        control: &ControlProjection<'_>,
         entity: &crate::sim::game_entity::GameEntity,
         current: i32,
         group: i32,
         selected: &std::collections::HashSet<u64>,
     ) -> i32 {
-        if !(0..10).contains(&group) || !self.control_projection().can_select(entity.owner()) {
+        if !(0..10).contains(&group) || !control.can_select(entity.owner()) {
             current
         } else if selected.contains(&entity.stable_id()) {
             group
@@ -1212,13 +1298,15 @@ impl Simulation {
             return false;
         }
         let selected = selected.iter().copied().collect();
+        let control = self.control_projection();
         let changes: Vec<_> = self
             .substrate
             .entities
             .iter_sorted()
             .filter_map(|(id, entity)| {
                 let current = entity.control_group();
-                let next = self.assigned_control_group(entity, current, group, &selected);
+                let next =
+                    Self::assigned_control_group(&control, entity, current, group, &selected);
                 (next != current).then_some((id, next))
             })
             .collect();
@@ -1249,20 +1337,34 @@ impl Simulation {
     /// Arbitrary authored native raw-save bytes are outside this producer.
     /// See engineer_bridge_cursor_caller.md for executed gate controls/bounds.
     pub fn techno_player_controllable(&self, id: u64, rules: &RuleSet) -> bool {
-        self.techno_controllable_for(id, rules, |owner| self.house_is_human_player(owner))
+        self.techno_controllable_for(id, rules, None, |owner| self.house_is_human_player(owner))
     }
 
     pub fn local_techno_controllable(&self, id: u64, rules: &RuleSet) -> bool {
+        self.local_techno_controllable_with(&self.control_projection(), id, rules)
+    }
+
+    pub fn local_techno_controllable_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        rules: &RuleSet,
+    ) -> bool {
         if !self.session.has_custom_control_grants() {
             return self.techno_player_controllable(id, rules);
         }
-        self.local_actor_can_order(id) && self.techno_controllable_for(id, rules, |_| true)
+        self.substrate
+            .entities
+            .get(id)
+            .is_some_and(|actor| control.can_order(actor.owner()))
+            && self.techno_controllable_for(id, rules, Some(control), |_| true)
     }
 
     fn techno_controllable_for(
         &self,
         id: u64,
         rules: &RuleSet,
+        control: Option<&ControlProjection<'_>>,
         player_actor: impl FnOnce(InternedId) -> bool,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
@@ -1281,13 +1383,16 @@ impl Simulation {
                 return true;
             }
             if object.construction_yard
-                && !(self.owner_is_human(actor.owner())
-                    && self
-                        .session
-                        .rule_policy()
-                        .allows_construction_yard_redeploy()
-                    && self.session.game_options().mcv_redeploy
-                    && actor.mind_control.controller().is_none())
+                && !(self
+                    .session
+                    .rule_policy()
+                    .allows_construction_yard_redeploy()
+                    && self.construction_yard_redeploy_core_gate(
+                        actor,
+                        self.owner_is_human(actor.owner())
+                            || control
+                                .is_some_and(|view| view.has_delegated_full_control(actor.owner())),
+                    ))
             {
                 return false;
             }
@@ -1326,7 +1431,15 @@ impl Simulation {
     }
 
     pub fn local_techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
-        let control = self.control_projection();
+        self.local_techno_is_active_with(&self.control_projection(), id, rules)
+    }
+
+    pub fn local_techno_is_active_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        rules: &RuleSet,
+    ) -> bool {
         self.techno_active_for(id, rules, |owner| control.can_order(owner))
     }
 
@@ -1431,10 +1544,20 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
     ) -> Option<EngineerBuildingAction> {
+        self.engineer_building_action_with(&self.control_projection(), actor_id, target_id, rules)
+    }
+
+    pub fn engineer_building_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+    ) -> Option<EngineerBuildingAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         if actor.category() != EntityCategory::Infantry
             || !self.object_type(actor.type_ref(), rules)?.engineer
-            || !self.control_projection().can_order(actor.owner())
+            || !control.can_order(actor.owner())
         {
             return None;
         }
@@ -1550,6 +1673,21 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
     ) -> bool {
+        self.infiltrator_building_action_with(
+            &self.control_projection(),
+            actor_id,
+            target_id,
+            rules,
+        )
+    }
+
+    pub fn infiltrator_building_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+    ) -> bool {
         let (Some(actor), Some(target)) = (
             self.substrate.entities.get(actor_id),
             self.substrate.entities.get(target_id),
@@ -1558,7 +1696,7 @@ impl Simulation {
         };
         if actor.category() != EntityCategory::Infantry
             || target.category() != EntityCategory::Structure
-            || !self.control_projection().can_order(actor.owner())
+            || !control.can_order(actor.owner())
         {
             return false;
         }

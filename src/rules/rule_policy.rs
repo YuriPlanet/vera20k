@@ -56,7 +56,7 @@ pub(crate) enum TeamLimitScope {
     PerHouse,
 }
 
-/// Independently selectable rule domains. Stock admission and legacy decoding choose
+/// Independently selectable rule domains. Stock admission chooses
 /// a preset from the mode and mode class. Live sessions retain the admitted
 /// value. Offline Skirmish (GameMode 5) uses multiplayer rules with local
 /// execution. Binary choices share one flag word; named selectors describe
@@ -107,6 +107,7 @@ impl RulePolicy {
     const USES_ELIMINATION_RESULTS: u64 = 1 << 29;
     const USES_ROOM_OPTIONS: u64 = 1 << 30;
     const USES_CAMPAIGN_DIPLOMACY: u64 = 1 << 31;
+    const ALLOWS_MANUAL_ALLIANCES: u64 = 1 << 32;
 
     pub const fn stock_campaign() -> Self {
         Self { flags: 0 }
@@ -145,6 +146,7 @@ impl RulePolicy {
             .with_uses_elimination_results(true)
             .with_uses_room_options(true)
             .with_uses_campaign_diplomacy(false)
+            .with_allows_manual_alliances(true)
     }
 
     const fn has_flag(self, flag: u64) -> bool {
@@ -311,6 +313,15 @@ impl RulePolicy {
 
     pub const fn with_uses_campaign_diplomacy(self, enabled: bool) -> Self {
         self.with_flag(Self::USES_CAMPAIGN_DIPLOMACY, enabled)
+    }
+
+    /// Admit the manual Ally order (0x00731840) subject to the separate alliance rules.
+    pub const fn allows_manual_alliances(self) -> bool {
+        self.has_flag(Self::ALLOWS_MANUAL_ALLIANCES)
+    }
+
+    pub const fn with_allows_manual_alliances(self, enabled: bool) -> Self {
+        self.with_flag(Self::ALLOWS_MANUAL_ALLIANCES, enabled)
     }
 
     pub const fn bootstrap(self) -> BootstrapRuleProfile {

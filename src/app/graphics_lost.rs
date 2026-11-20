@@ -4,8 +4,11 @@
 //! while the match and its sound go on behind a black window. The game saves
 //! a single-player match, closes as a closed window does, which leaves an
 //! online or LAN match, and tells the player why as it exits
-//! (`system_dialog::report_graphics_lost`). VERA product behavior: the
-//! renderer can't move its resources to a new device.
+//! (`system_dialog::report_graphics_lost`). A loss before the frame loop
+//! runs, at startup, ends in wgpu's panic on the first buffer it maps on the
+//! dead device; the panic hook shows the same box then
+//! (`system_dialog::report_panic`). VERA product behavior: the renderer
+//! can't move its resources to a new device.
 
 use winit::event_loop::ActiveEventLoop;
 

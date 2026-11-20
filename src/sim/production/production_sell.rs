@@ -320,6 +320,8 @@ pub enum SellOrder {
     /// click (`BuildingClass::Active_Click_With 0x004436F0`), whose SELL event
     /// follows the event that sets the building's ArchiveTarget.
     Undeploy,
+    /// VERA authorizes this player's order on an AI House through FullControl.
+    DelegatedRedeploy { explicit: bool },
     /// Control 1: the computer's low-credit sale
     /// (`BuildingClass::UpdateRepairAndPower 0x0045080D`) or captured-building
     /// sale (`BuildingClass::ChangeOwner 0x00449368`).
@@ -471,13 +473,23 @@ pub(crate) fn sell_back(
         }
         return firestorm_wall;
     }
-    match order {
-        SellOrder::Player | SellOrder::Undeploy if !selling => {
-            begin_selling(sim, rules, id, order == SellOrder::Undeploy);
+    if order == SellOrder::Computer && c4 {
+        return false;
+    }
+    if selling {
+        if order == SellOrder::Computer {
+            return false;
         }
-        SellOrder::Player | SellOrder::Undeploy => {}
-        SellOrder::Computer if selling || c4 => return false,
-        SellOrder::Computer => begin_selling(sim, rules, id, false),
+    } else {
+        let explicit = matches!(
+            order,
+            SellOrder::Undeploy | SellOrder::DelegatedRedeploy { explicit: true }
+        );
+        let mut route = BuildingDown::commenced(sim.session.binary_frame() as i32, explicit);
+        if matches!(order, SellOrder::DelegatedRedeploy { .. }) {
+            route = route.with_delegated_owner(owner);
+        }
+        begin_selling(sim, rules, id, route);
     }
     sim.sound_events.emit(SimSoundEvent::SellClick { owner });
     true
@@ -486,12 +498,12 @@ pub(crate) fn sell_back(
 /// `Queue_Mission(Selling, 0)` then Commence (Sell_Back,
 /// `0x0044717D..0x00447185`, with literal mission `0x13`): the
 /// building leaves its mission for Selling, whose visits start the next
-/// frame ([`BuildingDown`]). `undeploy_order` marks the player's undeploy
-/// order. A building already Selling keeps its sale (Queue_Mission refuses
+/// frame. The route records the admitted order for later Selling visits.
+/// A building already Selling keeps its sale (Queue_Mission refuses
 /// while Selling). A repair runs on until the first visit stops it
 /// (`ToggleRepair(0)`, `0x00449C41`): the computer's order at `0x0045080D`
 /// falls through to that frame's repair step (`0x00450813`).
-pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, undeploy_order: bool) {
+pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, route: BuildingDown) {
     let now = sim.session.binary_frame();
     let selling = MissionId::from_known(MissionType::Selling);
     let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
@@ -522,7 +534,7 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, unde
     if let Some(sell_rate) = sell_rate {
         entity.bind_building_sell_rate(sell_rate);
     }
-    entity.install_building_down(BuildingDown::commenced(now as i32, undeploy_order));
+    entity.install_building_down(route);
 }
 
 /// `BuildingClass::CanSell @ 0x004494C0` (vt+0x98), which the sell cursor
@@ -618,9 +630,10 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
         .rule_policy()
         .allows_construction_yard_redeploy()
         && sale_archive(entity)
-        && sim.owner_is_human(entity.owner())
-        && sim.session.game_options().mcv_redeploy
-        && entity.mind_control.controller().is_none()
+        && sim.construction_yard_redeploy_core_gate(
+            entity,
+            sim.owner_is_human(entity.owner()) || entity.sale_admitted_delegated_redeploy(),
+        )
 }
 
 /// Sell's stage-0 visit (`0x0044A8DF..0x0044ABAC`): an undeploy's

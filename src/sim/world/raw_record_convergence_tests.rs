@@ -105,6 +105,38 @@ fn gsi_04_07_wall_sell_raw_lockstep_replay_converges_with_semantic_execution() {
 }
 
 #[test]
+fn wall_sale_respects_the_admitted_player_control_rule_in_skirmish() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
+    let mut sim = Simulation::new();
+    let (wall_owner, receiver) = gsi_04_07_wall_sell_seed_houses(&mut sim);
+    let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
+    grid.place_owned_wall(1, 1, 2, 0, wall_owner);
+    sim.overlay_grid = Some(grid);
+
+    let mode = ScenarioGameMode::Skirmish;
+    let stock = mode.stock_rule_policy(None);
+    sim.install_session_admission(mode, None, stock);
+    let sell = |sim: &mut Simulation| {
+        let receiver_name = sim.interner.resolve(receiver).to_owned();
+        sim.sell_wall_at_cell(
+            &receiver_name,
+            None,
+            1,
+            1,
+            false,
+            &rules,
+            &overlays,
+            crate::sim::world::FrameEffects::empty(),
+        )
+    };
+    assert!(!sell(&mut sim));
+    sim.install_session_admission(mode, None, stock.with_counts_player_control_as_human(true));
+    assert!(sell(&mut sim));
+}
+
+#[test]
 fn gsi_04_07_wall_sell_raw_signed_linear_coordinates_use_canonical_cell() {
     fn apply_raw(
         sim: &mut Simulation,

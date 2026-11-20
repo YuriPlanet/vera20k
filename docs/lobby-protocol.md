@@ -198,13 +198,17 @@ for a seat, first first, each once and at most 30; the game leaves it out while 
 waits, and the host's game seats the first when a seat frees. A lobby from before it
 refuses it in the same way; the host's game then stops queueing in that room, says so
 and sends its options again, before it turns Teams Off if the lobby still refuses. `launch.options.host_rules`, the rules a VERA room plays, is
-`{terrain_deformation?:true, superweapon_limit?:2..20, personal_rules?:<base64>}`: the host's
-Terrain Deformation and its Superweapon Limit. `personal_rules`, the host's `VERARULES.INI`
+`{terrain_deformation?:true, superweapon_limit?:2..20, building_production_queue?:true, personal_rules?:<base64>}`: the host's
+Terrain Deformation, its Superweapon Limit and its Building Production Queue. `personal_rules`, the host's `VERARULES.INI`
 in standard base64 of at most 8,192 bytes (10,924 characters), came from games before the
 file was retired; current games never send it and refuse a room that has it. The game leaves each part out while it is off, and
 the object while all are; every player's match plays them in place of the player's own. A
 lobby from before the Superweapon Limit refuses options that carry `superweapon_limit`; the host's
 game then turns it off, says so and sends its options again, keeping the other rules. A
+lobby from before the Building Production Queue refuses options that carry
+`building_production_queue`; since such a lobby may list matches, the host's game turns
+the queue off on any refusal of options that carry it, says so and sends its options
+again, before anything else. A
 lobby from before the room's rules refuses them in the same way; the host's game then
 drops the room's rules, says so and sends its options again, before it stops queueing and
 then turns Teams Off if the lobby still refuses. `watching`, the room's Watching, is `off`,

@@ -671,7 +671,7 @@ fn radar_pixel_shroud_is_tested_at_the_cells_floor() {
             &fog,
             &Default::default(),
             false,
-            ControlProjection::for_native_view(
+            &ControlProjection::for_native_view(
                 &test_radar_session(ScenarioGameMode::Skirmish),
                 &houses,
             ),
@@ -725,7 +725,7 @@ fn radar_pixel_player_identity_is_independent_of_discovery_policy() {
                 &fog,
                 &Default::default(),
                 false,
-                ControlProjection::for_native_view(sim.session(), &houses),
+                &ControlProjection::for_native_view(sim.session(), &houses),
                 Some(&rules),
                 Some(&interner),
                 Some((0, 0)),
@@ -785,7 +785,7 @@ fn a_control_grant_does_not_reveal_the_ordered_house_on_radar() {
             &fog,
             sim.house_alliances(),
             false,
-            projection,
+            &projection,
             Some(&rules),
             Some(sim.interner()),
             Some((6, 6)),
@@ -817,7 +817,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        ControlProjection::for_native_view(
+        &ControlProjection::for_native_view(
             &test_radar_session(ScenarioGameMode::Skirmish),
             &houses
         ),
@@ -838,7 +838,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        ControlProjection::for_native_view(
+        &ControlProjection::for_native_view(
             &test_radar_session(ScenarioGameMode::Skirmish),
             &houses
         ),
@@ -863,7 +863,7 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         &fog,
         &test_alliances(alliances.clone()),
         true,
-        ControlProjection::for_native_view(
+        &ControlProjection::for_native_view(
             &test_radar_session(ScenarioGameMode::Skirmish),
             &houses
         ),
@@ -899,7 +899,7 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         &fog,
         &Default::default(),
         true,
-        ControlProjection::for_native_view(
+        &ControlProjection::for_native_view(
             &test_radar_session(ScenarioGameMode::Skirmish),
             &houses
         ),
@@ -916,7 +916,7 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
         &fog,
         &Default::default(),
         true,
-        ControlProjection::for_native_view(
+        &ControlProjection::for_native_view(
             &test_radar_session(ScenarioGameMode::Skirmish),
             &houses
         ),
@@ -951,7 +951,7 @@ fn radar_pixel_fogged_but_explored_cell_passes_render_gate_without_gap_proxy() {
         &fog,
         &Default::default(),
         false,
-        ControlProjection::for_native_view(
+        &ControlProjection::for_native_view(
             &test_radar_session(ScenarioGameMode::Skirmish),
             &houses
         ),

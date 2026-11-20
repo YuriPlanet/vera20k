@@ -299,7 +299,7 @@ pub(super) fn build_radar_object_update(
     fog: &FogState,
     alliances: &crate::sim::house_diplomacy::HouseAlliances,
     full_visibility: bool,
-    control: ControlProjection<'_>,
+    control: &ControlProjection<'_>,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
     projection: RadarProjectionFacts,
@@ -579,7 +579,7 @@ mod tests {
             &FogState::default(),
             &Default::default(),
             true,
-            ControlProjection::for_native_view(
+            &ControlProjection::for_native_view(
                 &test_radar_session(ScenarioGameMode::Campaign),
                 &crate::sim::houses::Houses::default(),
             ),
@@ -623,7 +623,7 @@ mod tests {
                 sim.fog(),
                 sim.house_alliances(),
                 true,
-                sim.control_projection(),
+                &sim.control_projection(),
                 Some(&rules),
                 Some(sim.interner()),
                 visibility_projection(),
@@ -962,7 +962,7 @@ mod tests {
             &FogState::default(),
             &Default::default(),
             true,
-            ControlProjection::for_native_view(
+            &ControlProjection::for_native_view(
                 &test_radar_session(ScenarioGameMode::Campaign),
                 &crate::sim::houses::Houses::default(),
             ),
@@ -1030,7 +1030,7 @@ mod tests {
                 fog,
                 &Default::default(),
                 false,
-                ControlProjection::for_native_view(
+                &ControlProjection::for_native_view(
                     &test_radar_session(ScenarioGameMode::Skirmish),
                     &crate::sim::houses::Houses::default(),
                 ),
@@ -1077,7 +1077,7 @@ mod tests {
                 &fog,
                 &Default::default(),
                 false,
-                ControlProjection::for_native_view(
+                &ControlProjection::for_native_view(
                     &test_radar_session(ScenarioGameMode::Skirmish),
                     &crate::sim::houses::Houses::default(),
                 ),
@@ -1144,7 +1144,7 @@ mod tests {
                 &fog,
                 &super::super::helpers::test_alliances(alliances),
                 false,
-                ControlProjection::for_native_view(
+                &ControlProjection::for_native_view(
                     &test_radar_session(ScenarioGameMode::Skirmish),
                     &houses,
                 ),
@@ -1187,7 +1187,7 @@ mod tests {
             &fog,
             &Default::default(),
             false,
-            ControlProjection::for_native_view(
+            &ControlProjection::for_native_view(
                 &test_radar_session(ScenarioGameMode::Skirmish),
                 &houses,
             ),
