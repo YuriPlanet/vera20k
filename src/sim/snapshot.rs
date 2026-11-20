@@ -23,8 +23,11 @@ pub mod scenario_resources;
 use saved_local_view::SavedLocalView;
 use scenario_resources::{SavedScenarioResources, SavedScenarioResourcesRef};
 
+use crate::map::resolved_terrain::SavedSharedCellDummy;
 use crate::rules::compatibility::RulesCompatibility;
 use crate::sim::intern::InternedId;
+use crate::sim::occupancy::RawCellOccupation;
+use crate::sim::pathfinding::zone_hierarchy::{ZONE_PRECHECK_LEVELS, ZoneLevelGraph};
 use crate::sim::world::Simulation;
 use crate::util::save_codec;
 
@@ -282,6 +285,18 @@ pub struct GameSnapshot {
     tactical_view: Option<SavedTacticalView>,
     local_view: Option<SavedLocalView>,
     scenario_resources: Option<SavedScenarioResources>,
+    continuation: Option<SnapshotContinuation<[ZoneLevelGraph; ZONE_PRECHECK_LEVELS]>>,
+}
+
+/// Custom matches resume state outside the native save body. Stock player
+/// loads still run LoadContent67E8CD's hierarchy rebuild and native resets.
+#[derive(Serialize, Deserialize)]
+struct SnapshotContinuation<Hierarchy> {
+    zone_levels: Option<Hierarchy>,
+    fallback_cell: SavedSharedCellDummy,
+    raw_occupation: RawCellOccupation,
+    reservation_mask: u128,
+    kamikaze_timer: crate::sim::timer::CdTimer,
 }
 
 fn deserialize_simulation<'de, D>(deserializer: D) -> Result<Simulation, D::Error>
@@ -347,6 +362,8 @@ pub enum SnapshotError {
     MissingLocalView,
     #[error("snapshot contains an invalid simulation random number cursor")]
     InvalidRandomCursor,
+    #[error("snapshot map continuation does not match the saved scenario rules and authority")]
+    InvalidContinuation,
     #[error("snapshot product identity {found:?} is not a VERA20k save")]
     ProductMismatch { found: [u8; 8] },
     #[error("snapshot format version {found} is incompatible with this build's version {expected}")]
@@ -593,6 +610,8 @@ pub enum SnapshotRestoreError {
     RetainedWallNeighborStorageMismatch { expected: usize, found: usize },
     #[error("snapshot navigation could not be published from retained map authority")]
     NavigationAuthorityPublicationFailed,
+    #[error("snapshot custom map continuation is invalid: {0}")]
+    InvalidCustomMapContinuation(&'static str),
     #[error("snapshot terrain assets could not be prepared: {reason}")]
     TerrainAssetPreparationFailed { reason: String },
     #[error("snapshot real-cell bridge flags do not match restored CellClass allocation")]
@@ -660,6 +679,7 @@ struct GameSnapshotRef<'a> {
     tactical_view: Option<&'a SavedTacticalView>,
     local_view: Option<&'a SavedLocalView>,
     scenario_resources: Option<&'a SavedScenarioResourcesRef<'a>>,
+    continuation: Option<SnapshotContinuation<&'a [ZoneLevelGraph; ZONE_PRECHECK_LEVELS]>>,
 }
 
 impl GameSnapshot {
@@ -707,6 +727,15 @@ impl GameSnapshot {
             tactical_view,
             local_view,
             scenario_resources,
+            continuation: sim
+                .retains_snapshot_continuation()
+                .then(|| SnapshotContinuation {
+                    zone_levels: sim.zone_grid.as_ref().map(|zones| zones.saved_hierarchy()),
+                    fallback_cell: sim.effective_shared_cell_dummy().saved_continuation(),
+                    raw_occupation: sim.substrate.raw_cell_occupation.saved_fallback_cell(),
+                    reservation_mask: sim.substrate.base_reservations.dummy_mask(),
+                    kamikaze_timer: sim.kamikaze.saved_continuation_timer(),
+                }),
         };
         save_codec::serialize(&snapshot)
     }
@@ -833,6 +862,11 @@ impl GameSnapshot {
         let mut simulation = self.sim;
         simulation.retain_process_state_for_load(process);
         let retain_continuation = simulation.retains_snapshot_continuation();
+        if retain_continuation != self.continuation.is_some() {
+            return Err(SnapshotRestoreError::InvalidCustomMapContinuation(
+                "presence differs from the saved scenario rules and authority",
+            ));
+        }
         // Native MouseLoad->Resize reconstructs the dummy before subsequent
         // LoadContent67E8CD hierarchy reads. The fallible candidate must see
         // that state without touching the running match's retained identity.
@@ -873,6 +907,9 @@ impl GameSnapshot {
         if !retain_continuation {
             simulation.reinitialize_lighting_after_user_load();
             simulation.refresh_animated_tiberium_after_load(rules, overlay_registry)?;
+        }
+        if let Some(continuation) = self.continuation {
+            continuation.restore(&mut simulation)?;
         }
 
         Ok((simulation, map_restore))
@@ -1011,7 +1048,11 @@ impl GameSnapshot {
         // Native content Load clears PlanMgr, then TechnoLoad zeros +514.
         // Stock player loads clear future paths. Internal checkpoints and
         // custom-authority player snapshots retain them.
-        if snapshot.sim.retains_snapshot_continuation() {
+        let retain_continuation = snapshot.sim.retains_snapshot_continuation();
+        if retain_continuation != snapshot.continuation.is_some() {
+            return Err(SnapshotError::InvalidContinuation);
+        }
+        if retain_continuation {
             if !snapshot.sim.scenario_rng.valid_checkpoint()
                 || !snapshot.sim.mapgen_rng.valid_checkpoint()
             {
@@ -1095,6 +1136,42 @@ impl GameSnapshot {
                 found,
             });
         }
+        Ok(())
+    }
+}
+
+impl SnapshotContinuation<[ZoneLevelGraph; ZONE_PRECHECK_LEVELS]> {
+    fn restore(self, sim: &mut Simulation) -> Result<(), SnapshotRestoreError> {
+        use SnapshotRestoreError::InvalidCustomMapContinuation;
+
+        match (sim.zone_grid.as_mut(), self.zone_levels) {
+            (Some(zones), Some(levels)) => zones
+                .restore_saved_hierarchy(levels)
+                .map_err(InvalidCustomMapContinuation)?,
+            (None, None) => {}
+            _ => {
+                return Err(InvalidCustomMapContinuation(
+                    "zone history is missing or unexpected",
+                ));
+            }
+        }
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .ok_or(InvalidCustomMapContinuation("bound map terrain is missing"))?;
+        // Map rebinding runs native lookups. Publish the saved fallback
+        // values last so a read cannot overwrite its retained coordinate.
+        sim.effective_shared_cell_dummy()
+            .restore_saved_continuation(self.fallback_cell, terrain)
+            .map_err(InvalidCustomMapContinuation)?;
+        sim.substrate
+            .raw_cell_occupation
+            .restore_saved_fallback_cell(self.raw_occupation, &sim.houses)
+            .map_err(InvalidCustomMapContinuation)?;
+        sim.substrate
+            .base_reservations
+            .restore_saved_dummy_mask(self.reservation_mask);
+        sim.kamikaze.restore_continuation_timer(self.kamikaze_timer);
         Ok(())
     }
 }
@@ -2016,6 +2093,7 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        let retain_continuation = self.retains_snapshot_continuation();
         for (_, entity) in self.substrate.entities.iter_sorted() {
             if !entity.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {
@@ -2269,12 +2347,14 @@ impl Simulation {
         // Load reconstructs Techno's three empty vectors through NoInit
         //6F43AB..6F4410. Their raw headers have no element swizzles; discard
         // them before validating strong references, retaining real TarCom.
-        for id in self.substrate.entities.keys_sorted() {
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .clear_distributed_fire_after_load();
+        if !retain_continuation {
+            for id in self.substrate.entities.keys_sorted() {
+                self.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .clear_distributed_fire_after_load();
+            }
         }
         restore_object_references(self, &identities)?;
 
@@ -2283,27 +2363,29 @@ impl Simulation {
         // Continue with Logic slots (including ParticleSystem). Actual CellClass
         // list heads/order were serialized, like483C10/4839F0: validate references
         // without requerying geometry before map authority is reattached.
-        self.projectiles
-            .restart_arm_timers_after_load(self.session.binary_frame() as i32);
-        self.projectiles.restore_scalable_after_load();
-        // ParasiteClass Load 6295DB..6295F3 does the same for its suppression
-        // and bite timers: a bite is due at once and suppression is dropped.
         let frame = self.session.binary_frame();
-        // RadSiteClass::Load65B3D0 also restarts its level/light clocks;
-        // the saved field and source stay intact until ordinary RadSite AI.
-        self.radiation.restart_timers_after_load(frame);
+        if !retain_continuation {
+            self.projectiles.restart_arm_timers_after_load(frame as i32);
+            self.projectiles.restore_scalable_after_load();
+            // RadSiteClass::Load65B3D0 restarts its level/light clocks;
+            // the saved field and source stay intact until ordinary RadSite AI.
+            self.radiation.restart_timers_after_load(frame);
+        }
         for id in self.substrate.entities.keys_sorted() {
             self.substrate.restore_move_sound_state_after_load(id);
-            if let Some(entity) = self.substrate.entities.get_mut(id) {
+            // ParasiteClass Load6295DB..6295F3 leaves a bite due and drops
+            // suppression on a stock player load.
+            if !retain_continuation && let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.parasite.restart_timers_after_load(frame);
             }
         }
         self.rebuild_logic_membership();
         self.substrate.rebuild_building_anim_slot_indices();
         Self::rebuild_bomb_carriers(&self.substrate, &mut self.bombs);
-        // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
-        self.kamikaze
-            .restart_after_load(self.session.binary_frame());
+        if !retain_continuation {
+            // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
+            self.kamikaze.restart_after_load(frame);
+        }
         self.substrate
             .occupancy
             .restore_memberships(&self.substrate.entities)
@@ -4287,6 +4369,163 @@ mod tests {
             restored.control_scope_for_source(1, target),
             ControlScope::UnitsOnly
         );
+    }
+
+    #[test]
+    fn custom_player_file_resumes_live_navigation_and_fallback_cell() {
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::rules::rule_policy::AllowWinTagsPolicy;
+        use crate::sim::cell_rect::PlayfieldBounds;
+        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+        use crate::sim::occupancy::RawCellKey;
+        use crate::sim::overlay_grid::OverlayGrid;
+        use crate::sim::radiation::RadDetonation;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::sim::world::SnapshotProcessState;
+
+        let resources = crate::sim::runtime::SimResources::empty();
+        let rules = &resources.rules;
+        let mut live = Simulation::with_seed(29);
+        let local = live.intern("Shared");
+        let delegated = live.intern("Delegate");
+        for (owner, human) in [(local, true), (delegated, false)] {
+            live.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    owner, 0, None, human, 0, 1,
+                ));
+        }
+        let mode = ScenarioGameMode::Lan;
+        let policy = mode
+            .stock_rule_policy(None)
+            .with_allow_win_tags(AllowWinTagsPolicy::RequireClear);
+        live.install_session_admission(mode, None, policy);
+        live.session.install_network_timing(20);
+        live.session
+            .install_shared_house_sources(vec![0, 0], Some(0));
+        live.install_control_grants(vec![ControlGrant {
+            source: 0,
+            house: 1,
+            level: ControlGrantLevel::FullControl,
+        }])
+        .unwrap();
+        live.intern_rule_type_ids(rules);
+        live.resolve_type_handles(rules);
+        let template = flat_terrain(16, 16);
+        live.install_resolved_terrain_for_new_map(flat_terrain(16, 16));
+        live.overlay_grid = Some(OverlayGrid::new(16, 16));
+        let bounds = PlayfieldBounds {
+            base: 8,
+            off_fc: -1_000,
+            off_100: -1_000,
+            off_104: 2_000,
+            off_108: 2_000,
+        };
+        live.set_playfield_bounds_for_test(Some(bounds));
+        live.set_playfield_size_height_for_test(Some(8));
+        live.restore_map_authority_after_snapshot_load(rules, rules.overlay_registry(), None)
+            .unwrap();
+        let terrain = live.resolved_terrain.as_ref().unwrap();
+        let zones = live.zone_grid.as_mut().unwrap();
+        let before_slots = zones
+            .hierarchy_for(MovementZone::Normal)
+            .unwrap()
+            .level(1)
+            .unwrap()
+            .record_slot_count();
+        crate::sim::pathfinding::zone_incremental::repair_zone_hierarchy_around_cell(
+            zones,
+            (5, 5),
+            Some(bounds),
+            terrain,
+            &[],
+        );
+        let after_slots = zones
+            .hierarchy_for(MovementZone::Normal)
+            .unwrap()
+            .level(1)
+            .unwrap()
+            .record_slot_count();
+        assert!(
+            after_slots > before_slots,
+            "live topology repair retains ordered history"
+        );
+        let land = template
+            .capture_user_saved_template(terrain)
+            .unwrap()
+            .user_load_land_values()
+            .unwrap();
+
+        live.substrate
+            .base_reservations
+            .reserve(Some(terrain), -1, -1, 0);
+        let dummy = live.effective_shared_cell_dummy();
+        dummy.stamp_coord(-2, 7);
+        dummy.set_level_slope(-7, 11);
+        dummy.write_native_anchor(Some(NativeCellIdentity::Dummy));
+        dummy.adjust_neighbor_count(true);
+        live.substrate.raw_cell_occupation.write_occupant(
+            RawCellKey::Dummy,
+            MovementLayer::Ground,
+            1 << 3,
+            Some(delegated),
+            true,
+        );
+        live.radiation.apply_detonation(
+            RadDetonation {
+                rx: 6,
+                ry: 6,
+                rad_level: 20,
+                spread: 1,
+                rad_type: None,
+                firing_house: None,
+                invoker: None,
+            },
+            live.session.binary_frame(),
+            "TEMPERATE",
+            rules,
+            Some(terrain),
+            &mut live.lighting_sources,
+        );
+        assert_ne!(live.substrate.base_reservations.dummy_mask(), 0);
+        let mut outgoing = Simulation::new();
+        outgoing.substrate.raw_cell_occupation.write_occupant(
+            RawCellKey::Dummy,
+            MovementLayer::Bridge,
+            1 << 4,
+            None,
+            true,
+        );
+
+        let bytes = GameSnapshot::save_validated(&live, 1, 2, "custom map history", 0);
+        let snapshot = GameSnapshot::load_validated(&bytes, 1, 2, live.session.map_name()).unwrap();
+        let (mut restored, _) = snapshot
+            .restore_player_world(
+                SnapshotProcessState::Live(&outgoing),
+                rules,
+                template,
+                Default::default(),
+                PlayerSaveCells::Saved {
+                    land,
+                    prepare_assets: &mut |_, _, _| Ok(()),
+                },
+            )
+            .unwrap();
+        // The main-menu load tail reaches this owner after publishing the
+        // restored world. It must leave the custom Scenario cursor intact.
+        restored.initialize_random_number_system(99);
+        assert_eq!(
+            restored.effective_shared_cell_dummy().state_words(),
+            dummy.state_words()
+        );
+        assert_eq!(
+            restored.substrate.raw_cell_occupation.dummy_for_hash(),
+            live.substrate.raw_cell_occupation.dummy_for_hash()
+        );
+        assert_zone_grids_equivalent(
+            restored.zone_grid.as_ref().unwrap(),
+            live.zone_grid.as_ref().unwrap(),
+        );
+        assert_eq!(restored.state_hash(), live.state_hash());
     }
 
     #[test]

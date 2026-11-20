@@ -28,6 +28,7 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::map::waypoints;
+use crate::rules::rule_policy::BootstrapRuleProfile;
 use crate::sim::intern::InternedId;
 use crate::sim::scenario_bootstrap::ScenarioBootstrapRng;
 use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
@@ -324,6 +325,7 @@ fn load_with_assets(
     let mode_class = Some(launch.session().mode.class);
     let rule_policy = launch
         .rule_policy_override()
+        .map(|policy| policy.with_bootstrap(BootstrapRuleProfile::Multiplayer))
         .unwrap_or_else(|| ScenarioGameMode::Skirmish.stock_rule_policy(mode_class));
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
@@ -348,11 +350,6 @@ fn load_with_assets(
         map_name: map_file_name.to_string(),
         theater: map.header.theater.clone(),
         rule_policy,
-        no_damage: false,
-        // Non-campaign: the session staging word's Harvester Truce byte
-        // (`0x005E7495..0x005E74D4`) replaces the map's bit at
-        // `0x00687C16..0x00687C29`.
-        harvester_immune: launch.session().options.harvester_truce,
         free_radar: map.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
         timer_inherit: map.basic.timer_inherit.unwrap_or(false),
@@ -362,10 +359,6 @@ fn load_with_assets(
         truck_crate: map.basic.truck_crate.unwrap_or(false),
         ice_growth_enabled: map.basic.ice_growth_enabled,
         vein_growth_enabled: map.basic.vein_growth_enabled,
-        // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
-        // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
-        tiberium_grows_flag: true,
-        tiberium_spreads_flag: true,
         map_width: scenario_cell_extent,
         map_height: scenario_cell_extent,
         mp_start_waypoints: waypoints::multiplayer_start_waypoints(
@@ -378,7 +371,9 @@ fn load_with_assets(
         .collect(),
         pixel_conversion_bounds: Default::default(),
         lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&lighting_profiles),
-    };
+        ..Default::default()
+    }
+    .with_authored_special_flags(&map.special_flags, launch.session().options.harvester_truce);
     let bootstrap_rng = ScenarioBootstrapRng::new(seed);
     let (mut sim, scenario_prefix_projection) = bootstrap_rng
         .into_stock_offline_staged_simulation(&descriptor, bound_scenario_prefix)

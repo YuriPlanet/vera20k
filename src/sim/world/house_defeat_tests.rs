@@ -207,17 +207,27 @@ fn cooperative_defeated_local_waits_for_partner_and_shares_completed_victory() {
             .tracking_mut_for_test()
             .set_for_test(i32::from(index != 0), &[], (0, 0, 0), &[]);
     }
-    sim.check_defeat(None, None);
-    assert!(sim.houses[&owners[0]].is_defeated());
-    assert!(!sim.houses[&owners[0]].has_lost());
-    sim.houses
-        .get_mut(&owners[2])
-        .unwrap()
-        .tracking_mut_for_test()
-        .set_for_test(0, &[], (0, 0, 0), &[]);
-    sim.check_defeat(None, None);
-    assert!(sim.houses[&owners[0]].has_won());
-    assert!(sim.houses[&owners[1]].has_won());
+    let mut individual = sim.clone();
+    individual.install_session_admission(
+        ScenarioGameMode::Lan,
+        Some(crate::skirmish_modes::MpModeClass::Cooperative),
+        sim.session.rule_policy().with_shared_allied_victory(false),
+    );
+
+    for (mut world, shared_victory) in [(sim, true), (individual, false)] {
+        world.check_defeat(None, None);
+        assert!(world.houses[&owners[0]].is_defeated());
+        assert!(!world.houses[&owners[0]].has_lost());
+        world
+            .houses
+            .get_mut(&owners[2])
+            .unwrap()
+            .tracking_mut_for_test()
+            .set_for_test(0, &[], (0, 0, 0), &[]);
+        world.check_defeat(None, None);
+        assert_eq!(world.houses[&owners[0]].has_won(), shared_victory);
+        assert!(world.houses[&owners[1]].has_won());
+    }
 }
 
 fn network_result_world(local: usize) -> (Simulation, Vec<InternedId>) {

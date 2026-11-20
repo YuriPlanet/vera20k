@@ -600,6 +600,7 @@ impl LoadingStartup {
         MatchSpec {
             topology: mode.execution_topology(),
             rules: rule_override
+                .map(|policy| policy.with_bootstrap(profile))
                 .unwrap_or_else(|| mode.stock_rule_policy_for_bootstrap(profile, class)),
         }
     }

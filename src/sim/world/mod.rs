@@ -3491,12 +3491,12 @@ impl Simulation {
                 if !retain_continuation {
                     self.session.record_random_seed(live.session.seed());
                     self.mapgen_rng = live.mapgen_rng.clone();
+                    self.substrate
+                        .raw_cell_occupation
+                        .retain_process_dummy_from(&live.substrate.raw_cell_occupation);
                 }
                 self.main_rng = live.main_rng.staged_copy();
                 self.bind_shared_cell_dummy(live.effective_shared_cell_dummy());
-                self.substrate
-                    .raw_cell_occupation
-                    .retain_process_dummy_from(&live.substrate.raw_cell_occupation);
             }
             SnapshotProcessState::Cold(main) => {
                 if !retain_continuation {
@@ -3558,10 +3558,14 @@ impl Simulation {
     /// Init_Random_Number_System52FC20, ordinary offline menu-load tail
     /// 52E619. The caller supplies the resolved clock/override seed. Both
     /// Scenario and process Main are reseeded, Main in its shared process
-    /// cell; MapGen is untouched. In-game options resume does not reach this
-    /// caller. Executed full-state controls:
+    /// cell; MapGen is untouched. A custom checkpoint retains its saved
+    /// continuation. In-game options resume does not reach this caller.
+    /// Executed full-state controls:
     /// tools/rmg_oracle/vectors/rng.json::menu_rng_cases.
     pub fn initialize_random_number_system(&mut self, seed: u32) {
+        if self.retains_snapshot_continuation() {
+            return;
+        }
         self.session.record_random_seed(u64::from(seed));
         self.scenario_rng = SimRng::new(u64::from(seed));
         self.main_rng.install_from(MainRng::new(u64::from(seed)));

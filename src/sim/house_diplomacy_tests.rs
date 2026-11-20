@@ -237,6 +237,7 @@ fn cooperative_computers_turn_paranoid_without_allies_allowed() {
 /// BuildConst path calls at 0x0050C2F0 with only the AI and mode gates.
 #[test]
 fn disabling_paranoid_suppresses_human_ally_but_not_skirmish_base_activation() {
+    use crate::rules::rule_policy::ComputerParanoidPolicy;
     use crate::sim::scenario_session::ScenarioGameMode;
 
     let patch = IniFile::from_str("[AI]\nParanoid=no\n");
@@ -253,12 +254,20 @@ fn disabling_paranoid_suppresses_human_ally_but_not_skirmish_base_activation() {
         ("Computer1", "Russians", false),
         ("Computer2", "Russians", false),
     ];
-    for (mode, expects_paranoid) in [
-        (ScenarioGameMode::Skirmish, true),
-        (ScenarioGameMode::Campaign, false),
+    let skirmish = ScenarioGameMode::Skirmish;
+    let campaign = ScenarioGameMode::Campaign;
+    let stock = skirmish.stock_rule_policy(None);
+    for (mode, policy, expects_paranoid) in [
+        (skirmish, stock, true),
+        (
+            skirmish,
+            stock.with_computer_paranoid(ComputerParanoidPolicy::Disabled),
+            false,
+        ),
+        (campaign, campaign.stock_rule_policy(None), false),
     ] {
         let (mut sim, ids) = sim_with(&rules, &houses);
-        sim.session.set_game_mode(mode);
+        sim.install_session_admission(mode, None, policy);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
@@ -273,7 +282,7 @@ fn disabling_paranoid_suppresses_human_ally_but_not_skirmish_base_activation() {
         assert_eq!(
             allies(&sim, "Computer1").contains("COMPUTER2"),
             expects_paranoid,
-            "{mode:?}"
+            "{mode:?} {policy:?}"
         );
     }
 }

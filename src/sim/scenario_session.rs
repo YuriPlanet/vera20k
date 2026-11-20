@@ -855,6 +855,28 @@ pub struct ScenarioDescriptor {
 }
 
 impl ScenarioDescriptor {
+    /// Resolve the scenario bits copied from the room staging word at
+    /// Full_Init 0x00687C16 or read from the map at 0x006B8CA0.
+    pub fn with_authored_special_flags(
+        mut self,
+        flags: &crate::map::basic::SpecialFlagsSection,
+        harvester_truce: bool,
+    ) -> Self {
+        if self.rule_policy.uses_room_options() {
+            self.no_damage = false;
+            self.harvester_immune = harvester_truce;
+            // PregameSetup sets TiberiumGrows|TiberiumSpreads at 0x005E74CD.
+            self.tiberium_grows_flag = true;
+            self.tiberium_spreads_flag = true;
+        } else {
+            self.no_damage = flags.inert.unwrap_or(false);
+            self.harvester_immune = flags.harvester_immune.unwrap_or(false);
+            self.tiberium_grows_flag = flags.tiberium_grows.unwrap_or(false);
+            self.tiberium_spreads_flag = flags.tiberium_spreads.unwrap_or(true);
+        }
+        self
+    }
+
     /// Seed normal scenario initialization from a native recording header.
     ///
     /// Map bounds, theater, objects, and active registration order are rebuilt

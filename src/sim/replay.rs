@@ -1853,6 +1853,8 @@ mod tests {
     #[test]
     #[ignore = "slow; authored retail lockstep replay with shared source authority"]
     fn authored_lockstep_replay_preserves_custom_rules_and_source_grants() {
+        use crate::map::source::test_support::TestDirectory;
+        use crate::rules::rule_policy::BootstrapRuleProfile;
         use crate::sim::combat::TargetKind;
         use crate::sim::command::{ArchiveRecord, MegaMissionTarget};
         use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
@@ -1862,7 +1864,23 @@ mod tests {
         use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition};
 
         const MAP: &str = "XMP03T4.MAP";
-        let root = std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("retail RA2_DIR"));
+        let (root, assets) =
+            crate::rules::retail_ini_fixture::retail_assets().expect("retail RA2_DIR");
+        let directory = TestDirectory::new("authored-custom-replay");
+        let map_bytes = assets.resolve_ref(MAP).unwrap().bytes;
+        let map_bytes = crate::util::ini_writer::set_ini_values(
+            map_bytes,
+            "SpecialFlags",
+            &[
+                ("Inert", "yes"),
+                ("HarvesterImmune", "yes"),
+                ("TiberiumGrows", "no"),
+                ("TiberiumSpreads", "no"),
+            ],
+        );
+        directory.write(MAP, &map_bytes);
+        let map_path = directory.path().join(MAP);
+        let map_path = map_path.to_str().unwrap();
         let rival = (LaunchCountry::Russia, AiDifficulty::Normal);
         let mut launch = crate::headless_scenario::battle_session(MAP, &[rival, rival]);
         launch.humans[0].slot.start_position = LaunchStartPosition::Position(0);
@@ -1880,6 +1898,8 @@ mod tests {
         let mode = ScenarioGameMode::Lan;
         let policy = mode
             .stock_rule_policy(Some(launch.mode.class))
+            .with_bootstrap(BootstrapRuleProfile::Campaign)
+            .with_uses_room_options(false)
             .with_starting_house_role_alliances(true);
         let grant = |source, house, level| ControlGrant {
             source,
@@ -1897,7 +1917,7 @@ mod tests {
             .with_control_grants(grants.to_vec());
         let mut scene = crate::headless_scenario::load_with_launch_and_ini(
             &root,
-            MAP,
+            map_path,
             19,
             descriptor,
             &Default::default(),
@@ -1907,6 +1927,11 @@ mod tests {
         )
         .unwrap();
         let sim = &mut scene.runtime.simulation;
+        assert!(sim.session().no_damage());
+        assert!(sim.session().harvester_immune());
+        assert!(!sim.session().tiberium_grows_flag());
+        assert!(!sim.session().tiberium_spreads_flag());
+        assert_eq!(sim.session().rule_policy(), policy);
         sim.batch_path_searches();
         sim.batch_target_scans();
         sim.present_effect_anims();
@@ -2005,7 +2030,7 @@ mod tests {
         assert_eq!(startup.rule_policy_override(), Some(policy));
         assert_eq!(startup.control_grants(), &grants);
         assert!(startup.launch_session().options.queue.is_empty());
-        let verified = ReplayRunner::verify(&root, &decoded, None).unwrap();
+        let verified = ReplayRunner::verify(&root, &decoded, Some(map_path)).unwrap();
         assert_eq!(verified.checked_hashes, 2);
         assert_eq!(verified.final_state_hash, scene.sim().state_hash());
     }

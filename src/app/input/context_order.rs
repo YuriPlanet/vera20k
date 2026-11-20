@@ -2873,6 +2873,7 @@ pub(crate) fn try_queue_context_order(
             selected_units.retain(|&id| {
                 if !vehicle_capture_action(
                     sim,
+                    &control,
                     &resources.rules,
                     id,
                     target.stable_id,
@@ -4621,7 +4622,8 @@ fn garrison_entry_orders(
 /// in a campaign; rare.
 ///
 /// [`Simulation::entry_click_action`]: crate::sim::world::Simulation::entry_click_action
-pub(super) fn entry_action(
+#[cfg(test)]
+fn entry_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     actor_id: u64,
@@ -4640,6 +4642,46 @@ pub(super) fn entry_action(
         force_move_key,
         overlay_registry,
     )
+}
+
+pub(super) fn hovered_entry_action(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    hover: &HoverTargetKindWithId,
+    modifier: OrderModifier,
+    force_move_key: bool,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+) -> Option<crate::sim::world::EntryClickAction> {
+    use crate::sim::world::EntryClickAction;
+
+    let grind_only = match hover.kind {
+        HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit => false,
+        // TacticalPick classifies for the represented House. The delegated
+        // actor may still enter its own Grinder (Infantry 0x0051F0AF,
+        // Unit 0x00740122), even when that House is hostile to the viewer.
+        HoverTargetKind::EnemyStructure if sim.session().has_custom_control_grants() => {
+            let actor = sim.entities().get(actor_id)?;
+            let target = sim.entities().get(hover.stable_id)?;
+            if actor.owner() != target.owner() {
+                return None;
+            }
+            true
+        }
+        _ => return None,
+    };
+    let action = entry_action_with(
+        sim,
+        control,
+        rules,
+        actor_id,
+        hover.stable_id,
+        modifier,
+        force_move_key,
+        overlay_registry,
+    )?;
+    (!grind_only || action == EntryClickAction::Grind).then_some(action)
 }
 
 fn entry_action_with(
@@ -4730,17 +4772,19 @@ fn entry_orders(
     if !matches!(
         hover.kind,
         HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit
-    ) {
+    ) && !(hover.kind == HoverTargetKind::EnemyStructure
+        && sim.session().has_custom_control_grants())
+    {
         return None;
     }
     let control = sim.control_projection();
     let action = |id| {
-        entry_action_with(
+        hovered_entry_action(
             sim,
             &control,
             rules,
             id,
-            hover.stable_id,
+            hover,
             modifier,
             force_move_key,
             overlay_registry,
@@ -4811,6 +4855,7 @@ fn entry_orders(
 /// vehicle `target`, for the cursor and the click alike, while Ares plays.
 pub(super) fn vehicle_capture_action(
     sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
     rules: &crate::rules::ruleset::RuleSet,
     actor: u64,
     target: u64,
@@ -4820,8 +4865,9 @@ pub(super) fn vehicle_capture_action(
     // Shift and the admitted Ctrl+Alt GuardArea return before51E7A6.
     rules.ares()
         && !matches!(
-            object_key_action(
+            object_key_action_with(
                 sim,
+                control,
                 rules,
                 actor,
                 target,
@@ -4831,7 +4877,7 @@ pub(super) fn vehicle_capture_action(
             ),
             Some(ObjectKeyAction::ToggleSelect | ObjectKeyAction::GuardArea)
         )
-        && sim.ares_vehicle_capture_action(actor, target, rules)
+        && sim.ares_vehicle_capture_action(control, actor, target, rules)
 }
 
 /// Engineer object actions before event enqueue. No duplicate geometry query.
