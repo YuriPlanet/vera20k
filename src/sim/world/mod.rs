@@ -3555,17 +3555,12 @@ impl Simulation {
         Ok(())
     }
 
-    /// Init_Random_Number_System52FC20, ordinary offline menu-load tail
-    /// 52E619. The caller supplies the resolved clock/override seed. Both
-    /// Scenario and process Main are reseeded, Main in its shared process
-    /// cell; MapGen is untouched. A custom checkpoint retains its saved
-    /// continuation. In-game options resume does not reach this caller.
+    /// Init_Random_Number_System52FC20. The caller supplies the resolved
+    /// clock/override seed. Both Scenario and process Main are reseeded,
+    /// Main in its shared process cell; MapGen is untouched.
     /// Executed full-state controls:
     /// tools/rmg_oracle/vectors/rng.json::menu_rng_cases.
     pub fn initialize_random_number_system(&mut self, seed: u32) {
-        if self.retains_snapshot_continuation() {
-            return;
-        }
         self.session.record_random_seed(u64::from(seed));
         self.scenario_rng = SimRng::new(u64::from(seed));
         self.main_rng.install_from(MainRng::new(u64::from(seed)));

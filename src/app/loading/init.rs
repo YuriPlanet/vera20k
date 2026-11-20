@@ -1957,6 +1957,10 @@ pub(super) fn install_startup_session_mode(
         simulation.install_network_timing(accepted.max_ahead_frames());
         let wol = accepted.wol_start();
         simulation.install_wol_start(wol.tournament, wol.squad_lists.clone());
+    } else if let LoadingStartup::Replay { launch, .. } = startup
+        && let Some(network) = launch.network_start()
+    {
+        network.install(simulation);
     }
 }
 

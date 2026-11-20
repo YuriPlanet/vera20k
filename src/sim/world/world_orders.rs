@@ -980,9 +980,12 @@ impl Simulation {
                     && control.can_order(actor.owner())
                     && !target_obj.is_1x1_with_undeploy())
                 .then(|| {
-                    if control
-                        .local_command_house()
-                        .is_some_and(|player| control.can_order_from(target.owner(), player))
+                    // The delegated form of the 0x0051F0AF ownership check
+                    // keeps the infantry and its Grinder in the same House.
+                    if actor.owner() == target.owner()
+                        && control
+                            .local_command_house()
+                            .is_some_and(|player| control.can_order_from(target.owner(), player))
                     {
                         EntryClickAction::Grind
                     } else {

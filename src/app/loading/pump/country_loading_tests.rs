@@ -262,10 +262,12 @@ fn network_replays_skip_outgoing_country_prefix_rules() {
         let mut request =
             LoadingRequest::unverified_legacy_skirmish(launch.clone(), tests::unverified_seed(77));
         request.startup = LoadingStartup::Replay {
-            session: launch,
+            launch: Box::new(
+                crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch)
+                    .unwrap(),
+            ),
             game_mode: mode,
             native_id_prefix: 0,
-            authority: None,
             seed: crate::app::match_bootstrap::MatchSeed {
                 value: 77,
                 source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,

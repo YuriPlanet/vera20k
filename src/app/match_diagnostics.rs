@@ -523,7 +523,7 @@ impl MatchDiagnosticsState {
         launch: Option<&crate::skirmish_launch::SkirmishLaunchSession>,
         source: Option<&crate::map::source::LoadedMapSource>,
         map_hash: Option<u64>,
-        every_frame_network: bool,
+        options: crate::sim::replay::ReplayStartOptions,
     ) {
         let Some(log) = self.replay_log.as_mut().filter(|log| {
             log.startup.is_none()
@@ -541,7 +541,7 @@ impl MatchDiagnosticsState {
             source,
             map_hash,
             crate::app::types::SIM_TICK_MS,
-            every_frame_network,
+            options,
         ) {
             Ok(startup) => {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;

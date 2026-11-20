@@ -2080,7 +2080,7 @@ impl Simulation {
 
     /// Custom sessions resume authoritative state instead of running the
     /// resets that mimic a stock player load.
-    pub(super) fn retains_snapshot_continuation(&self) -> bool {
+    pub fn retains_snapshot_continuation(&self) -> bool {
         !self.session.has_stock_rule_policy() || self.session.has_custom_control_grants()
     }
 
@@ -4498,7 +4498,7 @@ mod tests {
 
         let bytes = GameSnapshot::save_validated(&live, 1, 2, "custom map history", 0);
         let snapshot = GameSnapshot::load_validated(&bytes, 1, 2, live.session.map_name()).unwrap();
-        let (mut restored, _) = snapshot
+        let (restored, _) = snapshot
             .restore_player_world(
                 SnapshotProcessState::Live(&outgoing),
                 rules,
@@ -4510,9 +4510,6 @@ mod tests {
                 },
             )
             .unwrap();
-        // The main-menu load tail reaches this owner after publishing the
-        // restored world. It must leave the custom Scenario cursor intact.
-        restored.initialize_random_number_system(99);
         assert_eq!(
             restored.effective_shared_cell_dummy().state_words(),
             dummy.state_words()

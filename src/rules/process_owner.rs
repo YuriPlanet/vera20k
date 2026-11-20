@@ -753,6 +753,11 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules = rules;
     }
 
+    /// Effective simulation switches at the admitted scenario root.
+    pub fn personal_rules(&self) -> &PersonalRules {
+        &self.sources.personal_rules
+    }
+
     /// The skirmish Game Options' Terrain Deformation box, read by the next scenario.
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.sources.personal_rules.set_terrain_deformation(on);

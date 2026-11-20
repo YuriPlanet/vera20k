@@ -308,23 +308,13 @@ impl LoadingRequest {
     pub(crate) fn replay(
         startup: &crate::sim::replay::ReplayStartup,
         map_beside: Option<&str>,
-    ) -> Self {
-        let mut session = startup.launch_session().clone();
-        if let Some(map) = map_beside {
-            session.selected_map_file = Some(map.to_owned());
-        }
-        Self {
+    ) -> anyhow::Result<Self> {
+        let launch = startup.launch_descriptor(map_beside.unwrap_or(startup.map_name()))?;
+        Ok(Self {
             startup: LoadingStartup::Replay {
-                session,
+                launch: Box::new(launch),
                 game_mode: startup.game_mode(),
-                native_id_prefix: startup
-                    .native_id_prefix()
-                    .expect("validated replay startup"),
-                authority: Some(Box::new(crate::app::match_bootstrap::ReplayLoadAuthority {
-                    rule_policy: startup.rule_policy(),
-                    rule_policy_override: startup.rule_policy_override(),
-                    control_grants: startup.control_grants().to_vec(),
-                })),
+                native_id_prefix: startup.native_id_prefix()?,
                 seed: crate::app::match_bootstrap::MatchSeed {
                     value: startup.seed(),
                     source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
@@ -335,7 +325,7 @@ impl LoadingRequest {
             random_map_preview: None,
             skirmish_colors: None,
             the_team_enabled: false,
-        }
+        })
     }
 
     pub(crate) fn campaign(startup: crate::app::match_bootstrap::PreparedCampaignStartup) -> Self {
@@ -1319,10 +1309,8 @@ fn prepare_session_for_loading(
         // The shell retains the recorded mode until its world is installed;
         // replay never admits a participant table or live connection.
         LoadingStartup::Replay {
-            session: launch,
-            game_mode,
-            ..
-        } => session.begin_replay(*game_mode, launch.local_player().name.clone()),
+            launch, game_mode, ..
+        } => session.begin_replay(*game_mode, launch.session().local_player().name.clone()),
         startup => session.begin_offline(
             startup.session_mode(),
             startup
@@ -1333,19 +1321,18 @@ fn prepare_session_for_loading(
 }
 
 /// VERA: a network match plays the rules its room took from its host
-/// (`HostRules`), which the room's agreement already compared, and so does
-/// a replay that recorded them; every other game, offline replays included,
-/// plays the player's own Options switches.
+/// (`HostRules`), which the room's agreement already compared. A replay
+/// applies the exact simulation switches recorded by its blueprint.
 fn play_startup_personal_rules(
     process_assets: &mut crate::app::process_assets::ProcessAssets,
     startup: &LoadingStartup,
 ) {
     let room = match startup {
         LoadingStartup::Network(startup) => &startup.launch_session().options.host_rules,
-        // A network match recorded the room's, none included.
-        LoadingStartup::Replay {
-            session, game_mode, ..
-        } if game_mode.is_network() => &session.options.host_rules,
+        LoadingStartup::Replay { launch, .. } => {
+            return process_assets
+                .use_personal_rules(launch.personal_rules().cloned().unwrap_or_default());
+        }
         _ => return process_assets.use_own_personal_rules(),
     };
     match room.personal_rules() {

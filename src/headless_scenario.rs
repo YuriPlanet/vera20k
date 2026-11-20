@@ -280,7 +280,13 @@ fn load_with_assets(
         cold_rules_owner = owner;
         &mut cold_rules_owner
     };
-    if game_mode.is_network() {
+    if let Some(rules) = launch.personal_rules() {
+        native_rules_owner.use_personal_rules(rules.clone());
+    } else if game_mode.execution_topology().is_lockstep() {
+        native_rules_owner
+            .use_personal_rules(launch.session().options.host_rules.personal_rules()?);
+    }
+    if game_mode.execution_topology().is_lockstep() {
         native_rules_owner
             .reset_for_network_match()
             .map_err(|error| format!("reset network Rules: {error}"))?;
@@ -320,13 +326,16 @@ fn load_with_assets(
     let bound_scenario_prefix = scenario_prefix_plan
         .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
         .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
-    // This entry constructs a noncampaign scenario even when a replay
-    // installs the live mode and rules of a campaign.
+    // Admitted authored multiplayer launches use the same construction
+    // profile as the graphical loader, independent of the live replay mode.
+    let construction_profile = BootstrapRuleProfile::Multiplayer;
     let mode_class = Some(launch.session().mode.class);
     let rule_policy = launch
         .rule_policy_override()
-        .map(|policy| policy.with_bootstrap(BootstrapRuleProfile::Multiplayer))
-        .unwrap_or_else(|| ScenarioGameMode::Skirmish.stock_rule_policy(mode_class));
+        .map(|policy| policy.with_bootstrap(construction_profile))
+        .unwrap_or_else(|| {
+            game_mode.stock_rule_policy_for_bootstrap(construction_profile, mode_class)
+        });
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
     let theater = theater::load_theater(assets, &map.header.theater)
@@ -388,6 +397,12 @@ fn load_with_assets(
             .rule_policy_override()
             .unwrap_or_else(|| game_mode.stock_rule_policy(mode_class)),
     );
+    if let Some(start) = launch.network_start() {
+        if !game_mode.execution_topology().is_lockstep() {
+            return Err("Offline launch has lockstep start settings".to_string());
+        }
+        start.install(&mut sim);
+    }
     if let Some(checkpoint) = accepted_native_id_prefix {
         sim.install_accepted_native_id_prefix(checkpoint)
             .map_err(|error| format!("replay native-ID prefix: {error}"))?;

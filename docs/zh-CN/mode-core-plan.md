@@ -55,7 +55,7 @@ R07 守卫禁止 `rules/`、`map/` 和已迁移的玩法链读取原始模式，
 
 ## Phase 3 剧本蓝图与回放
 
-R11–R12 携带权限表的剧本蓝图沿用 Phase 2 已接纳的来源映射与权限表。完整无头回放验收覆盖遭遇战、原版合作及差异化授权锁步对局，按原位重放 `ScenarioServiceInput` 并比对逐检查点和终局哈希。启动配方只携带仿真所需的房间事实。多阵营 `StageCarryOver` 和 `CampaignGraph` 在 Phase 5 随消费者一起落地。
+R11–R12 携带权限表的剧本蓝图沿用 Phase 2 已接纳的规则、来源映射与权限表。`MatchStartBlueprint` 用 `kind` 标识遭遇战、原版合作与剧本锁步启动，保留生成地图标签，启动配方只携带仿真所需的事实。原版合作续关沿用现有的单份 `CampaignCarryOver`。图形与无头回放按原位重放 `ScenarioServiceInput`，校验逐检查点以及最后一条服务之后的终局共享哈希与原始计分快照。多阵营 `StageCarryOver` 和 `CampaignGraph` 在 Phase 5 随消费者一起落地。
 
 ## Phase 4 房间信封
 

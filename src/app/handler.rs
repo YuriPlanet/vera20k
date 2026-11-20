@@ -409,19 +409,23 @@ impl App {
                 // Resizes may have arrived while startup owned the renderer.
                 Self::follow_window_size(&mut state);
                 if let Some(request) = self.replay_request.take() {
-                    let loading = crate::app::loading::pump::LoadingRequest::replay(
-                        request
-                            .replay
-                            .standalone_startup()
-                            .expect("validated replay request"),
-                        request.map_beside.as_deref(),
-                    );
-                    state.match_state.match_diagnostics.begin_playback(
-                        request.replay,
-                        request.capture_output,
-                        request.replay_sha256,
-                    );
-                    crate::app::loading::pump::begin_loading(&mut state, loading);
+                    let loading = request.replay.standalone_startup().and_then(|startup| {
+                        crate::app::loading::pump::LoadingRequest::replay(
+                            startup,
+                            request.map_beside.as_deref(),
+                        )
+                    });
+                    match loading {
+                        Ok(loading) => {
+                            state.match_state.match_diagnostics.begin_playback(
+                                request.replay,
+                                request.capture_output,
+                                request.replay_sha256,
+                            );
+                            crate::app::loading::pump::begin_loading(&mut state, loading);
+                        }
+                        Err(error) => log::error!("The diagnostic replay cannot start: {error:#}"),
+                    }
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 let mut browser_spawn_failure = None;
