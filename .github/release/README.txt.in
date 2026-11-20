@@ -57,7 +57,9 @@ License version 3 or later (LICENSE-GPL). The decoder is copyright 2007-2011
 Peter Ross, 2009 Daniel Verkamp and 2009 Konstantin Shishkov; the scaler
 2011-2012 Hyllian/Jararaca and 2014 Arwa Arif.
 THIRD_PARTY_LICENSES.html lists the open-source libraries it includes and
-their licenses.
+their licenses. On Windows, dxcompiler.dll beside the game is Microsoft's
+DirectX Shader Compiler, which compiles the game's DirectX 12 shaders; its
+license notices are in LICENSE-DXC.txt.
 
 Command & Conquer, Red Alert and Yuri's Revenge are trademarks of Electronic
 Arts Inc. The program icon, Red Alert 2's red star, is game art owned by
