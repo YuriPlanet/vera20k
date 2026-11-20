@@ -180,3 +180,20 @@ fn one_way_alliance_does_not_form_a_team() {
     assert!(rows.iter().all(|row| row.team == TeamKey::Unteamed));
     assert_eq!((rows[0].ready, rows[0].total), (1, 2));
 }
+
+/// Every one-house team shares the "-" row, so its colour and blink house is
+/// the first holder in house order on every call. It came from a map whose
+/// order changed per call, so the row could switch house between frames.
+#[test]
+fn unteamed_row_takes_its_first_holder_in_house_order() {
+    let houses: Vec<_> = (0..8).map(house).collect();
+    let views = vec![
+        view(houses[5], "Nuke", 30, false),
+        view(houses[3], "Nuke", 60, false),
+    ];
+    for _ in 0..16 {
+        let rows = grouped_super_rows(&houses, allies(&[]), &views, None);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].representative, houses[3]);
+    }
+}

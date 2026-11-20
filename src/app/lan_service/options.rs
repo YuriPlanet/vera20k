@@ -1077,7 +1077,10 @@ mod tests {
             frozen.launch_session().unwrap().clone(),
         )
         .unwrap();
-        let retail = crate::rules::retail_ini_fixture::retail_battle_rules().expect("retail rules");
+        // Without retail data (`RA2_DIR`) the fixture prints SKIPPED.
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
         let mut sim = crate::sim::world::Simulation::new();
         crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
             &mut sim,
