@@ -519,6 +519,13 @@ pub(crate) fn prepare_campaign_startup_at_index(
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayLoadAuthority {
+    pub(crate) rule_policy: RulePolicy,
+    pub(crate) rule_policy_override: Option<RulePolicy>,
+    pub(crate) control_grants: Vec<crate::sim::control_authority::ControlGrant>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LoadingStartup {
     Network(std::sync::Arc<PreparedNetworkStartup>),
     /// Exact immutable recorded launch. The diagnostics owner retains and
@@ -526,8 +533,9 @@ pub enum LoadingStartup {
     Replay {
         session: SkirmishLaunchSession,
         seed: MatchSeed,
-        game_mode: crate::sim::scenario_session::ScenarioGameMode,
+        game_mode: ScenarioGameMode,
         native_id_prefix: u32,
+        authority: Option<Box<ReplayLoadAuthority>>,
     },
     Campaign(PreparedCampaignStartup),
     Accepted(PreparedMatchStartup),
@@ -560,7 +568,16 @@ impl MatchSpec {
 
 impl LoadingStartup {
     pub(crate) fn match_spec(&self) -> MatchSpec {
-        self.match_spec_for_construction(self.session_mode().bootstrap_rule_profile())
+        let mut spec =
+            self.match_spec_for_construction(self.session_mode().bootstrap_rule_profile());
+        if let Self::Replay {
+            authority: Some(authority),
+            ..
+        } = self
+        {
+            spec.rules = authority.rule_policy;
+        }
+        spec
     }
 
     /// The admitted map family controls construction even when a replay's
@@ -568,9 +585,22 @@ impl LoadingStartup {
     pub(crate) fn match_spec_for_construction(&self, profile: BootstrapRuleProfile) -> MatchSpec {
         let class = self.launch_session().map(|launch| launch.mode.class);
         let mode = self.session_mode();
+        let rule_override = match self {
+            Self::Replay {
+                authority: Some(authority),
+                ..
+            } => authority.rule_policy_override,
+            Self::Replay { .. }
+            | Self::Network(_)
+            | Self::Campaign(_)
+            | Self::Accepted(_)
+            | Self::UnverifiedLegacy { .. }
+            | Self::Generic { .. } => None,
+        };
         MatchSpec {
             topology: mode.execution_topology(),
-            rules: mode.stock_rule_policy_for_bootstrap(profile, class),
+            rules: rule_override
+                .unwrap_or_else(|| mode.stock_rule_policy_for_bootstrap(profile, class)),
         }
     }
 
@@ -1065,6 +1095,7 @@ mod tests {
             },
             game_mode,
             native_id_prefix: 0,
+            authority: None,
         };
         let wol_replay = replay(SessionMode::Wol);
         assert_eq!(

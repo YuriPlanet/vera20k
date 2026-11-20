@@ -71,6 +71,7 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
         },
         game_mode: SessionMode::Wol,
         native_id_prefix: 0,
+        authority: None,
     };
     assert!(!crate::app::loading::init::should_read_tmcj4f(
         startup.session_mode(),
@@ -87,6 +88,7 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
             seed: *seed,
             game_mode,
             native_id_prefix: *native_id_prefix,
+            authority: None,
         },
         _ => unreachable!("test startup is a Replay"),
     };
@@ -134,6 +136,7 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
             },
             game_mode,
             native_id_prefix: 0,
+            authority: None,
         };
         let construction_rules = startup
             .match_spec_for_construction(BootstrapRuleProfile::Multiplayer)
@@ -2594,6 +2597,7 @@ fn map_additions_reach_matches_but_not_missions_or_random_maps() {
             },
             game_mode,
             native_id_prefix: 0,
+            authority: None,
         })
     };
     assert!(reach(Battle, "mp01t4.map", SessionMode::Lan));

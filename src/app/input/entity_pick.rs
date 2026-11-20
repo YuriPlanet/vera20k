@@ -15,6 +15,7 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::vision::FogState;
+use crate::sim::world::ControlProjection;
 
 /// Selection uses the last prepared presentation sample, not a temporary
 /// mutation of authoritative entities. Native callers/tests retain raw geometry.
@@ -68,21 +69,11 @@ pub(crate) trait PickSource: Copy {
     /// `PlayerControl=yes` (SOV04's Germans, Premier Romanov's owner)
     /// band-selects exactly like the player's own House.
     ///
-    /// `ControlProjection::can_order` preserves that stock leaf: with a nonzero game
-    /// mode (`A8B238`, `0x0050B6F0`) the House is compared with the saved
-    /// current House `A83D4C` (`0x0050B716`); in mode zero it is the House's
-    /// `+0x1EC` IsHuman (`0x0050B6F9`) or `+0x1ED` PlayerControl
-    /// (`0x0050B703`). A granted House joins this cohort with Tactical scope.
-    /// A bare EntityStore has no house table and answers
-    /// `None`; its fixtures keep exact local-owner identity.
-    fn owner_can_band_select(&self, _owner: InternedId) -> Option<bool> {
-        None
-    }
-    /// [`crate::sim::world::ControlProjection::can_select`], the
-    /// owner test of the T key's predicates (`0x00732580`, `0x00732770`,
-    /// `0x006DA770`). A bare EntityStore answers `None`; its fixtures keep
-    /// exact local-owner identity.
-    fn owner_controls_selection(&self, _owner: InternedId) -> Option<bool> {
+    /// Band and shift-click use ControlProjection::can_order (0x0050B6F0).
+    /// TypeSelect uses ControlProjection::can_select, including the narrower
+    /// mode-zero PlayerControl test (0x00732580, 0x00732770, 0x006DA770).
+    /// A bare EntityStore leaves the caller's exact-owner fallback in place.
+    fn selection_control(&self) -> Option<ControlProjection<'_>> {
         None
     }
 }
@@ -116,11 +107,8 @@ impl PickSource for &crate::sim::world::Simulation {
             crate::sim::movement::locomotor::MovementLayer::Ground,
         )
     }
-    fn owner_can_band_select(&self, owner: InternedId) -> Option<bool> {
-        Some(self.control_projection().can_order(owner))
-    }
-    fn owner_controls_selection(&self, owner: InternedId) -> Option<bool> {
-        Some(self.control_projection().can_select(owner))
+    fn selection_control(&self) -> Option<ControlProjection<'_>> {
+        Some(self.control_projection())
     }
 }
 impl PickWorld for &crate::sim::world::Simulation {
@@ -172,11 +160,8 @@ impl PickSource for PresentedWorld<'_> {
             )
         })
     }
-    fn owner_can_band_select(&self, owner: InternedId) -> Option<bool> {
-        Some(self.sim.control_projection().can_order(owner))
-    }
-    fn owner_controls_selection(&self, owner: InternedId) -> Option<bool> {
-        Some(self.sim.control_projection().can_select(owner))
+    fn selection_control(&self) -> Option<ControlProjection<'_>> {
+        Some(self.sim.control_projection())
     }
 }
 impl PickWorld for PresentedWorld<'_> {
@@ -599,7 +584,8 @@ fn first_selected_is_players(
         .and_then(|id| source.entities().get(*id))
         .is_some_and(|entity| match (local_owner, interner) {
             (Some(owner), Some(names)) => source
-                .owner_can_band_select(entity.owner())
+                .selection_control()
+                .map(|control| control.can_order(entity.owner()))
                 .unwrap_or_else(|| names.resolve(entity.owner()).eq_ignore_ascii_case(owner)),
             _ => true,
         })
@@ -846,13 +832,14 @@ pub(crate) fn compute_type_select_tap_with_playfield(
     require_playfield_membership: bool,
 ) -> TypeSelectTapResult {
     let entities = source.entities();
+    let control = source.selection_control();
     let mut mutation = SelectionMutation::default();
     let mut selected = current_selection.to_vec();
     if selected.len() == 1 {
         // `Tactical::Unselect_If_Not_Owned @ 0x006DA770`.
-        let nonlocal = entities
-            .get(selected[0])
-            .is_some_and(|entity| !type_select_owner_admits(source, local_owner, entity, interner));
+        let nonlocal = entities.get(selected[0]).is_some_and(|entity| {
+            !type_select_owner_admits(control.as_ref(), local_owner, entity, interner)
+        });
         if nonlocal {
             mutation.deselect.push(selected[0]);
             selected.clear();
@@ -911,6 +898,7 @@ pub(crate) fn compute_type_select_tap_with_playfield(
     if !across_map {
         let visible = type_select_candidates(
             source,
+            control.as_ref(),
             screen_order,
             &seeds,
             fog,
@@ -938,6 +926,7 @@ pub(crate) fn compute_type_select_tap_with_playfield(
 
     let map_candidates = type_select_candidates(
         source,
+        control.as_ref(),
         map_order,
         &seeds,
         None,
@@ -1001,6 +990,7 @@ fn push_type_select_seed(
 
 fn type_select_candidates(
     source: impl PickSource,
+    control: Option<&ControlProjection<'_>>,
     source_order: &[u64],
     seeds: &[TypeSelectionSeed],
     fog: Option<(&FogState, &crate::map::houses::HouseAllianceMap)>,
@@ -1019,7 +1009,7 @@ fn type_select_candidates(
             let owner = interner.map_or("", |i| i.resolve(entity.owner()));
             let type_id = interner.map_or("", |i| i.resolve(entity.type_ref()));
             if !entity.lifecycle.object_alive()
-                || !type_select_owner_admits(source, local_owner, entity, interner)
+                || !type_select_owner_admits(control, local_owner, entity, interner)
                 || !seeds.iter().any(|&seed| {
                     type_selection_matches(
                         seed,
@@ -1047,18 +1037,18 @@ fn type_select_candidates(
 }
 
 /// The owner arm of the T key's predicates, asked of the object's House
-/// ([`PickSource::owner_controls_selection`]). A world without a local player
+/// ([ControlProjection::can_select]). A world without a local player
 /// keeps every owner, as the headless fixtures always have; a source without
 /// a house table falls back to exact local-owner identity.
 fn type_select_owner_admits(
-    source: impl PickSource,
+    control: Option<&ControlProjection<'_>>,
     local_owner: Option<&str>,
     entity: &crate::sim::game_entity::GameEntity,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
     local_owner.is_none_or(|local| {
-        source
-            .owner_controls_selection(entity.owner())
+        control
+            .map(|control| control.can_select(entity.owner()))
             .unwrap_or_else(|| {
                 interner
                     .map_or("", |i| i.resolve(entity.owner()))
@@ -1101,6 +1091,7 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
         return SelectionMutation::default();
     };
     let clicked_type = (clicked.type_ref(), clicked.category());
+    let control = source.selection_control();
     let additive = additive
         && (current_selection.is_empty()
             || first_selected_is_players(source, current_selection, local_owner, interner));
@@ -1108,6 +1099,7 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
         return SelectionMutation {
             deselect: matching_type_group(
                 source,
+                control.as_ref(),
                 scope_order,
                 clicked_type,
                 local_owner,
@@ -1126,6 +1118,7 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
         clear: !additive,
         select: matching_type_group(
             source,
+            control.as_ref(),
             scope_order,
             clicked_type,
             local_owner,
@@ -1178,10 +1171,12 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
         );
     }
 
+    let control = source.selection_control();
     let mut select = Vec::new();
     for type_ref in represented_types {
         select.extend(matching_type_group(
             source,
+            control.as_ref(),
             scope_order,
             type_ref,
             local_owner,
@@ -1201,6 +1196,7 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
 
 fn matching_type_group(
     source: impl PickSource,
+    control: Option<&ControlProjection<'_>>,
     source_order: &[u64],
     type_ref: TypeSelectionSeed,
     local_owner: Option<&str>,
@@ -1222,7 +1218,7 @@ fn matching_type_group(
                     rules,
                     interner,
                 )
-                || !type_select_owner_admits(source, local_owner, entity, interner)
+                || !type_select_owner_admits(control, local_owner, entity, interner)
                 || (selecting
                     && !static_selection_gate(entity, type_id, rules, require_playfield_membership))
             {
@@ -1248,6 +1244,7 @@ fn entities_in_rect(
     require_playfield_membership: bool,
 ) -> Vec<u64> {
     let entities = source.entities();
+    let control = source.selection_control();
     encounter_order
         .iter()
         .filter_map(|entity| {
@@ -1261,7 +1258,7 @@ fn entities_in_rect(
             let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
             let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
             if !is_local_band_candidate(
-                source,
+                control.as_ref(),
                 local_owner,
                 owner_str,
                 entity,
@@ -1361,7 +1358,8 @@ pub(crate) fn selection_dynamic_prefix(
 /// current fog tile or viewport. House50B6F0 owns campaign/current-house policy.
 /// This gate does not read Alive, Foot+6AD or Techno+270; later virtuals do.
 pub(crate) fn is_local_player_selectable_object(
-    sim: &crate::sim::world::Simulation,
+    interner: &crate::sim::intern::StringInterner,
+    control: &ControlProjection<'_>,
     rules: Option<&RuleSet>,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> bool {
@@ -1370,8 +1368,8 @@ pub(crate) fn is_local_player_selectable_object(
         && entity.in_playfield()
         && entity.category() != EntityCategory::Structure
         && entity.discovery.discovered_by_current_house()
-        && type_is_selectable(sim.interner().resolve(entity.type_ref()), rules)
-        && sim.control_projection().can_order(entity.owner())
+        && type_is_selectable(interner.resolve(entity.type_ref()), rules)
+        && control.can_order(entity.owner())
 }
 
 /// Does a building's footprint cover this cell? The native lookup asks the cell
@@ -1567,7 +1565,7 @@ pub(crate) fn no_selection_refuses_select(
 /// Final object admission shared by selection callers. Ownership and the
 /// band/TypeSelect dynamic virtual are caller gates: an ordinary discovered
 /// nonlocal click may reach this gate, the band collects the candidates whose
-/// House `IsHumanPlayer` admits ([`PickSource::owner_can_band_select`]), and
+/// House `IsHumanPlayer` admits ([ControlProjection::can_order]), and
 /// TypeSelect collects only exact-local candidates. Newly selected objects
 /// still have to be alive, present, statically selectable, and outside
 /// active warp-out.
@@ -1595,12 +1593,12 @@ fn type_is_selectable(entity_type: &str, rules: Option<&RuleSet>) -> bool {
 }
 
 /// The band callback `0x004AC2B0` in VERA's order: the owning House's
-/// `IsHumanPlayer` (`0x004AC2BE`, see [`PickSource::owner_can_band_select`])
+/// `IsHumanPlayer` (`0x004AC2BE`, see [ControlProjection::can_order])
 /// and then the static admission. A world without a local player keeps the
 /// band open to every owner, as the headless fixtures always have; a source
 /// without a house table falls back to exact local-owner identity.
 fn is_local_band_candidate(
-    source: impl PickSource,
+    control: Option<&ControlProjection<'_>>,
     local_owner: Option<&str>,
     entity_owner: &str,
     entity: &crate::sim::game_entity::GameEntity,
@@ -1609,8 +1607,8 @@ fn is_local_band_candidate(
     require_playfield_membership: bool,
 ) -> bool {
     local_owner.is_none_or(|local| {
-        source
-            .owner_can_band_select(entity.owner())
+        control
+            .map(|control| control.can_order(entity.owner()))
             .unwrap_or_else(|| entity_owner.eq_ignore_ascii_case(local))
     }) && static_selection_gate(entity, entity_type, rules, require_playfield_membership)
 }

@@ -47,10 +47,12 @@ fn flashes(
 ) -> Vec<CommandEnvelope> {
     let owner = sim.session().current_house().unwrap();
     let mut queued = Vec::new();
+    let control = sim.control_projection();
     for &receiver in receivers {
         push_move_flash(
             &mut queued,
             sim,
+            &control,
             rules,
             owner,
             7,

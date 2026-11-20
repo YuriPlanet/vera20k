@@ -476,14 +476,17 @@ impl Simulation {
                 _ => None,
             })
             .collect();
+        let control = (!assignments.is_empty()).then(|| self.control_projection());
         let mut slots = std::array::from_fn(|_| Vec::new());
         for entity in entities {
-            let group =
+            let current = entity.control_group();
+            let group = control.as_ref().map_or(current, |control| {
                 assignments
                     .iter()
-                    .fold(entity.control_group(), |current, (group, selected)| {
-                        self.assigned_control_group(entity, current, *group, selected)
-                    });
+                    .fold(current, |current, (group, selected)| {
+                        Self::assigned_control_group(control, entity, current, *group, selected)
+                    })
+            });
             if (0..10).contains(&group) {
                 slots[((group + 1) % 10) as usize].push(entity.stable_id());
             }

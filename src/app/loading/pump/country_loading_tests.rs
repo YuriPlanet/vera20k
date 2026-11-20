@@ -265,6 +265,7 @@ fn network_replays_skip_outgoing_country_prefix_rules() {
             session: launch,
             game_mode: mode,
             native_id_prefix: 0,
+            authority: None,
             seed: crate::app::match_bootstrap::MatchSeed {
                 value: 77,
                 source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,

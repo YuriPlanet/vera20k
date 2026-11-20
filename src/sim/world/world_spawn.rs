@@ -3007,19 +3007,18 @@ impl Simulation {
     pub(crate) fn undeploy_building(
         &mut self,
         stable_id: u64,
+        delegated: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        self.can_undeploy_building_runtime(stable_id, rules)
-            && production::sell_back(
-                self,
-                rules,
-                stable_id,
-                production::SellOrder::Undeploy,
-                registry,
-                frame_effects,
-            )
+        let order = if delegated {
+            production::SellOrder::DelegatedRedeploy { explicit: true }
+        } else {
+            production::SellOrder::Undeploy
+        };
+        self.can_undeploy_building_runtime(stable_id, delegated, rules)
+            && production::sell_back(self, rules, stable_id, order, registry, frame_effects)
     }
 
     /// `BuildingClass::Mission_Selling`'s UndeploysInto conversion (`0x00449CEA`), on
@@ -3251,7 +3250,12 @@ impl Simulation {
         );
     }
 
-    pub(crate) fn can_undeploy_building_runtime(&self, stable_id: u64, rules: &RuleSet) -> bool {
+    pub(crate) fn can_undeploy_building_runtime(
+        &self,
+        stable_id: u64,
+        delegated: bool,
+        rules: &RuleSet,
+    ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
@@ -3274,10 +3278,26 @@ impl Simulation {
         if !obj.construction_yard {
             return true;
         }
-        self.construction_yard_redeploy_core_gate(entity)
+        (!delegated
+            || self
+                .session
+                .rule_policy()
+                .allows_construction_yard_redeploy())
+            && self.construction_yard_redeploy_core_gate(
+                entity,
+                delegated
+                    || self
+                        .houses
+                        .get(&entity.owner())
+                        .is_some_and(|house| house.is_human()),
+            )
     }
 
-    pub(super) fn construction_yard_redeploy_core_gate(&self, entity: &GameEntity) -> bool {
+    pub(crate) fn construction_yard_redeploy_core_gate(
+        &self,
+        entity: &GameEntity,
+        authorized: bool,
+    ) -> bool {
         // Building44374F..443778 /44F5F3..44F61C admit existing radio
         // contacts. Selling44AB68/44A2EE notifies and breaks them later.
         if !self.session.game_options().mcv_redeploy {
@@ -3289,9 +3309,7 @@ impl Simulation {
         if entity.mind_control.controller().is_some() {
             return false;
         }
-        self.houses
-            .get(&entity.owner())
-            .is_some_and(|house| house.is_human())
+        authorized
     }
 }
 

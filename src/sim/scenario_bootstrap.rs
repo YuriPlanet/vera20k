@@ -1226,6 +1226,7 @@ impl NormalizedSkirmishSlot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchLaunchDescriptor {
     session: SkirmishLaunchSession,
+    rule_policy_override: Option<crate::rules::rule_policy::RulePolicy>,
     control_grants: Vec<crate::sim::control_authority::ControlGrant>,
     /// WOL Quick Co-op (`[0xA8B244] == 2`) at scenario load: the start
     /// callback is AssignStartingPoints `0x005EE9D0`.
@@ -1284,9 +1285,20 @@ impl MatchLaunchDescriptor {
         }
         Ok(Self {
             session,
+            rule_policy_override: None,
             control_grants: Vec::new(),
             quick_coop_starts: false,
         })
+    }
+
+    /// Use admitted custom rules while constructing and running the world.
+    pub fn with_rule_policy(mut self, policy: crate::rules::rule_policy::RulePolicy) -> Self {
+        self.rule_policy_override = Some(policy);
+        self
+    }
+
+    pub fn rule_policy_override(&self) -> Option<crate::rules::rule_policy::RulePolicy> {
+        self.rule_policy_override
     }
 
     /// Supply grants in resolved source and House order. The constructed

@@ -322,7 +322,9 @@ fn load_with_assets(
     // This entry constructs a noncampaign scenario even when a replay
     // installs the live mode and rules of a campaign.
     let mode_class = Some(launch.session().mode.class);
-    let rule_policy = ScenarioGameMode::Skirmish.stock_rule_policy(mode_class);
+    let rule_policy = launch
+        .rule_policy_override()
+        .unwrap_or_else(|| ScenarioGameMode::Skirmish.stock_rule_policy(mode_class));
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
     let theater = theater::load_theater(assets, &map.header.theater)
@@ -387,7 +389,9 @@ fn load_with_assets(
     sim.install_session_admission(
         game_mode,
         mode_class,
-        game_mode.stock_rule_policy(mode_class),
+        launch
+            .rule_policy_override()
+            .unwrap_or_else(|| game_mode.stock_rule_policy(mode_class)),
     );
     if let Some(checkpoint) = accepted_native_id_prefix {
         sim.install_accepted_native_id_prefix(checkpoint)

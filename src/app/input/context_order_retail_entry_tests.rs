@@ -187,6 +187,54 @@ fn a_players_vehicle_and_rifleman_grind_at_their_own_grinder() {
     );
 }
 
+#[test]
+fn delegated_infantry_uses_its_grinder_instead_of_the_players_house() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let (mut sim, grinder, _, _) = scene(rules, "Russians");
+    let infantry = sim
+        .spawn_object("E1", "Russians", 14, 17, 0, rules)
+        .unwrap();
+    sim.session_mut_for_test()
+        .set_game_mode(ScenarioGameMode::Lan);
+    sim.install_network_timing(10);
+    sim.network_command_queues()
+        .install_timing(0, std::num::NonZeroU8::new(5).unwrap(), [0]);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::FullControl,
+    }])
+    .unwrap();
+    assert_eq!(
+        cursor(&sim, rules, &registry, infantry, grinder),
+        Some(CursorId::Enter)
+    );
+    let mut selected = vec![infantry];
+    assert_eq!(
+        entry_orders(
+            &sim,
+            rules,
+            &[infantry],
+            &mut selected,
+            &hover(grinder),
+            OrderModifier::Normal,
+            false,
+            Some(&registry),
+        ),
+        Some(vec![eaten(infantry, grinder)]),
+    );
+}
+
 /// Over an ally's Grinder an armed player's object has base action 0, not
 /// Select (`0x0070056C`), so neither grinder row runs and the click sends no
 /// one to be ground; the Unit tail (`0x007403EB`) makes the vehicle's NoMove
