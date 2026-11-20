@@ -2154,8 +2154,7 @@ impl ApplicationHandler for App {
                     .then(|| crate::app::input::coop_score::poll(state))
                     .flatten(),
                 crate::app::input::sound::poll_scroll_repeat(state),
-                Self::poll_movie_list_scroll(state),
-                Self::poll_mods_scroll(state),
+                Self::poll_family_list(state),
                 Self::poll_mod_files(state),
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),

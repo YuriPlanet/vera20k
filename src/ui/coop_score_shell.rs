@@ -358,11 +358,7 @@ pub fn hidden_on_final_mission(id: u16) -> bool {
 }
 
 /// `0x0046DE20`'s slider range: Easy, Normal, Hard.
-pub const DIFFICULTY_RANGE: TrackbarRange = TrackbarRange {
-    min: 0,
-    max: 2,
-    step: 1,
-};
+pub const DIFFICULTY_RANGE: TrackbarRange = TrackbarRange::new(0, 2, 1);
 
 /// The combo face height every shell combo paints.
 const COMBO_FACE_H: i32 = 24;

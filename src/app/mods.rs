@@ -128,7 +128,7 @@ pub(crate) struct Mods {
     kept: Option<String>,
     /// The Mods page while it is open (`App::open_mods_page`): what `Mods`
     /// held when it opened, and the row picked.
-    pub(crate) page: Option<crate::ui::shell::list::ListBoxState<Listed>>,
+    pub(crate) page: Option<crate::ui::movies_credits_shell::FamilyList<Listed>>,
     /// The page's Check Files, from its button to its last box.
     pub(crate) files_check: Option<crate::app::mod_files::PageCheck>,
 }
@@ -1000,7 +1000,7 @@ mod tests {
         // Use This Mod changes to the picked row, unless this version cannot
         // play it, or this run plays it and config.toml asks for it too.
         let page = |selected| {
-            Some(crate::ui::shell::list::ListBoxState::new(
+            Some(crate::ui::movies_credits_shell::FamilyList::new(
                 listed.clone(),
                 selected,
             ))

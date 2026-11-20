@@ -12,20 +12,21 @@ use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
 use crate::app::{App, AppState};
 use crate::ui::chat_translation::ChatTranslation;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
-use crate::ui::shell::combobox::ComboPress;
+use crate::ui::shell::combobox::ComboPopup;
 use crate::ui::shell::sound::{
-    SHELL_SOUND_PAGE, ShellSoundLayout, SoundButton, SoundControl, SoundState,
+    SHELL_SOUND_PAGE, ShellSoundInput, ShellSoundLayout, ShellSoundState,
 };
 use crate::ui::wol_options::{
-    DIALOG, TRANSLATE, WolOptionsAction, WolOptionsLayout, WolOptionsState, WolPreferences,
+    DIALOG, TRANSLATE, TRANSLATE_OFF_KEY, WolOptionsAction, WolOptionsInput, WolOptionsLayout,
+    WolOptionsState, WolPreferences,
 };
-use crate::util::time::Instant;
+use vera20k_gui::{Prop, Value};
 
 /// The open `0x2BC`, and `0xD6` while it runs over the hidden `0x2BC`.
 #[derive(Debug, Clone)]
 pub(crate) struct WolOptionsPage {
     pub(crate) ui: WolOptionsState,
-    pub(crate) sound: Option<SoundState>,
+    pub(crate) sound: Option<ShellSoundState>,
 }
 
 pub(crate) fn layout(state: &AppState) -> WolOptionsLayout {
@@ -95,10 +96,6 @@ pub(crate) fn open_sound_art(state: &mut AppState) -> bool {
     state.frontend.wol_sound_options_art.is_some()
 }
 
-fn is_button(id: u16) -> bool {
-    crate::ui::wol_options::PAGE.button(id).is_some()
-}
-
 fn page_mut(state: &mut AppState) -> Option<&mut WolOptionsPage> {
     match &mut state.frontend.wol.as_mut()?.page {
         WolPage::Options(page) => Some(page),
@@ -123,6 +120,7 @@ pub(crate) fn commit_open(state: &mut AppState) {
     visit.page = WolPage::Options(Box::new(WolOptionsPage { ui, sound: None }));
     open_art(state);
     state.frontend.shell_controller.reset_to(DIALOG, false);
+    sync_gui(state);
     state.platform.window.request_redraw();
 }
 
@@ -181,17 +179,14 @@ pub(crate) fn commit_open_sound(state: &mut AppState) {
     let Some(page) = page_mut(state) else {
         return;
     };
-    page.ui.buttons = Default::default();
-    page.ui.hovered = None;
     // GameActive 0 skips the track list init (0x006B6485).
-    let mut sound = SoundState::new(positions, Vec::new(), -1);
-    sound.sliders_enabled = sliders_enabled;
-    page.sound = Some(sound);
+    page.sound = Some(ShellSoundState::new(positions, sliders_enabled));
     open_sound_art(state);
     state
         .frontend
         .shell_controller
         .reset_to(SHELL_SOUND_PAGE.dialog, false);
+    sync_gui(state);
     state.platform.window.request_redraw();
 }
 
@@ -203,6 +198,7 @@ pub(crate) fn commit_sound_back(state: &mut AppState) {
         page.sound = None;
     }
     state.frontend.shell_controller.reset_to(DIALOG, false);
+    sync_gui(state);
     state.platform.window.request_redraw();
 }
 
@@ -225,204 +221,149 @@ fn dispatch(state: &mut AppState, action: WolOptionsAction) {
     }
 }
 
-pub(super) fn cursor_moved(state: &mut AppState) {
-    let (x, y) = state.match_state.input.cursor_px();
+/// Puts the shown page's widgets (`0x2BC`'s or `0xD6`'s) under its dialog
+/// and mirrors the current layout and states into them.
+pub(crate) fn sync_gui(state: &mut AppState) {
     let options = layout(state);
     let sound = sound_layout(state);
-    let mut changed = None;
-    if let Some(page) = page_mut(state) {
-        match page.sound.as_mut() {
-            Some(dialog) => {
-                dialog.hovered = sound.control_at(x, y);
-                dialog.buttons.hovered = match dialog.hovered {
-                    Some(SoundControl::Button(id)) => Some(id),
-                    _ => None,
-                };
-                // The trackbar works in the authored dialog's pixels.
-                let scale = sound.page.scale;
-                let (bx, _) = scale.base_point(x, y);
-                changed = dialog.dragging.and_then(|id| {
-                    dialog
-                        .set_from_pointer(id, scale.base_rect(sound.sliders[id as usize]), bx)
-                        .map(|volume| (id, volume))
-                });
+    let off = state.process_assets.csf.as_ref().map_or_else(
+        || TRANSLATE_OFF_KEY.to_owned(),
+        |csf| csf.text(TRANSLATE_OFF_KEY).into_owned(),
+    );
+    let frontend = &mut state.frontend;
+    let Some(WolPage::Options(page)) = frontend.wol.as_mut().map(|visit| &mut visit.page) else {
+        return;
+    };
+    let controller = &mut frontend.shell_controller;
+    let (dialog, scale) = match page.sound {
+        Some(_) => (SHELL_SOUND_PAGE.dialog, sound.page.scale),
+        None => (DIALOG, options.page.scale),
+    };
+    let Some(root) = controller
+        .root_in(dialog)
+        .filter(|_| controller.top_id() == Some(dialog))
+    else {
+        return;
+    };
+    controller.set_scale(scale);
+    let gui = controller.gui_mut();
+    match page.sound.as_mut() {
+        Some(sound_page) => sound_page.sync_gui(gui, root, &sound),
+        None => page.ui.sync_gui(gui, root, &options, &off),
+    }
+}
+
+/// The widget events of the last input, in order.
+fn handle_events(state: &mut AppState) {
+    for event in state.frontend.shell_controller.drain_events() {
+        let Some(page) = page_mut(state) else {
+            return;
+        };
+        if let Some(sound) = page.sound.as_mut() {
+            // 0x6B6300 on 0xD6: the sliders apply live and Back re-applies
+            // all three (shared with B8).
+            match sound.on_event(&event) {
+                Some(ShellSoundInput::BackPressed) => App::play_main_menu_button_sound(state),
+                Some(ShellSoundInput::Back(positions)) => {
+                    crate::app::input::sound::apply_back_volumes(state, positions);
+                    App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsBack);
+                }
+                Some(ShellSoundInput::Volume(id, volume)) => {
+                    crate::app::input::sound::apply_slider_volume(state, id, volume);
+                }
+                None => {}
             }
-            None => {
-                let popup = page.ui.translate_popup(&options);
-                // The open list covers the controls under it.
-                let over = options
-                    .control_at(x, y)
-                    .filter(|_| !popup.is_some_and(|popup| popup.rect.contains(x, y)));
-                page.ui.hovered = over;
-                page.ui.buttons.hovered = over.filter(|id| is_button(*id));
-                if let Some(popup) = popup {
-                    page.ui.translate_list.pointer_moved(popup, x, y);
+            continue;
+        }
+        match page.ui.on_event(&event) {
+            Some(WolOptionsInput::ButtonPressed) => App::play_main_menu_button_sound(state),
+            Some(WolOptionsInput::Toggled(action)) => {
+                App::play_launcher_options_cue(state, LauncherCue::Checkbox);
+                if let Some(action) = action {
+                    dispatch(state, action);
                 }
             }
+            Some(WolOptionsInput::List(cue)) => {
+                if let Some(cue) = cue {
+                    App::play_launcher_options_cue(state, LauncherCue::from(cue));
+                }
+                state.frontend.shell_status_line.repaint();
+            }
+            Some(WolOptionsInput::Action(action)) => dispatch(state, action),
+            None => {}
         }
     }
-    if let Some((id, volume)) = changed {
-        crate::app::input::sound::apply_slider_volume(state, id, volume);
-    }
+}
+
+pub(super) fn cursor_moved(state: &mut AppState) {
+    let (x, y) = state.match_state.input.cursor_px();
+    sync_gui(state);
+    state.frontend.shell_controller.on_pointer_move(x, y, &[]);
+    handle_events(state);
     state.frontend.shell_status_line.repaint();
     state.platform.window.request_redraw();
 }
 
-enum Press {
-    Nothing,
-    Button,
-    Checkbox(Option<WolOptionsAction>),
-    List(ComboPress),
-}
-
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     let (x, y) = state.match_state.input.cursor_px();
-    if page_mut(state).is_some_and(|page| page.sound.is_some()) {
-        sound_mouse(state, pressed, x, y);
-        return;
-    }
-    let layout = layout(state);
-    let over = layout.control_at(x, y);
-    let Some(page) = page_mut(state) else {
-        return;
-    };
-    if !pressed {
-        page.ui.translate_list.cancel_pointer();
-        let button = over.filter(|id| is_button(*id));
-        let action = page
-            .ui
-            .buttons
-            .release(button)
-            .and_then(|id| page.ui.activate(id));
-        if let Some(action) = action {
-            dispatch(state, action);
-        }
-        state.platform.window.request_redraw();
-        return;
-    }
-    let scale = layout.page.scale;
-    let press = if let Some(popup) = page.ui.translate_popup(&layout) {
-        // The open list captures the press.
-        let press = page
-            .ui
-            .translate_list
-            .press_list(popup, x, y, Instant::now());
-        if let ComboPress::Pick(row) = press {
-            page.ui.pick_translate_row(row);
-        }
-        Press::List(press)
+    sync_gui(state);
+    let controller = &mut state.frontend.shell_controller;
+    if pressed {
+        controller.on_pointer_down(x, y, &[]);
     } else {
-        match over {
-            Some(id) if is_button(id) => {
-                page.ui.buttons.press(Some(id));
-                Press::Button
-            }
-            Some(TRANSLATE) if let Some(translate) = layout.translate => {
-                let selected = Some(page.ui.translate_row());
-                Press::List(page.ui.translate_list.press_face(
-                    TRANSLATE,
-                    translate.list,
-                    scale,
-                    selected,
-                    x,
-                    y,
-                ))
-            }
-            // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
-            // toggles on the press; Translate in Matches draws the same way.
-            Some(id)
-                if layout.checkbox_rect(id).is_some_and(|rect| {
-                    crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)
-                }) =>
-            {
-                Press::Checkbox(page.ui.toggle(id))
-            }
-            _ => {
-                page.ui.buttons.press(None);
-                Press::Nothing
-            }
-        }
-    };
-    match press {
-        // Owner-draw buttons play GUIMainButtonSound on the press.
-        Press::Button => App::play_main_menu_button_sound(state),
-        Press::Checkbox(action) => {
-            App::play_launcher_options_cue(state, LauncherCue::Checkbox);
-            if let Some(action) = action {
-                dispatch(state, action);
-            }
-        }
-        Press::List(press) => {
-            if let Some(cue) = press.cue() {
-                App::play_launcher_options_cue(state, LauncherCue::from(cue));
-            }
-            state.frontend.shell_status_line.repaint();
-        }
-        Press::Nothing => {}
+        controller.on_pointer_up(x, y, &[]);
     }
+    handle_events(state);
     state.platform.window.request_redraw();
 }
 
-/// `0x6B6300` on `0xD6`: the sliders apply live and Back re-applies all
-/// three (shared with B8); the rail press plays no generic click
-/// (`0x006B6382`/`0x006B63EA`/`0x006B6444`).
-fn sound_mouse(state: &mut AppState, pressed: bool, x: i32, y: i32) {
-    let layout = sound_layout(state);
-    let hit = layout.control_at(x, y);
-    let over_button = match hit {
-        Some(SoundControl::Button(id)) => Some(id),
-        _ => None,
-    };
-    let Some(dialog) = page_mut(state).and_then(|page| page.sound.as_mut()) else {
-        return;
-    };
-    if !pressed {
-        dialog.dragging = None;
-        let back = dialog.buttons.release(over_button) == Some(SoundButton::Back);
-        let positions = dialog.positions;
-        if back {
-            crate::app::input::sound::apply_back_volumes(state, positions);
-            App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsBack);
-        }
-        state.platform.window.request_redraw();
-        return;
-    }
-    dialog.buttons.press(over_button);
-    match hit {
-        Some(SoundControl::Button(_)) => App::play_main_menu_button_sound(state),
-        Some(SoundControl::Slider(id)) => {
-            let scale = layout.page.scale;
-            let (bx, by) = scale.base_point(x, y);
-            let rect = scale.base_rect(layout.sliders[id as usize]);
-            if let Some(volume) = dialog.press_slider(id, rect, bx, by) {
-                crate::app::input::sound::apply_slider_volume(state, id, volume);
-            }
-        }
-        _ => {}
-    }
-    state.platform.window.request_redraw();
-}
-
-/// Escape closes the open translation list.
+/// Escape closes the open translation list, without a cue.
 pub(super) fn close_list(state: &mut AppState) -> bool {
-    let Some(page) = page_mut(state) else {
-        return false;
-    };
-    let open = page.ui.translate_list.control.is_some();
-    page.ui.translate_list.close();
-    open
+    page_mut(state).is_some()
+        && state.frontend.shell_controller.top_id() == Some(DIALOG)
+        && state.frontend.shell_controller.gui_mut().close_popup()
 }
 
-/// The status help under the pointer: `0x2BC`'s `0x006040B0` rows; `0xD6`
-/// has none.
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
+/// The open translation list, where it hits.
+pub(crate) fn translate_popup(state: &AppState) -> Option<ComboPopup> {
     let WolPage::Options(page) = &state.frontend.wol.as_ref()?.page else {
         return None;
     };
-    if page.sound.is_some() {
+    let node = page.ui.node(TRANSLATE)?;
+    let drop_down = state
+        .frontend
+        .shell_controller
+        .gui()
+        .combo_drop_down(node)?;
+    Some(drop_down.popup)
+}
+
+/// Whether page button `id` shows pushed: captured and still under the
+/// pointer (612B70).
+pub(crate) fn button_pressed(state: &AppState, id: u16) -> bool {
+    let Some(WolPage::Options(page)) = state.frontend.wol.as_ref().map(|visit| &visit.page) else {
+        return false;
+    };
+    let node = match &page.sound {
+        Some(sound) => sound.back().filter(|_| id == SHELL_SOUND_PAGE.back.id),
+        None => page.ui.node(id),
+    };
+    node.is_some_and(|node| state.frontend.shell_controller.gui().shows_pressed(node))
+}
+
+/// The status help under the pointer: the hovered `0x2BC` control's
+/// `0x006040B0` row; `0xD6` has none.
+pub(crate) fn status_key(state: &AppState) -> Option<&str> {
+    let WolPage::Options(page) = &state.frontend.wol.as_ref()?.page else {
+        return None;
+    };
+    let controller = &state.frontend.shell_controller;
+    if page.sound.is_some() || controller.top_id() != Some(DIALOG) {
         return None;
     }
-    page.ui
-        .hovered
-        .and_then(crate::ui::wol_options::tooltip_key)
+    let gui = controller.gui();
+    match gui.get(gui.hovered()?, Prop::Tooltip).ok().flatten()? {
+        Value::Text(key) => Some(key),
+        _ => None,
+    }
 }

@@ -2,6 +2,8 @@
 //! Values here are control projections; the process Options/Theme owners retain
 //! audio values, playback and playlist identity.
 
+use vera20k_gui::{Gui, NodeId, NodeKind, Prop, UiEvent, Value};
+
 use super::button::ShellButtonInteraction;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
@@ -78,12 +80,6 @@ pub struct SoundState {
     pub dragging: Option<SoundSlider>,
     pub hovered: Option<SoundControl>,
     pub scroll: super::list::ListScrollInteraction,
-    /// `0x6B6300`'s init enables the three trackbars only with an output
-    /// device (`Audio__HasOutputDevice @ 0x00407000`, `0x006B635F..0x006B6483`);
-    /// a disabled window takes no press. B8 never opens without one (BBB
-    /// disables its Sound button, `0x004E2201..0x004E2223`), so only `0xD6`
-    /// from WOL Options clears it.
-    pub sliders_enabled: bool,
 }
 impl SoundState {
     pub fn new(positions: [u8; 3], rows: Vec<SoundTrackRow>, current: i32) -> Self {
@@ -103,7 +99,6 @@ impl SoundState {
             dragging: None,
             hovered: None,
             scroll: Default::default(),
-            sliders_enabled: true,
         }
     }
     pub fn selected_theme(&self) -> Option<i32> {
@@ -135,8 +130,7 @@ impl SoundState {
     /// rows admit it; the thumb starts a drag, the rail jumps once. Returns
     /// the changed volume.
     pub fn press_slider(&mut self, id: SoundSlider, rect: RectPx, x: i32, y: i32) -> Option<f32> {
-        if !self.sliders_enabled || !crate::ui::shell::trackbar::admits_press_y(y - rect.y, rect.h)
-        {
+        if !crate::ui::shell::trackbar::admits_press_y(y - rect.y, rect.h) {
             return None;
         }
         let left = rect.x + self.thumb_left(id, rect);
@@ -170,6 +164,127 @@ pub const SHELL_SOUND_PAGE: super::menu_page::MenuPageSpec = super::menu_page::M
 /// The slider captions `GUI:MusicVolume`, `GUI:SoundVolume`, `GUI:VoiceVolume`.
 pub const SHELL_SOUND_LABEL_KEYS: [&str; 3] =
     ["GUI:MusicVolume", "GUI:SoundVolume", "GUI:VoiceVolume"];
+
+/// What one of `0xD6`'s widget events asks its host to do.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ShellSoundInput {
+    /// Back took the press: GUIMainButtonSound (`0x0061376B`). The rail
+    /// press plays nothing (`0x006B6382`/`0x006B63EA`/`0x006B6444`).
+    BackPressed,
+    /// Back released over itself: the positions it re-applies.
+    Back([u8; 3]),
+    /// A trackbar moved (`WM_HSCROLL`): the volume it applies live.
+    Volume(SoundSlider, f32),
+}
+
+/// The open `0xD6`: the three positions Back re-applies, and its widgets in
+/// the dialog's GUI tree.
+#[derive(Debug, Clone)]
+pub struct ShellSoundState {
+    pub positions: [u8; 3],
+    /// `0x6B6300`'s init enables the three trackbars only with an output
+    /// device (`Audio__HasOutputDevice @ 0x00407000`, `0x006B635F..0x006B6483`);
+    /// a disabled window takes no press. B8 never opens without one (BBB
+    /// disables its Sound button, `0x004E2201..0x004E2223`), so only `0xD6`
+    /// clears it.
+    pub sliders_enabled: bool,
+    nodes: Option<ShellSoundNodes>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShellSoundNodes {
+    back: NodeId,
+    sliders: [NodeId; 3],
+    labels: [NodeId; 3],
+}
+
+impl ShellSoundState {
+    pub fn new(positions: [u8; 3], sliders_enabled: bool) -> Self {
+        Self {
+            positions,
+            sliders_enabled,
+            nodes: None,
+        }
+    }
+
+    /// Puts the widgets under `root` (again, for a new dialog instance) and
+    /// mirrors the layout and positions into them: Back, then each slider
+    /// (range 0..10, the plaque on) under its right-aligned caption.
+    pub fn sync_gui(&mut self, gui: &mut Gui, root: NodeId, layout: &ShellSoundLayout) {
+        let built = self
+            .nodes
+            .is_some_and(|nodes| gui.tree().parent(nodes.back) == Ok(Some(root)));
+        if !built {
+            self.nodes = Self::build(gui, root);
+        }
+        let Some(nodes) = self.nodes else {
+            return;
+        };
+        let rect = |rect: RectPx| Value::Rect(rect);
+        let _ = gui.set(nodes.back, Prop::Rect, rect(layout.back()));
+        for id in SoundSlider::ALL {
+            let index = id as usize;
+            let slider = nodes.sliders[index];
+            let _ = gui.set(slider, Prop::Rect, rect(layout.sliders[index]));
+            let _ = gui.set(slider, Prop::Pos, Value::Int(self.positions[index].into()));
+            let _ = gui.set(slider, Prop::Enabled, Value::Bool(self.sliders_enabled));
+            let _ = gui.set(nodes.labels[index], Prop::Rect, rect(layout.labels[index]));
+        }
+    }
+
+    fn build(gui: &mut Gui, root: NodeId) -> Option<ShellSoundNodes> {
+        let back = gui.create(NodeKind::Button, Some(root)).ok()?;
+        let mut sliders = [back; 3];
+        let mut labels = [back; 3];
+        for index in 0..3 {
+            let slider = gui.create(NodeKind::Trackbar, Some(root)).ok()?;
+            let _ = gui.set(slider, Prop::Min, Value::Int(0));
+            let _ = gui.set(slider, Prop::Max, Value::Int(10));
+            let label = gui.create(NodeKind::Text, Some(root)).ok()?;
+            let key = SHELL_SOUND_LABEL_KEYS[index].to_owned();
+            let _ = gui.set(label, Prop::Label, Value::Text(key));
+            let align = crate::render::shell_text::ShellAlign::H_RIGHT.0;
+            let _ = gui.set(label, Prop::Align, Value::Int(align.into()));
+            (sliders[index], labels[index]) = (slider, label);
+        }
+        Some(ShellSoundNodes {
+            back,
+            sliders,
+            labels,
+        })
+    }
+
+    /// Back's widget.
+    pub fn back(&self) -> Option<NodeId> {
+        self.nodes.map(|nodes| nodes.back)
+    }
+
+    pub fn on_event(&mut self, event: &UiEvent) -> Option<ShellSoundInput> {
+        let nodes = self.nodes?;
+        match *event {
+            UiEvent::Pressed { node } if node == nodes.back => Some(ShellSoundInput::BackPressed),
+            UiEvent::Activated { node, .. } if node == nodes.back => {
+                Some(ShellSoundInput::Back(self.positions))
+            }
+            // The release repeats the last position; only a move applies.
+            UiEvent::Changed {
+                node,
+                value: Value::Int(pos),
+                final_: false,
+            } => {
+                let index = nodes.sliders.iter().position(|n| *n == node)?;
+                // The range is 10, so the position fits a byte.
+                let pos = pos.clamp(0, 10) as u8;
+                self.positions[index] = pos;
+                // Original HSCROLL uses double 0.1 then stores f32 through
+                // each setter.
+                let volume = (f64::from(pos) * 0.1) as f32;
+                Some(ShellSoundInput::Volume(SoundSlider::ALL[index], volume))
+            }
+            _ => None,
+        }
+    }
+}
 
 /// `0xD6` at the current screen. The sliders and labels keep their executed
 /// places at every size (`0x0060C0C0`); the right panel follows the family.
@@ -228,15 +343,6 @@ impl ShellSoundLayout {
     }
     pub fn back(&self) -> RectPx {
         self.page.buttons[0].rect
-    }
-    pub fn control_at(&self, x: i32, y: i32) -> Option<SoundControl> {
-        if self.back().contains(x, y) {
-            return Some(SoundControl::Button(SoundButton::Back));
-        }
-        SoundSlider::ALL
-            .into_iter()
-            .find(|id| self.sliders[*id as usize].contains(x, y))
-            .map(SoundControl::Slider)
     }
 }
 
@@ -437,15 +543,36 @@ mod tests {
         assert_eq!(s.positions, [10, 5, 5]);
     }
     #[test]
-    fn disabled_sliders_take_no_press() {
-        let mut s = SoundState::new([5, 5, 5], Vec::new(), -1);
-        s.sliders_enabled = false;
-        let r = RectPx::new(236, 98, 263, 21);
-        let thumb = r.x + s.thumb_left(SoundSlider::Sound, r);
+    fn shell_0xd6_disabled_sliders_take_no_press_and_a_rail_press_applies_once() {
+        use vera20k_gui::{DialogKind, InputEvent, MouseButton};
+        let layout = ShellSoundLayout::new(800, 600);
+        let mut gui = Gui::new(16);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        gui.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        let mut s = ShellSoundState::new([5, 5, 5], false);
+        s.sync_gui(&mut gui, root, &layout);
+        let r = layout.sliders[1];
+        let press = |gui: &mut Gui, s: &mut ShellSoundState, x: i32| {
+            let (y, button) = (r.y + r.h - 2, MouseButton::Left);
+            gui.input(InputEvent::PointerDown { x, y, button }, 0);
+            gui.input(InputEvent::PointerUp { x, y, button }, 0);
+            let events = gui.drain_events();
+            events
+                .iter()
+                .filter_map(|e| s.on_event(e))
+                .collect::<Vec<_>>()
+        };
+        let thumb = r.x + crate::ui::shell::trackbar::thumb_left(5, r.w, 50, 10);
         for x in [r.x + 1, thumb] {
-            assert_eq!(s.press_slider(SoundSlider::Sound, r, x, r.y + 10), None);
+            assert_eq!(press(&mut gui, &mut s, x), []);
         }
         assert_eq!(s.positions, [5, 5, 5]);
-        assert_eq!(s.dragging, None);
+        s.sliders_enabled = true;
+        s.sync_gui(&mut gui, root, &layout);
+        assert_eq!(
+            press(&mut gui, &mut s, r.x + 1),
+            [ShellSoundInput::Volume(SoundSlider::Sound, 0.0)]
+        );
+        assert_eq!(s.positions, [5, 0, 5]);
     }
 }

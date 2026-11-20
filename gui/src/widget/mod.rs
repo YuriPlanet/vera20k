@@ -21,6 +21,8 @@ pub(crate) struct Ctx<'a> {
     /// The dialog's device-to-authored mapping.
     pub scale: ShellScale,
     pub now: UiMs,
+    /// The host's double-click limits: milliseconds, width, height.
+    pub double_click: (UiMs, i32, i32),
     /// The dialog's open popup (a combo's drop-down list): while set, every
     /// pointer input of the dialog goes to it first.
     pub popup: &'a mut Option<NodeId>,

@@ -13,8 +13,6 @@ use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, Menu
 
 /// Not a retail dialog: their ids stop near `0xBC7`.
 pub(crate) const DIALOG: DialogId = DialogId(0x7E02);
-/// The list of mods: a hover target for status help, as `0x744` is.
-pub(crate) const LIST: u16 = 0x7E30;
 pub(crate) const USE: u16 = 0x7E31;
 pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
@@ -158,7 +156,7 @@ pub(crate) fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ModsLay
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::ui::shell::list::{ListBoxState, ListMetrics};
+    use crate::ui::shell::list::{ListMetrics, list_box_geometry};
 
     /// The page's own parts stay left of the right panel and above the lower
     /// strip at both retail sizes, one under the other, and the list shows
@@ -190,9 +188,8 @@ mod tests {
                 line = rect.y + rect.h;
             }
             assert!(line < layout.details.y + layout.details.h);
-            let list = ListBoxState::new(vec![(); 30], None);
             assert_eq!(
-                list.geometry(layout.list, ListMetrics::RETAIL).visible_rows,
+                list_box_geometry(layout.list, 30, 0, ListMetrics::RETAIL).visible_rows,
                 rows
             );
         }
@@ -208,10 +205,9 @@ mod tests {
     fn a_fitted_window_keeps_the_lists_rows() {
         for (width, height) in [(640, 480), (1280, 720), (1366, 768), (1920, 1080)] {
             let layout = compute_responsive_layout(width, height);
-            let list = ListBoxState::new(vec![(); 30], None);
             let metrics = ListMetrics::scaled(layout.page.scale);
             assert_eq!(
-                list.geometry(layout.list, metrics).visible_rows,
+                list_box_geometry(layout.list, 30, 0, metrics).visible_rows,
                 9,
                 "{width}x{height}"
             );

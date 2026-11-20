@@ -9,9 +9,7 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::main_menu_dialogs::options::shell::{
-    LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
-};
+use crate::ui::main_menu_dialogs::options::shell::{LauncherOptionsLayout, LauncherStatusHelp};
 use crate::ui::main_menu_dialogs::options::{
     ColorVisionMode, HealthBarMode, LauncherCheckboxId, LauncherComboId, OptionsDialogState,
     SidebarColumns, SidebarSize, Zoom,
@@ -66,8 +64,21 @@ fn text_draw(
     )
 }
 
-/// The left-side controls, and the right-panel buttons unless a slide draws
-/// the column in their place.
+/// The page's labels, sliders and boxes, painted from the dialog's tree
+/// (synced to `layout` by the caller). Captions under `hidden_under` are
+/// left out.
+pub(super) fn paint_widgets(
+    state: &AppState,
+    layout: &LauncherOptionsLayout,
+    dialog: &OptionsDialogState,
+    hidden_under: &[RectPx],
+) -> super::gui_paint::GuiPaint {
+    let (gui, widgets) = dialog.shell_widgets();
+    super::gui_paint::paint_gui_children_under(state, gui, widgets, layout.scale, hidden_under)
+}
+
+/// The lists, and the right-panel buttons unless a slide draws the column in
+/// their place.
 pub(super) fn build_controls(
     atlas: &SkirmishShellChromeAtlas,
     layout: &LauncherOptionsLayout,
@@ -77,35 +88,6 @@ pub(super) fn build_controls(
     let mut out = Vec::new();
     let chrome = atlas.control_chrome();
     let scale = layout.scale;
-    for &(id, rect) in &layout.trackbars {
-        paint_control(
-            &mut out,
-            &chrome,
-            ControlPaint::Trackbar {
-                rect,
-                thumb_left: dialog.shell_trackbar_thumb_left(id, rect, scale),
-                plaque: id.plaque_reserve() > 0,
-                disabled: !dialog.trackbar_enabled(id),
-            },
-            scale,
-        );
-    }
-    for &(id, rect) in &layout.checkboxes {
-        paint_control(
-            &mut out,
-            &chrome,
-            ControlPaint::StatefulCheckbox {
-                face: if dialog.shell_checkbox_checked(id) {
-                    crate::ui::shell::button::CheckboxFace::Checked
-                } else {
-                    crate::ui::shell::button::CheckboxFace::Unchecked
-                },
-                disabled: false,
-                rect,
-            },
-            scale,
-        );
-    }
     let open = dialog.shell_popup(layout).map(|popup| popup.combo);
     for &(combo, rect) in &layout.combos {
         paint_control(
@@ -174,72 +156,27 @@ pub(super) fn build_text(
     let mut out = Vec::new();
     let scale = layout.scale;
     let glyph = scale.factor();
-    for label in dialog.shell_labels(layout) {
-        let align = match label.align {
-            LauncherLabelAlign::Left => ShellAlign::NONE,
-            LauncherLabelAlign::Center => ShellAlign::H_CENTER,
-            LauncherLabelAlign::Right => ShellAlign::H_RIGHT,
-        };
-        if label.title {
-            if let Some(window) = title {
-                out.push(shell_text::draw_in_rect_path_a_scaled(
-                    font,
-                    &label.text,
-                    TextRect {
-                        x: label.rect.x,
-                        y: label.rect.y,
-                        w: label.rect.w as u32,
-                        h: label.rect.h as u32,
-                    },
-                    align | ShellAlign::PANEL_FACE,
-                    [0.0, 0.0],
-                    SHELL_CONTROL_TEXT_DEPTH,
-                    PathAReveal {
-                        count: window.count,
-                        range: window.range,
-                        base_rgb: [255, 255, 0],
-                        highlight_rgb: [255, 255, 255],
-                    },
-                    glyph,
-                ));
-            }
-        } else {
-            out.push(text_draw(
-                font,
-                &label.text,
-                label.rect,
-                align,
-                SHELL_LABEL_TEXT_RGB,
-                glyph,
-            ));
-        }
-    }
-    for &(id, rect) in &layout.checkboxes {
-        let text = crate::ui::skirmish_shell::checkbox_text_rect(rect, scale);
-        out.push(text_draw(
+    if let Some(window) = title {
+        out.push(shell_text::draw_in_rect_path_a_scaled(
             font,
-            &dialog.shell_checkbox_face_text(layout, id),
-            text,
-            ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
+            dialog.shell_title_text(),
+            TextRect {
+                x: layout.title.x,
+                y: layout.title.y,
+                w: layout.title.w as u32,
+                h: layout.title.h as u32,
+            },
+            ShellAlign::H_CENTER | ShellAlign::PANEL_FACE,
+            [0.0, 0.0],
+            SHELL_CONTROL_TEXT_DEPTH,
+            PathAReveal {
+                count: window.count,
+                range: window.range,
+                base_rgb: [255, 255, 0],
+                highlight_rgb: [255, 255, 255],
+            },
             glyph,
         ));
-    }
-    for &(id, rect) in &layout.trackbars {
-        if id.plaque_reserve() > 0 {
-            out.push(text_draw(
-                font,
-                &dialog.trackbar_plaque_text(id),
-                crate::ui::shell::trackbar::value_text_rect(rect, scale),
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                if dialog.trackbar_enabled(id) {
-                    SHELL_LABEL_TEXT_RGB
-                } else {
-                    SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-                },
-                glyph,
-            ));
-        }
     }
     let face_text = |rect| {
         scale.derive_rect(rect, |rect| {
@@ -402,16 +339,19 @@ fn without_text_under(layout: &LauncherOptionsLayout, list: RectPx) -> LauncherO
 /// them. They paint in submission order, after the box and its buttons.
 pub(crate) fn paint_options_settings(
     draw: &mut crate::render::shell_paint::ModalDraw,
-    font: &BitFont,
+    state: &AppState,
     atlas: &SkirmishShellChromeAtlas,
     layout: &LauncherOptionsLayout,
     settings: &OptionsDialogState,
 ) {
+    let font = &state.renderer.bit_font;
+    let list = settings.shell_popup(layout).map(|popup| popup.rect);
+    let widgets = paint_widgets(state, layout, settings, list.as_slice());
+    draw.sprites.extend(widgets.controls);
     draw.sprites
         .extend(build_controls(atlas, layout, settings, false));
-    let shown = settings
-        .shell_popup(layout)
-        .map(|popup| without_text_under(layout, popup.rect));
+    draw.text.extend(widgets.texts);
+    let shown = list.map(|list| without_text_under(layout, list));
     draw.text.extend(build_text(
         font,
         shown.as_ref().unwrap_or(layout),
@@ -475,6 +415,9 @@ pub(crate) fn render_launcher_options(
         .expect("launcher active")
         .category();
     let layout = crate::app::frontend::shell_layout::launcher_options_layout(state, category);
+    if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+        dialog.shell_sync(&layout);
+    }
     let scale = layout.scale;
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`) and
     // pumps no messages until it ends: every child stays blank. The entry
@@ -558,8 +501,11 @@ pub(crate) fn render_launcher_options(
         );
     }
     if !leaving {
+        let widgets = paint_widgets(state, &layout, dialog, &[]);
+        instances.extend(widgets.controls);
         instances.extend(build_controls(atlas, &layout, dialog, !sliding));
         texts = build_text(&state.renderer.bit_font, &layout, dialog, title, !sliding);
+        texts.extend(widgets.texts);
     }
     texts.extend(crate::render::shell_paint::paint_labels_scaled(
         &state.renderer.bit_font,

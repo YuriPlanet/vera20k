@@ -7,10 +7,6 @@
 //! Retail's controls and VERA's own share one dialog, sorted into the
 //! [`Category`] pages its right-hand column picks between.
 
-use crate::ui::shell::trackbar::{
-    TrackbarHold, TrackbarPress, trackbar_position_from_x, trackbar_press,
-};
-
 pub(crate) mod shell;
 
 /// gamemd-derived: launcher owner `OptionsClass__ShowLauncherDialog @
@@ -809,6 +805,15 @@ impl LauncherTrackbarId {
 
     /// The value plaque's reserve; Detail, Difficulty and Scroll turn the
     /// plaque off (`0x4AC` with 0).
+    /// The slider's value at position 0. VERA's strength slider runs on the
+    /// levels it stands for, so its plaque reads the level.
+    const fn value_base(self) -> i32 {
+        match self {
+            Self::HouseColorStrength => crate::rules::house_colors::STRENGTH_MIN as i32,
+            _ => 0,
+        }
+    }
+
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
             Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
@@ -1168,16 +1173,6 @@ pub(crate) struct LauncherOptionsPacked {
     pub(crate) voice_volume: f32,
 }
 
-/// One integer-pixel input frame from the retail control rectangle used by
-/// the shell renderer and input admission.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PhysicalControlFrame {
-    pub(crate) local_x: i32,
-    pub(crate) local_y: i32,
-    pub(crate) width: i32,
-    pub(crate) height: i32,
-}
-
 /// gamemd-derived: the fresh launcher trackbars created by primary-proc slice
 /// `0x0055FDB0..0x0056047A` reject an out-of-range set-position request and
 /// retain constructor position zero rather than clamping it.
@@ -1218,7 +1213,7 @@ fn difficulty_caption(labels: &LauncherOptionsLabels, position: u8) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub(crate) struct OptionsDialogState {
     labels: LauncherOptionsLabels,
     values: LauncherOptionsValues,
@@ -1246,20 +1241,18 @@ pub(crate) struct OptionsDialogState {
     /// Whether the dialog is the in-game menu's, set with the speed: a
     /// running match greys what it keeps as it began.
     in_match: bool,
-    /// The list that is open, if any.
-    open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
     detail_caption: String,
     difficulty_caption: String,
     scroll_caption: String,
-    /// The slider holding the mouse since a press on it.
-    capture: Option<TrackbarHold<LauncherTrackbarId>>,
     pending_events: Vec<LauncherOptionsEvent>,
     pending_result: Option<LauncherParentResult>,
     /// The category whose page shows.
     category: Category,
     pending_update_check: bool,
-    shell_interaction: shell::ShellInteraction,
+    /// The controls on the GUI tree: hit tests, captures, hover, the open
+    /// list and the status help.
+    shell: shell::ShellGui,
 }
 
 impl Default for OptionsDialogState {
@@ -1328,14 +1321,12 @@ impl OptionsDialogState {
             game_speed_names: Vec::new(),
             in_game_sound_label: String::new(),
             in_match: false,
-            open_combo: None,
             launcher_audio_available,
-            capture: None,
             pending_events: Vec::new(),
             pending_result: None,
             category: Category::ALL[0],
             pending_update_check: false,
-            shell_interaction: shell::ShellInteraction::default(),
+            shell: shell::ShellGui::default(),
         }
     }
 
@@ -1453,18 +1444,9 @@ impl OptionsDialogState {
     /// VERA's team-colour strength as the level the profile stores: the
     /// slider's position lifted onto the
     /// [`crate::rules::house_colors`] scale.
+    #[cfg(test)]
     pub(crate) const fn house_color_strength(&self) -> u8 {
         self.values.house_color_position + crate::rules::house_colors::STRENGTH_MIN
-    }
-
-    /// What a plaque trackbar's plaque reads. Retail's sliders show their
-    /// position; VERA's strength shows the level that position stands for, so
-    /// the player never sees a 0 for gamemd's own colours.
-    pub(crate) fn trackbar_plaque_text(&self, id: LauncherTrackbarId) -> String {
-        match id {
-            LauncherTrackbarId::HouseColorStrength => self.house_color_strength().to_string(),
-            _ => self.trackbar_position(id).to_string(),
-        }
     }
 
     /// gamemd-derived: primary-proc slice `0x0055FDB0..0x0056047A` changes
@@ -1535,191 +1517,96 @@ impl OptionsDialogState {
         }
     }
 
-    /// A press on one trackbar ([`trackbar_press`]).
-    pub(crate) fn trackbar_mouse_down(
-        &mut self,
-        id: LauncherTrackbarId,
-        frame: PhysicalControlFrame,
-    ) {
-        if !self.trackbar_enabled(id) {
-            return;
-        }
-        let press = trackbar_press(
-            i32::from(self.trackbar_position(id)),
-            frame.local_x,
-            frame.local_y,
-            frame.width,
-            frame.height,
-            id.plaque_reserve(),
-            i32::from(id.maximum()),
-        );
-        self.capture = press.hold(id);
-        if let TrackbarPress::Jump(position) = press {
-            // The position never exceeds the byte-sized maximum.
-            self.set_trackbar_position(id, position as u8);
-        }
-    }
-
-    pub(crate) fn trackbar_mouse_move(
-        &mut self,
-        id: LauncherTrackbarId,
-        frame: PhysicalControlFrame,
-    ) {
-        if self.capture != Some(TrackbarHold { id, dragging: true }) {
-            return;
-        }
-        let position = trackbar_position_from_x(
-            frame.local_x,
-            frame.width,
-            id.plaque_reserve(),
-            i32::from(id.maximum()),
-        );
-        self.set_trackbar_position(id, position as u8);
-    }
-
-    pub(crate) fn trackbar_mouse_up(&mut self, id: LauncherTrackbarId) {
-        if self.capture.is_some_and(|hold| hold.id == id) {
-            self.capture = None;
+    /// Where box `id`'s value lives.
+    fn checkbox_slot(values: &mut LauncherOptionsValues, id: LauncherCheckboxId) -> &mut bool {
+        match id {
+            LauncherCheckboxId::Tooltips => &mut values.tooltips,
+            LauncherCheckboxId::TargetLines => &mut values.target_lines,
+            LauncherCheckboxId::ShowHidden => &mut values.show_hidden,
+            LauncherCheckboxId::FullScreen => &mut values.full_screen,
+            LauncherCheckboxId::OriginalShape => &mut values.original_shape,
+            LauncherCheckboxId::YrOriginalStyle => &mut values.yr_original_style,
+            LauncherCheckboxId::ShiftQueue => &mut values.shift_queue,
+            LauncherCheckboxId::AutoRepair => &mut values.auto_repair,
+            LauncherCheckboxId::MouseWheelZoom => &mut values.mouse_wheel_zoom,
+            LauncherCheckboxId::RightClickOrders => &mut values.right_click_orders,
+            LauncherCheckboxId::MinimapBeacons => &mut values.minimap_beacons,
+            LauncherCheckboxId::LockCursor => &mut values.lock_cursor,
+            LauncherCheckboxId::VeraIcon => &mut values.vera_icon,
+            LauncherCheckboxId::HdRadar => &mut values.hd_radar,
+            LauncherCheckboxId::SmoothSidebar => &mut values.smooth_sidebar,
+            LauncherCheckboxId::SmoothOnlineMenus => &mut values.smooth_online_menus,
+            LauncherCheckboxId::VSync => &mut values.vsync,
+            LauncherCheckboxId::HdMapPreviews => &mut values.hd_map_previews,
+            LauncherCheckboxId::PerformanceStats => &mut values.performance_stats,
+            LauncherCheckboxId::ShowStringKeys => &mut values.show_string_keys,
+            LauncherCheckboxId::SkipIntro => &mut values.skip_intro,
+            LauncherCheckboxId::CustomEndGameBanner => &mut values.custom_end_game_banner,
+            LauncherCheckboxId::CustomEndGameScore => &mut values.custom_end_game_score,
+            LauncherCheckboxId::CustomEndGameMovie => &mut values.custom_end_game_movie,
+            LauncherCheckboxId::CommanderFeedback => &mut values.commander_feedback,
+            LauncherCheckboxId::DetailedEvaText => &mut values.detailed_eva_text,
+            LauncherCheckboxId::ConvenienceHelp => &mut values.convenience_help,
+            LauncherCheckboxId::BuildingProductionQueue => &mut values.building_production_queue,
+            LauncherCheckboxId::CompactSuperTimers => &mut values.compact_super_timers,
         }
     }
 
-    /// gamemd-derived: checkbox owner `0x006163A0` admits only the unsigned
-    /// 18x18 icon square, normalizes the toggle, then emits the checkbox cue.
-    pub(crate) fn checkbox_mouse_down(
-        &mut self,
-        id: LauncherCheckboxId,
-        frame: PhysicalControlFrame,
-    ) {
-        if !(0..18).contains(&frame.local_x) || !(0..18).contains(&frame.local_y) {
-            return;
-        }
-        self.toggle_checkbox(id);
+    pub(crate) fn shell_checkbox_checked(&self, id: LauncherCheckboxId) -> bool {
+        let mut values = self.values;
+        *Self::checkbox_slot(&mut values, id)
     }
 
     fn toggle_checkbox(&mut self, id: LauncherCheckboxId) {
-        let slot = match id {
-            LauncherCheckboxId::Tooltips => &mut self.values.tooltips,
-            LauncherCheckboxId::TargetLines => &mut self.values.target_lines,
-            LauncherCheckboxId::ShowHidden => &mut self.values.show_hidden,
-            LauncherCheckboxId::FullScreen => &mut self.values.full_screen,
-            LauncherCheckboxId::OriginalShape => &mut self.values.original_shape,
-            LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
-            LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
-            LauncherCheckboxId::AutoRepair => &mut self.values.auto_repair,
-            LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
-            LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
-            LauncherCheckboxId::MinimapBeacons => &mut self.values.minimap_beacons,
-            LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
-            LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
-            LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
-            LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
-            LauncherCheckboxId::SmoothOnlineMenus => &mut self.values.smooth_online_menus,
-            LauncherCheckboxId::VSync => &mut self.values.vsync,
-            LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
-            LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
-            LauncherCheckboxId::ShowStringKeys => &mut self.values.show_string_keys,
-            LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
-            LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
-            LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
-            LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
-            LauncherCheckboxId::CommanderFeedback => &mut self.values.commander_feedback,
-            LauncherCheckboxId::DetailedEvaText => &mut self.values.detailed_eva_text,
-            LauncherCheckboxId::ConvenienceHelp => &mut self.values.convenience_help,
-            LauncherCheckboxId::BuildingProductionQueue => {
-                &mut self.values.building_production_queue
-            }
-            LauncherCheckboxId::CompactSuperTimers => &mut self.values.compact_super_timers,
-        };
+        let slot = Self::checkbox_slot(&mut self.values, id);
         *slot = !*slot;
         let checked = *slot;
         self.pending_events
             .push(LauncherOptionsEvent::Cue(LauncherCue::Checkbox));
-        match id {
-            LauncherCheckboxId::FullScreen => self
-                .pending_events
-                .push(LauncherOptionsEvent::FullScreenChanged(checked)),
-            LauncherCheckboxId::OriginalShape => self
-                .pending_events
-                .push(LauncherOptionsEvent::OriginalShapeChanged(checked)),
-            LauncherCheckboxId::YrOriginalStyle => self
-                .pending_events
-                .push(LauncherOptionsEvent::YrOriginalStyleChanged(checked)),
-            LauncherCheckboxId::ShiftQueue => self
-                .pending_events
-                .push(LauncherOptionsEvent::ShiftQueueChanged(checked)),
-            LauncherCheckboxId::AutoRepair => self
-                .pending_events
-                .push(LauncherOptionsEvent::AutoRepairChanged(checked)),
-            LauncherCheckboxId::MouseWheelZoom => self
-                .pending_events
-                .push(LauncherOptionsEvent::MouseWheelZoomChanged(checked)),
-            LauncherCheckboxId::RightClickOrders => self
-                .pending_events
-                .push(LauncherOptionsEvent::RightClickOrdersChanged(checked)),
-            LauncherCheckboxId::MinimapBeacons => self
-                .pending_events
-                .push(LauncherOptionsEvent::MinimapBeaconsChanged(checked)),
-            LauncherCheckboxId::LockCursor => self
-                .pending_events
-                .push(LauncherOptionsEvent::LockCursorChanged(checked)),
-            LauncherCheckboxId::VeraIcon => self
-                .pending_events
-                .push(LauncherOptionsEvent::VeraIconChanged(checked)),
-            LauncherCheckboxId::HdRadar => self
-                .pending_events
-                .push(LauncherOptionsEvent::HdRadarChanged(checked)),
-            LauncherCheckboxId::SmoothSidebar => self
-                .pending_events
-                .push(LauncherOptionsEvent::SmoothSidebarChanged(checked)),
-            LauncherCheckboxId::SmoothOnlineMenus => self
-                .pending_events
-                .push(LauncherOptionsEvent::SmoothOnlineMenusChanged(checked)),
-            LauncherCheckboxId::VSync => self
-                .pending_events
-                .push(LauncherOptionsEvent::VSyncChanged(checked)),
-            LauncherCheckboxId::HdMapPreviews => self
-                .pending_events
-                .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
-            LauncherCheckboxId::PerformanceStats => self
-                .pending_events
-                .push(LauncherOptionsEvent::PerformanceStatsChanged(checked)),
-            LauncherCheckboxId::ShowStringKeys => self
-                .pending_events
-                .push(LauncherOptionsEvent::ShowStringKeysChanged(checked)),
-            LauncherCheckboxId::SkipIntro => self
-                .pending_events
-                .push(LauncherOptionsEvent::SkipIntroChanged(checked)),
-            LauncherCheckboxId::CustomEndGameBanner => self
-                .pending_events
-                .push(LauncherOptionsEvent::CustomEndGameBannerChanged(checked)),
-            LauncherCheckboxId::CustomEndGameScore => self
-                .pending_events
-                .push(LauncherOptionsEvent::CustomEndGameScoreChanged(checked)),
-            LauncherCheckboxId::CustomEndGameMovie => self
-                .pending_events
-                .push(LauncherOptionsEvent::CustomEndGameMovieChanged(checked)),
-            LauncherCheckboxId::CommanderFeedback => self
-                .pending_events
-                .push(LauncherOptionsEvent::CommanderFeedbackChanged(checked)),
-            LauncherCheckboxId::DetailedEvaText => self
-                .pending_events
-                .push(LauncherOptionsEvent::DetailedEvaTextChanged(checked)),
-            LauncherCheckboxId::ConvenienceHelp => self
-                .pending_events
-                .push(LauncherOptionsEvent::ConvenienceHelpChanged(checked)),
-            LauncherCheckboxId::BuildingProductionQueue => {
-                self.pending_events
-                    .push(LauncherOptionsEvent::BuildingProductionQueueChanged(
-                        checked,
-                    ))
+        // Retail's three boxes apply with the accepted pack (`0x0055FAA0`);
+        // VERA's publish each change.
+        let changed: fn(bool) -> LauncherOptionsEvent = match id {
+            LauncherCheckboxId::FullScreen => LauncherOptionsEvent::FullScreenChanged,
+            LauncherCheckboxId::OriginalShape => LauncherOptionsEvent::OriginalShapeChanged,
+            LauncherCheckboxId::YrOriginalStyle => LauncherOptionsEvent::YrOriginalStyleChanged,
+            LauncherCheckboxId::ShiftQueue => LauncherOptionsEvent::ShiftQueueChanged,
+            LauncherCheckboxId::AutoRepair => LauncherOptionsEvent::AutoRepairChanged,
+            LauncherCheckboxId::MouseWheelZoom => LauncherOptionsEvent::MouseWheelZoomChanged,
+            LauncherCheckboxId::RightClickOrders => LauncherOptionsEvent::RightClickOrdersChanged,
+            LauncherCheckboxId::MinimapBeacons => LauncherOptionsEvent::MinimapBeaconsChanged,
+            LauncherCheckboxId::LockCursor => LauncherOptionsEvent::LockCursorChanged,
+            LauncherCheckboxId::VeraIcon => LauncherOptionsEvent::VeraIconChanged,
+            LauncherCheckboxId::HdRadar => LauncherOptionsEvent::HdRadarChanged,
+            LauncherCheckboxId::SmoothSidebar => LauncherOptionsEvent::SmoothSidebarChanged,
+            LauncherCheckboxId::SmoothOnlineMenus => LauncherOptionsEvent::SmoothOnlineMenusChanged,
+            LauncherCheckboxId::VSync => LauncherOptionsEvent::VSyncChanged,
+            LauncherCheckboxId::HdMapPreviews => LauncherOptionsEvent::HdMapPreviewsChanged,
+            LauncherCheckboxId::PerformanceStats => LauncherOptionsEvent::PerformanceStatsChanged,
+            LauncherCheckboxId::ShowStringKeys => LauncherOptionsEvent::ShowStringKeysChanged,
+            LauncherCheckboxId::SkipIntro => LauncherOptionsEvent::SkipIntroChanged,
+            LauncherCheckboxId::CustomEndGameBanner => {
+                LauncherOptionsEvent::CustomEndGameBannerChanged
             }
-            LauncherCheckboxId::CompactSuperTimers => self
-                .pending_events
-                .push(LauncherOptionsEvent::CompactSuperTimersChanged(checked)),
+            LauncherCheckboxId::CustomEndGameScore => {
+                LauncherOptionsEvent::CustomEndGameScoreChanged
+            }
+            LauncherCheckboxId::CustomEndGameMovie => {
+                LauncherOptionsEvent::CustomEndGameMovieChanged
+            }
+            LauncherCheckboxId::CommanderFeedback => LauncherOptionsEvent::CommanderFeedbackChanged,
+            LauncherCheckboxId::DetailedEvaText => LauncherOptionsEvent::DetailedEvaTextChanged,
+            LauncherCheckboxId::ConvenienceHelp => LauncherOptionsEvent::ConvenienceHelpChanged,
+            LauncherCheckboxId::BuildingProductionQueue => {
+                LauncherOptionsEvent::BuildingProductionQueueChanged
+            }
+            LauncherCheckboxId::CompactSuperTimers => {
+                LauncherOptionsEvent::CompactSuperTimersChanged
+            }
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
-            | LauncherCheckboxId::ShowHidden => {}
-        }
+            | LauncherCheckboxId::ShowHidden => return,
+        };
+        self.pending_events.push(changed(checked));
     }
 
     /// Follow a full-screen change the page didn't make (the window's own
@@ -1733,37 +1620,11 @@ impl OptionsDialogState {
         self.values.performance_stats = shown;
     }
 
-    /// Like gamemd's combo owner `0x00617250`, a press emits GUIComboOpen
-    /// first. gamemd then opens the list only from the 20-pixel arrow
-    /// (`x > client_width - 20`); VERA's own lists open from anywhere on them.
-    pub(crate) fn combo_mouse_down(&mut self, combo: LauncherComboId, frame: PhysicalControlFrame) {
-        if frame.local_x < 0
-            || frame.local_x >= frame.width
-            || frame.local_y < 0
-            || frame.local_y >= frame.height
-        {
-            return;
-        }
-        self.pending_events
-            .push(LauncherOptionsEvent::Cue(LauncherCue::ComboOpen));
-        self.open_combo = (self.open_combo != Some(combo)).then_some(combo);
-    }
-
-    /// gamemd-derived: ordinary `0xD5` owner-draw buttons emit
-    /// `[AudioVisual] GUIMainButtonSound` on admitted primary mouse-down;
-    /// `OptionsClass__ShowLauncherDialog @ 0x0055FC80` observes the distinct
-    /// Back/Keyboard result only on the later activation release.
-    pub(crate) fn main_button_mouse_down(&mut self) {
-        self.pending_events
-            .push(LauncherOptionsEvent::Cue(LauncherCue::MainButton));
-    }
-
     /// Like gamemd's resolution row (primary-proc slice
     /// `0x0055FDB0..0x0056047A`), a picked zoom row is published at once; the
     /// accepted projection `0x0055FAA0` never owns it.
     pub(crate) fn select_zoom(&mut self, zoom: Zoom) {
         self.zoom = zoom;
-        self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::ZoomSelected(zoom));
     }
@@ -1771,7 +1632,6 @@ impl OptionsDialogState {
     /// The Sidebar list publishes its pick at once, like Zoom.
     pub(crate) fn select_sidebar(&mut self, size: SidebarSize) {
         self.values.sidebar = size;
-        self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::SidebarSelected(size));
     }
@@ -1779,7 +1639,6 @@ impl OptionsDialogState {
     /// The Sidebar Columns list publishes its pick at once too.
     pub(crate) fn select_sidebar_columns(&mut self, columns: SidebarColumns) {
         self.values.sidebar_columns = columns;
-        self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::SidebarColumnsSelected(columns));
     }
@@ -1788,7 +1647,6 @@ impl OptionsDialogState {
     /// its next start.
     pub(crate) fn select_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
         self.values.ares = setting;
-        self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::AresSelected(setting));
     }
@@ -1796,7 +1654,6 @@ impl OptionsDialogState {
     /// The Health Bars list publishes its pick at once too.
     pub(crate) fn select_health_bars(&mut self, mode: HealthBarMode) {
         self.values.health_bars = mode;
-        self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::HealthBarModeSelected(mode));
     }
@@ -1805,7 +1662,6 @@ impl OptionsDialogState {
     /// the profile every frame, so no atlas or ramp has to be rebuilt.
     pub(crate) fn select_color_vision(&mut self, mode: ColorVisionMode) {
         self.values.color_vision = mode;
-        self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::ColorVisionModeSelected(mode));
     }
@@ -1814,7 +1670,6 @@ impl OptionsDialogState {
     /// that screen straight away. Picking the screen already chosen, or one the
     /// window layer did not list, changes nothing.
     pub(crate) fn select_display(&mut self, display: DisplayTarget) {
-        self.open_combo = None;
         let listed = match &display {
             DisplayTarget::Auto => true,
             DisplayTarget::Fixed(id) => self.displays.iter().any(|choice| &choice.id == id),
@@ -1831,7 +1686,6 @@ impl OptionsDialogState {
     /// that language. The language in use, or one the list does not offer,
     /// changes nothing.
     pub(crate) fn select_language(&mut self, tag: &str) {
-        self.open_combo = None;
         if self.language == tag || !self.languages.iter().any(|choice| choice.tag == tag) {
             return;
         }
@@ -1862,9 +1716,7 @@ impl OptionsDialogState {
             return;
         }
         self.category = category;
-        self.open_combo = None;
-        self.capture = None;
-        self.shell_interaction = self.shell_interaction.page_switched();
+        self.shell_page_switched();
     }
 
     /// Ask for Check for Updates; like a parent result, the first request of
@@ -2048,7 +1900,9 @@ pub(crate) enum Setting {
 mod tests {
     use super::*;
     use crate::assets::csf_file::CsfFile;
-    use crate::ui::shell::trackbar::thumb_left;
+    use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
+    use crate::ui::shell::geom::RectPx;
+    use crate::ui::shell::trackbar::TrackbarHold;
 
     fn labels() -> LauncherOptionsLabels {
         LauncherOptionsLabels::resolve(&|_| None)
@@ -2065,13 +1919,26 @@ mod tests {
         )
     }
 
-    fn frame(x: i32, y: i32, width: i32, height: i32) -> PhysicalControlFrame {
-        PhysicalControlFrame {
-            local_x: x,
-            local_y: y,
-            width,
-            height,
-        }
+    /// A category's page in the retail 800x600 window.
+    fn page(category: Category) -> LauncherOptionsLayout {
+        LauncherOptionsLayout::new(800, 600, category)
+    }
+
+    fn checkbox(layout: &LauncherOptionsLayout, id: LauncherCheckboxId) -> RectPx {
+        layout
+            .checkboxes
+            .iter()
+            .find(|(candidate, _)| *candidate == id)
+            .map(|(_, rect)| *rect)
+            .unwrap()
+    }
+
+    /// A click on the icon of the Display page's box `id`.
+    fn click_display_box(state: &mut OptionsDialogState, id: LauncherCheckboxId) {
+        let layout = page(Category::Display);
+        let rect = checkbox(&layout, id);
+        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+        state.shell_mouse_up(rect.x + 5, rect.y + 5, &layout);
     }
 
     fn build_single_label_csf(label: &str, value: &str) -> Vec<u8> {
@@ -2196,59 +2063,61 @@ mod tests {
     #[test]
     fn thumb_down_captures_without_jump_and_captured_motion_is_x_only() {
         let mut state = state(true);
-        let before = state.trackbar_position(LauncherTrackbarId::Difficulty);
-        let left = thumb_left(i32::from(before), 180, 0, 2);
-        state.trackbar_mouse_down(LauncherTrackbarId::Difficulty, frame(left + 5, 23, 180, 24));
+        let layout = page(Category::Gameplay);
+        let id = LauncherTrackbarId::Difficulty;
+        let rect = layout.trackbar_rect(id).unwrap();
+        let before = state.trackbar_position(id);
+        let left = state.shell_trackbar_thumb_left(id, rect, layout.scale);
+        let y = rect.y + rect.h - 1;
+        state.shell_mouse_down(rect.x + left + 5, y, &layout);
+        assert_eq!(state.trackbar_position(id), before);
         assert_eq!(
-            state.trackbar_position(LauncherTrackbarId::Difficulty),
-            before
+            state.shell_trackbar_hold(),
+            Some(TrackbarHold { id, dragging: true })
         );
-        assert_eq!(
-            state.capture,
-            Some(TrackbarHold {
-                id: LauncherTrackbarId::Difficulty,
-                dragging: true,
-            })
-        );
-        state.trackbar_mouse_move(LauncherTrackbarId::Difficulty, frame(179, -400, 180, 24));
-        assert_eq!(state.trackbar_position(LauncherTrackbarId::Difficulty), 2);
-        state.trackbar_mouse_up(LauncherTrackbarId::Difficulty);
-        assert_eq!(state.capture, None);
+        state.shell_mouse_move(rect.x + rect.w - 1, y - 400, &layout);
+        assert_eq!(state.trackbar_position(id), 2);
+        state.shell_mouse_up(rect.x + rect.w - 1, y - 400, &layout);
+        assert_eq!(state.shell_trackbar_hold(), None);
     }
 
     #[test]
     fn rail_jump_has_lower_strip_gate_and_holds_without_drag() {
         let mut state = state(true);
+        let layout = page(Category::Controls);
+        let id = LauncherTrackbarId::Scroll;
+        let rect = layout.trackbar_rect(id).unwrap();
         let held = Some(TrackbarHold {
-            id: LauncherTrackbarId::Scroll,
+            id,
             dragging: false,
         });
-        state.trackbar_mouse_down(LauncherTrackbarId::Scroll, frame(151, 6, 180, 24));
-        assert_eq!(
-            state.trackbar_position(LauncherTrackbarId::Scroll),
-            3,
-            "strict lower edge rejects"
-        );
-        assert_eq!(state.capture, held);
-        state.trackbar_mouse_up(LauncherTrackbarId::Scroll);
-        state.trackbar_mouse_down(LauncherTrackbarId::Scroll, frame(151, 7, 180, 24));
-        assert_eq!(state.trackbar_position(LauncherTrackbarId::Scroll), 6);
-        assert_eq!(state.capture, held);
-        state.trackbar_mouse_move(LauncherTrackbarId::Scroll, frame(0, 7, 180, 24));
-        assert_eq!(state.trackbar_position(LauncherTrackbarId::Scroll), 6);
+        let x = rect.x + rect.w - 2;
+        state.shell_mouse_down(x, rect.y + rect.h - 18, &layout);
+        assert_eq!(state.trackbar_position(id), 3, "strict lower edge rejects");
+        assert_eq!(state.shell_trackbar_hold(), held);
+        state.shell_mouse_up(x, rect.y + rect.h - 18, &layout);
+        state.shell_mouse_down(x, rect.y + rect.h - 17, &layout);
+        assert_eq!(state.trackbar_position(id), 6);
+        assert_eq!(state.shell_trackbar_hold(), held);
+        state.shell_mouse_move(rect.x, rect.y + rect.h - 17, &layout);
+        assert_eq!(state.trackbar_position(id), 6);
     }
 
     #[test]
     fn common_audio_gate_rejects_every_audio_input_without_mutation() {
         let mut state = state(false);
         let before = state.values;
+        let layout = page(Category::Audio);
         for id in [
             LauncherTrackbarId::Score,
             LauncherTrackbarId::Sound,
             LauncherTrackbarId::Voice,
         ] {
-            state.trackbar_mouse_down(id, frame(67, 23, 128, 24));
-            state.trackbar_mouse_move(id, frame(67, 23, 128, 24));
+            let rect = layout.trackbar_rect(id).unwrap();
+            let (x, y) = (rect.x + 67, rect.y + rect.h - 1);
+            state.shell_mouse_down(x, y, &layout);
+            state.shell_mouse_move(x, y, &layout);
+            state.shell_mouse_up(x, y, &layout);
         }
         assert_eq!(state.values, before);
         assert!(state.drain_output().events.is_empty());
@@ -2262,14 +2131,21 @@ mod tests {
         let mut in_match = state(true);
         in_match.set_in_game_controls(String::new(), Vec::new(), 0, String::new());
         let before = in_match.values;
-        for id in [
-            LauncherTrackbarId::Difficulty,
-            LauncherTrackbarId::HouseColorStrength,
+        for (category, id) in [
+            (Category::Gameplay, LauncherTrackbarId::Difficulty),
+            (Category::Display, LauncherTrackbarId::HouseColorStrength),
         ] {
             // The track's far end, which the main menu's dialog jumps to.
-            let end = frame(179 - id.plaque_reserve(), 7, 180, 24);
-            in_match.trackbar_mouse_down(id, end);
-            main_menu.trackbar_mouse_down(id, end);
+            let layout = page(category);
+            let rect = layout.trackbar_rect(id).unwrap();
+            let (x, y) = (
+                rect.x + rect.w - 1 - id.plaque_reserve(),
+                rect.y + rect.h - 1,
+            );
+            for dialog in [&mut in_match, &mut main_menu] {
+                dialog.shell_mouse_down(x, y, &layout);
+                dialog.shell_mouse_up(x, y, &layout);
+            }
             assert!(!in_match.trackbar_enabled(id) && main_menu.trackbar_enabled(id));
             assert_ne!(
                 main_menu.trackbar_position(id),
@@ -2282,22 +2158,30 @@ mod tests {
         assert!(!in_match.button_enabled(LauncherButton::CheckForUpdates));
         assert!(main_menu.button_enabled(LauncherButton::CheckForUpdates));
         // What the match does take still changes.
-        in_match.checkbox_mouse_down(LauncherCheckboxId::ShiftQueue, frame(5, 5, 18, 18));
+        let layout = page(Category::Gameplay);
+        let rect = checkbox(&layout, LauncherCheckboxId::ShiftQueue);
+        in_match.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
         assert_ne!(in_match.values.shift_queue, before.shift_queue);
     }
 
     #[test]
     fn checkbox_hit_is_strict_icon_square_and_cue_follows_toggle() {
         let mut state = state(true);
+        let layout = page(Category::Interface);
+        let rect = checkbox(&layout, LauncherCheckboxId::Tooltips);
+        let click = |state: &mut OptionsDialogState, x, y| {
+            state.shell_mouse_down(rect.x + x, rect.y + y, &layout);
+            state.shell_mouse_up(rect.x + x, rect.y + y, &layout);
+        };
         assert!(state.values.tooltips);
-        state.checkbox_mouse_down(LauncherCheckboxId::Tooltips, frame(17, 17, 220, 20));
+        click(&mut state, 17, rect.h - 1);
         assert!(!state.values.tooltips);
         assert_eq!(
             state.drain_output().events,
             [LauncherOptionsEvent::Cue(LauncherCue::Checkbox)]
         );
-        state.checkbox_mouse_down(LauncherCheckboxId::Tooltips, frame(18, 5, 220, 20));
-        state.checkbox_mouse_down(LauncherCheckboxId::Tooltips, frame(80, 5, 220, 20));
+        click(&mut state, 18, 5);
+        click(&mut state, 80, 5);
         assert!(!state.values.tooltips);
         assert!(state.drain_output().events.is_empty());
     }
@@ -2306,9 +2190,15 @@ mod tests {
     fn combo_cues_then_toggles_from_anywhere_on_its_face() {
         use LauncherComboId::{Sidebar, Zoom as ZoomList};
         let mut state = state(true);
-        state.combo_mouse_down(ZoomList, frame(4, 5, 180, 24));
+        let layout = page(Category::Display);
+        let face = layout.combo_rect(ZoomList).unwrap();
+        let press = |state: &mut OptionsDialogState, layout: &LauncherOptionsLayout, x, y| {
+            state.shell_mouse_down(x, y, layout);
+            state.shell_mouse_up(x, y, layout);
+        };
+        press(&mut state, &layout, face.x + 4, face.y + 5);
         assert_eq!(
-            state.open_combo,
+            state.shell_open_list(),
             Some(ZoomList),
             "the face opens the list, not only the arrow"
         );
@@ -2316,47 +2206,62 @@ mod tests {
             state.drain_output().events,
             [LauncherOptionsEvent::Cue(LauncherCue::ComboOpen)]
         );
-        state.combo_mouse_down(ZoomList, frame(161, 5, 180, 24));
-        assert_eq!(state.open_combo, None, "a second press closes it");
-        state.combo_mouse_down(ZoomList, frame(180, 5, 180, 24));
-        assert_eq!(state.open_combo, None, "outside the face does nothing");
-        state.combo_mouse_down(ZoomList, frame(161, 5, 180, 24));
-        assert_eq!(state.open_combo, Some(ZoomList));
+        press(&mut state, &layout, face.x + 161, face.y + 5);
+        assert_eq!(state.shell_open_list(), None, "a second press closes it");
+        press(&mut state, &layout, face.x + 180, face.y + 5);
+        assert_eq!(
+            state.shell_open_list(),
+            None,
+            "outside the face does nothing"
+        );
+        press(&mut state, &layout, face.x + 161, face.y + 5);
+        assert_eq!(state.shell_open_list(), Some(ZoomList));
         let _ = state.drain_output();
-        state.select_zoom(Zoom::Auto);
-        assert_eq!(state.open_combo, None);
+        let auto = state.shell_popup(&layout).unwrap().row_rect(0);
+        press(&mut state, &layout, auto.x + 10, auto.y + 5);
+        assert_eq!(state.shell_open_list(), None);
         assert_eq!(state.zoom, Zoom::Auto);
         assert_eq!(
             state.drain_output().events,
-            [LauncherOptionsEvent::ZoomSelected(Zoom::Auto)]
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::ZoomSelected(Zoom::Auto)
+            ]
         );
 
         // The Sidebar list works the same way, on its own value.
-        state.combo_mouse_down(Sidebar, frame(4, 5, 180, 24));
-        assert_eq!(state.open_combo, Some(Sidebar));
-        state.select_sidebar(SidebarSize::Large);
-        assert_eq!(state.open_combo, None);
+        let interface = page(Category::Interface).with_battle_frame((1920, 1080));
+        let face = interface.combo_rect(Sidebar).unwrap();
+        press(&mut state, &interface, face.x + 4, face.y + 5);
+        assert_eq!(state.shell_open_list(), Some(Sidebar));
+        let large = state.shell_popup(&interface).unwrap().row_rect(1);
+        press(&mut state, &interface, large.x + 10, large.y + 5);
+        assert_eq!(state.shell_open_list(), None);
         assert_eq!(state.values.sidebar, SidebarSize::Large);
         assert_eq!(state.zoom, Zoom::Auto);
         assert_eq!(
             state.drain_output().events,
             [
                 LauncherOptionsEvent::Cue(LauncherCue::ComboOpen),
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
                 LauncherOptionsEvent::SidebarSelected(SidebarSize::Large)
             ]
         );
 
         // The Health Bars list works the same way, on its own value.
         use LauncherComboId::HealthBars as HealthBarsList;
-        state.combo_mouse_down(HealthBarsList, frame(4, 5, 180, 24));
-        assert_eq!(state.open_combo, Some(HealthBarsList));
-        state.select_health_bars(HealthBarMode::Always);
-        assert_eq!(state.open_combo, None);
+        let face = interface.combo_rect(HealthBarsList).unwrap();
+        press(&mut state, &interface, face.x + 4, face.y + 5);
+        assert_eq!(state.shell_open_list(), Some(HealthBarsList));
+        let always = state.shell_popup(&interface).unwrap().row_rect(1);
+        press(&mut state, &interface, always.x + 10, always.y + 5);
+        assert_eq!(state.shell_open_list(), None);
         assert_eq!(state.values.health_bars, HealthBarMode::Always);
         assert_eq!(
             state.drain_output().events,
             [
                 LauncherOptionsEvent::Cue(LauncherCue::ComboOpen),
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
                 LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::Always)
             ]
         );
@@ -2389,7 +2294,7 @@ mod tests {
     #[test]
     fn full_screen_box_reports_each_toggle_after_its_cue() {
         let mut state = state(true);
-        state.checkbox_mouse_down(LauncherCheckboxId::FullScreen, frame(5, 5, 180, 16));
+        click_display_box(&mut state, LauncherCheckboxId::FullScreen);
         assert_eq!(
             state.drain_output().events,
             [
@@ -2400,7 +2305,7 @@ mod tests {
         // The window's own button changes it with no event; the next click
         // turns it off again.
         state.sync_full_screen(false);
-        state.checkbox_mouse_down(LauncherCheckboxId::FullScreen, frame(5, 5, 180, 16));
+        click_display_box(&mut state, LauncherCheckboxId::FullScreen);
         assert_eq!(
             state.drain_output().events,
             [
@@ -2416,7 +2321,7 @@ mod tests {
     fn original_shape_box_reports_each_toggle_after_its_cue() {
         let mut state = state(true);
         for checked in [true, false] {
-            state.checkbox_mouse_down(LauncherCheckboxId::OriginalShape, frame(5, 5, 195, 16));
+            click_display_box(&mut state, LauncherCheckboxId::OriginalShape);
             assert_eq!(state.values.original_shape, checked);
             assert_eq!(
                 state.drain_output().events,
@@ -2427,7 +2332,7 @@ mod tests {
             );
         }
         // Applied at once, so the accepted pack never carries it.
-        state.checkbox_mouse_down(LauncherCheckboxId::OriginalShape, frame(5, 5, 195, 16));
+        click_display_box(&mut state, LauncherCheckboxId::OriginalShape);
         assert_eq!(state.pack(), self::state(true).pack());
     }
 

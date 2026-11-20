@@ -2154,7 +2154,7 @@ pub(crate) use wol_login::{
     paint_wol_account_form, paint_wol_login_children, wol_button_label_rgb,
 };
 pub(crate) use wol_my_info::paint_wol_my_info_children;
-pub(crate) use wol_options::{paint_shell_sound_children, paint_wol_options_children};
+pub(crate) use wol_options::paint_wol_options_children;
 pub(crate) use wol_page::{
     in_match_page_draw, paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received,
     paint_wol_verify,

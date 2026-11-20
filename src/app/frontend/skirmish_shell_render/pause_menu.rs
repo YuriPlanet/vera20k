@@ -174,6 +174,12 @@ pub(crate) fn render_pause_menu_shell(
     } = in_game_shell::current_in_game_shell_layout(state).expect("active shell geometry");
     let layout = crate::app::input::pause_menu::current_layout(state).expect("active shell");
     let page_layout = crate::app::input::pause_menu::options_page_layout(state);
+    if let (Some(page_layout), Some(page)) = (
+        &page_layout,
+        state.match_state.match_presentation.options_page.as_mut(),
+    ) {
+        page.dialog.shell_sync(page_layout);
+    }
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .expect("active side art");
     let mut art = in_game_shell::background_instances(atlas, shell, width, height);
@@ -231,6 +237,9 @@ pub(crate) fn render_pause_menu_shell(
         // None only if switching YR Original Style failed to rebuild the
         // control art; the menu's own buttons still work without it.
         if let Some(chrome_atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+            let widgets = launcher_options::paint_widgets(state, page_layout, dialog, &[]);
+            controls.extend(widgets.controls);
+            texts.extend(widgets.texts);
             controls.extend(launcher_options::build_controls(
                 chrome_atlas,
                 page_layout,

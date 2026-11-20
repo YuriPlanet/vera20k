@@ -48,7 +48,10 @@ pub struct DialogController {
 
 impl Default for DialogController {
     fn default() -> Self {
-        Self { gui: Gui::new(4096), stack: Vec::new(), epoch: Instant::now(), pending: Vec::new() }
+        let mut gui = Gui::new(4096);
+        let (time, width, height) = super::saved_file_input::host_double_click_limits();
+        gui.set_double_click(time.as_millis() as u64, width, height);
+        Self { gui, stack: Vec::new(), epoch: Instant::now(), pending: Vec::new() }
     }
 }
 

@@ -339,6 +339,8 @@ pub struct Item { pub label: String, pub enabled: bool, pub swatch: Option<Rgba>
 - 下拉列表绘制在覆盖层，不受其所在的 `ScrollArea` 裁剪。下拉列表打开时：**滚动所在的容器会关闭它**（不发出 `Changed`）；点击外部或按 Escape 也关闭它，不发出 `Changed`，且该次 Escape 不触发对话框的 `EscapePolicy`。
 - 选中项时发出 `Changed { value: Int(index), final_: true }`。
 - 列表超出可见高度时，下拉列表内部滚动（`Scroll`，行号）。
+- `OpenAnywhere`（Bool）：按下框面任意处都打开列表，而不只是箭头区（VERA 的选项页列表）。
+- `PopupBottom`（Int）：下拉列表上移，使其底边不低于此 y，但不越过窗口顶部（VERA 的 Esc 菜单）。
 
 ### 5.2 `ScrollArea`
 
@@ -359,6 +361,7 @@ pub struct Cell { pub text: String, pub color: Option<Rgba>, pub picture: Option
 - `List` 只使用 `Columns` 与 `Rows`。`Items` 不用于 `List`。
 - 键盘：`Up`、`Down`、`PageUp`、`PageDown`、`Home`、`End` 改变 `Selected`，发出 `ListSelected`（用户操作）；`Enter` 发出 `ListDoubleClicked`（打开当前行）。
 - 双击的时间间隔使用主题的 `double_click_ms`（默认 400 毫秒，与系统一致）。
+- `DoubleClick`（Bool，默认开）：关闭时每次按下都选中行，不检查双击（VERA 的 Mods 页）。
 - 标题行可点击，发出 `ListColumnClicked`。列宽不能由用户调整（v5 不支持）。
 - 滚动条默认显示（`ScrollBar`）。
 - 程序设置 `Selected` 不发出事件。
@@ -405,7 +408,7 @@ pub struct Expiry { pub ms: u32, pub clock: Clock }
 
 ### 5.7 `Trackbar` 与 `ScrollBar`
 
-- `Trackbar` 水平绘制；`ShowValue = true` 在滑块上显示当前数值（格式为整数）。
+- `Trackbar` 水平绘制；`ShowValue = true` 在滑块上显示当前数值（格式为整数）。`ShowValue = false` 时没有数值牌，轨道占满整个窗口（`0x4AC` 设为 0）。
 - 拖动中的 `Changed` 每帧最多发出一次（`final_ = false`），释放时发出 `final_ = true`。
 - 键盘：左右方向键减、加一个 `Step`，发出 `Changed`（`final_ = true`）。
 
@@ -413,6 +416,7 @@ pub struct Expiry { pub ms: u32, pub clock: Clock }
 
 - 空格（焦点在 `Checkbox` 上）切换 `Checked`，发出 `Changed`（`final_ = true`）。
 - 点击切换同样发出 `Changed`。
+- `HitRect`（Rect，任意可交互节点）：指针命中的区域，代替 `Rect`。有它的 `Checkbox` 在其中任意处按下都切换（VERA 的 Esc 菜单行），否则只有左上角 18x18 的图标接受按下（`0x006163A0`）。
 
 ## 6. 对话框、模态框与消息框
 

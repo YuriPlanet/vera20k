@@ -260,13 +260,15 @@ pub(crate) fn render_wol_page(
         }
         WolPage::Options(page) => {
             let sound = page.sound.is_some();
-            if sound {
+            let painted = if sound {
                 crate::app::shell_wol::options::open_sound_art(state);
                 Painted::SoundOptions(crate::app::shell_wol::options::sound_layout(state))
             } else {
                 crate::app::shell_wol::options::open_art(state);
                 Painted::Options(crate::app::shell_wol::options::layout(state))
-            }
+            };
+            crate::app::shell_wol::options::sync_gui(state);
+            painted
         }
         WolPage::AutoLoginQuery(_) | WolPage::Locale(_) | WolPage::AddBuddyQuery(_) => {
             if matches!(
@@ -575,22 +577,22 @@ pub(crate) fn render_wol_page(
             }),
         _ => None,
     };
-    let options_page = match &state.frontend.wol.as_ref().expect("checked").page {
-        WolPage::Options(page) => Some(page.as_ref()),
-        _ => None,
-    };
-    let options_children = match (&painted, children, options_page) {
-        (Painted::Options(layout), true, Some(page)) => Some(
+    let options_children = match (&painted, children) {
+        (Painted::Options(layout), true) => Some(
             crate::app::frontend::skirmish_shell_render::paint_wol_options_children(
-                state, &page.ui, layout,
+                state,
+                crate::ui::wol_options::DIALOG,
+                layout.page.scale,
             ),
         ),
-        (Painted::SoundOptions(layout), true, Some(page)) => page.sound.as_ref().map(|dialog| {
-            crate::app::frontend::skirmish_shell_render::paint_shell_sound_children(
-                state, dialog, layout,
-            )
-        }),
-        (Painted::Persona(layout), true, _) => {
+        (Painted::SoundOptions(layout), true) => Some(
+            crate::app::frontend::skirmish_shell_render::paint_wol_options_children(
+                state,
+                crate::ui::shell::sound::SHELL_SOUND_PAGE.dialog,
+                layout.page.scale,
+            ),
+        ),
+        (Painted::Persona(layout), true) => {
             match &state.frontend.wol.as_ref().expect("checked").page {
                 WolPage::AutoLoginQuery(query) => Some(
                     crate::app::frontend::skirmish_shell_render::paint_wol_auto_login_children(
@@ -738,36 +740,19 @@ pub(crate) fn render_wol_page(
             }
             None
         }
-        (Painted::Options(layout), None) => {
-            spec = Some(&crate::ui::wol_options::PAGE);
-            if let Some(page) = options_page {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| (*button, page.ui.buttons.is_pressed(button.id), true))
-                    .collect();
-            }
-            None
-        }
-        (Painted::SoundOptions(layout), None) => {
-            spec = Some(&crate::ui::shell::sound::SHELL_SOUND_PAGE);
-            if let Some(dialog) = options_page.and_then(|page| page.sound.as_ref()) {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            dialog
-                                .buttons
-                                .is_pressed(crate::ui::shell::sound::SoundButton::Back),
-                            true,
-                        )
-                    })
-                    .collect();
-            }
+        (Painted::Options(_), None) | (Painted::SoundOptions(_), None) => {
+            spec = Some(match painted {
+                Painted::Options(_) => &crate::ui::wol_options::PAGE,
+                _ => &crate::ui::shell::sound::SHELL_SOUND_PAGE,
+            });
+            painted_buttons = page
+                .buttons
+                .iter()
+                .map(|button| {
+                    let pressed = crate::app::shell_wol::options::button_pressed(state, button.id);
+                    (*button, pressed, true)
+                })
+                .collect();
             None
         }
         (Painted::Persona(layout), None) => {
@@ -1061,8 +1046,8 @@ pub(crate) fn render_wol_page(
             texture: &atlas.texture,
             instances: options.popup,
         });
-        if let Painted::Options(layout) = &painted
-            && let Some(list) = options_page.and_then(|page| page.ui.translate_popup(layout))
+        if let Painted::Options(_) = &painted
+            && let Some(list) = crate::app::shell_wol::options::translate_popup(state)
         {
             hide_glyphs_under(&mut options.texts, list.rect);
         }

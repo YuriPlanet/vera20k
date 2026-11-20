@@ -14,7 +14,10 @@ use crate::app::frontend::state::{ModFilesBox, ShellMessageBox, ShellMessageBoxP
 use crate::app::mod_files::{Against, Checked, PageCheck, Step};
 use crate::app::shell_route::ShellRoute;
 use crate::ui::mods_shell::{self, ModsLayout};
-use crate::ui::shell::list::{ListBoxState, ListMetrics};
+use crate::ui::movies_credits_shell::{
+    FamilyList, family_list_node, find_family_list, set_family_list,
+};
+use crate::ui::shell::list::{ListMetrics, list_box_geometry};
 
 impl App {
     fn installed_mods(state: &AppState) -> Vec<crate::app::mods::Listed> {
@@ -32,14 +35,22 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         let rows = Self::installed_mods(state);
         let selected = rows.iter().position(|row| state.frontend.mods.in_use(row));
-        let mut page = ListBoxState::new(rows, selected);
-        Self::show_selected_mod(&mut page, &Self::mods_layout(state));
-        state.frontend.mods.page = Some(page);
+        let page = FamilyList::new(rows, selected);
         state.frontend.shell_route = ShellRoute::Mods;
-        state
-            .frontend
-            .shell_controller
-            .reset_to(mods_shell::DIALOG, false);
+        let layout = Self::mods_layout(state);
+        let controller = &mut state.frontend.shell_controller;
+        controller.reset_to(mods_shell::DIALOG, false);
+        controller.set_scale(layout.page.scale);
+        let top = Self::mods_list_tops(&page, &layout).0;
+        family_list_node(
+            controller,
+            mods_shell::DIALOG,
+            layout.list,
+            &page,
+            top,
+            false,
+        );
+        state.frontend.mods.page = Some(page);
     }
 
     /// The window is in front again, perhaps from the folder that Open Mods
@@ -50,7 +61,6 @@ impl App {
             return;
         }
         let rows = Self::installed_mods(state);
-        let layout = Self::mods_layout(state);
         let Some(page) = state.frontend.mods.page.as_mut() else {
             return;
         };
@@ -63,19 +73,50 @@ impl App {
             .map(|row| row.folder.clone());
         page.selected = picked.and_then(|folder| rows.iter().position(|row| row.folder == folder));
         page.rows = rows;
-        let geometry = page.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
-        page.top = page.top.min(geometry.max_top);
+        // The top stays where it was, within the new range.
+        Self::update_mods_list(state, |top, (_, last)| top.min(last));
         state.platform.window.request_redraw();
     }
 
-    /// Scroll the list so its selected row, or else its first, is in view.
-    fn show_selected_mod(page: &mut ListBoxState<crate::app::mods::Listed>, layout: &ModsLayout) {
-        let geometry = page.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
-        page.top = page
+    /// The list's tops for `page`: the one that shows its selected row (or
+    /// else its first), and the last.
+    fn mods_list_tops(
+        page: &FamilyList<crate::app::mods::Listed>,
+        layout: &ModsLayout,
+    ) -> (usize, usize) {
+        let geometry = list_box_geometry(
+            layout.list,
+            page.rows.len(),
+            0,
+            ListMetrics::scaled(layout.page.scale),
+        );
+        let showing = page
             .selected
             .unwrap_or(0)
-            .saturating_sub(geometry.visible_rows.saturating_sub(1))
-            .min(geometry.max_top);
+            .saturating_sub(geometry.visible_rows.saturating_sub(1));
+        (showing.min(geometry.max_top), geometry.max_top)
+    }
+
+    /// The page's rows and selection into its `List` node, at the top
+    /// `top` makes of the node's current one and [`Self::mods_list_tops`].
+    fn update_mods_list(state: &mut AppState, top: impl FnOnce(usize, (usize, usize)) -> usize) {
+        let layout = Self::mods_layout(state);
+        let Some(page) = state.frontend.mods.page.as_ref() else {
+            return;
+        };
+        let controller = &mut state.frontend.shell_controller;
+        let Some(node) = find_family_list(controller, mods_shell::DIALOG) else {
+            return;
+        };
+        let current = controller.gui().list_view(node).map_or(0, |view| view.top);
+        let top = top(current, Self::mods_list_tops(page, &layout));
+        set_family_list(
+            controller.gui_mut(),
+            node,
+            page.rows.len(),
+            page.selected,
+            top,
+        );
     }
 
     pub(super) fn mods_page_active(state: &AppState) -> bool {
@@ -88,9 +129,10 @@ impl App {
         crate::app::frontend::shell_layout::mods_layout(state)
     }
 
-    /// The page's buttons, then its list: a hover target for status help,
-    /// never a button press. Use This Mod is disabled while the selection is
-    /// nothing a restart would change to, Check Files while it is no mod.
+    /// The page's buttons. The list is the dialog's `List` node: a hover
+    /// target for status help, never a button press. Use This Mod is
+    /// disabled while the selection is nothing a restart would change to,
+    /// Check Files while it is no mod.
     fn mods_feed(state: &mut AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
         let layout = Self::mods_layout(state);
         let nothing_to_use = state.frontend.mods.switch_to().is_none();
@@ -99,104 +141,63 @@ impl App {
         controller.ensure_active(mods_shell::DIALOG, false);
         controller.set_disabled(mods_shell::USE, nothing_to_use);
         controller.set_disabled(mods_shell::CHECK, nothing_to_check);
-        let mut feed = Self::menu_page_button_feed(&layout.page);
-        feed.push(crate::ui::shell::layout::LaidOutControl {
-            id: mods_shell::LIST,
-            rect: layout.list,
-        });
-        feed
-    }
-
-    fn mods_button_feed(state: &mut AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        Self::mods_feed(state)
-            .into_iter()
-            .filter(|control| control.id != mods_shell::LIST)
-            .collect()
+        controller.set_scale(layout.page.scale);
+        if let Some(page) = state.frontend.mods.page.as_ref() {
+            let top = Self::mods_list_tops(page, &layout).0;
+            family_list_node(
+                controller,
+                mods_shell::DIALOG,
+                layout.list,
+                page,
+                top,
+                false,
+            );
+        }
+        Self::menu_page_button_feed(&layout.page)
     }
 
     pub(super) fn handle_mods_mouse_move(state: &mut AppState) {
         let feed = Self::mods_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        let layout = Self::mods_layout(state);
-        if let Some(page) = state.frontend.mods.page.as_mut() {
-            page.scroll_pointer_moved(layout.list, ListMetrics::scaled(layout.page.scale), x, y);
-        }
+        state.frontend.shell_controller.drain_events();
         // Every hover message repaints the status line (0x00615EF7).
         state.frontend.shell_status_line.repaint();
     }
 
-    /// Scrollbar arrow auto-repeat; returns the next wake deadline.
-    pub(super) fn poll_mods_scroll(state: &mut AppState) -> Option<Instant> {
-        if !Self::mods_page_active(state) {
-            return None;
-        }
-        let (x, y) = state.match_state.input.cursor_px();
-        let layout = Self::mods_layout(state);
-        let page = state.frontend.mods.page.as_mut()?;
-        if page.scroll_poll(
-            layout.list,
-            ListMetrics::scaled(layout.page.scale),
-            x,
-            y,
-            Instant::now(),
-        ) {
-            state.platform.window.request_redraw();
-        }
-        page.scroll.repeat_at()
-    }
-
-    /// The wheel moves the list three rows a notch, as on the Keyboard page.
+    /// The wheel moves the list three rows a notch, as on the Keyboard page,
+    /// wherever the pointer is.
     pub(super) fn handle_mods_wheel(state: &mut AppState, lines: f32) {
-        let layout = Self::mods_layout(state);
-        let Some(page) = state.frontend.mods.page.as_mut() else {
-            return;
-        };
-        let geometry = page.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
-        page.top =
-            (page.top as i32 - (lines * 3.0) as i32).clamp(0, geometry.max_top as i32) as usize;
+        Self::update_mods_list(state, |top, (_, last)| {
+            (top as i32 - (lines * 3.0) as i32).clamp(0, last as i32) as usize
+        });
         state.platform.window.request_redraw();
     }
 
     pub(super) fn handle_mods_mouse_down(state: &mut AppState) {
+        let feed = Self::mods_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
-        let layout = Self::mods_layout(state);
-        let metrics = ListMetrics::scaled(layout.page.scale);
-        if let Some(page) = state.frontend.mods.page.as_mut()
-            && layout.list.contains(x, y)
-        {
-            // As in the movie list: the scrollbar takes its own presses
-            // without a sound, and a press on a row selects it.
-            if page.scroll_press(layout.list, metrics, x, y, Instant::now()) {
-                return;
-            }
-            if let Some(row) = page.row_at(layout.list, metrics, x, y) {
-                page.selected = Some(row);
-                Self::play_generic_click_sound(state);
-            }
-            return;
-        }
-        let buttons = Self::mods_button_feed(state);
-        state
-            .frontend
-            .shell_controller
-            .on_pointer_down(x, y, &buttons);
+        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
         if state.frontend.shell_controller.pressed().is_some() {
             Self::play_main_menu_button_sound(state);
+        }
+        // As in the movie list: the scrollbar takes its own presses without
+        // a sound, and a press on a row selects it; the page checks for no
+        // double-click.
+        if let Some(row) = Self::family_list_selected_row(state)
+            && let Some(page) = state.frontend.mods.page.as_mut()
+        {
+            page.selected = Some(row);
+            Self::play_generic_click_sound(state);
         }
     }
 
     pub(super) fn handle_mods_mouse_up(state: &mut AppState) {
-        if let Some(page) = state.frontend.mods.page.as_mut() {
-            page.scroll.cancel();
-        }
-        let buttons = Self::mods_button_feed(state);
+        let feed = Self::mods_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
-        match state
-            .frontend
-            .shell_controller
-            .on_pointer_up(x, y, &buttons)
-        {
+        let released = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
+        state.frontend.shell_controller.drain_events();
+        match released {
             Some(mods_shell::USE) => Self::use_picked_mod(state),
             Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(state),
             Some(mods_shell::CHECK) => Self::check_picked_mod(state),
@@ -461,14 +462,13 @@ impl App {
             made.copied.join(", ")
         );
         Self::refresh_mods_page(state);
-        let layout = Self::mods_layout(state);
         if let Some(page) = state.frontend.mods.page.as_mut() {
             page.selected = page
                 .rows
                 .iter()
                 .position(|row| row.folder.as_deref() == Some(made.folder.as_str()));
-            Self::show_selected_mod(page, &layout);
         }
+        Self::update_mods_list(state, |_, (showing, _)| showing);
         Self::open_shell_message_box(
             state,
             ShellMessageBox {

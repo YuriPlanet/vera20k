@@ -158,6 +158,9 @@ pub struct TrackbarRange {
     pub min: i32,
     pub max: i32,
     pub step: i32,
+    /// The plaque's reserve at the window's right end: [`PLAQUE_RESERVE`],
+    /// or 0 once the owner turns the plaque off (`0x4AC` with 0).
+    pub reserve: i32,
 }
 
 impl TrackbarRange {
@@ -165,7 +168,20 @@ impl TrackbarRange {
     /// (`0x0061DB94..0x0061DBAD`).
     pub const fn new(min: i32, max: i32, step: i32) -> Self {
         let step = if step == 0 { 1 } else { step };
-        Self { min, max, step }
+        Self {
+            min,
+            max,
+            step,
+            reserve: PLAQUE_RESERVE,
+        }
+    }
+
+    /// The same range on a window with (`true`) or without its value plaque.
+    pub const fn with_plaque(self, plaque: bool) -> Self {
+        Self {
+            reserve: if plaque { PLAQUE_RESERVE } else { 0 },
+            ..self
+        }
     }
 
     /// What the owner reads back from a window holding `value` (`TBM_GETPOS`,
@@ -196,7 +212,7 @@ impl TrackbarRange {
 
     /// The thumb's left edge in a `width`-wide window showing `value`.
     pub fn thumb_left(self, value: i32, width: i32) -> i32 {
-        thumb_left(value - self.min, width, PLAQUE_RESERVE, self.max - self.min)
+        thumb_left(value - self.min, width, self.reserve, self.max - self.min)
     }
 
     /// [`Self::thumb_left`] for a window at `scale`, as an offset from its left
@@ -207,7 +223,7 @@ impl TrackbarRange {
         thumb_left_at(
             value - self.min,
             window,
-            PLAQUE_RESERVE,
+            self.reserve,
             self.max - self.min,
             scale,
         )
@@ -215,7 +231,7 @@ impl TrackbarRange {
 
     /// The value a captured pointer at window-relative `x` selects.
     pub fn value_at(self, x: i32, width: i32) -> i32 {
-        let position = trackbar_position_from_x(x, width, PLAQUE_RESERVE, self.max - self.min);
+        let position = trackbar_position_from_x(x, width, self.reserve, self.max - self.min);
         self.stepped(self.min + position)
     }
 
@@ -229,7 +245,7 @@ impl TrackbarRange {
     /// `value`; a jump carries the new value.
     pub fn press(self, value: i32, x: i32, y: i32, width: i32, height: i32) -> TrackbarPress {
         let range = self.max - self.min;
-        match trackbar_press(value - self.min, x, y, width, height, PLAQUE_RESERVE, range) {
+        match trackbar_press(value - self.min, x, y, width, height, self.reserve, range) {
             TrackbarPress::Jump(position) => TrackbarPress::Jump(self.stepped(self.min + position)),
             other => other,
         }

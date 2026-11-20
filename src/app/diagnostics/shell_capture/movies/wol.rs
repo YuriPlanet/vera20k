@@ -4953,9 +4953,7 @@ impl WolCapture {
         self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
         let layout = crate::app::shell_wol::options::layout(state);
         welcome_click(state, translate_list_arrow(&layout)?);
-        let popup = Self::options_page(state)?
-            .ui
-            .translate_popup(&layout)
+        let popup = crate::app::shell_wol::options::translate_popup(state)
             .context("the translation list did not open")?;
         welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
         let row = layout
@@ -4967,7 +4965,8 @@ impl WolCapture {
         );
         let ui = &Self::options_page(state)?.ui;
         ensure!(
-            ui.translate == translated_lobby_only() && ui.translate_list.control.is_none(),
+            ui.translate == translated_lobby_only()
+                && crate::app::shell_wol::options::translate_popup(state).is_none(),
             "the clicks did not pick the settings: {:?}",
             ui.translate
         );
@@ -5013,9 +5012,7 @@ impl WolCapture {
         restore_settings(state, bytes)?;
         if self.target == WolTarget::ModernOptionsTranslationList {
             welcome_click(state, translate_list_arrow(&layout)?);
-            let row = Self::options_page(state)?
-                .ui
-                .translate_popup(&layout)
+            let row = crate::app::shell_wol::options::translate_popup(state)
                 .and_then(|popup| popup.row_rect(4))
                 .context("the translation list did not open")?;
             set_window_pointer_to_rect_center(state, row);

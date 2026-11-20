@@ -603,6 +603,7 @@ fn render_main_menu_shell_to_target_inner(
     // (`0x0052FEC0`). Retail leaves the destroyed box's last image on screen
     // through the quit fade (nothing repaints after OK); here the backdrop
     // shows alone (evidence note residual).
+    sync_shell_menu_settings(state);
     let cover = MainMenuCover::of(state);
     let backdrop = cover != MainMenuCover::Live;
     if !backdrop {
@@ -950,10 +951,12 @@ const EXIT_CONFIRM_MODAL_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDe
 /// been composed on the shell surface, so the box and the cursor go on top
 /// and the surface is presented again.
 pub(crate) fn render_shell_message_box_over_page(
-    state: &AppState,
+    state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) {
+    sync_shell_menu_settings(state);
+    let state = &*state;
     let (Some(overlay), Some(chrome)) = (
         build_shell_message_box_overlay(state),
         state.frontend.skirmish_shell_chrome.as_ref(),
@@ -983,6 +986,32 @@ pub(crate) fn render_shell_message_box_over_page(
                 ),
         },
     );
+}
+
+/// The Esc menu's settings tree follows its layout and values before it
+/// paints.
+fn sync_shell_menu_settings(state: &mut AppState) {
+    if state
+        .frontend
+        .shell_message_box
+        .as_ref()
+        .and_then(crate::app::frontend::state::ShellMessageBox::menu_settings)
+        .is_none()
+    {
+        return;
+    }
+    let controls = shell_layout::shell_menu_settings_layout(
+        shell_layout::shell_screen_size(state),
+        &state.renderer.bit_font,
+    );
+    if let Some(settings) = state
+        .frontend
+        .shell_message_box
+        .as_mut()
+        .and_then(crate::app::frontend::state::ShellMessageBox::menu_settings_mut)
+    {
+        settings.shell_sync(&controls);
+    }
 }
 
 /// Build the shell message box (0xCE/0x120/0x121) SHP modal overlay when it is open: the centered
@@ -1113,7 +1142,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
             &mut draw,
-            &state.renderer.bit_font,
+            state,
             atlas,
             &controls,
             settings,

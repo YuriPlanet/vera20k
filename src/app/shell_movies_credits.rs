@@ -4,7 +4,6 @@
 //! recreates its return dialog afterwards.
 
 use crate::sim::trigger_runtime::ThemeRequest;
-use crate::ui::shell::list::ListMetrics;
 use crate::util::time::Instant;
 use std::sync::Arc;
 
@@ -15,7 +14,7 @@ use crate::app::frontend::credits_roll::{
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn, movie_stem};
 use crate::app::shell_route::ShellRoute;
 use crate::ui::movies_credits_shell::{
-    MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MovieListState, MoviesCreditsAction,
+    MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, family_list_node,
 };
 
 /// The Sneak Peeks movie (`0x0052DE55`).
@@ -68,15 +67,17 @@ impl App {
     /// and the retained selection `DAT_00825C80`.
     pub(super) fn open_movie_list(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
-        state.frontend.movie_list = Some(crate::ui::movies_credits_shell::open_movie_list(
+        let list = crate::ui::movies_credits_shell::open_movie_list(
             state.persistence.options_profile.movie_progress,
             state.frontend.movie_list_selection,
-        ));
+        );
         state.frontend.shell_route = ShellRoute::MovieList;
-        state
-            .frontend
-            .shell_controller
-            .reset_to(MOVIE_LIST_DIALOG, false);
+        let layout = Self::movie_list_layout(state);
+        let controller = &mut state.frontend.shell_controller;
+        controller.reset_to(MOVIE_LIST_DIALOG, false);
+        controller.set_scale(layout.page.scale);
+        family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, &list, 0, true);
+        state.frontend.movie_list = Some(list);
     }
 
     pub(super) fn movie_list_active(state: &AppState) -> bool {
@@ -89,114 +90,82 @@ impl App {
         crate::app::frontend::shell_layout::movie_list_layout(state)
     }
 
+    /// The page's buttons. The list `0x744` is the dialog's `List` node: a
+    /// hover target for status help and its own press handler, never a
+    /// button press.
     fn movie_list_feed(state: &mut AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
         let layout = Self::movie_list_layout(state);
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(MOVIE_LIST_DIALOG, false);
-        let mut feed = Self::menu_page_button_feed(&layout.page);
-        // The list is a hover target for status help, never an owner-draw
-        // button press: it is appended after the buttons and filtered out of
-        // press handling below.
-        feed.push(crate::ui::shell::layout::LaidOutControl {
-            id: crate::ui::movies_credits_shell::MOVIE_LIST_CONTROL,
-            rect: layout.list,
-        });
-        feed
+        let controller = &mut state.frontend.shell_controller;
+        controller.ensure_active(MOVIE_LIST_DIALOG, false);
+        controller.set_scale(layout.page.scale);
+        if let Some(list) = state.frontend.movie_list.as_ref() {
+            family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list, 0, true);
+        }
+        Self::menu_page_button_feed(&layout.page)
     }
 
     pub(super) fn handle_movie_list_mouse_move(state: &mut AppState) {
         let feed = Self::movie_list_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
         state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        let layout = Self::movie_list_layout(state);
-        if let Some(list) = state.frontend.movie_list.as_mut() {
-            list.scroll_pointer_moved(layout.list, ListMetrics::scaled(layout.page.scale), x, y);
-        }
+        state.frontend.shell_controller.drain_events();
         // Every hover message repaints the status line (0x00615EF7).
         state.frontend.shell_status_line.repaint();
     }
 
-    /// Scrollbar arrow auto-repeat; returns the next wake deadline.
-    pub(super) fn poll_movie_list_scroll(state: &mut AppState) -> Option<Instant> {
-        if !Self::movie_list_active(state) {
+    /// The movie or Mods list's scrollbar arrow repeat
+    /// (`0x0061D215..0x0061D2C8`); returns the next wake deadline.
+    pub(super) fn poll_family_list(state: &mut AppState) -> Option<Instant> {
+        if !Self::movie_list_active(state) && !Self::mods_page_active(state) {
             return None;
         }
-        let (x, y) = state.match_state.input.cursor_px();
-        let layout = Self::movie_list_layout(state);
-        let list = state.frontend.movie_list.as_mut()?;
-        if list.scroll_poll(
-            layout.list,
-            ListMetrics::scaled(layout.page.scale),
-            x,
-            y,
-            Instant::now(),
-        ) {
+        let controller = &mut state.frontend.shell_controller;
+        let next = controller.poll();
+        if !controller.drain_events().is_empty() {
             state.platform.window.request_redraw();
         }
-        list.scroll.repeat_at()
+        next
+    }
+
+    /// The row a family list press selected (0x0061A948), if any. The
+    /// scrollbar child (0x0061C690) captures its own presses and reports
+    /// none; the second press of a double-click selects nothing.
+    pub(super) fn family_list_selected_row(state: &mut AppState) -> Option<usize> {
+        state
+            .frontend
+            .shell_controller
+            .drain_events()
+            .into_iter()
+            .find_map(|event| match event {
+                vera20k_gui::UiEvent::ListSelected { row, .. } => Some(row as usize),
+                _ => None,
+            })
     }
 
     pub(super) fn handle_movie_list_mouse_down(state: &mut AppState) {
         let feed = Self::movie_list_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
-        let layout = Self::movie_list_layout(state);
-        if let Some(list) = state.frontend.movie_list.as_mut()
-            && layout.list.contains(x, y)
-        {
-            // The scrollbar child (0x0061C690) captures its own presses and
-            // plays no sound.
-            if list.scroll_press(
-                layout.list,
-                ListMetrics::scaled(layout.page.scale),
-                x,
-                y,
-                Instant::now(),
-            ) {
-                return;
-            }
-            let double_click = list.is_double_click(
-                Instant::now(),
-                x,
-                y,
-                crate::ui::shell::saved_file_input::host_double_click_limits(),
-            );
-            // 0x0061A948: a single press selects the row under it (presses
-            // below the last row are ignored) and plays GenericClick.
-            if !double_click
-                && let Some(row) =
-                    list.row_at(layout.list, ListMetrics::scaled(layout.page.scale), x, y)
-            {
-                list.selected = Some(row);
-                Self::play_generic_click_sound(state);
-            }
-            return;
-        }
-        let buttons: Vec<_> = feed
-            .into_iter()
-            .filter(|control| control.id != crate::ui::movies_credits_shell::MOVIE_LIST_CONTROL)
-            .collect();
-        state
-            .frontend
-            .shell_controller
-            .on_pointer_down(x, y, &buttons);
+        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
         if state.frontend.shell_controller.pressed().is_some() {
             Self::play_main_menu_button_sound(state);
+        }
+        // A single press selects the row under it (presses below the last
+        // row are ignored) and plays GenericClick.
+        if let Some(row) = Self::family_list_selected_row(state)
+            && let Some(list) = state.frontend.movie_list.as_mut()
+        {
+            list.selected = Some(row);
+            Self::play_generic_click_sound(state);
         }
     }
 
     pub(super) fn handle_movie_list_mouse_up(state: &mut AppState) {
-        if let Some(list) = state.frontend.movie_list.as_mut() {
-            list.scroll.cancel();
-        }
-        let feed: Vec<_> = Self::movie_list_feed(state)
-            .into_iter()
-            .filter(|control| control.id != crate::ui::movies_credits_shell::MOVIE_LIST_CONTROL)
-            .collect();
+        let feed = Self::movie_list_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
         use crate::app::frontend::shell_transition::ShellExitThen;
-        match state.frontend.shell_controller.on_pointer_up(x, y, &feed) {
+        let released = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
+        state.frontend.shell_controller.drain_events();
+        match released {
             Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL) => {
                 let selected = state
                     .frontend

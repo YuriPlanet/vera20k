@@ -8,7 +8,7 @@ use anyhow::Result;
 
 use crate::app::AppState;
 use crate::app::frontend::movies_credits_render::{
-    FamilyListRows, family_backdrop, push_family_backdrop, push_family_list,
+    family_backdrop, family_list_hovered, family_list_view, push_family_backdrop, push_family_list,
 };
 use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
@@ -24,7 +24,6 @@ use crate::render::shell_paint::{
 use crate::render::shell_text::ShellAlign;
 use crate::ui::main_menu_shell::RectPx;
 use crate::ui::mods_shell::{self, ModsLayout, PAGE};
-use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
 /// Row text inset from the row's left edge, as in the movie list, and from
@@ -110,22 +109,13 @@ fn mods_composition<'a>(
     let leaving = exit_wave.is_some();
     let mods = &state.frontend.mods;
     let mut labels = Vec::new();
-    if let Some(page) = mods.page.as_ref().filter(|_| !leaving) {
-        let geometry = page.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
-        push_family_list(
-            &mut sprites,
-            atlas,
-            &backdrop,
-            layout.list,
-            Some(FamilyListRows {
-                geometry: &geometry,
-                top: page.top,
-                selected: page.selected,
-                pressed: page.scroll.pressed_part(),
-            }),
-        );
+    if let Some(page) = mods.page.as_ref().filter(|_| !leaving)
+        && let Some(list) = family_list_view(state, PAGE.dialog, layout.list, layout.page.scale)
+    {
+        push_family_list(&mut sprites, atlas, &backdrop, layout.list, Some(&list));
         push_family_list(&mut sprites, atlas, &backdrop, layout.details, None);
-        for (visible, index) in (page.top..page.rows.len())
+        let (geometry, view) = list;
+        for (visible, index) in (view.top..page.rows.len())
             .take(geometry.visible_rows)
             .enumerate()
         {
@@ -261,10 +251,11 @@ fn mods_status_key(state: &AppState) -> Option<&'static str> {
     if controller.top_id() != Some(PAGE.dialog) {
         return None;
     }
-    match controller.hovered()? {
-        mods_shell::LIST => Some(mods_shell::PROMPT_KEY),
-        id => PAGE.button(id).map(|button| button.tooltip_key),
+    if family_list_hovered(state, PAGE.dialog) {
+        return Some(mods_shell::PROMPT_KEY);
     }
+    PAGE.button(controller.hovered()?)
+        .map(|button| button.tooltip_key)
 }
 
 /// Paint the Mods page. Returns `false` when the shell chrome is missing.

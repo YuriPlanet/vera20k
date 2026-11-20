@@ -71,7 +71,8 @@ fn selected(n: &Node) -> Option<usize> {
     usize::try_from(n.int_prop(Prop::Selected, -1)).ok()
 }
 
-/// The list hung under the face (`face.y + face.h + 1`); none without rows.
+/// The list hung under the face (`face.y + face.h + 1`), raised to end by
+/// `PopupBottom` when set; none without rows.
 fn popup_at(tree: &Tree, node: NodeId, scale: ShellScale, top: usize) -> Option<ComboPopup> {
     let n = tree.node(node).ok()?;
     let total = row_count(n);
@@ -80,7 +81,11 @@ fn popup_at(tree: &Tree, node: NodeId, scale: ShellScale, top: usize) -> Option<
     }
     let cap = n.int_prop(Prop::VisibleRows, 0).max(0) as usize;
     let face = combo_face_rect(tree.screen_rect(node).ok()?, scale);
-    Some(ComboPopup::new(face, scale, total, cap, top))
+    let mut popup = ComboPopup::new(face, scale, total, cap, top);
+    if let Some(Value::Int(bottom)) = n.props.get(&Prop::PopupBottom) {
+        popup.rect.y = popup.rect.y.min((bottom - popup.rect.h).max(0));
+    }
+    Some(popup)
 }
 
 fn state_mut(tree: &mut Tree, node: NodeId) -> Option<&mut ComboState> {
@@ -118,17 +123,29 @@ fn close(ctx: &mut Ctx<'_>, node: NodeId) {
     ctx.events.push(UiEvent::ComboClosed { node });
 }
 
+/// Closes the list for the host: no cue, no event.
+pub(crate) fn dismiss(tree: &mut Tree, node: NodeId) {
+    if let Some(st) = state_mut(tree, node) {
+        st.list.close();
+    }
+    let _ = tree.set(node, Prop::Open, Value::Bool(false));
+}
+
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture {
     let (Ok(rect), Ok(n)) = (ctx.tree.screen_rect(node), ctx.tree.node(node)) else {
         return Capture::No;
     };
     let selected = selected(n);
+    let anywhere = n.bool_prop(Prop::OpenAnywhere, false);
     let can_open = popup_at(ctx.tree, node, ctx.scale, 0).is_some();
     let scale = ctx.scale;
     let Some(st) = state_mut(ctx.tree, node) else {
         return Capture::No;
     };
-    let press = if can_open {
+    let press = if can_open && anywhere {
+        st.list.open(node, selected);
+        ComboPress::Open
+    } else if can_open {
         st.list.press_face(node, rect, scale, selected, x, y)
     } else {
         ComboPress::Face
@@ -320,6 +337,40 @@ mod tests {
             click(&mut g, 125, 25),
             vec![UiEvent::ComboClosed { node: c }]
         );
+        assert_eq!(g.popup(), None);
+    }
+
+    #[test]
+    fn open_list_leaves_hover_to_the_screen_beside_it_and_the_host_closes_it_silently() {
+        let (mut g, c) = page_with_combo(3, 0);
+        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
+        let b = g.create(NodeKind::Button, Some(root)).unwrap();
+        g.set(b, Prop::Rect, Value::Rect(Rect::new(200, 0, 20, 20)))
+            .unwrap();
+        click(&mut g, 125, 25);
+        g.input(InputEvent::PointerMove { x: 205, y: 5 }, 0);
+        assert_eq!(g.hovered(), Some(b));
+        let row = g.combo_drop_down(c).unwrap().popup.row_rect(1).unwrap();
+        g.input(InputEvent::PointerMove { x: row.x + 1, y: row.y + 1 }, 0);
+        assert_eq!(g.hovered(), None, "the list covers what is under it");
+        g.drain_events();
+        assert!(g.close_popup());
+        assert!(g.drain_events().is_empty());
+        assert_eq!(g.popup(), None);
+        assert_eq!(g.get(c, Prop::Open).unwrap(), Some(&Value::Bool(false)));
+        assert!(!g.close_popup());
+    }
+
+    #[test]
+    fn open_anywhere_opens_from_the_face_and_popup_bottom_raises_the_list() {
+        let (mut g, c) = page_with_combo(3, 0);
+        g.set(c, Prop::OpenAnywhere, Value::Bool(true)).unwrap();
+        g.set(c, Prop::PopupBottom, Value::Int(100)).unwrap();
+        assert_eq!(click(&mut g, 12, 25), vec![UiEvent::ComboOpened { node: c }]);
+        let list = g.combo_drop_down(c).unwrap().popup.rect;
+        assert_eq!((list.y, list.h), (100 - 3 * 23, 3 * 23), "raised to end at 100");
+        // Removing the combo forgets its open list.
+        g.remove(c).unwrap();
         assert_eq!(g.popup(), None);
     }
 

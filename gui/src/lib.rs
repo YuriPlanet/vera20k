@@ -9,6 +9,7 @@ pub mod fixtures;
 pub mod gui;
 pub mod node;
 pub mod shell;
+pub mod spec;
 pub mod time;
 mod widget;
 
@@ -18,3 +19,5 @@ pub use gui::{
 };
 pub use node::{NodeId, NodeKind, Prop, Refused, Rgba, Tree, Value};
 pub use widget::combo::ComboDropDown;
+pub use widget::list::ListView;
+pub use spec::NodeSpec;

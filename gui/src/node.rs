@@ -64,6 +64,8 @@ impl NodeKind {
 /// the rest of the §2.3 table is added with the screen that needs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Prop {
+    /// The host's own integer id for the node (a dialog resource id).
+    Id,
     Visible,
     Enabled,
     Text,
@@ -111,6 +113,19 @@ pub enum Prop {
     Align,
     /// Trackbar: the value plaque at the right end (default on).
     ShowValue,
+    /// List: a second press within the double-click limits only reports
+    /// `ListDoubleClicked` (default on); off, every press selects.
+    DoubleClick,
+    /// Combo: a press anywhere on the face opens the list, not only on the
+    /// arrow (VERA's own Options lists).
+    OpenAnywhere,
+    /// Combo: the drop-down rises to end at or above this y, but not above
+    /// the window top (VERA's Esc menu keeps its list above the box's footer).
+    PopupBottom,
+    /// The area the pointer hits, when other than `Rect`. A checkbox with one
+    /// takes a press anywhere in it, not only on its icon (VERA's Esc menu
+    /// rows, whose caption toggles too).
+    HitRect,
     Color,
     Font,
 }
@@ -148,6 +163,8 @@ impl Prop {
             | Prop::ActivateOnPress
             | Prop::Open
             | Prop::ShowValue
+            | Prop::DoubleClick
+            | Prop::OpenAnywhere
             | Prop::Password
             | Prop::ByteOnly => ValueType::Bool,
             Prop::Items => ValueType::Items,
@@ -161,9 +178,10 @@ impl Prop {
             | Prop::Allowed => {
                 ValueType::Text
             }
-            Prop::Rect => ValueType::Rect,
+            Prop::Rect | Prop::HitRect => ValueType::Rect,
             Prop::Color => ValueType::Rgba,
-            Prop::OffsetX
+            Prop::Id
+            | Prop::OffsetX
             | Prop::OffsetY
             | Prop::Selected
             | Prop::Pos
@@ -176,6 +194,7 @@ impl Prop {
             | Prop::MaxLen
             | Prop::Caret
             | Prop::Align
+            | Prop::PopupBottom
             | Prop::Font => ValueType::Int,
         }
     }
@@ -185,6 +204,8 @@ impl Prop {
         match self {
             Prop::Command | Prop::Toggled => kind == NodeKind::Button,
             Prop::Checked | Prop::ActivateOnPress => kind == NodeKind::Checkbox,
+            Prop::DoubleClick => kind == NodeKind::List,
+            Prop::OpenAnywhere | Prop::PopupBottom => kind == NodeKind::Combo,
             Prop::Min | Prop::Max | Prop::Step => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
             _ => true,
         }
@@ -404,6 +425,17 @@ impl Tree {
         let r = self.node(id)?.rect();
         let (dx, dy) = self.offset(id);
         Ok(r.translate(dx, dy))
+    }
+
+    /// Screen area the pointer hits: `HitRect` when set, else the `Rect`.
+    pub fn screen_hit_rect(&self, id: NodeId) -> Result<Rect, Refused> {
+        match self.node(id)?.props.get(&Prop::HitRect) {
+            Some(Value::Rect(r)) => {
+                let (dx, dy) = self.offset(id);
+                Ok(r.translate(dx, dy))
+            }
+            _ => self.screen_rect(id),
+        }
     }
 
     /// Pre-order walk in draw order (parents before children, roots in order).

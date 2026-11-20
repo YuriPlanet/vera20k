@@ -335,17 +335,20 @@ impl MoviesCapture {
         let layout = crate::app::frontend::shell_layout::mods_layout(state);
         let mods = &state.frontend.mods;
         let page = mods.page.as_ref().context("the Mods page has no list")?;
-        let geometry = page.geometry(
+        let (geometry, view) = crate::app::frontend::movies_credits_render::family_list_view(
+            state,
+            crate::ui::mods_shell::DIALOG,
             layout.list,
-            crate::ui::shell::list::ListMetrics::scaled(layout.page.scale),
-        );
+            layout.page.scale,
+        )
+        .context("the Mods page has no list")?;
         // The list opens with the row in use in view: pick from what shows.
         // New Mod needs no row.
         let row = (press != ModsPress::New)
             .then(|| {
                 page.rows
                     .iter()
-                    .skip(page.top)
+                    .skip(view.top)
                     .take(geometry.visible_rows)
                     .position(|row| match press {
                         ModsPress::Check => row.folder.is_some(),

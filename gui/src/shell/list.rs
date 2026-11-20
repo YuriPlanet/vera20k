@@ -288,17 +288,9 @@ impl<Row> ListBoxState<Row> {
         }
     }
 
-    /// List and scrollbar geometry. The shared geometry takes the paint
-    /// surface, one pixel wider and taller than the `0x744` window, which
-    /// reproduces the retail frames: a scrollbar only above 15 rows, at
-    /// `x + w - 20` and 20 wide, a 202 px thumb for 17 rows.
+    /// List and scrollbar geometry ([`list_box_geometry`]).
     pub fn geometry(&self, list: RectPx, metrics: ListMetrics) -> ShellListGeometry {
-        ShellListGeometry::new(
-            RectPx::new(list.x, list.y, list.w + 1, list.h + 1),
-            self.rows.len(),
-            self.top,
-            metrics,
-        )
+        list_box_geometry(list, self.rows.len(), self.top, metrics)
     }
 
     /// A press on the scrollbar child: capture it, step an arrow or jump the
@@ -369,6 +361,25 @@ impl<Row> ListBoxState<Row> {
         let row = ((y - list.y) / metrics.row_h) as usize + self.top;
         (row < self.rows.len()).then_some(row)
     }
+}
+
+/// An owner-draw list box's list and scrollbar geometry with `count` rows
+/// from `top`. The shared geometry takes the paint surface, one pixel wider
+/// and taller than the `0x744` window `list`, which reproduces the retail
+/// frames: a scrollbar only above 15 rows, at `x + w - 20` and 20 wide, a
+/// 202 px thumb for 17 rows.
+pub fn list_box_geometry(
+    list: RectPx,
+    count: usize,
+    top: usize,
+    metrics: ListMetrics,
+) -> ShellListGeometry {
+    ShellListGeometry::new(
+        RectPx::new(list.x, list.y, list.w + 1, list.h + 1),
+        count,
+        top,
+        metrics,
+    )
 }
 
 /// Shared 0061C890..0061C8AA scrollbar placement. Both list boxes and

@@ -18,8 +18,8 @@ use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
 use crate::ui::main_menu_shell::RectPx;
 use crate::ui::movies_credits_shell::{
-    MOVIE_LIST_CONTROL, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
-    MovieListLayout,
+    MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
+    MovieListLayout, find_family_list,
 };
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::list::{
@@ -27,6 +27,7 @@ use crate::ui::shell::list::{
     scrollbar_arrow_origins, scrollbar_edge_lines, scrollbar_interior,
 };
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
+use vera20k_gui::ListView;
 
 /// Selected-row fill `0x0000FF` (RGB red).
 const LIST_SELECTED_FILL: [u8; 3] = [0xFF, 0x00, 0x00];
@@ -259,12 +260,31 @@ pub(crate) fn push_family_backdrop(out: &mut Vec<SpriteInstance>, backdrop: &Fam
     );
 }
 
-/// The rows a family list shows, when it has any state to paint.
-pub(crate) struct FamilyListRows<'a> {
-    pub geometry: &'a ShellListGeometry,
-    pub top: usize,
-    pub selected: Option<usize>,
-    pub pressed: Option<ListScrollPart>,
+/// The family page `dialog`'s list as its `List` node shows it, with its
+/// geometry in window `list`.
+pub(crate) fn family_list_view(
+    state: &AppState,
+    dialog: crate::ui::shell::descriptor::DialogId,
+    list: RectPx,
+    scale: ShellScale,
+) -> Option<(ShellListGeometry, ListView)> {
+    let controller = &state.frontend.shell_controller;
+    let view = controller
+        .gui()
+        .list_view(find_family_list(controller, dialog)?)?;
+    Some((view.geometry(list, ListMetrics::scaled(scale)), view))
+}
+
+/// Whether the pointer is over the family page `dialog`'s list, its status
+/// help's hover target. The page is the top dialog.
+pub(crate) fn family_list_hovered(
+    state: &AppState,
+    dialog: crate::ui::shell::descriptor::DialogId,
+) -> bool {
+    let controller = &state.frontend.shell_controller;
+    controller.top_id() == Some(dialog)
+        && find_family_list(controller, dialog)
+            .is_some_and(|node| controller.gui().hovered() == Some(node))
 }
 
 /// A family list box over the parent background: its darkened interior,
@@ -275,7 +295,7 @@ pub(crate) fn push_family_list(
     atlas: &MainMenuShellChromeAtlas,
     backdrop: &FamilyBackdrop,
     window: RectPx,
-    rows: Option<FamilyListRows<'_>>,
+    rows: Option<&(ShellListGeometry, ListView)>,
 ) {
     backdrop.push_pixels(
         out,
@@ -284,13 +304,12 @@ pub(crate) fn push_family_list(
         LIST_FILL_DEPTH + 0.00001,
     );
     push_list_frame(out, atlas, window);
-    let Some(rows) = rows else {
+    let Some((geometry, view)) = rows else {
         return;
     };
-    let geometry = rows.geometry;
-    push_list_scrollbar(out, atlas, backdrop, geometry, rows.pressed);
-    if let Some(selected) = rows.selected
-        && let Some(visible) = selected.checked_sub(rows.top)
+    push_list_scrollbar(out, atlas, backdrop, geometry, view.pressed);
+    if let Some(selected) = view.selected
+        && let Some(visible) = selected.checked_sub(view.top)
         && visible < geometry.visible_rows
     {
         push_solid(
@@ -343,29 +362,14 @@ fn movie_list_composition<'a>(
     // the list box and the prompt stay blank.
     let leaving = exit_wave.is_some();
     let list = state.frontend.movie_list.as_ref().filter(|_| !leaving);
+    let view = list
+        .and_then(|_| family_list_view(state, MOVIE_LIST_DIALOG, layout.list, layout.page.scale));
     let mut labels = Vec::new();
     if !leaving {
-        let geometry =
-            list.map(|list| list.geometry(layout.list, ListMetrics::scaled(layout.page.scale)));
-        push_family_list(
-            &mut sprites,
-            atlas,
-            &backdrop,
-            layout.list,
-            geometry
-                .as_ref()
-                .zip(list)
-                .map(|(geometry, list)| FamilyListRows {
-                    geometry,
-                    top: list.top,
-                    selected: list.selected,
-                    pressed: list.scroll.pressed_part(),
-                }),
-        );
+        push_family_list(&mut sprites, atlas, &backdrop, layout.list, view.as_ref());
     }
-    if let Some(list) = list {
-        let geometry = list.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
-        for (visible, index) in (list.top..list.rows.len())
+    if let (Some(list), Some((geometry, view))) = (list, view) {
+        for (visible, index) in (view.top..list.rows.len())
             .take(geometry.visible_rows)
             .enumerate()
         {
@@ -463,10 +467,12 @@ fn movie_list_status_key(state: &AppState) -> Option<&'static str> {
     if controller.top_id() != Some(MOVIE_LIST_PAGE.dialog) {
         return None;
     }
-    match controller.hovered()? {
-        MOVIE_LIST_CONTROL => Some(MOVIE_LIST_TOOLTIP_KEY),
-        id => MOVIE_LIST_PAGE.button(id).map(|button| button.tooltip_key),
+    if family_list_hovered(state, MOVIE_LIST_DIALOG) {
+        return Some(MOVIE_LIST_TOOLTIP_KEY);
     }
+    MOVIE_LIST_PAGE
+        .button(controller.hovered()?)
+        .map(|button| button.tooltip_key)
 }
 
 /// Paint dialog `0x129`. Returns `false` when the shell chrome is missing.
@@ -641,6 +647,7 @@ pub(crate) fn render_credits_roll(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
+    use crate::ui::shell::list::list_box_geometry;
 
     #[test]
     fn family_background_preserves_retail_canvas_when_scaled() {
@@ -679,30 +686,30 @@ mod tests {
         let list = RectPx::new(120, 128, 399, 304);
         // Selection fill measured at x 121..=518, y 129..=147.
         assert_eq!(list_interior(list), RectPx::new(121, 129, 398, 303));
-        let mut state = crate::ui::movies_credits_shell::open_movie_list(
+        let state = crate::ui::movies_credits_shell::open_movie_list(
             crate::ui::movies_credits_shell::MovieProgress::default(),
             -1,
         );
-        let short = state.geometry(list, ListMetrics::RETAIL);
+        let geometry = |rows, top| list_box_geometry(list, rows, top, ListMetrics::RETAIL);
+        let short = geometry(state.rows.len(), 0);
         assert_eq!(short.row(0), RectPx::new(121, 129, 398, 19));
         assert_eq!(short.visible_rows, 15);
         assert!(short.scrollbar.is_none());
         // Retail list with all 17 movies (`list17-*.png`): bar columns
         // 499..=518, thumb rows 151..=352 at top 0 and 208..=409 at top 2.
-        state.rows = crate::ui::movies_credits_shell::active_movie_entries(
+        let rows = crate::ui::movies_credits_shell::active_movie_entries(
             crate::ui::movies_credits_shell::MovieProgress {
                 soviet: 7,
                 allied: 7,
             },
         );
-        assert_eq!(state.rows.len(), 17);
-        let full = state.geometry(list, ListMetrics::RETAIL);
+        assert_eq!(rows.len(), 17);
+        let full = geometry(rows.len(), 0);
         assert_eq!(full.scrollbar, Some(RectPx::new(499, 128, 20, 305)));
         assert_eq!(full.thumb, Some(RectPx::new(500, 151, 18, 202)));
         assert_eq!(full.row(0), RectPx::new(121, 129, 378, 19));
-        state.top = 2;
         assert_eq!(
-            state.geometry(list, ListMetrics::RETAIL).thumb,
+            geometry(rows.len(), 2).thumb,
             Some(RectPx::new(500, 208, 18, 202))
         );
     }

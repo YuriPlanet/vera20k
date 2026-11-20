@@ -125,7 +125,7 @@ impl App {
         };
         let layout = shell_layout::shell_menu_settings_layout(size, &state.renderer.bit_font);
         let (x, y) = state.match_state.input.cursor_px();
-        let list_open = settings.shell_popup(&layout).is_some();
+        let list_open = settings.shell_list_open();
         match pressed {
             Some(true) => settings.shell_mouse_down(x, y, &layout),
             Some(false) => settings.shell_mouse_up(x, y, &layout),

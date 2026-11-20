@@ -10,7 +10,7 @@ use anyhow::Result;
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::app::frontend::movies_credits_render::{
-    FamilyListRows, family_backdrop, push_family_backdrop, push_family_list,
+    family_backdrop, push_family_backdrop, push_family_list,
 };
 use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
@@ -105,12 +105,15 @@ pub(crate) fn render_load_saved_game_page(
             chrome,
             &backdrop,
             layout.list_window,
-            Some(FamilyListRows {
-                geometry: &geometry,
-                top: browser.top_index,
-                selected: browser.selected,
-                pressed,
-            }),
+            Some(&(
+                geometry,
+                vera20k_gui::ListView {
+                    rows: browser.entries.len(),
+                    top: browser.top_index,
+                    selected: browser.selected,
+                    pressed,
+                },
+            )),
         );
     }
 

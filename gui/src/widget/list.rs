@@ -4,16 +4,21 @@
 //!
 //! The node's props hold what the host sees: `Rect` (the list window, the
 //! scrollbar included), `Items` or `RowCount`, `Selected` (`-1` or absent =
-//! none) and `Top`. The scrollbar capture and the double-click timing stay in
-//! the node's `WidgetState::List`.
+//! none), `Top` and `DoubleClick` (default on: the second press of a
+//! double-click only reports it; off, every press selects, as VERA's Mods
+//! page does). The scrollbar capture and the double-click timing stay in the
+//! node's `WidgetState::List`; the limits are the GUI's
+//! ([`crate::Gui::set_double_click`]).
 
 use std::sync::OnceLock;
 
 use super::{Capture, Ctx, WidgetState};
 use crate::Rect;
 use crate::gui::{UiEvent, UiMs};
-use crate::node::{NodeId, Prop, Value};
-use crate::shell::list::{ListBoxState, ListMetrics};
+use crate::node::{Node, NodeId, Prop, Tree, Value};
+use crate::shell::list::{
+    ListBoxState, ListMetrics, ListScrollPart, ShellListGeometry, list_box_geometry,
+};
 use crate::time::{Duration, Instant};
 
 #[derive(Debug)]
@@ -35,10 +40,6 @@ impl Default for ListState {
     }
 }
 
-/// The host double-click policy off Windows (`host_double_click_limits` in
-/// the engine's `saved_file_input`): 500 ms within a 4x4 px rectangle.
-const DOUBLE_CLICK: (Duration, i32, i32) = (Duration::from_millis(500), 4, 4);
-
 /// The substrate keeps its timers as `Instant`s; the GUI clock is `UiMs`.
 /// One process-wide epoch maps between them.
 fn epoch() -> Instant {
@@ -54,6 +55,44 @@ fn ui_ms(at: Instant) -> UiMs {
     at.saturating_duration_since(epoch()).as_millis() as UiMs
 }
 
+/// What the host paints of a list: its rows, top, selection and the
+/// scrollbar arrow drawn pushed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ListView {
+    pub rows: usize,
+    pub top: usize,
+    pub selected: Option<usize>,
+    pub pressed: Option<ListScrollPart>,
+}
+
+impl ListView {
+    /// The list box geometry in window `list` ([`list_box_geometry`]).
+    pub fn geometry(&self, list: Rect, metrics: ListMetrics) -> ShellListGeometry {
+        list_box_geometry(list, self.rows, self.top, metrics)
+    }
+}
+
+fn row_count(n: &Node) -> usize {
+    match n.props.get(&Prop::Items) {
+        Some(Value::Items(items)) => items.len(),
+        _ => n.int_prop(Prop::RowCount, 0).max(0) as usize,
+    }
+}
+
+pub(crate) fn view(tree: &Tree, node: NodeId) -> Option<ListView> {
+    let n = tree.node(node).ok()?;
+    let pressed = match &n.state {
+        WidgetState::List(state) => state.list.scroll.pressed_part(),
+        _ => None,
+    };
+    Some(ListView {
+        rows: row_count(n),
+        top: n.int_prop(Prop::Top, 0).max(0) as usize,
+        selected: usize::try_from(n.int_prop(Prop::Selected, -1)).ok(),
+        pressed,
+    })
+}
+
 /// Runs `f` on the node's list box with its props loaded, then writes the
 /// top and selection back; a moved top is the user's scroll (`Scrolled`).
 fn with_list<R>(
@@ -64,10 +103,7 @@ fn with_list<R>(
     let rect = ctx.tree.screen_rect(node).ok()?;
     let metrics = ListMetrics::scaled(ctx.scale);
     let n = ctx.tree.node_mut(node).ok()?;
-    let count = match n.props.get(&Prop::Items) {
-        Some(Value::Items(items)) => items.len(),
-        _ => n.int_prop(Prop::RowCount, 0).max(0) as usize,
-    };
+    let count = row_count(n);
     let top = n.int_prop(Prop::Top, 0).max(0) as usize;
     let selected = usize::try_from(n.int_prop(Prop::Selected, -1)).ok();
     let mut state = match std::mem::take(&mut n.state) {
@@ -97,6 +133,12 @@ fn with_list<R>(
 
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture {
     let now = instant(ctx.now);
+    let (ms, w, h) = ctx.double_click;
+    let limits = (Duration::from_millis(ms), w, h);
+    let double_click = ctx
+        .tree
+        .node(node)
+        .is_ok_and(|n| n.bool_prop(Prop::DoubleClick, true));
     with_list(ctx, node, |s, rect, metrics, events| {
         s.pointer = (x, y);
         // The scrollbar child (0x0061C690) captures its own presses and
@@ -107,7 +149,7 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
         // CS_DBLCLKS: the second press only forwards LBN_DBLCLK
         // (0x0061A904..0x0061A945), wherever it landed; the host opens the
         // current selection.
-        if s.list.is_double_click(now, x, y, DOUBLE_CLICK) {
+        if double_click && s.list.is_double_click(now, x, y, limits) {
             if let Some(row) = s.list.selected {
                 events.push(UiEvent::ListDoubleClicked {
                     node,
@@ -235,6 +277,19 @@ mod tests {
         // Below the last row: no selection change.
         assert_eq!(click(&mut g, 50, 20 + 19 * 5, 2000), vec![]);
         assert_eq!(g.get(list, Prop::Selected).unwrap(), Some(&Value::Int(1)));
+    }
+
+    #[test]
+    fn with_double_click_off_every_press_selects() {
+        let (mut g, list) = list_page(Value::Int(3));
+        g.set(list, Prop::DoubleClick, Value::Bool(false)).unwrap();
+        let row1 = 20 + 19 + 5;
+        for now in [0, 300] {
+            assert_eq!(
+                click(&mut g, 50, row1, now),
+                vec![UiEvent::ListSelected { node: list, row: 1 }]
+            );
+        }
     }
 
     #[test]

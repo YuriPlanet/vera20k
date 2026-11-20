@@ -122,6 +122,9 @@ pub struct Gui {
     dialogs: Vec<Dialog>,
     next_dialog: u32,
     events: Vec<UiEvent>,
+    /// List double-click limits: milliseconds within a width x height
+    /// rectangle of the previous press.
+    double_click: (UiMs, i32, i32),
 }
 
 impl Gui {
@@ -131,7 +134,16 @@ impl Gui {
             dialogs: Vec::new(),
             next_dialog: 0,
             events: Vec::new(),
+            // The host policy off Windows (`host_double_click_limits` in the
+            // engine's `saved_file_input`).
+            double_click: (500, 4, 4),
         }
+    }
+
+    /// The host's double-click time and rectangle (Windows: GetDoubleClickTime,
+    /// SM_CXDOUBLECLK, SM_CYDOUBLECLK).
+    pub fn set_double_click(&mut self, ms: UiMs, width: i32, height: i32) {
+        self.double_click = (ms, width, height);
     }
 
     pub fn tree(&self) -> &Tree {
@@ -155,11 +167,12 @@ impl Gui {
         let tree = &self.tree;
         self.dialogs.retain(|d| tree.kind(d.root).is_ok());
         for d in &mut self.dialogs {
-            for slot in [&mut d.pointer.pressed, &mut d.pointer.hovered] {
+            for slot in [&mut d.pointer.pressed, &mut d.pointer.hovered, &mut d.pointer.popup, &mut d.pointer.focus] {
                 if slot.is_some_and(|n| tree.kind(n).is_err()) {
                     *slot = None;
                 }
             }
+            d.pointer.dragging &= d.pointer.pressed.is_some();
         }
         Ok(())
     }
@@ -221,6 +234,24 @@ impl Gui {
         }
     }
 
+    /// Drops the top dialog's capture and hover when the host loses the
+    /// pointer (`0x0061E3AF..0x0061E44E` for a held trackbar); an open
+    /// drop-down stays open.
+    pub fn cancel_pointer(&mut self) {
+        if let Some(d) = self.dialogs.last_mut() {
+            d.pointer.pressed = None;
+            d.pointer.dragging = false;
+            d.pointer.hovered = None;
+            d.pointer.hover_started = None;
+        }
+    }
+
+    /// Whether the top dialog's captured trackbar follows the pointer (the
+    /// press took its thumb).
+    pub fn dragging(&self) -> bool {
+        self.top_pointer().dragging
+    }
+
     pub fn pressed_in(&self, id: DialogId) -> Option<NodeId> {
         self.dialog(id).and_then(|d| d.pointer.pressed)
     }
@@ -272,6 +303,11 @@ impl Gui {
                 }
                 InputEvent::PointerMove { x, y } => {
                     self.with_ctx(now, |ctx| widget::combo::popup_move(ctx, popup, x, y));
+                    // The list is a window of its own: the dialog under it
+                    // still hit-tests the rest of the screen (status help).
+                    let covered = self.combo_drop_down(popup).is_some_and(|d| d.popup.rect.contains(x, y));
+                    let over = self.hit(root, x, y).filter(|_| !covered);
+                    self.set_hover(over, now);
                     return InputResult { consumed: true };
                 }
                 InputEvent::PointerUp { x, y, button: MouseButton::Left } => {
@@ -398,11 +434,26 @@ impl Gui {
         self.top_pointer().popup
     }
 
+    /// Closes the top dialog's open drop-down for the host (no event, as a
+    /// host `set` reports none); true when one was open.
+    pub fn close_popup(&mut self) -> bool {
+        let Some(node) = self.dialogs.last_mut().and_then(|d| d.pointer.popup.take()) else {
+            return false;
+        };
+        widget::combo::dismiss(&mut self.tree, node);
+        true
+    }
+
     /// The open drop-down of combo `node` (in any dialog), on the geometry its
     /// pointer input hits, for the host to paint.
     pub fn combo_drop_down(&self, node: NodeId) -> Option<widget::combo::ComboDropDown> {
         let d = self.dialogs.iter().find(|d| d.pointer.popup == Some(node))?;
         widget::combo::drop_down(&self.tree, node, d.scale)
+    }
+
+    /// What the host paints of List `node`.
+    pub fn list_view(&self, node: NodeId) -> Option<widget::list::ListView> {
+        widget::list::view(&self.tree, node)
     }
 
     fn with_ctx<R>(&mut self, now: UiMs, f: impl FnOnce(&mut Ctx<'_>) -> R) -> R {
@@ -412,6 +463,7 @@ impl Gui {
             events: &mut self.events,
             scale: d.scale,
             now,
+            double_click: self.double_click,
             popup: &mut d.pointer.popup,
             focus: &mut d.pointer.focus,
         };
@@ -434,6 +486,16 @@ impl Gui {
             return;
         }
         let Ok(n) = self.tree.node(node) else { return };
+        if n.kind == NodeKind::Checkbox {
+            // OwnerDraw_CheckBox 0x006163A0 admits a press only on its
+            // 18x18 icon at the row's left; a `HitRect` takes it anywhere.
+            let rect = self.tree.screen_rect(node).unwrap_or_default();
+            let scale = self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale);
+            let anywhere = n.props.contains_key(&Prop::HitRect);
+            if !anywhere && !scale.derive_rect(rect, |r| Rect::new(r.x, r.y, 18, 18)).contains(x, y) {
+                return;
+            }
+        }
         match n.kind {
             NodeKind::Checkbox if n.bool_prop(Prop::ActivateOnPress, false) => self.toggle(node),
             NodeKind::Trackbar => {
@@ -553,7 +615,7 @@ impl Gui {
             if found.is_none()
                 && kind.is_focusable()
                 && self.tree.effective(id, Prop::Visible)
-                && self.tree.screen_rect(id).is_ok_and(|r| r.contains(x, y))
+                && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
             {
                 found = Some(id);
             }
@@ -572,8 +634,11 @@ impl Gui {
     }
 }
 
+/// The trackbar's range; without its value plaque the track runs to the
+/// window's right end (`0x4AC` with 0).
 fn trackbar_range(n: &crate::node::Node) -> TrackbarRange {
     TrackbarRange::new(n.int_prop(Prop::Min, 0), n.int_prop(Prop::Max, 100), n.int_prop(Prop::Step, 1))
+        .with_plaque(n.bool_prop(Prop::ShowValue, true))
 }
 
 /// 612B70's timer highlight: 1000 ms alternating, starting off.
@@ -688,6 +753,20 @@ mod tests {
     }
 
     #[test]
+    fn checkbox_takes_a_press_only_on_its_icon() {
+        let (mut g, _, _) = page_with_two_buttons();
+        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
+        let cb = g.create(NodeKind::Checkbox, Some(root)).unwrap();
+        g.set(cb, Prop::Rect, Value::Rect(Rect::new(30, 0, 100, 20))).unwrap();
+        g.set(cb, Prop::ActivateOnPress, Value::Bool(true)).unwrap();
+        down(&mut g, 30 + 18);
+        assert_eq!(g.hovered(), Some(cb), "the caption still hovers");
+        assert_eq!(g.get(cb, Prop::Checked).unwrap(), None);
+        down(&mut g, 30 + 17);
+        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(true)));
+    }
+
+    #[test]
     fn trackbar_jumps_beside_the_thumb_and_drags_only_from_it() {
         let mut g = Gui::new(8);
         let root = g.create(NodeKind::Dialog, None).unwrap();
@@ -716,6 +795,30 @@ mod tests {
             .filter(|e| matches!(e, UiEvent::Changed { final_: true, .. }))
             .count();
         assert_eq!(finals, 2, "every release reports the final position");
+    }
+
+    #[test]
+    fn a_hit_rect_checkbox_toggles_anywhere_in_it_and_a_plaqueless_track_runs_to_the_end() {
+        let (mut g, _, _) = page_with_two_buttons();
+        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
+        let cb = g.create(NodeKind::Checkbox, Some(root)).unwrap();
+        g.set(cb, Prop::Rect, Value::Rect(Rect::new(60, 0, 20, 10))).unwrap();
+        g.set(cb, Prop::HitRect, Value::Rect(Rect::new(30, 0, 100, 10))).unwrap();
+        g.set(cb, Prop::ActivateOnPress, Value::Bool(true)).unwrap();
+        down(&mut g, 31);
+        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(true)));
+        // 120 px, 0..=2, no plaque: the track spans the whole window
+        // (`0x0061D950` with a zero reserve), so its middle is the middle
+        // value; a 50 px plaque would make it the top one.
+        let bar = g.create(NodeKind::Trackbar, Some(root)).unwrap();
+        g.set(bar, Prop::Rect, Value::Rect(Rect::new(0, 20, 120, 20))).unwrap();
+        g.set(bar, Prop::Max, Value::Int(2)).unwrap();
+        g.set(bar, Prop::ShowValue, Value::Bool(false)).unwrap();
+        g.input(InputEvent::PointerDown { x: 60, y: 35, button: MouseButton::Left }, 0);
+        assert_eq!(g.get(bar, Prop::Pos).unwrap(), Some(&Value::Int(1)));
+        // Losing the pointer drops the hold.
+        g.cancel_pointer();
+        assert_eq!((g.pressed(), g.dragging()), (None, false));
     }
 
     #[test]

@@ -73,7 +73,7 @@ impl InternetPauseControls {
 /// Controls button as its tab. gamemd opens BBB as a dialog of its own from
 /// that button (4F11B0 writes state 5). Its Options button shows the main
 /// menu's pages with their own column.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub(crate) struct InGameOptionsPage {
     pub(crate) dialog: OptionsDialogState,
     /// What the controls showed at open: only one the player moves writes.
