@@ -322,13 +322,19 @@ impl Simulation {
             overlays: self.overlay_grid.as_ref(),
             playfield_bounds: self.playfield_bounds,
         }
-        .rebuild_zones(path_grid, terrain, self.bridge_state.as_ref());
+        .rebuild_zones(
+            Arc::new(path_grid.clone()),
+            terrain,
+            self.bridge_state.as_ref(),
+        );
     }
 
     /// Rebuild without `rebuild_zones`' reuse of unchanged inputs. Reduced zone
     /// type can change while boolean walkability stays identical (notably a
     /// live OccupationBits=0 terrain object changing Building to Ground).
-    pub(super) fn rebuild_zone_grid_full(&mut self, path_grid: &PathGrid) {
+    ///
+    /// Publishes `path_grid` as it is.
+    pub(super) fn rebuild_zone_grid_full(&mut self, path_grid: Arc<PathGrid>) {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
         };

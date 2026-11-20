@@ -371,7 +371,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
         sim.overlay_grid.as_ref(),
     );
     assert!(input_path_grid.is_walkable(0, 0));
-    sim.rebuild_zone_grid_full(&input_path_grid);
+    sim.rebuild_zone_grid_full(std::sync::Arc::new(input_path_grid.clone()));
     assert_eq!(
         sim.zone_grid
             .as_ref()

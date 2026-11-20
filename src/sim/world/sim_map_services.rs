@@ -582,7 +582,7 @@ impl Simulation {
         // native connectivity plus every retained hierarchy level without
         // discarding dynamic building blockers.
         if let Some(path_grid) = self.path_grid.clone() {
-            self.rebuild_zone_grid_full(path_grid.as_ref());
+            self.rebuild_zone_grid_full(path_grid);
         }
 
         // Native calls RefreshRadar after the cell/zone rebuild. The distinct

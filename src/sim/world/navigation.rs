@@ -169,7 +169,7 @@ impl NavigationCaches<'_> {
             )?;
             *self.path = Some(Arc::new(grid));
         } else {
-            self.rebuild_zones(&grid, terrain, bridges);
+            self.rebuild_zones(Arc::new(grid), terrain, bridges);
         }
         Ok(structure_cells)
     }
@@ -237,9 +237,10 @@ impl NavigationCaches<'_> {
         Ok(())
     }
 
+    /// Publish `path_grid` and the zones for it.
     pub(super) fn rebuild_zones(
         &mut self,
-        path_grid: &PathGrid,
+        path_grid: Arc<PathGrid>,
         terrain: &ResolvedTerrainGrid,
         bridges: Option<&BridgeRuntimeState>,
     ) {
@@ -260,13 +261,13 @@ impl NavigationCaches<'_> {
         // repairs go through `repair_zone_cell` at their mutation owners).
         if let (Some(prev), Some(zones)) = (self.path.as_deref(), self.zones.as_ref())
             && prev
-                .diff_cells(path_grid)
+                .diff_cells(&path_grid)
                 .is_some_and(|changed| changed.is_empty())
             && zones.movement_classes_match(terrain)
         {
             // PathGrid does not carry CellClass reduced zone type.
             // Both path state and retained base classes must match.
-            *self.path = Some(Arc::new(path_grid.clone()));
+            *self.path = Some(path_grid);
             return;
         }
         self.rebuild_zones_full(path_grid, terrain, bridges);
@@ -276,13 +277,13 @@ impl NavigationCaches<'_> {
     /// though boolean walkability remains identical (e.g. OccupationBits=0).
     pub(super) fn rebuild_zones_full(
         &mut self,
-        path_grid: &PathGrid,
+        path_grid: Arc<PathGrid>,
         terrain: &ResolvedTerrainGrid,
         bridges: Option<&BridgeRuntimeState>,
     ) {
         *self.zones = Some(
             ZoneGrid::build_with_native_map_context(
-                path_grid,
+                &path_grid,
                 terrain,
                 bridges
                     .map(BridgeRuntimeState::endpoint_records)
@@ -292,6 +293,6 @@ impl NavigationCaches<'_> {
             )
             .into(),
         );
-        *self.path = Some(Arc::new(path_grid.clone()));
+        *self.path = Some(path_grid);
     }
 }

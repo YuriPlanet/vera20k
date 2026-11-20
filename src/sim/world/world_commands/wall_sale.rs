@@ -278,7 +278,7 @@ impl Simulation {
         // before the conditional target clear, then Team targets detach.
         self.stop_all_targeting_cell(rx, ry, rules, effects);
 
-        if let Some(tail_grid) = tail_grid {
+        if let Some(tail_grid) = tail_grid.map(std::sync::Arc::new) {
             if self.zone_grid.is_some() {
                 // HouseClass performs the sold-cell AssignOrphaned/graph tail
                 // after PostDestructionWallCleanup has completed every visit.
@@ -289,9 +289,9 @@ impl Simulation {
                     ZoneRepairKind::AssignOrphaned,
                 );
             } else {
-                self.rebuild_zone_grid_full(&tail_grid);
+                self.rebuild_zone_grid_full(std::sync::Arc::clone(&tail_grid));
             }
-            self.path_grid = Some(std::sync::Arc::new(tail_grid));
+            self.path_grid = Some(tail_grid);
         }
         true
     }

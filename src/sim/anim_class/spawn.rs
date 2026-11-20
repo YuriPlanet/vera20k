@@ -655,17 +655,20 @@ impl Simulation {
         // The MoveFlash alone runs in the clicking game only; a presentation
         // anim runs in every game alike, so it may name what it plays.
         let private = local && !presentation;
-        let type_name = self
-            .interner
-            .resolve(descriptor.type_name)
-            .to_ascii_uppercase();
         // Borrowed from the rules, which outlive the spawn: the record is
-        // only read.
+        // only read. The lookup folds case itself.
         let config = rules
             .art()
-            .anim_runtime_config(&type_name)
+            .anim_runtime_config(self.interner.resolve(descriptor.type_name))
             .ok_or(AnimSpawnError::MissingType(descriptor.type_name))?;
-        let (effective_end, effective_loop_end) = effective_bounds(&type_name, config)?;
+        // The refusals name the type in uppercase, as the ART key is written.
+        let (effective_end, effective_loop_end) = effective_bounds(config).ok_or_else(|| {
+            AnimSpawnError::UnboundType(
+                self.interner
+                    .resolve(descriptor.type_name)
+                    .to_ascii_uppercase(),
+            )
+        })?;
         let reverse = descriptor.reverse || config.reverse;
         // VERA-only: a local anim never adds a name to the interner, which the
         // other games would lack; a StopSound name not yet interned is left out.
@@ -780,7 +783,12 @@ impl Simulation {
                         // VERA's explicit unsupported-arithmetic failure precedes
                         // Reveal. The original constructor ID remains spent.
                         self.substrate.anims.remove(stable_id);
-                        return Err(AnimSpawnError::LaunchOutOfDomain(type_name, error));
+                        return Err(AnimSpawnError::LaunchOutOfDomain(
+                            self.interner
+                                .resolve(descriptor.type_name)
+                                .to_ascii_uppercase(),
+                            error,
+                        ));
                     }
                 }
             }
@@ -827,14 +835,18 @@ impl Simulation {
             .is_some_and(|owner| self.anim_owner_coords(owner).is_some());
         self.reveal_anim(stable_id, rules, !attaches || start_reaches_display);
         //42264D..4226BF reveals DropZone before the constructor-time Start.
-        if rules
-            .general
-            .drop_zone_anim
-            .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(&type_name))
-        {
+        if rules.general.drop_zone_anim.as_deref().is_some_and(|name| {
+            name.eq_ignore_ascii_case(self.interner.resolve(descriptor.type_name))
+        }) {
             self.reveal_drop_zone_from_anim(rules, initial_world_coord);
         }
+        // RESIDUAL (VERA-only refusal): Start can refuse a mod's invalid
+        // Tiberium Image start after the anim was registered, revealed and
+        // given its start sound and Middle. The refusal returns with the
+        // anim still stored, so a producer that writes after construction
+        // (a map tile anim's ZAdjust, `runtime::spawn_terrain_tile_animations`)
+        // leaves it without that write. Removing it here would not undo what
+        // Start already did.
         if descriptor.delay == 0 {
             self.anim_start(
                 stable_id,
@@ -1095,16 +1107,13 @@ impl Simulation {
     }
 }
 
-pub(super) fn effective_bounds(
-    type_name: &str,
-    config: &AnimTypeRuntimeConfig,
-) -> Result<(i32, i32), AnimSpawnError> {
+/// The type's effective End and LoopEnd, or `None` when its ART body was read
+/// but no SHP frame count was bound.
+pub(super) fn effective_bounds(config: &AnimTypeRuntimeConfig) -> Option<(i32, i32)> {
     if !config.art_body_read {
-        return Ok((config.end, config.loop_end));
+        return Some((config.end, config.loop_end));
     }
-    let raw = config
-        .raw_shp_frame_count
-        .ok_or_else(|| AnimSpawnError::UnboundType(type_name.to_string()))?;
+    let raw = config.raw_shp_frame_count?;
     let effective_end = if config.end == -1 {
         if config.shadow { raw / 2 } else { raw }
     } else {
@@ -1115,7 +1124,7 @@ pub(super) fn effective_bounds(
     } else {
         config.loop_end
     };
-    Ok((effective_end, effective_loop_end))
+    Some((effective_end, effective_loop_end))
 }
 
 /// The Scenario draws `AnimClass::AnimClass @ 0x00421EA0` takes, in order:
