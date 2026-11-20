@@ -1628,8 +1628,10 @@ impl Simulation {
         self.human_player_client_set(house).to_vec()
     }
 
-    /// [`Self::human_player_clients`] without copying the client list: a
-    /// shot's RevealOnFire asks it per shot at a human player's object.
+    /// [`Self::human_player_clients`] without the extra copy of the client
+    /// list (inside the object pass the list is the pass's own, so nothing is
+    /// copied): a shot's RevealOnFire asks it per shot at a human player's
+    /// object.
     pub(crate) fn human_player_client_set(&self, house: InternedId) -> HumanPlayerClients {
         let control = super::ControlProjection::for_native_view(&self.session, &self.houses);
         if control.uses_player_pointer() {
