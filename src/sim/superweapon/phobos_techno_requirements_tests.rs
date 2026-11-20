@@ -15,6 +15,7 @@ const BASE: &str = "[InfantryTypes]\n0=E1\n1=DESO\n[VehicleTypes]\n0=MTNK\n\
 [E1]\nStrength=100\nSpeed=4\n\
 [DESO]\nStrength=100\nSpeed=4\n\
 [MTNK]\nStrength=300\nSpeed=6\n\
+[General]\nAIFireSale=no\n\
 [SuperWeaponTypes]\n0=GateSpecial\n\
 [GateSpecial]\nType=PsychicReveal\nRechargeTime=1\nIsPowered=no\n";
 const ART: &str = "[GACLAB]\nFoundation=1x1\n[NATIVEAUX]\nFoundation=1x1\n";

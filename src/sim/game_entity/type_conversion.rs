@@ -574,8 +574,22 @@ impl Simulation {
                 effects,
             );
         }
-        self.houses.request_house_tech_tree_recheck(old_owner);
-        self.houses.request_house_tech_tree_recheck(new_owner);
+        // An Ares game refreshes only a declared prerequisite alternate
+        // (both Houses); a Building keeps its independent vanilla tail, and
+        // the stock game rechecks both.
+        let entity = self.substrate.entities.get(id);
+        let declared = entity.is_some_and(|entity| {
+            rules.is_ares_prerequisite_alternate(
+                entity.category().into(),
+                self.interner.resolve(entity.type_ref()),
+            )
+        });
+        let vanilla_building =
+            entity.is_some_and(|entity| entity.category() == EntityCategory::Structure);
+        if !rules.ares() || declared || vanilla_building {
+            self.houses.request_house_tech_tree_recheck(old_owner);
+            self.houses.request_house_tech_tree_recheck(new_owner);
+        }
     }
 
     /// Phobos `TechnoExt::ChangeOwnerMissionFix`

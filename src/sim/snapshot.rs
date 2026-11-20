@@ -9222,7 +9222,7 @@ mod tests {
         // `place_spawned` resolves the owner against `sim.interner`; re-intern so
         // the id is valid there (test_default uses the thread-local test interner).
         ge.set_owner_for_test(sim.interner.intern("Americans"));
-        let id = Simulation::create_limbo(&mut sim.substrate, &mut sim.houses, ge);
+        let id = Simulation::create_limbo(&mut sim.substrate, &mut sim.houses, ge, false);
 
         let e = sim.substrate.entities.get(id).expect("entity in store");
         assert!(

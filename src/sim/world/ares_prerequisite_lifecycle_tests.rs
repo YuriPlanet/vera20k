@@ -8,6 +8,8 @@ use crate::sim::house_state::HouseState;
 use crate::sim::production::ProductionCategory;
 
 fn fixture(category: &str, declared: bool) -> (Simulation, RuleSet, InternedId, InternedId, u64) {
+    // `PrerequisiteCustomAlternate` is an Ares key.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let registry = match category {
         "building" => "[VehicleTypes]\n0=OTHER\n[BuildingTypes]\n0=ALT\n",
         "unit" => "[VehicleTypes]\n0=OTHER\n1=ALT\n",

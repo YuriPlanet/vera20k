@@ -7411,7 +7411,7 @@ impl Simulation {
         }
         // `0x7015C9` runs its AutoDeath block before the tracking work.
         self.check_auto_death_owner_change(stable_id, new_owner, rules);
-        self.phobos_tracking_change_owner(stable_id, new_owner);
+        self.phobos_tracking_change_owner(stable_id, new_owner, rules.phobos());
         // `0x7015C9`'s Foot arm runs before the caller's tracking work: a
         // human<->computer change converts the Foot through the old type's
         // keys and fixes its mission, with the old owner still installed.

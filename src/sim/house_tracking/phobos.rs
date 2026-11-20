@@ -192,7 +192,12 @@ impl Simulation {
 
     /// TechnoClass_Captured_UpdateTracking @ 0x007015C9 transfers limbo counts
     /// while the old owner is still installed, before stock Remove/Add_Tracking.
-    pub(crate) fn phobos_tracking_change_owner(&mut self, id: u64, new_owner: InternedId) {
+    pub(crate) fn phobos_tracking_change_owner(
+        &mut self,
+        id: u64,
+        new_owner: InternedId,
+        phobos: bool,
+    ) {
         if self.substrate.phobos_limbo_control.enabled
             && let Some(entity) = self.substrate.entities.get(id)
             && entity.lifecycle.in_limbo()
@@ -206,7 +211,8 @@ impl Simulation {
         }
         // The same 0x007015C9 hook requests both Foot houses independently
         // of limbo and Ares prerequisite-alternate membership.
-        if let Some(entity) = self.substrate.entities.get(id)
+        if phobos
+            && let Some(entity) = self.substrate.entities.get(id)
             && entity.category().is_foot()
         {
             let old_owner = entity.owner();

@@ -1919,7 +1919,6 @@ impl Simulation {
                     return;
                 }
             }
-            return;
         }
         if !house.is_controlled_by_human(game_mode_nonzero) && !house.multiplay_passive() {
             if let Some(entity) = substrate.entities.get_mut(stable_id) {

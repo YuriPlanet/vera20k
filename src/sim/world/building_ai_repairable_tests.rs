@@ -9,6 +9,8 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 
 fn rules(basic: &str) -> RuleSet {
+    // `[Basic] RepairBaseNodes=` and the house slots are Ares keys.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     RuleSet::from_ini(&IniFile::from_str(&format!(
         "[Basic]\n{basic}\
          [BuildingTypes]\n0=POWER\n[POWER]\nStrength=100\nFoundation=1x1\n"

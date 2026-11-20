@@ -246,7 +246,8 @@ pub(super) fn manager_rules() -> RuleSet {
 
 fn manager_ini() -> IniFile {
     IniFile::from_str(
-        "[Countries]\n0=Americans\n1=Russians\n[InfantryTypes]\n0=E1\n1=SLAV\n\
+        "[Countries]\n0=Americans\n1=Russians\n[General]\nAIFireSale=no\n\
+         [InfantryTypes]\n0=E1\n1=SLAV\n\
          [VehicleTypes]\n0=MTNK\n1=SMIN\n\
          [AircraftTypes]\n0=HORN\n1=ORCA\n\
          [BuildingTypes]\n0=GAPILE\n1=GAWEAP\n2=GACNST\n3=YAREFN\n4=GATECH\n5=GAAIRC\n6=GAPOWR\n\
@@ -1901,7 +1902,7 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     // abandons construct the next queued heads and their slaves.
     assert_eq!(
         live.simulation.houses[&owner].tech_recheck_pending(),
-        crate::rules::PHOBOS_ENABLED
+        live.resources.rules.phobos()
     );
     let head = held_id(&live.simulation, owner, ProductionCategory::Vehicle);
     assert_eq!(

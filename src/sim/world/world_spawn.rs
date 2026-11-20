@@ -1282,7 +1282,8 @@ impl Simulation {
             return Ok(None);
         };
 
-        let stable_id = Self::create_limbo(&mut self.substrate, &mut self.houses, ge);
+        let stable_id =
+            Self::create_limbo(&mut self.substrate, &mut self.houses, ge, rules.phobos());
         self.commit_constructor_owned_techno_children(stable_id, rules, frame_effects);
         Self::register_house_base_building(
             &self.interner,
@@ -1989,6 +1990,7 @@ impl Simulation {
         substrate: &mut ObjectSubstrate,
         houses: &mut Houses,
         mut ge: GameEntity,
+        phobos: bool,
     ) -> u64 {
         let stable_id = ge.stable_id();
 
@@ -2010,7 +2012,8 @@ impl Simulation {
         substrate.entities.insert(ge);
         // Phobos TechnoExt::InitializeState, hook 0x006F42F7: every Foot
         // requests the owner's existing tech-tree tail for Aux/NegTechnos.
-        if let Some(entity) = substrate.entities.get(stable_id)
+        if phobos
+            && let Some(entity) = substrate.entities.get(stable_id)
             && entity.category().is_foot()
         {
             houses.request_house_tech_tree_recheck(entity.owner());
@@ -2087,8 +2090,9 @@ impl Simulation {
         substrate: &mut ObjectSubstrate,
         houses: &mut Houses,
         ge: GameEntity,
+        phobos: bool,
     ) -> u64 {
-        Self::store_spawned_limbo(substrate, houses, ge)
+        Self::store_spawned_limbo(substrate, houses, ge, phobos)
     }
 
     /// Store a new object, then place it through active
@@ -2099,7 +2103,7 @@ impl Simulation {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn unlimbo(&mut self, ge: GameEntity) -> (u64, RevealOutcome) {
         let position = ge.position;
-        let stable_id = Self::store_spawned_limbo(&mut self.substrate, &mut self.houses, ge);
+        let stable_id = Self::store_spawned_limbo(&mut self.substrate, &mut self.houses, ge, false);
         let outcome = self.try_reveal_entity(
             stable_id,
             RevealRequest {
@@ -2140,7 +2144,12 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> (u64, RevealPosition) {
         let position = ge.position;
-        let stable_id = Self::store_spawned_limbo(&mut self.substrate, &mut self.houses, ge);
+        let stable_id = Self::store_spawned_limbo(
+            &mut self.substrate,
+            &mut self.houses,
+            ge,
+            rules.phobos(),
+        );
         self.commit_constructor_owned_techno_children(stable_id, rules, frame_effects);
         Self::register_house_base_building(
             &self.interner,
