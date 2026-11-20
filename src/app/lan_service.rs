@@ -1403,8 +1403,9 @@ impl DirectAdmission {
         // Hash the launch every participant shares, so a different map,
         // option or roster can never enter another participant's scope. It
         // also holds each player's own Terrain Deformation and Superweapon
-        // Limit (`start_spawn_session`), so players whose Options rules
-        // differ never share one either.
+        // Limit (`start_spawn_session`, which leaves the Building Production
+        // Queue off), so players whose Options rules differ never share one
+        // either.
         let mut shared = launch.clone();
         shared.local_player_index = 0;
         shared.selected_map_file = None;

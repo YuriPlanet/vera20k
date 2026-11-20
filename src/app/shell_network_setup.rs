@@ -21,7 +21,7 @@ pub(crate) use service::{
     prepare_lan_guest_handoff, refuse_local_acceptance, service_event, set_network_map_progress,
 };
 mod teams;
-pub(crate) use teams::{lobby_refused_option, starts_needed};
+pub(crate) use teams::{lobby_refused_building_queue, lobby_refused_option, starts_needed};
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{
@@ -813,9 +813,10 @@ impl App {
             }
         };
         // VERA: the room plays its host's rules, the Terrain Deformation and
-        // Superweapon Limit of the host's skirmish Game Options, which the host
-        // can change in the room's Game Options. Quick Match plays the
-        // original game.
+        // Superweapon Limit of the host's skirmish Game Options and the
+        // Building Production Queue of the Options page, which the host can
+        // change in the room's Game Options. Quick Match plays the original
+        // game.
         if !(dialog.wol() && crate::app::shell_wol::lobby::quick_match_runner(state)) {
             launch.options.host_rules =
                 crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
