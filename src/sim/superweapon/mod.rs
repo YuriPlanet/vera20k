@@ -1558,6 +1558,7 @@ pub struct SuperTimerView {
     on_hold: bool,
     recharge_frames: i32,
     place: u32,
+    is_ready: bool,
 }
 
 impl SuperTimerView {
@@ -1577,7 +1578,13 @@ impl SuperTimerView {
             on_hold,
             recharge_frames,
             place,
+            is_ready: false,
         }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_ready_for_test(self, is_ready: bool) -> Self {
+        Self { is_ready, ..self }
     }
 
     pub fn owner(self) -> InternedId {
@@ -1608,6 +1615,11 @@ impl SuperTimerView {
     pub fn place(self) -> u32 {
         self.place
     }
+
+    /// Fully charged and ready to fire (`+0x6F`).
+    pub fn is_ready(self) -> bool {
+        self.is_ready
+    }
 }
 
 /// The timer list, in its order.
@@ -1630,6 +1642,7 @@ pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerVie
                         .super_weapon(sim.interner.resolve(instance.type_id))
                         .map_or(0, |sw| instance.recharge_time(sw)),
                     place: instance.timer_place?,
+                    is_ready: instance.is_ready,
                 })
             })
         })
