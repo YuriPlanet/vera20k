@@ -835,7 +835,6 @@ mod tests {
     fn a_guest_missing_the_map_waits_for_its_answer_before_downloading() {
         let now = Instant::now();
         let transfer = |resource| Transfer {
-            active: Arc::new(()),
             resource,
             direction: Direction::Download,
             bytes: Vec::new(),
@@ -844,6 +843,7 @@ mod tests {
             retry_at: now,
             deadline: now,
             retries: 0,
+            active: Arc::new(()),
             directory: PathBuf::new(),
         };
         let mut maps = Transfers {
