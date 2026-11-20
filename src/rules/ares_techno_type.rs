@@ -67,6 +67,12 @@ pub(crate) struct AresTechnoTypeRules {
 /// replaced, so one field holds both. `RequirementsMet @ 10021FF0`,
 /// `PrerequisitesMet @ 10021CA0` and `PrerequisitesListed @ 10021C50`
 /// consume these.
+/// VERA's bound on `Prerequisite.Lists=`, the lists after list 0. Ares sizes
+/// the vector by the raw value (`TechnoTypeExt::LoadFromINIFile`, no upper
+/// bound), so a value near `i32::MAX` exhausts memory there. Outside data
+/// never stops the game: the count clamps here, far above any mod's lists.
+const PREREQUISITE_LIST_LIMIT: i32 = 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresPrerequisiteRules {
     /// Lists 1.. of +0x40 (`Prerequisite.List1=` on).
@@ -107,9 +113,12 @@ impl AresPrerequisiteRules {
         let _ares = crate::rules::ares_switch::ares_reads();
         // `INIClass::ReadInteger("Prerequisite.Lists", size - 1)`, at least
         // 0, plus one: the vector grows with empty lists or is truncated.
-        // Initialize (1003DEC0) sized it to one at the first read.
-        let current = i32::try_from(self.extra_lists.len()).unwrap_or(i32::MAX);
-        let extra = section.read_int("Prerequisite.Lists", current).max(0);
+        // Initialize (1003DEC0) sized it to one at the first read. The upper
+        // clamp is VERA's (`PREREQUISITE_LIST_LIMIT`), so `current` fits.
+        let current = i32::try_from(self.extra_lists.len()).unwrap_or(PREREQUISITE_LIST_LIMIT);
+        let extra = section
+            .read_int("Prerequisite.Lists", current)
+            .clamp(0, PREREQUISITE_LIST_LIMIT);
         self.extra_lists
             .resize(usize::try_from(extra).unwrap_or(0), Vec::new());
         // `Prerequisite` (list 0) and `PrerequisiteOverride` come next; the
@@ -1408,6 +1417,21 @@ mod tests {
             .process()
             .unwrap();
         RuleSet::from_processed_rules(&processed).unwrap()
+    }
+
+    /// `Prerequisite.Lists=` clamps at VERA's bound instead of sizing the
+    /// vector by the raw value.
+    #[test]
+    fn prerequisite_lists_clamp_at_the_list_limit() {
+        let ini = IniFile::from_str("[T]\nPrerequisite.Lists=1000000\n");
+        let mut prerequisites = super::AresPrerequisiteRules::default();
+        prerequisites.read_pass(ini.section_or_empty("T"), &mut Vec::new(), |_, prior| {
+            prior.to_vec()
+        });
+        assert_eq!(
+            prerequisites.extra_lists().len(),
+            super::PREREQUISITE_LIST_LIMIT as usize
+        );
     }
 
     /// Initialize's Find-only seeds and the 1003C710 defaults: without
