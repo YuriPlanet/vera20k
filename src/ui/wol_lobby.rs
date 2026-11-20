@@ -274,6 +274,8 @@ pub(crate) struct WolLobbyLayout {
     pub(crate) page: MenuPageLayout,
     pub(crate) lobbies: RectPx,
     pub(crate) games: RectPx,
+    /// Modern room information is outside the games list's scroll and click bounds.
+    pub(crate) game_details: Option<RectPx>,
     pub(crate) players: RectPx,
     pub(crate) chat_log: RectPx,
     /// The chat NewEdit after its init inset (`0x00614CCF`).
@@ -331,6 +333,7 @@ impl WolLobbyLayout {
                 ah,
             )),
             games: px(11, 57, 301, 307),
+            game_details: None,
             players: px(321, 57, 301, 307),
             chat_log: px(11, 369, 611, 160),
             chat: px(12, 534, 578, 22),
@@ -657,6 +660,18 @@ impl WolLobbyState {
                 .sort_buttons
                 .retain(|(id, _)| !LEGACY_CONTROLS.contains(id));
             let scale = layout.page.scale;
+            // Ten whole rows at 800x600. Rounding to whole scaled rows also
+            // keeps the list's last few pixels from hitting an undrawn row.
+            let pane = layout.games;
+            let row_h = crate::ui::shell::list::ListMetrics::scaled(scale).row_h;
+            let rows = ((pane.h * 2 / 3 - 2) / row_h).max(1);
+            layout.games.h = 2 + rows * row_h;
+            layout.game_details = Some(RectPx::new(
+                pane.x,
+                pane.y + layout.games.h,
+                pane.w,
+                pane.h - layout.games.h,
+            ));
             for (id, rect) in &mut layout.sort_buttons {
                 match *id {
                     SORT_ALPHA => *rect = scale.scale_rect(RectPx::new(12, 37, 198, 17)),
@@ -1097,6 +1112,50 @@ mod tests {
                 Some(id)
             );
         }
+    }
+
+    #[test]
+    fn modern_game_details_do_not_hide_a_clickable_game_at_the_scroll_limit() {
+        let mut ui = WolLobbyState::new(false, true);
+        let channels = (1..=30)
+            .map(|n| WolChannel {
+                name: format!("Game {n}"),
+                max_users: 8,
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+        ui.replace_games(game_rows(&channels, 0, false, true));
+        let layout = ui.layout(640, 480, false);
+        let classic = WolLobbyState::new(false, false).layout(640, 480, false);
+        let count = ui.game_rows.len();
+        let list = ui
+            .game_list
+            .geometry(layout.games, count, layout.page.scale);
+        let thumb = list.thumb.expect("a crowded list scrolls");
+        let x = thumb.x + thumb.w / 2;
+        let y = thumb.y + thumb.h / 2;
+        let top = &mut ui.game_list.top_index;
+        ui.game_list.scroll.press(
+            list.scroll_part_at(x, y).unwrap(),
+            list,
+            top,
+            y,
+            crate::util::time::Instant::now(),
+        );
+        ui.game_list
+            .scroll
+            .pointer_moved(list, top, x, layout.games.y + layout.games.h - 1);
+        let last = list.row(list.visible_rows - 1);
+        ui.hover_games(&layout, last.x + 1, last.y + 1);
+        assert_eq!(ui.game_rows[ui.game_list.hot_row.unwrap()].name, "Game 30");
+        let (x, y) = (last.x + 1, classic.games.y + classic.games.h - 12);
+        assert_eq!(
+            layout.control_at(x, y),
+            None,
+            "details must not accept game clicks"
+        );
+        ui.hover_games(&layout, x, y);
+        assert_eq!(ui.game_list.hot_row, None);
     }
 
     /// The modern Observe checkbox trails the Players heading on its row,

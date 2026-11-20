@@ -1869,7 +1869,25 @@ fn refill_games(state: &mut AppState) {
         .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
         .map(|mode| csf(state, &mode.ui_name_key));
     for row in &mut rows {
-        if cooperative_campaign(state, &lobby.games[row.record]).is_some() {
+        let channel = &lobby.games[row.record];
+        if lobby.ui.is_modern() {
+            let fallback_map = if channel
+                .summary
+                .as_ref()
+                .and_then(|s| s.map.as_ref())
+                .is_none()
+            {
+                scenario_description(state, &channel.ex_info().scenario)
+            } else {
+                String::new()
+            };
+            if let Some(heading) =
+                room_heading(&channel.name, channel.summary.as_ref(), &fallback_map)
+            {
+                row.text = heading;
+            }
+        }
+        if cooperative_campaign(state, channel).is_some() {
             row.tag = tag.clone();
         }
     }
@@ -1888,10 +1906,44 @@ fn refill_games(state: &mut AppState) {
     }
 }
 
-/// VERA: the modern list's matches to watch, after its rooms: the room's
-/// name (the map's when it has none) with its watchers out of the most it
-/// takes, greyed once it has them all, and tagged. A row's key is its
-/// match, which the selection follows across refreshes.
+/// Build a modern row only from published facts. Older listings can still
+/// supply a known map. With no added information, keep the original count.
+fn room_heading(
+    name: &str,
+    summary: Option<&WolRoomSummary>,
+    fallback_map: &str,
+) -> Option<String> {
+    let format = summary.and_then(|summary| match &summary.teams {
+        _ if summary.forming => Some(crate::i18n::tr("VERA:LobbyTeamsForming")),
+        Some(teams) if teams.is_empty() => Some(crate::i18n::tr("VERA:LobbyFfa")),
+        Some(teams) => Some(
+            teams
+                .iter()
+                .filter(|&&seats| seats > 0)
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join("v"),
+        ),
+        None => None,
+    });
+    let map = summary
+        .and_then(|summary| summary.map.as_deref())
+        .unwrap_or(fallback_map);
+    if format.is_none() && (name.is_empty() || map.is_empty() || map == name) {
+        return None;
+    }
+    let parts = [name, format.as_deref().unwrap_or_default(), map];
+    Some(
+        parts
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" - "),
+    )
+}
+
+/// Matches follow open rooms. The match ID keys selection across refreshes.
+/// Older listings without a descriptive header retain their viewer counts.
 fn watch_rows(matches: &[service::WolMatch], tag: &str) -> Vec<WolGameRow> {
     matches
         .iter()
@@ -1905,7 +1957,8 @@ fn watch_rows(matches: &[service::WolMatch], tag: &str) -> Vec<WolGameRow> {
             WolGameRow {
                 record,
                 name: watch.match_id.clone(),
-                text: format!("{name} {}/{}", watch.watchers, watch.max_watchers),
+                text: room_heading(&watch.name, watch.summary.as_ref(), &watch.map)
+                    .unwrap_or_else(|| format!("{name} {}/{}", watch.watchers, watch.max_watchers)),
                 greyed: watch.watchers >= watch.max_watchers,
                 kind: GameTypeIcon::Plain,
                 keyed: false,
@@ -4922,7 +4975,8 @@ pub(crate) fn status_help(state: &AppState) -> String {
     let ui = &lobby.ui;
     match ui.buttons.hovered {
         Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
-            Some(row) if !row.watch => game_help(state, row, ui.is_modern()),
+            Some(_) if ui.is_modern() => String::new(),
+            Some(row) => game_help(state, row),
             _ => csf(state, "STT:LobbyListGames"),
         },
         Some(PLAYERS) => match ui
@@ -4942,6 +4996,105 @@ pub(crate) fn status_help(state: &AppState) -> String {
             .unwrap_or_default(),
         None => String::new(),
     }
+}
+
+pub(crate) struct RoomDetails<'a> {
+    pub(crate) title: &'a str,
+    /// Start of the displayed heading, before its published format and map.
+    pub(crate) room_name: &'a str,
+    pub(crate) counts: String,
+}
+
+/// The modern games pane shows the hovered room, or keeps the selected
+/// room visible while the pointer moves to its details or another control.
+pub(crate) fn room_details(state: &AppState) -> Option<RoomDetails<'_>> {
+    let lobby = lobby(state)?;
+    let ui = &lobby.ui;
+    if !ui.is_modern() || ui.popup.is_some() || ui.card.is_some() {
+        return None;
+    }
+    let row = ui
+        .game_list
+        .hot_row
+        .filter(|_| ui.buttons.hovered == Some(GAMES))
+        .and_then(|index| ui.game_rows.get(index))
+        .or_else(|| ui.selected_game())?;
+    modern_game_help(state, lobby, row)
+}
+
+/// The team numbers retain their original slots, including gaps. Room
+/// spectators have seats; a running match's viewers connect separately.
+fn modern_game_help<'a>(
+    state: &AppState,
+    lobby: &'a WolLobby,
+    row: &'a WolGameRow,
+) -> Option<RoomDetails<'a>> {
+    let (room_name, summary, capacity, campaign) = if row.watch {
+        let watch = lobby.matches.get(row.record)?;
+        (
+            watch.name.as_str(),
+            watch.summary.as_ref(),
+            crate::i18n::tr_fill(
+                "VERA:LobbyWatchCapacity",
+                &[("count", &watch.watchers), ("max", &watch.max_watchers)],
+            ),
+            None,
+        )
+    } else {
+        let room = lobby.games.get(row.record)?;
+        let campaign = cooperative_campaign(state, room)
+            .and_then(|campaign| {
+                state
+                    .frontend
+                    .multiplayer_shell_runtime
+                    .cooperative_campaign_name(campaign)
+            })
+            .map(|key| csf(state, key));
+        (
+            room.name.as_str(),
+            room.summary.as_ref(),
+            crate::i18n::tr_fill(
+                "VERA:LobbyRoomCapacity",
+                &[("count", &room.users), ("max", &room.max_users)],
+            ),
+            campaign,
+        )
+    };
+    let mut details = Vec::new();
+    if let Some(summary) = summary {
+        if let Some(teams) = &summary.teams {
+            let occupied = teams.iter().filter(|&&count| count > 0).count();
+            if occupied > 4 {
+                // The header already gives the matchup. With many sides,
+                // leave room for the map, spectators and occupancy.
+                details.push(format!("{}: {occupied}", crate::i18n::tr("VERA:Teams")));
+            } else {
+                for (team, count) in teams.iter().enumerate().filter(|(_, count)| **count > 0) {
+                    details.push(crate::i18n::tr_count(
+                        "VERA:LobbyTeamSeats",
+                        *count,
+                        &[("team", &(team + 1))],
+                    ));
+                }
+            }
+        }
+        if let Some(count) = summary.observers {
+            details.push(crate::i18n::tr_count("VERA:LobbySpectators", count, &[]));
+        }
+        if let Some(count) = summary.computers {
+            details.push(crate::i18n::tr_fill(
+                "VERA:LobbyAiCount",
+                &[("count", &count)],
+            ));
+        }
+    }
+    details.push(capacity);
+    details.extend(campaign);
+    Some(RoomDetails {
+        title: &row.text,
+        room_name,
+        counts: details.join(" - "),
+    })
 }
 
 /// VERA's help for a modern player row ([`badge_help`]); the name alone
@@ -5065,8 +5218,8 @@ fn scenario_description(state: &AppState, scenario: &str) -> String {
 
 /// `0x00780E30`: the host (the name up to `'`, at most 10 characters), the
 /// ping, then `", "` and the map when exInfo names a scenario `0x00780D90`
-/// knows. VERA: the modern list's help then names a co-op room's campaign.
-fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
+/// knows. Used by the classic lobby.
+fn game_help(state: &AppState, row: &WolGameRow) -> String {
     let host: String = row
         .name
         .split('\'')
@@ -5094,19 +5247,6 @@ fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
             help.push_str(", ");
             help.push_str(&name);
         }
-    }
-    if let Some(key) = channel
-        .filter(|_| modern)
-        .and_then(|channel| cooperative_campaign(state, channel))
-        .and_then(|campaign| {
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .cooperative_campaign_name(campaign)
-        })
-    {
-        help.push_str(", ");
-        help.push_str(&csf(state, key));
     }
     help
 }
@@ -5375,6 +5515,35 @@ mod tests {
     }
 
     #[test]
+    fn a_forming_room_never_advertises_its_partial_teams_as_the_matchup() {
+        let mut room = WolRoomSummary {
+            teams: Some(vec![0, 2, 0, 1]),
+            forming: true,
+            ..Default::default()
+        };
+        fn heading(summary: Option<&WolRoomSummary>) -> Option<String> {
+            room_heading("Friday Night", summary, "Oasis")
+        }
+        assert_eq!(
+            heading(Some(&room)),
+            Some(format!(
+                "Friday Night - {} - Oasis",
+                crate::i18n::tr("VERA:LobbyTeamsForming")
+            ))
+        );
+        room.teams = Some(Vec::new());
+        room.forming = false;
+        assert_eq!(
+            heading(Some(&room)),
+            Some(format!(
+                "Friday Night - {} - Oasis",
+                crate::i18n::tr("VERA:LobbyFfa")
+            ))
+        );
+        assert_eq!(heading(None).as_deref(), Some("Friday Night - Oasis"));
+    }
+
+    #[test]
     fn watch_rows_name_each_match_with_its_watchers() {
         let watch = |match_id: &str, name: &str, watchers| service::WolMatch {
             match_id: match_id.into(),
@@ -5383,8 +5552,16 @@ mod tests {
             watchers,
             max_watchers: 10,
             names: Vec::new(),
+            summary: None,
         };
-        let matches = [watch("m1", "Ann's game", 9), watch("m2", "", 10)];
+        let mut matches = [watch("m1", "Ann's game", 9), watch("m2", "", 10)];
+        matches[0].summary = Some(WolRoomSummary {
+            map: Some("Snow Valley".into()),
+            teams: Some(vec![0, 4, 0, 4]),
+            forming: false,
+            observers: Some(2),
+            computers: Some(1),
+        });
         let rows = watch_rows(&matches, "Watch");
         let shown: Vec<_> = rows
             .iter()
@@ -5393,7 +5570,7 @@ mod tests {
         assert_eq!(
             shown,
             [
-                ("m1", "Ann's game 9/10", false),
+                ("m1", "Ann's game - 4v4 - Snow Valley", false),
                 ("m2", "Little Big Lake 10/10", true)
             ]
         );

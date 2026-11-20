@@ -15,7 +15,7 @@ use super::{WolBoxThen, WolPage, WolVisit};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
 use crate::ui::wol_chat::WolChatLine;
-use crate::ui::wol_lobby::{WolChannel, WolMember};
+use crate::ui::wol_lobby::{WolChannel, WolMember, WolRoomSummary};
 use crate::ui::wol_login::WolCredential;
 use crate::ui::wol_shell::{
     BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WolBoxButtons, WolMessageBox,
@@ -290,6 +290,7 @@ pub(crate) struct WolMatch {
     pub(crate) max_watchers: u32,
     /// The playing humans.
     pub(crate) names: Vec<String>,
+    pub(crate) summary: Option<WolRoomSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
