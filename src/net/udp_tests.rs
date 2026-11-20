@@ -1821,3 +1821,122 @@ fn rematch_rejects_old_ack_data_and_frame_sync_before_reliable_state() {
     assert_eq!(malformed_after_receipt(&mut right, 4, 1), 1);
     assert!(right.pop_received().is_none());
 }
+
+#[test]
+fn authored_stage_rollover_reacks_the_registered_receipt_until_new_gameplay() {
+    use crate::net::lan_messages::extended_setup::campaign::{Record, Signal, StageChoice};
+    use crate::net::lan_messages::ingame::LoadingProgressMessage;
+
+    let mut guest = transport();
+    let mut host = transport();
+    let guest_addr = guest.primary_addr().unwrap();
+    let host_addr = host.primary_addr().unwrap();
+    let former = SessionScope {
+        epoch: [37; 16],
+        revision: 4,
+    };
+    for (wire, peer, address) in [(&mut guest, 0, host_addr), (&mut host, 1, guest_addr)] {
+        wire.set_lan_scope(former).unwrap();
+        wire.connections_mut().add_peer(peer, address).unwrap();
+    }
+    let begun = Record {
+        scope: Some(former),
+        attempt: 1,
+        signal: Signal::StageBegun(StageChoice::Retry),
+    }
+    .encode();
+    assert!(guest.global_mut().send(
+        &begun,
+        GlobalDestination::direct(host_addr),
+        Delivery::Reliable,
+        0
+    ));
+    assert!(
+        guest
+            .connections_mut()
+            .send_to(0, b"old orders", Delivery::Reliable)
+    );
+    assert_eq!(guest.service(1).sent_datagrams, 2);
+    let old = take_wire_datagrams(&host, 2);
+    for datagram in &old {
+        guest.lock().primary.send_to(datagram, host_addr).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut host, 1, 2), 0);
+    let receipt = host.pop_global_received().unwrap();
+    assert_eq!(receipt.payload, begun);
+    let original_acks = take_wire_datagrams(&guest, 2);
+
+    let next = host.advance_lan_stage_scope(former, vec![receipt]).unwrap();
+    assert_eq!(
+        next,
+        SessionScope {
+            revision: former.revision + 1,
+            ..former
+        }
+    );
+    for datagram in &old {
+        guest.lock().primary.send_to(datagram, host_addr).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut host, 2, 2), 1);
+    assert!(host.pop_received().is_none());
+    assert!(host.pop_global_received().is_none());
+    assert_eq!(malformed_after_receipt(&mut guest, 1, 1), 0);
+    assert_eq!(
+        guest.global().queued_send_count(),
+        0,
+        "old receipt survives a lost ACK"
+    );
+    // Keep the clock on the original bucket until the recovered ACK arrives.
+    // The next bucket retries only the old private send whose ACK was lost.
+    assert_eq!(guest.service(2).sent_datagrams, 1);
+    let former_retry = take_wire_datagrams(&host, 1).pop().unwrap();
+    assert_eq!(
+        Some(&former_retry),
+        old.iter().find(|packet| packet.ends_with(b"old orders"))
+    );
+
+    assert_eq!(
+        guest.advance_lan_stage_scope(former, Vec::new()).unwrap(),
+        next
+    );
+    let report = LoadingProgressMessage::new("Guest", 100)
+        .unwrap()
+        .scoped_bytes(next);
+    assert!(guest.global_mut().send(
+        &report,
+        GlobalDestination::direct(host_addr),
+        Delivery::Reliable,
+        0
+    ));
+    assert_eq!(guest.service(3).sent_datagrams, 1);
+    let current = take_wire_datagrams(&host, 1);
+    for ack in &original_acks {
+        host.lock().primary.send_to(ack, guest_addr).unwrap();
+        host.lock()
+            .primary
+            .send_to(&ack[LAN_SCOPE_HEADER_LEN..], guest_addr)
+            .unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut guest, 3, 4), 4);
+    assert_eq!(
+        guest.global().queued_send_count(),
+        1,
+        "a stale ACK cannot clear next stage's 100"
+    );
+    guest
+        .lock()
+        .primary
+        .send_to(&current[0], host_addr)
+        .unwrap();
+    assert_eq!(malformed_after_receipt(&mut host, 3, 1), 0);
+    assert_eq!(host.pop_global_received().unwrap().payload, report);
+    assert_eq!(malformed_after_receipt(&mut guest, 3, 1), 0);
+    assert_eq!(guest.global().queued_send_count(), 0);
+
+    host.set_lan_scope(next).unwrap();
+    for datagram in &old {
+        guest.lock().primary.send_to(datagram, host_addr).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut host, 4, 2), 2);
+    assert!(host.pop_global_received().is_none());
+}

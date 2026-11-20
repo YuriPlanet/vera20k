@@ -453,6 +453,11 @@ pub(crate) fn lobby_watches(state: &AppState) -> Option<bool> {
 
 /// VERA: whether the online lobby lets a room's players visit the public
 /// lobby, as its sign-in answered; a lobby from before it does not.
+pub(crate) fn lobby_campaign_rooms(state: &AppState) -> bool {
+    state.frontend.wol.as_ref().and_then(|visit| visit.live_service.as_ref())
+        .is_some_and(|service| service.campaign_rooms)
+}
+
 pub(crate) fn lobby_visits(state: &AppState) -> bool {
     state
         .frontend

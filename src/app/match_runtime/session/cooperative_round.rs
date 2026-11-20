@@ -341,7 +341,7 @@ impl MatchSession {
         } = round_parts(self)?;
         anyhow::ensure!(round.outcome.is_none(), "the result dialog has closed");
         if online && round.can_continue {
-            if let NetworkRoomReturn::Wol { cooperative } = room_return {
+            if let NetworkRoomReturn::Wol { cooperative, .. } = room_return {
                 *cooperative = Some(CooperativeResume {
                     mode_id: launch.mode.id,
                     scenario: round.next_scenario,
@@ -821,7 +821,7 @@ mod tests {
             .unwrap();
         session.set_network_start_seed(SEED).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        let LoadingStartup::Network(startup) = session.freeze_network_start(SEED).unwrap() else {
+        let LoadingStartup::Network(startup) = session.freeze_network_start(SEED, None).unwrap() else {
             panic!("network start");
         };
         (session, startup)
@@ -854,7 +854,7 @@ mod tests {
             .accept_network_setup(launch, true, Some(7), false)
             .unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        session.freeze_network_start(SEED).unwrap();
+        session.freeze_network_start(SEED, None).unwrap();
         session
             .enter_cooperative_round(Some("C2S02MD.MAP".into()), true, 1, 1, None)
             .unwrap();
@@ -1250,7 +1250,10 @@ mod tests {
     #[test]
     fn an_online_round_continues_in_its_room() {
         let (mut session, _) = frozen_in(NetworkReturnContext::Wol, 0);
-        session.set_network_room_return(NetworkRoomReturn::Wol { cooperative: None });
+        session.set_network_room_return(NetworkRoomReturn::Wol {
+            cooperative: None,
+            campaign: None,
+        });
         let mode_id = session.network_setup().unwrap().mode.id;
         session
             .enter_cooperative_round(Some("C2S02MD.MAP".into()), true, 2, 1, None)
@@ -1270,7 +1273,8 @@ mod tests {
                 cooperative: Some(CooperativeResume {
                     mode_id,
                     scenario: 1
-                })
+                }),
+                campaign: None,
             }
         );
         assert!(!session.awaiting_wol_room_return());
@@ -1296,7 +1300,7 @@ mod tests {
             session.accept_network_setup(launch, true, None, false)?;
             session.set_network_start_seed(SEED)?;
             session.prepare_network_timing(2, || 0)?;
-            session.freeze_network_start(SEED).map(|_| session)
+            session.freeze_network_start(SEED, None).map(|_| session)
         };
         let mut session = freeze(7).unwrap();
         session

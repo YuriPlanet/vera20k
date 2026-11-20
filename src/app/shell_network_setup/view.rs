@@ -196,7 +196,7 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
         .flatten();
     // In a mode with teams, VERA's rooms group their rows under headers:
     // with Teams set, one for each of its teams.
-    let grouped = several && session.network_team_room();
+    let grouped = several && session.network_team_room() && session.campaign_room().is_none();
     let listed = if several {
         listed_rows(
             session,
@@ -272,10 +272,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let local = launch.humans.get(launch.local_player_index)?;
     let room = session.network_room();
     let dialog = super::dialog(state);
+    let campaign = session.campaign_room().is_some();
     // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
     // team combo and the team header 0x794.
     let clan_room = dialog.wol() && room.clan;
-    let map_index = local_map_index(state);
+    let map_index = (!campaign).then(|| local_map_index(state)).flatten();
     let listing = room_listing(state)?;
     let RoomListing {
         capacity,
@@ -288,7 +289,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         first_row,
         ..
     } = listing;
-    let cooperative = mode.class.uses_cooperative_setup();
+    let cooperative = !campaign && mode.class.uses_cooperative_setup();
     let coop = cooperative.then(|| {
         state
             .frontend
@@ -301,8 +302,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let may_remove = seats.filter(|row| !removed(row)).count() > 2;
     // AI play in a VERA room while people watch too, unlike in gamemd's
     // (`0x5EC9F0`'s TXT_NO_AI_WITH_OBSERVER).
-    let ai_allowed = mode.class.policy().lists_in_skirmish;
-    let teams = session.network_teams();
+    let ai_allowed = !campaign && mode.class.policy().lists_in_skirmish;
+    let teams = (!campaign).then(|| session.network_teams()).flatten();
     // With Teams Off a room with teams is free-for-all and nobody is on a
     // team, so, as in a clan room, it has no Team lists.
     let no_team_lists = clan_room || grouped && teams.is_none();
@@ -328,7 +329,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     } else {
         dialog.rows_per_page()
     };
-    let mut combos = Vec::with_capacity(5 * rows);
+    let mut combos = super::campaign_room::setup_selectors(state);
     let mut row_icons = std::array::from_fn(|_| None);
     let mut headers = std::array::from_fn(|_| None);
     for visible_row in 0..rows {
@@ -437,7 +438,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .iter()
             .enumerate()
             .find(|(_, human)| human.raw_slot_index == Some(row));
-        let ai = session.network_display_ai(row);
+        let ai = (!campaign)
+            .then(|| session.network_display_ai(row))
+            .flatten();
         let vacancy = session.network_vacancy(row);
         let is_local = local.raw_slot_index == Some(row);
         let observer = human.is_some_and(|(_, human)| human.is_observer())
@@ -610,6 +613,21 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             choices: players,
             list_w: 0,
         });
+        if campaign {
+            if let Some((_, human)) = human.filter(|(_, human)| !human.is_observer()) {
+                let (choices, selected) = super::campaign_room::role_choices(state, &human.name);
+                combos.push(SetupCombo {
+                    id: SetupColumn::Country.control(visible_row),
+                    row,
+                    enabled: host && choices.iter().any(|choice| choice.value >= 0),
+                    visible,
+                    selected,
+                    choices,
+                    list_w: 0,
+                });
+            }
+            continue;
+        }
         // VERA's room bans leave their countries off the list.
         let banned = super::bans::banned_countries(state, launch.options.bans);
         let mut countries: Vec<_> = state
@@ -809,21 +827,22 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             value: bounds.credits_visual_position(options.starting_credits),
             range: bounds.visual_range(SkirmishTrackbarId::Credits0x511),
             enabled: host,
-            visible: true,
+            visible: !campaign,
         },
         SetupTrackbar {
             id: UNITS,
             value: options.unit_count,
             range: bounds.range(SkirmishTrackbarId::UnitCount0x50c),
             enabled: host,
-            visible: true,
+            visible: !campaign,
         },
         SetupTrackbar {
             id: DIFFICULTY,
-            value: coop.as_ref().map_or(0, |coop| coop.difficulty),
+            value: super::campaign_room::difficulty(state)
+                .unwrap_or_else(|| coop.as_ref().map_or(0, |coop| coop.difficulty)),
             range: TrackbarRange::new(0, 2, 1),
             enabled: host,
-            visible: cooperative,
+            visible: cooperative || campaign,
         },
         // The Teams box's count: 1 is Off, then the teams.
         SetupTrackbar {
@@ -849,7 +868,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             value: i32::from(options.host_rules.superweapon_limit.max(1)),
             range: crate::ui::skirmish_shell::game_options::SUPERWEAPON_LIMIT_RANGE,
             enabled: host,
-            visible: dialog.modern,
+            visible: dialog.modern && !campaign,
         },
     ];
     // The host drags people, itself too, and AI between the boxes of a room
@@ -892,6 +911,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         }
     }
     Some(SetupView {
+        campaign,
         first_row,
         row_count,
         page_len: listing.page_len,
@@ -952,8 +972,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 &mode.ui_name_key
             },
         ),
-        map_label: super::map_display_name(state)
-            .map_or_else(|| label(state, "GUI:None"), str::to_owned),
+        map_label: super::campaign_room::stage_label(state).unwrap_or_else(|| {
+            super::map_display_name(state).map_or_else(|| label(state, "GUI:None"), str::to_owned)
+        }),
         selected_map_index: map_index,
         cooperative,
         cooperative_description: coop.as_ref().and_then(|coop| coop.description).map(

@@ -422,6 +422,8 @@ impl App {
             };
         }
         crate::app::lan_service::poll(state, scenario_now_ms);
+        crate::app::match_runtime::narrative_sync::service(state, scenario_now_ms);
+        crate::app::match_runtime::stage_result::poll(state, scenario_now_ms);
         Self::poll_external_launch_progress(state);
         Self::poll_spawn_actions(state);
         // Resume receipts must release only the relay clock hold even while
@@ -727,8 +729,9 @@ impl App {
     /// in-game and the configured focus freeze is not holding the world; a
     /// tactical capture never reaches the hidden service loop.
     pub(super) fn match_runs_while_hidden(state: &AppState) -> bool {
-        state.frontend.screen == GameScreen::InGame
-            && (Self::house_outcome_wait_pending(state) || !state.focus_freeze_active())
+        crate::app::match_runtime::narrative_sync::owns_fullscreen(state)
+            || (state.frontend.screen == GameScreen::InGame
+                && (Self::house_outcome_wait_pending(state) || !state.focus_freeze_active()))
     }
 
     /// The active-game shell `page` into `destination`.

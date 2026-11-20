@@ -133,22 +133,29 @@ pub fn stop_io_after_crash() {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LanScopeState {
     Prepared(SessionScope),
+    ContinuationLoading(SessionScope),
     Active(SessionScope),
 }
 
 impl LanScopeState {
     fn scope(self) -> SessionScope {
         match self {
-            Self::Prepared(scope) | Self::Active(scope) => scope,
+            Self::Prepared(scope) | Self::ContinuationLoading(scope) | Self::Active(scope) => scope,
         }
     }
 
     fn outgoing(self) -> Option<SessionScope> {
         match self {
             Self::Prepared(_) => None,
-            Self::Active(scope) => Some(scope),
+            Self::ContinuationLoading(scope) | Self::Active(scope) => Some(scope),
         }
     }
+}
+
+#[derive(Debug)]
+struct RetiredLanReceipts {
+    scope: SessionScope,
+    received: Vec<GlobalMessage>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -384,6 +391,7 @@ struct UdpIo {
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
     relay_gateway: Option<String>,
     lan_scope: Option<LanScopeState>,
+    retired_lan_receipts: Option<RetiredLanReceipts>,
     pending_report: UdpServiceReport,
     // App play runs the IO pump: the relay session then times datagrams to
     // the millisecond. Manual-clock consumers time them by `service`.
@@ -606,6 +614,35 @@ impl LanUdpTransport {
 
     pub fn set_lan_scope(&mut self, scope: SessionScope) -> io::Result<()> {
         self.lock().set_lan_scope(scope)
+    }
+
+    /// Start an admitted authored stage on a fresh datagram revision. Only
+    /// exact final handoff receipts can elicit an ACK from the previous scope.
+    pub fn advance_lan_stage_scope(
+        &mut self,
+        scope: SessionScope,
+        receipts: Vec<GlobalMessage>,
+    ) -> io::Result<SessionScope> {
+        let mut io = self.lock();
+        if io.lan_scope != Some(LanScopeState::Active(scope)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "LAN stage handoff has no matching active scope",
+            ));
+        }
+        let revision = scope.revision.checked_add(1).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "LAN stage revision exhausted")
+        })?;
+        let next = SessionScope { revision, ..scope };
+        io.reset_session();
+        io.lan_scope = Some(LanScopeState::ContinuationLoading(next));
+        if !receipts.is_empty() {
+            io.retired_lan_receipts = Some(RetiredLanReceipts {
+                scope,
+                received: receipts,
+            });
+        }
+        Ok(next)
     }
 
     pub fn lan_scope(&self) -> Option<SessionScope> {
@@ -1157,6 +1194,7 @@ impl UdpIo {
             #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
             relay_gateway: None,
             lan_scope: None,
+            retired_lan_receipts: None,
             pending_report: UdpServiceReport::default(),
             precise_relay_clock: false,
             game_serviced: 0,
@@ -1201,6 +1239,7 @@ impl UdpIo {
     fn set_lan_scope(&mut self, scope: SessionScope) -> io::Result<()> {
         self.prepare_lan_scope(scope)?;
         self.lan_scope = Some(LanScopeState::Active(scope));
+        self.retired_lan_receipts = None;
         Ok(())
     }
 
@@ -1466,6 +1505,7 @@ impl UdpIo {
         self.connections.reset();
         self.global.reset();
         self.lan_scope = None;
+        self.retired_lan_receipts = None;
         self.pending_report = UdpServiceReport::default();
     }
 
@@ -1692,6 +1732,7 @@ impl UdpIo {
             &mut self.relay,
             &mut self.primary_send,
             self.lan_scope,
+            self.retired_lan_receipts.as_ref(),
             UdpChannel::Primary,
             &mut self.connections,
             &mut self.global,
@@ -1706,6 +1747,7 @@ impl UdpIo {
             &mut self.relay,
             &mut self.primary_send,
             self.lan_scope,
+            self.retired_lan_receipts.as_ref(),
             UdpChannel::Alternate,
             &mut self.connections,
             &mut self.global,
@@ -1799,6 +1841,7 @@ fn drain_socket(
     relay: &mut Option<RelayRoute>,
     ack_queue: &mut UdpSendQueue,
     lan_scope: Option<LanScopeState>,
+    retired_lan_receipts: Option<&RetiredLanReceipts>,
     channel: UdpChannel,
     connections: &mut LanConnections,
     global: &mut GlobalChannel,
@@ -1959,18 +2002,23 @@ fn drain_socket(
         } else {
             let datagram = &bytes[..length];
             if datagram.starts_with(LAN_SCOPE_MAGIC) {
-                let Some(scope) = lan_scope.map(LanScopeState::scope) else {
+                if lan_scope.is_none() {
                     // Retired match bytes never enter plain lobby receive state.
                     report.malformed_datagrams += 1;
                     continue;
-                };
+                }
                 if datagram.len() < LAN_SCOPE_HEADER_LEN + CHECKSUM_LEN
                     || datagram.len() > UDP_DATAGRAM_CAPACITY
-                    || datagram[LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN] != scope.encode()
                 {
                     report.malformed_datagrams += 1;
                     continue;
                 }
+                let Some(scope) =
+                    SessionScope::decode(&datagram[LAN_SCOPE_MAGIC.len()..LAN_SCOPE_HEADER_LEN])
+                else {
+                    report.malformed_datagrams += 1;
+                    continue;
+                };
                 (&datagram[LAN_SCOPE_HEADER_LEN..], source, Some(scope))
             } else {
                 (datagram, source, None)
@@ -1987,6 +2035,36 @@ fn drain_socket(
             report.malformed_datagrams += 1;
             continue;
         }
+        if let Some(scope) = received_scope
+            && Some(scope) != lan_scope.map(LanScopeState::scope)
+        {
+            let acknowledged = retired_lan_receipts
+                .filter(|retired| retired.scope == scope)
+                .is_some_and(|retired| {
+                    global.acknowledge_retired_receipt(
+                        source,
+                        frame,
+                        &retired.received,
+                        |destination, ack| {
+                            send_global_frame(
+                                ack_socket,
+                                relay,
+                                Some(scope),
+                                UdpChannel::Primary,
+                                ack_queue,
+                                destination,
+                                broadcast_targets,
+                                ack,
+                                report,
+                            );
+                        },
+                    )
+                });
+            if !acknowledged {
+                report.malformed_datagrams += 1;
+            }
+            continue;
+        }
         //541820 demultiplexes the first word before private endpoint lookup;
         //otherwise discovery and Join from unknown sources never reach BB.
         let is_global = frame.get(..2).is_some_and(|bytes| {
@@ -1997,6 +2075,7 @@ fn drain_socket(
             // installs gameplay. In particular a late old plain packet must
             // not initialize a fresh private receive sequence during loading.
             Some(LanScopeState::Prepared(_)) => is_global,
+            Some(LanScopeState::ContinuationLoading(_)) => is_global && received_scope.is_some(),
             Some(LanScopeState::Active(scope)) if received_scope.is_none() => {
                 // A peer may still be loading after we received its100. Its
                 // retry stays plain until it promotes the same route. Only

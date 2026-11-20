@@ -242,6 +242,35 @@ impl GlobalChannel {
         self.receive.len()
     }
 
+    /// Acknowledge an exact application-registered receipt from a preceding
+    /// LAN scope, without feeding its data or sequence into the new channel.
+    pub(super) fn acknowledge_retired_receipt(
+        &self,
+        source: SocketAddrV4,
+        frame: &[u8],
+        receipts: &[GlobalMessage],
+        send: impl FnOnce(GlobalDestination, &[u8]),
+    ) -> bool {
+        if frame.len() < GLOBAL_HEADER_LEN
+            || frame[..2] != self.config.discriminator.to_le_bytes()
+            || frame[2] != Delivery::Reliable.wire_kind()
+        {
+            return false;
+        }
+        let seq = sequence(frame);
+        let product_id = u16::from_le_bytes([frame[14], frame[15]]);
+        if !receipts.iter().any(|receipt| {
+            receipt.source == source
+                && receipt.sequence == seq
+                && receipt.product_id == product_id
+                && receipt.payload == frame[GLOBAL_HEADER_LEN..]
+        }) {
+            return false;
+        }
+        send(GlobalDestination::direct(source), &self.frame(2, seq, &[]));
+        true
+    }
+
     /// Manager5410F0 and global53FBD0: broadcast is unacknowledged, even when
     /// reliability was requested. A nonzero override changes just the wire
     /// sequence; every successful enqueue still advances the aggregate count.

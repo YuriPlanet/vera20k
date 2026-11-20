@@ -788,7 +788,7 @@ struct ReplayEnding {
 }
 
 pub const REPLAY_VERSION: u32 = 6;
-const REPLAY_STARTUP_VERSION: u32 = 5;
+const REPLAY_STARTUP_VERSION: u32 = 6;
 
 mod blueprint;
 pub use blueprint::{MatchStartBlueprint, ReplayLaunch, ReplayLaunchInput};
@@ -849,6 +849,14 @@ impl ReplayStartup {
 
     pub fn control_grants(&self) -> &[crate::sim::control_authority::ControlGrant] {
         self.session().control_grants()
+    }
+
+    pub fn authored_campaign(&self) -> Option<&crate::sim::scenario_bootstrap::AuthoredCampaignStart> {
+        self.blueprint.map_houses()
+    }
+
+    pub fn game_speed(&self) -> i32 {
+        self.session().game_options().game_speed
     }
 
     pub fn launch_descriptor(
@@ -1238,8 +1246,14 @@ impl ReplayPlayback {
         if let Some(record) = startup.blueprint().campaign_carry_over() {
             sim.restore_campaign_carry_over(record, &runtime.resources.rules);
         }
+        let admitted = startup.session().clone();
+        let admitted = if startup.authored_campaign().is_some() {
+            admitted.with_replay_view(Some(sim.session()))
+        } else {
+            admitted
+        };
         sim.restore_replay_startup(
-            startup.session().clone(),
+            admitted,
             startup.scenario_rng.clone(),
             startup.main_rng.clone(),
             startup.mapgen_rng.clone(),
@@ -1488,13 +1502,20 @@ impl ReplayRunner {
         let startup = replay.standalone_startup()?;
         let map_file = map_beside.unwrap_or(&replay.header.map_name);
         let accepted_prefix = Some(startup.native_id_prefix()?);
-        let mut loaded = match startup.blueprint().map_houses() {
+        let mode = startup.game_mode();
+        let mut loaded = match startup.authored_campaign() {
             Some(start) => crate::headless_scenario::load_campaign_stage(
                 retail_dir,
                 map_file,
                 startup.seed(),
-                start,
+                crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                    start,
+                    mode,
+                    local_source: Some(0),
+                },
                 accepted_prefix,
+                Some(startup.game_speed()),
+                Some(startup.map_name()),
             ),
             None => crate::headless_scenario::load_with_launch_and_ini(
                 retail_dir,
@@ -1502,7 +1523,7 @@ impl ReplayRunner {
                 startup.seed(),
                 startup.launch_descriptor(map_file)?,
                 &Default::default(),
-                startup.game_mode(),
+                mode,
                 accepted_prefix,
                 None,
             ),
@@ -2118,9 +2139,9 @@ mod tests {
         let error = ReplayLog::decode_json(old_log).unwrap_err().to_string();
         assert!(error.contains("incompatible diagnostic replay version 5; expected 6"));
 
-        let old_startup = br#"{"header":{"version":6},"startup":{"version":4},"ticks":[]}"#;
+        let old_startup = br#"{"header":{"version":6},"startup":{"version":5},"ticks":[]}"#;
         let error = ReplayLog::decode_json(old_startup).unwrap_err().to_string();
-        assert!(error.contains("incompatible replay startup version 4; expected 5"));
+        assert!(error.contains("incompatible replay startup version 5; expected 6"));
     }
 
     #[test]

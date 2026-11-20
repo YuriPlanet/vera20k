@@ -7,6 +7,7 @@
 mod actions;
 pub(crate) mod agreement;
 pub(crate) mod bans;
+pub(crate) mod campaign_room;
 mod cooperative;
 pub(crate) use cooperative::{
     chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
@@ -140,6 +141,7 @@ impl StartPhase {
 }
 
 pub(crate) struct NetworkSetupProtocol {
+    campaign_catalog: Vec<campaign_room::CampaignSeries>,
     locked: bool,
     /// WOL Quick Match (`[0xA8B244]` 1): the game channel's nodes and start
     /// run without C2/C9 (`0x007A6208..0x007A6229`, `0x0078A36C..0x0078A386`)
@@ -374,6 +376,7 @@ impl NetworkSetupProtocol {
         // C2's 0x497 (the advertisement) never runs without C2.
         let wol_host = dialog.wol() && host && !quick_match;
         Self {
+            campaign_catalog: Vec::new(),
             locked: false,
             quick_match,
             external: false,
@@ -1033,6 +1036,9 @@ fn install_setup(
     }
     state.frontend.multiplayer_setup = Some(setup_ui);
     let mut protocol = NetworkSetupProtocol::new(dialog, quick_match);
+    if dialog.modern && !quick_match {
+        protocol.campaign_catalog = campaign_room::discover(state);
+    }
     // VERA's online room publishes its host's Watching from Create Game,
     // also when it comes back after a match; Quick Match's lobby decides.
     if dialog.host && dialog.modern && dialog.wol() && !quick_match {

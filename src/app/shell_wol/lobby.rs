@@ -1184,9 +1184,9 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         log::debug!("WOL room reopened after the wait ended");
         return;
     }
-    let resume = match state.match_state.session.take_network_room_return() {
-        crate::app::match_runtime::session::NetworkRoomReturn::Wol { cooperative } => cooperative,
-        _ => None,
+    let (resume, campaign) = match state.match_state.session.take_network_room_return() {
+        crate::app::match_runtime::session::NetworkRoomReturn::Wol { cooperative, campaign } => (cooperative, campaign),
+        _ => (None, None),
     };
     let listed = joined.members.clone();
     let channel = joined.channel.clone();
@@ -1202,7 +1202,13 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         .frontend
         .multiplayer_shell_runtime
         .lan_create_observer();
-    open_game_room(state, &listed, observe, resume);
+    if open_game_room(state, &listed, observe, resume)
+        && let Some(campaign) = campaign
+        && let Err(error) = setup::campaign_room::resume_after_wol_result(state, *campaign)
+    {
+        log::warn!("WOL campaign continuation refused: {error:#}");
+        message_line(state, crate::i18n::tr("VERA:CampaignRoomUnavailable"));
+    }
 }
 
 /// The others in a room this game hosts again take rows as joiners would,

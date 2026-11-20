@@ -27,6 +27,9 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
     if super::super::start_phase(state).in_progress() {
         return Ok(());
     }
+    if state.match_state.session.campaign_room().is_some() {
+        return request_campaign_start(state);
+    }
     super::super::remember_setup(state);
     let launch = state
         .match_state
@@ -271,6 +274,74 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         queue_lan_go(protocol, launch, agreed_seed, max_ahead_frames);
+    }
+    state.frontend.skirmish_preview_texture = None;
+    Ok(())
+}
+
+pub(in crate::app::shell_network_setup) fn request_campaign_start(
+    state: &mut AppState,
+) -> anyhow::Result<()> {
+    use super::super::campaign_room;
+    if super::super::dialog(state).wol() && !crate::app::shell_wol::lobby_campaign_rooms(state) {
+        message(state, "VERA:CampaignRoomOnlineUnsupported", &[]);
+        return Ok(());
+    }
+    let room = match campaign_room::publication(state) {
+        Ok(Some(room)) => room,
+        Ok(None) => return Ok(()),
+        Err(error) => {
+            log::warn!("Campaign room publication refused: {error:#}");
+            message(state, "VERA:CampaignRoomUnavailable", &[]);
+            return Ok(());
+        }
+    };
+    let launch = state
+        .match_state
+        .session
+        .network_setup()
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?
+        .clone();
+    if launch.humans.iter().any(|human| human.is_observer()) {
+        message(state, "VERA:CampaignRoomObservers", &[]);
+        return Ok(());
+    }
+    if let Err(error) = campaign_room::prepare_current(state, &room) {
+        log::warn!("Campaign start refused: {error:#}");
+        message(state, "VERA:CampaignRoomRoster", &[]);
+        return Ok(());
+    }
+    state
+        .match_state
+        .session
+        .accept_campaign_room(Some(room), launch.options.game_speed)?;
+    if super::super::dialog(state).wol() {
+        let users = launch
+            .humans
+            .iter()
+            .map(|human| human.name.clone())
+            .collect();
+        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+            protocol.submit_start(users);
+        }
+    } else {
+        if !all_ready(state)
+            || (0..launch.humans.len())
+                .any(|index| state.match_state.session.network_map_status(index) != Some(1))
+        {
+            return Ok(());
+        }
+        crate::app::lan_service::prepare_host_timing(state)?;
+        let session = &state.match_state.session;
+        let seed = session
+            .network_start_seed()
+            .ok_or_else(|| anyhow::anyhow!("host campaign has no seed"))?;
+        let max_ahead = session
+            .network_max_ahead_frames()
+            .ok_or_else(|| anyhow::anyhow!("host campaign has no timing"))?;
+        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+            queue_lan_go(protocol, &launch, seed, max_ahead);
+        }
     }
     state.frontend.skirmish_preview_texture = None;
     Ok(())

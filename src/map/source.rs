@@ -146,7 +146,7 @@ pub fn is_logical_name(name: &str) -> bool {
 }
 
 /// Whether Windows reads `part` as a device in whatever folder it is, as it
-/// does up to Windows 10: `CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9` and
+/// does up to Windows 10: `CON`, `CONIN$`, `CONOUT$`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9` and
 /// `LPT0`-`LPT9` (also with a superscript 1-3), with any extension. Opening
 /// such a name reads or writes the device, not a file
 /// (Microsoft, "Naming Files, Paths, and Namespaces").
@@ -158,13 +158,15 @@ fn is_windows_device_name(part: &str) -> bool {
         .trim_end()
         .to_ascii_uppercase();
     let mut rest = device.chars().skip(3);
-    matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ((device.starts_with("COM") || device.starts_with("LPT"))
-            && matches!(
-                rest.next(),
-                Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}')
-            )
-            && rest.next().is_none())
+    matches!(
+        device.as_str(),
+        "CON" | "CONIN$" | "CONOUT$" | "PRN" | "AUX" | "NUL"
+    ) || ((device.starts_with("COM") || device.starts_with("LPT"))
+        && matches!(
+            rest.next(),
+            Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}')
+        )
+        && rest.next().is_none())
 }
 
 /// A multiplayer map name is a VFS-relative logical identity, never a peer's
@@ -376,6 +378,34 @@ pub fn random_map_dir(root: &Path) -> &Path {
 /// VERA's downloaded maps. A seed is only looked for in [`random_map_dir`].
 pub fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
     local_map_path_in(mod_dir(), ra2_dir, downloaded_maps_dir(), map_name)
+}
+
+/// Locate an installed authored scenario by its recorded bytes. A mod can
+/// shadow a name without shadowing the manifest that supplied its recording.
+pub fn matching_loose_map_path(
+    ra2_dir: &Path,
+    selected_mod: Option<&Path>,
+    logical_name: &str,
+    expected_sha256: &str,
+) -> Option<PathBuf> {
+    if !is_logical_name(logical_name) || !valid_source_sha256(expected_sha256) {
+        return None;
+    }
+    game_folders_in(ra2_dir, selected_mod)
+        .into_iter()
+        .rev()
+        .filter_map(|root| existing_map_file(root.join(logical_name)))
+        .find(|path| {
+            read_loose_map_input_bounded(path, Some(MAX_TRANSFER_MAP_BYTES))
+                .ok()
+                .and_then(|input| {
+                    input
+                        .source
+                        .physical_identity()
+                        .map(|(_, digest)| digest == expected_sha256)
+                })
+                .unwrap_or(false)
+        })
 }
 
 fn local_map_path_in(
@@ -1146,6 +1176,24 @@ pub mod test_support {
 #[cfg(all(test, tests_map))]
 mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
+
+    #[test]
+    fn replay_finds_recorded_bytes_behind_a_mods_same_named_map() {
+        let retail = TestDirectory::new("retail-recorded-scenario");
+        let selected_mod = TestDirectory::new("mod-same-named-scenario");
+        retail.write("opening.map", b"recorded retail scenario");
+        selected_mod.write("opening.map", b"conflicting mod scenario");
+        let digest = crate::util::sha256::sha256_hex(b"recorded retail scenario");
+        assert_eq!(
+            super::matching_loose_map_path(
+                retail.path(),
+                Some(selected_mod.path()),
+                "opening.map",
+                &digest
+            ),
+            Some(retail.path().join("opening.map")),
+        );
+    }
 
     #[cfg(unix)]
     #[test]
