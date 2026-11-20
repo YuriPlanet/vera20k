@@ -1250,3 +1250,37 @@ fn object_type_id_past_the_saved_interner_refuses_the_load() {
         },
     );
 }
+
+/// A bullet's saved warhead id is resolved when it detonates, so one past the
+/// saved interner refuses the load too.
+#[test]
+fn bullet_warhead_id_past_the_saved_interner_refuses_the_load() {
+    use crate::sim::combat::RAD_NO_ATTACKER;
+    use crate::sim::projectile::{ProjectilePayload, ProjectileTarget};
+
+    let mut sim = Simulation::new();
+    let unknown = crate::sim::intern::InternedId::from_index(9_999);
+    let mut spawn = gsi_17_03_projectile(RAD_NO_ATTACKER, ProjectileTarget::None);
+    spawn.payload = ProjectilePayload::new(1, unknown, None, false);
+    let bullet = sim.substrate.allocate_stable_id();
+    sim.admit_projectile(bullet, spawn);
+    let bytes = GameSnapshot::save(&sim, 0, 0, "unknown-warhead", 0);
+    let Err(error) = GameSnapshot::load(&bytes).unwrap().restore_player_world(
+        crate::sim::world::SnapshotProcessState::Live(&Simulation::new()),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        flat_terrain(8, 8),
+        Default::default(),
+        PlayerSaveCells::FixtureBaseline,
+    ) else {
+        panic!("a warhead id past the saved interner must refuse the load");
+    };
+    assert_eq!(
+        error,
+        SnapshotRestoreError::UnknownInternedId {
+            registry: "bullet",
+            object_id: bullet,
+            field: "warhead",
+            id: unknown.index(),
+        },
+    );
+}

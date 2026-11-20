@@ -45,11 +45,12 @@ impl Simulation {
         Ok(())
     }
 
-    /// The saved interned ids every later step resolves without a check (each
-    /// object's type and owner, each House's key and type) must name an entry
-    /// of the saved interner: both come from the file, and
-    /// `StringInterner::resolve` panics on an id it never produced. A save
-    /// that fails this is refused before any restore step reads one.
+    /// Each object's type and owner, each House's key and type and each
+    /// bullet's warhead, BulletType and Weapon must name an entry of the saved
+    /// interner: both come from the file, and `StringInterner::resolve`
+    /// panics on an id it never produced. A save that fails this is refused
+    /// before any restore step reads one. Team, script and trigger ids are
+    /// not covered here.
     pub(super) fn validate_saved_interned_ids(&self) -> Result<(), SnapshotRestoreError> {
         let check = |registry, object_id, field, id: crate::sim::intern::InternedId| {
             self.interner
@@ -70,6 +71,16 @@ impl Simulation {
             let object_id = u64::from(key.index());
             check("House", object_id, "key", key)?;
             check("House", object_id, "type", house.house_type_id())?;
+        }
+        for (&bullet_id, bullet) in self.projectiles.iter() {
+            let payload = bullet.payload();
+            check("bullet", bullet_id, "warhead", payload.warhead)?;
+            if let Some(projectile_type) = payload.projectile_type() {
+                check("bullet", bullet_id, "projectile type", projectile_type)?;
+            }
+            if let Some(weapon) = payload.installed_weapon() {
+                check("bullet", bullet_id, "weapon", weapon)?;
+            }
         }
         Ok(())
     }

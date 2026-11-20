@@ -482,7 +482,7 @@ pub(super) fn offer_join(
     let identity = {
         let service = state.match_state.lan_service.as_mut().expect("visit");
         service.ensure_host_scope()?;
-        match service.join_offer(endpoint, message, request, now) {
+        match service.join_offer(endpoint, message, now) {
             Ok(identity) => identity,
             Err(_) => return send_join_denial(state, endpoint, 5, &proof),
         }

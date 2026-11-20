@@ -758,13 +758,10 @@ fn newer_join_challenge_survives_old_request_confirm_and_cancel() {
     };
     let old = request(1);
     let current = request(2);
-    let old_identity = host.join_offer(endpoint, &old, fields, 31).unwrap();
-    let identity = host.join_offer(endpoint, &current, fields, 32).unwrap();
+    let old_identity = host.join_offer(endpoint, &old, 31).unwrap();
+    let identity = host.join_offer(endpoint, &current, 32).unwrap();
     assert_ne!(old_identity.admission_nonce, identity.admission_nonce);
-    assert_eq!(
-        host.join_offer(endpoint, &old, fields, 33).unwrap(),
-        old_identity
-    );
+    assert_eq!(host.join_offer(endpoint, &old, 33).unwrap(), old_identity);
     assert!(
         host.peer_admissions.is_empty(),
         "an offer cannot admit a Session peer"
@@ -794,7 +791,7 @@ fn newer_join_challenge_survives_old_request_confirm_and_cancel() {
     assert!(host.confirmed_request(endpoint, &stale, 35).is_none());
     assert!(!host.cancel_peer_admission(endpoint, &stale));
     assert!(host.peer_admission_matches(endpoint, &proof));
-    let replayed_offer = host.join_offer(endpoint, &old, fields, 36).unwrap();
+    let replayed_offer = host.join_offer(endpoint, &old, 36).unwrap();
     assert_ne!(replayed_offer.admission_nonce, old_identity.admission_nonce);
     assert!(host.confirmed_request(endpoint, &stale, 37).is_none());
     stale.admission_nonce = [0; 16];

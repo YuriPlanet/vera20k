@@ -701,9 +701,11 @@ impl LanService {
         &mut self,
         endpoint: SocketAddrV4,
         request: &LanMessage,
-        fields: LanJoinRequest,
         now: u32,
     ) -> anyhow::Result<PeerAdmission> {
+        let LanPayload::JoinRequest(fields) = request.payload() else {
+            anyhow::bail!("not a join request");
+        };
         let proof = request
             .session_proof()?
             .ok_or_else(|| anyhow::anyhow!("join proof missing"))?;
