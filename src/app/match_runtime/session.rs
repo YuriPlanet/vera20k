@@ -243,7 +243,7 @@ struct ParticipantAdmission {
     ready: bool,
     map_status: u8,
     /// VERA: the K this participant last sent for the current map. A
-    /// revision clears `map_status`, not this; a new map clears both.
+    /// revision clears `map_status`, not this; another map or mode does.
     reported_map_status: Option<u8>,
 }
 
@@ -2645,6 +2645,7 @@ impl MatchSession {
                         launch,
                         capacity: previous,
                         observer_row,
+                        admission,
                         ..
                     },
                 return_context,
@@ -2654,6 +2655,14 @@ impl MatchSession {
             else {
                 anyhow::bail!("network setup is not editable");
             };
+            // VERA: a guest sends K again for another map or mode (the
+            // 5E4F49 mapsame test), which is news to the host's room.
+            let old_file = launch.selected_map_file.as_deref().unwrap_or("");
+            if launch.mode.id != mode.id || !old_file.eq_ignore_ascii_case(&file) {
+                for entry in admission.iter_mut() {
+                    entry.reported_map_status = None;
+                }
+            }
             let session_mode = return_context.session_mode();
             let room = *room;
             // Cooperative's +0x20 (`0x005C1A10`) clears the observer
@@ -3008,15 +3017,26 @@ impl MatchSession {
     /// The host takes a participant's K (`0x5E39C0`) and learns whether it
     /// is news: the first K about this map, or a changed one. A native
     /// guest sends K once per map; VERA's online guests repeat theirs with
-    /// every options revision, which says nothing new.
+    /// every options revision, which says nothing new. Native admission
+    /// (0x5E5500) has every guest report RandMap.Sed present, so an online
+    /// guest's K0 for it, sent while the host's map is on its way, is not.
     pub(crate) fn report_network_map_status(
         &mut self,
         index: usize,
         status: u8,
     ) -> anyhow::Result<bool> {
+        let file = self
+            .network_setup()
+            .and_then(|setup| setup.selected_map_file.as_deref());
+        let always_present =
+            self.network_map_metadata()
+                .zip(file)
+                .is_some_and(|(metadata, file)| {
+                    metadata.admission(file, false) == NetworkMapAdmission::Present
+                });
         let entry = self.network_admission_mut(index)?;
         entry.map_status = status;
-        Ok(entry.reported_map_status.replace(status) != Some(status))
+        Ok(entry.reported_map_status.replace(status) != Some(status) && !always_present)
     }
 
     fn network_admission_mut(&mut self, index: usize) -> anyhow::Result<&mut ParticipantAdmission> {
@@ -5226,13 +5246,16 @@ mod tests {
     }
 
     /// Online guests repeat their K with every options revision. The host's
-    /// room prints it once per map, and again only when it changes.
+    /// room hears it once per map or mode, again only when it changes, and
+    /// never for RandMap.Sed, which native admission reports present.
     #[test]
     fn a_repeated_map_report_is_news_once_per_map() {
         let mut session = MatchSession::default();
         session.enter_network(super::NetworkReturnContext::Wol);
         let launch = network_fixture();
         let guest = 1 - launch.local_player_index;
+        let file = launch.selected_map_file.clone().unwrap();
+        let mut mode = launch.mode.clone();
         session
             .accept_network_setup(launch, true, None, false)
             .unwrap();
@@ -5258,6 +5281,12 @@ mod tests {
             .accept_network_map_metadata(metadata, None, true)
             .unwrap();
         assert!(session.report_network_map_status(guest, 1).unwrap());
+        mode.id += 1;
+        session.select_network_map(mode.clone(), file, 8).unwrap();
+        assert!(session.report_network_map_status(guest, 1).unwrap());
+        let random = crate::map::skirmish_scenarios::RANDMAP_SED;
+        session.select_network_map(mode, random.into(), 8).unwrap();
+        assert!(!session.report_network_map_status(guest, 0).unwrap());
     }
 
     #[test]
