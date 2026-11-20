@@ -2211,7 +2211,7 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
 /// The OS drops the clip on focus loss (alt-tab), so callers re-apply this on
 /// every focus regain. A platform that cannot confine (some Wayland setups)
 /// logs and leaves the cursor free rather than failing the frame.
-pub(crate) fn apply_cursor_confinement(state: &AppState) {
+pub(crate) fn apply_cursor_confinement(state: &mut AppState) {
     apply_cursor_confinement_impl(state, true);
 }
 
@@ -2223,7 +2223,7 @@ pub(crate) fn apply_cursor_confinement(state: &AppState) {
 /// we never trap it inside another application. A cleared lock always releases.
 /// Silent (no per-frame log spam), and a no-op once the OS clip already matches
 /// what the player chose, so re-asserting per frame issues no `ClipCursor` call.
-pub(crate) fn reassert_cursor_confinement(state: &AppState) {
+pub(crate) fn reassert_cursor_confinement(state: &mut AppState) {
     if !state.platform.window_active && state.platform.cursor_confined {
         // Backgrounded: don't fight other apps; Focused(false) already released.
         return;
@@ -2272,7 +2272,7 @@ fn cursor_clip_wanted(cursor_confined: bool, window_foreground: bool) -> bool {
     cursor_confined && window_foreground
 }
 
-fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
+fn apply_cursor_confinement_impl(state: &mut AppState, verbose: bool) {
     // Windows: clip to the client rectangle with the Win32 ClipCursor API.
     // winit's own grab path is deliberately not used here: `refresh_os_cursor`
     // clips a hidden cursor to a one-pixel box at the client centre
@@ -2295,12 +2295,12 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                 if verbose {
                     log::warn!("cursor confinement: no window handle ({err})");
                 }
-                state.platform.pointer_held.set(false);
+                state.platform.pointer_held = false;
                 return;
             }
         };
         let RawWindowHandle::Win32(w) = handle.as_raw() else {
-            state.platform.pointer_held.set(false);
+            state.platform.pointer_held = false;
             return;
         };
         let hwnd = w.hwnd.get() as *mut c_void;
@@ -2366,7 +2366,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                         clip.bottom
                     );
                 }
-                state.platform.pointer_held.set(false);
+                state.platform.pointer_held = false;
                 return;
             }
             // Only issue a call when the clip actually changes. Re-issuing
@@ -2380,7 +2380,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                 None
             };
             if current_cursor_clip() == wanted {
-                state.platform.pointer_held.set(wanted.is_some());
+                state.platform.pointer_held = wanted.is_some();
                 return;
             }
             if verbose {
@@ -2402,7 +2402,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             if ok == 0 && verbose {
                 log::warn!("cursor confinement: ClipCursor failed");
             }
-            state.platform.pointer_held.set(wanted.is_some() && ok != 0);
+            state.platform.pointer_held = wanted.is_some() && ok != 0;
         }
     }
     // macOS: winit 0.30 refuses a Confined grab there, so the lock is VERA's
@@ -2411,10 +2411,8 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
     #[cfg(target_os = "macos")]
     {
         let _ = verbose;
-        state.platform.pointer_held.set(cursor_clip_wanted(
-            state.platform.cursor_confined,
-            state.platform.window_active,
-        ));
+        state.platform.pointer_held =
+            cursor_clip_wanted(state.platform.cursor_confined, state.platform.window_active);
     }
     // Other platforms: use winit's Confined grab. On X11 this confines the
     // pointer to the window; on pure Wayland cursor confinement is unsupported
@@ -2438,7 +2436,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                 log::warn!("cursor confinement unavailable on this platform: {err:#}");
             }
         }
-        state.platform.pointer_held.set(wanted && grabbed.is_ok());
+        state.platform.pointer_held = wanted && grabbed.is_ok();
     }
 }
 
@@ -2474,7 +2472,7 @@ pub(crate) fn hold_pointer_in_window(state: &mut AppState) -> bool {
             && pointer.in_strip_above(super::mac_pointer::strip_above_full_screen(
                 &state.platform.window,
             ));
-        if !state.platform.pointer_held.get() && !beside_housing {
+        if !state.platform.pointer_held && !beside_housing {
             return false;
         }
         let (x, y) = pointer.nearest_inside();
@@ -2509,8 +2507,8 @@ pub(crate) fn refresh_pointer_in_client(state: &mut AppState) {
 /// Drop the OS cursor clip entirely. Called on focus loss so alt-tab releases
 /// the pointer instead of leaving it trapped over the game window (
 /// behaviour). Presentation-only.
-pub(crate) fn release_cursor_confinement(state: &AppState) {
-    state.platform.pointer_held.set(false);
+pub(crate) fn release_cursor_confinement(state: &mut AppState) {
+    state.platform.pointer_held = false;
     #[cfg(target_os = "windows")]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor;
