@@ -3920,7 +3920,7 @@ impl GeneralRules {
                 .read_int("RadarCombatFlashTime", defaults.radar_combat_flash_time),
             // ReadGeneral 0x0067194D..0x00671967, unclamped signed dword.
             weed_capacity: general.read_int("WeedCapacity", defaults.weed_capacity),
-            vein_damage: defaults.vein_damage,
+            vein_damage: general.read_int("VeinDamage", defaults.vein_damage),
             scroll_multiplier: audio_visual
                 .read_double("ScrollMultiplier", defaults.scroll_multiplier),
             savour_delay_minutes,

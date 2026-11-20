@@ -252,8 +252,12 @@ fn resolve_generic_shp_frame(
     };
     resolve_shp_frame_parts(
         i32::from(def.start_frame),
-        i32::from(def.facings),
-        if def.facings <= 1 { 0 } else { 1 },
+        i32::from(def.frame_count),
+        if def.facings <= 1 {
+            0
+        } else {
+            i32::from(def.facing_multiplier)
+        },
         i32::from(slot),
         frame_index,
     )
@@ -598,7 +602,7 @@ pub fn resolve_shp_vehicle_turret_frame(
     turret_shape: bool,
 ) -> Option<u16> {
     let def = set.shp_vehicle_turret()?;
-    if def.facings == 0 {
+    if def.facings == 0 || def.frame_count == 0 {
         return None;
     }
     let start_frame = if turret_shape {
@@ -611,11 +615,15 @@ pub fn resolve_shp_vehicle_turret_frame(
     } else {
         0
     };
+    // One image per facing: the block holds `frame_count / facings` frames
+    // for each heading (the stock 32-frame rotation and Phobos' per-body
+    // facing block both divide to 1).
+    let stride = i32::from(def.frame_count.max(1) / def.facings.max(1));
     u16::try_from(resolve_shp_frame_parts(
         start_frame,
         i32::from(def.facings),
-        i32::from(def.facings),
-        if def.facings <= 1 { 0 } else { 1 },
+        stride,
+        i32::from(slot),
         0,
     ))
     .ok()

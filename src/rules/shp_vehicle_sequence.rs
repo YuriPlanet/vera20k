@@ -173,6 +173,7 @@ pub(crate) fn build_shp_vehicle_sequences(
     cadence: FootBodyCadence,
     has_turret: bool,
     retained: Option<&UnitShpReadState>,
+    phobos: bool,
 ) -> SequenceSet {
     let mut set = SequenceSet::new();
     set.set_shp_vehicle_cadence(cadence);
@@ -310,13 +311,22 @@ pub(crate) fn build_shp_vehicle_sequences(
     }
 
     // A `Turret=yes` SHP Unit draws its turret from the body SHP at
-    // `WalkFrames * 8` (UnitClass SHP draw `0x0073CCF7..0x0073CD03`: the
-    // signed `WalkFrames` byte at UnitType `+0xE5C` times a literal 8, plus
-    // the heading frame). `Facings`, `StartWalkFrame` and the standing and
-    // firing blocks do not move it. `CYCL` (WalkFrames=22) starts at 176.
-    if has_turret {
-        let start = u32::from(walk_frames).wrapping_mul(8);
-        if let Ok(start_frame) = u16::try_from(start) {
+    // `WalkFrames * 8` with a 32-frame rotation (UnitClass SHP draw
+    // `0x0073CCF7..0x0073CD03`). Phobos `UnitTypeClass_ReadINI_TurretShape`
+    // (`0x747A2E`) instead starts the body-slice fallback at
+    // `WalkFrames * Facings` with one image per body facing
+    // (`Ext/Unit/Hooks.DrawIt.cpp:29-33`, `0x73C7AC`), and a voxel type keeps
+    // its VXL turret.
+    if phobos {
+        if retained.is_some() && has_turret && !art.voxel {
+            set.set_shp_vehicle_turret(ShpVehicleTurret {
+                start_frame: walk_frames.wrapping_mul(u16::from(facings)),
+                facings: u16::from(facings),
+                frame_count: u16::from(facings),
+            });
+        }
+    } else if has_turret {
+        if let Ok(start_frame) = u16::try_from(u32::from(walk_frames).wrapping_mul(8)) {
             set.set_shp_vehicle_turret(ShpVehicleTurret {
                 start_frame,
                 facings: crate::rules::art_data::SHP_TURRET_FACING_FRAMES,
@@ -474,7 +484,7 @@ mod tests {
         let ini = IniFile::from_str(&source);
         let mut native = UnitShpReadState::default();
         native.read_pass(ini.section_or_empty("IMAGE"), has_turret);
-        build_shp_vehicle_sequences(art, TEST_CADENCE, has_turret, Some(&native))
+        build_shp_vehicle_sequences(art, TEST_CADENCE, has_turret, Some(&native), false)
     }
 
     #[test]
@@ -746,7 +756,7 @@ mod turret_shape_tests {
         );
         let mut art = make_art_entry(Some(walk), None);
         art.voxel = voxel;
-        build_shp_vehicle_sequences(&art, TEST_CADENCE, has_turret, Some(&native))
+        build_shp_vehicle_sequences(&art, TEST_CADENCE, has_turret, Some(&native), true)
     }
 
     /// The turret block starts at `WalkFrames * Facings`, one image per
@@ -756,9 +766,8 @@ mod turret_shape_tests {
         let set = turret_set(4, 8, false, true);
         let turret = set.shp_vehicle_turret().expect("turret layout");
         assert_eq!(turret.start_frame, 32);
+        assert_eq!(turret.frame_count, 8);
         assert_eq!(turret.facings, 8);
-        assert_eq!(turret.facings, 8);
-        assert_eq!(turret.facings, 1);
 
         assert!(
             turret_set(4, 8, false, false)
@@ -780,7 +789,7 @@ mod turret_shape_tests {
         let set = turret_set(4, 6, false, true);
         let turret = set.shp_vehicle_turret().expect("turret layout");
         assert_eq!(turret.start_frame, 24);
-        assert_eq!(turret.facings, 6);
+        assert_eq!(turret.frame_count, 6);
         assert_eq!(turret.facings, 6);
     }
 

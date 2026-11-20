@@ -861,6 +861,9 @@ mod tests {
         host_extra: &str,
         combat_damage: &str,
     ) -> (Simulation, RuleSet, u64, u64, u64) {
+        // `KillDriver=` is an Ares warhead key: the fixture reads its Rules
+        // the Ares way.
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             &format!(
                 "[Countries]\n0=Americans\n1=Russians\n2=Special\n\

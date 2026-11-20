@@ -1880,11 +1880,11 @@ fn shp_vehicle_turret_frame_switches_between_the_turret_shape_and_the_body_slice
         Some(96 + east)
     );
     let mut without = SequenceSet::new();
-        set.set_shp_vehicle_turret(ShpVehicleTurret {
-            start_frame: 0,
-            facings: 8,
-            frame_count: 8,
-        });
+    without.set_shp_vehicle_turret(ShpVehicleTurret {
+        start_frame: 0,
+        facings: 8,
+        frame_count: 0,
+    });
     assert_eq!(
         resolve_shp_vehicle_turret_frame(&without, 0, true),
         None,
@@ -1893,11 +1893,11 @@ fn shp_vehicle_turret_frame_switches_between_the_turret_shape_and_the_body_slice
     // A non-octant body keeps one image per body facing; the facing selects
     // no sub-slot, so the turret shape still starts at its frame-0 block.
     let mut six = SequenceSet::new();
-        set.set_shp_vehicle_turret(ShpVehicleTurret {
-            start_frame: 24,
-            facings: 6,
-            frame_count: 6,
-        });
+    six.set_shp_vehicle_turret(ShpVehicleTurret {
+        start_frame: 24,
+        facings: 6,
+        frame_count: 6,
+    });
     assert_eq!(resolve_shp_vehicle_turret_frame(&six, 64, true), Some(0));
     assert_eq!(resolve_shp_vehicle_turret_frame(&six, 64, false), Some(24));
 }

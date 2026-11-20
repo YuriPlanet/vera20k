@@ -338,6 +338,11 @@ pub(crate) fn spawn_parachuted(
     };
     let human = sim.owner_is_human(rider.owner());
     let infantry = rider.category() == EntityCategory::Infantry;
+    // Phobos' override queues a Unit too; without Phobos the stock/Ares
+    // `ObjectClass::Paradrop` arm picks no mission.
+    if !infantry && !rules.phobos() {
+        return Ok(());
+    }
     // Phobos `FootClass_Paradrop` (`Ext/Techno/Hooks.cpp:1869-1893`) replaces
     // both the Infantry (0x7EB140) and Unit (0x7F5D58) `SpawnParachuted`
     // vtable entries: the mission comes from the type's

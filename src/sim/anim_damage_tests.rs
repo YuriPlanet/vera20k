@@ -89,7 +89,9 @@ fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
                 "explicit and attached owners both propagate"
             );
         } else {
-            assert_eq!(visit["warhead"], "FALLBACK");
+            // The ART `Warhead=` is the native AnimType+330 read; only its
+            // house propagation is Ares'.
+            assert_eq!(visit["warhead"], "CUSTOM");
             assert_eq!(visit["no_source_house"], true);
         }
     }

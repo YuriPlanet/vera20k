@@ -7206,14 +7206,16 @@ impl ObjectType {
                     crate::rules::phobos_shields::AffectedHouse::parse(value).or(current)
                 }),
             phobos_engineer_repair_amount: section.read_int("EngineerRepairAmount", 0),
-            phobos_paradrop_mission: section
-                .read_string_with("ParadropMission", 2048, None, |current, value| {
+            phobos_paradrop_mission: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_string_with("ParadropMission", 2048, None, |current, value| {
                     crate::rules::mission_data::MissionType::from_map_name(value).or(current)
-                }),
-            phobos_ai_paradrop_mission: section
-                .read_string_with("AIParadropMission", 2048, None, |current, value| {
+                })
+            }),
+            phobos_ai_paradrop_mission: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_string_with("AIParadropMission", 2048, None, |current, value| {
                     crate::rules::mission_data::MissionType::from_map_name(value).or(current)
-                }),
+                })
+            }),
             phobos_is_aloaner: section.read_phobos_nullable_bool("IsALoaner", None),
             phobos_bunker_rof_multiplier: section
                 .read_phobos_nullable_double("BunkerROFMultMultiplier", None)

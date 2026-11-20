@@ -3150,18 +3150,22 @@ impl PhobosGlobals {
         );
         globals.sinkable = general.read_phobos_nullable_bool("Sinkable", globals.sinkable);
         globals.sink_speed = general.read_int("SinkSpeed", globals.sink_speed);
-        globals.paradrop_mission = general.read_string_with(
-            "ParadropMission",
-            2048,
-            globals.paradrop_mission,
-            |current, value| MissionType::from_map_name(value).unwrap_or(current),
-        );
-        globals.ai_paradrop_mission = general.read_string_with(
-            "AIParadropMission",
-            2048,
-            globals.ai_paradrop_mission,
-            |current, value| MissionType::from_map_name(value).unwrap_or(current),
-        );
+        globals.paradrop_mission = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_string_with(
+                "ParadropMission",
+                2048,
+                globals.paradrop_mission,
+                |current, value| MissionType::from_map_name(value).unwrap_or(current),
+            )
+        });
+        globals.ai_paradrop_mission = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_string_with(
+                "AIParadropMission",
+                2048,
+                globals.ai_paradrop_mission,
+                |current, value| MissionType::from_map_name(value).unwrap_or(current),
+            )
+        });
         // `Ext/Rules/Body.cpp:522`: the `[General]` fallback an AircraftType's
         // `ParadropDelay=` overrides (`Ext/Aircraft/Hooks.cpp:1274`).
         globals.paradrop_delay = general.read_ares_int("ParadropDelay", globals.paradrop_delay);

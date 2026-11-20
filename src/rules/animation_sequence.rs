@@ -505,6 +505,7 @@ pub(crate) fn build_animation_sequence_catalog(
                 } else {
                     None
                 },
+                rules.phobos(),
             ),
         );
     }
