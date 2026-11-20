@@ -323,14 +323,23 @@ thread_local! {
 /// The chat branch `0x0055E519..0x0055E5B4`: the prefix is `TXT_FROM` with
 /// the player's House UI name, in the player's colour; overflow is on and
 /// no sound plays. The cursor character 0 draws no caret.
-/// Android: the message lane's long press opens the chat as Enter does, to the
-/// listeners (`ChatTarget::Listeners`). Returns whether the edit opened.
+/// Android: the message lane's long press opens the chat as Enter does: the
+/// Skirmish target in an offline skirmish (which also cancels a pending spawn
+/// order), the listeners otherwise. Returns whether the edit opened.
 #[cfg(target_os = "android")]
 pub(crate) fn open_touch_edit(state: &mut AppState) -> bool {
     if state.match_state.match_presentation.message_list.editing() {
         return false;
     }
-    let opened = open_edit(state, ChatTarget::Listeners);
+    // Enter's own choice: plain Enter in a skirmish session is the Skirmish
+    // chat (`opens_skirmish_chat`), so a long press must not pick a target the
+    // keyboard would not, or a pending spawn order survives it.
+    let target = if skirmish_input_available(state) {
+        ChatTarget::Skirmish
+    } else {
+        ChatTarget::Listeners
+    };
+    let opened = open_edit(state, target);
     if opened {
         TOUCH_OPENED_AT.with(|at| *at.borrow_mut() = Some(crate::util::time::Instant::now()));
     }
