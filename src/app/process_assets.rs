@@ -42,9 +42,9 @@ pub(crate) struct ProcessAssets {
     /// The launch's Ares setting (`util::ares_launch::AresSetting`), kept as
     /// the mod folder is.
     ares_setting: crate::util::ares_launch::AresSetting,
-    /// That folder's files as one digest (`app::mod_files::files_digest`), taken
-    /// once: the pre-match check compares it.
-    mod_files: std::sync::Arc<std::sync::OnceLock<Result<[u8; 32], String>>>,
+    /// That folder's files, read once: the pre-match check compares their
+    /// digest.
+    mod_files: std::sync::Arc<std::sync::OnceLock<Result<ModFiles, String>>>,
     /// [`ProcessAssets::read_mod_files_ahead`] has started its thread.
     mod_files_ahead: std::sync::atomic::AtomicBool,
     /// That folder's map additions (`app::mod_additions`), read once: the
@@ -96,11 +96,37 @@ pub(crate) struct ProcessAssets {
     changed_tiles: std::sync::OnceLock<crate::map::theater::ChangedTiles>,
 }
 
-fn mod_files_digest(dir: &std::path::Path) -> Result<[u8; 32], String> {
-    crate::app::mod_files::files_digest(dir).map_err(|error| {
-        log::warn!("Could not read the mod in {}: {error}", dir.display());
-        format!("the mod's files could not be read: {error}")
-    })
+/// A mod's files as the pre-match check reads them
+/// (`app::mod_files::read_for_match`).
+struct ModFiles {
+    /// `FileList::digest`, which the rules agreement compares.
+    digest: [u8; 32],
+    /// What the mod's own list says of them, for the rules parts.
+    against: crate::app::mod_files::Against,
+}
+
+fn read_mod_files(dir: &std::path::Path) -> Result<ModFiles, String> {
+    crate::app::mod_files::read_for_match(dir)
+        .map(|checked| ModFiles {
+            digest: checked.found.digest(),
+            against: checked.against,
+        })
+        .map_err(|error| {
+            log::warn!("Could not read the mod in {}: {error}", dir.display());
+            format!("the mod's files could not be read: {error}")
+        })
+}
+
+/// One INI source the rules agreement digests
+/// ([`ProcessAssets::agreed_inis`]).
+struct AgreedIni {
+    /// Its `rules_parts` id (`app::rules_parts::RulesFile::id`).
+    id: String,
+    /// The name the game reads it by.
+    name: String,
+    digest: Option<String>,
+    /// LANGRULE and the mode INI: absent, they add no part.
+    optional: bool,
 }
 
 /// Immutable process sources; output players and match queues have separate
@@ -108,6 +134,31 @@ fn mod_files_digest(dir: &std::path::Path) -> Result<[u8; 32], String> {
 pub(crate) struct ProcessAudioCatalog {
     definitions: crate::rules::audio_sources::AudioDefinitions,
     index: Option<crate::assets::asset_manager::LoadedAudioIndex>,
+}
+
+/// Where a source (`AssetResolutionRef::source_archive`) the rules parts name
+/// comes from: `retail`, `mod`, `loose` or `mix:<archive>`.
+fn source_label(assets: &AssetManager, source: &str) -> String {
+    use crate::rules::retail_sources::{game_folder_file, shipped_source};
+    if shipped_source(source) {
+        return "retail".to_owned();
+    }
+    let file = game_folder_file(source);
+    if !source.starts_with("loose:") && !assets.from_mod_folder(&file) {
+        return format!("mix:{file}");
+    }
+    file_label(assets, &file)
+}
+
+/// [`source_label`] of a file in the game folder by name.
+fn file_label(assets: &AssetManager, file: &str) -> String {
+    if assets.from_mod_folder(file) {
+        "mod".to_owned()
+    } else if file.to_ascii_lowercase().ends_with(".mix") {
+        format!("mix:{file}")
+    } else {
+        "loose".to_owned()
+    }
 }
 
 impl ProcessAudioCatalog {
@@ -204,15 +255,15 @@ impl ProcessAssets {
         let _ = std::thread::Builder::new()
             .name("mod-files".into())
             .spawn(move || {
-                files.get_or_init(|| mod_files_digest(&dir));
+                files.get_or_init(|| read_mod_files(&dir));
             });
     }
 
-    /// The launch's mod folder as one digest, or why it could not be read;
+    /// The launch's mod folder's files, or why they could not be read;
     /// `None` without a mod.
-    fn mod_files(&self) -> Option<&Result<[u8; 32], String>> {
+    fn mod_files(&self) -> Option<&Result<ModFiles, String>> {
         let dir = self.mod_dir.as_deref()?;
-        Some(self.mod_files.get_or_init(|| mod_files_digest(dir)))
+        Some(self.mod_files.get_or_init(|| read_mod_files(dir)))
     }
 
     /// The launch mod's map additions, which the matches they reach
@@ -528,30 +579,12 @@ impl ProcessAssets {
     /// theater tiles the game folder changes.
     /// The legacy advertisement CRC remains a separate native UI value.
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::retail_sources::{select_ini, select_mode_ini};
-        let rules = self
-            .native_rules
-            .as_ref()
-            .ok_or("retail rules not loaded")?;
-        let assets = self.manager.as_ref().ok_or("retail sources are loading")?;
-        let ai = select_ini(assets, assets.ini_roots().ai())?;
-        let selected_mode = select_mode_ini(assets, Some(mode))?;
-        let mut digests = rules.multiplayer_source_digests().to_vec();
-        digests.push(Some(ai.ini.multiplayer_digest()));
-        digests.push(selected_mode.as_ref().map(IniFile::multiplayer_digest));
-        // VERA: a theater INI's tilesets decide every cell's land and height.
-        // One that is absent or does not parse fails that theater's load.
-        digests.extend(
-            crate::map::theater::theater_ini_names(assets)
-                .iter()
-                .map(|name| {
-                    let (bytes, _) = assets.get_with_source_ref(name)?;
-                    IniFile::from_bytes(bytes)
-                        .ok()
-                        .map(|ini| ini.multiplayer_digest())
-                }),
-        );
+        let (rules, assets) = self.rules_and_sources()?;
+        let mut digests: Vec<Option<String>> = self
+            .agreed_inis(rules, assets, mode, true)?
+            .into_iter()
+            .map(|ini| ini.digest)
+            .collect();
         // VERA: and the tiles the game folder changes; none add an absent
         // digest.
         digests.push(self.changed_tiles(assets).digest.clone());
@@ -595,7 +628,7 @@ impl ProcessAssets {
         // a mod this adds nothing.
         if let Some(files) = self.mod_files() {
             bytes.extend_from_slice(b"mod files\0");
-            bytes.extend_from_slice(files.as_ref().map_err(String::clone)?);
+            bytes.extend_from_slice(&files.as_ref().map_err(String::clone)?.digest);
         }
         // VERA: and the map additions the matches play, as this process read
         // them. A game that does not add them, such as an older release with
@@ -605,6 +638,226 @@ impl ProcessAssets {
             bytes.extend_from_slice(additions.digest().as_bytes());
         }
         Ok(crate::util::sha256::sha256_hex(&bytes))
+    }
+
+    fn rules_and_sources(
+        &self,
+    ) -> Result<
+        (
+            &crate::rules::process_owner::NativeRulesProcessOwner,
+            &AssetManager,
+        ),
+        String,
+    > {
+        let rules = self
+            .native_rules
+            .as_ref()
+            .ok_or("retail rules not loaded")?;
+        let assets = self.manager.as_ref().ok_or("retail sources are loading")?;
+        Ok((rules, assets))
+    }
+
+    /// The INI sources the rules agreement digests, in its order: the
+    /// process Rules root (as scenarios read it, with the Options switches,
+    /// when `switches`; else as selected), LANGRULE, ART, AIMD, the mode's
+    /// INI, then each theater's INI as `map::theater::load_theater` reads it.
+    fn agreed_inis(
+        &self,
+        rules: &crate::rules::process_owner::NativeRulesProcessOwner,
+        assets: &AssetManager,
+        mode: &str,
+        switches: bool,
+    ) -> Result<Vec<AgreedIni>, String> {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::retail_sources::{select_ini, select_mode_ini};
+        let roots = assets.ini_roots();
+        let ai = select_ini(assets, roots.ai())?;
+        let selected_mode = select_mode_ini(assets, Some(mode))?;
+        let [root, langrule, art] = rules.multiplayer_source_digests();
+        let root = if switches {
+            root
+        } else {
+            Some(rules.selected_rules_root().multiplayer_digest())
+        };
+        let ini = |id: &str, name: &str, digest, optional| AgreedIni {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            digest,
+            optional,
+        };
+        let mut inis = vec![
+            ini("rules", roots.rules(), root, false),
+            ini("langrule", "langrule.ini", langrule, true),
+            ini("art", roots.art(), art, false),
+            ini("ai", roots.ai(), Some(ai.ini.multiplayer_digest()), false),
+            ini(
+                "mode",
+                mode,
+                selected_mode.as_ref().map(IniFile::multiplayer_digest),
+                true,
+            ),
+        ];
+        // VERA: a theater INI's tilesets decide every cell's land and height.
+        // One that is absent or does not parse fails that theater's load.
+        inis.extend(
+            crate::map::theater::theater_ini_names(assets)
+                .into_iter()
+                .map(|name| {
+                    let digest = assets.get_with_source_ref(&name).and_then(|(bytes, _)| {
+                        IniFile::from_bytes(bytes)
+                            .ok()
+                            .map(|ini| ini.multiplayer_digest())
+                    });
+                    AgreedIni {
+                        id: format!("theater:{}", name.to_ascii_lowercase()),
+                        name,
+                        digest,
+                        optional: false,
+                    }
+                }),
+        );
+        Ok(inis)
+    }
+
+    /// VERA: [`Self::multiplayer_rules_digest`] of each mode in `modes`, in
+    /// parts (`app::rules_parts`): a part per component, in the digest's
+    /// order, where each comes from and how it differs from the retail copy,
+    /// and the settings the digest covers. The Rules part is the selected
+    /// root without the Options switches, which `settings` names.
+    pub(crate) fn multiplayer_rules_parts(
+        &self,
+        modes: &[&str],
+    ) -> Result<Vec<crate::app::rules_parts::RulesParts>, String> {
+        use crate::app::rules_parts::{
+            ModCheck, ModIdentity, RulesFile, RulesParts, RulesSettings, short_digest,
+        };
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::retail_sources::{ShippedCopy, ShippedInis};
+        let (rules, assets) = self.rules_and_sources()?;
+        let mod_files = self
+            .mod_files()
+            .map(|files| files.as_ref().map_err(String::clone))
+            .transpose()?;
+        let settings = RulesSettings {
+            terrain_deformation: rules.personal_rules().terrain_deformation(),
+            superweapon_limit: rules.personal_rules().superweapon_limit(),
+            ares: match assets.ares_setting() {
+                crate::util::ares_launch::AresSetting::Auto => "auto",
+                crate::util::ares_launch::AresSetting::On => "on",
+                crate::util::ares_launch::AresSetting::Off => "off",
+            },
+            ares_mix: assets.ares_mix_mounted(),
+            ini_roots_stock: self.stock_ini_roots(),
+            mod_in_use: self.mod_dir.as_deref().map(|dir| {
+                let (title, version) = crate::app::mods::name_and_version(dir);
+                ModIdentity { title, version }
+            }),
+        };
+        let mod_check = mod_files.and_then(|files| match &files.against {
+            crate::app::mod_files::Against::Same => Some(ModCheck {
+                changed: Vec::new(),
+                missing: Vec::new(),
+                extra: Vec::new(),
+            }),
+            crate::app::mod_files::Against::Differs(differences) => Some(ModCheck {
+                changed: differences.changed.clone(),
+                missing: differences.missing.clone(),
+                extra: differences.extra.clone(),
+            }),
+            crate::app::mod_files::Against::NoList | crate::app::mod_files::Against::BadList => {
+                None
+            }
+        });
+        // Where each component comes from, read once for every mode.
+        let shipped = ShippedInis::new(assets);
+        let mut read: std::collections::HashMap<String, RulesFile> = Default::default();
+        let mut ini_part = |ini: AgreedIni| {
+            let mut part = read
+                .entry(ini.name.to_ascii_lowercase())
+                .or_insert_with(|| {
+                    let mut part = RulesFile {
+                        id: String::new(),
+                        name: ini.name.clone(),
+                        digest: String::new(),
+                        source: "unknown".to_owned(),
+                        changed: false,
+                        sections: None,
+                        sections_more: None,
+                    };
+                    if let Some(used) = shipped.used(&ini.name) {
+                        part.source = source_label(assets, used.source);
+                        if let ShippedCopy::Changed(retail) = used.shipped {
+                            part.changed = true;
+                            if let Ok(used) = IniFile::from_bytes(used.bytes) {
+                                let retail = retail
+                                    .and_then(|bytes| IniFile::from_bytes(bytes).ok())
+                                    .unwrap_or_else(IniFile::empty);
+                                part.set_sections(used.differing_sections(&retail));
+                            }
+                        }
+                    }
+                    part
+                })
+                .clone();
+            part.id = ini.id;
+            part.digest = short_digest(ini.digest.as_deref());
+            part
+        };
+        let tiles = self.changed_tiles(assets);
+        let additions = self.map_additions(assets)?;
+        modes
+            .iter()
+            .map(|mode| {
+                let mut files: Vec<RulesFile> = self
+                    .agreed_inis(rules, assets, mode, false)?
+                    .into_iter()
+                    .filter(|ini| !ini.optional || ini.digest.is_some())
+                    .map(&mut ini_part)
+                    .collect();
+                files.push(RulesFile {
+                    id: "tiles".to_owned(),
+                    name: "theater tiles".to_owned(),
+                    digest: short_digest(tiles.digest.as_deref()),
+                    source: tiles
+                        .files
+                        .first()
+                        .map_or_else(|| "retail".to_owned(), |file| file_label(assets, file)),
+                    changed: tiles.digest.is_some(),
+                    sections: None,
+                    sections_more: None,
+                });
+                if let (Some(dir), Some(files_read)) = (self.mod_dir.as_deref(), mod_files) {
+                    files.push(RulesFile {
+                        id: "mod_files".to_owned(),
+                        name: dir
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        digest: short_digest(Some(&crate::util::sha256::digest_hex(
+                            files_read.digest,
+                        ))),
+                        source: "mod".to_owned(),
+                        changed: true,
+                        sections: None,
+                        sections_more: None,
+                    });
+                }
+                if let Some(additions) = additions.as_ref() {
+                    files.push(RulesFile {
+                        id: "map_additions".to_owned(),
+                        name: crate::app::shell_network_setup::agreement::changed_files_text(
+                            additions.names(),
+                        ),
+                        digest: short_digest(Some(&additions.digest())),
+                        source: "mod".to_owned(),
+                        changed: true,
+                        sections: None,
+                        sections_more: None,
+                    });
+                }
+                Ok(RulesParts::new(files, settings.clone(), mod_check.clone()))
+            })
+            .collect()
     }
 
     /// A seed regenerates its map after Start, so its rules agreement also
@@ -1286,6 +1539,64 @@ mod tests {
         assert_eq!(started().changed_game_files(), ["isosnomd.mix"]);
         std::fs::write(dir.path().join("isosnomd.mix"), b"not a MIX").unwrap();
         assert_eq!(started().changed_game_files(), ["isosnomd.mix"]);
+    }
+
+    /// VERA: the parts name the changed file, where it comes from and its
+    /// changed sections; the Options switches change `settings`, never the
+    /// Rules part.
+    #[test]
+    fn rules_parts_name_changed_sections_and_keep_switches_out_of_the_rules_part() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        use crate::rules::personal_rules::PersonalRules;
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("rules-parts");
+        let local = make_new_format_mix_bytes(&[
+            (
+                "rulesmd.ini",
+                b"[General]\nBuildSpeed=.7\n[NUKE]\nDamage=1\n",
+            ),
+            ("artmd.ini", b"[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", b"[AI]\nValue=1\n"),
+        ]);
+        std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            make_new_format_mix_bytes(&[("localmd.mix", &local)]),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("rulesmd.ini"),
+            "[General]\nBuildSpeed=.8\n[NUKE]\nDamage=1\n",
+        )
+        .unwrap();
+        let parts = |rules: PersonalRules| {
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_personal_rules(rules);
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            let parts = process.multiplayer_rules_parts(&[""]).unwrap().remove(0);
+            serde_json::from_str::<serde_json::Value>(&parts.json()).unwrap()
+        };
+        let stock = parts(PersonalRules::default());
+        let rules = &stock["files"][0];
+        assert_eq!(rules["id"], "rules");
+        assert_eq!(rules["source"], "loose");
+        assert_eq!(rules["changed"], true);
+        assert_eq!(rules["sections"], serde_json::json!(["General"]));
+        let art = &stock["files"][1];
+        assert_eq!(
+            (&art["id"], &art["source"]),
+            (&"art".into(), &"retail".into())
+        );
+        assert_eq!(art["changed"], false);
+        assert!(art.get("sections").is_none());
+
+        let mut deformation = PersonalRules::default();
+        deformation.set_terrain_deformation(true);
+        let deformed = parts(deformation);
+        assert_eq!(deformed["files"], stock["files"]);
+        assert_eq!(deformed["settings"]["terrain_deformation"], true);
+        assert_ne!(deformed["digest"], stock["digest"]);
     }
 
     #[test]

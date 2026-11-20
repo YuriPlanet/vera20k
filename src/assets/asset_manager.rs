@@ -558,6 +558,16 @@ impl AssetManager {
         self.mod_dir.is_some()
     }
 
+    /// VERA: whether `file`, a file in the game folder by name (a loose file
+    /// or an archive, `retail_sources::game_folder_file`), is read from the
+    /// selected mod's folder rather than the installation's.
+    pub fn from_mod_folder(&self, file: &str) -> bool {
+        self.mod_dir.as_deref().is_some_and(|dir| {
+            self.loose_asset(file)
+                .is_some_and(|asset| asset.path.starts_with(dir))
+        })
+    }
+
     /// Whether this game is an Ares game (`rules::ares_switch`): the player's
     /// Ares setting is On, or, set to Auto, the selected mod mounted Ares's
     /// `ares.mix`, its own copy or the installation's. With no mod selected,

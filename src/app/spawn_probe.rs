@@ -22,6 +22,7 @@ use crate::app::frontend::cncnet_spawn::{
     max_spawn_color_index, max_spawn_country_index, spawn_battle_mode, spawn_modes,
 };
 use crate::app::process_assets::ProcessAssets;
+use crate::app::rules_parts::RulesParts;
 use crate::app::shell_network_setup::agreement;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::assets::csf_file::CsfFile;
@@ -30,6 +31,8 @@ use crate::assets::csf_file::CsfFile;
 pub(crate) struct ProbeGameMode {
     pub id: i32,
     pub rules_digest: String,
+    /// `rules_digest` in parts (docs/spawn.md, "Rules parts").
+    pub rules_parts: RulesParts,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -41,6 +44,10 @@ pub(crate) struct ProbeReport {
     /// The multiplayer rules agreement for spawn Battle launches
     /// (`MPBattleMD.ini`). `ExpectedRulesDigest`.
     pub rules_digest: String,
+    /// `rules_digest` in parts, which say what differs when two games'
+    /// digests do (docs/spawn.md, "Rules parts"). An older build's report
+    /// lacks the field.
+    pub rules_parts: RulesParts,
     /// `GameMode=` values and each one's agreement: the digest covers the mode's
     /// INI, so `ExpectedRulesDigest` must come from the row the launch selects.
     pub game_modes: Vec<ProbeGameMode>,
@@ -266,22 +273,31 @@ pub(crate) fn probe(
         ares_setting,
         true,
     )?;
-    let rules_digest = process
-        .multiplayer_rules_digest(&spawn_battle_mode().override_file)
-        .map_err(anyhow::Error::msg)
-        .context("could not digest the multiplayer rules")?;
-    let game_modes = spawn_modes()
-        .map(|mode| {
-            process
-                .multiplayer_rules_digest(&mode.override_file)
-                .map(|rules_digest| ProbeGameMode {
-                    id: mode.id,
-                    rules_digest,
-                })
-        })
+    let modes: Vec<_> = std::iter::once(spawn_battle_mode())
+        .chain(spawn_modes())
+        .collect();
+    let files: Vec<&str> = modes
+        .iter()
+        .map(|mode| mode.override_file.as_str())
+        .collect();
+    let digests = files
+        .iter()
+        .map(|file| process.multiplayer_rules_digest(file))
         .collect::<Result<Vec<_>, _>>()
+        .and_then(|digests| Ok((digests, process.multiplayer_rules_parts(&files)?)))
         .map_err(anyhow::Error::msg)
         .context("could not digest the multiplayer rules")?;
+    let mut digests = digests.0.into_iter().zip(digests.1);
+    let (rules_digest, rules_parts) = digests.next().context("no Battle mode")?;
+    let game_modes = modes[1..]
+        .iter()
+        .zip(digests)
+        .map(|(mode, (rules_digest, rules_parts))| ProbeGameMode {
+            id: mode.id,
+            rules_digest,
+            rules_parts,
+        })
+        .collect();
     // The Session Country array and PrepareSession's Country bodies, as the
     // shell reads them before a multiplayer start; the digested sources do
     // not change.
@@ -332,6 +348,7 @@ pub(crate) fn probe(
         version: agreement::version(),
         build_identity: build_identity(),
         rules_digest,
+        rules_parts,
         game_modes,
         max_start_waypoints: map.as_ref().map(|map| map.start_waypoints),
         map: map.map(|map| map.map),
@@ -762,9 +779,11 @@ mod tests {
             version: "v".into(),
             build_identity: build_identity(),
             rules_digest: "r".into(),
+            rules_parts: RulesParts::for_test(),
             game_modes: vec![ProbeGameMode {
                 id: 1,
                 rules_digest: "r".into(),
+                rules_parts: RulesParts::for_test(),
             }],
             map: Some(ProbeMap {
                 file: "spawnmap.ini".into(),
@@ -811,9 +830,12 @@ mod tests {
                 "max_offline_houses",
                 "max_start_waypoints",
                 "rules_digest",
+                "rules_parts",
                 "version"
             ]
         );
+        assert_eq!(value["rules_parts"]["v"], 1);
+        assert_eq!(value["game_modes"][0]["rules_parts"], value["rules_parts"]);
         let map: Vec<_> = value["map"].as_object().unwrap().keys().cloned().collect();
         assert_eq!(
             map,

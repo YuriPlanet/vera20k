@@ -428,6 +428,9 @@ impl App {
                 if let Some(request) = self.spawn_request.take()
                     && let Err(error) = Self::start_spawn_session(&mut state, request)
                 {
+                    let rules_mismatch = error
+                        .downcast_ref::<crate::app::frontend::cncnet_spawn::RulesMismatch>()
+                        .and_then(|mismatch| mismatch.parts.clone());
                     let error = format!("CnCNet startup failed: {error:#}");
                     log::error!("{error}");
                     // docs/spawn.md: the page keeps its engine and may start
@@ -435,6 +438,7 @@ impl App {
                     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                     {
                         crate::web::status(&error);
+                        state.frontend.external_rules_mismatch = rules_mismatch;
                         browser_spawn_failure = Some(error);
                     }
                     #[cfg(not(all(
@@ -444,6 +448,7 @@ impl App {
                     )))]
                     {
                         self.startup_failure = Some(error);
+                        self.spawn_rules_mismatch = rules_mismatch;
                         event_loop.exit();
                         return;
                     }

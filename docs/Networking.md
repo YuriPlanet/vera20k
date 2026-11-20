@@ -732,7 +732,9 @@ same whichever rules a room plays. Offline games play the player's own, a networ
 replay the room's it recorded. A Quick Match room has none: the guest's game drops
 any its host sends, and the lobby refuses them there. A launcher's network game
 (`tools/spawn`) has no host to share them, so each player plays their own, which its
-`ExpectedRulesDigest` compares, and the start barrier compares again. So the room's
+`ExpectedRulesDigest` compares, and the start barrier compares again. The probe also reports the
+digest in [parts](spawn.md#rules-parts), which only explain a difference; a launch the
+digest refuses names this game's parts in its result. So the room's
 door, the native rules hash (LAN's join check, online the room's `ex_info`), leaves
 the switches out, while the rules
 digest compares the ones each game plays.

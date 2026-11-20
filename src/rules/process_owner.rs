@@ -746,6 +746,11 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules.compatibility_crc()
     }
 
+    /// VERA: the Options switches the next scenario plays.
+    pub fn personal_rules(&self) -> &PersonalRules {
+        &self.sources.personal_rules
+    }
+
     /// VERA: play the switches `rules` from the next scenario on, as a network
     /// room plays its host's. Scenario roots compose them, so the one registry
     /// and everything the shell read into it stay as they are.

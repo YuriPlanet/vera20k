@@ -264,7 +264,9 @@ A `start_spawn` launch skips the result-screen Continue button and campaign
 continuation. It freezes its result, completes the existing network finish/leave
 cleanup, delivers `match-ended`, and immediately requests engine shutdown;
 `engine-exited` follows. The old `spawn:finished:<json>` status notification is
-retained once for existing result consumers.
+retained once for existing result consumers. A launch refused for its `ExpectedRulesDigest` adds
+`"failure": "rules_mismatch"` and the game's `rules_parts` to that report
+([rules parts](spawn.md#rules-parts)).
 
 Once `engine-exited` has returned, the same page may call `start_spawn` again:
 import the next launch's files with `import_spawn_file`, call `prepare_audio` and

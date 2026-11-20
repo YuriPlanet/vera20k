@@ -142,10 +142,15 @@ impl SpawnExpectations {
         }
         if let Some(expected) = &self.rules_digest {
             let actual = rules_digest()?;
-            ensure!(
-                *expected == actual,
-                "ExpectedRulesDigest {expected} does not match the local rules digest {actual}"
-            );
+            if *expected != actual {
+                return Err(RulesMismatch {
+                    message: format!(
+                        "ExpectedRulesDigest {expected} does not match the local rules digest {actual}"
+                    ),
+                    parts: None,
+                }
+                .into());
+            }
         }
         if let Some(expected) = &self.map_digest {
             let actual = map_digest()?;
@@ -157,6 +162,24 @@ impl SpawnExpectations {
         Ok(())
     }
 }
+
+/// The launch's rules differ from the `ExpectedRulesDigest` the launcher
+/// probed: the launch report names the failure and this game's parts
+/// (docs/spawn.md, "Rules parts").
+#[derive(Debug)]
+pub(crate) struct RulesMismatch {
+    message: String,
+    /// This game's rules parts for the launched mode, once read.
+    pub(crate) parts: Option<crate::app::rules_parts::RulesParts>,
+}
+
+impl std::fmt::Display for RulesMismatch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RulesMismatch {}
 
 #[derive(Debug)]
 pub(crate) enum SpawnGame {

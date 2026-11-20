@@ -1226,6 +1226,7 @@ impl App {
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
+                external_rules_mismatch: None,
                 match_result: None,
                 match_result_at: None,
                 match_winners: None,

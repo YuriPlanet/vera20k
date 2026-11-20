@@ -89,6 +89,27 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
     })
 }
 
+/// VERA: log the match's rules in parts (`app::rules_parts`), so a refused
+/// start can be read against another player's log.
+pub(crate) fn log_rules_parts(state: &AppState) {
+    let Some(mode) = state
+        .match_state
+        .session
+        .network_setup()
+        .map(|setup| setup.mode.override_file.as_str())
+    else {
+        return;
+    };
+    match state.process_assets.multiplayer_rules_parts(&[mode]) {
+        Ok(parts) => {
+            for parts in parts {
+                log::info!("Rules parts: {}", parts.json());
+            }
+        }
+        Err(error) => log::warn!("No rules parts: {error}"),
+    }
+}
+
 /// `{files}` in a box naming the changed game files: the body is a few
 /// lines, so it names the first three files and counts the rest, which the
 /// startup log lists, as `(+2)`, which needs no translation.

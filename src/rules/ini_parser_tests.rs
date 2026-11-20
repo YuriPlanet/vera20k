@@ -451,3 +451,18 @@ fn multiplayer_digest_ignores_comments_but_keeps_duplicate_value_order() {
     assert_eq!(base.multiplayer_digest(), padded.multiplayer_digest());
     assert_ne!(base.multiplayer_digest(), reordered.multiplayer_digest());
 }
+
+#[test]
+fn differing_sections_name_the_changed_added_and_removed_sections_once() {
+    let retail =
+        IniFile::from_str("[General]\nBuildSpeed=.7\n[NUKE]\nDamage=1\n[Same]\nA=1\n[Gone]\nB=1\n");
+    let used = IniFile::from_str(
+        "; comment\n[Same]\nA = 1\n[NUKE]\nDamage=2\n[General]\nBuildSpeed=.7\n\
+         [Added]\nX=1\n[General]\nBuildSpeed=.8\n",
+    );
+    assert_eq!(
+        used.differing_sections(&retail),
+        ["Added", "General", "Gone", "NUKE"]
+    );
+    assert!(retail.differing_sections(&retail.clone()).is_empty());
+}
