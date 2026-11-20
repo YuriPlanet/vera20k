@@ -25,7 +25,7 @@ use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::shell_ui_style_assets::{
-    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver,
+    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver, mod_art_candidates,
 };
 use crate::ui::main_menu_shell::{
     MainMenuControlId, MainMenuMovieBase, MainMenuShellLayout, csf_key_for_control,
@@ -41,7 +41,6 @@ use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind
 /// (Yuri's Revenge), whose copy normal priority resolves first. `ra2ts_s.bik`,
 /// the 640-wide loop, ships only here, so both looks play it.
 const RA2_MOVIE_ARCHIVE: &str = "language.mix";
-const MAX_MOD_MENU_MOVIE_BYTES: usize = 64 * 1024 * 1024;
 
 /// Dialog 0xE2 owner-draw button policy: the SDBTNANM frame fills its 156x42
 /// cell, right-anchored and vertically centred, so a stretched cell stretches
@@ -478,16 +477,15 @@ fn mod_menu_movie_candidates(
     };
     [preferred, alternative].into_iter().flat_map(move |base| {
         let name = base.asset_name();
-        assets
-            .mod_asset_candidates(name, MAX_MOD_MENU_MOVIE_BYTES)
-            .filter(move |(bytes, _)| {
-                BinkHeader::probe(bytes).is_ok_and(|header| {
+        mod_art_candidates(assets, name)
+            .filter(move |asset| {
+                BinkHeader::probe(asset.bytes).is_ok_and(|header| {
                     header.width.max(header.height) <= max_dimension
                         && header.width <= header.height * 2
                         && header.height <= header.width * 2
                 })
             })
-            .map(move |(bytes, source)| (name, bytes, source))
+            .map(move |asset| (name, asset.bytes, asset.source))
     })
 }
 

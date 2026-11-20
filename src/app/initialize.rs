@@ -702,13 +702,9 @@ impl App {
                 &mut main_menu_shell_error,
             )
         });
-        let startup_fnt = startup_asset_manager.as_ref().and_then(|assets| {
-            assets.get_ref("GAME.FNT").and_then(|data| {
-                crate::assets::fnt_file::FntFile::from_bytes(data)
-                    .map_err(|err| log::warn!("Failed to parse startup GAME.FNT: {err}"))
-                    .ok()
-            })
-        });
+        let startup_fnt = startup_asset_manager
+            .as_ref()
+            .and_then(crate::render::shell_ui_style_assets::load_game_font);
         let bit_font = match startup_fnt.as_ref() {
             Some(fnt) => BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt),
             None => BitFont::without_fnt(&gpu.device, &gpu.queue, &batch_renderer),

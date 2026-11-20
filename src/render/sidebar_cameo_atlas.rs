@@ -8,11 +8,13 @@ use std::path::Path;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
+use crate::assets::pcx_file::PcxFile;
 use crate::assets::shp_file::ShpFile;
 use crate::i18n::cameo_labels::{CAMEO_HEIGHT, CAMEO_WIDTH, CameoLabel};
 use crate::render::atlas_growth;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
+use crate::render::shell_ui_style_assets::{decode_ui_pcx, decode_ui_shp, ui_art_candidates};
 use crate::render::sidebar_smoothing::{self, SmoothCopy, SmoothSource};
 use crate::rules::ruleset::RuleSet;
 
@@ -300,10 +302,11 @@ fn render_cameo(
     // and nothing else before the stock placeholder.
     if let Some(declared) = rules.art().resolve_declared_cameo_id(type_id, &rules_image) {
         let file_name = format!("{declared}.SHP");
-        if let Some(data) = asset_manager.get_ref(&file_name) {
-            let cameo = render_cameo_file(type_id, &file_name, data, palette)?;
-            log::debug!("Sidebar cameo {} loaded from {}", type_id, file_name);
+        if let Some(cameo) = render_cameo_file(type_id, &file_name, asset_manager, palette) {
             return Some(cameo);
+        }
+        if !asset_manager.mod_selected() && asset_manager.get_ref(&file_name).is_some() {
+            return None;
         }
     }
     render_placeholder_cameo(type_id, rules, asset_manager, palette)
@@ -326,7 +329,7 @@ fn render_placeholder_cameo(
     #[cfg(not(feature = "phobos"))]
     {
         let _ = rules;
-        let cameo = render_shp_frame0(key, asset_manager.get_ref(XXICON)?, palette)?;
+        let cameo = render_named_cameo(key, XXICON, asset_manager, palette, None)?;
         log::debug!("Sidebar cameo {key} fell back to {XXICON}");
         Some(cameo)
     }
@@ -372,12 +375,7 @@ fn render_alt_cameo(
         .art()
         .resolve_declared_alt_cameo_id(type_id, &rules_image)?;
     let shp_name = format!("{alt_cameo}.SHP");
-    let mut cameo = render_cameo_file(
-        type_id,
-        &shp_name,
-        asset_manager.get_ref(&shp_name)?,
-        palette,
-    )?;
+    let mut cameo = render_cameo_file(type_id, &shp_name, asset_manager, palette)?;
     cameo.kind = CameoKind::Promoted;
     log::debug!("Sidebar alt cameo {} loaded from {}", type_id, shp_name);
     Some(cameo)
@@ -396,8 +394,11 @@ fn techno_cameo_palette(
     rules
         .art()
         .resolve_declared_cameo_palette(type_id, rules_image)
-        .and_then(|name| asset_manager.get_ref(name))
-        .and_then(|data| Palette::from_bytes(data).ok())
+        .and_then(|name| load_cameo_palette(asset_manager, name))
+}
+
+pub(crate) fn load_cameo_palette(asset_manager: &AssetManager, name: &str) -> Option<Palette> {
+    ui_art_candidates(asset_manager, name).find_map(|asset| Palette::from_bytes(asset.bytes).ok())
 }
 
 /// Load a superweapon sidebar image SHP directly by name.
@@ -423,17 +424,14 @@ fn render_superweapon_cameo(
     // its SHP cameo when the file loads, else CAMEO.PAL.
     let custom = if ares {
         sw.sidebar_palette()
-            .and_then(|name| asset_manager.get_ref(name))
-            .and_then(|data| Palette::from_bytes(data).ok())
+            .and_then(|name| load_cameo_palette(asset_manager, name))
     } else {
         None
     };
     let palette = custom.as_ref().unwrap_or(palette);
     if let Some(image_name) = sw.sidebar_image.as_deref() {
         let shp_name = format!("{image_name}.SHP");
-        if let Some(data) = asset_manager.get_ref(&shp_name)
-            && let Some(mut cameo) = render_cameo_file(key, &shp_name, data, palette)
-        {
+        if let Some(mut cameo) = render_cameo_file(key, &shp_name, asset_manager, palette) {
             cameo.kind = CameoKind::SuperWeapon;
             log::debug!("SW sidebar cameo {} loaded from {}", image_name, shp_name);
             return Some(cameo);
@@ -466,7 +464,10 @@ pub(crate) struct NativePcxImage {
 /// reads it as one byte per pixel and garbles it; VERA keeps the SHP fallback
 /// instead.
 pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
-    let image = crate::assets::pcx_file::PcxFile::from_bytes(bytes).ok()?;
+    render_native_pcx(&PcxFile::from_bytes(bytes).ok()?)
+}
+
+fn render_native_pcx(image: &PcxFile) -> Option<NativePcxImage> {
     #[cfg(not(feature = "phobos"))]
     if !image.is_indexed() {
         return None;
@@ -481,6 +482,18 @@ pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
     })
 }
 
+pub(crate) fn load_native_pcx(assets: &AssetManager, filename: &str) -> Option<NativePcxImage> {
+    ui_art_candidates(assets, filename).find_map(|asset| {
+        let image = if assets.mod_selected() {
+            render_native_pcx(&decode_ui_pcx(asset.bytes).ok()?)?
+        } else {
+            decode_native_pcx(asset.bytes)?
+        };
+        log::debug!("PCX art {filename} resolved from {}", asset.source);
+        Some(image)
+    })
+}
+
 /// Ares3.0 Cameos1005E32D..1005E366 through `decode_native_pcx`. Normal,
 /// promoted and superweapon consumers share this decoder. Ares supplies
 /// a60x48 destination canvas;6BA5EF..600 uses source dimensions without scaling.
@@ -491,8 +504,7 @@ fn render_pcx_cameo(
     filename: &str,
     asset_manager: &AssetManager,
 ) -> Option<RenderedCameo> {
-    let image = decode_native_pcx(asset_manager.get_ref(filename)?)?;
-    log::debug!("Sidebar PCX cameo {key} loaded from {filename}");
+    let image = load_native_pcx(asset_manager, filename)?;
     // A loaded surface remains selected even if every word is keyed out.
     // Cropping it to None would incorrectly select the legacy SHP instead.
     Some(RenderedCameo {
@@ -514,27 +526,56 @@ fn render_pcx_cameo(
 fn render_cameo_file(
     key: &str,
     file: &str,
-    data: &[u8],
+    assets: &AssetManager,
     palette: &Palette,
 ) -> Option<RenderedCameo> {
     let label = crate::i18n::cameo_label(file);
-    render_labelled_frame0(key, data, palette, label.as_deref())
+    render_named_cameo(key, file, assets, palette, label.as_deref())
+}
+
+fn render_named_cameo(
+    key: &str,
+    file: &str,
+    assets: &AssetManager,
+    palette: &Palette,
+    label: Option<&CameoLabel>,
+) -> Option<RenderedCameo> {
+    ui_art_candidates(assets, file).find_map(|asset| {
+        let shape = if assets.mod_selected() {
+            decode_ui_shp(asset.bytes).ok()?
+        } else {
+            ShpFile::from_bytes(asset.bytes).ok()?
+        };
+        let cameo = render_labelled_shape(key, shape, palette, label)?;
+        log::debug!("Sidebar cameo {key} loaded from {file} in {}", asset.source);
+        Some(cameo)
+    })
 }
 
 /// Frame 0 of a cameo SHP on its full canvas, keyed by `key`.
+#[cfg(test)]
 fn render_shp_frame0(key: &str, data: &[u8], palette: &Palette) -> Option<RenderedCameo> {
     render_labelled_frame0(key, data, palette, None)
 }
 
-/// [`render_shp_frame0`] with `label` drawn over the name in the picture,
-/// when the picture is the retail one it was made for.
+#[cfg(test)]
 fn render_labelled_frame0(
     key: &str,
     data: &[u8],
     palette: &Palette,
     label: Option<&CameoLabel>,
 ) -> Option<RenderedCameo> {
-    let mut shp = ShpFile::from_bytes(data).ok()?;
+    render_labelled_shape(key, ShpFile::from_bytes(data).ok()?, palette, label)
+}
+
+/// Draw a localized label over the name when the shape is the retail picture
+/// the label was made for.
+fn render_labelled_shape(
+    key: &str,
+    mut shp: ShpFile,
+    palette: &Palette,
+    label: Option<&CameoLabel>,
+) -> Option<RenderedCameo> {
     if shp.frames.is_empty() {
         return None;
     }
@@ -598,21 +639,19 @@ fn render_missing_cameo(
     let lower = name.to_ascii_lowercase();
     if lower != "xxicon.shp"
         && lower.contains(".shp")
-        && let Some(cameo) = asset_manager
-            .get_ref(name)
-            .and_then(|data| render_shp_frame0(key, data, palette))
+        && let Some(cameo) = render_named_cameo(key, name, asset_manager, palette, None)
     {
         log::debug!("Sidebar cameo {key} fell back to {name}");
         return Some(cameo);
     }
-    let stock = asset_manager.get_ref(XXICON)?;
+    ui_art_candidates(asset_manager, XXICON).next()?;
     if lower.contains(".pcx")
         && let Some(cameo) = render_pcx_cameo(key, name, asset_manager)
     {
         log::debug!("Sidebar cameo {key} fell back to {name}");
         return Some(cameo);
     }
-    let cameo = render_shp_frame0(key, stock, palette)?;
+    let cameo = render_named_cameo(key, XXICON, asset_manager, palette, None)?;
     log::debug!("Sidebar cameo {key} fell back to {XXICON}");
     Some(cameo)
 }
@@ -883,6 +922,29 @@ mod tests {
         shp.extend_from_slice(&frame);
         shp.extend_from_slice(pixels);
         shp
+    }
+
+    #[test]
+    fn a_build_cameo_uses_the_valid_mod_shape_ahead_of_the_stock_archive() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+        use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+        use crate::assets::pal_file::Palette;
+
+        let install = audio_test_install("stock-build-cameo");
+        let addon = TestDirectory::new("mod-build-cameo");
+        let name = "OVERRIDE.SHP";
+        install.write_mix("language.mix", name, &full_cameo_shp(&[1; 60 * 48]));
+        addon.write_mix("expandmd01.mix", name, &full_cameo_shp(&[2; 60 * 48]));
+        std::fs::write(addon.path().join(name), b"bad cameo").unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(addon.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        let palette = Palette::from_rgb(|index| [index, index, index]);
+        let art = super::render_cameo_file("OVERRIDE", name, &assets, &palette).unwrap();
+        assert_eq!(&art.rgba[..4], &[2, 2, 2, 255]);
     }
 
     /// A language's label redraws its retail cameo's name band and keeps the

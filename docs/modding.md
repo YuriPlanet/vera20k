@@ -202,6 +202,11 @@ can use the other size if the mod ships one. The movie needs to fit the menu's
 picture area, so its width and height must be within a factor of two. Brief,
 wide launcher messages are skipped when looking for menu artwork.
 
+Compatible mod artwork is tried before stock in the startup splash, setup shell,
+loading screen, match controls and score screen. Shape replacements can use
+their matching palette. Supply a loose file or put it in a loaded mod MIX
+archive. The built-in style supplies fallbacks where the mod has no usable art.
+
 Skirmish keeps your saved choices where the selected game supports them. A saved
 faction that the current rules do not offer comes back as **Random**.
 
@@ -213,6 +218,10 @@ containing `Resources/ClientDefinitions.ini` and the game archives there, then
 choose it as above. VERA uses its `MPMapsPath` catalog and can recognize one
 complete renamed Rules, Art and AI family in its numbered MIX files. A folder
 that ships the Ares DLL and its injection list uses VERA's own Ares reader.
+VERA also uses the client theme's `splashScreen.png` and skirmish lobby
+background when present. It reads the configured `BackgroundTexture` from
+`SkirmishLobby.ini` or looks for `gamelobbybg.png`, and draws its setup controls
+over the artwork.
 
 This import opens offline Skirmish with the supported maps and modes. It applies
 their plain mode INIs and uses VERA's game options. Client-only forced settings,

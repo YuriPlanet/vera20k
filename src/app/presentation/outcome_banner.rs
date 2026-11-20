@@ -15,6 +15,7 @@ use crate::app::AppState;
 use crate::assets::{asset_manager::AssetManager, pal_file::Palette, shp_file::ShpFile};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
+use crate::render::shell_ui_style_assets::{decode_ui_shp, ui_art_candidates};
 use crate::sim::house_state::HouseOutcomeKind;
 
 struct Frame {
@@ -81,38 +82,44 @@ impl OutcomeBannerArt {
         image: &str,
         palette: Option<&str>,
     ) -> Option<Self> {
-        let shp = assets
-            .get_ref(image)
-            .and_then(|bytes| ShpFile::from_bytes(bytes).ok())?;
-        //6D4E8D sign-extends the SHP frame count; its invalid-count branch
-        //uses text. The normal retail shape has a small positive count.
-        if (shp.frames.len() as i16) <= 0 {
-            return None;
-        }
+        let texture_limit = gpu.device.limits().max_texture_dimension_2d;
+        let (shp, atlas_width, atlas_height) =
+            ui_art_candidates(assets, image).find_map(|asset| {
+                let shp = if assets.mod_selected() {
+                    decode_ui_shp(asset.bytes).ok()?
+                } else {
+                    ShpFile::from_bytes(asset.bytes).ok()?
+                };
+                // 6D4E8D sign-extends the SHP frame count. The invalid-count
+                // branch uses text.
+                if (shp.frames.len() as i16) <= 0 {
+                    return None;
+                }
+                let width = shp
+                    .frames
+                    .iter()
+                    .map(|frame| u32::from(frame.frame_width))
+                    .sum::<u32>();
+                let height = shp
+                    .frames
+                    .iter()
+                    .map(|frame| u32::from(frame.frame_height))
+                    .max()?;
+                if width == 0 || height == 0 || width.max(height) > texture_limit {
+                    return None;
+                }
+                log::debug!("Outcome banner {image} resolved from {}", asset.source);
+                Some((shp, width, height))
+            })?;
         //6D4E20 draws the frame with CC_Draw_Shape SHAPE_NORMAL through the
         //GRFXTXT ConvertClass: the shared palette conversion, index 0 skipped.
-        let palette = assets
-            .get_ref(palette.unwrap_or(STOCK_PALETTE))
-            .and_then(|bytes| Palette::from_bytes(bytes).ok())
-            .or_else(|| {
-                assets
-                    .get_ref(STOCK_PALETTE)
-                    .and_then(|bytes| Palette::from_bytes(bytes).ok())
-            })?;
-        let atlas_width: u32 = shp
-            .frames
-            .iter()
-            .map(|frame| u32::from(frame.frame_width))
-            .sum();
-        let atlas_height = shp
-            .frames
-            .iter()
-            .map(|frame| u32::from(frame.frame_height))
-            .max()?;
-        if atlas_width == 0 || atlas_height == 0 {
-            return None;
-        }
-        let mut rgba = vec![0; (atlas_width * atlas_height * 4) as usize];
+        let palette_for = |name| {
+            ui_art_candidates(assets, name).find_map(|asset| Palette::from_bytes(asset.bytes).ok())
+        };
+        let palette = palette
+            .and_then(palette_for)
+            .or_else(|| palette_for(STOCK_PALETTE))?;
+        let mut rgba = vec![0; atlas_width.checked_mul(atlas_height)?.checked_mul(4)? as usize];
         let mut x = 0;
         let mut frames = Vec::with_capacity(shp.frames.len());
         for (index, frame) in shp.frames.iter().enumerate() {

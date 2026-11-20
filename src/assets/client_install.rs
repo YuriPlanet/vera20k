@@ -19,6 +19,14 @@ const MAX_ENTRIES: usize = 65_536;
 pub struct ClientInstall {
     pub maps: Vec<ClientMap>,
     pub modes: Vec<ClientMode>,
+    pub theme: ClientTheme,
+}
+
+/// Optional launcher artwork for equivalent VERA screens.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ClientTheme {
+    pub startup_splash: Option<PathBuf>,
+    pub skirmish_background: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -149,7 +157,77 @@ impl ClientInstall {
                 max_players,
             });
         }
-        Ok(Some(Self { maps, modes }))
+        Ok(Some(Self {
+            maps,
+            modes,
+            theme: read_theme(&root, &definitions),
+        }))
+    }
+}
+
+fn theme_entry(value: &str) -> Option<(&str, &str)> {
+    let (name, path) = value.split_once(',')?;
+    let name = name.trim();
+    (!name.is_empty()).then_some((name, path.trim()))
+}
+
+fn read_theme(root: &Path, definitions: &ClientIni) -> ClientTheme {
+    // CnCNet ClientConfiguration.cs and UserINISettings.cs: [Themes] lists
+    // name,directory pairs. The user's Theme defaults to entry 0.
+    // https://github.com/CnCNet/xna-cncnet-client/tree/0ebe0d60/ClientCore
+    let settings_file = definitions
+        .value("Settings", "SettingsFile")
+        .unwrap_or("Settings.ini");
+    let settings = resolve_file(root, settings_file)
+        .ok()
+        .flatten()
+        .and_then(|path| ClientIni::read(&path).ok());
+    let selected = settings
+        .as_ref()
+        .and_then(|ini| ini.value("MultiPlayer", "Theme"))
+        .and_then(|selection| {
+            definitions
+                .entries("Themes")
+                .iter()
+                .filter_map(|(_, value)| theme_entry(value))
+                .find(|(name, _)| *name == selection)
+                // Older packages store the numbered entry in Theme.
+                .or_else(|| {
+                    let index = selection.parse::<u32>().ok()?;
+                    theme_entry(definitions.value("Themes", &index.to_string())?)
+                })
+        });
+    let directory = selected
+        .or_else(|| definitions.value("Themes", "0").and_then(theme_entry))
+        .map(|(_, directory)| directory)
+        .filter(|directory| !directory.is_empty());
+
+    // Startup.cs and GameClass.cs search the chosen resource directory
+    // before the base Resources. Theme directories can end in a separator.
+    let resource = |name: &str| {
+        path_parts(name).ok()?;
+        if let Some(directory) = directory {
+            let directory = directory.trim_end_matches(['/', '\\']);
+            let path = resolve_file(root, &format!("Resources/{directory}/{name}")).ok()?;
+            if path.is_some() {
+                return path;
+            }
+        }
+        resolve_file(root, &format!("Resources/{name}"))
+            .ok()
+            .flatten()
+    };
+
+    // GameLobbyBase.Initialize loads gamelobbybg.png before loading the
+    // window's INI. INItializableWindow reads the named theme INI first.
+    let skirmish = resource("SkirmishLobby.ini").and_then(|path| ClientIni::read(&path).ok());
+    let background = skirmish
+        .as_ref()
+        .and_then(|ini| ini.value("SkirmishLobby", "BackgroundTexture"))
+        .unwrap_or("gamelobbybg.png");
+    ClientTheme {
+        startup_splash: resource("splashScreen.png"),
+        skirmish_background: resource(background),
     }
 }
 
@@ -396,6 +474,74 @@ impl ClientIni {
 mod tests {
     use super::*;
     use crate::assets::asset_manager::test_support::TestDirectory;
+
+    #[test]
+    fn client_theme_uses_selected_lobby_art_and_base_splash() {
+        let dir = TestDirectory::new("client-theme");
+        let resources = dir.path().join("Resources");
+        std::fs::create_dir_all(resources.join("Alternate/Pictures")).unwrap();
+        std::fs::create_dir_all(dir.path().join("INI")).unwrap();
+        std::fs::write(
+            resources.join("ClientDefinitions.ini"),
+            "[Themes]\n0=Default,\n1=Other,alternate/\n[Settings]\nSettingsFile=client.ini\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("INI/MPMaps.ini"), "[GameModes]\n").unwrap();
+        std::fs::write(resources.join("SplashScreen.PNG"), []).unwrap();
+        std::fs::write(resources.join("gamelobbybg.png"), []).unwrap();
+        std::fs::write(resources.join("Alternate/Pictures/Lobby.PNG"), []).unwrap();
+        std::fs::write(
+            resources.join("Alternate/SkirmishLobby.INI"),
+            "[SkirmishLobby]\nBackgroundTexture=pictures\\lobby.png\n",
+        )
+        .unwrap();
+        for selection in ["Other", "1"] {
+            std::fs::write(
+                dir.path().join("client.ini"),
+                format!("[MultiPlayer]\nTheme={selection}\n"),
+            )
+            .unwrap();
+            let theme = ClientInstall::read(dir.path()).unwrap().unwrap().theme;
+            assert_eq!(
+                theme,
+                ClientTheme {
+                    startup_splash: Some(canonical(&resources.join("SplashScreen.PNG")).unwrap()),
+                    skirmish_background: Some(
+                        canonical(&resources.join("Alternate/Pictures/Lobby.PNG")).unwrap()
+                    ),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_theme_background_does_not_reject_a_valid_map() {
+        let dir = TestDirectory::new("client-theme-invalid");
+        let resources = dir.path().join("Resources");
+        std::fs::create_dir_all(&resources).unwrap();
+        std::fs::create_dir_all(dir.path().join("INI")).unwrap();
+        std::fs::write(
+            resources.join("ClientDefinitions.ini"),
+            "[Themes]\n0=Default,\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("INI/MPMaps.ini"),
+            "[GameModes]\n0=Default\n[MultiMaps]\n0=Arena\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("Arena.map"), []).unwrap();
+        std::fs::write(dir.path().join("outside.png"), []).unwrap();
+        std::fs::write(
+            resources.join("SkirmishLobby.ini"),
+            "[SkirmishLobby]\nBackgroundTexture=../outside.png\n",
+        )
+        .unwrap();
+
+        let install = ClientInstall::read(dir.path()).unwrap().unwrap();
+        assert_eq!(install.theme.skirmish_background, None);
+        assert_eq!(install.maps[0].file_name, "Arena.map");
+    }
 
     #[test]
     fn client_metadata_resolves_real_spelling_and_plain_modes() {

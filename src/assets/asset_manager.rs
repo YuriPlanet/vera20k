@@ -50,6 +50,7 @@ struct LooseAsset {
     path: PathBuf,
     source_name: String,
     bytes: OnceLock<Option<Arc<[u8]>>>,
+    installation_copy: Option<Box<LooseAsset>>,
 }
 
 impl LooseAsset {
@@ -629,7 +630,10 @@ impl AssetManager {
             // Archives are found through this catalogue too
             // (`mount_named_archive`), so a mod's `expandmd50.mix` mounts where
             // the installation's would.
-            loose_files.extend(Self::open_loose_root(mod_dir)?);
+            for (name, mut asset) in Self::open_loose_root(mod_dir)? {
+                asset.installation_copy = loose_files.remove(&name).map(Box::new);
+                loose_files.insert(name, asset);
+            }
         }
         Ok(Self {
             archives: Vec::new(),
@@ -1064,10 +1068,32 @@ impl AssetManager {
         name: &str,
         maximum: usize,
     ) -> impl Iterator<Item = (&'a [u8], &'a str)> + use<'a> {
+        self.presentation_asset_candidates(name, maximum, true)
+    }
+
+    /// Installation copies a presentation slot can use when no mod copy fits.
+    pub fn base_asset_candidates<'a>(
+        &'a self,
+        name: &str,
+        maximum: usize,
+    ) -> impl Iterator<Item = (&'a [u8], &'a str)> + use<'a> {
+        self.presentation_asset_candidates(name, maximum, false)
+    }
+
+    fn presentation_asset_candidates<'a>(
+        &'a self,
+        name: &str,
+        maximum: usize,
+        from_selected_mod: bool,
+    ) -> impl Iterator<Item = (&'a [u8], &'a str)> + use<'a> {
         let from_mod = |path: &Path| self.mod_dir().is_some_and(|root| path.starts_with(root));
         let loose = self
             .loose_asset(name)
-            .filter(|loose| from_mod(&loose.path))
+            .and_then(|loose| match (from_mod(&loose.path), from_selected_mod) {
+                (true, true) | (false, false) => Some(loose),
+                (true, false) => loose.installation_copy.as_deref(),
+                (false, true) => None,
+            })
             .into_iter()
             .filter_map(move |loose| {
                 let bytes = loose.bytes_bounded(maximum).ok()??;
@@ -1077,7 +1103,9 @@ impl AssetManager {
         let archives = self
             .archives
             .iter()
-            .filter(move |named| named.archive.container_path().is_some_and(from_mod))
+            .filter(move |named| {
+                named.archive.container_path().is_some_and(from_mod) == from_selected_mod
+            })
             .filter_map(move |named| {
                 let bytes = named.archive.get_by_id(entry_id)?;
                 (bytes.len() <= maximum).then_some((bytes, named.name.as_str()))
@@ -2088,6 +2116,7 @@ impl AssetManager {
                     path: path.clone(),
                     source_name: format!("loose:{}", path.display()),
                     bytes: OnceLock::new(),
+                    installation_copy: None,
                 },
             );
         }
@@ -3216,6 +3245,7 @@ mod tests {
                     path: PathBuf::from("RA2MD.CSF"),
                     source_name: "loose:RA2MD.CSF".to_string(),
                     bytes: OnceLock::from(Some(Arc::from(&b"loose"[..]))),
+                    installation_copy: None,
                 },
             )]),
             audio_pairs: Vec::new(),
