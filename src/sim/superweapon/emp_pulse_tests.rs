@@ -72,6 +72,8 @@ const ART: &str = "[CANNON]\nFoundation=1x1\n[GUN]\nFoundation=1x1\n[DEPOT]\nFou
     [BALL]\n[PULSBALL]\n";
 
 fn rules(extra: &str) -> RuleSet {
+    // The fixture's `Type=EMPulse` data is SWTypeExt (Ares) read the Ares way.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(extra));
     let art = IniFile::from_str(ART);
@@ -515,7 +517,7 @@ fn a_second_empulse_hold_appends_to_the_house_entry() {
     );
     assert_eq!(house.release_emp_pulse_sws(pulse), [first, second]);
     assert!(house.suspended_emp_pulse_sws().is_empty());
-    }
+}
 /// Mental Omega's Iron Guard shape: an auto-firing, self-targeting EMPulse
 /// whose cannon's warhead curtains its House's nearby units.
 const IRON_GUARD: &str = "\

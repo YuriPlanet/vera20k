@@ -521,11 +521,17 @@ pub(super) fn resolve_receive_damage_with_input(
     // without an attacker, and `[CombatDamage] AllowBerzerkOnAllies=yes`
     // lets the allied hit through
     // (`Ext/Techno/Hooks.ReceiveDamage.cpp:528-539`).
-    let psychedelic_allied_rejection = !rules.phobos_globals.allow_berzerk_on_allies
-        && source
-            .map(|entity| entity.owner())
-            .or(event.source_house)
-            .is_some_and(|owner| allied(target.owner(), owner));
+    let psychedelic_allied_rejection = if rules.phobos() {
+        !rules.phobos_globals.allow_berzerk_on_allies
+            && source
+                .map(|entity| entity.owner())
+                .or(event.source_house)
+                .is_some_and(|owner| allied(target.owner(), owner))
+    } else {
+        event
+            .source_house
+            .is_some_and(|owner| allied(target.owner(), owner))
+    };
     // Techno701CA1 asks the live attacker's House about the target;
     // Psychedelic701CE5 asks the target's House about the literal sourceHouse argument.
     let attacker_is_allied =
@@ -574,9 +580,8 @@ pub(super) fn resolve_receive_damage_with_input(
         let owner = source.map(|entity| entity.owner()).or(event.source_house);
         Some(
             warhead.affects_allies
-                || !owner.is_some_and(|owner| {
-                    owner == target.owner() || allied(owner, target.owner())
-                }),
+                || !owner
+                    .is_some_and(|owner| owner == target.owner() || allied(owner, target.owner())),
         )
     } else {
         None

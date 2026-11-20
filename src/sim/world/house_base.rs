@@ -368,25 +368,26 @@ impl HouseBaseState {
             self.secret_labs.push(id);
         }
         // The stock `FactoryPlant=` test at `0x4414F7..0x4414FF` gates the
-        // whole House+140 append, so a restricted plant must be a plant too.
-        let restricted = self
-            .registration(id)
-            .is_some_and(|entry| entry.plant.is_some() && entry.restricted.is_some());
-        if restricted {
-            self.restricted_plants.push(id);
-        } else if self
-            .registration(id)
-            .is_some_and(|entry| entry.plant.is_some())
-        {
-            self.plants.push(id);
+        // whole House+140 append, so a restricted plant is a plant too. Its
+        // bonus belongs to the restricted list alone: the ordinary list would
+        // spread the discount to every type the Phobos allow/disallow and
+        // max-count rules exclude.
+        let (plant, restricted) = self.registration(id).map_or((false, false), |entry| {
+            (
+                entry.plant.is_some(),
+                entry.plant.is_some() && entry.restricted.is_some(),
+            )
+        });
+        if plant {
+            if restricted {
+                self.restricted_plants.push(id);
+            } else {
+                self.plants.push(id);
+            }
+            self.buildings.push(id);
+        } else {
+            self.buildings.push(id);
         }
-        if self
-            .registration(id)
-            .is_some_and(|entry| entry.plant.is_some())
-        {
-            self.plants.push(id);
-        }
-        self.buildings.push(id);
     }
 }
 

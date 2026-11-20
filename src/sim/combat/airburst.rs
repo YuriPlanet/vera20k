@@ -10,7 +10,7 @@ use crate::sim::world::Simulation;
 /// Installed Ares replaces the whole tail with `1001A090` (hook `0x469EBA`,
 /// [`ares_emit`]), including when `Splits=` is false. Installed Phobos NOPs
 /// it and owns both `Airburst=` and `Splits=` (`phobos_airburst`), taking
-/// precedence over Ares; Phobos builds never call this.
+/// precedence over Ares; the caller picks by `RuleSet::phobos()`.
 pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
     if rules.ares() {
         ares_emit(world, rules, detonation);
@@ -22,9 +22,6 @@ pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &Project
 /// Eight native compass neighbors followed by the retained center identity;
 /// Cluster controls neither this count nor a second parent detonation.
 fn stock_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
-    if crate::rules::PHOBOS_ENABLED {
-        return;
-    }
     // Native always has an actual `this` Bullet. Receiver-only packets (for
     // example a bare death weapon) do not invent a fan from an impact point.
     let Some(parent) = world.projectiles.get(detonation.projectile_id) else {

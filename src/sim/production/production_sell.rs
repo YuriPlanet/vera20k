@@ -126,7 +126,7 @@ pub(crate) fn type_refund(
     let m2 = if rules.ares_form() {
         factors.ares_factory_plant(slot, object.ares_production().factory_plant_multiplier())
     } else {
-        factors.factory_plant[slot]
+        factors.plant_factor(slot)
     };
     if object.soylent != 0 {
         return X87::ftol_i32_low_masked(X87::mul(

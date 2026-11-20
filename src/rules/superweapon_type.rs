@@ -1140,12 +1140,14 @@ impl SuperWeaponType {
             generic_warhead: (ares_way && kind == SuperWeaponKind::GenericWarhead).then(|| {
                 GenericWarheadSettings {
                     warhead: None,
-                    damage: crate::rules::ares_switch::ares_read(|| section.read_int("SW.Damage", 0)),
+                    damage: crate::rules::ares_switch::ares_read(|| {
+                        section.read_int("SW.Damage", 0)
+                    }),
                 }
             }),
         }
     }
-    }
+}
 
 /// Canonical, category-distinct TechnoType pointer used by SW type lists.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -1751,11 +1753,14 @@ impl AresEMPulseRules {
         // Phobos reads the same section after Ares (`Body.cpp:179-182`).
         // `Valueable<int>` is INI_EX::ReadInteger and `Valueable<bool>` a
         // plain ReadBool, both retaining the constructor value on a failure.
+        // These are Phobos-only keys, so they turn the Phobos switch on.
         {
-            self.empulse_weapon_index =
-                section.read_int("EMPulse.WeaponIndex", self.empulse_weapon_index);
-            self.empulse_suspend_others =
-                section.read_bool("EMPulse.SuspendOthers", self.empulse_suspend_others);
+            self.empulse_weapon_index = crate::rules::phobos_switch::phobos_read(|| {
+                section.read_int("EMPulse.WeaponIndex", self.empulse_weapon_index)
+            });
+            self.empulse_suspend_others = crate::rules::phobos_switch::phobos_read(|| {
+                section.read_bool("EMPulse.SuspendOthers", self.empulse_suspend_others)
+            });
         }
         if pulse_ball.is_some() {
             self.pulse_ball = pulse_ball;

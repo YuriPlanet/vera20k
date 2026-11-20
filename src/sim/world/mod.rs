@@ -3019,6 +3019,10 @@ impl Simulation {
                 } else {
                     None
                 };
+                let ambient_ignored_id = ambient_ignored_target.and_then(|target| match target {
+                    crate::sim::combat::TargetKind::Entity(id) => Some(id),
+                    _ => None,
+                });
                 let source_house = Some(firer.owner());
                 let mut shared_damage = raw_ambient_damage;
 
@@ -3060,6 +3064,7 @@ impl Simulation {
                     let receiver = match receiver_object {
                         CellObject::Entity(id)
                             if Some(id) != firer
+                                && Some(id) != ambient_ignored_id
                                 && self
                                     .substrate
                                     .entities
@@ -3083,7 +3088,8 @@ impl Simulation {
                             ))
                         }
                         CellObject::Terrain(id)
-                            if self
+                            if Some(id) != ambient_ignored_id
+                                && self
                                 .terrain_objects
                                 .get(id)
                                 .is_some_and(|tree| tree.is_live() && tree.health() > 0) =>
@@ -3161,8 +3167,10 @@ impl Simulation {
                     // `Wall=yes` one damages the wall.
                     if flags.wall
                         && (!rules.ares()
-                            || rules
-                                .warhead(warhead_name)
+                            || weapon
+                                .warhead
+                                .as_deref()
+                                .and_then(|name| rules.warhead(name))
                                 .is_some_and(|warhead| warhead.wall))
                     {
                         let _wall = {

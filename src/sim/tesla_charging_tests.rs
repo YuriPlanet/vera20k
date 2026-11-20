@@ -975,6 +975,7 @@ fn overpowered(sim: &mut Simulation, rules: &RuleSet, coil: u64, online: bool) -
         .entities
         .get(coil)
         .unwrap()
+        .building
         .tesla_charge
         .is_overpowered()
 }

@@ -141,12 +141,12 @@ impl Simulation {
             // `0x004555DA`: an offline building (independent latch) is not
             // operational unless two retained Tesla chargers bypass it.
             online: entity.building_online(),
-            tesla_chargers: entity.tesla_charge.chargers().len() as i32,
+            tesla_chargers: entity.building.tesla_charge.chargers().len() as i32,
             tesla_charge_levels: Self::power_charger_level_sum(
                 &self.interner,
                 &self.substrate,
                 rules,
-                entity.tesla_charge.chargers(),
+                entity.building.tesla_charge.chargers(),
             ),
             overpower_keep_online: object.overpower_keep_online,
             charger_bypass: {

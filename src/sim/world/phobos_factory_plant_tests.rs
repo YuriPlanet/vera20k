@@ -226,6 +226,9 @@ fn capture_moves_the_restricted_plant_and_death_removes_it() {
 /// multiplies. One 0.8 plant with a multiplier of 2 discounts to 0.6.
 #[test]
 fn factory_plant_multiplier_scales_the_restricted_discount() {
+    // `FactoryPlant.Multiplier` is an Ares TypeExt key: only a game whose
+    // Rules are read the Ares way holds it.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // `GetRestrictedFactoryPlantMult` multiplies by the *priced* type's
     // `FactoryPlant.Multiplier` (`Ext/House/Body.cpp:585`).
     let rules = RuleSet::from_ini(&IniFile::from_str(

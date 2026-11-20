@@ -571,7 +571,6 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
     // (`Ext/Building/Hooks.cpp:132-189`): the Phobos latch owns the weapon
     // slot, the suspended-SW resume and the clear, all before the shot.
     let weapon_index = phobos_empulse_weapon_index(sim, rules, id, cell);
-    let weapon_index = 0_i32;
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;
     };

@@ -1109,10 +1109,7 @@ fn phobos_spare_power_puts_a_power_plant_first() {
              [General]\nGDIPowerPlant=GAPOWR\n[AI]\n{ai}\n"
         )))
         .expect("spare power rules");
-        assert_eq!(
-            rules.phobos(),
-            ai.starts_with("Enable") || crate::rules::PHOBOS_ENABLED
-        );
+        assert_eq!(rules.phobos(), ai.starts_with("Enable"));
         let radar = rules.object("RADAR").expect("consumer type");
         assert_eq!(
             super::power_plant_to_splice(&mut sim, &rules, owner, radar),

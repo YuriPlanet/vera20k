@@ -932,6 +932,9 @@ fn powers_up_buildings_prerequisite_accepts_any_declared_host() {
 /// installed on the second host too.
 #[test]
 fn powers_up_buildings_build_limit_counts_every_host() {
+    // `PowersUp.Buildings` is an Ares key and the limit census is Ares'
+    // `CountOwned10020AF0`: the fixture reads its Rules the Ares way.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=HOST_A\n1=HOST_B\n2=UPGRADE\n\
          [HOST_A]\nStrength=100\nUpgrades=3\n\

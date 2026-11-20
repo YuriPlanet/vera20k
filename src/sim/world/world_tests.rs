@@ -10338,6 +10338,10 @@ fn phobos_wave_ambient_damage_ignore_target_skips_a_terrain_target() {
 /// (`0x75F39D`) must not replace.
 #[test]
 fn phobos_wave_wall_damage_gate_reads_the_weapon_warhead() {
+    // The wall gate is Ares `WaveClass_DamageCell_Wall`: the fixture names an
+    // Ares-only weapon key (`ProjectileRange`, at its default) so the game
+    // reads as an Ares game.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     fn wall_rules(weapon_warhead: &str) -> RuleSet {
         RuleSet::from_ini(&IniFile::from_str(&format!(
             "[VehicleTypes]\n0=DLPH\n1=AIM\n\n\
@@ -10345,6 +10349,7 @@ fn phobos_wave_wall_damage_gate_reads_the_weapon_warhead() {
              [AIM]\nStrength=100\nArmor=wood\n\n\
              [SonicZap]\nDamage=4\nROF=20\nRange=10\nProjectile=Sonic\nSpeed=100\n\
              Warhead={weapon_warhead}\nIsSonic=yes\nAmbientDamage=10\n\
+             ProjectileRange=100000\n\
              AmbientDamage.Warhead={override_warhead}\n\n\
              [Sonic]\nLevel=yes\n\n\
              [RAILWH]\nWood=yes\n\

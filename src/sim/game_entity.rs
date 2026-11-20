@@ -1022,10 +1022,6 @@ pub struct Seldom {
     /// latch from Ares's TechnoExt::SuperWeapon, which other owners read.
     #[serde(default)]
     phobos_current_empulse_sw: Option<crate::sim::intern::InternedId>,
-    /// Building+66C charger pointers and +661 weapon latch, owned by
-    /// `sim::tesla_charging` independently of House power accounting.
-    #[serde(default)]
-    pub(crate) tesla_charge: crate::sim::tesla_charging::BuildingCharge,
     /// Foot+68E automatic charging-target intent, owned by `sim::tesla_charging`.
     #[serde(default)]
     pub(crate) tesla_charger: crate::sim::tesla_charging::TeslaCharger,
@@ -3158,7 +3154,6 @@ impl GameEntity {
             ares_super_weapon: None,
             ares_super_target: None,
             phobos_current_empulse_sw: None,
-            tesla_charge: Default::default(),
             fall: ObjectFallState::default(),
             jumpjet_straight_ascend: false,
             invulnerability: None,

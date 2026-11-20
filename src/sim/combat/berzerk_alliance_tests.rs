@@ -10,16 +10,23 @@ use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
-fn rules() -> RuleSet {
-    RuleSet::from_ini(&clear_ground_ini(
+fn rules_with(allow_key: &str) -> RuleSet {
+    RuleSet::from_ini(&clear_ground_ini(&format!(
         "[VehicleTypes]\n0=FIRER\n1=TARGET\n\
          [Warheads]\n0=WH\n\
          [WH]\nCellSpread=0\nDamage=30\nPsychedelic=yes\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [FIRER]\nStrength=500\nArmor=none\n\
-         [TARGET]\nStrength=1000\nArmor=none\nImmuneToPsionics=no\n",
-    ))
+         [TARGET]\nStrength=1000\nArmor=none\nImmuneToPsionics=no\n\
+         {allow_key}"
+    )))
     .expect("psychedelic fixture")
+}
+
+/// The Phobos hook: `AllowBerzerkOnAllies=` (even at its default) marks the
+/// game as a Phobos game, which is what installs it.
+fn rules() -> RuleSet {
+    rules_with("[CombatDamage]\nAllowBerzerkOnAllies=no\n")
 }
 
 /// One Psychedelic hit from `firer`'s own house, with a hostile `event`
@@ -109,7 +116,7 @@ fn without_an_attacker_the_source_house_still_governs() {
 /// inverts.
 #[test]
 fn stock_reads_only_the_source_house_of_the_call() {
-    let rules = rules();
+    let rules = rules_with("");
     let (mut sim, firer, target) = paired(&rules);
     hit(&mut sim, &rules, firer, target, Some("Russians"), true);
     assert!(

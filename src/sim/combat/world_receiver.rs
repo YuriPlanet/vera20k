@@ -5277,8 +5277,47 @@ pub(crate) fn commit_projectile_detonations_inline(
             // The ordinary outer cluster successor still follows that return.
             if area_continuation.is_none() || area_result != AreaDamageResult::IronCurtain {
                 emit_warhead_debris(world, rules, &live_tail, warhead, emit);
-                super::phobos_airburst::emit(world, rules, &live_tail);
-                super::airburst::emit(world, rules, &live_tail);
+                // Phobos `BulletClass_Logics_Extras` (`0x469AA4`,
+                // `Ext/Bullet/Hooks.DetonateLogics.cpp:367-470`): after this
+                // cluster's detonation, the weapon's `ExtraWarheads=` fire at
+                // the same impact, before the airburst tail (`0x469EBA`).
+                super::phobos_extra_warheads::emit(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    &live_tail,
+                    emit,
+                    under_attack_events,
+                );
+                // Phobos `BulletClass_Logics_Extras`'s "Return to sender" arm
+                // (`0x469AA4`, `Ext/Bullet/Hooks.DetonateLogics.cpp:480-500`):
+                // after the extra warheads and before `UnlimboDetonate`, a
+                // `BulletType`'s `ReturnWeapon=` fires back at the firer from
+                // this impact.
+                super::phobos_return_weapon::emit(world, rules, &live_tail);
+                // Phobos `BulletClass_Logics_Extras`'s `UnlimboDetonate` arm
+                // (`0x469AA4`, `Ext/Bullet/Hooks.DetonateLogics.cpp:502-592`):
+                // after the weapon's own warhead, the same hook replays a
+                // `LimboLaunch=` firer of a qualifying warhead at this impact.
+                super::phobos_unlimbo_detonate::emit(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    &live_tail,
+                    warhead,
+                    emit,
+                    under_attack_events,
+                );
+                // Phobos NOPs the native airburst tail and owns both
+                // `Airburst=` and `Splits=` (`0x469EBA`, taking precedence
+                // over Ares); without Phobos the tail is `super::airburst`.
+                if rules.phobos() {
+                    super::phobos_airburst::emit(world, rules, &live_tail);
+                } else {
+                    super::airburst::emit(world, rules, &live_tail);
+                }
             }
             if cluster_draws {
                 // Phobos `BulletClass_Explode_Cluster` (`0x46902C`,

@@ -6987,8 +6987,12 @@ impl ObjectType {
             produce_cash_amount: section.read_int("ProduceCashAmount", 0),
             produce_cash_delay: section.read_int("ProduceCashDelay", 0),
             overpowerable: section.read_bool("Overpowerable", false),
-            overpower_keep_online: section.read_int("Overpower.KeepOnline", 2),
-            overpower_charge_weapon: section.read_int("Overpower.ChargeWeapon", 1),
+            overpower_keep_online: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_int("Overpower.KeepOnline", 2)
+            }),
+            overpower_charge_weapon: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_int("Overpower.ChargeWeapon", 1)
+            }),
             attack_friendlies: section.read_bool("AttackFriendlies", false),
             attack_cursor_on_friendlies: section.read_bool("AttackCursorOnFriendlies", false),
             sabotage_cursor: section.read_bool("SabotageCursor", false),

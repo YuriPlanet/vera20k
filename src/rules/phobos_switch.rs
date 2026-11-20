@@ -24,10 +24,9 @@
 //!
 //! The answer comes from the recorded reads that also decide Ares
 //! (`ares_switch::record`), and the RuleSet stores it, so a save, a replay
-//! and every peer reach it again from the same rules, mode and map. Until the
-//! `phobos` build feature is deleted, a build with it plays Phobos in every
-//! game, as it always has: the rest of its Phobos code still runs there
-//! without asking.
+//! and every peer reach it again from the same rules, mode and map. A game
+//! whose data names none of those keys plays as gamemd even though every
+//! build carries the Phobos code.
 
 use std::cell::Cell;
 
@@ -62,12 +61,12 @@ pub(super) fn reading() -> bool {
 }
 
 /// Whether Phobos plays in the game whose Rules projection made these reads:
-/// a key only Phobos readers found, or a build with the `phobos` feature. The
-/// deciding key goes to the log, so a modder can see why.
+/// a key only Phobos readers found. The deciding key goes to the log, so a
+/// modder can see why.
 pub(super) fn decide(projection: &KeyReads) -> bool {
     let key = projection.phobos_only().min();
     if let Some((section, key)) = key {
         log::info!("Phobos plays in this game: [{section}] {key} is a Phobos key");
     }
-    crate::rules::PHOBOS_ENABLED || key.is_some()
+    key.is_some()
 }

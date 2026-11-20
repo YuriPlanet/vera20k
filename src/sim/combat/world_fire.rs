@@ -3422,6 +3422,7 @@ pub(super) fn emit_admitted_fire(
         } else {
             fireat_rearm_frames(rof, entity.berserk.is_active())
         };
+        entity.weapon_burst.record_rearm_arm(rearm_arm);
         entity.rearm_after_fire(binary_frame as i32, rearm);
         // Phobos `SetChargeTurretDelay` hooks this rearm site (`0x6FF29E`);
         // the just-fired shot's list item (`CurrentBurstIndex - 1`, `0x6FF27C`
@@ -4327,6 +4328,12 @@ pub(crate) fn visit_fire(
                 && let Some(target) = shot_target(actor, None)
             {
                 let snap = build_attacker_snapshot(actor, target, None);
+                // Phobos `UnitClass_UpdateFiring_OmniFireTurnToTarget @
+                // 0x736E6E` (`Ext/Unit/Hooks.Jumpjet.cpp:50-96`) runs before
+                // `UnitClass_UpdateFiring_FireUp @ 0x736F61` and tests the
+                // `GetFireError` answer the fire routine already computed,
+                // so the hull turns on a held frame too.
+                let omni_turn = phobos_omni_fire_turn(world, rules, id, &snap.target, fog_enabled);
                 emit.unit_facing.push(UnitFacingUpdate {
                     entity_id: id,
                     turret_destination: None,
@@ -4334,20 +4341,77 @@ pub(crate) fn visit_fire(
                     hull_destination: None,
                     turret_destination_is_idle_return: false,
                 });
-                let fire_error = resolve_attacker_fire(
-                    world,
-                    rules,
-                    overlay_registry,
-                    &snap,
-                    fog_enabled,
-                    world.session.binary_frame(),
-                    world.active_wave_id(id).is_some(),
-                    emit,
-                    run.effects(),
-                    false,
-                )
-                .0
-                .code;
+                let facing_update_index = emit.unit_facing.len() - 1;
+                // Phobos `UnitClass_UpdateFiring_FireUp @ 0x736F61`
+                // (`SkipFiring = 0x737063`) runs after this facing work and
+                // before `Fire_At_Target`: a held frame launches nothing.
+                // The raw `FireVisit::Direct` path stays ungated.
+                let gate = phobos_unit_fire_up_skips(world, rules, &snap, fog_enabled);
+                let mut fire_error = None;
+                if !gate.skip {
+                    let (reach, repeat_shot) = resolve_attacker_fire(
+                        world,
+                        rules,
+                        overlay_registry,
+                        &snap,
+                        fog_enabled,
+                        world.session.binary_frame(),
+                        world.active_wave_id(id).is_some(),
+                        emit,
+                        run.effects(),
+                        gate.pause_handled,
+                    );
+                    // `UnitClass_UpdateFiring_BurstNoDelay @ 0x736F67` fires
+                    // the rest of the burst inside this same update.
+                    if let Some(shot) = repeat_shot {
+                        fire_remaining_burst_this_frame(
+                            world,
+                            rules,
+                            overlay_registry,
+                            &shot,
+                            world.session.binary_frame(),
+                            fog_enabled,
+                            emit,
+                            run.effects(),
+                        );
+                    }
+                    fire_error = reach.code;
+                }
+                // A held frame skipped the launch — ask that same query here.
+                if let Some(turn) = omni_turn {
+                    let held_code = if gate.skip {
+                        phobos_held_frame_fire_error(
+                            world,
+                            rules,
+                            overlay_registry,
+                            &snap,
+                            turn.weapon_index,
+                            fog_enabled,
+                        )
+                    } else {
+                        None
+                    };
+                    if let Some(code) = fire_error.or(held_code)
+                        && matches!(
+                            code,
+                            fire_error::FireError::Ok | fire_error::FireError::Rearm
+                        )
+                        && (code != fire_error::FireError::Rearm || turn.rearm_allowed)
+                        && turn.should_turn
+                    {
+                        if turn.jumpjet {
+                            let frame = world.session.binary_frame();
+                            if let Some(entity) = world.substrate.entities.get_mut(id)
+                                && let Some(loco) = entity.locomotor.as_mut()
+                                && let Some(runtime) = loco.jumpjet_runtime_mut()
+                            {
+                                runtime.set_desired_facing(turn.direction, frame);
+                            }
+                        } else if let Some(update) = emit.unit_facing.get_mut(facing_update_index) {
+                            update.hull_destination = Some(turn.direction);
+                        }
+                    }
+                }
                 unit_tail = Some((id, fire_error));
             }
         }

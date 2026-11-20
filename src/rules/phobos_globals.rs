@@ -2734,13 +2734,18 @@ impl PhobosGlobals {
         globals.ai_node_walls_only = ai.read_bool("AINodeWallsOnly", globals.ai_node_walls_only);
         globals.ai_clean_wall_node = ai.read_bool("AICleanWallNode", globals.ai_clean_wall_node);
         // `Ext/Rules/Body.cpp:243-244`: the surplus-power switches live in
-        // `[AI]`, not in `[General]`.
-        globals.enable_power_surplus =
-            ai.read_bool("EnablePowerSurplus", globals.enable_power_surplus);
-        globals.power_surplus_scale_to_drain_amount = ai.read_int(
-            "PowerSurplus.ScaleToDrainAmount",
-            globals.power_surplus_scale_to_drain_amount,
-        );
+        // `[AI]`, not in `[General]`. Both are Phobos-only keys, so they turn
+        // the Phobos switch on.
+        globals.enable_power_surplus = crate::rules::phobos_switch::phobos_read(|| {
+            ai.read_bool("EnablePowerSurplus", globals.enable_power_surplus)
+        });
+        globals.power_surplus_scale_to_drain_amount =
+            crate::rules::phobos_switch::phobos_read(|| {
+                ai.read_int(
+                    "PowerSurplus.ScaleToDrainAmount",
+                    globals.power_surplus_scale_to_drain_amount,
+                )
+            });
         // Stock `[AI] PowerSurplus=`, read by RulesClass and re-enabled by the
         // switch above.
         globals.power_surplus = ai.read_int("PowerSurplus", globals.power_surplus);
@@ -3532,9 +3537,10 @@ fn section_settings(section: &crate::rules::ini_parser::IniSection) -> PhobosGlo
             "BerzerkTargeting",
             defaults.berzerk_targeting,
         ),
-        // `Ext/Rules/Body.cpp:421`.
-        allow_berzerk_on_allies: section
-            .read_bool("AllowBerzerkOnAllies", defaults.allow_berzerk_on_allies),
+        // `Ext/Rules/Body.cpp:421`. Phobos-only key: turns the switch on.
+        allow_berzerk_on_allies: crate::rules::phobos_switch::phobos_read(|| {
+            section.read_bool("AllowBerzerkOnAllies", defaults.allow_berzerk_on_allies)
+        }),
         // `Ext/Rules/Body.cpp:615`: `detail::read<Mission>` looks the name up
         // in `[MissionControl]` (`Utilities/TemplateDef.h:508-526`); a name
         // matching no mission, like a blank value, keeps the previous one.
