@@ -10,6 +10,29 @@ use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
 use crate::sim::{pathfinding::PathGrid, vision};
 
+/// The clients on which `HouseClass::IsHumanPlayer @ 0x0050B6F0` passes for
+/// a house ([`Simulation::human_player_client_set`]), read as a slice.
+#[derive(Debug)]
+pub(crate) enum HumanPlayerClients {
+    None,
+    /// A PlayerPtr mode: only the house's own client.
+    Own(InternedId),
+    /// Mode zero: every logical client ([`Simulation::fog_viewers`]).
+    All(std::sync::Arc<[InternedId]>),
+}
+
+impl std::ops::Deref for HumanPlayerClients {
+    type Target = [InternedId];
+
+    fn deref(&self) -> &[InternedId] {
+        match self {
+            Self::None => &[],
+            Self::Own(house) => std::slice::from_ref(house),
+            Self::All(clients) => clients,
+        }
+    }
+}
+
 /// Within one `HouseClass::Computer_Paranoid @ 0x00501640` call, the maps
 /// whose alliance walks may still change something.
 ///
@@ -1601,20 +1624,24 @@ impl Simulation {
     /// (`0x0050B716`) passes only on `house`'s own. Mode zero reads `house`'s
     /// human and PlayerControl flags (`+0x1EC`, `+0x1ED`), so a campaign
     /// PlayerControl house passes on the player's client too.
-    pub(crate) fn human_player_clients(
-        &self,
-        house: crate::sim::intern::InternedId,
-    ) -> Vec<crate::sim::intern::InternedId> {
+    pub(crate) fn human_player_clients(&self, house: InternedId) -> Vec<InternedId> {
+        self.human_player_client_set(house).to_vec()
+    }
+
+    /// [`Self::human_player_clients`] without copying the client list: a
+    /// shot's RevealOnFire asks it per shot at a human player's object.
+    pub(crate) fn human_player_client_set(&self, house: InternedId) -> HumanPlayerClients {
         let control = super::ControlProjection::for_native_view(&self.session, &self.houses);
         if control.uses_player_pointer() {
-            self.owner_is_human(house)
-                .then_some(house)
-                .into_iter()
-                .collect()
+            if self.owner_is_human(house) {
+                HumanPlayerClients::Own(house)
+            } else {
+                HumanPlayerClients::None
+            }
         } else if control.native_player_on(house, None) {
-            self.fog_viewers().to_vec()
+            HumanPlayerClients::All(self.fog_viewers())
         } else {
-            Vec::new()
+            HumanPlayerClients::None
         }
     }
 

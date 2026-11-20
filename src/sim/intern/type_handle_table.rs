@@ -232,9 +232,9 @@ impl TypeHandleTable {
         }
     }
 
-    /// The object `id` names in `rules`, as `rules.object(interner.resolve(id))`
-    /// answers: from the table when it was built from `rules` and covers `id`,
-    /// else by name.
+    /// The object `id` names in `rules`, as `rules.object(name)` answers for
+    /// the name `interner.try_resolve(id)` gives: from the table when it was
+    /// built from `rules` and covers `id`, else by name.
     #[inline]
     pub(super) fn object<'r>(
         &self,
@@ -247,7 +247,9 @@ impl TypeHandleTable {
     }
 
     /// The handle of the object `id` names in `rules`, as
-    /// `rules.type_handle(interner.resolve(id))` answers, the same way.
+    /// `rules.type_handle(name)` answers for the name
+    /// `interner.try_resolve(id)` gives (none for an id the interner never
+    /// made), the same way.
     #[inline]
     pub(super) fn handle(
         &self,
@@ -263,7 +265,7 @@ impl TypeHandleTable {
                 );
                 handle
             }
-            _ => rules.type_handle(interner.resolve(id)),
+            _ => rules.type_handle(interner.try_resolve(id)?),
         }
     }
 
