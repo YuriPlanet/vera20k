@@ -43,11 +43,21 @@ impl Default for PhobosRateDown {
 
 impl PhobosRateDown {
     pub fn from_section(section: &IniSection) -> Self {
+        // Phobos-only keys: reading one turns the Phobos switch on, which is
+        // what installs the DecreaseValue hooks that consume them.
         Self {
-            delay: section.read_ares_int("RateDown.Delay", 0),
-            reset: section.read_ares_bool("RateDown.Reset", false),
-            cover_value: section.read_ares_int("RateDown.Cover.Value", 0),
-            cover_ammo_below: section.read_ares_int("RateDown.Cover.AmmoBelow", -2),
+            delay: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_ares_int("RateDown.Delay", 0)
+            }),
+            reset: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_ares_bool("RateDown.Reset", false)
+            }),
+            cover_value: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_ares_int("RateDown.Cover.Value", 0)
+            }),
+            cover_ammo_below: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_ares_int("RateDown.Cover.AmmoBelow", -2)
+            }),
         }
     }
 

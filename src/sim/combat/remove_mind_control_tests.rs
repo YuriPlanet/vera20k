@@ -21,7 +21,10 @@ fn rules_with(wh_ini: &str, global_ini: &str) -> RuleSet {
          [TARGET]\nStrength=500\nArmor=none\nSpeed=6\n\
          [AudioVisual]\nMindClearedSound=CLEARME\n{global_ini}"
     ));
-    RuleSet::from_ini(&ini).expect("remove-mind-control test ruleset")
+    // `MindClearedSound=` resolves through the sound registry, as production
+    // binds it.
+    RuleSet::from_ini_with_sounds_for_test(&ini, &["CLEARME"])
+        .expect("remove-mind-control test ruleset")
 }
 
 fn scene(wh_ini: &str, global_ini: &str) -> (Simulation, RuleSet, u64, u64) {
@@ -81,12 +84,28 @@ fn captured(
     crate::sim::intern::InternedId,
     crate::sim::intern::InternedId,
 ) {
+    let _ = rules;
     let americans = sim.interner.get("Americans").expect("house");
     let russians = sim.interner.get("Russians").expect("house");
-    detonate_once(sim, rules, firer, target, "CAPTURE");
-    let entity = sim.entities().get(target).expect("target");
-    assert_eq!(entity.owner(), americans, "the capture takes the target");
-    assert!(entity.mind_control.is_mind_controlled(), "the link is live");
+    // The production capture's retained state: the controller's manager holds
+    // the victim with its original owner and the victim keeps the controller
+    // link. Phobos' `ApplyRemoveMindControl` frees through `MindControlledBy`,
+    // which only a CaptureManager sets (`ChangeOwner.SetAsMindControl` writes
+    // just the permanent byte).
+    {
+        let firer_entity = sim.entities_mut_for_test().get_mut(firer).expect("firer");
+        firer_entity.capture_manager = Some(Box::new(
+            crate::sim::capture_manager::CaptureManagerState::with_nodes_for_test(&[(
+                target, russians,
+            )]),
+        ));
+    }
+    {
+        let entity = sim.entities_mut_for_test().get_mut(target).expect("target");
+        entity.set_owner_for_test(americans);
+        entity.mind_control =
+            crate::sim::capture_manager::MindControlLink::controlled_by_for_test(firer);
+    }
     (americans, russians)
 }
 

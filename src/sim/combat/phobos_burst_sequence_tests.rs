@@ -163,20 +163,18 @@ fn listed_delays_move_the_admission_frames_without_draws() {
     );
 
     // 2 + 2 + max(0, 1) = 5 admits the last shot. Its GetROF joins the full
-    // rearm arm, which draws the stock RandomRanged(0, 2) before Phobos
-    // replaces the jitter; ROF.RandomDelay=0 makes the value 0 without a
-    // second draw, so the rearm is the plain 40.
+    // rearm arm, where Phobos' `0x6FD0B5` hook replaces the stock jitter
+    // draw; `ROF.RandomDelay=0` is a single value, so it draws nothing and
+    // the rearm is the plain 40.
     sim.session.set_binary_frame_for_test(103);
     set_firing_frame(&mut sim, firer, 5);
     assert_eq!(visit(&mut sim, &rules, firer), 1);
     assert_eq!(index(&sim, firer), 0, "the burst wrapped");
     assert_eq!(rearm(&sim, firer), 40);
-    let mut expected = SimRng::new(9);
-    expected.next_range_u32_inclusive(0, 2);
     assert_eq!(
         sim.scenario_rng.logical_state(),
-        expected.logical_state(),
-        "the full arm's stock jitter draw is consumed; the key replaces only its value"
+        before,
+        "the hook replaces the stock draw; a single ROF.RandomDelay draws nothing"
     );
 }
 
@@ -218,10 +216,9 @@ fn unset_entries_draw_one_value_per_index_in_order() {
     let first = expected.next_range_u32_inclusive(3, 5) as i32;
     let second = expected.next_range_u32_inclusive(3, 5) as i32;
     let frame = 2 + first.max(1) + second.max(1);
-    // The completed burst's GetROF joins the full arm, whose unconditional
-    // stock RandomRanged(0, 2) draw is consumed before ROF.RandomDelay=0
-    // replaces the value.
-    expected.next_range_u32_inclusive(0, 2);
+    // The completed burst's GetROF joins the full arm, where the Phobos hook
+    // replaces the stock jitter draw; a single-value ROF.RandomDelay draws
+    // nothing, so the two unset entries stay the whole consumption.
     let after = expected.logical_state();
     set_firing_frame(&mut sim, firer, frame);
     assert_eq!(visit(&mut sim, &rules, firer), 1);

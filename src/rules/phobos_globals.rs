@@ -3113,10 +3113,12 @@ impl PhobosGlobals {
         );
         globals.skip_crush_slowdown =
             general.read_bool("SkipCrushSlowdown", globals.skip_crush_slowdown);
-        globals.aircraft_firing_force_scatter = general.read_bool(
-            "AircraftFiringForceScatter",
-            globals.aircraft_firing_force_scatter,
-        );
+        globals.aircraft_firing_force_scatter = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_bool(
+                "AircraftFiringForceScatter",
+                globals.aircraft_firing_force_scatter,
+            )
+        });
         globals.bunker_state_update_delay =
             general.read_int("BunkerStateUpdateDelay", globals.bunker_state_update_delay);
         globals.chrono_sphere_pre_delay =
@@ -3160,24 +3162,30 @@ impl PhobosGlobals {
             general.read_ares_int("ParadropEndDelay", globals.paradrop_end_delay);
         // `Ext/Rules/Body.cpp:193`: the `[General]` fallback an AircraftType's
         // `SpawnFromEdge=` overrides (`Ext/Aircraft/Body.cpp:88`).
-        globals.aircraft_spawn_from_edge = general.read_string_with(
-            "AircraftSpawnFromEdge",
-            32,
-            globals.aircraft_spawn_from_edge,
-            |current, value| {
-                crate::rules::phobos_aircraft_edge::PhobosEdgeType::parse(value).unwrap_or(current)
-            },
-        );
+        globals.aircraft_spawn_from_edge = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_string_with(
+                "AircraftSpawnFromEdge",
+                32,
+                globals.aircraft_spawn_from_edge,
+                |current, value| {
+                    crate::rules::phobos_aircraft_edge::PhobosEdgeType::parse(value)
+                        .unwrap_or(current)
+                },
+            )
+        });
         // `Ext/Rules/Body.cpp:194`: the `[General]` fallback an AircraftType's
         // `RetreatToEdge=` overrides (`Ext/Aircraft/Body.cpp:89`, `0x415A7A`).
-        globals.aircraft_retreat_to_edge = general.read_string_with(
-            "AircraftRetreatToEdge",
-            32,
-            globals.aircraft_retreat_to_edge,
-            |current, value| {
-                crate::rules::phobos_aircraft_edge::PhobosEdgeType::parse(value).unwrap_or(current)
-            },
-        );
+        globals.aircraft_retreat_to_edge = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_string_with(
+                "AircraftRetreatToEdge",
+                32,
+                globals.aircraft_retreat_to_edge,
+                |current, value| {
+                    crate::rules::phobos_aircraft_edge::PhobosEdgeType::parse(value)
+                        .unwrap_or(current)
+                },
+            )
+        });
         globals.aircraft_weapon_kick_out_passengers = general.read_bool(
             "AircraftWeapon.KickOutPassengers",
             globals.aircraft_weapon_kick_out_passengers,

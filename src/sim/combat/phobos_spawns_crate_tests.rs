@@ -5,8 +5,29 @@ use super::{crit, world_receiver};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::powerups::{POWERUP_MONEY, POWERUP_VETERAN};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::crates::tests::{crate_cells, crate_registry, sim_with_grid};
+use crate::sim::crates::tests::{crate_cells, sim_with_grid};
 use crate::sim::projectile::ProjectileCoord;
+
+/// The `[CrateRules]` images the fixture names; the shared crate registry has
+/// only the dense OV*/STEEPCRATE index space, so this one carries the names.
+fn crate_images_registry() -> crate::rules::overlay_types::OverlayTypeRegistry {
+    crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &IniFile::from_str(
+            "[OverlayTypes]
+0=SILVER
+1=WOOD
+2=WATER
+             [SILVER]
+Crate=yes
+[WOOD]
+Crate=yes
+[WATER]
+Crate=yes
+",
+        ),
+        None,
+    )
+}
 
 fn rules(keys: &str) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
@@ -26,7 +47,7 @@ fn fire(
 ) {
     let registry;
     let registry_ref = if with_registry {
-        registry = crate_registry();
+        registry = crate_images_registry();
         Some(&registry)
     } else {
         None
@@ -65,7 +86,7 @@ fn register_owner(sim: &mut crate::sim::world::Simulation) -> crate::sim::intern
 #[test]
 fn a_spawns_crate_powerup_is_placed_with_one_draw() {
     let rules = rules("SpawnsCrate0.Type=Money\nSpawnsCrate0.Weight=1\n");
-    let registry = crate_registry();
+    let registry = crate_images_registry();
     let mut sim = sim_with_grid(11);
     let owner = register_owner(&mut sim);
     let mut expected = sim.scenario_rng.clone();
@@ -95,7 +116,7 @@ fn weights_pick_the_second_powerup_and_a_missing_registry_still_draws() {
         "SpawnsCrate0.Type=Money\nSpawnsCrate0.Weight=0\n\
          SpawnsCrate1.Type=Veteran\nSpawnsCrate1.Weight=100\n",
     );
-    let registry = crate_registry();
+    let registry = crate_images_registry();
     let mut sim = sim_with_grid(22);
     let owner = register_owner(&mut sim);
     let impact = ProjectileCoord::new(20 * 256 + 128, 20 * 256 + 128, 0);
@@ -129,7 +150,7 @@ fn weights_pick_the_second_powerup_and_a_missing_registry_still_draws() {
 #[test]
 fn a_house_less_detonation_draws_nothing() {
     let rules = rules("SpawnsCrate0.Type=Money\n");
-    let registry = crate_registry();
+    let registry = crate_images_registry();
     let mut sim = sim_with_grid(33);
     let before = sim.scenario_rng.logical_state();
     let warhead = rules.warhead("WH").expect("warhead");

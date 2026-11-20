@@ -3405,6 +3405,9 @@ fn ares_perma_mc_replace_respects_the_free_silent_flag() {
 fn ares_perma_mc_replace_silent_follows_the_warhead_then_the_global() {
     use crate::sim::world::FrameEffects;
 
+    // `MindControl.Permanent` is an Ares warhead key: the fixture reads its
+    // Rules the Ares way.
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (warhead_key, global, silent) in [
         ("", false, false),
         ("", true, true),

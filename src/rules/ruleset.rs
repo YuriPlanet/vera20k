@@ -2170,21 +2170,6 @@ pub struct GeneralRules {
     /// the fallback for a warhead's `Nullable<bool>` when the warhead section
     /// leaves it unset.
     pub decloak_damaged_targets: bool,
-    /// Phobos `[General] SkipCrushSlowdown` (`Ext/Rules/Body.cpp:274`,
-    /// `Valueable<bool>`, constructor `Body.h:716` stores false): the
-    /// fallback for a UnitType's `Nullable<bool>` when the unit section
-    /// leaves it unset.
-    pub skip_crush_slowdown: bool,
-    /// Phobos `[General] AircraftRetreatToEdge` (`Ext/Rules/Body.cpp:194`,
-    /// `Valueable<EdgeType>`, constructor `Body.h:637` stores `Owner`): the
-    /// fallback for an AircraftType's `RetreatToEdge` when its section leaves
-    /// the key unset.
-    pub aircraft_retreat_to_edge: crate::rules::ini_value::PhobosEdgeType,
-    /// Phobos `[General] AircraftFiringForceScatter` (`Ext/Rules/Body.cpp:473`,
-    /// `Valueable<bool>`, constructor `Body.h:888` stores true): the fallback
-    /// for an AircraftType's `FiringForceScatter` when its section leaves the
-    /// key unset.
-    pub aircraft_firing_force_scatter: bool,
     /// Phobos `[CombatDamage] ROF.RandomDelay` (`RulesExt`,
     /// `PartialVector2D<int>`, default `{0, 2}`): the full rearm's jitter
     /// range for a weapon that leaves its own key unset.
@@ -3129,9 +3114,6 @@ impl Default for GeneralRules {
             infantry_auto_deploy: false,
             allow_damage_on_self: false,
             decloak_damaged_targets: true,
-            skip_crush_slowdown: false,
-            aircraft_retreat_to_edge: crate::rules::ini_value::PhobosEdgeType::Owner,
-            aircraft_firing_force_scatter: true,
             rof_random_delay: crate::rules::ini_value::PartialIntPair {
                 low: 0,
                 high: 2,
@@ -3938,9 +3920,6 @@ impl GeneralRules {
                 .read_int("RadarCombatFlashTime", defaults.radar_combat_flash_time),
             // ReadGeneral 0x0067194D..0x00671967, unclamped signed dword.
             weed_capacity: general.read_int("WeedCapacity", defaults.weed_capacity),
-            skip_crush_slowdown: defaults.skip_crush_slowdown,
-            aircraft_retreat_to_edge: defaults.aircraft_retreat_to_edge,
-            aircraft_firing_force_scatter: defaults.aircraft_firing_force_scatter,
             vein_damage: defaults.vein_damage,
             scroll_multiplier: audio_visual
                 .read_double("ScrollMultiplier", defaults.scroll_multiplier),
@@ -11295,7 +11274,7 @@ impl RuleSet {
     /// resolved type (native always has one) takes the global.
     pub fn skip_crush_slowdown_for(&self, unit: Option<&ObjectType>) -> bool {
         unit.and_then(|unit| unit.phobos_skip_crush_slowdown)
-            .unwrap_or(self.general.skip_crush_slowdown)
+            .unwrap_or(self.phobos_globals.skip_crush_slowdown)
     }
 
     /// Phobos is compiled out: the Foot+6B5 cap arm stays stock.
@@ -11311,7 +11290,7 @@ impl RuleSet {
     ) -> crate::rules::ini_value::PhobosEdgeType {
         aircraft
             .and_then(ObjectType::phobos_retreat_to_edge)
-            .unwrap_or(self.general.aircraft_retreat_to_edge)
+            .unwrap_or(self.phobos_globals.aircraft_retreat_to_edge)
     }
 
     /// Phobos is compiled out: every retreat stays on the house's edge.
@@ -11324,7 +11303,7 @@ impl RuleSet {
     pub fn aircraft_firing_force_scatter_for(&self, aircraft: Option<&ObjectType>) -> bool {
         aircraft
             .and_then(ObjectType::phobos_firing_force_scatter)
-            .unwrap_or(self.general.aircraft_firing_force_scatter)
+            .unwrap_or(self.phobos_globals.aircraft_firing_force_scatter)
     }
 
     /// Phobos is compiled out: the stock Scatter stays.

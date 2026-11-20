@@ -700,26 +700,29 @@ impl crate::sim::world::Simulation {
         let rate_down = obj.phobos_rate_down;
         let ammo = entity.ammo().map_or(-1, |ammo| ammo.current());
         let mut state = entity.gattling;
-        state.update_phobos(&obj.gattling_stages, elite, ticks, &rate_down, ammo, || {
-            // Update70E013 reaches Release406060 before latch/value writes,
-            // including an already cleared handle. The sound owner validates
-            // Type0/stale handles. Source: gattling_loop.json's Unit release.
-            self.sound_events
-                .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
-                    owner: gattling_sound_owner(id),
-                });
-            frame_effects.flush_sound(self, rules);
-        });
-        state.update(&obj.gattling_stages, elite, ticks, || {
-            // Update70E013 reaches Release406060 before latch/value writes,
-            // including an already cleared handle. The sound owner validates
-            // Type0/stale handles. Source: gattling_loop.json's Unit release.
-            self.sound_events
-                .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
-                    owner: gattling_sound_owner(id),
-                });
-            frame_effects.flush_sound(self, rules);
-        });
+        if rules.phobos() {
+            state.update_phobos(&obj.gattling_stages, elite, ticks, &rate_down, ammo, || {
+                // Update70E013 reaches Release406060 before latch/value writes,
+                // including an already cleared handle. The sound owner validates
+                // Type0/stale handles. Source: gattling_loop.json's Unit release.
+                self.sound_events
+                    .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
+                        owner: gattling_sound_owner(id),
+                    });
+                frame_effects.flush_sound(self, rules);
+            });
+        } else {
+            state.update(&obj.gattling_stages, elite, ticks, || {
+                // Update70E013 reaches Release406060 before latch/value writes,
+                // including an already cleared handle. The sound owner validates
+                // Type0/stale handles. Source: gattling_loop.json's Unit release.
+                self.sound_events
+                    .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
+                        owner: gattling_sound_owner(id),
+                    });
+                frame_effects.flush_sound(self, rules);
+            });
+        }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.gattling = state;
         }
