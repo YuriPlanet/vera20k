@@ -228,11 +228,16 @@ impl Simulation {
     /// every human's map in immutable House order; local input identity never
     /// selects shared fog. Offline/campaign retains its one current viewpoint.
     pub(crate) fn represented_player_maps(&self) -> Vec<InternedId> {
-        if self.session.execution_topology().is_lockstep() {
-            self.network_player_maps().collect()
-        } else {
-            self.offline_player_map().into_iter().collect()
-        }
+        self.each_represented_player_map().collect()
+    }
+
+    /// [`Self::represented_player_maps`] without keeping a list, for a
+    /// caller that only reads between maps.
+    pub(crate) fn each_represented_player_map(&self) -> impl Iterator<Item = InternedId> + '_ {
+        let network = self.session.execution_topology().is_lockstep();
+        let network_maps = network.then(|| self.network_player_maps());
+        let offline_map = (!network).then(|| self.offline_player_map()).flatten();
+        network_maps.into_iter().flatten().chain(offline_map)
     }
 
     /// The represented maps of a network game, in House order, for a caller
@@ -917,7 +922,12 @@ impl Simulation {
         // projected AI/other plane is not another native client callback.
         let notification_viewer = notification_viewer.filter(|viewer| viewers.contains(viewer));
         let network = self.session.execution_topology().is_lockstep();
-        let (cells, local_origin) = config.collect_area_cells(
+        let local_origin = config.area_origin(cell, radius, z);
+        // The fog's buffer, lent for this walk: receivers below may reveal
+        // again, and a nested walk takes its own.
+        let mut cells = self.fog.take_reveal_cells();
+        config.extend_area_cells(
+            &mut cells,
             cell,
             radius,
             z,
@@ -956,6 +966,7 @@ impl Simulation {
                 );
             }
         }
+        self.fog.restore_reveal_cells(cells);
         //5673A0's native House rejection567570..5D0 skips its border too.
         //Keep the admitted local XYZ captured before any synchronous callback;
         //a logical other-viewer projection is not another admitted native call.
@@ -1947,9 +1958,12 @@ impl Simulation {
     /// reconstructed from interned-name or contribution-map ordering.
     fn release_viewers(&self, id: u64) -> std::sync::Arc<[crate::sim::intern::InternedId]> {
         let clients = self.fog_viewers();
-        let mut others = self.fog.source_sight_viewers(id);
-        others.retain(|viewer| !clients.contains(viewer));
-        if others.is_empty() {
+        let mut others = self
+            .fog
+            .source_sight_viewers(id)
+            .filter(|viewer| !clients.contains(viewer))
+            .peekable();
+        if others.peek().is_none() {
             // The clients already stand in that order: they follow the House
             // order, and an unregistered current House comes last.
             return clients;
@@ -2010,57 +2024,76 @@ impl Simulation {
         // Each logical PlayerPtr has its own native Techno +250/+254/+260.
         // Publish all source state before any RevealArea receiver can reenter;
         // a client whose +250 is already set takes no part.
-        let admitted: Vec<_> = requested_viewers
-            .iter()
-            .copied()
-            .filter(|&viewer| self.fog.retain_source_sight(id, viewer, owner, geometry))
-            .filter(|&viewer| {
-                vision::reveal_admits(&self.house_alliances, owner, viewer, config, &self.interner)
-            })
-            .collect();
+        let mut admitted = self.fog.take_admitted_viewers();
+        admitted.extend(
+            requested_viewers
+                .iter()
+                .copied()
+                .filter(|&viewer| self.fog.retain_source_sight(id, viewer, owner, geometry))
+                .filter(|&viewer| {
+                    vision::reveal_admits(
+                        &self.house_alliances,
+                        owner,
+                        viewer,
+                        config,
+                        &self.interner,
+                    )
+                }),
+        );
         // The footprint indexes an admitting map's source counts. A source no
         // requested map admits has published its geometry and needs none
         // (VERA-only: a computer house's unit on a human's client).
-        if admitted.is_empty() {
-            return;
-        }
-        #[cfg(any(test, feature = "test-support"))]
-        REVEAL_CALLS.with_borrow_mut(|trace| {
-            if let Some(trace) = trace {
-                trace.footprints += 1;
-            }
-        });
-        let Some(admission) = vision::sight_admission(
-            &self.fog,
-            geometry,
-            config,
-            heights.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
-            terrain,
-        ) else {
-            return;
-        };
-        // Register each accepted map contribution before walking any cells.
-        // A newly latched source may follow a rejected release while its old
-        // knowledge counts remain; retire that stale index without changing
-        // the remembered map counts.
-        for &viewer in &admitted {
-            if self.fog.sight_is_latched(id, viewer) {
-                self.fog.abandon_sight_admission(id, viewer);
-            }
-            self.fog
-                .retain_sight_admission(id, viewer, admission.clone(), false);
-        }
-        for viewer in admitted {
-            self.walk_source_sight(
-                viewer,
-                &admission,
-                false,
+        let admission = if admitted.is_empty() {
+            None
+        } else {
+            #[cfg(any(test, feature = "test-support"))]
+            REVEAL_CALLS.with_borrow_mut(|trace| {
+                if let Some(trace) = trace {
+                    trace.footprints += 1;
+                }
+            });
+            vision::sight_admission(
+                &self.fog,
+                geometry,
                 config,
-                heights,
-                context,
-                notification_viewer,
-            );
+                heights.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
+                terrain,
+            )
+        };
+        if let Some(admission) = admission
+            && let Some((&last, rest)) = admitted.split_last()
+        {
+            let (origin, radius) = (admission.origin, admission.radius);
+            // Register each accepted map contribution before walking any
+            // cells. A newly latched source may follow a rejected release
+            // while its old knowledge counts remain; retire that stale index
+            // without changing the remembered map counts. Each map keeps its
+            // own footprint; the last takes this one.
+            let fog = &mut self.fog;
+            let mut register = |viewer, footprint| {
+                if fog.sight_is_latched(id, viewer) {
+                    fog.abandon_sight_admission(id, viewer);
+                }
+                fog.retain_sight_admission(id, viewer, footprint, false);
+            };
+            for &viewer in rest {
+                register(viewer, admission.clone());
+            }
+            register(last, admission);
+            for &viewer in &admitted {
+                self.walk_source_sight_at(
+                    viewer,
+                    origin,
+                    radius,
+                    false,
+                    config,
+                    heights,
+                    context,
+                    notification_viewer,
+                );
+            }
         }
+        self.fog.restore_admitted_viewers(admitted);
     }
 
     /// ReReveal70B1D0 clears its retained latch before its final1 walk. The
@@ -2090,7 +2123,7 @@ impl Simulation {
             // before clearing retained sight. In that case only visit the
             // clients already cached for this source; each release reads its
             // own canonical owner and geometry below.
-            self.fog.source_sight_viewers(id).into()
+            self.fog.source_sight_viewers(id).collect()
         };
         if viewers.is_empty() {
             return;
@@ -2488,15 +2521,11 @@ impl Simulation {
             );
             let border_origin = border_origin.or_else(|| {
                 only_viewer.and_then(|_| {
-                    config
-                        .collect_area_cells(
-                            (geometry.origin.0, geometry.origin.1),
-                            geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
-                            geometry.origin.2,
-                            heights.cell_levels(self.resolved_terrain.as_ref()),
-                            (self.fog.width(), self.fog.height()),
-                        )
-                        .1
+                    config.area_origin(
+                        (geometry.origin.0, geometry.origin.1),
+                        geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+                        geometry.origin.2,
+                    )
                 })
             });
             let Some(border_origin) = border_origin else {
@@ -3237,7 +3266,6 @@ impl Simulation {
         let remaining: Vec<_> = self
             .fog
             .source_sight_viewers(stable_id)
-            .into_iter()
             .filter(|viewer| !clients.contains(viewer))
             .collect();
         if !remaining.is_empty() {
