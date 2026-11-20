@@ -874,6 +874,12 @@ pub struct TeamScriptVm {
     /// destructor, not its Limbo or UnInit.
     #[serde(default)]
     rejoin_team: BTreeMap<u64, u64>,
+    /// Scratch for `Regroup`'s copy of a team's member list
+    /// ([`Simulation::team_regroup`]), kept so the walk allocates once per
+    /// match instead of once per regrouping team per tick. Empty between
+    /// walks; saves and the state hash leave it out.
+    #[serde(skip)]
+    regroup_members: Vec<TeamMember>,
 }
 
 impl TeamScriptVm {

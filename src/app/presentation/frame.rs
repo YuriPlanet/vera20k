@@ -1409,6 +1409,16 @@ impl PresentationFrame {
     /// The frame of `sim` under `rules`, for a test that draws a world it
     /// built without a `SimHost`.
     pub(crate) fn of_test(sim: &Simulation, rules: &crate::rules::ruleset::RuleSet) -> Self {
+        Self::of_test_with_status_rows(sim, rules, false)
+    }
+
+    /// [`Self::of_test`], capturing VERA's Convenience Help rows when
+    /// `status_rows`.
+    pub(crate) fn of_test_with_status_rows(
+        sim: &Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        status_rows: bool,
+    ) -> Self {
         let mut simulation = sim.clone();
         // A fixture may have interned its objects' names elsewhere: give the
         // world's interner as many names, so capture can resolve their ids.
@@ -1429,7 +1439,7 @@ impl PresentationFrame {
             simulation,
             resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules.clone())),
         };
-        Self::capture(&runtime, &types, false)
+        Self::capture(&runtime, &types, status_rows)
     }
 }
 
