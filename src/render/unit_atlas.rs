@@ -257,7 +257,26 @@ struct PendingTexels {
     page: usize,
     origin: [u32; 2],
     size: [u32; 2],
-    texels: Vec<u8>,
+    texels: StagedTexels,
+}
+
+/// Where a waiting rectangle's texels are.
+enum StagedTexels {
+    /// A newly placed sprite's pixels, read from `rendered_cache[index]`,
+    /// which only grows, so the index outlives the wait.
+    Placed(usize),
+    /// Texels written over a placed picture.
+    Written(Vec<u8>),
+}
+
+impl StagedTexels {
+    /// The texels, reading a placed sprite's from the resident cache.
+    fn bytes<'a>(&'a self, rendered_cache: &'a [CachedUnitSprite]) -> &'a [u8] {
+        match self {
+            Self::Placed(index) => &rendered_cache[*index].pixels,
+            Self::Written(texels) => texels,
+        }
+    }
 }
 
 /// The voxel models a world can draw: vehicle types seeded as ground units
@@ -478,17 +497,17 @@ impl UnitAtlas {
             let texture = batch.create_blank_unit_atlas_texture(device, width, height);
             self.pages.push(UnitAtlasPage { texture });
         }
-        for texels in resident.uploads.drain(..) {
-            let Some(page) = self.pages.get(texels.page) else {
+        for pending in resident.uploads.drain(..) {
+            let Some(page) = self.pages.get(pending.page) else {
                 continue;
             };
             atlas_growth::write_texels(
                 queue,
                 page.texture.view.texture(),
-                texels.origin,
-                texels.size,
+                pending.origin,
+                pending.size,
                 1,
-                &texels.texels,
+                pending.texels.bytes(&resident.rendered_cache),
             );
         }
     }
@@ -639,7 +658,7 @@ impl Resident {
             page,
             origin,
             size: [width, height],
-            texels: sprite.pixels.clone(),
+            texels: StagedTexels::Placed(self.rendered_cache.len()),
         });
         if let Some(old) = self.entries.insert(sprite.key.clone(), entry) {
             self.rendered_index.by_place.remove(&sprite_place(&old));
@@ -663,7 +682,7 @@ impl Resident {
                 (entry.uv_origin[1] * page_height as f32).round() as u32,
             ],
             size: entry.pixel_size.map(|side| side as u32),
-            texels,
+            texels: StagedTexels::Written(texels),
         });
     }
 
