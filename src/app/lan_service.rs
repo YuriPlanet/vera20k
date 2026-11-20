@@ -1200,8 +1200,16 @@ fn local_control_proof(state: &mut AppState) -> anyhow::Result<LanSessionProof> 
         .match_state
         .lan_service
         .as_ref()
-        .expect("visit")
+        .ok_or_else(closed_visit)?
         .agreed_proof()
+}
+
+/// The error for a step that finds no LAN service. Each packet, request and
+/// poll step runs while the visit holds one, but a step can close the visit
+/// part way (a failed launch, a departure or a kick reaches `close`), so a
+/// later step of the same pass ends with this error instead of a panic.
+pub(super) fn closed_visit() -> anyhow::Error {
+    anyhow::anyhow!("the LAN visit has closed")
 }
 
 fn fresh_nonce() -> anyhow::Result<[u8; 16]> {
@@ -1503,12 +1511,11 @@ fn advance_go(state: &mut AppState, now: u32, service_ok: bool) {
         return;
     }
     let host = state.match_state.session.host();
-    state
-        .match_state
-        .lan_service
-        .as_mut()
-        .expect("visit")
-        .apply_start_timing(host, true);
+    // `observe_lan_go_transport` can fail the setup, which closes the visit.
+    let Some(service) = state.match_state.lan_service.as_mut() else {
+        return;
+    };
+    service.apply_start_timing(host, true);
     let result = (|| -> anyhow::Result<()> {
         if !state.match_state.session.host() {
             super::shell_network_setup::service_event(
@@ -1812,7 +1819,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .match_state
                     .lan_service
                     .as_mut()
-                    .expect("visit")
+                    .ok_or_else(closed_visit)?
                     .accept_setup_keepalive(&state.match_state.session, &incoming, &message, now)?;
                 let differs = match keepalive {
                     SetupKeepalive::OtherBuild(name) => Some(format!(
@@ -1830,7 +1837,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                         .match_state
                         .lan_service
                         .as_mut()
-                        .expect("visit")
+                        .ok_or_else(closed_visit)?
                         .retire_setup_peer(incoming.source);
                     super::App::fail_external_launch(state, &reason);
                 }
@@ -1975,7 +1982,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .match_state
                     .lan_service
                     .as_mut()
-                    .expect("visit")
+                    .ok_or_else(closed_visit)?
                     .deferred_setup
                     .extend(deferred);
             }
@@ -2079,7 +2086,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 .match_state
                 .lan_service
                 .as_mut()
-                .expect("live LAN visit");
+                .ok_or_else(closed_visit)?;
             let open = flags & 1 != 0;
             service.record_advertised_game(incoming.source, name, open, now);
             project_games(state);
@@ -2106,7 +2113,11 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             let proof = message
                 .session_proof()?
                 .ok_or_else(|| anyhow::anyhow!("cancel receipt has no proof"))?;
-            let service = state.match_state.lan_service.as_mut().expect("visit");
+            let service = state
+                .match_state
+                .lan_service
+                .as_mut()
+                .ok_or_else(closed_visit)?;
             service.accept_cancel_receipt(incoming.source, &proof);
         }
         LanPayload::JoinAccepted(_) => {
@@ -2114,7 +2125,11 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 .session_proof()?
                 .ok_or_else(|| anyhow::anyhow!("challenge has no proof"))?;
             let name = local_name(state);
-            let service = state.match_state.lan_service.as_mut().expect("visit");
+            let service = state
+                .match_state
+                .lan_service
+                .as_mut()
+                .ok_or_else(closed_visit)?;
             if !service.accepts_join_reply(incoming.source, &proof) {
                 return Ok(());
             }
@@ -2143,7 +2158,11 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 crate::ui::multiplayer_setup::SetupFlavor::Lan,
             )
             .modern;
-            let service = state.match_state.lan_service.as_mut().expect("visit");
+            let service = state
+                .match_state
+                .lan_service
+                .as_mut()
+                .ok_or_else(closed_visit)?;
             let proof = message
                 .session_proof()?
                 .ok_or_else(|| anyhow::anyhow!("LAN acceptance has no session proof"))?;
@@ -2230,7 +2249,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                         .match_state
                         .lan_service
                         .as_ref()
-                        .expect("visit")
+                        .ok_or_else(closed_visit)?
                         .control_proof()?;
                     let response =
                         LanMessage::participant(&name, &[], fields)?.with_session_proof(&proof)?;
@@ -2260,7 +2279,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .match_state
                     .lan_service
                     .as_mut()
-                    .expect("visit")
+                    .ok_or_else(closed_visit)?
                     .peer_admissions
                     .remove(&incoming.source);
                 if state
@@ -2308,7 +2327,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .match_state
                     .lan_service
                     .as_mut()
-                    .expect("visit")
+                    .ok_or_else(closed_visit)?
                     .pending_host = None;
             } else if state.frontend.network_setup_protocol.is_some() {
                 let proof = message
@@ -2322,7 +2341,11 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 {
                     return Ok(());
                 }
-                let service = state.match_state.lan_service.as_ref().expect("visit");
+                let service = state
+                    .match_state
+                    .lan_service
+                    .as_ref()
+                    .ok_or_else(closed_visit)?;
                 if proof.join_nonce != service.join_nonce.unwrap_or([0; 16])
                     || proof.admission_nonce != service.admission_nonce.unwrap_or([0; 16])
                 {
@@ -2332,7 +2355,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .match_state
                     .lan_service
                     .as_mut()
-                    .expect("visit")
+                    .ok_or_else(closed_visit)?
                     .begin_kicked_exit(&state.match_state.session, incoming.source, now)?;
                 super::shell_network_setup::lock_lan_departure(state);
             }
