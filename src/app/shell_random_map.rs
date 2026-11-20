@@ -547,7 +547,8 @@ impl RandomMapGenerationRetention {
 
     pub(super) fn accept_setup(&mut self, selected_map_file: &str) {
         self.accepted_launch = self.candidate.take().map(|generated| {
-            let start_staging = AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
+            let start_staging =
+                AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
             (
                 selected_map_file.to_owned(),
                 AcceptedRandomMapLaunch {
@@ -874,6 +875,15 @@ pub(super) fn prepare_random_map_generation(
         crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
             asset_manager.get_ref(name)
         });
+    // The launch load refuses the same theater with this message
+    // (app/loading/init.rs); the dialog has no message surface for a
+    // refused preparation, like the refusals above.
+    if let Some(missing) =
+        blocks.missing_cliff_tile(&theater.lookup, resolved_inputs.ids.cliffs.cliff_set)
+    {
+        log::warn!("random map: {missing}");
+        return None;
+    }
     Some(PreparedRandomMapGeneration {
         theater,
         terrain_rules,

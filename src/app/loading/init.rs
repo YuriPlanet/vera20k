@@ -2686,6 +2686,11 @@ pub(crate) fn load_map_initial_with_assets(
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
                 asset_manager.get_ref(name)
             });
+        if let Some(missing) =
+            blocks.missing_cliff_tile(&theater.lookup, resolved.ids.cliffs.cliff_set)
+        {
+            return Err(anyhow::anyhow!("random map: {missing}"));
+        }
 
         // `[AI] NeutralTechBuildings` plus each type's `Foundation=`. The phase
         // runs for every map type except 0, so an empty list here would both
@@ -3298,14 +3303,17 @@ fn load_map_first_step(
                                 bootstrap_rng.install_process_mapgen_continuation(continuation);
                             }
                             let authored_campaign = startup.authored_campaign();
-                            let campaign_game_options = if let Some(game_speed) = startup.authored_campaign_speed() {
-                                Some(crate::sim::game_options::GameOptions {
-                                    game_speed,
-                                    ..Default::default()
-                                })
-                            } else {
-                                campaign.as_ref().and_then(|campaign| campaign.game_options())
-                            };
+                            let campaign_game_options =
+                                if let Some(game_speed) = startup.authored_campaign_speed() {
+                                    Some(crate::sim::game_options::GameOptions {
+                                        game_speed,
+                                        ..Default::default()
+                                    })
+                                } else {
+                                    campaign
+                                        .as_ref()
+                                        .and_then(|campaign| campaign.game_options())
+                                };
                             let fresh_prefix = if let Some(plan) = scenario_prefix_plan {
                                 FreshScenarioPrefix::StockOffline(
                                     plan.bind_native_rules_receipt(
@@ -3327,7 +3335,8 @@ fn load_map_first_step(
                                     house_roster: &house_roster,
                                     game_options: campaign_game_options.as_ref(),
                                     campaign_index: 0,
-                                    restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                                    restart_carry_over:
+                                        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
                                 }
                             } else {
                                 let campaign = campaign

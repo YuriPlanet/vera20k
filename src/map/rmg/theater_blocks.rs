@@ -18,7 +18,20 @@ use std::collections::HashMap;
 use crate::assets::tmp_file::TmpFile;
 use crate::map::theater::TilesetLookup;
 
+use super::phases::cliff_variants::CLIFF_SET_TILES;
 use super::phases::shore::{SubTile, TileBlock, TileBlocks};
+
+/// A cliff-set tile whose template is missing or unreadable
+/// ([`TheaterTileBlocks::missing_cliff_tile`]).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "the theater's cliff tile {tile} ({filename}) is missing or unreadable; \
+     reinstall the game or remove the mod that replaces it"
+)]
+pub struct MissingCliffTile {
+    pub tile: i32,
+    pub filename: String,
+}
 
 /// A `TileBlocks` provider backed by the theater's parsed TMP templates.
 pub struct TheaterTileBlocks {
@@ -70,6 +83,27 @@ impl TheaterTileBlocks {
             blocks.insert(tile_id as i32, tile_block_from_tmp(&tmp));
         }
         Self { blocks }
+    }
+
+    /// The first tile of the theater's cliff set (`CliffSet=`, the
+    /// generator's 40 cliff pieces) whose TMP the lookup names but which did
+    /// not load or parse. The cliff passes read each piece's template, so a
+    /// generation with one missing is refused rather than drawn without it;
+    /// retail theaters hold every piece. The refusal is VERA's: gamemd reads
+    /// the absent template.
+    pub fn missing_cliff_tile(
+        &self,
+        lookup: &TilesetLookup,
+        cliff_set: Option<u16>,
+    ) -> Option<MissingCliffTile> {
+        let first = i32::from(cliff_set?);
+        (first..first + CLIFF_SET_TILES).find_map(|tile| {
+            let filename = lookup.filename(tile)?;
+            (!self.blocks.contains_key(&tile)).then(|| MissingCliffTile {
+                tile,
+                filename: filename.to_string(),
+            })
+        })
     }
 
     /// Number of tiles that resolved to a parsed block (for tests).
@@ -241,5 +275,32 @@ TilesInSet=2
         // Loader yields garbage → parse fails → still absent, no panic.
         let blocks = TheaterTileBlocks::build(&lookup, |_name| Some(&[0u8; 4]));
         assert!(blocks.block(0).is_none());
+    }
+
+    /// A theater whose cliff-set piece did not load is named, so the
+    /// generation refuses instead of drawing cliffs without their template.
+    #[test]
+    fn a_cliff_set_piece_without_its_template_is_reported() {
+        let lookup = parse_tileset_ini(
+            b"[General]\n[TileSet0000]\nFileName=clear\nTilesInSet=1\n\
+              [TileSet0001]\nFileName=cliff\nTilesInSet=3\n",
+            "tem",
+        )
+        .expect("lookup");
+        let fixture = tmp_row(&[(0, 0, 0)]);
+        let cliff_two = lookup.filename(2).expect("tile 2 is named").to_string();
+        let blocks = TheaterTileBlocks::build(&lookup, |name| {
+            (name != cliff_two).then_some(fixture.as_slice())
+        });
+        assert_eq!(
+            blocks.missing_cliff_tile(&lookup, Some(1)),
+            Some(MissingCliffTile {
+                tile: 2,
+                filename: cliff_two,
+            })
+        );
+        // Tiles outside the set, and a theater without a set, need nothing.
+        assert_eq!(blocks.missing_cliff_tile(&lookup, Some(3)), None);
+        assert_eq!(blocks.missing_cliff_tile(&lookup, None), None);
     }
 }
