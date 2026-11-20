@@ -1888,7 +1888,10 @@ pub(crate) fn cursor_over_battlefield(state: &AppState) -> bool {
 /// The battlefield point the player is pointing at now, in world pixels.
 pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> {
     let pointer = state.match_state.input.pointer_in_window()?;
-    if !state.platform.pointer_in_client || !cursor_over_battlefield(state) {
+    // A tap supplies window coordinates even when the hardware mouse is outside.
+    if !(state.platform.pointer_in_client || touch_owns_pointer(&state.match_state.input))
+        || !cursor_over_battlefield(state)
+    {
         return None;
     }
     if let Some(zoom) = state.tactical_zoom() {
