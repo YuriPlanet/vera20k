@@ -109,7 +109,7 @@ def read_lines(path: Path) -> list[str]:
 
 def verify(folder: Path, profile: str = 'fast',
            binary: Path | None = None) -> tuple[list[str], bool]:
-    """Report lines for FOLDER, and whether the game can start from it."""
+    """Report lines for FOLDER, and whether its required data checks pass."""
     lines: list[str] = []
     if not folder.is_dir():
         return [f'problem  {folder} is not a folder'], False
@@ -125,8 +125,8 @@ def verify(folder: Path, profile: str = 'fast',
         lines.append('optional:')
         lines += [f'  note     {issue}' for issue in optional]
     lines.append('')
-    lines.append('the game can start from this folder' if code == 0
-                 else 'the game cannot start from this folder')
+    lines.append('required game-data checks passed' if code == 0
+                 else 'required game-data checks failed')
     return lines, code == 0
 
 
@@ -248,7 +248,7 @@ def write_config(folder: Path, root: Path = REPO) -> str:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or '').split('\n\n')[0])
     sub = parser.add_subparsers(dest='command', required=True)
 
     verify_parser = sub.add_parser('verify', help='report what a folder still lacks')

@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -99,6 +100,14 @@ class VerifyTest(unittest.TestCase):
             lines, ready = game_files.verify(Path(temporary) / 'absent')
         self.assertFalse(ready)
         self.assertIn('is not a folder', lines[0])
+
+    def test_a_passing_install_check_is_not_described_as_a_successful_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.object(game_files, 'run_game_data_check', return_value=([], [], 0)):
+                lines, ready = game_files.verify(Path(temporary))
+        self.assertTrue(ready)
+        self.assertEqual(lines[-1], 'required game-data checks passed')
+        self.assertNotIn('can start', '\n'.join(lines))
 
 
 class HumanSizeTest(unittest.TestCase):
