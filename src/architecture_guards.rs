@@ -11,6 +11,7 @@
 //! `include_bytes!`. Determinism guards pin the engine files that read
 //! platform- or process-dependent values (libm math, clocks, environment,
 //! directory order, thread count) and the engine's per-client reads.
+//! A size guard keeps every source file under [`MAX_SOURCE_LINES`].
 //!
 //! The app pseudo-root matches crate::app paths and retired root app_* modules.
 //! The ui rule also forbids the retired skirmish_scenarios root. These checks
@@ -1461,6 +1462,29 @@ fn sim_names_no_upper_layer_root_even_in_tests() {
 /// Embedded fixtures made up most of the test executable and recompiled the
 /// crate on every fixture edit. A literal fixture path must name a file, so a
 /// removed fixture fails here even when only ignored tests read it.
+/// The most lines one Rust source file may hold. An owner that outgrows it
+/// is split by responsibility into a parent module and private parts, and a
+/// test file into `*_tests.rs` children, so a reader can take the whole file
+/// in. The limit is a ceiling, not a target: most files are far smaller.
+const MAX_SOURCE_LINES: usize = 5_000;
+
+#[test]
+fn no_source_file_is_over_the_line_limit() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let over: Vec<String> = source_files(&src_root)
+        .iter()
+        .map(|file| (file.source.lines().count(), &file.rel))
+        .filter(|(lines, _)| *lines > MAX_SOURCE_LINES)
+        .map(|(lines, rel)| format!("{rel}: {lines} lines"))
+        .collect();
+    assert!(
+        over.is_empty(),
+        "source files over {MAX_SOURCE_LINES} lines: {over:#?}\n\
+         Split the file by responsibility: keep it as the parent, move each part to a private \
+         child module, and re-export what other modules name."
+    );
+}
+
 #[test]
 fn test_fixtures_are_read_at_run_time_from_existing_files() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
