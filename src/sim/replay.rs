@@ -1565,7 +1565,7 @@ impl ReplayRunner {
             let mut frame = scene.runtime.advance_frame(
                 &[],
                 tick_ms,
-                TickLane::Ordinary,
+                crate::sim::world::TickLane::Ordinary,
                 crate::sim::world::FrameEffects::empty().with_network_commands(&network),
             )?;
             anyhow::ensure!(
