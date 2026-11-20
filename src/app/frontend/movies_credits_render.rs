@@ -4,9 +4,8 @@
 use anyhow::Result;
 
 use crate::app::AppState;
-use crate::ui::shell::menu_page;
 use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
+    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect,
     software_cursor,
 };
 use crate::render::batch::SpriteInstance;
@@ -27,6 +26,7 @@ use crate::ui::shell::list::{
     ListFrameTone, ListMetrics, ListScrollPart, ShellListGeometry, list_frame_lines,
     scrollbar_edge_lines, scrollbar_interior,
 };
+use crate::ui::shell::menu_page;
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 use vera20k_gui::ListView;
 
@@ -337,7 +337,7 @@ fn movie_list_composition<'a>(
         {
             let row = geometry.row(visible);
             labels.push(PaintLabel {
-                text: resolve_csf(state, list[index].label_key),
+                text: state.csf_text(list[index].label_key).into(),
                 rect: RectPx::new(
                     row.x + LIST_TEXT_INSET,
                     row.y,
@@ -353,8 +353,12 @@ fn movie_list_composition<'a>(
 
     let controller = &state.frontend.shell_controller;
     let active = controller.top_id() == Some(MOVIE_LIST_PAGE.dialog);
-    let pressed = active.then(|| menu_page::pressed_id(controller, MOVIE_LIST_PAGE.dialog)).flatten();
-    let hovered = active.then(|| menu_page::hovered_id(controller, MOVIE_LIST_PAGE.dialog)).flatten();
+    let pressed = active
+        .then(|| menu_page::pressed_id(controller, MOVIE_LIST_PAGE.dialog))
+        .flatten();
+    let hovered = active
+        .then(|| menu_page::hovered_id(controller, MOVIE_LIST_PAGE.dialog))
+        .flatten();
     let wave = exit_wave.or(state.frontend.shell_first_paint_slide.as_ref());
     // While a slide runs the engine draws the whole tile column in place of
     // the buttons (`0x006071E0`).
@@ -393,7 +397,7 @@ fn movie_list_composition<'a>(
             continue;
         };
         labels.push(PaintLabel {
-            text: resolve_csf(state, spec.csf_key),
+            text: state.csf_text(spec.csf_key).into(),
             rect: owner_draw_button_label_rect(button.rect, pressed == Some(button.id)),
             align: ShellAlign::BUTTON_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -402,7 +406,7 @@ fn movie_list_composition<'a>(
     }
     if let Some(window) = title_window {
         labels.push(PaintLabel {
-            text: resolve_csf(state, MOVIE_LIST_PAGE.title_key),
+            text: state.csf_text(MOVIE_LIST_PAGE.title_key).into(),
             rect: layout.page.title,
             align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -413,7 +417,7 @@ fn movie_list_composition<'a>(
     }
     if !leaving {
         labels.push(PaintLabel {
-            text: resolve_csf(state, MOVIE_LIST_PROMPT_KEY),
+            text: state.csf_text(MOVIE_LIST_PROMPT_KEY).into(),
             rect: layout.prompt,
             align: ShellAlign::H_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -468,7 +472,7 @@ pub(crate) fn render_movie_list(
             .shell_page_title
             .paint(crate::util::time::Instant::now());
         let status_text = movie_list_status_key(state)
-            .map(|key| resolve_csf(state, key).into_owned())
+            .map(|key| state.csf_text(key))
             .unwrap_or_default();
         let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,

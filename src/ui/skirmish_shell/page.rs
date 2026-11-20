@@ -14,9 +14,9 @@ use super::layout::{
 };
 use super::state::{
     OwnerDrawButton, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,
-    SkirmishHoverTarget as Target, SkirmishShellAction, SkirmishShellState, SkirmishShellUiSound,
-    apply_combo_selection, combo_dropdown_max_visible_rows, combo_items, combo_open, combo_rect,
-    player_row_visible, selected_combo_item, selected_combo_item_index, status_help_key_for_hover,
+    SkirmishHoverTarget as Target, SkirmishShellAction, SkirmishShellState, apply_combo_selection,
+    combo_dropdown_max_visible_rows, combo_items, combo_open, combo_rect, player_row_visible,
+    selected_combo_item, selected_combo_item_index, status_help_key_for_hover,
 };
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::ui::shell::controller::DialogController;
@@ -107,13 +107,36 @@ fn flag_slot(id: u16) -> Option<usize> {
         .filter(|slot| *slot < SKIRMISH_LONG_ROW_COUNT)
 }
 
+/// The player columns' and the sliders' headings, statics with no control of
+/// their own (VERA's ids).
+const HEADINGS: u16 = 0x7500;
+
+fn heading_rect(layout: &SkirmishShellLayout, index: usize) -> Option<RectPx> {
+    let (columns, sliders) = (&layout.column_labels, &layout.trackbar_labels);
+    [
+        columns.players,
+        columns.side,
+        columns.color,
+        columns.start,
+        columns.team,
+        sliders.game_speed,
+        sliders.credits,
+        sliders.unit_count,
+    ]
+    .get(index)
+    .copied()
+}
+
 /// The words the page's captions take: each combo row's label, the Random
-/// a country face shows (`GUI:RandomEx`) and the option boxes' captions.
+/// a country face shows (`GUI:RandomEx`), the option boxes' and the right
+/// panel's buttons' captions in [`CONTROLS`] order, and the headings.
 #[derive(Debug, Clone, Default)]
 pub struct SkirmishLabels {
     pub items: Vec<(SkirmishComboItem, String)>,
     pub random_country: String,
     pub checkboxes: [String; 5],
+    pub buttons: [String; 5],
+    pub headings: [String; 8],
 }
 
 impl SkirmishLabels {
@@ -149,9 +172,11 @@ fn spec() -> NodeSpec {
         spec.id(id.into())
             .tooltip(status_help_key_for_hover(target).unwrap_or_default())
     });
+    let headings = (0..8).map(|index| NodeSpec::new(NodeKind::Text).id((HEADINGS + index).into()));
     NodeSpec::new(NodeKind::Dialog)
         .children(combos)
         .children(controls)
+        .children(headings)
 }
 
 /// Control `id`'s rect on `layout`; none while it does not show.
@@ -169,6 +194,9 @@ fn rect(
     }
     if let Some(slot) = flag_slot(id) {
         return layout.flags.get(slot).copied().filter(|_| slot_shows(slot));
+    }
+    if let Some(index) = id.checked_sub(HEADINGS) {
+        return heading_rect(layout, usize::from(index));
     }
     Some(match control(id)? {
         Target::Checkbox(checkbox) => layout.checkboxes.iter().find(|c| c.id == checkbox)?.rect,
@@ -262,8 +290,15 @@ pub fn sync_page(
             page::set(gui, root, node, prop, value);
         }
     }
-    let mut captions = labels.checkboxes.iter();
+    for (index, heading) in (HEADINGS..).zip(&labels.headings) {
+        page::set(gui, root, index, Prop::Text, Value::Text(heading.clone()));
+    }
+    let mut captions = labels.checkboxes.iter().chain(&labels.buttons);
     for (id, target) in CONTROLS {
+        if matches!(target, Target::OwnerDrawButton(_)) {
+            let caption = captions.next().cloned().unwrap_or_default();
+            page::set(gui, root, id, Prop::Text, Value::Text(caption));
+        }
         match target {
             Target::Checkbox(checkbox) => {
                 let caption = captions.next().cloned().unwrap_or_default();
@@ -350,10 +385,12 @@ fn handle(
     let mut action = None;
     for event in events {
         let sound = match event {
-            PageEvent::Cue(PageCue::Button) => Some(SkirmishShellUiSound::MainButton),
-            PageEvent::Cue(PageCue::Checkbox) => Some(SkirmishShellUiSound::GuiCheckboxSound),
-            PageEvent::Cue(PageCue::ComboOpen) => Some(SkirmishShellUiSound::GuiComboOpenSound),
-            PageEvent::Cue(PageCue::ComboClose) => Some(SkirmishShellUiSound::GuiComboCloseSound),
+            PageEvent::Cue(
+                cue @ (PageCue::Button
+                | PageCue::Checkbox
+                | PageCue::ComboOpen
+                | PageCue::ComboClose),
+            ) => Some(cue),
             PageEvent::Activated(id) => {
                 action = match control(id) {
                     Some(Target::OwnerDrawButton(button)) => Some(match button {
@@ -393,7 +430,7 @@ fn handle(
                 final_: false,
             } => match control(id) {
                 Some(Target::Trackbar(trackbar)) if set_trackbar_value(state, trackbar, value) => {
-                    Some(SkirmishShellUiSound::GenericClick)
+                    Some(PageCue::ListClick)
                 }
                 _ => None,
             },

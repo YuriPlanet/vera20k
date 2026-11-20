@@ -25,6 +25,15 @@ pub enum PageCue {
     ListClick,
 }
 
+impl From<super::combobox::ComboCue> for PageCue {
+    fn from(cue: super::combobox::ComboCue) -> Self {
+        match cue {
+            super::combobox::ComboCue::Open => Self::ComboOpen,
+            super::combobox::ComboCue::Close => Self::ComboClose,
+        }
+    }
+}
+
 /// One user action on a control, by resource id.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PageEvent {
@@ -34,7 +43,11 @@ pub enum PageEvent {
     /// A combo's new selection.
     Picked(u16, i32),
     /// A trackbar's position; `final_` once the pointer lets go.
-    Slid { id: u16, value: i32, final_: bool },
+    Slid {
+        id: u16,
+        value: i32,
+        final_: bool,
+    },
     Selected(u16, u32),
     DoubleClicked(u16, u32),
     Scrolled(u16),
@@ -46,7 +59,10 @@ pub enum PageEvent {
 /// Builds `spec`'s children under the dialog root once; true when it built.
 /// Buttons a box fed into the dialog carry no id and do not count.
 pub fn ensure_built(gui: &mut Gui, root: NodeId, spec: impl FnOnce() -> NodeSpec) -> bool {
-    let built = gui.tree().children(root).is_ok_and(|c| c.iter().any(|n| gui.id_of(*n).is_some()));
+    let built = gui
+        .tree()
+        .children(root)
+        .is_ok_and(|c| c.iter().any(|n| gui.id_of(*n).is_some()));
     if built {
         return false;
     }
@@ -66,7 +82,9 @@ pub fn sync_rects(gui: &mut Gui, root: NodeId, rect_of: impl Fn(u16) -> Option<R
         if let Ok(children) = gui.tree().children(node) {
             stack.extend(children.iter().copied());
         }
-        let Some(id) = gui.id_of(node).and_then(|id| u16::try_from(id).ok()) else { continue };
+        let Some(id) = gui.id_of(node).and_then(|id| u16::try_from(id).ok()) else {
+            continue;
+        };
         let rect = rect_of(id);
         let _ = gui.set(node, Prop::Rect, Value::Rect(rect.unwrap_or_default()));
         let _ = gui.set(node, Prop::Visible, Value::Bool(rect.is_some()));
@@ -82,7 +100,9 @@ pub fn set(gui: &mut Gui, root: NodeId, id: u16, prop: Prop, value: Value) {
 
 /// Control `id`'s value of `prop` under `root`.
 pub fn get(gui: &Gui, root: NodeId, id: u16, prop: Prop) -> Option<&Value> {
-    gui.get(gui.find_id(root, i32::from(id))?, prop).ok().flatten()
+    gui.get(gui.find_id(root, i32::from(id))?, prop)
+        .ok()
+        .flatten()
 }
 
 /// Whether checkbox `id` under `root` is checked.
@@ -113,7 +133,10 @@ pub fn edit_input(
     };
     for event in events {
         c.on_input(event);
-        if c.drain_events().iter().any(|event| matches!(event, UiEvent::TextChanged { .. })) {
+        if c.drain_events()
+            .iter()
+            .any(|event| matches!(event, UiEvent::TextChanged { .. }))
+        {
             changed(c);
         }
     }
@@ -138,7 +161,11 @@ pub fn hovered_help(gui: &Gui, hovered: Option<NodeId>) -> Option<String> {
 
 /// A family page's right-panel buttons as nodes, each with its status help.
 pub fn menu_buttons(spec: &super::menu_page::MenuPageSpec) -> impl Iterator<Item = NodeSpec> + '_ {
-    spec.buttons().map(|b| NodeSpec::new(NodeKind::Button).id(i32::from(b.id)).tooltip(b.tooltip_key))
+    spec.buttons().map(|b| {
+        NodeSpec::new(NodeKind::Button)
+            .id(i32::from(b.id))
+            .tooltip(b.tooltip_key)
+    })
 }
 
 /// The dialog rooted at `root`.
@@ -150,13 +177,24 @@ fn dialog_of(gui: &Gui, root: NodeId) -> Option<vera20k_gui::DialogId> {
 /// still under the pointer (612B70), under another dialog too.
 pub fn held_in(gui: &Gui, root: NodeId) -> Option<NodeId> {
     let dialog = dialog_of(gui, root)?;
-    gui.pressed_in(dialog).filter(|n| gui.hovered_in(dialog) == Some(*n))
+    gui.pressed_in(dialog)
+        .filter(|n| gui.hovered_in(dialog) == Some(*n))
+}
+
+/// The node a press captured in the dialog rooted at `root`, under the
+/// pointer or not (the Skirmish family's buttons keep their pushed look).
+pub fn captured_in(gui: &Gui, root: NodeId) -> Option<NodeId> {
+    gui.pressed_in(dialog_of(gui, root)?)
 }
 
 /// The status help of the control hovered in the dialog rooted at `root`,
 /// which may lie under another.
 pub fn hovered_key_in(gui: &Gui, root: NodeId) -> Option<&str> {
-    match gui.get(gui.hovered_in(dialog_of(gui, root)?)?, Prop::Tooltip).ok().flatten()? {
+    match gui
+        .get(gui.hovered_in(dialog_of(gui, root)?)?, Prop::Tooltip)
+        .ok()
+        .flatten()?
+    {
         Value::Text(key) => Some(key),
         _ => None,
     }
@@ -176,7 +214,8 @@ pub fn menu_button_looks(
         .iter()
         .map(|b| {
             let node = gui.find_id(root, i32::from(b.id));
-            let enabled = node.and_then(|n| gui.get(n, Prop::Enabled).ok().flatten()) != Some(&Value::Bool(false));
+            let enabled = node.and_then(|n| gui.get(n, Prop::Enabled).ok().flatten())
+                != Some(&Value::Bool(false));
             (*b, node.is_some() && node == held, enabled)
         })
         .collect()
@@ -197,7 +236,11 @@ pub fn page_events(gui: &Gui, events: Vec<UiEvent>) -> Vec<PageEvent> {
             UiEvent::ComboOpened { .. } => out.push(PageEvent::Cue(PageCue::ComboOpen)),
             UiEvent::ComboClosed { .. } => out.push(PageEvent::Cue(PageCue::ComboClose)),
             UiEvent::Activated { node, .. } => out.extend(id(node).map(PageEvent::Activated)),
-            UiEvent::Changed { node, value, final_ } => {
+            UiEvent::Changed {
+                node,
+                value,
+                final_,
+            } => {
                 let Some(id) = id(node) else { continue };
                 match (gui.tree().kind(node), value) {
                     (Ok(NodeKind::Checkbox), Value::Bool(on)) => {
@@ -244,24 +287,47 @@ mod tests {
         gui.push_dialog(root, DialogKind::Page, None, None).unwrap();
         ensure_built(&mut gui, root, || {
             NodeSpec::new(NodeKind::Dialog)
-                .child(NodeSpec::new(NodeKind::Checkbox).id(0x5F5).tooltip("STT:WOLOptionsPage"))
+                .child(
+                    NodeSpec::new(NodeKind::Checkbox)
+                        .id(0x5F5)
+                        .tooltip("STT:WOLOptionsPage"),
+                )
                 .child(NodeSpec::new(NodeKind::Button).id(1))
         });
-        sync_rects(&mut gui, root, |id| (id == 0x5F5).then_some(RectPx::new(0, 0, 18, 18)));
+        sync_rects(&mut gui, root, |id| {
+            (id == 0x5F5).then_some(RectPx::new(0, 0, 18, 18))
+        });
         let hidden = gui.find_id(root, 1).unwrap();
-        assert_eq!(gui.get(hidden, Prop::Visible).unwrap(), Some(&Value::Bool(false)));
+        assert_eq!(
+            gui.get(hidden, Prop::Visible).unwrap(),
+            Some(&Value::Bool(false))
+        );
         for event in [
             InputEvent::PointerMove { x: 5, y: 5 },
-            InputEvent::PointerDown { x: 5, y: 5, button: MouseButton::Left },
-            InputEvent::PointerUp { x: 5, y: 5, button: MouseButton::Left },
+            InputEvent::PointerDown {
+                x: 5,
+                y: 5,
+                button: MouseButton::Left,
+            },
+            InputEvent::PointerUp {
+                x: 5,
+                y: 5,
+                button: MouseButton::Left,
+            },
         ] {
             gui.input(event, 0);
         }
-        assert_eq!(hovered_help(&gui, gui.hovered()).as_deref(), Some("STT:WOLOptionsPage"));
+        assert_eq!(
+            hovered_help(&gui, gui.hovered()).as_deref(),
+            Some("STT:WOLOptionsPage")
+        );
         let events = gui.drain_events();
         assert_eq!(
             page_events(&gui, events),
-            [PageEvent::Cue(PageCue::Checkbox), PageEvent::Toggled(0x5F5, true)]
+            [
+                PageEvent::Cue(PageCue::Checkbox),
+                PageEvent::Toggled(0x5F5, true)
+            ]
         );
         // The tree owns the value the screen reads back.
         assert!(checked(&gui, root, 0x5F5) && !checked(&gui, root, 1));

@@ -9,9 +9,7 @@ use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
 pub use crate::ui::shell::geom::{RIGHT_PANEL_TILE_H, RIGHT_PANEL_WIDTH};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 pub use crate::ui::shell::geom::{SHELL_BASE_H, SHELL_BASE_W};
-use crate::ui::shell::geom::{
-    ShellScale, dlu_rect, fit_window, lower_strip_rect, right_panel_rects,
-};
+use crate::ui::shell::geom::{ShellScale, dlu_rect, lower_strip_rect, right_panel_rects};
 use crate::ui::shell::layout::{LaidOutControl, layout_pass};
 use crate::ui::shell::menu_page::{
     MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
@@ -258,15 +256,6 @@ pub fn movie_base_for_responsive_width(_screen_w: u32) -> MainMenuMovieBase {
     MainMenuMovieBase::Ra2tsL
 }
 
-/// Map the verified 800x600 dialog into the live window through one uniform
-/// scale, centred. Identity at 800x600, so the responsive layout equals the
-/// retail layout at the base size. This intentionally drifts from retail pixel
-/// parity at other sizes, but keeps render and input coordinates in the same
-/// window-pixel space.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
-    fit_window(screen_w, screen_h, compute_layout)
-}
-
 // The 800x600 layout plays the large loop, as a stretched area always does
 // ([`movie_base_for_responsive_width`]).
 vera20k_gui::scaled_rects!(MainMenuButtonRect { rect; keep: id });
@@ -305,6 +294,7 @@ impl MainMenuShellLayout {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::shell::geom::fit_window;
 
     #[test]
     fn buttons_grid_snap_and_exit_special_case_800x600() {
@@ -341,7 +331,7 @@ mod tests {
         ];
         assert_eq!(ids(compute_layout(640, 480)), retail);
         assert_eq!(ids(compute_layout(800, 600)), retail);
-        assert_eq!(ids(compute_responsive_layout(1920, 1080)), retail);
+        assert_eq!(ids(fit_window(1920, 1080, compute_layout)), retail);
     }
 
     #[test]
@@ -400,7 +390,7 @@ mod tests {
 
     #[test]
     fn responsive_layout_fits_the_base_shell_centred_in_the_window() {
-        let layout = compute_responsive_layout(1600, 900);
+        let layout = fit_window(1600, 900, compute_layout);
         assert_eq!(layout.screen, RectPx::new(0, 0, 1600, 900));
         assert_eq!(layout.movie_base, MainMenuMovieBase::Ra2tsL);
         // The height limits the factor to 1.5: the 1200x900 shell sits 200 px
@@ -421,7 +411,7 @@ mod tests {
     #[test]
     fn scaled_panel_rows_land_on_their_buttons() {
         let base = compute_layout(800, 600);
-        let layout = compute_responsive_layout(1366, 768);
+        let layout = fit_window(1366, 768, compute_layout);
         let panel = layout.right_panel;
         for (authored, button) in base.buttons.iter().zip(&layout.buttons) {
             let row = (authored.rect.y - base.right_panel.tile.y) / 42;
@@ -438,7 +428,7 @@ mod tests {
     fn responsive_layout_keeps_large_movie_when_shrunk_to_640x480() {
         // The stretched shell always plays the large loop; the retail 640
         // asset switch belongs to the unscaled layout.
-        let layout = compute_responsive_layout(640, 480);
+        let layout = fit_window(640, 480, compute_layout);
         assert_eq!(layout.movie_base, MainMenuMovieBase::Ra2tsL);
         assert_eq!(layout.movie, RectPx::new(0, 0, 506, 456));
         // Base SP cell (644,199,156,42) scaled 0.8x/0.8x → (515, 159, 125, 34).

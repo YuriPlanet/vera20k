@@ -354,7 +354,7 @@ pub(crate) fn chooser_rows(
                     .cooperative_campaign_name(campaign)
                     .unwrap_or_default()
                     .to_owned();
-                let name = crate::app::App::csf_label(state, &key, &key);
+                let name = state.csf_label(&key, &key);
                 (row.record, format!("{}. {}", campaign + 1, name))
             })
             .collect(),
@@ -362,7 +362,7 @@ pub(crate) fn chooser_rows(
 }
 
 fn saved_row_label(state: &AppState) -> String {
-    crate::app::App::csf_label(state, "TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE")
+    state.csf_label("TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE")
 }
 
 /// Every scenario record's file name, as `[0xA8B8CC]` holds them.
@@ -463,11 +463,7 @@ pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
     match tail {
         SavedCampaignJoin::Nothing => {}
         SavedCampaignJoin::Notice => {
-            let text = crate::app::App::csf_label(
-                state,
-                "TXT_SAVE_CAMP_AVAILABLE",
-                "TXT_SAVE_CAMP_AVAILABLE",
-            );
+            let text = state.csf_label("TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
             crate::app::shell_lan::append_room_chat(
                 state,
                 crate::ui::lan_shell::LanChatLine {

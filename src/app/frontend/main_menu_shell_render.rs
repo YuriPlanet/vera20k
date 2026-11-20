@@ -10,7 +10,7 @@ use crate::app::frontend::menu_page_render::{
     paint_shell_status_line,
 };
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_pass::{TexturedDraw, owner_draw_button_label_rect, resolve_csf};
+use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::{
     ColumnDraw, ExternalMenuWait, MainMenuEntryPaintFrame, MainMenuEntryPresentToken,
     ShellFrameWave, external_menu_wait,
@@ -153,7 +153,7 @@ impl MainMenuSlide {
 }
 
 pub(crate) fn main_menu_title_text(state: &AppState) -> std::borrow::Cow<'_, str> {
-    resolve_csf(state, MAIN_MENU_PAGE.title_key)
+    state.csf_text(MAIN_MENU_PAGE.title_key).into()
 }
 
 /// What 0xE2 shows in place of its live controls.
@@ -646,9 +646,7 @@ fn sync_shell_menu_settings(state: &mut AppState) {
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
 fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::ModalDraw> {
     use crate::app::frontend::state::ShellMessageBoxPurpose;
-    use crate::ui::shell::modal;
     let message_box = state.frontend.shell_message_box.as_ref()?;
-    let modal_state = &message_box.labels;
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
     // VERA's own boxes pick their art: the Esc menu the Allied eagle, the
     // updater's Red Alert 2's. The others draw gamemd's.
@@ -666,7 +664,8 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         _ => None,
     }
     .or_else(|| atlas.mode_two_dialog_background(None));
-    let layout = shell_layout::shell_message_box_layout(state, modal_state.kind());
+    let shell_box = &message_box.shell_box;
+    let parts = shell_layout::shell_box_parts(state, shell_box);
     // The updater's offer lists what changed (`app::updater::notes`).
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let notes = match &message_box.purpose {
@@ -679,54 +678,6 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     let pressed = controller
         .top_id()
         .and_then(|top| crate::ui::shell::menu_page::pressed_id(controller, top));
-    let frames = crate::app::frontend::skirmish_shell_render::type3_button_frames(atlas);
-    // Body left-top wrapped; each button's caption centred on it with the
-    // MNBTTN press sink — same conventions as the skirmish validation modal.
-    let mut buttons = Vec::new();
-    let mut labels = vec![PaintLabel {
-        text: (&modal_state.title).into(),
-        rect: layout.body,
-        align: ShellAlign::NONE,
-        rgb: SHELL_TEXT_RGB_ENABLED,
-        path_a_reveal: None,
-    }];
-    for (rect, text, control) in [
-        (Some(layout.ok), &modal_state.confirm, modal::control::OK),
-        (layout.third, &modal_state.third, modal::control::THIRD),
-        (layout.cancel, &modal_state.cancel, modal::control::CANCEL),
-    ] {
-        let Some(rect) = rect else { continue };
-        let pressed = pressed == Some(control);
-        buttons.push(shell_paint::ModalButton {
-            rect,
-            pressed,
-            enabled: true,
-        });
-        labels.push(PaintLabel {
-            text: text.into(),
-            rect: layout
-                .scale
-                .derive_rect(rect, |rect| owner_draw_button_label_rect(rect, pressed)),
-            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    if let Some((notes, (geometry, top, _))) = &notes {
-        labels.extend(
-            notes
-                .texts(geometry, *top, layout.scale.factor())
-                .into_iter()
-                .map(|(text, rect)| PaintLabel {
-                    text: text.into(),
-                    rect,
-                    align: ShellAlign::NONE,
-                    rgb: SHELL_TEXT_RGB_ENABLED,
-                    path_a_reveal: None,
-                }),
-        );
-    }
     let menu = message_box.menu_settings().map(|settings| {
         let controls = shell_layout::shell_menu_settings_layout(
             shell_layout::shell_screen_size(state),
@@ -734,24 +685,49 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         );
         (settings, controls)
     });
-    if let Some((settings, controls)) = &menu
-        && let Some(list) = settings.shell_popup(controls)
-    {
-        // The shell draws all text after its sprites, including the list's backing.
-        labels.retain(|label| {
-            !super::skirmish_shell_render::text_covered_by_overlay(label.rect, &[list.rect])
-        });
-    }
-    let mut draw = shell_paint::paint_modal_shp(
-        &state.renderer.bit_font,
-        background,
-        frames,
-        layout.dialog,
-        &buttons,
-        &labels,
-        layout.scale,
-        EXIT_CONFIRM_MODAL_DEPTHS,
+    // The shell draws all text after its sprites, the open list's backing
+    // too: what it covers gives way.
+    let list: Vec<RectPx> = menu
+        .as_ref()
+        .and_then(|(settings, controls)| settings.shell_popup(controls))
+        .map(|list| list.rect)
+        .into_iter()
+        .collect();
+    let look = crate::app::frontend::skirmish_shell_render::BoxLook {
+        covered: &list,
+        ..crate::app::frontend::skirmish_shell_render::BoxLook::new(
+            background,
+            EXIT_CONFIRM_MODAL_DEPTHS,
+        )
+    };
+    let mut draw = crate::app::frontend::skirmish_shell_render::paint_shell_box(
+        state,
+        Some(atlas),
+        shell_box,
+        &parts,
+        |id| pressed == Some(id),
+        look,
     );
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    if let Some((notes, (geometry, top, _))) = &notes {
+        let labels: Vec<PaintLabel> = notes
+            .texts(geometry, *top, parts.scale.factor())
+            .into_iter()
+            .map(|(text, rect)| PaintLabel {
+                text: text.into(),
+                rect,
+                align: ShellAlign::NONE,
+                rgb: SHELL_TEXT_RGB_ENABLED,
+                path_a_reveal: None,
+            })
+            .collect();
+        draw.text.extend(shell_paint::paint_labels_at_depth_scaled(
+            &state.renderer.bit_font,
+            &labels,
+            EXIT_CONFIRM_MODAL_DEPTHS.text,
+            parts.scale.factor(),
+        ));
+    }
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
             &mut draw, state, atlas, &controls, settings,
@@ -768,7 +744,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
             None,
             pressed,
             true,
-            layout.scale,
+            parts.scale,
         );
     }
     Some(draw)

@@ -929,6 +929,7 @@ impl RandomMapSetupModalState {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::shell::page::PageCue;
 
     /// Always returns `max`, so draws are identifiable.
     struct MaxRng;
@@ -1491,18 +1492,14 @@ mod tests {
         state: &mut RandomMapSetupModalState,
         layout: &super::super::super::layout::RandomMapSetupLayout,
         at: (i32, i32),
-    ) -> Option<super::super::SkirmishShellUiSound> {
+    ) -> Option<PageCue> {
         use super::super::super::page::Pointer;
         use super::super::super::random_map_page::pointer;
         let (sounds, _) = pointer(ui, state, layout, Pointer::Down, at.0, at.1);
         pointer(ui, state, layout, Pointer::Up, at.0, at.1);
-        sounds.into_iter().find(|sound| {
-            matches!(
-                sound,
-                super::super::SkirmishShellUiSound::GuiComboOpenSound
-                    | super::super::SkirmishShellUiSound::GuiComboCloseSound
-            )
-        })
+        sounds
+            .into_iter()
+            .find(|sound| matches!(sound, PageCue::ComboOpen | PageCue::ComboClose))
     }
 
     fn open_combo(
@@ -1543,21 +1540,15 @@ mod tests {
     /// closes it; both play the close cue.
     #[test]
     fn combo_presses_open_from_the_arrow_and_close_from_anywhere() {
-        use super::super::SkirmishShellUiSound::{GuiComboCloseSound, GuiComboOpenSound};
+        use crate::ui::shell::page::PageCue::{ComboClose, ComboOpen};
         let layout = super::super::super::layout::compute_random_map_setup_layout(800, 600);
         let mut ui = crate::ui::shell::controller::DialogController::default();
         let mut state = opened();
         let time = layout.control_rects[SetupCombo::Time.row()];
         let (text, arrow) = ((time.x + 4, time.y + 4), (time.x + time.w - 4, time.y + 4));
-        assert_eq!(
-            click(&mut ui, &mut state, &layout, text),
-            Some(GuiComboOpenSound)
-        );
+        assert_eq!(click(&mut ui, &mut state, &layout, text), Some(ComboOpen));
         assert_eq!(open_combo(&ui, &state), None);
-        assert_eq!(
-            click(&mut ui, &mut state, &layout, arrow),
-            Some(GuiComboOpenSound)
-        );
+        assert_eq!(click(&mut ui, &mut state, &layout, arrow), Some(ComboOpen));
         assert_eq!(open_combo(&ui, &state), Some(SetupCombo::Time));
         let list = super::super::super::layout::random_map_setup_dropdown_rect(
             &layout,
@@ -1567,7 +1558,7 @@ mod tests {
         let dusk_row = list.y + list.h * 5 / 8;
         assert_eq!(
             click(&mut ui, &mut state, &layout, (list.x + 4, dusk_row)),
-            Some(GuiComboCloseSound)
+            Some(ComboClose)
         );
         assert_eq!(
             (
@@ -1576,14 +1567,11 @@ mod tests {
             ),
             (None, Some(2))
         );
-        assert_eq!(
-            click(&mut ui, &mut state, &layout, arrow),
-            Some(GuiComboOpenSound)
-        );
+        assert_eq!(click(&mut ui, &mut state, &layout, arrow), Some(ComboOpen));
         let outside = (layout.randomize.x + 1, layout.randomize.y + 1);
         assert_eq!(
             click(&mut ui, &mut state, &layout, outside),
-            Some(GuiComboCloseSound)
+            Some(ComboClose)
         );
         assert_eq!(
             (

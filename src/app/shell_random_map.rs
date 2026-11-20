@@ -545,7 +545,8 @@ impl RandomMapGenerationRetention {
 
     pub(super) fn accept_setup(&mut self, selected_map_file: &str) {
         self.accepted_launch = self.candidate.take().map(|generated| {
-            let start_staging = AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
+            let start_staging =
+                AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
             (
                 selected_map_file.to_owned(),
                 AcceptedRandomMapLaunch {
@@ -1277,12 +1278,9 @@ impl App {
         // The ordinary Generate path also stamps the localized working label
         // immediately before generator construction (0x00595BC0).
         let mut generation_options = options.clone();
-        generation_options.description = Self::csf_label(
-            state,
-            RANDOM_MAP_DESCRIPTION_KEY,
-            RANDOM_MAP_DESCRIPTION_FALLBACK,
-        )
-        .into();
+        generation_options.description = state
+            .csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK)
+            .into();
         if let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -1514,7 +1512,8 @@ impl App {
                 // ends through its teardown slide.
                 Self::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellExitThen::RandomMapUse,
+                    crate::app::frontend::shell_transition::ShellSlideKind::RandomMap,
+                    App::accept_random_map_setup,
                 );
             }
             return true;
@@ -1753,7 +1752,11 @@ impl App {
     ) -> Option<crate::ui::skirmish_shell::RandomMapSetupControl> {
         let layout = Self::skirmish_random_map_setup_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
-        let modal = state.frontend.skirmish_shell_state.random_map_setup_modal.as_mut()?;
+        let modal = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_mut()?;
         let (sounds, activated) = crate::ui::skirmish_shell::random_map_page::pointer(
             &mut state.frontend.shell_controller,
             modal,
@@ -1762,13 +1765,8 @@ impl App {
             x,
             y,
         );
-        for sound in sounds {
-            match sound {
-                crate::ui::skirmish_shell::SkirmishShellUiSound::MainButton => {
-                    Self::play_main_menu_button_sound(state)
-                }
-                sound => Self::play_skirmish_shell_ui_sound(state, sound),
-            }
+        for cue in sounds {
+            Self::play_page_cue(state, cue);
         }
         state.platform.window.request_redraw();
         activated
@@ -1814,7 +1812,11 @@ impl App {
     fn update_random_map_status_help(state: &mut AppState) {
         use crate::ui::skirmish_shell::random_map_page;
         let controller = &state.frontend.shell_controller;
-        let Some(modal) = state.frontend.skirmish_shell_state.random_map_setup_modal.as_ref()
+        let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_ref()
         else {
             return;
         };
@@ -1840,7 +1842,11 @@ impl App {
     pub(super) fn handle_random_map_setup_mouse_up(state: &mut AppState) -> bool {
         use crate::ui::skirmish_shell::RandomMapSetupControl as Control;
 
-        let Some(modal) = state.frontend.skirmish_shell_state.random_map_setup_modal.as_ref()
+        let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_ref()
         else {
             return false;
         };
@@ -1850,7 +1856,8 @@ impl App {
             &state.frontend.shell_controller,
             modal,
         );
-        let released = Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Up);
+        let released =
+            Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Up);
         if held {
             Self::update_random_map_status_help(state);
         }
@@ -2076,13 +2083,15 @@ impl App {
         if accept_requested {
             Self::leave_shell_dialog(
                 state,
-                crate::app::frontend::shell_transition::ShellExitThen::RandomMapUse,
+                crate::app::frontend::shell_transition::ShellSlideKind::RandomMap,
+                App::accept_random_map_setup,
             );
         }
         if close_setup {
             Self::leave_shell_dialog(
                 state,
-                crate::app::frontend::shell_transition::ShellExitThen::RandomMapCancel,
+                crate::app::frontend::shell_transition::ShellSlideKind::RandomMap,
+                App::cancel_random_map_setup,
             );
         }
         true

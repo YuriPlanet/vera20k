@@ -23,6 +23,8 @@ pub(crate) mod options;
 
 pub(crate) use options::OptionsDialogState;
 
+use crate::ui::shell::modal::ShellBox;
+
 /// Resolves a CSF string key to display text, with an English fallback when the
 /// table is missing the key. Provided by the caller (which owns the CSF table).
 pub(crate) type CsfLookup<'a> = dyn Fn(&str, &str) -> String + 'a;
@@ -52,92 +54,72 @@ pub(crate) const CAMPAIGN_REPLAY_NO_KEY: &str = "TXT_NO";
 const SHELL_MENU_OPTIONS_KEY: &str = "GUI:Options";
 const SHELL_MENU_EXIT_KEY: &str = "GUI:ExitGame";
 
-/// The resolved strings of a shell message box (ShellMessageBox__Run
-/// `0x005D3490`): body, OK-slot button (`0x5AE`, result0), optional
-/// Cancel-slot caption (control2, result1) and optional third button
-/// (result2). An empty Cancel selects CE instead of 120, a populated third
-/// 121. Read from CSF once at open, not every frame.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ShellMessageBoxLabels {
-    pub title: String,
-    pub confirm: String,
-    pub cancel: String,
-    pub third: String,
+/// ShellMessageBox__Run `0x005D3490`'s boxes, read from CSF once at open:
+/// body, the OK-slot button (`0x5AE`, result 0), the Cancel slot (control 2,
+/// result 1) and the third (result 2); the count rule picks CE/120/121.
+pub(crate) fn map_select_failure(csf: &CsfLookup<'_>) -> ShellBox {
+    // FUN_005ADD10 @0x005ADDA6..5ADDCF: only TXT_OK is supplied.
+    let body = csf("MSG:UnableMapSelect", "Unable to initiate Map Selection!");
+    ShellBox::notice(body, csf("TXT_OK", "OK"))
 }
 
-impl ShellMessageBoxLabels {
-    /// gamemd ShellMessageBox__Run @0x005D3490 chooses CE/120/121 from
-    /// populated captions, including an empty CSF value in an optional slot.
-    pub fn kind(&self) -> crate::ui::shell::modal::ModalKind {
-        crate::ui::shell::modal::message_box_kind(Some(&self.cancel), Some(&self.third))
-    }
+/// Main-menu Exit Game (state 6).
+pub(crate) fn exit_confirm(csf: &CsfLookup<'_>) -> ShellBox {
+    ShellBox::message(
+        csf(EXIT_CONFIRM_TITLE_KEY, EXIT_CONFIRM_TITLE_FALLBACK),
+        csf(EXIT_CONFIRM_OK_KEY, EXIT_CONFIRM_OK_FALLBACK),
+        csf(EXIT_CONFIRM_CANCEL_KEY, EXIT_CONFIRM_CANCEL_FALLBACK),
+        String::new(),
+    )
+}
 
-    /// FUN_005ADD10 @0x005ADDA6..5ADDCF: only TXT_OK is supplied.
-    pub fn map_select_failure(csf: &CsfLookup<'_>) -> Self {
-        Self {
-            title: csf("MSG:UnableMapSelect", "Unable to initiate Map Selection!"),
-            confirm: csf("TXT_OK", "OK"),
-            cancel: String::new(),
-            third: String::new(),
-        }
-    }
+/// VERA's Esc menu: the main menu's own Options and Exit Game captions in
+/// the OK and third slots, and no question, its buttons in a footer.
+pub(crate) fn shell_menu(csf: &CsfLookup<'_>) -> ShellBox {
+    ShellBox::message(
+        String::new(),
+        csf(SHELL_MENU_OPTIONS_KEY, "Options"),
+        csf(EXIT_CONFIRM_CANCEL_KEY, EXIT_CONFIRM_CANCEL_FALLBACK),
+        csf(SHELL_MENU_EXIT_KEY, "Exit Game"),
+    )
+    .form(crate::ui::shell::modal::BoxForm::Footer)
+}
 
-    /// Main-menu Exit Game (state 6).
-    pub fn exit_confirm(csf: &CsfLookup<'_>) -> Self {
-        Self {
-            title: csf(EXIT_CONFIRM_TITLE_KEY, EXIT_CONFIRM_TITLE_FALLBACK),
-            confirm: csf(EXIT_CONFIRM_OK_KEY, EXIT_CONFIRM_OK_FALLBACK),
-            cancel: csf(EXIT_CONFIRM_CANCEL_KEY, EXIT_CONFIRM_CANCEL_FALLBACK),
-            third: String::new(),
-        }
-    }
-
-    /// VERA's Esc menu: the main menu's own Options and Exit Game captions in
-    /// the OK and third slots, and no question.
-    pub fn shell_menu(csf: &CsfLookup<'_>) -> Self {
-        Self {
-            title: String::new(),
-            confirm: csf(SHELL_MENU_OPTIONS_KEY, "Options"),
-            cancel: csf(EXIT_CONFIRM_CANCEL_KEY, EXIT_CONFIRM_CANCEL_FALLBACK),
-            third: csf(SHELL_MENU_EXIT_KEY, "Exit Game"),
-        }
-    }
-
-    /// Campaign defeat's retry prompt: Yes in the OK slot, No in Cancel's.
-    pub fn campaign_replay(csf: &CsfLookup<'_>) -> Self {
-        Self {
-            title: csf(
-                CAMPAIGN_REPLAY_TITLE_KEY,
-                "Would you like to replay this mission?",
-            ),
-            confirm: csf(CAMPAIGN_REPLAY_YES_KEY, "Yes"),
-            cancel: csf(CAMPAIGN_REPLAY_NO_KEY, "No"),
-            third: String::new(),
-        }
-    }
+/// Campaign defeat's retry prompt: Yes in the OK slot, No in Cancel's.
+pub(crate) fn campaign_replay(csf: &CsfLookup<'_>) -> ShellBox {
+    ShellBox::message(
+        csf(
+            CAMPAIGN_REPLAY_TITLE_KEY,
+            "Would you like to replay this mission?",
+        ),
+        csf(CAMPAIGN_REPLAY_YES_KEY, "Yes"),
+        csf(CAMPAIGN_REPLAY_NO_KEY, "No"),
+        String::new(),
+    )
 }
 
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::shell::modal::control::{CANCEL, OK, THIRD};
 
     #[test]
     fn message_boxes_read_their_csf_keys() {
         // A lookup that returns the key itself proves which keys are queried.
         let lookup = |key: &str, _fallback: &str| key.to_string();
-        let modal = ShellMessageBoxLabels::exit_confirm(&lookup);
-        assert_eq!(modal.title, EXIT_CONFIRM_TITLE_KEY);
-        assert_eq!(modal.confirm, EXIT_CONFIRM_OK_KEY);
-        assert_eq!(modal.cancel, EXIT_CONFIRM_CANCEL_KEY);
-        let replay = ShellMessageBoxLabels::campaign_replay(&lookup);
-        assert_eq!(replay.title, CAMPAIGN_REPLAY_TITLE_KEY);
-        assert_eq!(replay.confirm, CAMPAIGN_REPLAY_YES_KEY);
-        assert_eq!(replay.cancel, CAMPAIGN_REPLAY_NO_KEY);
+        let modal = exit_confirm(&lookup);
+        assert_eq!(modal.body, EXIT_CONFIRM_TITLE_KEY);
+        assert_eq!(modal.caption(OK), Some(EXIT_CONFIRM_OK_KEY));
+        assert_eq!(modal.caption(CANCEL), Some(EXIT_CONFIRM_CANCEL_KEY));
+        let replay = campaign_replay(&lookup);
+        assert_eq!(replay.body, CAMPAIGN_REPLAY_TITLE_KEY);
+        assert_eq!(replay.caption(OK), Some(CAMPAIGN_REPLAY_YES_KEY));
+        assert_eq!(replay.caption(CANCEL), Some(CAMPAIGN_REPLAY_NO_KEY));
         assert_eq!(replay.kind(), crate::ui::shell::modal::ModalKind::Confirm);
-        let failed = ShellMessageBoxLabels::map_select_failure(&lookup);
-        assert_eq!(failed.title, "MSG:UnableMapSelect");
-        assert_eq!(failed.confirm, "TXT_OK");
-        assert!(failed.cancel.is_empty());
+        let failed = map_select_failure(&lookup);
+        assert_eq!(failed.body, "MSG:UnableMapSelect");
+        assert_eq!(failed.caption(OK), Some("TXT_OK"));
+        assert!(failed.caption(CANCEL).is_none());
         assert_eq!(failed.kind(), crate::ui::shell::modal::ModalKind::BodyOk);
     }
 
@@ -146,10 +128,10 @@ mod tests {
     #[test]
     fn the_esc_menu_is_the_three_button_box() {
         let lookup = |key: &str, _fallback: &str| key.to_string();
-        let menu = ShellMessageBoxLabels::shell_menu(&lookup);
-        assert_eq!(menu.confirm, SHELL_MENU_OPTIONS_KEY);
-        assert_eq!(menu.third, SHELL_MENU_EXIT_KEY);
-        assert_eq!(menu.cancel, EXIT_CONFIRM_CANCEL_KEY);
+        let menu = shell_menu(&lookup);
+        assert_eq!(menu.caption(OK), Some(SHELL_MENU_OPTIONS_KEY));
+        assert_eq!(menu.caption(THIRD), Some(SHELL_MENU_EXIT_KEY));
+        assert_eq!(menu.caption(CANCEL), Some(EXIT_CONFIRM_CANCEL_KEY));
         assert_eq!(menu.kind(), crate::ui::shell::modal::ModalKind::ThreeButton);
     }
 }

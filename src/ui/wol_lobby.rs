@@ -292,15 +292,7 @@ pub(crate) struct WolLobbyLayout {
 }
 
 impl WolLobbyLayout {
-    pub(crate) fn new(width: i32, height: i32, page: &MenuPageSpec) -> Self {
-        Self::build(width, height, ShellScale::RETAIL, page)
-    }
-
-    pub(crate) fn responsive(width: i32, height: i32, page: &MenuPageSpec) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height), page)
-    }
-
-    fn build(width: i32, height: i32, scale: ShellScale, spec: &MenuPageSpec) -> Self {
+    pub(crate) fn new(width: i32, height: i32, scale: ShellScale, spec: &MenuPageSpec) -> Self {
         let mut page = menu_page::compute_layout_for(spec, scale, width, height);
         // Executed relayout 0x60AAB0 -> 0x60C540 -> 0x60C4A0 -> 0x60C0C0
         // (tools/storage_oracle/wol_shell.json): the body keeps its template
@@ -767,12 +759,8 @@ impl WolLobbyState {
         self.modern
     }
 
-    pub(crate) fn layout(&self, width: i32, height: i32, responsive: bool) -> WolLobbyLayout {
-        let mut layout = if responsive {
-            WolLobbyLayout::responsive(width, height, self.page_spec())
-        } else {
-            WolLobbyLayout::new(width, height, self.page_spec())
-        };
+    pub(crate) fn layout(&self, width: i32, height: i32, scale: ShellScale) -> WolLobbyLayout {
+        let mut layout = WolLobbyLayout::new(width, height, scale, self.page_spec());
         if self.modern {
             layout
                 .sort_buttons
@@ -1451,7 +1439,7 @@ mod tests {
         for (size, case) in corpus["layouts"]["0x113"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
             let layout =
-                WolLobbyLayout::new(width.parse().unwrap(), height.parse().unwrap(), &PAGE);
+                WolLobbyLayout::new(width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL, &PAGE);
             for (key, child) in case["controls"].as_object().unwrap() {
                 let mut native = rect(&child["rect"]);
                 let actual = match key.as_str() {
@@ -1499,10 +1487,10 @@ mod tests {
     #[test]
     fn online_sidebar_keeps_core_actions_and_never_reenables_removed_controls() {
         let mut lobby = WolLobbyState::new(false, true);
-        let layout = WolLobbyLayout::new(800, 600, lobby.page_spec());
+        let layout = WolLobbyLayout::new(800, 600, ShellScale::RETAIL, lobby.page_spec());
         let controls: Vec<_> = layout.page.buttons.iter().map(|button| button.id).collect();
         assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, BACK]);
-        let retail = WolLobbyLayout::new(800, 600, &PAGE);
+        let retail = WolLobbyLayout::new(800, 600, ShellScale::RETAIL, &PAGE);
         assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(BUDDY));
         assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(CLAN));
         assert_eq!(
@@ -1532,8 +1520,8 @@ mod tests {
     #[test]
     fn modern_body_keeps_useful_controls_and_hides_legacy_ones() {
         let mut lobby = WolLobbyState::new(false, true);
-        let layout = lobby.layout(800, 600, false);
-        let legacy = WolLobbyState::new(false, false).layout(800, 600, false);
+        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
+        let legacy = WolLobbyState::new(false, false).layout(800, 600, ShellScale::RETAIL);
         let headers: Vec<_> = layout.sort_buttons.iter().map(|(id, _)| *id).collect();
         assert_eq!(headers, [SORT_ALPHA, SORT_PING, PLAYER_SORT_ALPHA]);
         for id in [
@@ -1585,8 +1573,8 @@ mod tests {
     #[test]
     fn modern_observe_checkbox_trails_the_players_heading() {
         let mut lobby = WolLobbyState::new(false, true);
-        let layout = lobby.layout(800, 600, false);
-        let legacy = WolLobbyState::new(false, false).layout(800, 600, false);
+        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
+        let legacy = WolLobbyState::new(false, false).layout(800, 600, ShellScale::RETAIL);
         let (_, heading) = layout.labels[1];
         let plate = crate::ui::skirmish_shell::checkbox_icon_rect(
             layout.observer_toggle,
@@ -1629,7 +1617,7 @@ mod tests {
         assert_eq!(lobby.selected_row(GAMES), None);
 
         // A pointer resting on the second row keeps it hot across a refill.
-        let layout = lobby.layout(800, 600, false);
+        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
         let list = lobby.shown_geometry(GAMES, layout.games, 2, layout.page.scale);
         let (x, y) = (list.content.x + 1, list.content.y + list.metrics.row_h + 1);
         lobby.replace_games(vec![row("a"), row("b")]);
@@ -1685,7 +1673,7 @@ mod tests {
         };
         let mut lobby = WolLobbyState::new(false, false);
         lobby.replace_games(vec![row("a"), row("b")]);
-        let layout = lobby.layout(800, 600, false);
+        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
         lobby.sync(&layout);
         let list = lobby.shown_geometry(GAMES, layout.games, 2, layout.page.scale);
         let (x, y) = (list.content.x + 5, list.content.y + 5);

@@ -6,7 +6,7 @@
 use super::SHELL_LABEL_TEXT_RGB;
 use super::gui_paint::{GuiStyle, HostRows};
 use super::text::rect_to_text_rect;
-use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint, label};
+use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use crate::app::AppState;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign};
@@ -21,12 +21,19 @@ const SCALE: ShellScale = ShellScale::RETAIL;
 /// A yellow static of string `key`.
 fn caption(state: &AppState, key: &str, rect: RectPx, align: ShellAlign) -> PaintLabel<'static> {
     PaintLabel {
-        text: label(state, key).into(),
+        text: state.csf_text(key).into(),
         rect,
         align,
         rgb: SHELL_LABEL_TEXT_RGB,
         path_a_reveal: None,
     }
+}
+
+/// The mode-2 paint (`0x006221D1`) picks the neutral background in the
+/// shell and the scenario side's in a match.
+fn side(state: &AppState) -> Option<crate::ui::sidebar::SidebarTheme> {
+    (state.frontend.screen == crate::app::GameScreen::InGame)
+        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state))
 }
 
 /// Draw the box first, then its children over it. The mode-2 paint
@@ -42,11 +49,9 @@ fn paint_box(
     let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
         return paint;
     };
-    let side = (state.frontend.screen == crate::app::GameScreen::InGame)
-        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
     let draw = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
-        atlas.mode_two_dialog_background(side),
+        atlas.mode_two_dialog_background(side(state)),
         super::type3_button_frames(atlas),
         dialog,
         buttons,
@@ -70,7 +75,10 @@ fn paint_widget_box(
 ) -> WolLobbyPaint {
     let mut paint = paint_box(state, rect, &[], &[]);
     let c = &state.frontend.shell_controller;
-    let (Some(root), Some(atlas)) = (c.root_in(dialog), state.frontend.skirmish_shell_chrome.as_ref()) else {
+    let (Some(root), Some(atlas)) = (
+        c.root_in(dialog),
+        state.frontend.skirmish_shell_chrome.as_ref(),
+    ) else {
         return paint;
     };
     let style = GuiStyle {
@@ -96,13 +104,25 @@ fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
     use crate::app::input::surrender::SurrenderButton::{Cancel, Ok};
     let layout = crate::app::input::surrender::layout(state);
     let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-    let mut labels = vec![caption(state, "TXT_SURRENDER", layout.body, ShellAlign::NONE)];
+    let mut labels = vec![caption(
+        state,
+        "TXT_SURRENDER",
+        layout.body,
+        ShellAlign::NONE,
+    )];
     let mut buttons = Vec::new();
-    for (rect, button, key) in [(layout.ok, Ok, "TXT_OK"), (layout.cancel, Cancel, "TXT_CANCEL")] {
+    for (rect, button, key) in [
+        (layout.ok, Ok, "TXT_OK"),
+        (layout.cancel, Cancel, "TXT_CANCEL"),
+    ] {
         let pressed = crate::app::input::surrender::pressed(state, button);
         let at = crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);
         labels.push(caption(state, key, at, centre));
-        buttons.push(ModalButton { rect, pressed, enabled: true });
+        buttons.push(ModalButton {
+            rect,
+            pressed,
+            enabled: true,
+        });
     }
     paint_box(state, layout.dialog, &buttons, &labels)
 }
@@ -151,23 +171,19 @@ pub(crate) fn paint_wol_verify(
     layout: &crate::ui::shell::modal::WolVerifyLayout,
 ) -> WolLobbyPaint {
     if let Some(message) = &verify.mismatch {
-        let pressed = verify.ok_pressed().then_some(crate::ui::wol_shell::BOX_OK);
-        let (dialog, buttons, labels) = crate::app::frontend::wol_welcome_render::message_box_parts(
-            message,
-            pressed,
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
-            ShellScale::RETAIL,
-        );
-        let buttons: Vec<ModalButton> = buttons
-            .into_iter()
-            .map(|(rect, pressed)| ModalButton {
-                rect,
-                pressed,
-                enabled: true,
-            })
-            .collect();
-        return paint_box(state, dialog, &buttons, &labels);
+        let mut paint = WolLobbyPaint::default();
+        let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+            return paint;
+        };
+        let (w, h) = (state.renderer.gpu.config.width, state.renderer.gpu.config.height);
+        let parts = message.parts(w as i32, h as i32, SCALE);
+        let pressed = verify.ok_pressed();
+        let look = super::BoxLook::new(atlas.mode_two_dialog_background(side(state)), POPUP_DEPTHS);
+        let ok = |id| pressed && id == crate::ui::wol_shell::BOX_OK;
+        let draw = super::paint_shell_box(state, Some(atlas), message, &parts, ok, look);
+        paint.controls = draw.sprites;
+        paint.texts.extend(draw.text);
+        return paint;
     }
     let labels = [caption(
         state,

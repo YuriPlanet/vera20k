@@ -10,7 +10,7 @@ use crate::app::frontend::menu_page_render::{
     FamilyFrame, FamilyPage, encode_family_page, page_panel_state,
 };
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_pass::{TexturedDraw, resolve_csf};
+use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::CampaignShellArt;
@@ -137,7 +137,7 @@ fn campaign_labels<'a>(
     };
     for side in CampaignSide::ALL {
         out.push(PaintLabel {
-            text: resolve_csf(state, side.caption_key()),
+            text: state.csf_text(side.caption_key()).into(),
             rect: layout.caption(side),
             align: ShellAlign::H_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -145,14 +145,14 @@ fn campaign_labels<'a>(
         });
     }
     out.push(PaintLabel {
-        text: resolve_csf(state, "GUI:Difficulty"),
+        text: state.csf_text("GUI:Difficulty").into(),
         rect: layout.difficulty_label,
         align: ShellAlign::NONE,
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     });
     out.push(PaintLabel {
-        text: resolve_csf(state, campaign.difficulty_label_key()),
+        text: state.csf_text(campaign.difficulty_label_key()).into(),
         rect: layout.difficulty_value,
         align: ShellAlign::H_RIGHT,
         rgb: SHELL_TEXT_RGB_ENABLED,

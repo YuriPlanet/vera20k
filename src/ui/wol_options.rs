@@ -339,15 +339,7 @@ pub(crate) struct WolOptionsLayout {
 }
 
 impl WolOptionsLayout {
-    pub(crate) fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::RETAIL)
-    }
-
-    pub(crate) fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height))
-    }
-
-    fn build(width: i32, height: i32, scale: ShellScale) -> Self {
+    pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
         let place = Placer::on(scale, width, height);
         let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
         let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
@@ -435,7 +427,7 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x2BC"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
-            let layout = WolOptionsLayout::new(width.parse().unwrap(), height.parse().unwrap());
+            let layout = WolOptionsLayout::new(width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL);
             for (key, child) in case["controls"].as_object().unwrap() {
                 let id = u16::from_str_radix(&key[2..], 16).unwrap();
                 let actual = match id {
@@ -519,8 +511,8 @@ mod tests {
 
     #[test]
     fn modern_page_keeps_only_play_music() {
-        let retail = WolOptionsLayout::responsive(1600, 1200);
-        let modern = WolOptionsLayout::responsive(1600, 1200).modern();
+        let retail = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200));
+        let modern = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
         assert_eq!(modern.checkbox_rect(MUSIC), retail.checkbox_rect(PAGES));
         for checkbox in CHECKBOXES.iter().filter(|checkbox| checkbox.id != MUSIC) {
             assert_eq!(modern.checkbox_rect(checkbox.id), None);
@@ -541,8 +533,8 @@ mod tests {
     #[test]
     fn modern_page_picks_the_chat_translation_language_and_ok_hands_it_back() {
         use crate::ui::shell::page::PageCue;
-        let retail = WolOptionsLayout::responsive(1600, 1200);
-        let modern = WolOptionsLayout::responsive(1600, 1200).modern();
+        let retail = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200));
+        let modern = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
         assert_eq!(retail.translate, None);
         let list = modern.translate.expect("the modern page has the list").list;
         let music = modern.checkbox_rect(MUSIC).unwrap();
@@ -598,7 +590,7 @@ mod tests {
     #[test]
     fn translate_in_matches_sits_under_the_list_and_ok_hands_back_its_state() {
         use crate::ui::shell::page::PageCue;
-        let modern = WolOptionsLayout::responsive(1600, 1200).modern();
+        let modern = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
         let translate = modern.translate.unwrap();
         let row = modern.checkbox_rect(TRANSLATE_MATCHES).unwrap();
         assert!(row.y > translate.list.y + translate.list.h);
@@ -637,7 +629,7 @@ mod tests {
             display_asian: 0,
             ..WolPreferences::default()
         };
-        let layout = WolOptionsLayout::new(800, 600);
+        let layout = WolOptionsLayout::new(800, 600, ShellScale::RETAIL);
         let mut page = Page::new(&layout, &live);
         assert!(page.is_checked(PAGES) && !page.is_checked(ASIAN));
         assert!(!page.is_checked(BUDDIES));

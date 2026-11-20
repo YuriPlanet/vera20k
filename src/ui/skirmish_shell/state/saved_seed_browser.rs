@@ -66,18 +66,30 @@ pub struct SavedSeedPrompt<I = NativeFileName> {
 }
 
 impl<I> SavedSeedPrompt<I> {
+    /// The box as it paints: the body over the affirmative button and, for
+    /// a question, the negative one.
+    pub fn shell_box(&self) -> crate::ui::shell::modal::ShellBox {
+        use crate::ui::shell::modal::{BoxSlot, ModalKind, ShellBox};
+        let kind = match self.negative {
+            Some(_) => ModalKind::Confirm,
+            None => ModalKind::BodyOk,
+        };
+        let dialog = crate::ui::shell::descriptor::DialogId(kind.template_id());
+        let shell_box =
+            ShellBox::new(dialog, self.body.clone()).button(YES, BoxSlot::Ok, &*self.affirmative);
+        match &self.negative {
+            Some(no) => shell_box.button(NO, BoxSlot::Cancel, no.as_str()),
+            None => shell_box,
+        }
+    }
+
     /// Both shapes use the shared native message-box templates: dialog,
     /// body, affirmative and negative.
     pub fn layout(&self, width: u32, height: u32) -> (RectPx, RectPx, RectPx, Option<RectPx>) {
-        use crate::ui::shell::modal::{body_ok_layout, quit_confirm_layout};
-        let (width, height) = (width as i32, height as i32);
-        if self.negative.is_some() {
-            let l = quit_confirm_layout(width, height);
-            (l.dialog, l.body, l.ok, Some(l.cancel))
-        } else {
-            let l = body_ok_layout(width, height);
-            (l.dialog, l.body, l.ok, None)
-        }
+        let retail = crate::ui::shell::geom::ShellScale::RETAIL;
+        let parts = self.shell_box().parts(width as i32, height as i32, retail);
+        let yes = parts.rect_of(YES).unwrap_or_default();
+        (parts.dialog, parts.body, yes, parts.rect_of(NO))
     }
 }
 

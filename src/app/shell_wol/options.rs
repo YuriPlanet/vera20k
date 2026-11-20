@@ -8,7 +8,7 @@
 //! dialog; Escape only closes VERA's open translation list.
 
 use super::{WolPage, apply_wol_preferences};
-use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
+use crate::app::frontend::shell_layout;
 use crate::app::{App, AppState};
 use crate::ui::chat_translation::ChatTranslation;
 use crate::ui::shell::combobox::ComboPopup;
@@ -31,12 +31,7 @@ pub(crate) struct WolOptionsPage {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolOptionsLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    let layout = if shell_layout::fills_window(state) {
-        WolOptionsLayout::responsive(width as i32, height as i32)
-    } else {
-        WolOptionsLayout::new(width as i32, height as i32)
-    };
+    let layout = shell_layout::on(state, WolOptionsLayout::new);
     if state
         .frontend
         .wol
@@ -50,51 +45,7 @@ pub(crate) fn layout(state: &AppState) -> WolOptionsLayout {
 }
 
 pub(crate) fn sound_layout(state: &AppState) -> ShellSoundLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        ShellSoundLayout::responsive(width as i32, height as i32)
-    } else {
-        ShellSoundLayout::new(width as i32, height as i32)
-    }
-}
-
-/// `0x0072BAC0`: WOLOptions.shp (800 wide only) through WOLOptions.PAL.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_options_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_options_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("WOLOptions.shp", "WOLOptions.PAL"),
-        &[],
-    );
-    state.frontend.wol_options_art.is_some()
-}
-
-/// `0x0072B8E0`: WOLSoundOptions.shp (800 wide only) through its palette.
-pub(crate) fn open_sound_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_sound_options_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_sound_options_art =
-        crate::render::main_menu_shell_chrome::build_wol_page_art(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
-            assets,
-            shell_layout::art_key_screen_width(state),
-            ("WOLSoundOptions.shp", "WOLSoundOptions.PAL"),
-            &[],
-        );
-    state.frontend.wol_sound_options_art.is_some()
+    shell_layout::on(state, ShellSoundLayout::new)
 }
 
 fn page_mut(state: &mut AppState) -> Option<&mut WolOptionsPage> {
@@ -119,7 +70,7 @@ pub(crate) fn commit_open(state: &mut AppState) {
         lobby.ui.release_buttons();
     }
     visit.page = WolPage::Options(Box::new(WolOptionsPage { shown, sound: None }));
-    open_art(state);
+    super::leaf::open_art(state, crate::ui::wol_options::DIALOG);
     state.frontend.shell_controller.reset_to(DIALOG, false);
     sync_gui(state);
     state.platform.window.request_redraw();
@@ -134,8 +85,8 @@ pub(crate) fn commit_close(
     state: &mut AppState,
     staged: Option<(WolPreferences, ChatTranslation)>,
 ) {
-    state.frontend.wol_options_art = None;
-    state.frontend.wol_sound_options_art = None;
+    super::leaf::free_art(state, crate::ui::wol_options::DIALOG);
+    super::leaf::free_art(state, SHELL_SOUND_PAGE.dialog);
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
@@ -182,7 +133,7 @@ pub(crate) fn commit_open_sound(state: &mut AppState) {
     };
     // GameActive 0 skips the track list init (0x006B6485).
     page.sound = Some((positions, sliders_enabled));
-    open_sound_art(state);
+    super::leaf::open_art(state, SHELL_SOUND_PAGE.dialog);
     state
         .frontend
         .shell_controller
@@ -194,7 +145,7 @@ pub(crate) fn commit_open_sound(state: &mut AppState) {
 /// `0xD6`'s teardown has run: `ShowWindow(0x2BC, 5)` (it slides in again)
 /// and `0x0072B930` frees the Sound Options art.
 pub(crate) fn commit_sound_back(state: &mut AppState) {
-    state.frontend.wol_sound_options_art = None;
+    super::leaf::free_art(state, SHELL_SOUND_PAGE.dialog);
     if let Some(page) = page_mut(state) {
         page.sound = None;
     }
@@ -207,11 +158,16 @@ fn dispatch(state: &mut AppState, action: WolOptionsAction) {
     match action {
         WolOptionsAction::Ok(staged, translate) => App::leave_shell_dialog(
             state,
-            ShellExitThen::WolOptionsClose(Some((staged, translate))),
+            crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
+            move |state| {
+                crate::app::shell_wol::options::commit_close(state, Some((staged, translate)))
+            },
         ),
-        WolOptionsAction::Cancel => {
-            App::leave_shell_dialog(state, ShellExitThen::WolOptionsClose(None))
-        }
+        WolOptionsAction::Cancel => App::leave_shell_dialog(
+            state,
+            crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
+            move |state| crate::app::shell_wol::options::commit_close(state, None),
+        ),
         WolOptionsAction::SoundOptions => {
             // 0x2BC only hides under 0xD6: it shows the same states again.
             if let Some(shown) = shown(state)
@@ -219,7 +175,11 @@ fn dispatch(state: &mut AppState, action: WolOptionsAction) {
             {
                 page.shown = shown;
             }
-            App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsOpen)
+            App::leave_shell_dialog(
+                state,
+                crate::app::frontend::shell_transition::ShellSlideKind::WolOptions,
+                crate::app::shell_wol::options::commit_open_sound,
+            )
         }
         WolOptionsAction::MusicPreview(checked) => {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
@@ -316,7 +276,11 @@ fn handle_events(state: &mut AppState) {
             PageEvent::Activated(id) if on_sound && id == SHELL_SOUND_PAGE.back.id => {
                 let positions = sound::shell_sound_positions(gui, root);
                 crate::app::input::sound::apply_back_volumes(state, positions);
-                App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsBack);
+                App::leave_shell_dialog(
+                    state,
+                    crate::app::frontend::shell_transition::ShellSlideKind::WolSoundOptions,
+                    crate::app::shell_wol::options::commit_sound_back,
+                );
             }
             _ if on_sound => {
                 if let Some((id, volume)) = sound::shell_sound_volume(&event) {

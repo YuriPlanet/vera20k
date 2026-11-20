@@ -15,12 +15,12 @@ use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
-use crate::ui::shell::geom::{RectPx, ScaledRects, ShellScale, child_window, fit_window};
+use crate::ui::shell::geom::{RectPx, ScaledRects, ShellScale, child_window};
 use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{
     self, MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
 };
-use crate::ui::shell::modal::{MessageBoxLayout, ModalKind, message_box_layout_on};
+use crate::ui::shell::modal::{BoxForm, BoxSlot, ShellBox};
 
 pub const WOL_WELCOME_DIALOG: DialogId = DialogId(0x010E);
 pub const QUICK_MATCH: u16 = 0x06E0;
@@ -95,6 +95,7 @@ impl WolMode {
     /// `WOL_RunMain`'s login category for the mode (`0x0077B3AA..0x0077B3C8`):
     /// 0 for My Information (it ensures the API itself), 1 otherwise here
     /// (2 belongs to mode 3, which `0x10E` does not offer).
+    #[cfg(test)]
     pub fn needs_login(self) -> bool {
         self != Self::MyInformation
     }
@@ -291,14 +292,6 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
     }
 }
 
-/// The responsive variant of [`compute_layout`]: the verified 800x600 `0x10E`
-/// scaled to fit the window, keeping its shape. Identity at the base size. The
-/// heading override is authored 11 DLU tall, so it stretches from the
-/// overridden base rect rather than the family's 10.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
-    fit_window(screen_w, screen_h, compute_layout)
-}
-
 impl ScaledRects for WolTextStatic {
     fn scaled_rects(&self, _: ShellScale) -> Self {
         *self
@@ -351,74 +344,23 @@ impl WolWelcomeLayout {
     }
 }
 
-/// A box as it paints and takes the pointer: its window, the body text with
-/// its rect and alignment, and its owner-draw buttons with their captions.
-pub struct WolBoxParts<'a> {
-    pub dialog: RectPx,
-    pub body: (&'a str, RectPx, ShellAlign),
-    pub buttons: Vec<(u16, RectPx, &'a str)>,
-}
-
-/// Every button a box can have, each placed (or hidden) by its parts.
-pub fn box_spec() -> NodeSpec {
-    let ids = [BOX_OK, BOX_YES, BOX_NO, WAIT_DISCONNECT, WAIT_CHECK_STATUS];
-    NodeSpec::new(NodeKind::Dialog).children(ids.map(button_node))
-}
-
 fn button_node(id: u16) -> NodeSpec {
     NodeSpec::new(NodeKind::Button).id(id.into())
 }
 
 /// A WOL message box from `0x005E2CD0`, modal (mode 2, no slide) over the
 /// empty shell backdrop: style 0 is `0xD0` with OK (id 1); style 4 is
-/// `0x126` with Yes (6) and No (7). Its loop (`0x007759E0`) dispatches
-/// without `IsDialogMessage`, so it takes no keys.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WolMessageBox {
-    pub body: String,
-    pub buttons: WolBoxButtons,
+/// `0x126` with Yes (6) and No (7) on the CE/120 rects. Its loop
+/// (`0x007759E0`) dispatches without `IsDialogMessage`, so it takes no keys.
+pub fn message_box(body: String, ok: String) -> ShellBox {
+    ShellBox::new(DialogId(0x00D0), body).button(BOX_OK, BoxSlot::Ok, ok)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WolBoxButtons {
-    Ok(String),
-    YesNo { yes: String, no: String },
-}
-
-impl WolMessageBox {
-    /// WOL__MessageBox (0x005E2CD0)'s D0/126 share the CE/120 control rectangles.
-    pub fn layout(&self, width: i32, height: i32, scale: ShellScale) -> MessageBoxLayout {
-        let kind = match self.buttons {
-            WolBoxButtons::Ok(_) => ModalKind::BodyOk,
-            WolBoxButtons::YesNo { .. } => ModalKind::Confirm,
-        };
-        message_box_layout_on(kind, width, height, scale)
-    }
-
-    pub fn dialog(&self) -> DialogId {
-        DialogId(match self.buttons {
-            WolBoxButtons::Ok(_) => 0x00D0,
-            WolBoxButtons::YesNo { .. } => 0x0126,
-        })
-    }
-
-    /// The body (left aligned) and OK, or Yes and No.
-    pub fn parts(&self, width: i32, height: i32, scale: ShellScale) -> WolBoxParts<'_> {
-        let layout = self.layout(width, height, scale);
-        let buttons = match &self.buttons {
-            WolBoxButtons::Ok(ok) => vec![(BOX_OK, layout.ok, ok.as_str())],
-            WolBoxButtons::YesNo { yes, no } => vec![
-                (BOX_YES, layout.ok, yes.as_str()),
-                (BOX_NO, layout.cancel.expect("Yes/No has No"), no.as_str()),
-            ],
-        };
-        let body = (self.body.as_str(), layout.body, ShellAlign::NONE);
-        WolBoxParts {
-            dialog: layout.dialog,
-            body,
-            buttons,
-        }
-    }
+/// [`message_box`]'s style 4: Yes and No.
+pub fn yes_no_box(body: String, yes: String, no: String) -> ShellBox {
+    ShellBox::new(DialogId(0x0126), body)
+        .button(BOX_YES, BoxSlot::Ok, yes)
+        .button(BOX_NO, BoxSlot::Cancel, no)
 }
 
 /// `0xC4` OK button id 1, `0x126` Yes 6 / No 7.
@@ -435,10 +377,9 @@ pub const WAIT_DIALOG: DialogId = DialogId(0x00C4);
 /// tick shows it and kills the timer. A result before then never shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WolWaitBox {
-    /// `0x5B2`'s text, set by `0x4B2` after creation.
-    pub text: String,
-    pub disconnect: String,
-    pub check_status: String,
+    /// `0x5B2`'s text (set by `0x4B2` after creation), Disconnect and WOL
+    /// Check Status.
+    pub shell_box: ShellBox,
     pub opened_at: crate::util::time::Instant,
     pub shown: bool,
 }
@@ -447,6 +388,15 @@ pub struct WolWaitBox {
 pub const WAIT_REVEAL: std::time::Duration = std::time::Duration::from_millis(7000);
 
 impl WolWaitBox {
+    pub fn new(text: String, disconnect: String, check_status: String) -> Self {
+        let shell_box = ShellBox::new(WAIT_DIALOG, text)
+            .button(WAIT_DISCONNECT, BoxSlot::Disconnect, disconnect)
+            .button(WAIT_CHECK_STATUS, BoxSlot::CheckStatus, check_status)
+            .form(BoxForm::Wait);
+        let opened_at = crate::util::time::Instant::now();
+        Self { shell_box, opened_at, shown: false }
+    }
+
     pub fn reveal_at(&self) -> crate::util::time::Instant {
         self.opened_at + WAIT_REVEAL
     }
@@ -459,40 +409,17 @@ impl WolWaitBox {
         }
         false
     }
-
-    /// The text (`0x5B2` is SS_CENTER), Disconnect and WOL Check Status.
-    pub fn parts(&self, width: i32, height: i32, scale: ShellScale) -> WolBoxParts<'_> {
-        let layout = super::shell::modal::wait_box_layout_on(width, height, scale);
-        WolBoxParts {
-            dialog: layout.dialog,
-            body: (&self.text, layout.text, ShellAlign::H_CENTER),
-            buttons: vec![
-                (WAIT_DISCONNECT, layout.disconnect, self.disconnect.as_str()),
-                (
-                    WAIT_CHECK_STATUS,
-                    layout.check_status,
-                    self.check_status.as_str(),
-                ),
-            ],
-        }
-    }
 }
 
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::ui::shell::geom::centred_in_window;
+    use crate::ui::shell::geom::{centred_in_window, fit_window};
 
     #[test]
     fn message_boxes_follow_the_quit_box_scale_and_hit_rectangles() {
         use crate::ui::shell::modal::{ModalKind, message_box_layout_on};
-        let message = WolMessageBox {
-            body: "Question".into(),
-            buttons: WolBoxButtons::YesNo {
-                yes: "Yes".into(),
-                no: "No".into(),
-            },
-        };
+        let message = yes_no_box("Question".into(), "Yes".into(), "No".into());
         for (w, h) in [
             (760, 600),
             (1024, 768),
@@ -519,10 +446,7 @@ mod tests {
     #[test]
     fn retail_wol_prompts_keep_the_authored_size() {
         for (w, h) in [(640, 480), (800, 600)] {
-            let message = WolMessageBox {
-                body: "Notice".into(),
-                buttons: WolBoxButtons::Ok("OK".into()),
-            };
+            let message = message_box("Notice".into(), "OK".into());
             let layout = message.layout(w, h, ShellScale::RETAIL);
             assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));
             assert_eq!(
@@ -587,14 +511,8 @@ mod tests {
 
     #[test]
     fn wait_box_shows_once_its_timer_fires() {
-        let opened_at = std::time::Instant::now();
-        let mut wait = WolWaitBox {
-            text: String::new(),
-            disconnect: String::new(),
-            check_status: String::new(),
-            opened_at,
-            shown: false,
-        };
+        let mut wait = WolWaitBox::new(String::new(), String::new(), String::new());
+        let opened_at = wait.opened_at;
         assert!(!wait.poll(opened_at + WAIT_REVEAL - std::time::Duration::from_millis(1)));
         assert!(wait.poll(opened_at + WAIT_REVEAL));
         assert!(wait.shown);
@@ -661,12 +579,12 @@ mod tests {
     fn responsive_layout_stretches_the_page_and_the_left_side() {
         let base = compute_layout(800, 600);
         // Identity at the authored size, where the retail layout is used.
-        let same = compute_responsive_layout(800, 600);
+        let same = fit_window(800, 600, compute_layout);
         assert_eq!(same.page.title, base.page.title);
         assert_eq!(same.status_help, base.status_help);
         assert_eq!(same.group_boxes, base.group_boxes);
         let scale = ShellScale::from_screen(1600, 1200);
-        let scaled = compute_responsive_layout(1600, 1200);
+        let scaled = fit_window(1600, 1200, compute_layout);
         assert_eq!(scaled.page.scale, scale);
         assert_eq!(scaled.page.title, RectPx::new(1270, 18, 326, 38));
         assert_eq!(scaled.status_help, RectPx::new(20, 1156, 950, 42));

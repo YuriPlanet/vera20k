@@ -6,12 +6,12 @@
 //! Your own card's Change Country drops `0xFE`'s country list below the
 //! Country row; a pick is kept in VERA.INI and sent to the lobby.
 
+use crate::ui::shell::page::PageCue;
 use winit::keyboard::KeyCode;
 
 use super::service::WolServiceRequest;
 use crate::app::web_link;
 use crate::app::{App, AppState};
-use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::list::ListScrollPart;
@@ -76,10 +76,6 @@ fn close(state: &mut AppState) {
     }
     state.frontend.shell_status_line.repaint();
     state.platform.window.request_redraw();
-}
-
-fn label(state: &AppState, key: &str) -> String {
-    App::csf_label(state, key, key)
 }
 
 pub(crate) fn layout(state: &AppState) -> WolPlayerCardLayout {
@@ -198,7 +194,7 @@ fn own_locale(state: &AppState) -> i32 {
 /// Change Country: `0xFE`'s rows, every `WOL:Locale%02d`, with yours lit.
 fn open_countries(state: &mut AppState) {
     let rows = locale_rows(
-        (0..LOCALE_COUNT).map(|locale| (locale, label(state, &format!("WOL:Locale{locale:02}")))),
+        (0..LOCALE_COUNT).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
     );
     let locale = own_locale(state);
     if let Some(lobby) = state
@@ -251,7 +247,7 @@ fn countries_mouse(state: &mut AppState, list: ComboPopup, pressed: bool) {
         card.close_countries();
     }
     if let Some(cue) = press.cue() {
-        App::play_launcher_options_cue(state, LauncherCue::from(cue));
+        App::play_page_cue(state, PageCue::from(cue));
     }
     if let Some(locale) = picked {
         choose_country(state, locale);
@@ -406,7 +402,7 @@ pub(super) fn status_help(state: &AppState) -> Option<String> {
         }
     };
     Some(crate::i18n::fill(
-        &label(state, key),
+        &state.csf_text(key),
         &[("name", &card.name)],
     ))
 }
@@ -424,7 +420,7 @@ struct CardRow {
 /// Unranked, and the season's wins and losses. The badge and the season
 /// explain themselves under the pointer.
 fn rows(state: &AppState, name: &str) -> Vec<CardRow> {
-    let label = |key: &str| label(state, key);
+    let label = |key: &str| state.csf_text(key);
     let row = |caption: &str, value: String| CardRow {
         caption: label(caption),
         value,
@@ -474,7 +470,7 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
     let card = card(state)?;
     let name = card.name.as_str();
     let own = own(state, name);
-    let label = |key: &str| label(state, key);
+    let label = |key: &str| state.csf_text(key);
     let badge = super::lobby::player_badge(state, name);
     let rows = rows(state, name)
         .into_iter()

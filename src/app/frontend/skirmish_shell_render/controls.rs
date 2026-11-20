@@ -850,7 +850,7 @@ mod tests {
         use crate::ui::skirmish_shell::page::{self, Pointer};
         use crate::ui::skirmish_shell::{
             SkirmishComboId, combo_arrow_hit_rect, combo_dropdown_row_rect, combo_rect,
-            compute_layout, compute_responsive_layout, selected_combo_item,
+            compute_layout, selected_combo_item,
             selected_combo_item_index,
         };
 
@@ -860,7 +860,7 @@ mod tests {
         .unwrap();
         for layout in [
             compute_layout(800, 600),
-            compute_responsive_layout(1600, 1200),
+            crate::ui::shell::geom::fit_window(1600, 1200, compute_layout),
         ] {
             for id in [
                 SkirmishComboId::AiType(0),
@@ -1194,7 +1194,11 @@ mod tests {
                 );
             }
             windows.extend(
-                crate::ui::shell::sound::ShellSoundLayout::new(width as i32, height as i32)
+                crate::ui::shell::sound::ShellSoundLayout::new(
+                    width as i32,
+                    height as i32,
+                    crate::ui::shell::geom::ShellScale::RETAIL,
+                )
                     .sliders
                     .map(|rect| (true, rect)),
             );

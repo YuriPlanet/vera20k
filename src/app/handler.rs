@@ -359,6 +359,117 @@ impl App {
         crate::app::input::cursor::apply_cursor_confinement(state);
     }
 
+    /// The screen page's pointer route: a move (`edge` `None`) or a button
+    /// edge. A page reading only the left button takes its moves as `None`
+    /// and its left edges as `Some(pressed)`.
+    fn screen_pointer(
+        state: &mut AppState,
+        screen: ScreenPage,
+        edge: Option<(MouseButton, winit::event::ElementState)>,
+    ) {
+        let down = edge.map(|(_, edge)| edge.is_pressed());
+        let left = edge.is_none_or(|(button, _)| button == MouseButton::Left);
+        let choose_map = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .is_some();
+        let skirmish = |state: &mut AppState| match down {
+            None => Self::handle_skirmish_shell_mouse_move(state),
+            Some(true) => Self::handle_skirmish_shell_mouse_down(state),
+            Some(false) => Self::handle_skirmish_shell_mouse_up(state),
+        };
+        match screen {
+            // Play_Movie reads and ignores mouse buttons; Show_Credits
+            // queues them as ordinary Keyboard entries.
+            ScreenPage::CreditsRoll if down.is_some() => Self::credits_roll_input(
+                state,
+                crate::app::frontend::credits_roll::CreditsInput::Other,
+            ),
+            ScreenPage::LanLobby => match edge {
+                None => crate::app::shell_lan::cursor_moved(state),
+                Some((button, edge)) => {
+                    crate::app::shell_lan::mouse(state, button, edge.is_pressed())
+                }
+            },
+            ScreenPage::NetworkSetup if choose_map => {
+                if left {
+                    skirmish(state);
+                }
+            }
+            ScreenPage::NetworkSetup => match edge {
+                None => crate::app::input::multiplayer_setup::cursor_moved(state),
+                Some((button, edge)) => {
+                    crate::app::input::multiplayer_setup::mouse(state, button, edge.is_pressed())
+                }
+            },
+            ScreenPage::MovieList if left => Self::handle_movie_list_mouse(state, down),
+            ScreenPage::Mods if left => Self::handle_mods_mouse(state, down),
+            ScreenPage::Campaign if left => match down {
+                None => Self::handle_campaign_mouse_move(state),
+                Some(true) => Self::handle_campaign_mouse_down(state),
+                Some(false) => Self::handle_campaign_mouse_up(state),
+            },
+            ScreenPage::LoadSavedGame if left => match down {
+                None => Self::handle_load_saved_game_mouse_move(state),
+                Some(pressed) => {
+                    Self::handle_load_saved_game_mouse(state, pressed);
+                    state.platform.window.request_redraw();
+                }
+            },
+            ScreenPage::Wol if left => match down {
+                None => Self::handle_wol_mouse_move(state),
+                Some(pressed) => {
+                    if pressed {
+                        Self::handle_wol_mouse_down(state);
+                    } else {
+                        Self::handle_wol_mouse_up(state);
+                    }
+                    state.platform.window.request_redraw();
+                }
+            },
+            ScreenPage::LauncherOptions if left => Self::handle_launcher_options_mouse(state, down),
+            // A retained main-menu dialog takes the click: the SHP
+            // quit-confirm modal hit-tests its OK/Cancel here.
+            _ if down.is_some() && Self::main_menu_dialog_open(state) => {
+                if screen == ScreenPage::MainMenu
+                    && state.frontend.shell_message_box.is_some()
+                    && left
+                {
+                    Self::handle_shell_message_box_mouse(state, down == Some(true));
+                }
+            }
+            ScreenPage::CoopScore => match edge {
+                None => crate::app::input::coop_score::cursor_moved(state),
+                Some((button, edge)) => {
+                    crate::app::input::coop_score::mouse(state, button, edge.is_pressed())
+                }
+            },
+            ScreenPage::CampaignScore if left => Self::handle_campaign_score_mouse(state, down),
+            ScreenPage::Score if left => Self::handle_score_shell_mouse(state, down),
+            ScreenPage::Skirmish if left => skirmish(state),
+            ScreenPage::SinglePlayer | ScreenPage::MoviesAndCredits if left => {
+                Self::handle_menu_page_mouse(state, down);
+            }
+            // While the SHP quit-confirm modal owns the controller, the menu
+            // move handler must not re-activate 0xE2 and reset the gesture:
+            // the open box takes the move, and the update offer's change list
+            // follows it.
+            ScreenPage::MainMenu
+                if down.is_none() && state.frontend.shell_message_box.is_some() =>
+            {
+                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                crate::app::updater::notes::cursor_moved(state);
+            }
+            ScreenPage::MainMenu if left => Self::handle_main_menu_shell_mouse(state, down),
+            ScreenPage::InGameShell(_) | ScreenPage::Battlefield => match edge {
+                None => dispatch::handle_cursor_moved_in_game(state),
+                Some((button, edge)) => dispatch::handle_mouse_input(state, button, edge),
+            },
+            _ => {}
+        }
+    }
+
     fn campaign_score_animation_deadline(state: &AppState) -> Option<Instant> {
         if Self::campaign_score_shell_active(state) {
             state
@@ -1385,32 +1496,26 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // The seed browser, then VERA's Setups page, takes the keys
+                // over the page.
+                let shell = &state.frontend.skirmish_shell_state;
+                let browser_key: Option<fn(&mut AppState, Option<KeyCode>, Option<&str>)> =
+                    if shell.saved_seed_browser.is_some() {
+                        Some(Self::handle_saved_seed_browser_key)
+                    } else if shell.setups_browser.is_some() {
+                        Some(Self::handle_skirmish_setups_key)
+                    } else {
+                        None
+                    };
                 if screen == ScreenPage::Skirmish
-                    && state
-                        .frontend
-                        .skirmish_shell_state
-                        .saved_seed_browser
-                        .is_some()
+                    && let Some(browser_key) = browser_key
                 {
                     if event.state.is_pressed() {
                         let code = match event.physical_key {
                             PhysicalKey::Code(code) => Some(code),
                             _ => None,
                         };
-                        Self::handle_saved_seed_browser_key(state, code, event.text.as_deref());
-                        state.platform.window.request_redraw();
-                    }
-                    return;
-                }
-                if screen == ScreenPage::Skirmish
-                    && state.frontend.skirmish_shell_state.setups_browser.is_some()
-                {
-                    if event.state.is_pressed() {
-                        let code = match event.physical_key {
-                            PhysicalKey::Code(code) => Some(code),
-                            _ => None,
-                        };
-                        Self::handle_skirmish_setups_key(state, code, event.text.as_deref());
+                        browser_key(state, code, event.text.as_deref());
                         state.platform.window.request_redraw();
                     }
                     return;
@@ -1709,53 +1814,7 @@ impl ApplicationHandler for App {
                         return;
                     }
                 };
-                match screen {
-                    ScreenPage::LanLobby => crate::app::shell_lan::cursor_moved(state),
-                    ScreenPage::NetworkSetup => {
-                        if state
-                            .frontend
-                            .skirmish_shell_state
-                            .choose_map_modal
-                            .is_some()
-                        {
-                            Self::handle_skirmish_shell_mouse_move(state);
-                        } else {
-                            crate::app::input::multiplayer_setup::cursor_moved(state);
-                        }
-                    }
-                    ScreenPage::LauncherOptions => Self::handle_launcher_options_mouse(state, None),
-                    ScreenPage::InGameShell(_) | ScreenPage::Battlefield => {
-                        dispatch::handle_cursor_moved_in_game(state);
-                    }
-                    ScreenPage::Skirmish => Self::handle_skirmish_shell_mouse_move(state),
-                    ScreenPage::SinglePlayer | ScreenPage::MoviesAndCredits => {
-                        Self::handle_menu_page_mouse(state, None);
-                    }
-                    ScreenPage::MovieList => Self::handle_movie_list_mouse(state, None),
-                    ScreenPage::Mods => Self::handle_mods_mouse(state, None),
-                    ScreenPage::Campaign => Self::handle_campaign_mouse_move(state),
-                    ScreenPage::LoadSavedGame => Self::handle_load_saved_game_mouse_move(state),
-                    ScreenPage::Wol => Self::handle_wol_mouse_move(state),
-                    ScreenPage::CoopScore => crate::app::input::coop_score::cursor_moved(state),
-                    ScreenPage::Score => Self::handle_score_shell_mouse(state, None),
-                    ScreenPage::CampaignScore => Self::handle_campaign_score_mouse(state, None),
-                    // While the SHP quit-confirm modal owns the controller, the menu
-                    // move handler must not re-activate 0xE2 and reset the gesture.
-                    ScreenPage::MainMenu if state.frontend.shell_message_box.is_none() => {
-                        Self::handle_main_menu_shell_mouse(state, None);
-                    }
-                    // The open message box takes the move; the update offer's
-                    // change list follows it.
-                    ScreenPage::MainMenu => {
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        crate::app::updater::notes::cursor_moved(state);
-                    }
-                    ScreenPage::FullscreenMovie
-                    | ScreenPage::CreditsRoll
-                    | ScreenPage::Loading
-                    | ScreenPage::InGameCard
-                    | ScreenPage::ResultCard => {}
-                }
+                Self::screen_pointer(state, screen, None);
             }
             WindowEvent::MouseInput {
                 state: btn_state,
@@ -1815,101 +1874,12 @@ impl ApplicationHandler for App {
                         return;
                     }
                 };
-                let left = button == MouseButton::Left;
-                let pressed = btn_state.is_pressed();
                 if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
-                    && crate::app::frontend::preview_zoom::mouse(state, pressed)
+                    && crate::app::frontend::preview_zoom::mouse(state, btn_state.is_pressed())
                 {
                     return;
                 }
-                match screen {
-                    // Play_Movie reads and ignores mouse buttons; Show_Credits
-                    // queues them as ordinary Keyboard entries.
-                    ScreenPage::FullscreenMovie => {}
-                    ScreenPage::CreditsRoll => Self::credits_roll_input(
-                        state,
-                        crate::app::frontend::credits_roll::CreditsInput::Other,
-                    ),
-                    ScreenPage::MovieList if left => {
-                        Self::handle_movie_list_mouse(state, Some(pressed));
-                    }
-                    ScreenPage::Mods if left => {
-                        Self::handle_mods_mouse(state, Some(pressed));
-                    }
-                    ScreenPage::Campaign if left => {
-                        if pressed {
-                            Self::handle_campaign_mouse_down(state);
-                        } else {
-                            Self::handle_campaign_mouse_up(state);
-                        }
-                    }
-                    ScreenPage::LoadSavedGame if left => {
-                        Self::handle_load_saved_game_mouse(state, pressed);
-                        state.platform.window.request_redraw();
-                    }
-                    ScreenPage::Wol if left => {
-                        if pressed {
-                            Self::handle_wol_mouse_down(state);
-                        } else {
-                            Self::handle_wol_mouse_up(state);
-                        }
-                        state.platform.window.request_redraw();
-                    }
-                    ScreenPage::LanLobby => crate::app::shell_lan::mouse(state, button, pressed),
-                    ScreenPage::NetworkSetup => {
-                        if state
-                            .frontend
-                            .skirmish_shell_state
-                            .choose_map_modal
-                            .is_none()
-                        {
-                            crate::app::input::multiplayer_setup::mouse(state, button, pressed);
-                        } else if left && pressed {
-                            Self::handle_skirmish_shell_mouse_down(state);
-                        } else if left {
-                            Self::handle_skirmish_shell_mouse_up(state);
-                        }
-                    }
-                    ScreenPage::LauncherOptions if left => {
-                        Self::handle_launcher_options_mouse(state, Some(pressed));
-                    }
-                    // A retained main-menu dialog takes the click: the SHP
-                    // quit-confirm modal hit-tests its OK/Cancel here.
-                    _ if Self::main_menu_dialog_open(state) => {
-                        if screen == ScreenPage::MainMenu
-                            && state.frontend.shell_message_box.is_some()
-                            && left
-                        {
-                            Self::handle_shell_message_box_mouse(state, pressed);
-                        }
-                    }
-                    ScreenPage::CoopScore => {
-                        crate::app::input::coop_score::mouse(state, button, pressed)
-                    }
-                    ScreenPage::CampaignScore if left => {
-                        Self::handle_campaign_score_mouse(state, Some(pressed));
-                    }
-                    ScreenPage::Score if left => {
-                        Self::handle_score_shell_mouse(state, Some(pressed));
-                    }
-                    ScreenPage::Skirmish if left => {
-                        if pressed {
-                            Self::handle_skirmish_shell_mouse_down(state);
-                        } else {
-                            Self::handle_skirmish_shell_mouse_up(state);
-                        }
-                    }
-                    ScreenPage::SinglePlayer | ScreenPage::MoviesAndCredits if left => {
-                        Self::handle_menu_page_mouse(state, Some(pressed));
-                    }
-                    ScreenPage::MainMenu if left => {
-                        Self::handle_main_menu_shell_mouse(state, Some(pressed));
-                    }
-                    ScreenPage::InGameShell(_) | ScreenPage::Battlefield => {
-                        dispatch::handle_mouse_input(state, button, btn_state);
-                    }
-                    _ => {}
-                }
+                Self::screen_pointer(state, screen, Some((button, btn_state)));
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let lines = match delta {

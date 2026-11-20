@@ -1115,7 +1115,8 @@ impl SkirmishCapture {
                 } else if self.selected_scene.is_some() && self.chooser.is_some() {
                     App::leave_shell_dialog(
                         state,
-                        crate::app::frontend::shell_transition::ShellExitThen::SkirmishChooseMap,
+                        crate::app::frontend::shell_transition::ShellSlideKind::Skirmish,
+                        App::open_choose_map_from_skirmish,
                     );
                     ensure!(
                         state.frontend.shell_exit.is_some(),
@@ -1195,7 +1196,8 @@ impl SkirmishCapture {
                     Some(ChooserTarget::Return) if Self::chooser_settled(state) => {
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel,
+                            crate::app::frontend::shell_transition::ShellSlideKind::ChooseMap,
+                            App::close_choose_map_modal,
                         );
                         ensure!(
                             state.frontend.shell_exit.is_some(),

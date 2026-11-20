@@ -2,22 +2,25 @@
 //! lookup, the owner-draw button label clip, the software cursor sprite and
 //! one RGB565-presented composition pass.
 
-use std::borrow::Cow;
-
 use crate::app::AppState;
 use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::RectPx;
 
-/// CSF text for `key`; the key itself when no string table is loaded (a
-/// missing label resolves to the CSF's `MISSING:'key'` text).
-pub(crate) fn resolve_csf<'a>(state: &'a AppState, key: &'a str) -> Cow<'a, str> {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or(Cow::Borrowed(key), |csf| csf.text(key))
+impl AppState {
+    /// [`Self::csf_label`] with the key itself standing in while no table is
+    /// loaded (a missing label resolves to the CSF's `MISSING:'key'` text).
+    pub(crate) fn csf_text(&self, key: &str) -> String {
+        self.csf_label(key, key)
+    }
+
+    /// A label in the language in use ([`crate::i18n::label`]): VERA's own
+    /// (`VERA:`) come from its language files, the game's from the loaded
+    /// table, and `fallback` stands in while none is loaded.
+    pub(crate) fn csf_label(&self, key: &str, fallback: &str) -> String {
+        crate::i18n::label(self.process_assets.csf.as_ref(), key, fallback)
+    }
 }
 
 /// Native owner-draw button label clip: unpressed `(x, y+1, w-2, h-1)`,

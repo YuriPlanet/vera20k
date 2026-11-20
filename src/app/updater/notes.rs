@@ -9,8 +9,8 @@
 use crate::app::frontend::state::ShellMessageBoxPurpose;
 use crate::app::state::AppState;
 use crate::render::bit_font::BitFont;
-use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
 use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
 use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::modal::{MessageBoxLayout, ModalKind};
 use crate::util::time::Instant;
@@ -77,12 +77,21 @@ impl ReleaseNotes {
 
     /// The list in the offer box's `layout` from row `top`; `None` without
     /// notes.
-    pub(crate) fn geometry(&self, layout: &MessageBoxLayout, top: usize) -> Option<ShellListGeometry> {
+    pub(crate) fn geometry(
+        &self,
+        layout: &MessageBoxLayout,
+        top: usize,
+    ) -> Option<ShellListGeometry> {
         if self.rows.is_empty() {
             return None;
         }
         let metrics = ListMetrics::scaled(layout.scale);
-        Some(ShellListGeometry::new(list_rect(layout, metrics), self.rows.len(), top, metrics))
+        Some(ShellListGeometry::new(
+            list_rect(layout, metrics),
+            self.rows.len(),
+            top,
+            metrics,
+        ))
     }
 
     /// Each visible row's text with the rect it is drawn in. The rect runs to
@@ -136,11 +145,12 @@ fn wrap_width() -> u32 {
 
 /// The open offer's change list, the box's layout and its dialog.
 fn open_list(state: &AppState) -> Option<(&ReleaseNotes, MessageBoxLayout, DialogId)> {
-    let kind = state.frontend.shell_message_box.as_ref()?.labels.kind();
-    let layout = crate::app::frontend::shell_layout::shell_message_box_layout(state, kind);
-    match &state.frontend.shell_message_box.as_ref()?.purpose {
+    let message_box = state.frontend.shell_message_box.as_ref()?;
+    let shell_box = &message_box.shell_box;
+    let layout = crate::app::frontend::shell_layout::shell_message_box_layout(state, shell_box);
+    match &message_box.purpose {
         ShellMessageBoxPurpose::UpdateOffer(notes) if !notes.rows.is_empty() => {
-            Some((notes, layout, DialogId(kind.template_id())))
+            Some((notes, layout, shell_box.dialog))
         }
         _ => None,
     }
@@ -151,16 +161,24 @@ fn list_node(state: &AppState, dialog: DialogId) -> Option<NodeId> {
     let controller = &state.frontend.shell_controller;
     let gui = controller.gui();
     let children = gui.tree().children(controller.root_in(dialog)?).ok()?;
-    children.iter().copied().find(|node| gui.tree().kind(*node) == Ok(NodeKind::List))
+    children
+        .iter()
+        .copied()
+        .find(|node| gui.tree().kind(*node) == Ok(NodeKind::List))
 }
 
 /// The open offer's list as it paints: its geometry, top and the scrollbar
 /// arrow drawn pushed.
 pub(crate) fn view(state: &AppState) -> Option<(ShellListGeometry, usize, Option<ListScrollPart>)> {
     let (notes, layout, dialog) = open_list(state)?;
-    let view = list_node(state, dialog).and_then(|node| state.frontend.shell_controller.gui().list_view(node));
+    let view = list_node(state, dialog)
+        .and_then(|node| state.frontend.shell_controller.gui().list_view(node));
     let top = view.map_or(0, |view| view.top);
-    Some((notes.geometry(&layout, top)?, top, view.and_then(|view| view.pressed)))
+    Some((
+        notes.geometry(&layout, top)?,
+        top,
+        view.and_then(|view| view.pressed),
+    ))
 }
 
 /// Builds the open offer's list in its box once (with no id, so the box's
@@ -183,7 +201,11 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let _ = gui.set(node, Prop::ListWindow, Value::Bool(true));
     let _ = gui.set(node, Prop::RowCount, Value::Int(rows));
     let _ = gui.set(node, Prop::Rect, Value::Rect(geometry.outer));
-    let _ = gui.set(node, Prop::HitRect, Value::Rect(geometry.scrollbar.unwrap_or_default()));
+    let _ = gui.set(
+        node,
+        Prop::HitRect,
+        Value::Rect(geometry.scrollbar.unwrap_or_default()),
+    );
     Some(node)
 }
 
@@ -193,7 +215,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         return;
     };
     let controller = &state.frontend.shell_controller;
-    if controller.top_id().and_then(|top| controller.pressed_node_in(top)) != Some(node) {
+    if controller
+        .top_id()
+        .and_then(|top| controller.pressed_node_in(top))
+        != Some(node)
+    {
         return;
     }
     let shown = |state: &AppState| view(state).map(|(_, top, pressed)| (top, pressed));
@@ -215,7 +241,11 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     };
     let to = (top as i32 - (lines * 3.0) as i32).clamp(0, geometry.max_top as i32);
     if to as usize != top {
-        let _ = state.frontend.shell_controller.gui_mut().set(node, Prop::Top, Value::Int(to));
+        let _ = state
+            .frontend
+            .shell_controller
+            .gui_mut()
+            .set(node, Prop::Top, Value::Int(to));
         state.platform.window.request_redraw();
     }
     true
@@ -224,12 +254,8 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
 /// A held arrow's repeat; the deadline of the next one.
 pub(super) fn poll_scroll(state: &mut AppState) -> Option<Instant> {
     sync(state)?;
-    let controller = &mut state.frontend.shell_controller;
-    let next = controller.poll();
-    if !controller.drain_events().is_empty() {
-        state.platform.window.request_redraw();
-    }
-    next
+    let window = &state.platform.window;
+    state.frontend.shell_controller.poll_then(|| window.request_redraw())
 }
 
 #[cfg(all(test, tests_app))]

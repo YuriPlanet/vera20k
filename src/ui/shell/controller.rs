@@ -231,6 +231,16 @@ impl DialogController {
         next.map(|ms| self.epoch + Duration::from_millis(ms))
     }
 
+    /// [`Self::poll`] for a screen that only repaints when a timer fired:
+    /// `redraw` runs on any event, which is dropped; the next deadline.
+    pub fn poll_then(&mut self, redraw: impl FnOnce()) -> Option<Instant> {
+        let next = self.poll();
+        if !self.drain_events().is_empty() {
+            redraw();
+        }
+        next
+    }
+
     /// Moves the GUI's new events to `pending`.
     fn collect(&mut self) {
         self.pending.extend(self.gui.drain_events());

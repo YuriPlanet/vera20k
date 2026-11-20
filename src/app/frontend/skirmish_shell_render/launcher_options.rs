@@ -9,8 +9,8 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::main_menu_dialogs::options::shell::{LauncherOptionsLayout, LauncherStatusHelp};
 use crate::ui::main_menu_dialogs::options::OptionsDialogState;
+use crate::ui::main_menu_dialogs::options::shell::{LauncherOptionsLayout, LauncherStatusHelp};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
 
@@ -375,9 +375,7 @@ pub(crate) fn render_launcher_options(
             .as_ref()
             .and_then(|dialog| dialog.shell_status_help())
             .map(|help| match help {
-                LauncherStatusHelp::Csf(key) => {
-                    crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned()
-                }
+                LauncherStatusHelp::Csf(key) => state.csf_text(key),
                 LauncherStatusHelp::Vera(key) => crate::i18n::tr(key),
             })
             .unwrap_or_default();
@@ -558,7 +556,9 @@ pub(crate) fn render_launcher_options(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::{LauncherOptionsLayout, without_text_under};
-    use crate::ui::main_menu_dialogs::options::{LauncherComboId, OptionsDialogState, Zoom, zoom_label};
+    use crate::ui::main_menu_dialogs::options::{
+        LauncherComboId, OptionsDialogState, Zoom, zoom_label,
+    };
     use crate::ui::shell::geom::ShellScale;
 
     /// The open list covers the values in its column. The four setting

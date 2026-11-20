@@ -4,7 +4,7 @@ use super::chrome::*;
 use super::controls::frame_segments;
 use super::controls::{ControlPaint, group_box_geometry, paint_control, push_group_or_plain_frame};
 use super::in_game_shell::{self, InGameShellFrame, ShellFrameArt, ShellFrameOverlay};
-use super::text::{localized_label, rect_to_text_rect};
+use super::text::rect_to_text_rect;
 use super::{
     OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
     SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
@@ -31,7 +31,7 @@ pub(crate) fn render_keyboard_shell(
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     use crate::app::frontend::shell_transition::ShellSlideKind;
-    let title_text = localized_label(state, KEYBOARD_PAGE.title_key, "Keyboard Options");
+    let title_text = state.csf_label(KEYBOARD_PAGE.title_key, "Keyboard Options");
     let now = Instant::now();
     let active = state
         .frontend
@@ -93,7 +93,7 @@ pub(crate) fn render_keyboard_shell(
             .keyboard_dialog
             .as_ref()
             .and_then(|dialog| crate::app::input::dialog_page::help(&dialog.ui))
-            .map(|key| localized_label(state, key, ""))
+            .map(|key| state.csf_label(key, ""))
             .unwrap_or_default();
         let window =
             crate::app::frontend::shell_layout::keyboard_layout(state, width, height, None).footer;
@@ -231,7 +231,7 @@ pub(crate) fn render_keyboard_shell(
             glyph_scale,
         )
     };
-    let group_caption = localized_label(state, "GUI:Description", "Description");
+    let group_caption = state.csf_label("GUI:Description", "Description");
     let cell = font.cell_height() as i32;
     let (group_frame, group_caption_rect) = group_box_geometry(layout.group, cell, layout.scale);
     push_group_or_plain_frame(
@@ -295,7 +295,7 @@ pub(crate) fn render_keyboard_shell(
     for (key, rect, centered) in layout.labels {
         texts.push(text(
             font,
-            &localized_label(state, key, key),
+            &state.csf_label(key, key),
             rect,
             if centered {
                 ShellAlign::H_CENTER
@@ -321,7 +321,7 @@ pub(crate) fn render_keyboard_shell(
         let rect = super::pause_menu::button_text_rect(layout.button(id), is_pressed(id));
         texts.push(text(
             font,
-            &localized_label(state, key, fallback),
+            &state.csf_label(key, fallback),
             rect,
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             SHELL_CONTROL_TEXT_DEPTH,
@@ -416,7 +416,7 @@ pub(crate) fn render_keyboard_shell(
     if let Some(key) = dialog.error {
         texts.push(text(
             font,
-            &localized_label(state, key, key),
+            &state.csf_label(key, key),
             layout.error,
             ShellAlign::NONE,
             SHELL_CONTROL_TEXT_DEPTH,
@@ -425,7 +425,7 @@ pub(crate) fn render_keyboard_shell(
     if let Some(key) = crate::app::input::dialog_page::help(&dialog.ui).filter(|_| active) {
         texts.push(text(
             font,
-            &localized_label(state, key, ""),
+            &state.csf_label(key, ""),
             layout.footer,
             ShellAlign::NONE,
             SHELL_CONTROL_TEXT_DEPTH,

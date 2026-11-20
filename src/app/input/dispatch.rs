@@ -136,55 +136,21 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
                 .in_game_gadgets
                 .cancel_pointer_capture();
         }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Sound
-        {
-            crate::app::input::sound::mouse(state, button, pressed);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::AbortConfirm
-        {
-            crate::app::input::abort::mouse(state, button, pressed);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Surrender
-        {
-            crate::app::input::surrender::mouse(state, button, pressed);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Diplomacy
-        {
-            crate::app::input::diplomacy::mouse(state, button, pressed);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::MissionBriefing
-        {
-            crate::app::input::restate::mouse(state, button, pressed);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Page
-        {
-            if button == MouseButton::Left {
-                crate::app::shell_wol::page::mouse(state, pressed);
+        match state.match_state.match_presentation.in_game_menu {
+            crate::ui::pause_menu::InGameMenuState::Page => {
+                if button == MouseButton::Left {
+                    crate::app::shell_wol::page::mouse(state, pressed);
+                }
             }
-            return;
-        }
-        if matches!(
-            state.match_state.match_presentation.in_game_menu,
-            crate::ui::pause_menu::InGameMenuState::SavedGame(_)
-        ) {
-            if button == MouseButton::Left {
-                crate::app::App::saved_game_mouse(state, pressed);
+            crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
+                if button == MouseButton::Left {
+                    crate::app::App::saved_game_mouse(state, pressed);
+                }
             }
-        } else if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Menu
-        {
-            crate::app::input::pause_menu::mouse(state, button, pressed);
+            menu if button == MouseButton::Left => {
+                crate::app::input::dialog_page::in_game_pointer(state, menu, Some(pressed));
+            }
+            _ => {}
         }
         return;
     }
@@ -1026,51 +992,14 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // cadence applies on close, KD-8) and swallow the move so it can't begin a
     // selection drag or camera pan behind the overlay.
     if state.match_state.paused() {
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Sound
-        {
-            crate::app::input::sound::cursor_moved(state);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::AbortConfirm
-        {
-            crate::app::input::abort::cursor_moved(state);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Surrender
-        {
-            crate::app::input::surrender::cursor_moved(state);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Diplomacy
-        {
-            crate::app::input::diplomacy::cursor_moved(state);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::MissionBriefing
-        {
-            crate::app::input::restate::cursor_moved(state);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Page
-        {
-            crate::app::shell_wol::page::cursor_moved(state);
-            return;
-        }
-        if matches!(
-            state.match_state.match_presentation.in_game_menu,
-            crate::ui::pause_menu::InGameMenuState::SavedGame(_)
-        ) {
-            crate::app::App::update_saved_game_browser(state, true);
-        } else if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Menu
-        {
-            crate::app::input::pause_menu::cursor_moved(state);
+        match state.match_state.match_presentation.in_game_menu {
+            crate::ui::pause_menu::InGameMenuState::Page => {
+                crate::app::shell_wol::page::cursor_moved(state);
+            }
+            crate::ui::pause_menu::InGameMenuState::SavedGame(_) => {
+                crate::app::App::update_saved_game_browser(state, true);
+            }
+            menu => crate::app::input::dialog_page::in_game_pointer(state, menu, None),
         }
         return;
     }

@@ -14,7 +14,8 @@ use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::modal::WolVerifyLayout;
 use crate::ui::shell::page::{self, PageEvent};
-use crate::ui::wol_shell::{BOX_OK, WolMessageBox};
+use crate::ui::shell::modal::ShellBox;
+use crate::ui::wol_shell::BOX_OK;
 use crate::util::time::Instant;
 use std::ops::Range;
 
@@ -45,7 +46,7 @@ pub struct WolVerifyDialog {
     pub checked: Vec<bool>,
     /// `0xD0` with `TXT_SCENARIOS_DO_NOT_MATCH` over the dialog
     /// (`0x00794D28..0x00794D57`).
-    pub mismatch: Option<WolMessageBox>,
+    pub mismatch: Option<ShellBox>,
     ui: DialogController,
     opened: Instant,
 }

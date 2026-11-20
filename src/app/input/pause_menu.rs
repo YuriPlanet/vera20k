@@ -19,7 +19,6 @@ use crate::ui::shell::pause_menu::{
     PauseMenuTemplate, pause_menu_layout,
 };
 use crate::ui::skirmish_shell::SavedSeedMode;
-use winit::event::MouseButton;
 
 /// FF's two trackbars' positions as the dialog holds them between init and
 /// Resume; the trackbars report each move here.
@@ -544,7 +543,7 @@ pub(crate) fn hovered_help(state: &AppState) -> Option<LauncherStatusHelp> {
 
 /// One pointer message on the menu (`down`: `None` moves). The Options page
 /// sees it first; a disabled button neither hovers nor takes a press.
-fn pointer(state: &mut AppState, down: Option<bool>) {
+pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let Some(layout) = current_layout(state) else {
         return;
     };
@@ -596,21 +595,11 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
                         .internet_pause
                         .set(slider, value)
                 {
-                    App::play_skirmish_shell_generic_click_sound(state);
+                    App::play_page_cue(state, crate::ui::shell::page::PageCue::ListClick);
                 }
             }
             _ => {}
         }
-    }
-}
-
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    pointer(state, None);
-}
-
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button == MouseButton::Left {
-        pointer(state, Some(pressed));
     }
 }
 

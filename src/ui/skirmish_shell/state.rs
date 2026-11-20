@@ -21,8 +21,8 @@ pub use combos::{
 };
 pub(crate) use hit_test::status_help_key_for_hover_with_catalog;
 pub use hit_test::{
-    apply_action, status_help_key_for_choose_map_hover,
-    status_help_key_for_hover, status_help_key_for_random_map_setup,
+    apply_action, status_help_key_for_choose_map_hover, status_help_key_for_hover,
+    status_help_key_for_random_map_setup,
 };
 pub use launch::{launch_session, pack_launch_session_without_start_validation};
 pub use opponent_scroll::{
@@ -31,18 +31,18 @@ pub use opponent_scroll::{
 };
 
 pub use choose_map::{
-    ChooseMapContext, ChooseMapModalState, ChooseMapPrompt,
-    ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection,
-    ai_rows_beyond_limit_occupied, favorite_key,
+    ChooseMapContext, ChooseMapModalState, ChooseMapPrompt, ChooseMapPromptAnswer,
+    ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection, FAVORITES_ROW, ONLINE_MAPS_ROW,
+    SEARCH_MAX_CHARS, SkirmishModeSelection, ai_rows_beyond_limit_occupied, favorite_key,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
     PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
     PlayerNameEditState, SkirmishShellDialog, SkirmishShellState, accept_selected_map,
-    clear_status_help_text, dismiss_validation_modal, drain_pending_ui_sounds, initialize_rows_for_selected_map, player_row_visible,
-    repair_teams_for_selected_mode, selected_player_rows, set_status_help_text,
-    };
+    clear_status_help_text, dismiss_validation_modal, drain_pending_ui_sounds,
+    initialize_rows_for_selected_map, player_row_visible, repair_teams_for_selected_mode,
+    selected_player_rows, set_status_help_text,
+};
 pub use random_map_extras::{
     EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,
 };
@@ -91,16 +91,6 @@ pub enum SkirmishShellAction {
     Setups,
     SelectColor(ColorComboId),
     SelectMap(usize),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkirmishShellUiSound {
-    /// An owner-draw button's press (`GUIMainButtonSound`, 612B70).
-    MainButton,
-    GuiCheckboxSound,
-    GenericClick,
-    GuiComboOpenSound,
-    GuiComboCloseSound,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,23 +166,6 @@ pub enum DropdownScrollbarPart {
     DownArrow,
     Thumb,
     Track,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SkirmishValidationModalState {
-    pub message: String,
-    pub ok_button: String,
-    pub ok_button_pressed: bool,
-}
-
-impl SkirmishValidationModalState {
-    pub fn new(message: impl Into<String>, ok_button: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            ok_button: ok_button.into(),
-            ok_button_pressed: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

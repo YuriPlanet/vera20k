@@ -31,8 +31,7 @@ pub(crate) use view::view;
 pub(crate) use wol::{
     WolStartUser, balance_teams, guest_users_listed, kicked_key, local_left, map_status,
     play_player_left, player_choices, player_ready, resident_seed, send_first_choices, user_joined,
-    user_kicked, user_left, verify, verify_layout, verify_pointer,
-    verify_poll_scroll,
+    user_kicked, user_left, verify, verify_layout, verify_pointer, verify_poll_scroll,
 };
 
 use super::{App, AppState};
@@ -699,7 +698,7 @@ pub(crate) fn install_watch_setup(
 /// A white (0xFFFFFFFF) CSF line in the setup chat log: Start refusals and
 /// WOL chat notices.
 fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
-    let text = crate::assets::csf_file::format_csf(&App::csf_label(state, key, key), args);
+    let text = crate::assets::csf_file::format_csf(&state.csf_label(key, key), args);
     crate::app::shell_lan::append_room_chat(
         state,
         crate::ui::lan_shell::LanChatLine {
@@ -1100,7 +1099,7 @@ pub(crate) fn show_statics(state: &mut AppState) {
     let Some(view) = view(state) else {
         return;
     };
-    let heading = App::csf_label(state, view.page().title_key, view.page().title_key);
+    let heading = state.csf_label(view.page().title_key, view.page().title_key);
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.statics
             .show(&heading, &view.mode_label, &view.map_label, Instant::now());
@@ -1228,11 +1227,8 @@ pub(crate) fn show_room(state: &mut AppState) {
 
 /// The setup's dialog on screen, newly installed or shown again.
 fn show_dialog(state: &mut AppState, dialog: SetupDialog) {
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::NetworkSetup;
-    state
-        .frontend
-        .shell_controller
-        .reset_to(dialog.page().dialog, false);
+    let route = crate::app::shell_route::ShellRoute::NetworkSetup;
+    App::show_shell_page(state, route, dialog.page().dialog);
     state.frontend.skirmish_shell_state.choose_map_modal = None;
     state.frontend.skirmish_preview_texture = None;
     shell_transition::invalidate_main_menu_dialog_instance(state);
@@ -1335,7 +1331,8 @@ pub(crate) fn acknowledge_notice(state: &mut AppState) {
     {
         App::leave_shell_dialog(
             state,
-            shell_transition::ShellExitThen::NetworkSetupBack(dialog(state)),
+            shell_transition::ShellSlideKind::NetworkSetup(dialog(state)),
+            crate::app::shell_network_setup::commit_back,
         );
     }
     state.platform.window.request_redraw();

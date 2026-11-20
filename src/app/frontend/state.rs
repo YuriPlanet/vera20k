@@ -177,22 +177,12 @@ pub(crate) struct FrontendState {
     pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
-    /// `0x10E`'s background and icon art (`0x0072C7E0`).
-    pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x10F`'s background art (`0x0072C600`), freed with the dialog
-    /// (`0x0072C650`).
-    pub(crate) wol_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x113`'s background and list art (`0x0072CD60`).
-    pub(crate) wol_lobby_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// WOL Options `0x2BC`'s art (`0x0072BAC0`) and its Sound Options
-    /// `0xD6`'s (`0x0072B8E0`).
-    pub(crate) wol_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x0072BCA0`: AutoLoginQuery.shp through its PAL while `0x112` runs.
-    pub(crate) wol_auto_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// The Buddy List `0x116`'s art (`0x0072C060`).
-    pub(crate) wol_buddy_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x117`'s quickmatch.shp/.PAL (`0x0072BE80`).
-    pub(crate) wol_quick_match_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// The WOL pages' loaded art by dialog (`shell_wol::leaf::open_art`),
+    /// each freed with its page.
+    pub(crate) wol_art: Vec<(
+        crate::ui::shell::descriptor::DialogId,
+        crate::render::main_menu_shell_chrome::WolPageArt,
+    )>,
     /// The buddy mirror and its queues (process globals `0xB73AA8`..).
     pub(crate) wol_buddies: crate::app::shell_wol::buddies::WolBuddies,
     /// The offline WOL test service's buddy list, standing in for the
@@ -200,9 +190,6 @@ pub(crate) struct FrontendState {
     pub(crate) wol_test_buddies: Vec<String>,
     /// The offline WOL test service's stand-in guest of a created game.
     pub(crate) wol_test_guest: crate::app::shell_wol::WolTestGuest,
-    /// My Information `0x114`'s art (`0x0072C9C0`).
-    pub(crate) wol_my_info_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    pub(crate) wol_sound_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The custom lobby's process globals (sorts, lobby number, filters).
     pub(crate) wol_lobby_globals: crate::app::shell_wol::lobby::WolLobbyGlobals,
     /// The live `[WOnline]` globals (`[0xB76234]`..`[0xB73AD0]`): each WOL
@@ -290,7 +277,7 @@ pub(crate) struct FrontendState {
 /// One open shell message box `0x120` and the caller its result returns to.
 #[derive(Debug)]
 pub(crate) struct ShellMessageBox {
-    pub(crate) labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels,
+    pub(crate) shell_box: crate::ui::shell::modal::ShellBox,
     pub(crate) purpose: ShellMessageBoxPurpose,
 }
 

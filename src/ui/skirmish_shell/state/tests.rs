@@ -13,6 +13,7 @@ use crate::skirmish_launch::{
     LaunchCountry, LaunchStartPosition, LaunchTeam, LaunchValidationError, SKIRMISH_AI_SLOT_COUNT,
 };
 use crate::skirmish_modes::stock_skirmish_modes;
+use crate::ui::shell::page::PageCue;
 use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold};
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::page;
@@ -1068,10 +1069,7 @@ fn checkbox_icon_click_toggles_but_label_click_does_not() {
         SkirmishShellAction::None
     );
     assert_eq!(shell.short_game, !initial);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiCheckboxSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::Checkbox]);
 
     let label = checkbox_text_rect(checkbox.rect, crate::ui::shell::geom::ShellScale::RETAIL);
     handle_option_mouse_down(&mut shell, &layout, &[], label.x, label.y + 1);
@@ -1159,10 +1157,7 @@ fn trackbar_mouse_move_updates_while_capture_active() {
     handle_option_mouse_down(&mut shell, &layout, &[], thumb_x, y);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, y);
     assert_eq!(shell.starting_credits, 5000);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GenericClick]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ListClick]);
 
     handle_option_mouse_up(&mut shell);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 1000, y);
@@ -1193,10 +1188,7 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
             dragging: false,
         })
     );
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GenericClick]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ListClick]);
 
     handle_option_mouse_up(&mut shell);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, 319);
@@ -1216,10 +1208,7 @@ fn trackbar_repeated_drag_same_value_is_silent() {
     handle_option_mouse_down(&mut shell, &layout, &[], thumb_x + THUMB_W / 2, y);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 66, y);
     assert_eq!(shell.credits(), 30_000);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GenericClick]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ListClick]);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 66, y);
     assert_eq!(shell.credits(), 30_000);
     assert!(shell.drain_pending_ui_sounds().is_empty());
@@ -2087,10 +2076,7 @@ fn dropdown_hover_uses_scrolled_rows_and_only_click_commits_the_choice() {
     handle_option_mouse_down(&mut shell, &layout, &maps, x, y);
     assert_eq!(selected_combo_item(&shell, id), Some(picked));
     assert!(open_combo_dropdown(&shell).is_none());
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboCloseSound],
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboClose],);
 }
 
 #[test]
@@ -2101,10 +2087,7 @@ fn dropdown_wheel_is_inert_and_content_click_uses_top_index() {
     let rect = layout.rows.side_combos[0];
 
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboOpenSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboOpen]);
     // No verified retail wheel-scroll: the wheel neither consumes the event
     // nor moves the open dropdown's top index.
     assert!(!handle_option_mouse_wheel(&mut shell, &maps, -1.0));
@@ -2122,10 +2105,7 @@ fn dropdown_wheel_is_inert_and_content_click_uses_top_index() {
             .copied()
     );
     assert_eq!(open_combo_dropdown(&shell), None);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboCloseSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboClose]);
 }
 
 #[test]
@@ -2136,10 +2116,7 @@ fn dropdown_scrollbar_arrows_step_and_drag_clamp_top_index() {
     let rect = layout.rows.side_combos[0];
 
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboOpenSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboOpen]);
     let scrollbar =
         combo_dropdown_scrollbar_rect(&shell, &layout, &maps, SkirmishComboId::Side(0)).unwrap();
     handle_option_mouse_down(
@@ -2256,10 +2233,7 @@ fn combo_arrow_opens_dropdown_and_selects_color_row() {
     let rect = layout.color_combos[0];
 
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboOpenSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboOpen]);
 
     assert_eq!(
         open_combo_dropdown(&shell),
@@ -2281,10 +2255,7 @@ fn combo_arrow_opens_dropdown_and_selects_color_row() {
 
     assert_eq!(shell.player_color_index, 3);
     assert_eq!(open_combo_dropdown(&shell), None);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboCloseSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboClose]);
 }
 
 #[test]
@@ -2339,10 +2310,7 @@ fn collapsed_combo_face_click_plays_open_sound_without_opening() {
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + 2, rect.y + 1);
 
     assert_eq!(open_combo_dropdown(&shell), None);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboOpenSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboOpen]);
 
     // Click the rightmost arrow zone: open sound plays AND the dropdown opens.
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
@@ -2350,10 +2318,7 @@ fn collapsed_combo_face_click_plays_open_sound_without_opening() {
         open_combo_dropdown(&shell).map(|open| open.id),
         Some(SkirmishComboId::Side(0))
     );
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboOpenSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboOpen]);
 }
 
 #[test]
@@ -2387,10 +2352,7 @@ fn switching_combos_closes_first_without_opening_second() {
         combo_b.y + 1,
     );
     assert_eq!(open_combo_dropdown(&shell), None);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboCloseSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboClose]);
 
     // A second click on B's arrow opens B with the open sound.
     handle_option_mouse_down(
@@ -2404,10 +2366,7 @@ fn switching_combos_closes_first_without_opening_second() {
         open_combo_dropdown(&shell).map(|open| open.id),
         Some(SkirmishComboId::Start(0))
     );
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboOpenSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboOpen]);
 }
 
 #[test]
@@ -2436,10 +2395,7 @@ fn ai_type_dropdown_updates_active_row_state() {
     let rect = layout.rows.ai_type_combos[1];
 
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboOpenSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboOpen]);
     let dropdown = combo_dropdown_rect(&shell, &layout, &maps, SkirmishComboId::AiType(1)).unwrap();
     handle_option_mouse_down(
         &mut shell,
@@ -2452,10 +2408,7 @@ fn ai_type_dropdown_updates_active_row_state() {
     assert_eq!(shell.opponents[1].row_type, SkirmishAiRowType::Normal);
     assert!(shell.opponents[1].enabled);
     assert_eq!(shell.opponents[1].difficulty, AiDifficulty::Normal);
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GuiComboCloseSound]
-    );
+    assert_eq!(shell.drain_pending_ui_sounds(), vec![PageCue::ComboClose]);
 }
 
 #[test]

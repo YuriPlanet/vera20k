@@ -654,7 +654,11 @@ mod tests {
         // That is where the fitted main menu puts its page, so the menu that
         // follows the splash lines up with it.
         for (width, height) in [(1920, 1080), (1024, 768), (3024, 1964), (640, 400)] {
-            let menu = crate::ui::main_menu_shell::compute_responsive_layout(width, height);
+            let menu = crate::ui::shell::geom::fit_window(
+                width,
+                height,
+                crate::ui::main_menu_shell::compute_layout,
+            );
             assert_eq!(
                 splash_placement(width, height),
                 ([800, 600], menu.scale.dialog_rect())

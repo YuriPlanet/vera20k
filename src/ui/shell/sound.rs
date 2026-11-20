@@ -280,34 +280,11 @@ pub struct ShellSoundLayout {
     pub labels: [RectPx; 3],
 }
 impl ShellSoundLayout {
-    pub fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, geom::ShellScale::RETAIL)
-    }
-    pub fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, geom::ShellScale::from_screen(width, height))
-    }
-    fn build(width: i32, height: i32, scale: geom::ShellScale) -> Self {
-        use super::menu_page;
-        let status_template = RectPx::new(2, 355, 303, 12);
-        let (page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(&SHELL_SOUND_PAGE, width as u32, height as u32),
-                super::layout::status_line_rect(status_template, width, height),
-            )
-        } else {
-            (
-                menu_page::compute_responsive_layout(
-                    &SHELL_SOUND_PAGE,
-                    width as u32,
-                    height as u32,
-                ),
-                scale.scale_rect(super::layout::status_line_rect(
-                    status_template,
-                    geom::SHELL_BASE_W,
-                    geom::SHELL_BASE_H,
-                )),
-            )
-        };
+    pub fn new(width: i32, height: i32, scale: geom::ShellScale) -> Self {
+        let page = super::menu_page::compute_layout_for(&SHELL_SOUND_PAGE, scale, width, height);
+        let status_help = geom::layout_on(scale, width, height, |w, h| {
+            super::layout::status_line_rect(RectPx::new(2, 355, 303, 12), w, h)
+        });
         let px = |x, y, w, h| scale.scale_rect(geom::child_window(x, y, w, h));
         Self {
             page,
@@ -415,7 +392,11 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0xD6"]["sizes"].as_object().unwrap() {
             let (w, h) = size.split_once('x').unwrap();
-            let layout = ShellSoundLayout::new(w.parse().unwrap(), h.parse().unwrap());
+            let layout = ShellSoundLayout::new(
+                w.parse().unwrap(),
+                h.parse().unwrap(),
+                geom::ShellScale::RETAIL,
+            );
             for (key, child) in case["controls"].as_object().unwrap() {
                 let actual = match key.as_str() {
                     "0x52F" => layout.sliders[0],
@@ -571,7 +552,7 @@ mod tests {
     fn shell_0xd6_disabled_sliders_take_no_press_and_a_rail_press_applies_once() {
         use super::super::page;
         use vera20k_gui::{DialogKind, InputEvent, MouseButton};
-        let layout = ShellSoundLayout::new(800, 600);
+        let layout = ShellSoundLayout::new(800, 600, geom::ShellScale::RETAIL);
         let mut gui = Gui::new(16);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
         gui.push_dialog(root, DialogKind::Page, None, None).unwrap();

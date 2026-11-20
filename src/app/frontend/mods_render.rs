@@ -7,12 +7,11 @@ use std::borrow::Cow;
 use anyhow::Result;
 
 use crate::app::AppState;
-use crate::ui::shell::menu_page;
 use crate::app::frontend::movies_credits_render::{
     family_backdrop, family_list_hovered, family_list_view, push_family_backdrop, push_family_list,
 };
 use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
+    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect,
     software_cursor,
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -25,6 +24,7 @@ use crate::render::shell_paint::{
 use crate::render::shell_text::ShellAlign;
 use crate::ui::main_menu_shell::RectPx;
 use crate::ui::mods_shell::{self, ModsLayout, PAGE};
+use crate::ui::shell::menu_page;
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
 /// Row text inset from the row's left edge, as in the movie list, and from
@@ -165,7 +165,7 @@ fn mods_composition<'a>(
             labels.extend(detail_labels(row, mods.in_use(row), layout));
         }
         labels.push(label(
-            resolve_csf(state, mods_shell::PROMPT_KEY),
+            state.csf_text(mods_shell::PROMPT_KEY),
             layout.prompt,
             ShellAlign::H_CENTER,
         ));
@@ -173,8 +173,12 @@ fn mods_composition<'a>(
 
     let controller = &state.frontend.shell_controller;
     let active = controller.top_id() == Some(PAGE.dialog);
-    let pressed = active.then(|| menu_page::pressed_id(controller, PAGE.dialog)).flatten();
-    let hovered = active.then(|| menu_page::hovered_id(controller, PAGE.dialog)).flatten();
+    let pressed = active
+        .then(|| menu_page::pressed_id(controller, PAGE.dialog))
+        .flatten();
+    let hovered = active
+        .then(|| menu_page::hovered_id(controller, PAGE.dialog))
+        .flatten();
     // Use This Mod is dark while the selection is nothing to change to, Check
     // Files while it is the original game.
     let selected = crate::ui::movies_credits_shell::family_list_selected(controller, PAGE.dialog);
@@ -222,7 +226,7 @@ fn mods_composition<'a>(
         };
         let down = enabled(button.id) && pressed == Some(button.id);
         labels.push(PaintLabel {
-            text: resolve_csf(state, spec.csf_key),
+            text: state.csf_text(spec.csf_key).into(),
             rect: owner_draw_button_label_rect(button.rect, down),
             align: ShellAlign::BUTTON_CAPTION,
             rgb: if enabled(button.id) {
@@ -235,7 +239,7 @@ fn mods_composition<'a>(
     }
     if let Some(window) = title_window {
         labels.push(PaintLabel {
-            text: resolve_csf(state, PAGE.title_key),
+            text: state.csf_text(PAGE.title_key).into(),
             rect: layout.page.title,
             align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -287,7 +291,7 @@ pub(crate) fn render_mods_page(
             .shell_page_title
             .paint(crate::util::time::Instant::now());
         let status_text = mods_status_key(state)
-            .map(|key| resolve_csf(state, key).into_owned())
+            .map(|key| state.csf_text(key))
             .unwrap_or_default();
         let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,

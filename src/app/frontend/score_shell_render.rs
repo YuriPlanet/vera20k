@@ -19,7 +19,7 @@ use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, PageButton, encode_family_page, page_panel_state,
 };
-use crate::app::frontend::shell_pass::{TexturedDraw, resolve_csf};
+use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_paint::{
     PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel, SHELL_TEXT_RGB_ENABLED, STATIC_IMAGE_DEPTH,
@@ -43,7 +43,7 @@ pub(crate) fn score_title_text(state: &AppState) -> String {
         .frontend
         .score_page
         .as_ref()
-        .map(|page| resolve_csf(state, page.model.title_key).into_owned())
+        .map(|page| state.csf_text(page.model.title_key))
         .unwrap_or_default()
 }
 

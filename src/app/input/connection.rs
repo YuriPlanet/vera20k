@@ -2,24 +2,27 @@
 //! is open the wait loop services no tactical input (0x006497EC), so every
 //! pointer event belongs to it.
 
+use super::dialog_page::InGameDialog;
 use crate::app::AppState;
-use crate::ui::shell::connection::{self, ConnectionButton, ConnectionLayout, connection_layout};
+use crate::ui::shell::connection::{self, ConnectionButton, connection_layout};
 use crate::ui::shell::page::PageEvent;
 use winit::event::MouseButton;
 
-fn layout(state: &AppState) -> Option<ConnectionLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(connection_layout(
-        shell.width,
-        shell.height,
-        shell.layout,
-        shell.button_size,
-    ))
-}
+/// 0xEA: no title, Quit Game as the lower right-panel button, on its own
+/// controller.
+pub(crate) const DIALOG: InGameDialog = InGameDialog {
+    id: connection::DIALOG,
+    title: None,
+    lower: (0x2, connection::QUIT_LABEL),
+    label: "Active Connection Shell EA",
+    ui: |state| Some(&state.match_state.match_presentation.connection_ui),
+    ui_mut: |state| Some(&mut state.match_state.match_presentation.connection_ui),
+    own_checkbox_sound: false,
+};
 
 /// One pointer message on 0xEA (`down`: `None` moves).
 fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = layout(state) else {
+    let Some(layout) = super::dialog_page::layout(state, connection_layout) else {
         return;
     };
     let event = super::dialog_page::shell_event(state, down);

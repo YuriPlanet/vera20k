@@ -14,7 +14,7 @@ use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
 use super::preview::{build_preview_surface_instance, ensure_map_preview_texture};
-use super::text::{button_text_rect, localized_label, rect_to_text_rect};
+use super::text::{button_text_rect, rect_to_text_rect};
 use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH,
     SHELL_LABEL_TEXT_RGB, SHELL_PARENT_BACKGROUND_DEPTH,
@@ -63,9 +63,9 @@ pub(crate) fn render_coop_score(
     let held = crate::ui::shell::menu_page::pressed_id(controller, COOP_SCORE_PAGE.dialog);
     let status = hovered
         .and_then(help_key)
-        .map(|key| localized_label(state, key, ""))
+        .map(|key| state.csf_label(key, ""))
         .unwrap_or_default();
-    let title = localized_label(state, COOP_SCORE_PAGE.title_key, COOP_SCORE_PAGE.title_key);
+    let title = state.csf_label(COOP_SCORE_PAGE.title_key, COOP_SCORE_PAGE.title_key);
     let page = state.frontend.coop_score_page.as_ref().expect("view");
     let model = &page.model;
     let ui = &page.ui;
@@ -147,7 +147,7 @@ pub(crate) fn render_coop_score(
             NEXT_MISSION => model.next_mission.clone(),
             DESCRIPTION => model.description.clone(),
             id => match spec.caption_key {
-                Some(key) => localized_label(state, key, key),
+                Some(key) => state.csf_label(key, key),
                 None => {
                     let _ = id;
                     continue;
@@ -375,7 +375,7 @@ pub(crate) fn render_coop_score(
         if let Some(spec) = COOP_SCORE_PAGE.buttons().find(|spec| spec.id == button.id) {
             texts.push(shell_text::draw_in_rect_scaled(
                 font,
-                &localized_label(state, spec.csf_key, spec.csf_key),
+                &state.csf_label(spec.csf_key, spec.csf_key),
                 button_text_rect(button.rect, pressed, scale),
                 super::text::button_label_color_for_disabled(!enabled),
                 ShellAlign::BUTTON_CAPTION,

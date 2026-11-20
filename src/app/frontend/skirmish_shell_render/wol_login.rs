@@ -10,7 +10,7 @@ use vera20k_gui::NodeKind;
 use super::controls::push_new_edit_caret;
 use super::gui_paint::{self, GuiPaint, GuiStyle, HostRows};
 use super::text::{button_label_color_for_disabled, combo_face_text_color, rect_to_text_rect};
-use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint, label as csf_label};
+use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH};
 use crate::app::AppState;
 use crate::render::shell_paint;
@@ -21,8 +21,8 @@ use crate::ui::wol_account::{
     FIRST_CAPTION, FORM_CANCEL, FORM_OK, FORM_STATUS, POPUP, WolAccountForm,
 };
 use crate::ui::wol_login::{
-    DIALOG, LABELS, NICKNAME, NICKNAME_DROP, CAPTIONS_TEXT, COUNTS_TEXT, HEADING_TEXT,
-    STATUS_TEXT, WolLoginLayout, WolLoginState,
+    CAPTIONS_TEXT, COUNTS_TEXT, DIALOG, HEADING_TEXT, LABELS, NICKNAME, NICKNAME_DROP, STATUS_TEXT,
+    WolLoginLayout, WolLoginState,
 };
 
 /// The disabled color of a disabled owner-draw label (`0x00612F5F`).
@@ -46,7 +46,7 @@ pub(crate) fn paint_wol_login_children(
         return GuiPaint::default();
     };
     let scale = layout.page.scale;
-    let label = |key: &str| csf_label(state, key);
+    let label = |key: &str| state.csf_text(key);
     let text_of = |id: i32| {
         let id = u16::try_from(id).ok()?;
         let at = |ids: [u16; 2]| ids.iter().position(|other| *other == id);
@@ -157,15 +157,16 @@ pub(crate) fn paint_wol_account_form(
     let text_of = |id: i32| {
         let id = u16::try_from(id).ok()?;
         match id {
-            FORM_OK => Some(csf_label(state, "GUI:OK")),
-            FORM_CANCEL => Some(csf_label(state, "GUI:Cancel")),
+            FORM_OK => Some(state.csf_text("GUI:OK")),
+            FORM_CANCEL => Some(state.csf_text("GUI:Cancel")),
             FORM_STATUS => Some(form.status.clone()),
-            _ => Some(csf_label(
-                state,
-                form.fields
-                    .get(usize::from(id.checked_sub(FIRST_CAPTION)?))?
-                    .label,
-            )),
+            _ => Some(
+                state.csf_text(
+                    form.fields
+                        .get(usize::from(id.checked_sub(FIRST_CAPTION)?))?
+                        .label,
+                ),
+            ),
         }
     };
     let ok_enabled = form.ok_enabled(ui);

@@ -7,7 +7,7 @@
 //! The rows and the choice belong to `app::mods`; this is the page's shape.
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, fit_window};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::list::ROW_HEIGHT;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
@@ -109,13 +109,6 @@ pub(crate) fn compute_layout(screen_w: u32, screen_h: u32) -> ModsLayout {
     }
 }
 
-/// The responsive variant of [`compute_layout`]: the 800x600 page scaled to
-/// fit the window, keeping its shape. Rows grow with the scale, so the list
-/// shows the rows it shows at 800x600.
-pub(crate) fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ModsLayout {
-    fit_window(screen_w, screen_h, compute_layout)
-}
-
 vera20k_gui::scaled_rects!(ModsLayout {
     page,
     prompt,
@@ -131,6 +124,7 @@ vera20k_gui::scaled_rects!(ModsLayout {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::shell::geom::fit_window;
     use crate::ui::shell::list::{ListMetrics, list_box_geometry};
 
     /// The page's own parts stay left of the right panel and above the lower
@@ -179,7 +173,7 @@ mod tests {
     #[test]
     fn a_fitted_window_keeps_the_lists_rows() {
         for (width, height) in [(640, 480), (1280, 720), (1366, 768), (1920, 1080)] {
-            let layout = compute_responsive_layout(width, height);
+            let layout = fit_window(width, height, compute_layout);
             let metrics = ListMetrics::scaled(layout.page.scale);
             assert_eq!(
                 list_box_geometry(layout.list, 30, 0, metrics).visible_rows,

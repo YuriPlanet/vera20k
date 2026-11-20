@@ -79,14 +79,14 @@ impl App {
 
     /// The Lose movie has returned: ask over the empty shell backdrop.
     pub(super) fn open_campaign_replay_prompt(state: &mut AppState, defeat: CampaignDefeat) {
-        let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-        let labels = crate::ui::main_menu_dialogs::ShellMessageBoxLabels::campaign_replay(&csf);
+        let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+        let shell_box = crate::ui::main_menu_dialogs::campaign_replay(&csf);
         Self::destroy_current_shell_dialog(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         Self::open_shell_message_box(
             state,
             crate::app::frontend::state::ShellMessageBox {
-                labels,
+                shell_box,
                 purpose: crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(
                     defeat.retry,
                 ),

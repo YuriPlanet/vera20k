@@ -17,7 +17,7 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, dlu_rect, fit_window};
+use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, dlu_rect};
 use crate::ui::shell::menu_page::{
     self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec, hover_target,
 };
@@ -134,7 +134,7 @@ pub struct CampaignLayout {
     pub slider: RectPx,
     pub difficulty_label: RectPx,
     pub difficulty_value: RectPx,
-    /// The mapping [`compute_responsive_layout`] stretched the authored dialog
+    /// The mapping `fit_window` stretched the authored dialog
     /// with; [`compute_layout`] always reports [`ShellScale::RETAIL`]. Paint and
     /// hit-testing both read their rects through this.
     pub scale: ShellScale,
@@ -206,14 +206,6 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
         difficulty_value: at(309, 291, 141, 20),
         scale: ShellScale::RETAIL,
     }
-}
-
-/// The responsive variant of [`compute_layout`]: the verified 800x600 `0x94`
-/// scaled to fit the window, keeping its shape. At 800x600 the fixed control
-/// rectangles carry no centring offset, so the authored geometry is the retail
-/// one.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
-    fit_window(screen_w, screen_h, compute_layout)
 }
 
 vera20k_gui::scaled_rects!(CampaignLayout {

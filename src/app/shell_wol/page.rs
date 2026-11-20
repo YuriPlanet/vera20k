@@ -392,7 +392,7 @@ pub(super) fn located(
         Err(0x0004_0132) => "TXT_FINDPAGE_FIND_DISABLED",
         Err(_) => "TXT_FINDPAGE_NOT_ONLINE",
     };
-    set_status(state, App::csf_label(state, key, key))
+    set_status(state, state.csf_label(key, key))
 }
 
 fn set_status(state: &mut AppState, text: String) -> bool {
@@ -471,7 +471,7 @@ fn apply(state: &mut AppState, actions: Vec<WolPageAction>) {
 
 /// A white (-1) CSF line through `0x005E2790`.
 fn notice(state: &mut AppState, key: &str) {
-    let text = App::csf_label(state, key, key).encode_utf16().collect();
+    let text = state.csf_label(key, key).encode_utf16().collect();
     append_page_line(
         state,
         LanChatLine {
@@ -565,7 +565,7 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
             _ => None,
         });
         if matches!(event, PageEvent::Selected(..)) {
-            leaf::play(state, PageCue::ListClick);
+            App::play_page_cue(state, PageCue::ListClick);
         }
         apply_received(state, action.flatten());
     }

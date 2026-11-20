@@ -5,7 +5,7 @@ use super::*;
 use crate::app::match_runtime::session::PeerChoicesChange;
 use crate::skirmish_launch::{LaunchTeam, SkirmishLaunchSession, SkirmishLocalSlot};
 use crate::ui::lan_shell::LanChatLine;
-use crate::ui::skirmish_shell::SkirmishValidationModalState;
+use crate::ui::shell::modal::ShellBox;
 use crate::util::time::Instant;
 
 /// A host's full options as `0x005E3D10`'s default (digit-led) arm decodes
@@ -575,8 +575,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 protocol.accept_eligible = true;
             }
             if !ready {
-                let text =
-                    App::csf_label(state, "GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
+                let text = state.csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
                 crate::app::shell_lan::append_room_chat(
                     state,
                     LanChatLine {
@@ -694,22 +693,25 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     .clear_network_cooperative_partners();
             }
             // LAN Type 10 (0x005E10F2..0x005E1114) keeps its silent native exit.
-            let exit = if state.frontend.native_shell_ui {
-                shell_transition::ShellExitThen::NetworkSetupBack(dialog)
-            } else {
-                // VERA's notice belongs to the lobby opened after setup is retired.
-                shell_transition::ShellExitThen::NetworkSetupBackWithNotice {
-                    dialog,
-                    label: HOST_LEFT_LABEL,
-                }
-            };
-            App::leave_shell_dialog(state, exit);
+            let notice = !state.frontend.native_shell_ui;
+            App::leave_shell_dialog(
+                state,
+                shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                move |state| {
+                    super::commit_back(state);
+                    // VERA's notice belongs to the lobby opened after setup is retired.
+                    if notice {
+                        crate::app::shell_lan::report_error(state, HOST_LEFT_LABEL);
+                    }
+                },
+            );
         }
         NetworkSetupEvent::Kicked => {
             crate::app::shell_lan::report_error(state, "TXT_REQUEST_DENIED");
             App::leave_shell_dialog(
                 state,
-                shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+                crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                crate::app::shell_network_setup::commit_back,
             );
         }
         NetworkSetupEvent::GameStarted { users, pings } => {
@@ -1012,14 +1014,14 @@ fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str
         App::fail_external_launch(state, "the direct start handshake failed");
         return;
     }
-    let message = App::csf_label(state, label, fallback);
-    let ok = App::csf_label(state, "TXT_OK", "OK");
+    let message = state.csf_label(label, fallback);
+    let ok = state.csf_label("TXT_OK", "OK");
     state
         .frontend
         .multiplayer_setup
         .as_mut()
         .expect("setup interaction")
-        .notice = Some(SkirmishValidationModalState::new(message, ok));
+        .notice = Some(ShellBox::notice(message, ok));
     let protocol = state
         .frontend
         .network_setup_protocol
@@ -1170,7 +1172,7 @@ fn apply_local_map_admission(
     } {
         let map_name = super::map_display_name(state).unwrap_or_default();
         let text = crate::assets::csf_file::format_csf(
-            &App::csf_label(state, key, key),
+            &state.csf_label(key, key),
             &[crate::assets::csf_file::CsfArg::Str(map_name)],
         );
         crate::app::shell_lan::append_room_chat(
@@ -1256,13 +1258,7 @@ fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
         super::commit_start(state, seed);
         return Ok(());
     }
-    App::leave_shell_dialog(
-        state,
-        shell_transition::ShellExitThen::NetworkStart {
-            dialog: super::dialog(state),
-            agreed_seed: seed,
-        },
-    );
+    App::leave_shell_dialog_for_network_start(state, super::dialog(state), seed);
     Ok(())
 }
 

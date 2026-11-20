@@ -18,9 +18,9 @@ use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{WolChannel, WolMember};
 use crate::ui::wol_login::WolCredential;
 use crate::ui::wol_shell::{
-    BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WolBoxButtons, WolMessageBox,
-    WolMode, WolWaitBox,
+    BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WolMode, WolWaitBox,
 };
+use crate::ui::shell::modal::ShellBox;
 
 /// Which WOLAPI stands behind the visit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -766,10 +766,6 @@ impl WolVisit {
     }
 }
 
-pub(super) fn resolve(state: &AppState, key: &str) -> String {
-    App::csf_label(state, key, key)
-}
-
 /// [`WolProvider::Unavailable`]'s synchronous answer, called where the
 /// WOLAPI object is asked for: no request reaches a service, and the only
 /// answer is that WOLAPI is missing (`0x00786390` -> `0x00785711`).
@@ -1125,31 +1121,22 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
 }
 
 pub(super) fn wait_box(state: &AppState, key: &str) -> WolWaitBox {
-    WolWaitBox {
-        text: resolve(state, key),
-        disconnect: resolve(state, "GUI:Disconnect"),
-        check_status: resolve(state, "GUI:WOLCheckStatus"),
-        opened_at: Instant::now(),
-        shown: false,
-    }
+    let text = |key| state.csf_text(key);
+    WolWaitBox::new(text(key), text("GUI:Disconnect"), text("GUI:WOLCheckStatus"))
 }
 
 /// `0x005E2CD0`'s box over the shell: `0xD0` (OK) or `0x126` (Yes/No).
-pub(super) fn message_box(state: &AppState, key: &str, yes_no: bool) -> WolMessageBox {
-    message_box_text(state, resolve(state, key), yes_no)
+pub(super) fn message_box(state: &AppState, key: &str, yes_no: bool) -> ShellBox {
+    message_box_text(state, state.csf_text(key), yes_no)
 }
 
 /// The same box with an already formatted body.
-pub(super) fn message_box_text(state: &AppState, body: String, yes_no: bool) -> WolMessageBox {
-    let buttons = if yes_no {
-        WolBoxButtons::YesNo {
-            yes: resolve(state, "GUI:Yes"),
-            no: resolve(state, "GUI:No"),
-        }
-    } else {
-        WolBoxButtons::Ok(resolve(state, "GUI:OK"))
-    };
-    WolMessageBox { body, buttons }
+pub(super) fn message_box_text(state: &AppState, body: String, yes_no: bool) -> ShellBox {
+    let text = |key| state.csf_text(key);
+    match yes_no {
+        true => crate::ui::wol_shell::yes_no_box(body, text("GUI:Yes"), text("GUI:No")),
+        false => crate::ui::wol_shell::message_box(body, text("GUI:OK")),
+    }
 }
 
 /// A VERA-specific box over the current WOL page, whose OK returns to the
@@ -1159,7 +1146,7 @@ pub(super) fn show_text_box(state: &mut AppState, body: &str) -> bool {
         return false;
     }
     let message = message_box_text(state, body.to_owned(), false);
-    let dialog = message.dialog();
+    let dialog = message.dialog;
     let Some(visit) = state.frontend.wol.as_mut() else {
         return false;
     };
@@ -1193,7 +1180,7 @@ fn apply(state: &mut AppState, step: WolStep) {
             let wait = wait_box(state, key);
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             match &mut visit.page {
-                WolPage::Backdrop { wait: Some(open) } => open.text = wait.text,
+                WolPage::Backdrop { wait: Some(open) } => open.shell_box.body = wait.shell_box.body,
                 page => *page = WolPage::Backdrop { wait: Some(wait) },
             }
             state
@@ -1203,7 +1190,7 @@ fn apply(state: &mut AppState, step: WolStep) {
         }
         WolStep::Message { key, yes_no, then } => {
             let message = message_box(state, key, yes_no);
-            let dialog = message.dialog();
+            let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             visit.page = WolPage::Message { message, then };
             state.frontend.shell_controller.reset_to(dialog, false);
@@ -1281,7 +1268,7 @@ fn connect_succeeded(state: &mut AppState) {
         file.as_ref(),
         &nickname,
         server.as_ref().map(WolServer::persona_server),
-        &|key| resolve(state, key),
+        &|key| state.csf_text(key),
     );
     // The nickname becomes the session handle [0xA8B380], the persona's
     // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
@@ -1606,7 +1593,11 @@ mod tests {
         let mut globals = WolAccountGlobals::default();
         let mut ui = crate::ui::shell::controller::DialogController::default();
         ui.push(crate::ui::wol_login::DIALOG, true);
-        let cx = &mut LoginCx { ui: &mut ui, globals: &mut globals, credentials: &[] };
+        let cx = &mut LoginCx {
+            ui: &mut ui,
+            globals: &mut globals,
+            credentials: &[],
+        };
         visit.page = WolPage::Login(Box::new(WolLoginState::open_online(cx, None, None)));
         let modern = visit.login().unwrap().policy.page_spec();
         assert_eq!(modern, LoginPolicy::Online.page_spec());
@@ -1617,7 +1608,11 @@ mod tests {
             "Play and the three account buttons"
         );
         ui.reset_to(crate::ui::wol_login::DIALOG, true);
-        let cx = &mut LoginCx { ui: &mut ui, globals: &mut globals, credentials: &[] };
+        let cx = &mut LoginCx {
+            ui: &mut ui,
+            globals: &mut globals,
+            credentials: &[],
+        };
         visit.page = WolPage::Login(Box::new(WolLoginState::open(cx)));
         let native = visit.login().unwrap().policy.page_spec();
         assert_eq!(native, LoginPolicy::Legacy.page_spec());

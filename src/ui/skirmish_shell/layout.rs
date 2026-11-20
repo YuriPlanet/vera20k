@@ -6,7 +6,7 @@ use crate::ui::shell::descriptor::{
 };
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 use crate::ui::shell::geom::{
-    ScaledRects, ShellScale, center_offset, child_window, dialog_origin, dlu_rect, fit_window,
+    ScaledRects, ShellScale, center_offset, child_window, dialog_origin, dlu_rect,
     right_panel_rects,
 };
 use crate::ui::shell::layout::Placer;
@@ -1159,23 +1159,6 @@ scaled_rects!(SavedSeedLayout {
     dialog, title, prompt, list, name_edit, action, load, delete, back, blank
 });
 
-/// The responsive variant of [`compute_layout`]: the verified 800x600 `0x102`
-/// scaled to fit the window, keeping its shape. Identity at the base size.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
-    compute_responsive_layout_for_rows(screen_w, screen_h, SKIRMISH_ROW_COUNT)
-}
-
-/// The responsive variant of [`compute_layout_for_rows`].
-pub fn compute_responsive_layout_for_rows(
-    screen_w: u32,
-    screen_h: u32,
-    rows: usize,
-) -> SkirmishShellLayout {
-    fit_window(screen_w, screen_h, |w, h| {
-        compute_layout_for_rows(w, h, rows)
-    })
-}
-
 /// The `0x102` common shell on the mapping a page already holds: the retail
 /// layout for [`ShellScale::RETAIL`], the responsive one otherwise. Pages drawn
 /// over the common shell (Launcher Options, Keyboard) rebuild it through this,
@@ -1188,22 +1171,6 @@ pub fn compute_layout_on(scale: ShellScale, screen_w: u32, screen_h: u32) -> Ski
     }
 }
 
-/// The responsive variant of [`compute_choose_map_modal_layout`].
-pub fn compute_responsive_choose_map_modal_layout(
-    screen_w: u32,
-    screen_h: u32,
-) -> ChooseMapModalLayout {
-    fit_window(screen_w, screen_h, compute_choose_map_modal_layout)
-}
-
-/// The responsive variant of [`compute_random_map_setup_layout`].
-pub fn compute_responsive_random_map_setup_layout(
-    screen_w: u32,
-    screen_h: u32,
-) -> RandomMapSetupLayout {
-    fit_window(screen_w, screen_h, compute_random_map_setup_layout)
-}
-
 /// VERA's Setups page: the Save browser (list, name field, Save), with Load
 /// and Delete on the two tiles under Save, above Back at 640x480 too.
 pub fn compute_setups_layout(screen_w: u32, screen_h: u32) -> SavedSeedLayout {
@@ -1211,22 +1178,6 @@ pub fn compute_setups_layout(screen_w: u32, screen_h: u32) -> SavedSeedLayout {
     layout.load = Some(layout.action.translate(0, SDBTNBKGD_H));
     layout.delete = Some(layout.action.translate(0, 2 * SDBTNBKGD_H));
     layout
-}
-
-/// The responsive variant of [`compute_setups_layout`].
-pub fn compute_responsive_setups_layout(screen_w: u32, screen_h: u32) -> SavedSeedLayout {
-    fit_window(screen_w, screen_h, compute_setups_layout)
-}
-
-/// The responsive variant of [`compute_saved_seed_layout`].
-pub fn compute_responsive_saved_seed_layout(
-    mode: SavedSeedMode,
-    screen_w: u32,
-    screen_h: u32,
-) -> SavedSeedLayout {
-    fit_window(screen_w, screen_h, |w, h| {
-        compute_saved_seed_layout(mode, w, h)
-    })
 }
 
 #[cfg(all(test, tests_ui))]
@@ -1249,11 +1200,10 @@ mod tests {
         checkbox_icon_rect, checkbox_text_rect, combo_arrow_rect, combo_face_rect,
         combo_swatch_rect, combo_text_rect, compute_choose_map_modal_layout,
         compute_fixed_800_layout, compute_layout, compute_random_map_setup_layout,
-        compute_responsive_choose_map_modal_layout, compute_responsive_layout,
-        compute_responsive_random_map_setup_layout, compute_responsive_saved_seed_layout,
         compute_saved_seed_layout, dlu_rect, player_name_edit_client_rect,
         player_name_edit_text_rect,
     };
+    use crate::ui::shell::geom::fit_window;
 
     /// The chooser button the pointer at `x`, `y` hovers on its widgets.
     fn choose_map_modal_button_at(
@@ -1284,15 +1234,17 @@ mod tests {
     fn responsive_layouts_keep_the_window_as_screen_and_centre_the_shell() {
         // 16:9: the height limits the factor to 1.8, so the 1440x1080 shell sits
         // 240 px in from either side.
-        let shell = compute_responsive_layout(1920, 1080);
+        let shell = fit_window(1920, 1080, compute_layout);
         assert_eq!(shell.screen, RectPx::new(0, 0, 1920, 1080));
         assert_eq!(shell.shell_origin(), (240, 0));
         assert_eq!(shell.shell_height(), 1080);
         // The seed prompts and the eject box centre in `screen`, as their hit
         // tests centre in the window.
-        let seeds = compute_responsive_saved_seed_layout(SavedSeedMode::Save, 1920, 1080);
+        let seeds = fit_window(1920, 1080, |w, h| {
+            compute_saved_seed_layout(SavedSeedMode::Save, w, h)
+        });
         assert_eq!(seeds.screen, RectPx::new(0, 0, 1920, 1080));
-        let chooser = compute_responsive_choose_map_modal_layout(1920, 1080);
+        let chooser = fit_window(1920, 1080, compute_choose_map_modal_layout);
         assert_eq!(chooser.screen, RectPx::new(0, 0, 1920, 1080));
         // Its own full-size dialog is the centred shell, not the window.
         assert_eq!(chooser.dialog, RectPx::new(240, 0, 1440, 1080));
@@ -1876,15 +1828,15 @@ mod tests {
     #[test]
     fn responsive_layouts_are_identity_at_the_base_size() {
         assert_eq!(
-            compute_responsive_layout(800, 600),
+            fit_window(800, 600, compute_layout),
             compute_layout(800, 600)
         );
         assert_eq!(
-            compute_responsive_choose_map_modal_layout(800, 600),
+            fit_window(800, 600, compute_choose_map_modal_layout),
             compute_choose_map_modal_layout(800, 600)
         );
         assert_eq!(
-            compute_responsive_random_map_setup_layout(800, 600),
+            fit_window(800, 600, compute_random_map_setup_layout),
             compute_random_map_setup_layout(800, 600)
         );
         for mode in [
@@ -1893,7 +1845,7 @@ mod tests {
             SavedSeedMode::Delete,
         ] {
             assert_eq!(
-                compute_responsive_saved_seed_layout(mode, 800, 600),
+                fit_window(800, 600, |w, h| compute_saved_seed_layout(mode, w, h)),
                 compute_saved_seed_layout(mode, 800, 600)
             );
         }
@@ -1902,7 +1854,7 @@ mod tests {
     #[test]
     fn responsive_skirmish_layout_doubles_the_verified_base_geometry() {
         let base = compute_layout(800, 600);
-        let layout = compute_responsive_layout(1600, 1200);
+        let layout = fit_window(1600, 1200, compute_layout);
 
         assert_eq!(layout.scale, ShellScale::from_screen(1600, 1200));
         assert_eq!(layout.screen, RectPx::new(0, 0, 1600, 1200));
@@ -1938,7 +1890,7 @@ mod tests {
     #[test]
     fn responsive_hit_tests_follow_the_stretched_rects() {
         let base = compute_random_map_setup_layout(800, 600);
-        let setup = compute_responsive_random_map_setup_layout(1600, 1200);
+        let setup = fit_window(1600, 1200, compute_random_map_setup_layout);
         let face = setup.control_rects[0];
 
         assert_eq!(

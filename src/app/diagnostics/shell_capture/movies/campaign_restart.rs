@@ -492,7 +492,7 @@ impl RestartCapture {
             "the 0xF2 tab did not open the restate briefing"
         );
         // ALL01UMD.MAP's MISSIONMD Briefing key.
-        let expected = crate::app::frontend::shell_pass::resolve_csf(state, "Brief:ALL01md");
+        let expected = state.csf_text("Brief:ALL01md");
         ensure!(
             presentation.restate_text == expected,
             "the restate briefing did not resolve Brief:ALL01md"
@@ -623,7 +623,7 @@ impl RestartCapture {
             }
             Step::Settling(_) | Step::Done => {}
             Step::AwaitObjective => {
-                let expected = App::csf_label(state, "MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
+                let expected = state.csf_label("MISSION:Sov2Obj2", "MISSION:Sov2Obj2");
                 let row = state
                     .match_state
                     .match_presentation
@@ -795,15 +795,17 @@ impl RestartCapture {
                         crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
                     )
                 {
-                    let expected =
-                        crate::app::frontend::shell_pass::resolve_csf(state, "MSG:UnableMapSelect");
+                    let expected = state.csf_text("MSG:UnableMapSelect");
                     ensure!(
-                        message.labels.title == expected,
+                        message.shell_box.body == expected,
                         "MapSelect notice has wrong text"
                     );
                     ensure!(
-                        message.labels.kind() == crate::ui::shell::modal::ModalKind::BodyOk
-                            && message.labels.cancel.is_empty(),
+                        message.shell_box.kind() == crate::ui::shell::modal::ModalKind::BodyOk
+                            && message
+                                .shell_box
+                                .caption(crate::ui::shell::modal::control::CANCEL)
+                                .is_none(),
                         "MapSelect notice is not one button"
                     );
                     ensure!(
@@ -824,8 +826,12 @@ impl RestartCapture {
                             == Some(i64::from(state.audio.theme.current_song())),
                         "MapSelect notice queued the shell INTRO"
                     );
-                    receipt["body"] = json!(message.labels.title);
-                    receipt["confirm"] = json!(message.labels.confirm);
+                    receipt["body"] = json!(message.shell_box.body);
+                    receipt["confirm"] = json!(
+                        message
+                            .shell_box
+                            .caption(crate::ui::shell::modal::control::OK)
+                    );
                     receipt["dialog"] = json!(0xCE);
                     receipt["initial_save_pending_before"] = json!(false);
                     route.push(json!({"frame":frame,"action":"MapSelect failure notice shown","dialog":0xCE}));
@@ -855,8 +861,7 @@ impl RestartCapture {
                         set_window_pointer_to_rect_center(state, layout.ok);
                         App::handle_shell_message_box_mouse(state, true);
                         ensure!(
-                            box_pressed(state)
-                                == Some(crate::ui::shell::modal::control::OK),
+                            box_pressed(state) == Some(crate::ui::shell::modal::control::OK),
                             "MapSelect OK press missed"
                         );
                         App::handle_shell_message_box_mouse(state, false);

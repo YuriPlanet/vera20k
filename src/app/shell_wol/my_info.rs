@@ -3,13 +3,12 @@
 //! The model is [`crate::ui::wol_my_info`]; `wolinfoMD.ini` goes through
 //! [`super::persona`].
 
-use crate::util::time::Instant;
 use vera20k_gui::NodeId;
 
 use super::WolPage;
 use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
-use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
+use crate::app::frontend::shell_layout;
 use crate::app::persistence::wol_profile::WolPersona;
 use crate::app::{App, AppState};
 use crate::ui::shell::page::PageEvent;
@@ -49,7 +48,7 @@ fn country_rows(state: &AppState) -> Vec<MyInfoRow> {
                 crate::app::frontend::skirmish_shell_render::combo_item_label(state, item),
                 crate::app::frontend::skirmish_shell_render::side_item_data_for_country(country),
             ),
-            _ => MyInfoRow::text(service::resolve(state, "GUI:RandomEx"), -2),
+            _ => MyInfoRow::text(state.csf_text("GUI:RandomEx"), -2),
         })
         .collect()
 }
@@ -83,7 +82,7 @@ pub(super) fn open(state: &mut AppState) {
     let persona = super::persona::load(state, &nickname);
     let texts = super::persona::profile_texts(state, &nickname, &persona);
     let auto_login = auto_login_names(state);
-    let default_text = service::resolve(state, DEFAULT_KEY);
+    let default_text = state.csf_text(DEFAULT_KEY);
     let countries = country_rows(state);
     let colors = color_rows(state);
     let Some(visit) = state.frontend.wol.as_mut() else {
@@ -116,7 +115,7 @@ pub(super) fn open(state: &mut AppState) {
     let page = WolMyInfoPage::open(rows, &nickname, &view(&persona), texts, auto_login);
     visit.page = WolPage::MyInformation(Box::new(page));
     visit.requests.push(WolServiceRequest::LocaleCount);
-    open_art(state);
+    super::leaf::open_art(state, DIALOG);
     let _ = App::ensure_skirmish_shell_chrome(state);
     state.frontend.shell_controller.reset_to(DIALOG, false);
     present(state);
@@ -128,12 +127,9 @@ pub(super) fn open(state: &mut AppState) {
 pub(super) fn locale_count(state: &mut AppState, count: i32) {
     let nickname = state.frontend.wol_account.nickname.clone();
     let persona = super::persona::load(state, &nickname);
-    let rows = crate::ui::wol_persona::locale_rows((0..count.max(0)).map(|locale| {
-        (
-            locale,
-            service::resolve(state, &format!("WOL:Locale{locale:02}")),
-        )
-    }));
+    let rows = crate::ui::wol_persona::locale_rows(
+        (0..count.max(0)).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
+    );
     if let Some(page) = page_mut(state) {
         let combo = &mut page.combos[2];
         combo.rows = rows
@@ -144,25 +140,6 @@ pub(super) fn locale_count(state: &mut AppState, count: i32) {
     }
     present(state);
     state.platform.window.request_redraw();
-}
-
-/// `0x0072C9C0`: MnScrnLMyInformation.shp (800 wide only) through its PAL.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_my_info_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_my_info_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("MnScrnLMyInformation.shp", "MnScrnLMyInformation.PAL"),
-        &[],
-    );
-    state.frontend.wol_my_info_art.is_some()
 }
 
 pub(crate) fn page(state: &AppState) -> Option<&WolMyInfoPage> {
@@ -184,23 +161,15 @@ pub(super) fn page_open(state: &AppState) -> bool {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolMyInfoLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        WolMyInfoLayout::responsive(width as i32, height as i32)
-    } else {
-        WolMyInfoLayout::new(width as i32, height as i32)
-    }
-}
-
-/// The status help under the pointer (`0x006040B0`).
-pub(crate) fn status_key(state: &AppState) -> Option<&str> {
-    leaf::status_key(state, DIALOG)
+    shell_layout::on(state, WolMyInfoLayout::new)
 }
 
 /// Builds and places `0x114`'s widgets; the root.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let layout = layout(state);
-    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| layout.rect_of(id))
+    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| {
+        layout.rect_of(id)
+    })
 }
 
 /// Combo `control`'s open drop list.
@@ -211,7 +180,7 @@ pub(crate) fn drop_down(state: &AppState, control: u16) -> Option<vera20k_gui::C
 
 /// Shows the page in its widgets.
 fn present(state: &mut AppState) {
-    let unknown = service::resolve(state, UNKNOWN_STATS_KEY);
+    let unknown = state.csf_text(UNKNOWN_STATS_KEY);
     let Some(root) = sync(state) else {
         return;
     };
@@ -313,9 +282,11 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
                 page.refresh(&view(&default), texts);
             }
         }
-        MyInfoAction::Close(control) => {
-            App::leave_shell_dialog(state, ShellExitThen::WolMyInformationClose(control))
-        }
+        MyInfoAction::Close(control) => App::leave_shell_dialog(
+            state,
+            crate::app::frontend::shell_transition::ShellSlideKind::WolMyInformation,
+            move |state| crate::app::shell_wol::my_info::commit_close(state, control),
+        ),
         // 0x00773E90 needs the registry URL and an HTMLPath; a retail
         // install has neither and it returns.
         MyInfoAction::Browser(_) => {}
@@ -327,7 +298,7 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
 /// with return mode 6: mode 5's login category is 1, so `WOL_Main` runs the
 /// login flow first (`0x0077B3AA`), then the Buddy List runner.
 pub(crate) fn commit_close(state: &mut AppState, control: u16) {
-    state.frontend.wol_my_info_art = None;
+    super::leaf::free_art(state, DIALOG);
     if control != PLAY_BUDDY {
         App::reopen_wol_welcome(state);
         return;
@@ -357,7 +328,9 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         };
         // CBN_SELCHANGE, a box's BS_AUTOCHECKBOX flip, a released button.
         let action = match event {
-            PageEvent::Picked(id, row) => usize::try_from(row).ok().and_then(|row| page.select(id, row)),
+            PageEvent::Picked(id, row) => usize::try_from(row)
+                .ok()
+                .and_then(|row| page.select(id, row)),
             PageEvent::Toggled(id, _) => page.toggle(id),
             PageEvent::Activated(id) => page.activate(id),
             _ => None,
@@ -369,7 +342,3 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     present(state);
 }
 
-/// The drop list's scrollbar repeats.
-pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    leaf::poll(state, page_open(state))
-}

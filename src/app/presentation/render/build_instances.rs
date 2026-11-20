@@ -532,16 +532,12 @@ pub(super) fn build_world_instances(
                         state.match_state.input.camera_y,
                     ];
                     let coord = entity.hud.get_coords;
-                    let (base_x, base_y) = crate::util::lepton::absolute_leptons_to_screen(
-                        coord.x, coord.y, coord.z,
-                    );
+                    let (base_x, base_y) =
+                        crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
                     let tint = [1.0_f32, 1.0, 1.0];
                     let line_height = font.cell_height() as f32 + 2.0;
                     for (row, text) in entity.hud.info_lines().iter().enumerate() {
-                        let origin = [
-                            base_x - 4.0,
-                            base_y + 10.0 + row as f32 * line_height,
-                        ];
+                        let origin = [base_x - 4.0, base_y + 10.0 + row as f32 * line_height];
                         let measure = font.compute_text_rect(
                             text,
                             [
@@ -1587,7 +1583,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                 crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
                     .and_then(|atlas| atlas.top_strip_thin)
                     .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
-                &crate::app::frontend::shell_pass::resolve_csf(state, "TXT_TIME_FORMAT_HOURS"),
+                &state.csf_text("TXT_TIME_FORMAT_HOURS"),
                 crate::app::presentation::sidebar_text::credits_tint(theme),
                 [
                     state.match_state.input.camera_x,

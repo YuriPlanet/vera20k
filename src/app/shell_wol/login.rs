@@ -15,7 +15,6 @@ use crate::ui::wol_login::*;
 use winit::keyboard::KeyCode;
 
 pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
     let online = state
         .frontend
         .wol
@@ -26,30 +25,7 @@ pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
     } else {
         LoginPolicy::Legacy
     };
-    if shell_layout::fills_window(state) {
-        WolLoginLayout::responsive(width as i32, height as i32, policy)
-    } else {
-        WolLoginLayout::new(width as i32, height as i32, policy)
-    }
-}
-
-/// `0x0072C600`: LoginScreen.shp through LoginScreen.PAL, only at 800 wide.
-pub(crate) fn open_login_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_login_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_login_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("LoginScreen.shp", "LoginScreen.PAL"),
-        &[],
-    );
-    state.frontend.wol_login_art.is_some()
+    shell_layout::on(state, |w, h, scale| WolLoginLayout::new(w, h, scale, policy))
 }
 
 /// The open popup's rects on the login page's shell mapping.
@@ -90,7 +66,7 @@ pub(super) fn open(state: &mut AppState) {
     if online {
         super::login_info::refresh(state);
     }
-    open_login_art(state);
+    super::leaf::open_art(state, DIALOG);
     let _ = App::ensure_skirmish_shell_chrome(state);
     sync(state);
     state.platform.window.request_redraw();
@@ -173,7 +149,8 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
     match action {
         WolLoginAction::Close(result) => App::leave_shell_dialog(
             state,
-            shell_transition::ShellExitThen::WolLoginClose(result),
+            shell_transition::ShellSlideKind::WolLogin,
+            move |state| App::commit_wol_login_close(state, result),
         ),
         WolLoginAction::Forget { slot, nickname } => {
             // 0x0079A6F0..0x0079A7B6: a lowered match clears AutoLogin, then
@@ -223,7 +200,7 @@ pub(super) fn account_answered(state: &mut AppState, answer: Result<(), String>)
 /// again); Login starts the connect over the empty backdrop. The online
 /// sign-in is the visit's first page, so its Back leaves WOL.
 pub(super) fn commit_close(state: &mut AppState, result: u16) {
-    state.frontend.wol_login_art = None;
+    super::leaf::free_art(state, DIALOG);
     if result != LOGIN {
         if state
             .frontend
@@ -316,7 +293,3 @@ fn page_open(state: &AppState) -> bool {
     )
 }
 
-/// The drop list's scrollbar repeats.
-pub(crate) fn poll_scroll_repeat(state: &mut AppState) -> Option<crate::util::time::Instant> {
-    leaf::poll(state, page_open(state))
-}

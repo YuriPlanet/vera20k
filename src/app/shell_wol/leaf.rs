@@ -7,13 +7,106 @@
 
 use vera20k_gui::{NodeId, NodeSpec, Prop, Value};
 
+use crate::app::frontend::shell_layout;
 use crate::app::frontend::skirmish_shell_render::gui_paint;
 use crate::app::{App, AppState};
-use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::menu_page::MenuPageButtonRect;
-use crate::ui::shell::page::{self, PageCue, PageEvent};
+use crate::ui::shell::page::{self, PageEvent};
+
+/// A WOL page's art loader: its background shape and palette (loaded only at
+/// 800 wide, [`shell_layout::art_key_screen_width`]) and its PCX images.
+/// `0xFE` and `0x122` load none.
+fn art_files(dialog: DialogId) -> Option<((&'static str, &'static str), Vec<&'static str>)> {
+    use crate::ui::{wol_buddy, wol_persona, wol_shell};
+    let files = match dialog {
+        // 0x0072C7E0
+        wol_shell::WOL_WELCOME_DIALOG => (
+            ("MultiplaySelection.shp", "MultiplaySelection.pal"),
+            wol_shell::WOL_ICONS.iter().map(|icon| icon.file).collect(),
+        ),
+        // 0x0072C600
+        crate::ui::wol_login::DIALOG => (("LoginScreen.shp", "LoginScreen.PAL"), Vec::new()),
+        // 0x0072CD60: with the list and button images.
+        crate::ui::wol_lobby::DIALOG => (
+            ("MnScrnLCustomMatchLobby.shp", "MnScrnLCustomMatchLobby.pal"),
+            crate::ui::wol_lobby::PCX_FILES.to_vec(),
+        ),
+        // 0x0072BAC0
+        crate::ui::wol_options::DIALOG => (("WOLOptions.shp", "WOLOptions.PAL"), Vec::new()),
+        // 0x0072B8E0
+        dialog if dialog == crate::ui::shell::sound::SHELL_SOUND_PAGE.dialog => {
+            (("WOLSoundOptions.shp", "WOLSoundOptions.PAL"), Vec::new())
+        }
+        // 0x0072BCA0
+        wol_persona::AUTO_LOGIN_DIALOG => {
+            (("AutoLoginQuery.shp", "AutoLoginQuery.PAL"), Vec::new())
+        }
+        // 0x0072C9C0
+        crate::ui::wol_my_info::DIALOG => (
+            ("MnScrnLMyInformation.shp", "MnScrnLMyInformation.PAL"),
+            Vec::new(),
+        ),
+        // 0x0072C060: with Refresh's pictures.
+        wol_buddy::DIALOG => (
+            ("BuddyList.shp", "BuddyList.PAL"),
+            vec![
+                wol_buddy::REFRESH_FACES.0,
+                wol_buddy::REFRESH_FACES.1,
+                "wolclan.pcx",
+                "woltrny.pcx",
+                "wolpriv.pcx",
+                "wolreslk.pcx",
+                "wolrslkob.pcx",
+                "wolob.pcx",
+            ],
+        ),
+        // 0x0072BE80
+        crate::ui::wol_quick_match::DIALOG => (("quickmatch.shp", "quickmatch.PAL"), Vec::new()),
+        _ => return None,
+    };
+    Some(files)
+}
+
+/// Loads `dialog`'s art once (its loader above); whether it is loaded.
+pub(crate) fn open_art(state: &mut AppState, dialog: DialogId) -> bool {
+    if art(state, dialog).is_some() {
+        return true;
+    }
+    let (Some((background, icons)), Some(assets)) =
+        (art_files(dialog), state.process_assets.manager())
+    else {
+        return false;
+    };
+    let art = crate::render::main_menu_shell_chrome::build_wol_page_art(
+        &state.renderer.gpu,
+        &state.renderer.batch_renderer,
+        assets,
+        shell_layout::art_key_screen_width(state),
+        background,
+        &icons,
+    );
+    let loaded = art.is_some();
+    state.frontend.wol_art.extend(art.map(|art| (dialog, art)));
+    loaded
+}
+
+/// `dialog`'s loaded art.
+pub(crate) fn art(
+    state: &AppState,
+    dialog: DialogId,
+) -> Option<&crate::render::main_menu_shell_chrome::WolPageArt> {
+    let arts = &state.frontend.wol_art;
+    arts.iter()
+        .find(|(id, _)| *id == dialog)
+        .map(|(_, art)| art)
+}
+
+/// Frees `dialog`'s art (its page's teardown).
+pub(crate) fn free_art(state: &mut AppState, dialog: DialogId) {
+    state.frontend.wol_art.retain(|(id, _)| *id != dialog);
+}
 
 /// `dialog`'s root while it takes the input: the screen's top dialog, or the top overlay over it.
 pub(crate) fn root(state: &AppState, dialog: DialogId) -> Option<NodeId> {
@@ -155,23 +248,9 @@ pub(super) fn pointer_quiet(state: &mut AppState, at: Pointer) -> Vec<PageEvent>
             controller.on_pointer_up(x, y);
         }
     }
-    let events = events(state);
+    let events = App::shell_page_events(state, false);
     state.platform.window.request_redraw();
     events
-}
-
-fn events(state: &mut AppState) -> Vec<PageEvent> {
-    let controller = &mut state.frontend.shell_controller;
-    let raw = controller.drain_events();
-    let events = page::page_events(controller.gui(), raw);
-    let mut rest = Vec::with_capacity(events.len());
-    for event in events {
-        match event {
-            PageEvent::Cue(cue) if cue != PageCue::ListClick => play(state, cue),
-            event => rest.push(event),
-        }
-    }
-    rest
 }
 
 /// The open page's widget timers (a list's scroll-arrow repeat); the next
@@ -180,23 +259,11 @@ pub(super) fn poll(state: &mut AppState, open: bool) -> Option<crate::util::time
     if !open {
         return None;
     }
-    let controller = &mut state.frontend.shell_controller;
-    let next = controller.poll();
-    if !controller.drain_events().is_empty() {
-        state.platform.window.request_redraw();
-    }
-    next
-}
-
-pub(super) fn play(state: &mut AppState, cue: PageCue) {
-    let cue = match cue {
-        PageCue::Button => return App::play_main_menu_button_sound(state),
-        PageCue::Checkbox => LauncherCue::Checkbox,
-        PageCue::ComboOpen => LauncherCue::ComboOpen,
-        PageCue::ComboClose => LauncherCue::ComboClose,
-        PageCue::ListClick => LauncherCue::GenericClick,
-    };
-    App::play_launcher_options_cue(state, cue);
+    let window = &state.platform.window;
+    state
+        .frontend
+        .shell_controller
+        .poll_then(|| window.request_redraw())
 }
 
 /// The hovered control's status help on `dialog`, under a box too.

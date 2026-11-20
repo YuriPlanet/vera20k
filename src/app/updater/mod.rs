@@ -31,8 +31,7 @@ use crate::app::App;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::state::AppState;
 use crate::app::web_link::{DOWNLOAD_PAGE, open_in_browser};
-use crate::ui::main_menu_dialogs::ShellMessageBoxLabels;
-use crate::ui::shell::modal::ModalResult;
+use crate::ui::shell::modal::{ModalResult, ShellBox};
 use crate::util::time::{Duration, Instant};
 
 use fetch::Progress;
@@ -199,7 +198,8 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                 state.frontend.updater.phase = Phase::Offered { package, offer };
                 App::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellExitThen::UpdateOffer,
+                    crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                    crate::app::updater::open_offer,
                 );
             } else {
                 state.frontend.updater.phase = Phase::Found { package, offer };
@@ -231,7 +231,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                 if let Some(message_box) = state.frontend.shell_message_box.as_mut()
                     && matches!(message_box.purpose, ShellMessageBoxPurpose::UpdateProgress)
                 {
-                    message_box.labels.title = progress_text(
+                    message_box.shell_box.body = progress_text(
                         release.version,
                         progress.received.load(Ordering::Relaxed),
                         release.size,
@@ -293,8 +293,7 @@ const CHECK_FAILED: &str = "VERA:UpdateCheckFailed";
 /// under way, or a new one) answers in a box, offering a skipped version too.
 pub(crate) fn open_check(state: &mut AppState) {
     // Over the empty shell backdrop, as the offer asks.
-    crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-    crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+    App::destroy_current_shell_dialog(state);
     match std::mem::take(&mut state.frontend.updater.phase) {
         Phase::Found { package, offer } => {
             state.frontend.updater.phase = Phase::Offered { package, offer };
@@ -328,16 +327,11 @@ pub(crate) fn open_check(state: &mut AppState) {
 }
 
 fn open_checking(state: &mut AppState) {
-    let cancel = App::csf_label(state, "TXT_CANCEL", "Cancel");
+    let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
         state,
         ShellMessageBox {
-            labels: ShellMessageBoxLabels {
-                title: crate::i18n::tr("VERA:UpdateChecking"),
-                confirm: cancel,
-                third: String::new(),
-                cancel: String::new(),
-            },
+            shell_box: ShellBox::notice(crate::i18n::tr("VERA:UpdateChecking"), cancel),
             purpose: ShellMessageBoxPurpose::UpdateCheck,
         },
     );
@@ -389,8 +383,8 @@ pub(crate) fn open_offer(state: &mut AppState) {
         // Unverified: its version is not one to skip.
         Offer::NewKey { .. } => ("VERA:UpdateNewKey", "VERA:Download", None, &[][..]),
     };
-    let labels = ShellMessageBoxLabels {
-        title: tr_fill(
+    let shell_box = ShellBox::message(
+        tr_fill(
             "VERA:UpdateAvailable",
             &[
                 ("version", &offer.version()),
@@ -398,17 +392,16 @@ pub(crate) fn open_offer(state: &mut AppState) {
                 ("question", &tr(question)),
             ],
         ),
-        confirm: tr(confirm),
-        third: skip.map(tr).unwrap_or_default(),
-        cancel: tr("VERA:Later"),
-    };
+        tr(confirm),
+        tr("VERA:Later"),
+        skip.map(tr).unwrap_or_default(),
+    );
     let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
-    crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-    crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+    App::destroy_current_shell_dialog(state);
     App::open_shell_message_box(
         state,
         ShellMessageBox {
-            labels,
+            shell_box,
             purpose: ShellMessageBoxPurpose::UpdateOffer(notes),
         },
     );
@@ -477,16 +470,14 @@ fn download(state: &mut AppState, package: Package, release: Release) {
 }
 
 fn open_progress(state: &mut AppState, release: &Release, received: u64) {
-    let cancel = App::csf_label(state, "TXT_CANCEL", "Cancel");
+    let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
         state,
         ShellMessageBox {
-            labels: ShellMessageBoxLabels {
-                title: progress_text(release.version, received, release.size),
-                confirm: cancel,
-                third: String::new(),
-                cancel: String::new(),
-            },
+            shell_box: ShellBox::notice(
+                progress_text(release.version, received, release.size),
+                cancel,
+            ),
             purpose: ShellMessageBoxPurpose::UpdateProgress,
         },
     );

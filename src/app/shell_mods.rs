@@ -9,7 +9,6 @@
 use crate::util::time::Instant;
 
 use super::{App, AppState};
-use crate::app::frontend::shell_transition::ShellExitThen;
 use crate::app::frontend::state::{ModFilesBox, ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::mod_files::{Against, Checked, PageCheck, Step};
 use crate::app::shell_route::ShellRoute;
@@ -18,6 +17,7 @@ use crate::ui::movies_credits_shell::{
     family_list_node, family_list_selected, find_family_list, set_family_list,
 };
 use crate::ui::shell::list::{ListMetrics, list_box_geometry};
+use crate::ui::shell::modal::ShellBox;
 
 impl App {
     fn installed_mods(state: &AppState) -> Vec<crate::app::mods::Listed> {
@@ -34,11 +34,7 @@ impl App {
     pub(super) fn open_mods_page(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
         state.frontend.mods.page = Some(Self::installed_mods(state));
-        state.frontend.shell_route = ShellRoute::Mods;
-        state
-            .frontend
-            .shell_controller
-            .reset_to(mods_shell::DIALOG, false);
+        Self::show_shell_page(state, ShellRoute::Mods, mods_shell::DIALOG);
         Self::mods_sync(state);
     }
 
@@ -90,7 +86,7 @@ impl App {
         selected: Option<usize>,
         top: impl FnOnce(usize, (usize, usize)) -> usize,
     ) {
-        let layout = Self::mods_layout(state);
+        let layout = crate::app::frontend::shell_layout::mods_layout(state);
         let Some(rows) = state.frontend.mods.page.as_ref().map(Vec::len) else {
             return;
         };
@@ -109,15 +105,11 @@ impl App {
             && state.frontend.mods.page.is_some()
     }
 
-    fn mods_layout(state: &AppState) -> ModsLayout {
-        crate::app::frontend::shell_layout::mods_layout(state)
-    }
-
     /// Binds the controller to the page and keeps its `List` node, which a
     /// new instance builds with the row in use selected and in view (a hover
     /// target for status help, never a button press); the layout.
     fn mods_sync(state: &mut AppState) -> ModsLayout {
-        let layout = Self::mods_layout(state);
+        let layout = crate::app::frontend::shell_layout::mods_layout(state);
         let mods = &state.frontend.mods;
         let in_use = mods.page.as_ref().map(|rows| {
             let selected = rows.iter().position(|row| mods.in_use(row));
@@ -156,8 +148,14 @@ impl App {
             (mods_shell::CHECK, mods.picked_is_mod(selected)),
         ];
         let rect_of = |id| layout.page.button_rect(id);
-        let released =
-            Self::page_pointer(state, mods_shell::DIALOG, || mods_shell::PAGE.nodes(), rect_of, &enabled, down);
+        let released = Self::page_pointer(
+            state,
+            mods_shell::DIALOG,
+            || mods_shell::PAGE.nodes(),
+            rect_of,
+            &enabled,
+            down,
+        );
         if down.is_none() {
             state.frontend.shell_status_line.repaint();
         }
@@ -166,7 +164,14 @@ impl App {
             Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(state),
             Some(mods_shell::CHECK) => Self::check_picked_mod(state),
             Some(mods_shell::NEW) => Self::make_new_mod(state),
-            Some(mods_shell::BACK) => Self::leave_shell_dialog(state, ShellExitThen::ModsBack),
+            Some(mods_shell::BACK) => Self::leave_shell_dialog(
+                state,
+                crate::app::frontend::shell_transition::ShellSlideKind::Mods,
+                |state| {
+                    App::close_mods_page(state);
+                    App::open_launcher_options_dialog(state);
+                },
+            ),
             _ => {}
         }
     }
@@ -201,12 +206,7 @@ impl App {
         Self::open_shell_message_box(
             state,
             ShellMessageBox {
-                labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels {
-                    title: text,
-                    confirm,
-                    third: String::new(),
-                    cancel,
-                },
+                shell_box: ShellBox::message(text, confirm, cancel, String::new()),
                 purpose: ShellMessageBoxPurpose::ModFiles(which),
             },
         );
@@ -214,7 +214,7 @@ impl App {
 
     /// What Check Files found, or what came of writing the list, with OK.
     fn open_mod_files_found(state: &mut AppState, text: String) {
-        let ok = Self::csf_label(state, "TXT_OK", "OK");
+        let ok = state.csf_label("TXT_OK", "OK");
         Self::open_mod_files_box(state, ModFilesBox::Found, text, ok, String::new());
     }
 
@@ -435,15 +435,15 @@ impl App {
         Self::open_shell_message_box(
             state,
             ShellMessageBox {
-                labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels {
-                    title: crate::i18n::tr_fill(
+                shell_box: ShellBox::message(
+                    crate::i18n::tr_fill(
                         "VERA:ModMade",
                         &[("mod", &made.folder), ("files", &made.copied.join(", "))],
                     ),
-                    confirm: crate::i18n::tr("VERA:ModOpenItsFolder"),
-                    third: String::new(),
-                    cancel: crate::i18n::tr("VERA:Close"),
-                },
+                    crate::i18n::tr("VERA:ModOpenItsFolder"),
+                    crate::i18n::tr("VERA:Close"),
+                    String::new(),
+                ),
                 purpose: ShellMessageBoxPurpose::ModMade(made.dir),
             },
         );
@@ -491,12 +491,12 @@ impl App {
         Self::open_shell_message_box(
             state,
             ShellMessageBox {
-                labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels {
+                shell_box: ShellBox::message(
                     title,
-                    confirm: crate::i18n::tr("VERA:ModRestart"),
-                    third: String::new(),
-                    cancel: crate::i18n::tr("VERA:Cancel"),
-                },
+                    crate::i18n::tr("VERA:ModRestart"),
+                    crate::i18n::tr("VERA:Cancel"),
+                    String::new(),
+                ),
                 purpose: ShellMessageBoxPurpose::ModRestart(folder),
             },
         );

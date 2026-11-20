@@ -315,7 +315,8 @@ fn close(state: &mut AppState, exit: KeyboardExit) {
     if launcher && exit != KeyboardExit::PumpTerminated {
         App::leave_shell_dialog(
             state,
-            crate::app::frontend::shell_transition::ShellExitThen::KeyboardClose(exit),
+            crate::app::frontend::shell_transition::ShellSlideKind::Keyboard,
+            move |state| crate::app::input::keyboard::commit_close(state, exit),
         );
     } else {
         commit_close(state, exit);
@@ -402,11 +403,8 @@ fn cue(state: &mut AppState, open: bool) {
 /// Poll the captured list gesture and return its next event-loop wake deadline.
 pub(crate) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
     let dialog = state.frontend.keyboard_dialog.as_mut()?;
-    let next = dialog.ui.poll();
-    if !dialog.ui.drain_events().is_empty() {
-        state.platform.window.request_redraw();
-    }
-    next
+    let window = &state.platform.window;
+    dialog.ui.poll_then(|| window.request_redraw())
 }
 
 /// One pointer message on A3 (`down`: `None` moves). The open category list

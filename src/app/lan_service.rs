@@ -1961,7 +1961,8 @@ fn advance_departure(state: &mut AppState, now: u32, service_ok: bool) -> bool {
             let dialog = super::shell_network_setup::dialog(state);
             super::App::leave_shell_dialog(
                 state,
-                super::frontend::shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+                crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                crate::app::shell_network_setup::commit_back,
             );
         }
         DepartureReason::Kicked => {

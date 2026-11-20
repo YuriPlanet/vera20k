@@ -7,7 +7,7 @@ mod typed_codes;
 pub use layout::{
     MAIN_MENU_PAGE, MainMenuButtonRect, MainMenuMovieBase, MainMenuShellLayout, RA2TS_BASE_MOVIE,
     RIGHT_PANEL_TILE_H, RIGHT_PANEL_WIDTH, RectPx, SHELL_BASE_H, SHELL_BASE_W, compute_layout,
-    compute_responsive_layout, movie_base_for_responsive_width, movie_base_for_screen_width,
+    movie_base_for_responsive_width, movie_base_for_screen_width,
 };
 pub use state::{
     MAIN_MENU_DIALOG, MainMenuControlId, MainMenuShellAction, MainMenuShellState,

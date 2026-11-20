@@ -11,7 +11,7 @@ use winit::keyboard::KeyCode;
 use super::{App, AppState};
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
-use crate::ui::shell::saved_games::{LOAD_SAVED_GAME_PAGE, MainMenuSavedGameLayout};
+use crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE;
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserState, SavedSeedMode, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
@@ -20,22 +20,18 @@ impl App {
     /// State 9: `0x00558F2E` creates `0xB7` with the rows `0x005596A0`
     /// scanned, and `0x00558FC8..0x00558FE5` enables Load from the row count.
     pub(super) fn open_load_saved_game_page(state: &mut AppState) {
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+        Self::destroy_current_shell_dialog(state);
         // The error message box paints from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
         let rows = super::shell_saved_seeds::saved_browser_rows(
-            &Self::load_saved_game_layout(state).browser,
+            &crate::app::frontend::shell_layout::load_saved_game_layout(state).browser,
         );
         let browser = Self::open_saved_game_rows(state, SavedSeedMode::Load, rows);
         state.frontend.load_saved_game = Some(browser);
         // The status help is the cursor's from the first frame.
         Self::load_saved_game_pointer(state, None);
-        state.frontend.shell_route = ShellRoute::LoadSavedGame;
-        state
-            .frontend
-            .shell_controller
-            .reset_to(LOAD_SAVED_GAME_PAGE.dialog, false);
+        let dialog = LOAD_SAVED_GAME_PAGE.dialog;
+        Self::show_shell_page(state, ShellRoute::LoadSavedGame, dialog);
     }
 
     /// Back's teardown has run: state 9 returns false and state 1 recreates
@@ -51,13 +47,9 @@ impl App {
             && state.frontend.load_saved_game.is_some()
     }
 
-    pub(crate) fn load_saved_game_layout(state: &AppState) -> MainMenuSavedGameLayout {
-        crate::app::frontend::shell_layout::load_saved_game_layout(state)
-    }
-
     /// One pointer message on the page (`down`: `None` moves).
     fn load_saved_game_pointer(state: &mut AppState, down: Option<bool>) {
-        let layout = Self::load_saved_game_layout(state);
+        let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
         let extent = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
@@ -104,7 +96,7 @@ impl App {
         if !Self::load_saved_game_active(state) {
             return;
         }
-        let layout = Self::load_saved_game_layout(state);
+        let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
         let extent = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
@@ -118,7 +110,7 @@ impl App {
     }
 
     fn show_load_saved_game_error(state: &mut AppState, body: String) {
-        let affirmative = Self::csf_label(state, "TXT_OK", "OK");
+        let affirmative = state.csf_label("TXT_OK", "OK");
         if let Some(browser) = state.frontend.load_saved_game.as_mut() {
             let purpose = SavedSeedPromptPurpose::Error;
             browser.show_prompt(SavedSeedPrompt {
@@ -148,7 +140,8 @@ impl App {
                 }
                 BrowserInputResult::Outcome(SavedSeedOutcome::Close) => Self::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellExitThen::LoadSavedGameBack,
+                    crate::app::frontend::shell_transition::ShellSlideKind::LoadSavedGame,
+                    App::commit_load_saved_game_back,
                 ),
                 BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) => {
                     let browser = state.frontend.load_saved_game.as_ref();
@@ -182,7 +175,7 @@ impl App {
             }
             Err(error) => log::warn!("Load Saved Game: {}: {error}", path.display()),
         }
-        let body = Self::csf_label(state, "TXT_ERROR_LOADING_GAME", "Error loading game.");
+        let body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
         Self::show_load_saved_game_error(state, body);
     }
 
@@ -205,7 +198,7 @@ impl App {
         {
             state.match_state.campaign_names.save_title()
         } else {
-            Self::csf_label(state, "GUI:SkirmishGame", "Skirmish Game")
+            state.csf_label("GUI:SkirmishGame", "Skirmish Game")
         }
     }
 
@@ -227,7 +220,7 @@ impl App {
             })
             .collect();
         // Existing rows still keep their own saved descriptions.
-        let empty = Self::csf_label(state, "TXT_EMPTY_SLOT", "[EMPTY SLOT]");
+        let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
         SavedSeedBrowserState::open_rows(
             mode,
             entries,

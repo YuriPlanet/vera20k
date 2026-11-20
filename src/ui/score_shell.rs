@@ -20,7 +20,7 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, ShellScale, child_window, fit_window};
+use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
 use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::static_reveal::{Kind1Params, Kind1RevealWindow, PresentedKind1Static};
@@ -319,14 +319,6 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
     }
 }
 
-/// The responsive variant of [`compute_layout`]: the verified 800x600 `0x108`
-/// scaled to fit the window, keeping its shape. Identity at the base size. The
-/// table's cells, shaded rectangle, band windows and bars all scale with the
-/// page; each bar stays centred in its band window.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
-    fit_window(screen_w, screen_h, compute_layout)
-}
-
 impl ScoreLayout {
     /// VERA's Previous or Next, placed above Continue on the 800x600 page and
     /// scaled with it.
@@ -561,6 +553,7 @@ pub fn sort_rows(rows: &mut [ScoreRow]) {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::shell::geom::fit_window;
 
     #[test]
     fn thirty_results_are_presented_in_order_through_the_existing_table() {
@@ -635,7 +628,7 @@ mod tests {
         // At 1600x1200 the 800x600 page doubles; the caption's text does too,
         // and it is clipped to its rect.
         let base = compute_layout(800, 600);
-        let scaled = compute_responsive_layout(1600, 1200);
+        let scaled = fit_window(1600, 1200, compute_layout);
         let doubled = |r: RectPx| RectPx::new(2 * r.x, 2 * r.y, 2 * r.w, 2 * r.h);
         assert_eq!(scaled.page_label(), doubled(base.page_label()));
         for id in [PREVIOUS_PAGE, NEXT_PAGE] {

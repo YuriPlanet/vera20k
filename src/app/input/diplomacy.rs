@@ -9,6 +9,7 @@
 //! skirmish the world is frozen under the dialog, and in LAN/WOL a frame-rate
 //! refresh shows the same values up to 250 ms earlier.
 
+use super::dialog_page::InGameDialog;
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::presentation::house_ui::HouseUiSources;
@@ -23,8 +24,7 @@ use crate::ui::shell::diplomacy::{
     self, DIPLOMACY_ROWS, DiplomacyAlliesBox, DiplomacyChatBox, DiplomacyControl, DiplomacyLayout,
     DiplomacyRow, DiplomacyView, diplomacy_layout,
 };
-use crate::ui::shell::page::{PageCue, PageEvent};
-use winit::event::MouseButton;
+use crate::ui::shell::page::PageEvent;
 
 /// Which control asked for the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,7 +280,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     ) else {
         return view;
     };
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let listeners: Vec<_> = (0..sim.houses().order().len())
         .map(|index| state.match_state.match_presentation.chat.listens(index))
         .collect();
@@ -320,9 +320,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
             .and_then(|launch| {
                 crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)
             })
-            .map(|mode| {
-                crate::app::frontend::shell_pass::resolve_csf(state, &mode.ui_name_key).into_owned()
-            });
+            .map(|mode| state.csf_text(&mode.ui_name_key));
     }
     // 0x006580E0..0x0065810C: TauntsOn shows in LAN/WOL with LANTaunts /
     // WOLTaunts; the 250 ms refresh never touches it.
@@ -337,36 +335,32 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     view
 }
 
+/// 0x73: title 0x694 and Return as the lower right-panel button.
+pub(crate) const DIALOG: InGameDialog = InGameDialog {
+    id: diplomacy::DIALOG,
+    title: Some(diplomacy::TITLE_LABEL),
+    lower: (0x423, diplomacy::RETURN_LABEL),
+    label: "Active Diplomacy Shell 73",
+    ui: super::dialog_page::shared_ui,
+    ui_mut: super::dialog_page::shared_ui_mut,
+    // The boxes play GUICheckboxSound where their proc cases do, below.
+    own_checkbox_sound: true,
+};
+
 pub(crate) fn layout(state: &AppState) -> Option<DiplomacyLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(diplomacy_layout(
-        shell.width,
-        shell.height,
-        shell.layout,
-        shell.button_size,
-    ))
+    super::dialog_page::layout(state, diplomacy_layout)
 }
 
 /// One pointer message on 0x73 (`down`: `None` moves), over the rows as
 /// they stand now.
-fn pointer(state: &mut AppState, down: Option<bool>) {
+pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let Some(layout) = layout(state) else {
         return;
     };
     let view = view(state);
-    let event = super::dialog_page::shell_event(state, down);
-    let ui = &mut state.match_state.match_presentation.dialog_ui;
-    let events = super::dialog_page::route(
-        ui,
-        diplomacy::DIALOG,
-        diplomacy::spec,
-        |id| view.rect(&layout, id),
-        |gui, root| view.sync(&layout, gui, root),
-        event,
-    );
-    // The boxes play GUICheckboxSound where their proc cases do, below.
-    let events = events.into_iter().filter(|event| *event != PageEvent::Cue(PageCue::Checkbox));
-    for event in super::dialog_page::play_cues(state, events.collect()) {
+    let rect = |id| view.rect(&layout, id);
+    let sync = |gui: &mut vera20k_gui::Gui, root| view.sync(&layout, gui, root);
+    for event in DIALOG.route(state, down, diplomacy::spec, rect, sync) {
         let (PageEvent::Activated(id) | PageEvent::Toggled(id, _)) = event else {
             continue;
         };
@@ -388,16 +382,6 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
             Some(DiplomacyControl::Taunts) => toggle_taunts_box(state),
             _ => {}
         }
-    }
-}
-
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    pointer(state, None);
-}
-
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button == MouseButton::Left {
-        pointer(state, Some(pressed));
     }
 }
 

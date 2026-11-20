@@ -15,7 +15,7 @@ use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, PageButton, PanelState, encode_family_page,
 };
-use crate::app::frontend::shell_pass::{TexturedDraw, resolve_csf};
+use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::render::shell_paint::{
     self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
     SHELL_TEXT_RGB_ENABLED,
@@ -111,7 +111,7 @@ pub(crate) fn render_campaign_score_page(
     let status = hovered
         .and_then(|id| dialog.control(id))
         .and_then(|control| control.tooltip_key)
-        .map(|key| resolve_csf(state, key).into_owned())
+        .map(|key| state.csf_text(key))
         .unwrap_or_default();
     let pressed = active
         .then(|| pressed_id(controller, dialog.id()))

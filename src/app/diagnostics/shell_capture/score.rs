@@ -715,8 +715,7 @@ fn comparison_model(state: &AppState) -> Result<ScoreScreenModel> {
             crate::rules::house_colors::HouseColorIndex(entry as u8),
         ))
     };
-    let computer =
-        crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER").into_owned();
+    let computer = state.csf_text("TXT_COMPUTER");
     Ok(ScoreScreenModel {
         title_key: "GUI:SkirmishScore",
         game_number: 1,

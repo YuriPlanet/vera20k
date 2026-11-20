@@ -6,9 +6,9 @@ use super::controls::push_new_edit;
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
-use super::text::{button_text_rect, localized_label, rect_to_text_rect};
+use super::text::{button_text_rect, rect_to_text_rect};
 use super::{
-    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
+    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -104,7 +104,7 @@ pub(crate) fn render_lan_lobby(
     } else {
         let gui = state.frontend.shell_controller.gui();
         let help = crate::ui::shell::page::hovered_key(gui)
-            .map(|key| localized_label(state, key, ""))
+            .map(|key| state.csf_label(key, ""))
             .unwrap_or_default();
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
@@ -163,7 +163,7 @@ pub(crate) fn render_lan_lobby(
     if !leaving && !runtime.creating {
         for (key, rect) in layout.labels {
             texts.push(text(
-                &localized_label(state, key, key),
+                &state.csf_label(key, key),
                 rect,
                 ShellAlign::NONE,
                 SHELL_LABEL_TEXT_RGB,
@@ -210,10 +210,10 @@ pub(crate) fn render_lan_lobby(
             Some(match u16::try_from(id).ok()? {
                 GAMES => (0..lobby.game_count())
                     .map(|index| match index.checked_sub(1) {
-                        None => yellow(localized_label(state, "TXT_LOBBY", "Lobby")),
+                        None => yellow(state.csf_label("TXT_LOBBY", "Lobby")),
                         Some(game) => {
                             let game = &lobby.games[game];
-                            let format = localized_label(state, game.label_key(), game.label_key());
+                            let format = state.csf_label(game.label_key(), game.label_key());
                             yellow(format.replacen("%s", &game.name, 1))
                         }
                     })
@@ -250,7 +250,7 @@ pub(crate) fn render_lan_lobby(
         if let Some(reveal) = title {
             texts.push(shell_text::draw_in_rect_path_a_scaled(
                 font,
-                &localized_label(state, PAGE.title_key, "Lobby"),
+                &state.csf_label(PAGE.title_key, "Lobby"),
                 rect_to_text_rect(layout.page.title),
                 ShellAlign::PANEL_TITLE,
                 [0.0; 2],
@@ -284,7 +284,7 @@ pub(crate) fn render_lan_lobby(
                     };
                     texts.push(shell_text::draw_in_rect_scaled(
                         font,
-                        &localized_label(state, key, key),
+                        &state.csf_label(key, key),
                         button_text_rect(button.rect, pressed, scale),
                         if lobby.enabled {
                             SHELL_LABEL_TEXT_RGB
@@ -305,34 +305,20 @@ pub(crate) fn render_lan_lobby(
             scale.factor(),
         ));
         if let Some(key) = runtime.modal {
-            let modal = crate::ui::shell::modal::body_ok_layout(width as i32, height as i32);
-            let pressed = box_pressed(state, 1);
-            super::modals::push_validation_modal_instances(
-                &mut overlay.controls,
-                atlas,
-                &modal,
-                pressed,
+            use crate::app::shell_lan::{MODAL, OK};
+            let body = runtime.modal_body.clone().unwrap_or_else(|| state.csf_label(key, key));
+            let ok = state.csf_label("TXT_OK", "OK");
+            let notice = crate::ui::shell::modal::ShellBox::new(MODAL, body).button(
+                OK,
+                crate::ui::shell::modal::BoxSlot::Ok,
+                ok,
             );
-            overlay.texts.push(shell_text::draw_in_rect(
-                font,
-                &runtime.modal_body.clone().unwrap_or_else(|| {
-                    crate::i18n::label(state.process_assets.csf.as_ref(), key, key)
-                }),
-                rect_to_text_rect(modal.body),
-                SHELL_LABEL_TEXT_RGB,
-                super::text::validation_modal_body_text_align(),
-                [0.0; 2],
-                SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
-            ));
-            overlay.texts.push(shell_text::draw_in_rect(
-                font,
-                &localized_label(state, "TXT_OK", "OK"),
-                button_text_rect(modal.ok, pressed, ShellScale::RETAIL),
-                SHELL_LABEL_TEXT_RGB,
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                [0.0; 2],
-                SHELL_DROPDOWN_TEXT_DEPTH - 0.00013,
-            ));
+            let pressed = box_pressed(state, OK.into());
+            let look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
+            let (sprites, texts) = (Some(&mut overlay.controls), Some((&mut overlay.texts, false)));
+            let size = (width as i32, height as i32);
+            let pressed = |id| pressed && id == OK;
+            super::shell_box::push_skirmish_box(state, size, &notice, pressed, look, sprites, texts);
         }
     }
     if runtime.creating {

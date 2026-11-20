@@ -16,7 +16,6 @@ use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{QuitConfirmLayout, quit_confirm_layout_in};
 use crate::ui::shell::page::PageEvent;
-use winit::event::MouseButton;
 
 const DIALOG: DialogId = DialogId(0x120);
 
@@ -68,7 +67,7 @@ pub(crate) fn layout(state: &AppState) -> QuitConfirmLayout {
 }
 
 /// One pointer message on the box (`down`: `None` moves).
-fn pointer(state: &mut AppState, down: Option<bool>) {
+pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let event = super::dialog_page::event_at(x, y, down);
@@ -104,16 +103,6 @@ pub(crate) fn pressed(state: &AppState, button: SurrenderButton) -> bool {
         &state.match_state.match_presentation.dialog_ui,
         button as u16,
     )
-}
-
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    pointer(state, None);
-}
-
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button == MouseButton::Left {
-        pointer(state, Some(pressed));
-    }
 }
 
 /// Enter (IDOK) and Escape (IDCANCEL) both give result 1.

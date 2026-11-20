@@ -2,17 +2,17 @@
 //!
 //! Covers Choose Map and validation modal instance construction.
 
+use super::shell_box::push_saved_browser_prompt_instances;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::shell::geom::{LOWER_STRIP_H, ShellScale};
 use crate::ui::shell::list::ListMetrics;
-use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
     ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, RandomMapSetupControl,
     RandomMapSetupLayout, RandomMapSetupModalState, RectPx, SETUP_COMBO_ROWS,
-    SavedSeedBrowserState, SavedSeedLayout, SkirmishShellLayout,
-    SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect,
+    SavedSeedBrowserState, SavedSeedLayout, SkirmishShellLayout, SkirmishShellState,
+    combo_face_rect, random_map_setup_dropdown_rect,
 };
 
 use super::chrome::{
@@ -105,12 +105,12 @@ pub(crate) fn render_saved_game_loading(
         .find(|child| child.id == control::BODY_STATIC && child.visible)
         .expect("F0 visible body Static");
     let labels = [shell_paint::PaintLabel {
-        text: super::text::localized_label(
-            state,
-            body.csf_key.expect("F0 loading caption"),
-            "Mission is loading. Please wait...",
-        )
-        .into(),
+        text: state
+            .csf_label(
+                body.csf_key.expect("F0 loading caption"),
+                "Mission is loading. Please wait...",
+            )
+            .into(),
         rect: layout.body,
         rgb: SHELL_LABEL_TEXT_RGB,
         align: super::text::validation_modal_body_text_align(),
@@ -376,57 +376,6 @@ pub(super) fn push_download_progress_bar(
             depth,
         );
     }
-}
-
-/// Use Map's two-button box. gamemd's eject-AI question and VERA's random-map
-/// failure draw gamemd's art; VERA's map-library download boxes draw Red
-/// Alert 2's, like its other online-service boxes.
-pub(super) fn push_choose_map_prompt_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    screen: RectPx,
-    prompt: crate::ui::skirmish_shell::ChooseMapPrompt,
-    progress: Option<(u64, u64)>,
-) {
-    let boxed = crate::ui::shell::modal::quit_confirm_layout(screen.w, screen.h);
-    if prompt.kind == crate::ui::skirmish_shell::ChooseMapPromptKind::Downloading
-        && let Some(progress) = progress
-    {
-        push_download_progress_bar(
-            out,
-            atlas,
-            boxed.body,
-            progress,
-            VALIDATION_MODAL_SPRITE_DEPTHS.button,
-        );
-    }
-    let pressed = |button| prompt.pressed == Some(button);
-    let buttons = [
-        shell_paint::ModalButton {
-            rect: boxed.ok,
-            pressed: pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
-            enabled: prompt.button_enabled(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
-        },
-        shell_paint::ModalButton {
-            rect: boxed.cancel,
-            pressed: pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel),
-            enabled: true,
-        },
-    ];
-    let background = match prompt.kind {
-        crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi
-        | crate::ui::skirmish_shell::ChooseMapPromptKind::RandomMapFailed => None,
-        _ => atlas.ra2_dialog_background,
-    }
-    .or_else(|| atlas.mode_two_dialog_background(None));
-    out.extend(shell_paint::paint_modal_sprites(
-        background,
-        super::chrome::type3_button_frames(atlas),
-        boxed.dialog,
-        &buttons,
-        ShellScale::RETAIL,
-        VALIDATION_MODAL_SPRITE_DEPTHS,
-    ));
 }
 
 /// The generic shell background (MNSCRNS/MNSCRNL through SHELL.PAL): the
@@ -751,59 +700,6 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     }
 }
 
-pub(super) fn push_validation_modal_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    layout: &BodyOkLayout,
-    pressed: bool,
-) {
-    let frames = super::chrome::type3_button_frames(atlas);
-    let button = shell_paint::ModalButton {
-        rect: layout.ok,
-        pressed,
-        enabled: true,
-    };
-    if atlas.mode_two_dialog_background(None).is_none() {
-        push_solid_rect(
-            out,
-            atlas,
-            layout.dialog,
-            SHELL_MODAL_PANEL_RGB,
-            VALIDATION_MODAL_SPRITE_DEPTHS.background,
-        );
-        push_rect_outline(
-            out,
-            atlas,
-            layout.dialog,
-            OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-            SHELL_DROPDOWN_DEPTH - 0.00015,
-        );
-    }
-    out.extend(shell_paint::paint_modal_sprites(
-        atlas.mode_two_dialog_background(None),
-        frames,
-        layout.dialog,
-        &[button],
-        ShellScale::RETAIL,
-        VALIDATION_MODAL_SPRITE_DEPTHS,
-    ));
-}
-
-/// Build the sprite instances for the saved-seed browser.
-///
-/// It replaces the setup dialog on screen, so it redraws the same background
-/// and right-column chrome rather than layering over it.
-pub(super) fn push_saved_seed_modal_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    font: &crate::render::bit_font::BitFont,
-    layout: &SavedSeedLayout,
-    browser: &SavedSeedBrowserState,
-    interior: BackdropInteriorPaint,
-) {
-    push_saved_browser_modal_instances(out, atlas, font, layout, browser, interior, true);
-}
-
 /// Shared native list/editor/prompt painting; active-game callers supply
 /// SIDEBTTN from the side atlas and therefore omit the launcher column buttons.
 pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
@@ -825,7 +721,16 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
     );
     let (selected, pressed) = (browser.selected(), browser.list_pressed());
     let solid = interior.paints_solid_fill();
-    super::list::paint_list(out, atlas, geometry, top, selected, pressed, solid, layout.scale);
+    super::list::paint_list(
+        out,
+        atlas,
+        geometry,
+        top,
+        selected,
+        pressed,
+        solid,
+        layout.scale,
+    );
     // The name field is a plain sunken plate; Save is the only mode that has one.
     if let Some(edit) = layout.name_edit {
         super::controls::push_new_edit_instances(
@@ -873,34 +778,3 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
     push_saved_browser_prompt_instances(out, atlas, layout, browser);
 }
 
-/// The browser's message box (PUDLGBGN and its buttons), when one is up.
-pub(super) fn push_saved_browser_prompt_instances<I: Clone + PartialEq>(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    layout: &SavedSeedLayout,
-    browser: &SavedSeedBrowserState<I>,
-) {
-    if let Some(prompt) = browser.prompt.as_ref() {
-        let (dialog, _, yes, no) = prompt.layout(layout.screen.w as u32, layout.screen.h as u32);
-        let mut buttons = vec![shell_paint::ModalButton {
-            rect: yes,
-            pressed: browser.pressed(crate::ui::skirmish_shell::saved_seed_browser::YES),
-            enabled: true,
-        }];
-        if let Some(rect) = no {
-            buttons.push(shell_paint::ModalButton {
-                rect,
-                pressed: browser.pressed(crate::ui::skirmish_shell::saved_seed_browser::NO),
-                enabled: true,
-            });
-        }
-        out.extend(shell_paint::paint_modal_sprites(
-            atlas.mode_two_dialog_background(None),
-            super::chrome::type3_button_frames(atlas),
-            dialog,
-            &buttons,
-            ShellScale::RETAIL,
-            VALIDATION_MODAL_SPRITE_DEPTHS,
-        ));
-    }
-}

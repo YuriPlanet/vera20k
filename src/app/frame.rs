@@ -1239,125 +1239,77 @@ impl App {
                 )? {
                     pending_main_menu_entry_token = main_menu_entry_token;
                 } else {
-                    match screen_page {
-                        ScreenPage::MovieList => {
-                            if crate::app::frontend::movies_credits_render::render_movie_list(
-                                state,
-                                &mut encoder,
-                                &output.texture,
-                            )? {
-                                presented_shell = PresentedShell::MovieList;
-                            } else {
-                                Self::render_shell_error(state, &mut encoder, &view)?;
-                            }
-                        }
-                        ScreenPage::Mods => {
-                            if crate::app::frontend::mods_render::render_mods_page(
-                                state,
-                                &mut encoder,
-                                &output.texture,
-                            )? {
-                                presented_shell = PresentedShell::Mods;
-                            } else {
-                                Self::render_shell_error(state, &mut encoder, &view)?;
-                            }
-                        }
+                    use crate::app::frontend::{
+                        campaign_shell_render, load_saved_game_render, main_menu_shell_render,
+                        menu_page_render, mods_render, movies_credits_render,
+                        skirmish_shell_render as skirmish, wol_welcome_render,
+                    };
+                    let (encoder, texture) = (&mut encoder, &output.texture);
+                    // The page that painted, or `None` for the error card.
+                    let shown = match screen_page {
+                        ScreenPage::MovieList => movies_credits_render::render_movie_list(state, encoder, texture)?
+                            .then_some(PresentedShell::MovieList),
+                        ScreenPage::Mods => mods_render::render_mods_page(state, encoder, texture)?
+                            .then_some(PresentedShell::Mods),
                         ScreenPage::Campaign => {
-                            if crate::app::frontend::campaign_shell_render::render_campaign_page(
-                                state,
-                                &mut encoder,
-                                &output.texture,
-                            )? {
-                                presented_shell = PresentedShell::Campaign;
-                            } else {
-                                Self::render_shell_error(state, &mut encoder, &view)?;
-                            }
+                            campaign_shell_render::render_campaign_page(state, encoder, texture)?
+                                .then_some(PresentedShell::Campaign)
                         }
                         ScreenPage::LanLobby => {
-                            crate::app::frontend::skirmish_shell_render::render_lan_lobby(state, &mut encoder, &output.texture)?;
-                            presented_shell = PresentedShell::LanLobby;
+                            skirmish::render_lan_lobby(state, encoder, texture)?;
+                            Some(PresentedShell::LanLobby)
                         }
                         ScreenPage::NetworkSetup => {
                             if state.frontend.skirmish_shell_state.choose_map_modal.is_some() {
-                                crate::app::frontend::skirmish_shell_render::render_skirmish_shell(state, &mut encoder, &output.texture)?;
+                                skirmish::render_skirmish_shell(state, encoder, texture)?;
                             } else {
-                                crate::app::frontend::skirmish_shell_render::render_multiplayer_setup(state, &mut encoder, &output.texture)?;
+                                skirmish::render_multiplayer_setup(state, encoder, texture)?;
                             }
-                            presented_shell = PresentedShell::NetworkSetup;
+                            Some(PresentedShell::NetworkSetup)
                         }
-                        ScreenPage::Wol => {
-                            if crate::app::frontend::wol_welcome_render::render_wol_page(
-                                state,
-                                &mut encoder,
-                                &output.texture,
-                            )? {
-                                presented_shell = crate::app::frontend::wol_welcome_render::presented_wol_page(state);
-                            } else {
-                                Self::render_shell_error(state, &mut encoder, &view)?;
-                            }
-                        }
+                        ScreenPage::Wol => wol_welcome_render::render_wol_page(state, encoder, texture)?
+                            .then(|| wol_welcome_render::presented_wol_page(state)),
                         ScreenPage::LoadSavedGame => {
-                            if crate::app::frontend::load_saved_game_render::render_load_saved_game_page(
-                                state,
-                                &mut encoder,
-                                &output.texture,
-                            )? {
-                                presented_shell = PresentedShell::LoadSavedGame;
-                            } else {
-                                Self::render_shell_error(state, &mut encoder, &view)?;
-                            }
+                            load_saved_game_render::render_load_saved_game_page(state, encoder, texture)?
+                                .then_some(PresentedShell::LoadSavedGame)
                         }
                         ScreenPage::LauncherOptions => {
-                            crate::app::frontend::skirmish_shell_render::render_launcher_options(
-                                state, &mut encoder, &output.texture,
-                            )?;
-                            presented_shell = PresentedShell::Options;
+                            skirmish::render_launcher_options(state, encoder, texture)?;
+                            Some(PresentedShell::Options)
                         }
                         ScreenPage::Skirmish => {
-                            crate::app::frontend::skirmish_shell_render::render_skirmish_shell(
-                                state,
-                                &mut encoder,
-                                &output.texture,
-                            )?;
-                            if state.frontend.skirmish_shell_chrome.is_some() {
-                                presented_shell = PresentedShell::Skirmish;
-                            }
+                            skirmish::render_skirmish_shell(state, encoder, texture)?;
+                            Some(if state.frontend.skirmish_shell_chrome.is_some() {
+                                PresentedShell::Skirmish
+                            } else {
+                                presented_shell
+                            })
                         }
                         ScreenPage::SinglePlayer | ScreenPage::MoviesAndCredits => {
-                            match crate::app::frontend::menu_page_render::render_active_menu_page(
-                                state,
-                                &mut encoder,
-                                &output.texture,
-                            )? {
-                                crate::app::frontend::menu_page_render::MenuPageRenderResult::Rendered => {
-                                    presented_shell = if screen_page == ScreenPage::SinglePlayer {
+                            match menu_page_render::render_active_menu_page(state, encoder, &output.texture)? {
+                                menu_page_render::MenuPageRenderResult::Rendered => {
+                                    Some(if screen_page == ScreenPage::SinglePlayer {
                                         PresentedShell::SinglePlayer
                                     } else {
                                         PresentedShell::MoviesAndCredits
-                                    };
+                                    })
                                 }
-                                crate::app::frontend::menu_page_render::MenuPageRenderResult::Fallback => {
-                                    Self::render_shell_error(state, &mut encoder, &view)?;
-                                }
+                                menu_page_render::MenuPageRenderResult::Fallback => None,
                             }
                         }
-                        _ => {
-                            match crate::app::frontend::main_menu_shell_render::render_main_menu_shell(
-                                state,
-                                &mut encoder,
-                                &output.texture,
-                            )? {
-                                crate::app::frontend::main_menu_shell_render::MainMenuShellRenderResult::Rendered {
-                                    title_receipt,
-                                } => {
-                                    pending_main_menu_title_receipt = title_receipt;
-                                    presented_shell = PresentedShell::MainMenu;
-                                }
-                                crate::app::frontend::main_menu_shell_render::MainMenuShellRenderResult::Fallback => {
-                                    Self::render_shell_error(state, &mut encoder, &view)?;
-                                }
+                        _ => match main_menu_shell_render::render_main_menu_shell(state, encoder, texture)? {
+                            main_menu_shell_render::MainMenuShellRenderResult::Rendered {
+                                title_receipt,
+                            } => {
+                                pending_main_menu_title_receipt = title_receipt;
+                                Some(PresentedShell::MainMenu)
                             }
-                        }
+                            main_menu_shell_render::MainMenuShellRenderResult::Fallback => None,
+                        },
+                    };
+                    match shown {
+                        Some(shell) => presented_shell = shell,
+                        None => Self::render_shell_error(state, encoder, &view)?,
                     }
                 }
                 if page == Some(ModalPage::ShellMessageBox) {

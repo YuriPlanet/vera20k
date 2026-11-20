@@ -95,8 +95,15 @@ pub(crate) fn paint_wol_buddy_children(
     // The list widget's top and pushed arrow.
     let view = node(LIST).and_then(|list| gui.list_view(list));
     let (top, pressed) = view.map_or((0, None), |view| (view.top, view.pressed));
-    let geometry = ShellListGeometry::new(layout.list, ui.rows.len(), top, ListMetrics::scaled(scale));
-    list_view_controls(&mut paint.controls, atlas, geometry, (ui.selected, top, pressed), scale);
+    let geometry =
+        ShellListGeometry::new(layout.list, ui.rows.len(), top, ListMetrics::scaled(scale));
+    list_view_controls(
+        &mut paint.controls,
+        atlas,
+        geometry,
+        (ui.selected, top, pressed),
+        scale,
+    );
     for (visible, row) in ui
         .rows
         .iter()

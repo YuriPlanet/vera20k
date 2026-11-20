@@ -420,6 +420,7 @@ pub fn drawn_trackbar_frame_slot(
 
 impl ControlChrome {
     /// The frame entry of a `width` x `height` trackbar window.
+    #[cfg(test)]
     pub fn trackbar_frame(
         &self,
         plaque: bool,

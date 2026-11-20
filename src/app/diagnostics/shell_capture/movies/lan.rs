@@ -870,7 +870,7 @@ impl LanCapture {
         );
         setup::service_event(state, NetworkSetupEvent::CooperativeCampaign(text.clone()))?;
         let view = setup::view(state).context("BD")?;
-        let expected = App::csf_label(state, "NAME:COOPDESC21", "NAME:COOPDESC21");
+        let expected = state.csf_label("NAME:COOPDESC21", "NAME:COOPDESC21");
         ensure!(
             view.cooperative && view.cooperative_description.as_deref() == Some(expected.as_str()),
             "BD lacks the received campaign's description"
@@ -1035,9 +1035,13 @@ impl LanCapture {
             {
                 App::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                        crate::ui::main_menu_shell::MainMenuShellAction::Network,
-                    ),
+                    crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                    move |state| {
+                        crate::app::App::handle_main_menu_shell_action(
+                            state,
+                            crate::ui::main_menu_shell::MainMenuShellAction::Network,
+                        )
+                    },
                 );
                 ensure!(
                     state.frontend.shell_exit.is_some(),
@@ -2003,7 +2007,7 @@ impl LanCapture {
                         "host Start prompt changed readiness or omitted the eligible button prompt"
                     );
                     let expected =
-                        App::csf_label(state, "GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
+                        state.csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
                     let actual = state
                         .frontend
                         .multiplayer_setup
@@ -2256,7 +2260,7 @@ impl LanCapture {
                 ensure!(bb.games.is_empty(), "returned BB retained old games");
                 if self.target == LanTarget::ModernHostLeft {
                     let key = "VERA:HostLeftRoomClosed";
-                    let expected = App::csf_label(state, key, key);
+                    let expected = state.csf_label(key, key);
                     let text: Vec<_> = bb
                         .chat
                         .lines
@@ -2379,8 +2383,7 @@ impl LanCapture {
                                 .is_some_and(|house| !house.is_to_die()),
                         "timeout did not flag only the mapped remote House before first simulation tick"
                     );
-                    let template =
-                        App::csf_label(state, "TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST");
+                    let template = state.csf_label("TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST");
                     let text = crate::assets::csf_file::format_csf(
                         &template,
                         &[crate::assets::csf_file::CsfArg::Str(
@@ -2584,8 +2587,7 @@ impl LanCapture {
                     ensure!(!destructs_pending, "defeat preceded the DESTRUCT execution");
                     // MPlayer_Defeated's local line (4FC271..4FC2DB) names the
                     // House by its own +0x1602A, the host's handle.
-                    let template =
-                        App::csf_label(state, "TXT_PLAYER_DEFEATED", "TXT_PLAYER_DEFEATED");
+                    let template = state.csf_label("TXT_PLAYER_DEFEATED", "TXT_PLAYER_DEFEATED");
                     let line = crate::assets::csf_file::format_csf(
                         &template,
                         &[crate::assets::csf_file::CsfArg::Str(
@@ -2668,7 +2670,7 @@ impl LanCapture {
                     state.match_state.session.network_connected_source_indices() == [0],
                     "the peer's connection was not dropped"
                 );
-                let template = App::csf_label(state, "TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let template = state.csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
                 let line = crate::assets::csf_file::format_csf(
                     &template,
                     &[crate::assets::csf_file::CsfArg::Str(peer_name)],
@@ -3089,7 +3091,7 @@ impl LanCapture {
                     crate::app::presentation::house_ui::house_ui_name(state, order[index])
                         .unwrap_or_default()
                 };
-                let template = App::csf_label(state, "TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
+                let template = state.csf_label("TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
                 let line = |a: usize, b: usize| {
                     crate::assets::csf_file::format_csf(
                         &template,
@@ -3226,7 +3228,7 @@ impl LanCapture {
                     }
                 };
                 let prefix = crate::assets::csf_file::format_csf(
-                    &App::csf_label(state, "TXT_FROM", "TXT_FROM"),
+                    &state.csf_label("TXT_FROM", "TXT_FROM"),
                     &[crate::assets::csf_file::CsfArg::Str(&host)],
                 );
                 // Enter: the chat-mask set, now empty of connected peers.

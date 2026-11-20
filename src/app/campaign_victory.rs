@@ -381,16 +381,16 @@ impl App {
                 // ShellMessageBox5D3490 with MSG:UnableMapSelect/TXT_OK.
                 // Victory685A56 ignores its result and proceeds after any
                 // dismissal. Failed Init never reaches5AE126's ABCE08 write.
-                let labels =
-                    crate::ui::main_menu_dialogs::ShellMessageBoxLabels::map_select_failure(
-                        &|key, fallback| Self::csf_label(state, key, fallback),
-                    );
+                let shell_box =
+                    crate::ui::main_menu_dialogs::map_select_failure(&|key, fallback| {
+                        state.csf_label(key, fallback)
+                    });
                 Self::destroy_current_shell_dialog(state);
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::open_shell_message_box(
                     state,
                     crate::app::frontend::state::ShellMessageBox {
-                        labels,
+                        shell_box,
                         purpose:
                             crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(
                                 Box::new(CampaignVictory {

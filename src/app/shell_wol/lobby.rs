@@ -32,10 +32,11 @@ use crate::app::shell_network_setup as setup;
 use crate::app::{App, AppState};
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::modal::ShellBox;
 use crate::ui::wol_chat::{self, WolChatFilter, WolChatLine, WolLobbyChatLine};
 use crate::ui::wol_lobby::*;
+use crate::ui::wol_shell::WolWaitBox;
 use crate::ui::wol_shell::{BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT};
-use crate::ui::wol_shell::{WolMessageBox, WolWaitBox};
 use winit::keyboard::KeyCode;
 
 /// The list wait `0x0077F120` gives up after 30 s.
@@ -333,7 +334,7 @@ pub(crate) struct WolLobby {
     /// Create/Join wait.
     pub(crate) covered: bool,
     pub(crate) wait: Option<WolWaitBox>,
-    message: Option<(WolMessageBox, BoxThen)>,
+    message: Option<(ShellBox, BoxThen)>,
     step: Step,
     postmatch: bool,
     games_at: Instant,
@@ -420,7 +421,7 @@ impl WolLobby {
         }
     }
 
-    pub(crate) fn message(&self) -> Option<&WolMessageBox> {
+    pub(crate) fn message(&self) -> Option<&ShellBox> {
         self.message.as_ref().map(|(message, _)| message)
     }
 
@@ -431,19 +432,10 @@ impl WolLobby {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolLobbyLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if let Some(lobby) = lobby(state) {
-        return lobby.ui.layout(
-            width as i32,
-            height as i32,
-            shell_layout::fills_window(state),
-        );
-    }
-    if shell_layout::fills_window(state) {
-        WolLobbyLayout::responsive(width as i32, height as i32, &crate::ui::wol_lobby::PAGE)
-    } else {
-        WolLobbyLayout::new(width as i32, height as i32, &crate::ui::wol_lobby::PAGE)
-    }
+    shell_layout::on(state, |w, h, scale| match lobby(state) {
+        Some(lobby) => lobby.ui.layout(w, h, scale),
+        None => WolLobbyLayout::new(w, h, scale, &PAGE),
+    })
 }
 
 fn lobby(state: &AppState) -> Option<&WolLobby> {
@@ -531,12 +523,8 @@ fn request(state: &mut AppState, request: WolServiceRequest) {
     service::request(state, request);
 }
 
-fn csf(state: &AppState, key: &str) -> String {
-    App::csf_label(state, key, key)
-}
-
 fn units(state: &AppState, key: &str) -> Vec<u16> {
-    csf(state, key).encode_utf16().collect()
+    state.csf_text(key).encode_utf16().collect()
 }
 
 /// `0x005E2700` with color -1 into the lobby's transcript.
@@ -928,7 +916,7 @@ pub(crate) fn base_names(state: &AppState) -> [String; 8] {
         .wol
         .as_ref()
         .is_some_and(|visit| visit.modern_ui());
-    lobby_base_names(modern, |key| csf(state, key))
+    lobby_base_names(modern, |key| state.csf_text(key))
 }
 
 fn lobby_base_names(modern: bool, text: impl Fn(&str) -> String) -> [String; 8] {
@@ -946,7 +934,7 @@ fn show_wait(state: &mut AppState, key: &str) {
         return;
     };
     match lobby.wait.as_mut() {
-        Some(open) => open.text = fresh.text,
+        Some(open) => open.shell_box.body = fresh.shell_box.body,
         None => lobby.wait = Some(fresh),
     }
     lobby.ui.cancel_pointer();
@@ -958,9 +946,9 @@ fn show_wait(state: &mut AppState, key: &str) {
 
 /// `0x00792BE0(0)`: only an open box takes the text.
 fn retext_wait(state: &mut AppState, key: &str) {
-    let text = csf(state, key);
+    let text = state.csf_text(key);
     if let Some(wait) = lobby_mut(state).and_then(|lobby| lobby.wait.as_mut()) {
-        wait.text = text;
+        wait.shell_box.body = text;
     }
 }
 
@@ -987,8 +975,8 @@ pub(super) fn replace_box_body(state: &mut AppState, body: &str) -> bool {
     true
 }
 
-fn put_box(state: &mut AppState, message: WolMessageBox, then: BoxThen) {
-    let dialog = message.dialog();
+fn put_box(state: &mut AppState, message: ShellBox, then: BoxThen) {
+    let dialog = message.dialog;
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -1022,7 +1010,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         visit.cooperative_resume = None;
         visit.lobby = None;
         visit.page = WolPage::Backdrop { wait: None };
-        state.frontend.wol_lobby_art = None;
+        super::leaf::free_art(state, DIALOG);
         state.match_state.session.leave_network();
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
         service::begin_flow(state);
@@ -1035,7 +1023,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
             .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
     }
     visit.page = WolPage::Lobby;
-    state.frontend.wol_login_art = None;
+    // Disjoint from the visit's borrow.
+    let login = crate::ui::wol_login::DIALOG;
+    state.frontend.wol_art.retain(|(id, _)| *id != login);
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
     state
         .frontend
@@ -1078,7 +1068,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         !visit.legacy_ui,
     ));
     let _ = App::ensure_skirmish_shell_chrome(state);
-    open_art(state);
+    super::leaf::open_art(state, DIALOG);
     // The MOTD [0xB73AE0], and the global is cleared.
     if let Some(motd) = motd.filter(|motd| !motd.is_empty()) {
         let modern = state
@@ -1133,10 +1123,10 @@ fn await_room(state: &mut AppState) {
     // The chat lobbies still come, so leaving the room later finds one.
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
     show_wait(state, "TXT_REQ_CHANLIST");
-    let cancel = service::resolve(state, "GUI:Cancel");
+    let cancel = state.csf_text("GUI:Cancel");
     if let Some(wait) = lobby_mut(state).and_then(|lobby| lobby.wait.as_mut()) {
-        wait.text = crate::i18n::tr("VERA:ReturningToRoom");
-        wait.disconnect = cancel;
+        wait.shell_box.body = crate::i18n::tr("VERA:ReturningToRoom");
+        wait.shell_box.set_caption(crate::ui::wol_shell::WAIT_DISCONNECT, cancel);
     }
 }
 
@@ -1654,7 +1644,7 @@ pub(super) fn open_runner(state: &mut AppState, runner: Runner) {
             .session
             .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
     }
-    state.frontend.wol_login_art = None;
+    super::leaf::free_art(state, crate::ui::wol_login::DIALOG);
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
     show_wait(state, "TXT_REQ_CHANLIST");
@@ -1827,26 +1817,6 @@ pub(super) fn buddy_find_game(state: &mut AppState, name: String) {
     );
 }
 
-/// `0x0072CD60`: MnScrnLCustomMatchLobby.shp through its own palette (800
-/// wide only), with the list and button PCX images.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_lobby_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_lobby_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("MnScrnLCustomMatchLobby.shp", "MnScrnLCustomMatchLobby.pal"),
-        &PCX_FILES,
-    );
-    state.frontend.wol_lobby_art.is_some()
-}
-
 fn refill_games(state: &mut AppState) {
     let sort = state.frontend.wol_lobby_globals.game_sort;
     let Some(lobby) = lobby(state) else {
@@ -1865,7 +1835,7 @@ fn refill_games(state: &mut AppState) {
         .skirmish_modes
         .iter()
         .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
-        .map(|mode| csf(state, &mode.ui_name_key));
+        .map(|mode| state.csf_text(&mode.ui_name_key));
     for row in &mut rows {
         if cooperative_campaign(state, &lobby.games[row.record]).is_some() {
             row.tag = tag.clone();
@@ -2020,7 +1990,7 @@ fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bo
                 let text = if key == crate::ui::wol_lobby::RULES_DIFFER {
                     crate::app::shell_network_setup::agreement::rules_differ_text(state)
                 } else {
-                    csf(state, key)
+                    state.csf_text(key)
                 };
                 message_line(state, text);
             }
@@ -2132,7 +2102,11 @@ fn send_join(state: &mut AppState, channel: WolChannel, key: String, game: bool,
         // 0x00789960 returned true: 0x0078C281 slides the dialog out
         // (0x006071E0), draws the empty backdrop and hides it; C9 comes from
         // the join sink afterwards.
-        App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolLobbyHide);
+        App::leave_shell_dialog(
+            state,
+            shell_transition::ShellSlideKind::WolLobby,
+            crate::app::shell_wol::lobby::commit_hide,
+        );
     }
 }
 
@@ -2161,7 +2135,7 @@ fn left_channel(state: &mut AppState) {
         None => current.name,
     };
     let text = crate::assets::csf_file::format_csf(
-        &csf(state, "TXT_YOULEFT"),
+        &state.csf_text("TXT_YOULEFT"),
         &[crate::assets::csf_file::CsfArg::Str(&room)],
     );
     message_line(state, text);
@@ -2302,7 +2276,7 @@ fn close_runner(state: &mut AppState) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.lobby = None;
     }
-    state.frontend.wol_lobby_art = None;
+    super::leaf::free_art(state, DIALOG);
     state.match_state.session.leave_network();
     if quick_match && super::quick_match::return_to_lobby(state) {
         return;
@@ -2343,7 +2317,7 @@ pub(crate) fn commit_runner_switch(state: &mut AppState, mode: crate::ui::wol_sh
         visit.mode = Some(mode);
         visit.return_mode = Some(crate::ui::wol_shell::WolMode::CustomMatch);
     }
-    state.frontend.wol_lobby_art = None;
+    super::leaf::free_art(state, DIALOG);
     super::apply_wol_preferences(state);
     super::open_lobby(state, false);
 }
@@ -2920,7 +2894,7 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
     let in_channel = lobby(state).is_some_and(|lobby| lobby.current.is_some());
     let echo_line = match &line {
         WolChatLine::Notice(key) => {
-            let text = csf(state, key);
+            let text = state.csf_text(key);
             message_line(state, text);
             return;
         }
@@ -2938,7 +2912,7 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
         }
         WolChatLine::Say(text) => {
             if !in_channel {
-                let text = csf(state, "TXT_NOT_IN_CHAN");
+                let text = state.csf_text("TXT_NOT_IN_CHAN");
                 message_line(state, text);
                 return;
             }
@@ -2979,12 +2953,12 @@ fn send_emote(state: &mut AppState, text: Vec<u16>) {
     };
     let to = lobby.ui.private_targets();
     if lobby.current.is_none() {
-        let text = csf(state, "TXT_NOT_IN_CHAN");
+        let text = state.csf_text("TXT_NOT_IN_CHAN");
         message_line(state, text);
         return;
     }
     if text.is_empty() {
-        let text = csf(state, "TXT_ENTER_MESSAGE");
+        let text = state.csf_text("TXT_ENTER_MESSAGE");
         message_line(state, text);
         return;
     }
@@ -3061,7 +3035,11 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
         // A visitor's Back goes back to their room.
         WolLobbyAction::Back if visiting(state) => back_to_room(state),
         WolLobbyAction::Back => {
-            App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolLobbyBack);
+            App::leave_shell_dialog(
+                state,
+                shell_transition::ShellSlideKind::WolLobby,
+                crate::app::shell_wol::lobby::commit_back,
+            );
         }
         WolLobbyAction::Refresh => {
             if let Some(lobby) = lobby_mut(state) {
@@ -3141,25 +3119,37 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             .set_lan_observer(observer),
         // 0x0078B829: 0x113 slides out over the empty backdrop before 0x2BC.
         WolLobbyAction::Options => {
-            App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolOptionsOpen);
+            App::leave_shell_dialog(
+                state,
+                shell_transition::ShellSlideKind::WolLobby,
+                crate::app::shell_wol::options::commit_open,
+            );
         }
         WolLobbyAction::Page => super::page::open_page_dialog(state),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
         // runner as Back does, and WOL_Main runs the Buddy List runner.
         WolLobbyAction::Unported(BUDDY) => App::leave_shell_dialog(
             state,
-            shell_transition::ShellExitThen::WolLobbyRunner(
-                crate::ui::wol_shell::WolMode::PlayBuddy,
-            ),
+            shell_transition::ShellSlideKind::WolLobby,
+            move |state| {
+                crate::app::shell_wol::lobby::commit_runner_switch(
+                    state,
+                    crate::ui::wol_shell::WolMode::PlayBuddy,
+                )
+            },
         ),
         WolLobbyAction::BackToRoom => back_to_room(state),
         // VERA: the online page's Quick Match ends the runner as Buddy List
         // does, with return mode 4, and the Quick Match runner follows.
         WolLobbyAction::QuickMatch => App::leave_shell_dialog(
             state,
-            shell_transition::ShellExitThen::WolLobbyRunner(
-                crate::ui::wol_shell::WolMode::QuickMatch,
-            ),
+            shell_transition::ShellSlideKind::WolLobby,
+            move |state| {
+                crate::app::shell_wol::lobby::commit_runner_switch(
+                    state,
+                    crate::ui::wol_shell::WolMode::QuickMatch,
+                )
+            },
         ),
         WolLobbyAction::Unported(control) => {
             // Clan/Tournament/News (0x00773E90 web pages) need the
@@ -3400,7 +3390,7 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
             None => joined.channel.name.clone(),
         };
         let text = crate::assets::csf_file::format_csf(
-            &csf(state, "TXT_JOINED_S"),
+            &state.csf_text("TXT_JOINED_S"),
             &[crate::assets::csf_file::CsfArg::Str(&name)],
         );
         message_line(state, text);
@@ -3529,7 +3519,7 @@ fn join_error(state: &mut AppState, code: u32) {
     {
         // 0x7A5961..0x7A5D2A: modes 1-3 print these as lines (colour -1)
         // instead of the boxes; every failure sets event 5.
-        let text = csf(state, key);
+        let text = state.csf_text(key);
         message_line(state, text);
         join_failed_tail(state, true);
         return;
@@ -3556,7 +3546,9 @@ fn join_error(state: &mut AppState, code: u32) {
             show_box(state, key, false, BoxThen::JoinFailed { close });
         }
         JoinErrorReply::Chat => {
-            let text = csf(state, "TXT_CANT_JOINCHAN").replacen("%X", &format!("{code:X}"), 1);
+            let text = state
+                .csf_text("TXT_CANT_JOINCHAN")
+                .replacen("%X", &format!("{code:X}"), 1);
             message_line(state, text);
             join_failed_tail(state, true);
         }
@@ -3644,7 +3636,8 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             } else {
                 App::leave_shell_dialog(
                     state,
-                    shell_transition::ShellExitThen::WolCreateAccepted { observe },
+                    shell_transition::ShellSlideKind::WolLobby,
+                    move |state| commit_create(state, observe),
                 );
             }
         }
@@ -3987,7 +3980,7 @@ pub(super) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
                 None => channel.name.clone(),
             };
             format_csf(
-                &csf(state, "TXT_USER_FOUND"),
+                &state.csf_text("TXT_USER_FOUND"),
                 &[CsfArg::Str(&name), CsfArg::Str(&room)],
             )
         }
@@ -3997,7 +3990,7 @@ pub(super) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
                 0x0004_0132 => "TXT_USER_FIND_DISABLED",
                 _ => "TXT_USER_NOT_ONLINE",
             };
-            format_csf(&csf(state, key), &[CsfArg::Str(&name)])
+            format_csf(&state.csf_text(key), &[CsfArg::Str(&name)])
         }
     };
     // 0x007AA5D5..0x007AA685: colour [0x7EEF28] = -1; `[0xB76E28]` is
@@ -4114,7 +4107,7 @@ pub(super) fn net_status(state: &mut AppState, status: u32) {
             lobby.shown = true;
             lobby.covered = false;
         }
-        open_art(state);
+        super::leaf::open_art(state, DIALOG);
     }
     // The records are zeroed without a list refill; the box shows over the
     // lists as they were, and the runner then closes.
@@ -4155,7 +4148,7 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
         // made it their channel.
         if user.flags & MEMBER_LOCAL != 0 && visiting(state) {
             let text = format_csf(
-                &csf(state, setup::kicked_key(state)),
+                &state.csf_text(setup::kicked_key(state)),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             visit_settles(state, text);
@@ -4167,7 +4160,7 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
         if user.flags & MEMBER_LOCAL != 0 {
             let key = setup::kicked_key(state);
             let text = format_csf(
-                &csf(state, key),
+                &state.csf_text(key),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             crate::app::shell_lan::append_wol_lobby_chat(
@@ -4182,7 +4175,7 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
             return;
         }
         let text = format_csf(
-            &csf(state, "TXT_USER_KICKED"),
+            &state.csf_text("TXT_USER_KICKED"),
             &[
                 CsfArg::Str(&user.name),
                 CsfArg::Str(&channel.name),
@@ -4199,14 +4192,14 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
     }
     if user.flags & MEMBER_LOCAL != 0 {
         let text = format_csf(
-            &csf(state, "TXT_YOURE_KICKED"),
+            &state.csf_text("TXT_YOURE_KICKED"),
             &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
         );
         let message = service::message_box_text(state, text, false);
         put_box(state, message, BoxThen::Kicked);
     } else {
         let text = format_csf(
-            &csf(state, "TXT_USER_KICKED"),
+            &state.csf_text("TXT_USER_KICKED"),
             &[
                 CsfArg::Str(&user.name),
                 CsfArg::Str(&channel.name),
@@ -4239,7 +4232,7 @@ pub(super) fn channel_ban(state: &mut AppState, name: &str, banned: bool) {
         "TXT_CHAN_UNBAN"
     };
     let text = crate::assets::csf_file::format_csf(
-        &csf(state, key),
+        &state.csf_text(key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
     message_line(state, text);
@@ -4370,7 +4363,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
 fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
     for effect in effects {
         match effect {
-            WolLobbyEffect::Cue(cue) => super::leaf::play(state, cue),
+            WolLobbyEffect::Cue(cue) => App::play_page_cue(state, cue),
             WolLobbyEffect::Card(name) => super::player_card::opened(state, &name),
             WolLobbyEffect::CardButton(id) => super::player_card::button(state, id),
             WolLobbyEffect::Action(action) => dispatch(state, action),
@@ -4598,7 +4591,7 @@ pub(crate) fn status_help(state: &AppState) -> String {
     if let Some(popup) = ui.popup.as_ref() {
         return (popup.create.is_some().then(|| ui.hovered()).flatten())
             .and_then(create_tooltip_key)
-            .map(|key| csf(state, key))
+            .map(|key| state.csf_text(key))
             .unwrap_or_default();
     }
     if let Some(help) = super::player_card::status_help(state) {
@@ -4607,10 +4600,10 @@ pub(crate) fn status_help(state: &AppState) -> String {
     match ui.hovered() {
         Some(GAMES) => match ui.hot_game.and_then(|row| ui.game_rows.get(row)) {
             Some(row) if !row.watch => game_help(state, row, ui.is_modern()),
-            _ => csf(state, "STT:LobbyListGames"),
+            _ => state.csf_text("STT:LobbyListGames"),
         },
         Some(PLAYERS) => match ui.hot_player.and_then(|row| ui.player_rows.get(row)) {
-            None => csf(state, "STT:LobbyListUsers"),
+            None => state.csf_text("STT:LobbyListUsers"),
             Some(row) if ui.is_modern() => modern_user_help(state, row),
             Some(row) => {
                 let member = lobby.members.iter().find(|member| member.name == row.name);
@@ -4618,7 +4611,7 @@ pub(crate) fn status_help(state: &AppState) -> String {
             }
         },
         Some(control) => tooltip_key(control, ui.page_spec())
-            .map(|key| csf(state, key))
+            .map(|key| state.csf_text(key))
             .unwrap_or_default(),
         None => String::new(),
     }
@@ -4649,11 +4642,11 @@ pub(crate) fn player_badge(state: &AppState, name: &str) -> Option<&'static str>
 /// and VERA's online room: the name, then the badge's name and the season's
 /// rank and OS as the player card shows them, or Unranked.
 pub(crate) fn badge_help(state: &AppState, name: &str, badge: &str) -> Option<String> {
-    let badge = csf(state, badge_name_key(badge)?);
+    let badge = state.csf_text(badge_name_key(badge)?);
     let ladder = &state.frontend.wol_lobby_globals.ladder;
     Some(match ladder.get(&name.to_ascii_lowercase()) {
         Some(record) => crate::i18n::fill(
-            &csf(state, "VERA:PlayerHelp"),
+            &state.csf_text("VERA:PlayerHelp"),
             &[
                 ("name", &name),
                 ("badge", &badge),
@@ -4662,7 +4655,7 @@ pub(crate) fn badge_help(state: &AppState, name: &str, badge: &str) -> Option<St
             ],
         ),
         None => crate::i18n::fill(
-            &csf(state, "VERA:PlayerHelpUnranked"),
+            &state.csf_text("VERA:PlayerHelpUnranked"),
             &[("name", &name), ("badge", &badge)],
         ),
     })
@@ -4685,11 +4678,11 @@ fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String
     let mut help = format!("{name} : ");
     match state.frontend.wol_lobby_globals.ladder.get(&key) {
         Some(record) => {
-            help.push_str(&csf(state, "TXT_RANK"));
+            help.push_str(&state.csf_text("TXT_RANK"));
             help.push(' ');
             help.push_str(&record.rank.to_string());
         }
-        None => help.push_str(&csf(state, "TXT_UNRANKED")),
+        None => help.push_str(&state.csf_text("TXT_UNRANKED")),
     }
     if let Some(member) = member {
         let clan = if member.clan_name.is_empty() {
@@ -4717,7 +4710,7 @@ pub(super) fn locale_name(state: &AppState, name: &str) -> Option<String> {
         .locales
         .get(&name.to_ascii_lowercase())
         .filter(|locale| **locale != 0)?;
-    Some(csf(state, &format!("WOL:Locale{locale:02}")))
+    Some(state.csf_text(&format!("WOL:Locale{locale:02}")))
 }
 
 /// `0x00780D90`: `TXT_RANDOM_MAP_DESCRIPTION` for `RandMap.Sed`, else the
@@ -4728,10 +4721,7 @@ fn scenario_description(state: &AppState, scenario: &str) -> String {
     use crate::util::native_string::crt_strcmpi;
     use std::cmp::Ordering;
     if crt_strcmpi(scenario, crate::map::skirmish_scenarios::RANDMAP_SED) == Ordering::Equal {
-        return csf(
-            state,
-            crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY,
-        );
+        return state.csf_text(crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY);
     }
     state
         .frontend
@@ -4756,10 +4746,10 @@ fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
         .take(10)
         .collect();
     let ping = if row.ping == -1 {
-        csf(state, "TXT_UNKNOWN_PING")
+        state.csf_text("TXT_UNKNOWN_PING")
     } else {
         crate::assets::csf_file::format_csf(
-            &csf(state, "MSG:PingInfo"),
+            &state.csf_text("MSG:PingInfo"),
             &[crate::assets::csf_file::CsfArg::Int(i64::from(row.ping))],
         )
     };
@@ -4786,7 +4776,7 @@ fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
         })
     {
         help.push_str(", ");
-        help.push_str(&csf(state, key));
+        help.push_str(&state.csf_text(key));
     }
     help
 }

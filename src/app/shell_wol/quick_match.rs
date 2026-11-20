@@ -26,17 +26,17 @@
 use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
+use super::leaf::{self, Pointer};
 use super::lobby;
 use super::service::{self, WolServiceRequest};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
-use super::leaf::{self, Pointer};
 use crate::ui::lan_shell::{LanChatLine, LanListState};
 use crate::ui::shell::page::{self, PageEvent};
-use vera20k_gui::{NodeId, Prop, Value};
 use crate::ui::wol_lobby::{GAME_CHANNEL, MEMBER_OPERATOR, WolChannel};
 use crate::ui::wol_quick_match::*;
 use crate::ui::wol_shell::WolMode;
+use vera20k_gui::{NodeId, Prop, Value};
 
 /// `0x0084A21C`: the Quick Match lobbies' prefix.
 pub(crate) const QUICK_MATCH_PREFIX: &str = "Lob_40_";
@@ -252,10 +252,15 @@ fn with_transcript(
     let layout = layout(state);
     let scale = layout.page.scale;
     let width = scale.base_rect(layout.transcript).w;
-    let visible = LanListState::default().geometry(layout.transcript, 0, scale).visible_rows;
+    let visible = LanListState::default()
+        .geometry(layout.transcript, 0, scale)
+        .visible_rows;
     let root = sync(state);
     let gui = state.frontend.shell_controller.gui_mut();
-    let top = std::cell::Cell::new(root.and_then(|root| page::int(gui, root, TRANSCRIPT, Prop::Top)).unwrap_or(0) as usize);
+    let top = std::cell::Cell::new(
+        root.and_then(|root| page::int(gui, root, TRANSCRIPT, Prop::Top))
+            .unwrap_or(0) as usize,
+    );
     let font = &state.renderer.bit_font;
     let Some(WolPage::QuickMatch(dialog)) =
         state.frontend.wol.as_mut().map(|visit| &mut visit.page)
@@ -263,16 +268,36 @@ fn with_transcript(
         return;
     };
     let add = |ui: &mut WolQuickMatchPage, line: LanChatLine| {
-        let mut list = LanListState { top_index: top.get(), ..LanListState::default() };
-        crate::ui::lan_shell::append_list_message(&mut ui.lines, &mut list, line, width, visible, |units| {
-            font.text_width(&String::from_utf16_lossy(units)) as i32
-        });
+        let mut list = LanListState {
+            top_index: top.get(),
+            ..LanListState::default()
+        };
+        crate::ui::lan_shell::append_list_message(
+            &mut ui.lines,
+            &mut list,
+            line,
+            width,
+            visible,
+            |units| font.text_width(&String::from_utf16_lossy(units)) as i32,
+        );
         top.set(list.top_index);
     };
     f(&mut dialog.ui, &add);
     if let Some(root) = root {
-        page::set(gui, root, TRANSCRIPT, Prop::RowCount, Value::Int(dialog.ui.lines.len() as i32));
-        page::set(gui, root, TRANSCRIPT, Prop::Top, Value::Int(top.get() as i32));
+        page::set(
+            gui,
+            root,
+            TRANSCRIPT,
+            Prop::RowCount,
+            Value::Int(dialog.ui.lines.len() as i32),
+        );
+        page::set(
+            gui,
+            root,
+            TRANSCRIPT,
+            Prop::Top,
+            Value::Int(top.get() as i32),
+        );
     }
 }
 
@@ -283,12 +308,7 @@ pub(crate) fn append_line(state: &mut AppState, line: LanChatLine) {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolQuickMatchLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        WolQuickMatchLayout::responsive(width as i32, height as i32)
-    } else {
-        WolQuickMatchLayout::new(width as i32, height as i32)
-    }
+    shell_layout::on(state, WolQuickMatchLayout::new)
 }
 
 /// The status help under the pointer (`0x006040B0`).
@@ -299,37 +319,16 @@ pub(crate) fn status_key(state: &AppState) -> Option<&str> {
 /// Builds and places `0x117`'s widgets; under a box they take no pointer.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let layout = layout(state);
-    let boxed = App::wol_box_feed(state).is_some();
-    let root = leaf::sync(state, DIALOG, layout.page.scale, spec, |id| layout.rect_of(id))?;
+    let boxed = App::wol_box_owns_input(state);
+    let root = leaf::sync(state, DIALOG, layout.page.scale, spec, |id| {
+        layout.rect_of(id)
+    })?;
     let gui = state.frontend.shell_controller.gui_mut();
     for id in [CANCEL, TRANSCRIPT] {
         let hit = layout.rect_of(id).filter(|_| !boxed).unwrap_or_default();
         page::set(gui, root, id, Prop::HitRect, Value::Rect(hit));
     }
     Some(root)
-}
-
-/// `0x0072BE80`: quickmatch.shp (800 wide only) through quickmatch.PAL.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_quick_match_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_quick_match_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("quickmatch.shp", "quickmatch.PAL"),
-        &[],
-    );
-    state.frontend.wol_quick_match_art.is_some()
-}
-
-fn csf(state: &AppState, key: &str) -> String {
-    service::resolve(state, key)
 }
 
 /// `0x005E2700` into the current dialog's transcript.
@@ -344,13 +343,13 @@ fn line(state: &mut AppState, text: String, color: u32) {
 }
 
 fn csf_line(state: &mut AppState, key: &str, color: u32) {
-    let text = csf(state, key);
+    let text = state.csf_text(key);
     line(state, text, color);
 }
 
 fn csf_name_line(state: &mut AppState, key: &str, name: &str, color: u32) {
     let text = crate::assets::csf_file::format_csf(
-        &csf(state, key),
+        &state.csf_text(key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
     line(state, text, color);
@@ -375,7 +374,10 @@ pub(super) fn run(state: &mut AppState) {
             .multiplayer_shell_runtime
             .set_lan_observer(false);
     }
-    let away = csf(state, "TXT_AWAY_QUICKMATCH").encode_utf16().collect();
+    let away = state
+        .csf_text("TXT_AWAY_QUICKMATCH")
+        .encode_utf16()
+        .collect();
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
@@ -473,7 +475,7 @@ fn open_dialog(state: &mut AppState) {
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
-    open_art(state);
+    super::leaf::open_art(state, DIALOG);
     state.frontend.shell_controller.reset_to(DIALOG, false);
     state.platform.window.request_redraw();
 }
@@ -1235,7 +1237,7 @@ fn close_dialog(state: &mut AppState) {
     {
         visit.page = WolPage::Lobby;
     }
-    state.frontend.wol_quick_match_art = None;
+    super::leaf::free_art(state, DIALOG);
 }
 
 /// Start Game Now's success (event 7, `0x007A029A..0x007A02C6`): the
@@ -1303,7 +1305,10 @@ pub(super) fn box_closed(state: &mut AppState, then: lobby::QuickMatchBoxThen) {
 /// Start Game Now's abort in modes 1-3 (`0x00794D69`, `0x00794E35`): stage
 /// 11 and the away text set again; event 6 then ends the runner with 0.
 pub(crate) fn start_aborted(state: &mut AppState) {
-    let away = csf(state, "TXT_AWAY_QUICKMATCH").encode_utf16().collect();
+    let away = state
+        .csf_text("TXT_AWAY_QUICKMATCH")
+        .encode_utf16()
+        .collect();
     if let Some(globals) = globals_mut(state) {
         globals.set(stage::STARTED, None);
         globals.away = Some(away);
@@ -1441,7 +1446,10 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         state.platform.window.request_redraw();
     }
     let stage_deadline = globals(state).and_then(|globals| globals.deadline(now_seconds()));
-    [stage_deadline, search, dot_at, repeat].into_iter().flatten().min()
+    [stage_deadline, search, dot_at, repeat]
+        .into_iter()
+        .flatten()
+        .min()
 }
 
 /// Diagnostics: the current stage's timeout has passed.

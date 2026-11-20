@@ -1002,20 +1002,7 @@ impl WolLoginLayout {
         })
     }
 
-    pub(crate) fn new(width: i32, height: i32, policy: LoginPolicy) -> Self {
-        Self::build(width, height, ShellScale::RETAIL, policy)
-    }
-
-    pub(crate) fn responsive(width: i32, height: i32, policy: LoginPolicy) -> Self {
-        Self::build(
-            width,
-            height,
-            ShellScale::from_screen(width, height),
-            policy,
-        )
-    }
-
-    fn build(width: i32, height: i32, scale: ShellScale, policy: LoginPolicy) -> Self {
+    pub(crate) fn new(width: i32, height: i32, scale: ShellScale, policy: LoginPolicy) -> Self {
         let place = Placer::on(scale, width, height);
         let mut page = menu_page::compute_layout_for(policy.page_spec(), scale, width, height);
         let status_help = place.at(AnchorRule::StatusLine, 2, 354, 316, 12);
@@ -1129,7 +1116,11 @@ mod tests {
             login: &mut WolLoginState,
             (x, y): (i32, i32),
         ) -> Option<WolLoginAction> {
-            self.hit(&WolLoginLayout::new(800, 600, login.policy), x, y);
+            self.hit(
+                &WolLoginLayout::new(800, 600, ShellScale::RETAIL, login.policy),
+                x,
+                y,
+            );
             self.ui.on_pointer_down(x, y);
             self.ui.on_pointer_up(x, y);
             let raw = self.ui.drain_events();
@@ -1147,7 +1138,7 @@ mod tests {
 
     #[test]
     fn layout_matches_the_executed_800x600_relayout() {
-        let layout = WolLoginLayout::new(800, 600, LoginPolicy::Legacy);
+        let layout = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy);
         let buttons: Vec<(u16, RectPx)> = layout
             .page
             .buttons
@@ -1178,7 +1169,7 @@ mod tests {
             "monitor 0x71C"
         );
         // 640x480: the right column moves left by 160, the left side stays.
-        let small = WolLoginLayout::new(640, 480, LoginPolicy::Legacy);
+        let small = WolLoginLayout::new(640, 480, ShellScale::RETAIL, LoginPolicy::Legacy);
         assert_eq!(
             small.page.button_rect(BACK),
             Some(RectPx::new(484, 409, 156, 42))
@@ -1263,7 +1254,8 @@ mod tests {
         assert_eq!(page.globals.password, "12345678", "limit 8");
         assert!(page.on(LOGIN, Prop::Enabled) && page.on(REMEMBER, Prop::Enabled));
         assert!(page.globals.changed);
-        let remember = WolLoginLayout::new(800, 600, LoginPolicy::Legacy).remember;
+        let remember =
+            WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy).remember;
         page.click(&mut login, inside(remember));
         assert!(page.globals.remember && page.on(REMEMBER, Prop::Checked));
         assert_eq!(
@@ -1323,7 +1315,7 @@ mod tests {
     fn the_arrow_opens_an_empty_list_that_swallows_the_next_press() {
         let mut page = Page::new(WolAccountGlobals::default(), Vec::new());
         let mut login = WolLoginState::open(&mut page.cx());
-        let layout = WolLoginLayout::new(800, 600, LoginPolicy::Legacy);
+        let layout = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy);
         let face = layout.nickname_face;
         page.click(&mut login, (face.x + face.w - 5, face.y + 5));
         let combo = page.ui.control(DIALOG, NICKNAME_DROP).unwrap();
@@ -1487,7 +1479,7 @@ mod tests {
         assert!(page.globals.remember);
         // Unticking Remember password, on its box only, forgets it at once.
         let mut login = WolLoginState::open_online(&mut page.cx(), Some("Tanya"), None);
-        let online = WolLoginLayout::new(800, 600, LoginPolicy::Online)
+        let online = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online)
             .online
             .unwrap();
         let caption = (online.remember.x + 30, online.remember.y + 5);
@@ -1557,8 +1549,8 @@ mod tests {
 
     #[test]
     fn online_page_offers_play_the_sign_in_form_and_the_account_buttons() {
-        let layout = WolLoginLayout::new(800, 600, LoginPolicy::Online);
-        let native = WolLoginLayout::new(800, 600, LoginPolicy::Legacy);
+        let layout = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online);
+        let native = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy);
         assert_eq!(
             layout
                 .page
@@ -1650,8 +1642,13 @@ mod tests {
     fn account_popups_centre_on_the_page_left_of_the_button_column() {
         use crate::ui::shell::modal::wol_account_form_layout_on;
         for layout in [
-            WolLoginLayout::new(800, 600, LoginPolicy::Online),
-            WolLoginLayout::responsive(1920, 1080, LoginPolicy::Online),
+            WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online),
+            WolLoginLayout::new(
+                1920,
+                1080,
+                ShellScale::from_screen(1920, 1080),
+                LoginPolicy::Online,
+            ),
         ] {
             let area = layout.page.scale.scale_rect(POPUP_AREA);
             let (left, right) = (area.x, area.x + area.w);

@@ -42,7 +42,7 @@ impl App {
             .get(state.frontend.skirmish_shell_state.selected_map_idx)
             .map(|map| map.display_name.trim().to_owned())
             .unwrap_or_default();
-        let empty = Self::csf_label(state, "TXT_EMPTY_SLOT", "[EMPTY SLOT]");
+        let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
         let visible_rows =
             saved_browser_rows(&crate::app::frontend::shell_layout::setups_layout(state));
         let browser = SavedSeedBrowserState::open_rows(
@@ -113,11 +113,8 @@ impl App {
             SetupOutcome::Save { description, .. } => {
                 let name = String::from_utf16_lossy(description.units());
                 if name.trim().is_empty() {
-                    let body = Self::csf_label(
-                        state,
-                        "TXT_MUSTENTER_DESCRIPTION",
-                        "You must enter a description!",
-                    );
+                    let body = state
+                        .csf_label("TXT_MUSTENTER_DESCRIPTION", "You must enter a description!");
                     Self::show_setups_prompt(state, SetupPurpose::EmptyDescription, body, false);
                 } else if state
                     .frontend

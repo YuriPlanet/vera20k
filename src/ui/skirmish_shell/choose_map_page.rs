@@ -8,6 +8,8 @@
 
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
+use crate::render::shell_text::ShellAlign;
+
 use super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
 use super::page::Pointer;
 use super::state::{
@@ -27,6 +29,14 @@ const MODE_LIST: u16 = 0x6EB;
 const MAP_LIST: u16 = 0x553;
 const PREVIEW: u16 = 0x468;
 const STATUS_HELP: u16 = 0x695;
+/// The `SS_CENTER` headings: Select Engagement, Game Type, Game Map.
+const HEADINGS: [(u16, &str, &str); 3] = [
+    (0x7130, "GUI:SelectEngagement", "Select Engagement"),
+    (0x7131, "GUI:GameType", "Game Type"),
+    (0x7132, "GUI:GameMap", "Game Map"),
+];
+/// VERA: the selected map's author under the preview.
+const AUTHOR: u16 = 0x7133;
 const BUTTONS: [(u16, ChooseMapModalButton); 4] = [
     (0x6C5, ChooseMapModalButton::UseMap0x6c5),
     (0x5C0, ChooseMapModalButton::Cancel0x5c0),
@@ -68,10 +78,22 @@ fn spec() -> NodeSpec {
             .with(Prop::ContentDoubleClick, Value::Bool(true))
     };
     let help = |target| status_help_key_for_choose_map_hover(target).unwrap_or_default();
+    let align = |align: ShellAlign| Value::Int(align.0.into());
+    let centred = align(ShellAlign::H_CENTER | ShellAlign::V_CENTER);
+    let text = |id: u16, align| {
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .with(Prop::Align, align)
+    };
     NodeSpec::new(NodeKind::Dialog)
         .child(list(MODE_LIST))
         .child(list(MAP_LIST))
-        .children(BUTTONS.map(|(id, _)| NodeSpec::new(NodeKind::Button).id(id.into())))
+        // The column's captions sit centred in the buttons.
+        .children(BUTTONS.map(|(id, _)| {
+            NodeSpec::new(NodeKind::Button)
+                .id(id.into())
+                .with(Prop::Align, centred.clone())
+        }))
         .child(
             NodeSpec::new(NodeKind::Text)
                 .id(PREVIEW.into())
@@ -83,6 +105,10 @@ fn spec() -> NodeSpec {
                 .id(STATUS_HELP.into())
                 .tooltip(""),
         )
+        .children(HEADINGS.map(|(id, ..)| text(id, centred.clone())))
+        // Top-aligned like `0x102`'s game type there, so a long name keeps
+        // its first line.
+        .child(text(AUTHOR, align(ShellAlign::H_CENTER)))
 }
 
 /// Puts the chooser's dialog on top of the controller (dropping whatever a
@@ -108,6 +134,10 @@ pub fn sync_page(
             MAP_LIST => surface(layout.map_list),
             PREVIEW => layout.preview,
             STATUS_HELP => layout.status_help,
+            0x7130 => layout.select_engagement,
+            0x7131 => layout.game_type_heading,
+            0x7132 => layout.game_map_heading,
+            AUTHOR => layout.author,
             _ => button_rect(layout, button_of(id)?),
         })
     });
@@ -145,11 +175,56 @@ pub fn sync_page(
     Some(root)
 }
 
+/// Puts the chooser's words on its widgets, each string key and fallback
+/// through `label`: the headings, the buttons' captions and the selected
+/// map's author. While a slide runs (`sliding`) the column art covers the
+/// buttons and the preview's credit.
+pub fn show_texts(
+    controller: &mut DialogController,
+    modal: &ChooseMapModalState,
+    records: &[SkirmishScenarioRecord],
+    sliding: bool,
+    label: &dyn Fn(&str, &str) -> String,
+) {
+    let Some(root) = controller.root_in(DIALOG) else {
+        return;
+    };
+    // VERA: Favorite stars the highlighted map, or takes its star away.
+    let favorite = match modal.favorite_button(records) {
+        Some(true) => "VERA:RemoveFavorite",
+        _ => "VERA:AddFavorite",
+    };
+    // VERA: a map's `[Basic]` `Author`, when it names one.
+    let author = modal
+        .selected_record_index()
+        .and_then(|index| records.get(index)?.author.as_deref())
+        .map(str::trim)
+        .filter(|author| !author.is_empty())
+        .map(|author| crate::i18n::tr_fill("VERA:MapAuthor", &[("author", &author)]));
+    let column = [
+        (0x6C5, label("GUI:UseMap", "Use Map")),
+        (0x5C0, label("GUI:Cancel", "Cancel")),
+        (0x583, label("GUI:CreateRandomMap", "Create Random Map")),
+        (0x7120, label(favorite, "")),
+        (AUTHOR, author.unwrap_or_default()),
+    ];
+    let headings = HEADINGS.map(|(id, key, fallback)| (id, label(key, fallback)));
+    let gui = controller.gui_mut();
+    for (id, text) in headings
+        .into_iter()
+        .chain(column.map(|(id, text)| (id, if sliding { String::new() } else { text })))
+    {
+        page::set(gui, root, id, Prop::Text, Value::Text(text));
+    }
+}
+
 /// A rebuilt map list drops a hold on its scrollbar, as the old list's
 /// capture went with it.
 pub fn take_rebuild(controller: &mut DialogController, modal: &mut ChooseMapModalState) {
     if std::mem::take(&mut modal.map_list_rebuilt)
-        && let Some(list) = controller.root_in(DIALOG).and_then(|root| controller.gui().find_id(root, MAP_LIST.into()))
+        && let Some(list) = controller
+            .root_in(DIALOG)
+            .and_then(|root| controller.gui().find_id(root, MAP_LIST.into()))
     {
         controller.gui_mut().cancel_list_scroll(list);
     }

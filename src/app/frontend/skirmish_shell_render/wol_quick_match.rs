@@ -5,7 +5,7 @@
 
 use super::controls::list_view_controls;
 use super::text::rect_to_text_rect;
-use super::wol_lobby::{WolLobbyPaint, label, row_rgb};
+use super::wol_lobby::{WolLobbyPaint, row_rgb};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::shell_text::{self, ShellAlign};
@@ -39,7 +39,7 @@ pub(crate) fn paint_wol_quick_match_children(
         )
     };
     paint.texts.push(text(
-        &label(state, MATCH_STATUS_KEY),
+        &state.csf_text(MATCH_STATUS_KEY),
         layout.caption,
         SHELL_LABEL_TEXT_RGB,
     ));
@@ -51,9 +51,19 @@ pub(crate) fn paint_wol_quick_match_children(
         .and_then(|root| gui.find_id(root, TRANSCRIPT.into()))
         .and_then(|list| gui.list_view(list));
     let (top, pressed) = view.map_or((0, None), |view| (view.top, view.pressed));
-    let geometry =
-        ShellListGeometry::new(layout.transcript, ui.lines.len(), top, ListMetrics::scaled(scale));
-    list_view_controls(&mut paint.controls, atlas, geometry, (None, top, pressed), scale);
+    let geometry = ShellListGeometry::new(
+        layout.transcript,
+        ui.lines.len(),
+        top,
+        ListMetrics::scaled(scale),
+    );
+    list_view_controls(
+        &mut paint.controls,
+        atlas,
+        geometry,
+        (None, top, pressed),
+        scale,
+    );
     for (visible, line) in ui
         .lines
         .iter()

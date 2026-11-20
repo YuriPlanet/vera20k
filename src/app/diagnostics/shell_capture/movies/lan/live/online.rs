@@ -432,8 +432,7 @@ impl LiveRoundFlow {
                     .iter()
                     .position(|row| row.locale != 0)
                     .unwrap_or(0);
-                let (geometry, top) =
-                    persona::list_view(state).context("online location list")?;
+                let (geometry, top) = persona::list_view(state).context("online location list")?;
                 ensure!(
                     row >= top && row < top + geometry.visible_rows,
                     "online location choice is outside the visible list"
@@ -617,7 +616,10 @@ impl LiveRoundFlow {
                         .as_ref()
                         .and_then(|visit| visit.login())
                         .is_some_and(|login| {
-                            login.button_enabled(&state.frontend.shell_controller, crate::ui::wol_login::PLAY)
+                            login.button_enabled(
+                                &state.frontend.shell_controller,
+                                crate::ui::wol_login::PLAY,
+                            )
                         }),
                     "the online username did not enable Play"
                 );
@@ -1490,10 +1492,12 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
         .as_ref()
         .and_then(|visit| visit.lobby())
         .context("online lobby")?;
-    let geometry =
-        lobby
-            .ui
-            .shown_geometry(crate::ui::wol_lobby::GAMES, layout.games, lobby.ui.game_rows.len(), layout.page.scale);
+    let geometry = lobby.ui.shown_geometry(
+        crate::ui::wol_lobby::GAMES,
+        layout.games,
+        lobby.ui.game_rows.len(),
+        layout.page.scale,
+    );
     let top = lobby.ui.list_top(crate::ui::wol_lobby::GAMES);
     if row < top || row >= top + geometry.visible_rows {
         let rect = if let Some(bar) = geometry.scrollbar {

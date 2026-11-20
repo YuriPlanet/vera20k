@@ -98,7 +98,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                     if !(dialog.wol() && !dialog.host) {
                         App::leave_shell_dialog(
                             state,
-                            shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+                            crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(
+                                dialog,
+                            ),
+                            crate::app::shell_network_setup::commit_back,
                         );
                     }
                 }
@@ -115,7 +118,8 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             {
                 App::leave_shell_dialog(
                     state,
-                    shell_transition::ShellExitThen::NetworkSetupChooseMap(dialog),
+                    crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                    crate::app::shell_network_setup::open_choose_map,
                 );
             }
             Ok(())

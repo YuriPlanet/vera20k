@@ -613,9 +613,13 @@ impl MoviesCapture {
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Internet"}));
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                                crate::ui::main_menu_shell::MainMenuShellAction::WwOnline,
-                            ),
+                            crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                            move |state| {
+                                App::handle_main_menu_shell_action(
+                                    state,
+                                    crate::ui::main_menu_shell::MainMenuShellAction::WwOnline,
+                                )
+                            },
                         );
                         self.phase = Phase::Wol;
                         return Ok(());
@@ -625,9 +629,13 @@ impl MoviesCapture {
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Network"}));
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                                crate::ui::main_menu_shell::MainMenuShellAction::Network,
-                            ),
+                            crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                            move |state| {
+                                App::handle_main_menu_shell_action(
+                                    state,
+                                    crate::ui::main_menu_shell::MainMenuShellAction::Network,
+                                )
+                            },
                         );
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -678,9 +686,13 @@ impl MoviesCapture {
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "ExitGame"}));
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                                crate::ui::main_menu_shell::MainMenuShellAction::ExitGame,
-                            ),
+                            crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                            move |state| {
+                                App::handle_main_menu_shell_action(
+                                    state,
+                                    crate::ui::main_menu_shell::MainMenuShellAction::ExitGame,
+                                )
+                            },
                         );
                         self.phase = next;
                         return Ok(());
@@ -774,7 +786,8 @@ impl MoviesCapture {
                     // The page button through the production teardown.
                     App::leave_shell_dialog(
                         state,
-                        crate::app::frontend::shell_transition::ShellExitThen::SinglePlayer(action),
+                        crate::app::frontend::shell_transition::ShellSlideKind::SinglePlayer,
+                        move |state| App::handle_single_player_shell_action(state, action),
                     );
                     self.phase = phase;
                 }
@@ -1164,7 +1177,8 @@ impl MoviesCapture {
                         // Back (0x686) through the production teardown.
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::MovieListBack,
+                            crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
+                            App::open_movies_credits_page,
                         );
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -1955,7 +1969,7 @@ impl MoviesCapture {
 
 /// The visit shows `0xD0` with `TXT_APIMISSING` over the backdrop.
 fn wol_api_missing_shown(state: &AppState) -> bool {
-    let expected = App::csf_label(state, "TXT_APIMISSING", "TXT_APIMISSING");
+    let expected = state.csf_label("TXT_APIMISSING", "TXT_APIMISSING");
     state
         .frontend
         .wol

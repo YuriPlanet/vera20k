@@ -7,7 +7,8 @@
 //! misaligns clicks by the scale factor.
 
 use crate::app::AppState;
-use crate::ui::main_menu_shell::{MainMenuShellLayout, compute_layout, compute_responsive_layout};
+use crate::ui::main_menu_shell::{MainMenuShellLayout, compute_layout};
+use crate::ui::shell::geom::{ScaledRects, ShellScale, fit_window};
 use crate::ui::shell::menu_page::{self, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{
     ChooseMapModalLayout, RandomMapSetupLayout, SavedSeedLayout, SavedSeedMode, SkirmishShellLayout,
@@ -58,45 +59,57 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
     if vera_online { fitted * 0.5 } else { fitted }
 }
 
+/// `retail` laid out at the window's size, or in a fitted window on the
+/// authored 800x600 dialog and scaled to fit it ([`fit_window`]).
+pub(crate) fn pick<L: ScaledRects>(state: &AppState, retail: impl FnOnce(u32, u32) -> L) -> L {
+    pick_at(fills_window(state), shell_screen_size(state), retail)
+}
+
+/// [`pick`] at `size` (the render size, for the skirmish family).
+fn pick_at<L: ScaledRects>(
+    fitted: bool,
+    size: (u32, u32),
+    retail: impl FnOnce(u32, u32) -> L,
+) -> L {
+    if fitted {
+        fit_window(size.0, size.1, retail)
+    } else {
+        retail(size.0, size.1)
+    }
+}
+
+/// The skirmish family's [`pick`], laid out at the render size.
+fn pick_render<L: ScaledRects>(state: &AppState, retail: impl FnOnce(u32, u32) -> L) -> L {
+    let size = (state.render_width(), state.render_height());
+    pick_at(fills_window(state), size, retail)
+}
+
+/// A layout built on the window's size and its shell mapping
+/// ([`shell_scale_for_screen`]).
+pub(crate) fn on<L>(state: &AppState, layout: impl FnOnce(i32, i32, ShellScale) -> L) -> L {
+    let size = shell_screen_size(state);
+    layout(size.0 as i32, size.1 as i32, shell_scale_for_screen(size))
+}
+
 /// Main menu dialog `0xE2`.
 pub(crate) fn main_menu_layout(state: &AppState) -> MainMenuShellLayout {
-    let (width, height) = shell_screen_size(state);
-    if fills_window(state) {
-        compute_responsive_layout(width, height)
-    } else {
-        compute_layout(width, height)
-    }
+    pick(state, compute_layout)
 }
 
-/// Front-end message boxes, including VERA's Esc menu, share their rendered
-/// button geometry with the pointer feed.
+/// A front-end message box (VERA's Esc menu too) on the window's mapping.
 pub(crate) fn shell_message_box_layout(
     state: &AppState,
-    kind: crate::ui::shell::modal::ModalKind,
+    shell_box: &crate::ui::shell::modal::ShellBox,
 ) -> crate::ui::shell::modal::MessageBoxLayout {
-    let size = shell_screen_size(state);
-    if kind == crate::ui::shell::modal::ModalKind::ThreeButton
-        && state
-            .frontend
-            .shell_message_box
-            .as_ref()
-            .is_some_and(|dialog| dialog.menu_settings().is_some())
-    {
-        return crate::ui::shell::modal::esc_menu_box_layout_on(
-            size.0 as i32,
-            size.1 as i32,
-            shell_scale_for_screen(size),
-        );
-    }
-    message_box_layout_for_screen(kind, size)
+    on(state, |w, h, scale| shell_box.layout(w, h, scale))
 }
 
-fn message_box_layout_for_screen(
-    kind: crate::ui::shell::modal::ModalKind,
-    size: (u32, u32),
-) -> crate::ui::shell::modal::MessageBoxLayout {
-    let scale = shell_scale_for_screen(size);
-    crate::ui::shell::modal::message_box_layout_on(kind, size.0 as i32, size.1 as i32, scale)
+/// A front-end box's rects on the window's mapping.
+pub(crate) fn shell_box_parts(
+    state: &AppState,
+    shell_box: &crate::ui::shell::modal::ShellBox,
+) -> crate::ui::shell::modal::BoxParts {
+    on(state, |w, h, scale| shell_box.parts(w, h, scale))
 }
 
 /// The settings in VERA's Esc menu, on its message box's mapping.
@@ -112,19 +125,14 @@ pub(crate) fn shell_menu_settings_layout(
     )
 }
 
-pub(crate) fn shell_scale_for_screen(size: (u32, u32)) -> crate::ui::shell::geom::ShellScale {
-    crate::ui::shell::geom::ShellScale::for_window(size.0 as i32, size.1 as i32)
+pub(crate) fn shell_scale_for_screen(size: (u32, u32)) -> ShellScale {
+    ShellScale::for_window(size.0 as i32, size.1 as i32)
 }
 
 /// The shared right-panel menu pages (`0x100` Single Player, `0x101` Movies &
 /// Credits) and any other [`MenuPageSpec`]-driven page.
 pub(crate) fn menu_page_layout(state: &AppState, spec: &MenuPageSpec) -> MenuPageLayout {
-    let (width, height) = shell_screen_size(state);
-    if fills_window(state) {
-        menu_page::compute_responsive_layout(spec, width, height)
-    } else {
-        menu_page::compute_layout(spec, width, height)
-    }
+    pick(state, |w, h| menu_page::compute_layout(spec, w, h))
 }
 
 /// The skirmish dialog `0x102`, the page behind its modals, for the selected
@@ -133,8 +141,7 @@ pub(crate) fn menu_page_layout(state: &AppState, spec: &MenuPageSpec) -> MenuPag
 /// the scaled 800x600 page every other window size already gets.
 pub(crate) fn skirmish_layout(state: &AppState) -> SkirmishShellLayout {
     use crate::ui::skirmish_shell::{
-        SKIRMISH_ROW_COUNT, compute_layout_for_rows, compute_responsive_layout_for_rows,
-        selected_player_rows,
+        SKIRMISH_ROW_COUNT, compute_layout_for_rows, selected_player_rows,
     };
     let (width, height) = (state.render_width(), state.render_height());
     let rows = selected_player_rows(
@@ -146,7 +153,7 @@ pub(crate) fn skirmish_layout(state: &AppState) -> SkirmishShellLayout {
         || (layout.shown_rows > SKIRMISH_ROW_COUNT
             && layout.authored_width() < crate::ui::shell::geom::SHELL_BASE_W)
     {
-        compute_responsive_layout_for_rows(width, height, rows)
+        fit_window(width, height, |w, h| compute_layout_for_rows(w, h, rows))
     } else {
         layout
     }
@@ -154,96 +161,65 @@ pub(crate) fn skirmish_layout(state: &AppState) -> SkirmishShellLayout {
 
 /// Choose Map `0x6B`, which replaces `0x102` while it is open.
 pub(crate) fn choose_map_layout(state: &AppState) -> ChooseMapModalLayout {
-    let (width, height) = (state.render_width(), state.render_height());
-    if fills_window(state) {
-        crate::ui::skirmish_shell::compute_responsive_choose_map_modal_layout(width, height)
-    } else {
-        crate::ui::skirmish_shell::compute_choose_map_modal_layout(width, height)
-    }
+    pick_render(
+        state,
+        crate::ui::skirmish_shell::compute_choose_map_modal_layout,
+    )
 }
 
 /// Random-map setup `0x105`, which replaces `0x6B` while it is open.
 pub(crate) fn random_map_setup_layout(state: &AppState) -> RandomMapSetupLayout {
-    let (width, height) = (state.render_width(), state.render_height());
-    if fills_window(state) {
-        crate::ui::skirmish_shell::compute_responsive_random_map_setup_layout(width, height)
-    } else {
-        crate::ui::skirmish_shell::compute_random_map_setup_layout(width, height)
-    }
+    pick_render(
+        state,
+        crate::ui::skirmish_shell::compute_random_map_setup_layout,
+    )
 }
 
 /// The saved-seed browser (Load / Save / Delete), which covers `0x105`.
 pub(crate) fn saved_seed_layout(state: &AppState, mode: SavedSeedMode) -> SavedSeedLayout {
-    let (width, height) = (state.render_width(), state.render_height());
-    if fills_window(state) {
-        crate::ui::skirmish_shell::compute_responsive_saved_seed_layout(mode, width, height)
-    } else {
-        crate::ui::skirmish_shell::compute_saved_seed_layout(mode, width, height)
-    }
+    pick_render(state, |w, h| {
+        crate::ui::skirmish_shell::compute_saved_seed_layout(mode, w, h)
+    })
 }
 
 /// VERA's Skirmish Setups page, on the Save browser's rects.
 pub(crate) fn setups_layout(state: &AppState) -> SavedSeedLayout {
-    let (width, height) = (state.render_width(), state.render_height());
-    if fills_window(state) {
-        crate::ui::skirmish_shell::compute_responsive_setups_layout(width, height)
-    } else {
-        crate::ui::skirmish_shell::compute_setups_layout(width, height)
-    }
+    pick_render(state, crate::ui::skirmish_shell::compute_setups_layout)
 }
 
 /// Campaign selection `0x94`, the page behind Single Player's New Campaign.
 pub(crate) fn campaign_layout(state: &AppState) -> crate::ui::campaign_shell::CampaignLayout {
-    let (width, height) = shell_screen_size(state);
-    if fills_window(state) {
-        crate::ui::campaign_shell::compute_responsive_layout(width, height)
-    } else {
-        crate::ui::campaign_shell::compute_layout(width, height)
-    }
+    pick(state, crate::ui::campaign_shell::compute_layout)
 }
 
 /// Single Player's Load Saved Game `0xB7`.
 pub(crate) fn load_saved_game_layout(
     state: &AppState,
 ) -> crate::ui::shell::saved_games::MainMenuSavedGameLayout {
-    let (width, height) = shell_screen_size(state);
-    if fills_window(state) {
-        crate::ui::shell::saved_games::main_menu_saved_game_responsive_layout(width, height)
-    } else {
-        crate::ui::shell::saved_games::main_menu_saved_game_layout(width, height)
-    }
+    pick(
+        state,
+        crate::ui::shell::saved_games::main_menu_saved_game_layout,
+    )
 }
 
 /// Movie list `0x129`, the page behind Movies & Credits' Play Movies.
 pub(crate) fn movie_list_layout(
     state: &AppState,
 ) -> crate::ui::movies_credits_shell::MovieListLayout {
-    let (width, height) = shell_screen_size(state);
-    if fills_window(state) {
-        crate::ui::movies_credits_shell::compute_responsive_movie_list_layout(width, height)
-    } else {
-        crate::ui::movies_credits_shell::compute_movie_list_layout(width, height)
-    }
+    pick(
+        state,
+        crate::ui::movies_credits_shell::compute_movie_list_layout,
+    )
 }
 
 /// VERA's Mods page, behind the Mods button of Options.
 pub(crate) fn mods_layout(state: &AppState) -> crate::ui::mods_shell::ModsLayout {
-    let (width, height) = shell_screen_size(state);
-    if fills_window(state) {
-        crate::ui::mods_shell::compute_responsive_layout(width, height)
-    } else {
-        crate::ui::mods_shell::compute_layout(width, height)
-    }
+    pick(state, crate::ui::mods_shell::compute_layout)
 }
 
 /// End-of-match score screen `0x108`.
 pub(crate) fn score_layout(state: &AppState) -> crate::ui::score_shell::ScoreLayout {
-    let (width, height) = shell_screen_size(state);
-    if fills_window(state) {
-        crate::ui::score_shell::compute_responsive_layout(width, height)
-    } else {
-        crate::ui::score_shell::compute_layout(width, height)
-    }
+    pick(state, crate::ui::score_shell::compute_layout)
 }
 
 /// Launcher Options `0xD5`, showing `category`'s page.
@@ -276,12 +252,7 @@ pub(crate) fn art_key_screen_width(state: &AppState) -> u32 {
 
 /// Westwood Online welcome `0x10E`.
 pub(crate) fn wol_welcome_layout(state: &AppState) -> crate::ui::wol_shell::WolWelcomeLayout {
-    let (width, height) = shell_screen_size(state);
-    if fills_window(state) {
-        crate::ui::wol_shell::compute_responsive_layout(width, height)
-    } else {
-        crate::ui::wol_shell::compute_layout(width, height)
-    }
+    pick(state, crate::ui::wol_shell::compute_layout)
 }
 
 /// Keyboard `0xA3`. Only the front-end family page stretches: the same dialog
@@ -303,11 +274,19 @@ pub(crate) fn keyboard_layout(
 mod tests {
     use super::window_takes_fitted_shell;
 
+    fn message_box_layout_for_screen(
+        kind: crate::ui::shell::modal::ModalKind,
+        (w, h): (u32, u32),
+    ) -> crate::ui::shell::modal::MessageBoxLayout {
+        let scale = super::shell_scale_for_screen((w, h));
+        crate::ui::shell::modal::message_box_layout_on(kind, w as i32, h as i32, scale)
+    }
+
     #[test]
     fn exit_message_box_follows_fitted_menu_and_keeps_button_hits() {
         use crate::ui::shell::geom::RectPx;
         use crate::ui::shell::modal::ModalKind;
-        let layout = super::message_box_layout_for_screen(ModalKind::Confirm, (2560, 1600));
+        let layout = message_box_layout_for_screen(ModalKind::Confirm, (2560, 1600));
         assert_eq!(layout.dialog, RectPx::new(456, 323, 1202, 869));
         assert_eq!(layout.ok, RectPx::new(1285, 995, 336, 66));
         let cancel = layout.cancel.unwrap();
@@ -317,7 +296,7 @@ mod tests {
         assert!(!layout.ok.contains(1453, 1113));
         assert!(!cancel.contains(1453, 1028));
         for size in [(800, 600), (640, 480)] {
-            let layout = super::message_box_layout_for_screen(ModalKind::Confirm, size);
+            let layout = message_box_layout_for_screen(ModalKind::Confirm, size);
             assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));
             assert!(layout.scale.is_retail());
         }

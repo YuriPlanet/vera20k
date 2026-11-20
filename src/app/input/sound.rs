@@ -1,5 +1,6 @@
 //! B8 orchestration and physical input. Original6B6300 owns control projection;
 //! Options/Theme retain values and playback, including while simulation is paused.
+use super::dialog_page::InGameDialog;
 use crate::app::persistence::options::audio::{AudioVolume, apply_volume};
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::InGameMenuState;
@@ -8,7 +9,6 @@ use crate::ui::shell::sound::{
     self, SoundButton, SoundControl, SoundLayout, SoundSlider, SoundState, SoundTrackRow,
 };
 use crate::util::time::Instant;
-use winit::event::MouseButton;
 
 fn channel(id: SoundSlider) -> AudioVolume {
     match id {
@@ -17,15 +17,34 @@ fn channel(id: SoundSlider) -> AudioVolume {
         SoundSlider::Voice => AudioVolume::Voice,
     }
 }
-fn layout(state: &AppState) -> Option<SoundLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(SoundLayout::new(
-        shell.width,
-        shell.height,
-        shell.layout,
-        shell.button_size,
-    ))
-}
+/// B8: title 0x694 and Back 0x686 as the lower right-panel button.
+pub(crate) const DIALOG: InGameDialog = InGameDialog {
+    id: sound::DIALOG,
+    title: Some(("GUI:SoundOptions", "Sound Options")),
+    lower: (0x686, ("GUI:Back", "Back")),
+    label: "Active Sound B8",
+    ui: |state| {
+        Some(
+            &state
+                .match_state
+                .match_presentation
+                .sound_dialog
+                .as_ref()?
+                .ui,
+        )
+    },
+    ui_mut: |state| {
+        Some(
+            &mut state
+                .match_state
+                .match_presentation
+                .sound_dialog
+                .as_mut()?
+                .ui,
+        )
+    },
+    own_checkbox_sound: false,
+};
 pub(crate) fn open(state: &mut AppState) {
     if !state.audio.launcher_audio_available {
         return;
@@ -142,11 +161,8 @@ pub(crate) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
         return None;
     }
     let dialog = state.match_state.match_presentation.sound_dialog.as_mut()?;
-    let next = dialog.ui.poll();
-    if !dialog.ui.drain_events().is_empty() {
-        state.platform.window.request_redraw();
-    }
-    next
+    let window = &state.platform.window;
+    dialog.ui.poll_then(|| window.request_redraw())
 }
 
 /// Shuffle and Repeat exclude each other (`0x006B6300`); both write the
@@ -173,36 +189,26 @@ fn toggle_score_option(state: &mut AppState, shuffle: bool) {
 /// One pointer message on B8 (`down`: `None` moves). Back, Play and Stop are
 /// owner-draw (GUIMainButtonSound, 0x0061376B); a row press plays the
 /// generic click; 6B6382/6B63EA/6B6444 suppress the rail's.
-fn pointer(state: &mut AppState, down: Option<bool>) {
-    let Some(layout) = layout(state) else {
+pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some(layout) = super::dialog_page::layout(state, SoundLayout::new) else {
         return;
     };
-    let event = super::dialog_page::shell_event(state, down);
     let profile = &state.persistence.options_profile;
     let boxes = [
         (SoundControl::Shuffle, profile.is_score_shuffle),
         (SoundControl::Repeat, profile.is_score_repeat),
     ];
-    let Some(dialog) = state.match_state.match_presentation.sound_dialog.as_mut() else {
-        return;
-    };
     let sync = |gui: &mut vera20k_gui::Gui, root| {
         for (control, on) in boxes {
             let value = vera20k_gui::Value::Bool(on);
             crate::ui::shell::page::set(gui, root, control.id(), vera20k_gui::Prop::Checked, value);
         }
     };
-    let events = super::dialog_page::route(
-        &mut dialog.ui,
-        sound::DIALOG,
-        // SoundState::new built B8's controls.
-        || vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog),
-        |id| layout.rect(id),
-        sync,
-        event,
-    );
+    // SoundState::new built B8's controls.
+    let nodes = || vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog);
+    let events = DIALOG.route(state, down, nodes, |id| layout.rect(id), sync);
     state.platform.window.request_redraw();
-    for event in super::dialog_page::play_cues(state, events) {
+    for event in events {
         if let Some((id, volume)) = sound::shell_sound_volume(&event) {
             apply_volume(state, channel(id), volume, true);
             continue;
@@ -216,15 +222,5 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
             Some(SoundControl::Repeat) => toggle_score_option(state, false),
             _ => {}
         }
-    }
-}
-
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    pointer(state, None);
-}
-
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button == MouseButton::Left {
-        pointer(state, Some(pressed));
     }
 }

@@ -115,7 +115,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
     use LauncherOptionsEvent as E;
     let profile = &mut state.persistence.options_profile;
     match event {
-        E::Cue(cue) => App::play_launcher_options_cue(state, cue),
+        E::Cue(cue) => App::play_page_cue(state, cue),
         E::ZoomSelected(zoom) => {
             profile.zoom = zoom;
             App::sync_zoom_pass(state);
@@ -241,7 +241,11 @@ fn store_vera_icon(state: &mut AppState, vera_icon: bool) {
     if state.platform.window.is_visible() == Some(false) {
         return;
     }
-    let ra2_dir = state.platform.game_config.as_ref().map(|config| config.paths.ra2_dir.as_path());
+    let ra2_dir = state
+        .platform
+        .game_config
+        .as_ref()
+        .map(|config| config.paths.ra2_dir.as_path());
     if let Some(icon) = crate::app::window_icon::WindowIcon::chosen(vera_icon, ra2_dir) {
         icon.show_on(&state.platform.window);
     }

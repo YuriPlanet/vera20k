@@ -200,29 +200,208 @@ pub struct MessageBoxLayout {
     pub scale: geom::ShellScale,
 }
 
-impl MessageBoxLayout {
-    /// The owner-draw button `id`'s rect, `None` when the template has none.
-    pub fn button_rect(&self, id: u16) -> Option<RectPx> {
-        match id {
-            control::OK => Some(self.ok),
-            control::CANCEL => self.cancel,
-            control::THIRD => self.third,
-            _ => None,
-        }
-    }
+vera20k_gui::scaled_rects!(MessageBoxLayout { [scale] dialog, body, ok, cancel, third });
 
-    /// The box's owner-draw buttons as nodes, OK first; [`Self::button_rect`]
-    /// hides the ones the template leaves out.
-    pub fn nodes() -> vera20k_gui::NodeSpec {
-        use vera20k_gui::{NodeKind, NodeSpec};
-        NodeSpec::new(NodeKind::Dialog).children(
-            [control::OK, control::CANCEL, control::THIRD]
-                .map(|id| NodeSpec::new(NodeKind::Button).id(i32::from(id))),
-        )
+/// Where a box's button sits on its template: a count-rule slot (OK `0x5AE`,
+/// Cancel control 2, the third `0x5AF`) or one of the wait box `0xC4`'s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoxSlot {
+    Ok,
+    Cancel,
+    Third,
+    Disconnect,
+    CheckStatus,
+}
+
+/// The template a box lays out on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoxForm {
+    /// ShellMessageBox__Run (0x005D3490)'s count-rule CE/120/121, and the
+    /// WOL D0/126 (0x005E2CD0) that share their rects.
+    Message,
+    /// VERA's Esc menu: the three-button template, its buttons in a footer.
+    Footer,
+    /// The WOL wait box `0xC4` (0x00792BE0): centred text over two buttons.
+    Wait,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoxButton {
+    pub id: u16,
+    pub slot: BoxSlot,
+    pub caption: String,
+    pub enabled: bool,
+}
+
+/// One front-end message or wait box as it paints and takes the pointer: its
+/// dialog resource, body, buttons (in paint order) and template. Its owner
+/// keeps what the answer leads to; the painter and the pointer are shared.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShellBox {
+    pub dialog: DialogId,
+    pub body: String,
+    pub buttons: Vec<BoxButton>,
+    pub form: BoxForm,
+    /// Centred on the whole window as gamemd centres it (a box over a
+    /// match), not on [`menu_popup_area`].
+    pub on_screen: bool,
+}
+
+/// A box's rects: its window, the body (centred for the wait box) and each
+/// button by id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoxParts {
+    pub dialog: RectPx,
+    pub body: RectPx,
+    pub centred: bool,
+    pub buttons: Vec<(u16, RectPx)>,
+    pub scale: geom::ShellScale,
+}
+
+impl BoxParts {
+    pub fn rect_of(&self, id: u16) -> Option<RectPx> {
+        self.buttons
+            .iter()
+            .find(|(b, _)| *b == id)
+            .map(|(_, rect)| *rect)
     }
 }
 
-vera20k_gui::scaled_rects!(MessageBoxLayout { [scale] dialog, body, ok, cancel, third });
+impl ShellBox {
+    pub fn new(dialog: DialogId, body: impl Into<String>) -> Self {
+        Self {
+            dialog,
+            body: body.into(),
+            buttons: Vec::new(),
+            form: BoxForm::Message,
+            on_screen: false,
+        }
+    }
+
+    /// ShellMessageBox__Run's box: `body` over OK, and Cancel and the third
+    /// button where the count rule ([`message_box_kind`]) gives them.
+    pub fn message(body: String, ok: String, cancel: String, third: String) -> Self {
+        let kind = message_box_kind(Some(&cancel), Some(&third));
+        let mut shell_box =
+            Self::new(DialogId(kind.template_id()), body).button(control::OK, BoxSlot::Ok, ok);
+        if includes_third(kind) {
+            shell_box = shell_box.button(control::THIRD, BoxSlot::Third, third);
+        }
+        if includes_cancel(kind) {
+            shell_box = shell_box.button(control::CANCEL, BoxSlot::Cancel, cancel);
+        }
+        shell_box
+    }
+
+    /// [`Self::message`] with OK only (`0xCE`).
+    pub fn notice(body: String, ok: String) -> Self {
+        Self::message(body, ok, String::new(), String::new())
+    }
+
+    pub fn button(mut self, id: u16, slot: BoxSlot, caption: impl Into<String>) -> Self {
+        self.buttons.push(BoxButton {
+            id,
+            slot,
+            caption: caption.into(),
+            enabled: true,
+        });
+        self
+    }
+
+    /// Greys button `id`, which then takes no press.
+    pub fn disabled(mut self, id: u16, disabled: bool) -> Self {
+        if let Some(button) = self.buttons.iter_mut().find(|b| b.id == id) {
+            button.enabled = !disabled;
+        }
+        self
+    }
+
+    pub fn form(mut self, form: BoxForm) -> Self {
+        self.form = form;
+        self
+    }
+
+    pub fn on_screen(mut self) -> Self {
+        self.on_screen = true;
+        self
+    }
+
+    /// The count-rule template its slots fill.
+    pub fn kind(&self) -> ModalKind {
+        let has = |slot| self.buttons.iter().any(|b| b.slot == slot);
+        if has(BoxSlot::Third) {
+            ModalKind::ThreeButton
+        } else if has(BoxSlot::Cancel) {
+            ModalKind::Confirm
+        } else {
+            ModalKind::BodyOk
+        }
+    }
+
+    /// Button `id`'s caption.
+    pub fn caption(&self, id: u16) -> Option<&str> {
+        let button = self.buttons.iter().find(|b| b.id == id)?;
+        Some(&button.caption)
+    }
+
+    /// Renames button `id`.
+    pub fn set_caption(&mut self, id: u16, caption: String) {
+        if let Some(button) = self.buttons.iter_mut().find(|b| b.id == id) {
+            button.caption = caption;
+        }
+    }
+
+    /// The message template's rects on the shell's mapping.
+    pub fn layout(&self, width: i32, height: i32, scale: geom::ShellScale) -> MessageBoxLayout {
+        match (self.form, self.on_screen) {
+            (BoxForm::Footer, _) => esc_menu_box_layout_on(width, height, scale),
+            (_, true) => message_box_layout_in(self.kind(), RectPx::new(0, 0, width, height)),
+            _ => message_box_layout_on(self.kind(), width, height, scale),
+        }
+    }
+
+    pub fn parts(&self, width: i32, height: i32, scale: geom::ShellScale) -> BoxParts {
+        // By `BoxSlot`, in its order.
+        let (dialog, body, scale, slots) = match self.form {
+            BoxForm::Wait => {
+                let l = wait_box_layout_on(width, height, scale);
+                let slots = [None, None, None, Some(l.disconnect), Some(l.check_status)];
+                (l.dialog, l.text, scale, slots)
+            }
+            _ => {
+                let l = self.layout(width, height, scale);
+                (
+                    l.dialog,
+                    l.body,
+                    l.scale,
+                    [Some(l.ok), l.cancel, l.third, None, None],
+                )
+            }
+        };
+        let buttons = self.buttons.iter();
+        BoxParts {
+            dialog,
+            body,
+            centred: self.form == BoxForm::Wait,
+            buttons: buttons
+                .filter_map(|b| Some((b.id, slots[b.slot as usize]?)))
+                .collect(),
+            scale,
+        }
+    }
+
+    /// Its buttons as nodes under its dialog root.
+    pub fn nodes(&self) -> vera20k_gui::NodeSpec {
+        use vera20k_gui::{NodeKind, NodeSpec};
+        let button = |b: &BoxButton| NodeSpec::new(NodeKind::Button).id(i32::from(b.id));
+        NodeSpec::new(NodeKind::Dialog).children(self.buttons.iter().map(button))
+    }
+
+    /// Each button's enable, for its node.
+    pub fn enabled(&self) -> Vec<(u16, bool)> {
+        self.buttons.iter().map(|b| (b.id, b.enabled)).collect()
+    }
+}
 
 pub fn message_box_layout(kind: ModalKind, screen_w: i32, screen_h: i32) -> MessageBoxLayout {
     message_box_layout_in(kind, menu_popup_area(screen_w, screen_h))

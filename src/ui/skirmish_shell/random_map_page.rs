@@ -5,17 +5,18 @@
 //! ([`RandomMapSetupModalState`]) and each sync shows them. Only VERA's
 //! Advanced scrollbar keeps its own press, as it pages the slider windows.
 
-use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
 use super::layout::{
-    AdvancedField, RandomMapSetupControl as C, RandomMapSetupLayout, RectPx, combo_face_rect,
-    random_map_setup_dropdown_rect,
+    AdvancedField, RandomMapSetupControl as C, RandomMapSetupLayout, RectPx, checkbox_text_rect,
+    combo_face_rect, random_map_setup_dropdown_rect,
 };
 use super::page::{Pointer, slider_held};
 use super::state::{
-    DropdownScrollbarPart, RandomMapSetupModalState, SetupCombo, SkirmishShellUiSound,
+    DropdownScrollbarPart, RandomMapSetupModalState, SetupCombo,
     status_help_key_for_random_map_setup,
 };
+use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
@@ -51,16 +52,29 @@ const SLIDER: u16 = 0x7410;
 const EXTRAS: u16 = 0x7420;
 /// The Advanced scrollbar, a static here: it carries its status help.
 const SCROLLBAR: u16 = 0x7430;
+/// The option rows' labels: the six original rows', an Advanced slider's
+/// or an Extras row's.
+const LABEL: u16 = 0x7440;
+/// Ares' Urban Areas caption, beside its box like `0x102`'s.
+pub const URBAN_CAPTION: u16 = 0x7450;
+/// The progress text `0x6C6`'s place.
+const PROGRESS: u16 = 0x7451;
+/// The right column's owner-draw type-1 buttons, which a slide's column
+/// art covers.
+const COLUMN: [u16; 9] = [
+    0x6C5, 0x6C2, 0x6C3, 0x6C4, 0x5C0, 0x7401, 0x7402, 0x7403, 0x7404,
+];
+
+const YELLOW: Value = Value::Rgba(Rgba(0xFF, 0xFF, 0, 0xFF));
+/// The disabled owner-draw caption ([`crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED`]).
+const DISABLED: Value = Value::Rgba(Rgba(0x48, 0, 0, 0xFF));
 
 const ROWS: u16 = AdvancedField::PAGE_SIZE as u16;
 
 /// The control widget `id` stands for now.
 fn control_of(modal: &RandomMapSetupModalState, id: u16) -> Option<C> {
     if let Some(row) = id.checked_sub(SLIDER).filter(|row| *row < ROWS) {
-        let field = AdvancedField::ALL.into_iter().find(|field| {
-            field.page() == modal.advanced_page && field.page_row() == usize::from(row)
-        })?;
-        return Some(C::Advanced(field));
+        return advanced_field(modal, usize::from(row)).map(C::Advanced);
     }
     if let Some(row) = id.checked_sub(EXTRAS).filter(|row| *row < ROWS) {
         return Some(C::ExtrasRow(usize::from(row)));
@@ -74,26 +88,55 @@ fn control_of(modal: &RandomMapSetupModalState, id: u16) -> Option<C> {
         .map(|(_, control)| *control)
 }
 
-/// The widgets in hit order.
+/// The Advanced slider of the page on show in window `row`.
+fn advanced_field(modal: &RandomMapSetupModalState, row: usize) -> Option<AdvancedField> {
+    AdvancedField::ALL
+        .into_iter()
+        .find(|field| field.page() == modal.advanced_page && field.page_row() == row)
+}
+
+/// The widgets in hit order, then the statics that show text only.
 fn spec() -> NodeSpec {
-    let rows =
-        |base: u16, kind| (0..ROWS).map(move |row| NodeSpec::new(kind).id((base + row).into()));
-    let kind = |control| match control {
-        C::Players0x3eb => NodeKind::Trackbar,
-        control if SetupCombo::from_control(control).is_some() => NodeKind::Combo,
-        _ => NodeKind::Button,
+    let centred = Value::Int((ShellAlign::H_CENTER | ShellAlign::V_CENTER).0.into());
+    let rows = |base: u16, kind, colour: &Value| {
+        let colour = colour.clone();
+        (0..ROWS).map(move |row| {
+            NodeSpec::new(kind)
+                .id((base + row).into())
+                .with(Prop::DisabledColor, colour.clone())
+        })
     };
+    // The faces, the Players value and an Extras row's value keep the label
+    // colour; the captions of a control that is off take the disabled one.
     let fixed = |range: std::ops::Range<usize>| {
-        CONTROLS[range]
-            .iter()
-            .map(move |(id, control)| NodeSpec::new(kind(*control)).id((*id).into()))
+        CONTROLS[range].iter().map(|(id, control)| {
+            let spec = |kind| NodeSpec::new(kind).id((*id).into());
+            match control {
+                C::Players0x3eb => spec(NodeKind::Trackbar).with(Prop::DisabledColor, YELLOW),
+                control if SetupCombo::from_control(*control).is_some() => {
+                    spec(NodeKind::Combo).with(Prop::DisabledColor, YELLOW)
+                }
+                // Owner-draw type 3: the caption centred in the button.
+                C::Randomize0x621 | C::Generate0x620 => {
+                    spec(NodeKind::Button).with(Prop::Align, centred.clone())
+                }
+                _ => spec(NodeKind::Button),
+            }
+        })
     };
+    let text = |id: u16| NodeSpec::new(NodeKind::Text).id(id.into());
     NodeSpec::new(NodeKind::Dialog)
         .children(fixed(0..4))
-        .child(NodeSpec::new(NodeKind::Text).id(SCROLLBAR.into()))
-        .children(rows(SLIDER, NodeKind::Trackbar))
-        .children(rows(EXTRAS, NodeKind::Button))
+        .child(text(SCROLLBAR))
+        .children(rows(SLIDER, NodeKind::Trackbar, &DISABLED))
+        .children(
+            rows(EXTRAS, NodeKind::Button, &YELLOW)
+                .map(|row| row.with(Prop::Align, centred.clone())),
+        )
         .children(fixed(4..CONTROLS.len()))
+        .children(rows(LABEL, NodeKind::Text, &DISABLED))
+        .child(text(URBAN_CAPTION))
+        .child(text(PROGRESS))
 }
 
 /// Widget `id`'s rect in the view on show; none while it does not show.
@@ -104,17 +147,40 @@ fn rect(
     layout: &RandomMapSetupLayout,
     id: u16,
 ) -> Option<RectPx> {
-    let control = control_of(modal, id)?;
     let (basic, extras) = (!modal.advanced, modal.extras_page.is_some());
+    if let Some(row) = id
+        .checked_sub(LABEL)
+        .filter(|row| *row < ROWS)
+        .map(usize::from)
+    {
+        return match (basic, extras) {
+            (true, _) => layout.label_rects.get(row).copied(),
+            (false, true) => modal
+                .extras_row(row)
+                .map(|_| layout.advanced_label_rects[row]),
+            (false, false) => advanced_field(modal, row).map(|_| layout.advanced_label_rects[row]),
+        };
+    }
+    match id {
+        URBAN_CAPTION => {
+            return (basic && modal.ares)
+                .then(|| checkbox_text_rect(layout.urban_areas, layout.scale));
+        }
+        PROGRESS => return Some(layout.progress_text),
+        _ => {}
+    }
+    let control = control_of(modal, id)?;
     Some(match control {
         C::Advanced(field) if !basic && !extras => layout.advanced_control_rects[field.page_row()],
         C::ExtrasRow(row) if extras => layout.advanced_control_rects[row],
         C::AdvancedScrollbar if !basic && !extras => AdvancedField::advanced_scrollbar_rect(layout),
         C::Players0x3eb if basic => layout.control_rects[5],
         C::UrbanAreas5000 if basic && modal.ares => layout.urban_areas,
-        _ if basic && SetupCombo::from_control(control).is_some() => {
-            layout.control_rects[SetupCombo::from_control(control)?.row()]
-        }
+        // A closed combo is its face; its list hangs from it.
+        _ if basic && SetupCombo::from_control(control).is_some() => combo_face_rect(
+            layout.control_rects[SetupCombo::from_control(control)?.row()],
+            layout.scale,
+        ),
         C::Randomize0x621 => layout.randomize,
         C::Generate0x620 => layout.generate,
         C::Ok0x6c5 => layout.use_map,
@@ -170,14 +236,11 @@ pub fn sync_page(
             _ => {
                 if let Some(combo) = SetupCombo::from_control(control) {
                     let count = modal.combo_items(combo).len();
-                    let face = combo_face_rect(layout.control_rects[combo.row()], layout.scale);
                     let selected = modal
                         .selected_item_index(combo)
                         .map_or(-1, |row| row as i32);
                     set(Prop::RowCount, Value::Int(count as i32));
                     set(Prop::Selected, Value::Int(selected));
-                    // A closed combo takes the pointer on its face only.
-                    set(Prop::HitRect, Value::Rect(face));
                     let list = random_map_setup_dropdown_rect(layout, combo.row(), count);
                     set(Prop::PopupRect, Value::Rect(list));
                 }
@@ -196,23 +259,163 @@ pub fn sync_page(
     Some(root)
 }
 
+/// Puts the dialog's words on its widgets, each string key and fallback
+/// through `label`: the row labels (the six original rows' are `SS_LEFT`,
+/// unlike Choose Map's centred headings), the faces, the values, the
+/// captions and the progress text. A face whose value has no entry (map
+/// type 0, which the list omits) stays blank, as the original's
+/// match-the-entry selection leaves it. While a slide runs (`sliding`) the
+/// column art covers the right column's captions.
+pub fn show_texts(
+    controller: &mut DialogController,
+    modal: &RandomMapSetupModalState,
+    sliding: bool,
+    label: &dyn Fn(&str, &str) -> String,
+) {
+    use super::state::{ExtrasValue, RandomMapPreset};
+    let Some(root) = controller.root_in(DIALOG) else {
+        return;
+    };
+    let gui = controller.gui_mut();
+    let key = |(key, fallback): (&str, &str)| label(key, fallback);
+    // The 0x405 label reads "Environment" though the control writes the map
+    // type.
+    const BASIC: [(&str, &str); 6] = [
+        ("GUI:Environment", "Environment"),
+        ("GUI:TimeOfDay", "Time of Day"),
+        ("GUI:Theater", "Theater"),
+        ("GUI:MapSize", "Map Size"),
+        ("GUI:Resources", "Resources"),
+        ("GUI:Players", "Players"),
+    ];
+    let mut texts: Vec<(u16, String)> = Vec::new();
+    for row in 0..usize::from(ROWS) {
+        let id = |base: u16| base + row as u16;
+        let (caption, enabled) = match (modal.advanced, modal.extras_page) {
+            (false, _) => (BASIC.get(row).map(|l| key(*l)), true),
+            (true, Some(_)) => (modal.extras_row(row).map(|entry| key(entry.label())), true),
+            (true, None) => match advanced_field(modal, row) {
+                Some(field) => (
+                    Some(key(field.label())),
+                    modal.is_enabled(C::Advanced(field)),
+                ),
+                None => (None, true),
+            },
+        };
+        page::set(gui, root, id(LABEL), Prop::Enabled, Value::Bool(enabled));
+        texts.push((id(LABEL), caption.unwrap_or_default()));
+        // VERA: an Extras row shows its value or tool in its face.
+        let value = modal
+            .extras_row(row)
+            .map(|entry| match modal.extras_value(entry) {
+                ExtrasValue::Label(k, f) => label(k, f),
+                ExtrasValue::Number(number) => number.to_string(),
+                ExtrasValue::Page(page, pages) => format!("{page} / {pages}"),
+            });
+        texts.push((id(EXTRAS), value.unwrap_or_default()));
+    }
+    for (id, control) in CONTROLS {
+        if let Some(combo) = SetupCombo::from_control(control) {
+            let items = modal.combo_items(combo);
+            let face = modal
+                .selected_item_index(combo)
+                .map(|row| label(items[row].key, items[row].fallback));
+            texts.push((id, face.unwrap_or_default()));
+        }
+    }
+    // The column's captions; its toggle names the view its press shows next.
+    let toggle = match (modal.extras_page, modal.advanced) {
+        (Some(_), _) => ("VERA:RandomMapBasic", "Basic"),
+        (None, true) => ("VERA:RandomMapExtras", "Extras"),
+        (None, false) => ("VERA:RandomMapAdvanced", "Advanced"),
+    };
+    let export = match modal.exported {
+        true => ("VERA:RandomMapExported", "Map Exported"),
+        false => ("VERA:RandomMapExport", "Export Map"),
+    };
+    let fair = match modal.options.fair_starts {
+        true => ("VERA:RandomMapFairStartsOn", "Fair Starts: On"),
+        false => ("VERA:RandomMapFairStartsOff", "Fair Starts: Off"),
+    };
+    // One of the player's own presets is named by its number.
+    let preset = match modal.preset {
+        Some(RandomMapPreset::Mine(slot)) => key(RandomMapPreset::Mine(slot).label())
+            .replace("{number}", &(u32::from(slot) + 1).to_string()),
+        preset => key(preset.map_or(("VERA:RandomMapPresets", "Presets"), RandomMapPreset::label)),
+    };
+    for (id, caption) in [
+        (0x621, key(("GUI:SurpriseMe", "Surprise Me"))),
+        (0x620, key(("GUI:PreviewMap", "Preview Map"))),
+        (0x6C5, key(("GUI:UseMap", "Use Map"))),
+        (0x6C2, key(("GUI:LoadMap", "Load Map"))),
+        (0x6C3, key(("GUI:SaveMap", "Save Map"))),
+        (0x6C4, key(("GUI:DeleteMap", "Delete Map"))),
+        (0x5C0, key(("GUI:Cancel", "Cancel"))),
+        (0x7401, key(toggle)),
+        (0x7402, key(export)),
+        (0x7403, key(fair)),
+        (0x7404, preset),
+        (URBAN_CAPTION, key(("GUI:UrbanAreas", "Urban Areas"))),
+        (PROGRESS, progress_text(modal, label).unwrap_or_default()),
+    ] {
+        let covered = sliding && COLUMN.contains(&id);
+        texts.push((id, if covered { String::new() } else { caption }));
+    }
+    for (id, text) in texts {
+        page::set(gui, root, id, Prop::Text, Value::Text(text));
+    }
+}
+
+/// The progress text's place: the generate block's text, else VERA's word
+/// on where Export Map wrote the file (not the game folder), what the last
+/// Extras tool did, or how evenly the map on show treats its starts.
+fn progress_text(
+    modal: &RandomMapSetupModalState,
+    label: &dyn Fn(&str, &str) -> String,
+) -> Option<String> {
+    if modal.generating {
+        return Some(label("GUI:WorkingPleaseWait", "Working, please wait..."));
+    }
+    if let Some(path) = modal.exported_to.as_ref().filter(|_| modal.exported) {
+        return Some(label("VERA:RandomMapExportedTo", "Saved to {path}").replace("{path}", path));
+    }
+    if let Some((key, fallback)) = modal.extras_note {
+        return Some(label(key, fallback));
+    }
+    let report = modal.fairness.filter(|_| modal.generated)?;
+    let readout = report.readout();
+    let text = label(
+        "VERA:RandomMapFairness",
+        "Fairness: ore {ore}%, 2nd field {expansion}%, room {room}%, spacing {spacing}%",
+    )
+    .replace("{ore}", &readout.ore.to_string())
+    .replace("{expansion}", &readout.expansion.to_string())
+    .replace("{room}", &readout.room.to_string())
+    .replace("{spacing}", &readout.spacing.to_string());
+    // The water near the starts joins the line with Sea Access on.
+    Some(match readout.sea.filter(|_| report.sea_wanted) {
+        Some(sea) => {
+            text + &label("VERA:RandomMapFairnessSea", ", sea {sea}%")
+                .replace("{sea}", &sea.to_string())
+        }
+        None => text,
+    })
+}
+
 /// What the widget events do to the dialog: the cues to play and the button
 /// the user activated. The combos and sliders act at once; the buttons on
 /// release.
 fn handle(
     modal: &mut RandomMapSetupModalState,
     events: Vec<PageEvent>,
-    sounds: &mut Vec<SkirmishShellUiSound>,
+    sounds: &mut Vec<PageCue>,
 ) -> Option<C> {
     let mut activated = None;
     for event in events {
         match event {
-            PageEvent::Cue(cue) => sounds.extend(match cue {
-                PageCue::Button => Some(SkirmishShellUiSound::MainButton),
-                PageCue::ComboOpen => Some(SkirmishShellUiSound::GuiComboOpenSound),
-                PageCue::ComboClose => Some(SkirmishShellUiSound::GuiComboCloseSound),
-                PageCue::Checkbox | PageCue::ListClick => None,
-            }),
+            PageEvent::Cue(cue @ (PageCue::Button | PageCue::ComboOpen | PageCue::ComboClose)) => {
+                sounds.push(cue)
+            }
             PageEvent::Activated(id) => activated = control_of(modal, id),
             PageEvent::Picked(id, row) => {
                 let Some(combo) = control_of(modal, id).and_then(SetupCombo::from_control) else {
@@ -239,7 +442,7 @@ fn handle(
                     _ => false,
                 };
                 if changed {
-                    sounds.push(SkirmishShellUiSound::GenericClick);
+                    sounds.push(PageCue::ListClick);
                 }
             }
             _ => {}
@@ -259,7 +462,7 @@ pub fn pointer(
     at: Pointer,
     x: i32,
     y: i32,
-) -> (Vec<SkirmishShellUiSound>, Option<C>) {
+) -> (Vec<PageCue>, Option<C>) {
     let mut sounds = Vec::new();
     if sync_page(controller, modal, layout).is_none() {
         return (sounds, None);
@@ -294,7 +497,7 @@ pub fn pointer(
         _ => None,
     };
     if let Some(paged) = paged {
-        sounds.extend(paged.then_some(SkirmishShellUiSound::GenericClick));
+        sounds.extend(paged.then_some(PageCue::ListClick));
         return (sounds, None);
     }
     match at {
@@ -352,10 +555,7 @@ pub fn view(
         .popup()
         .and_then(control)
         .and_then(SetupCombo::from_control);
-    (
-        open,
-        gui.pressed().and_then(control),
-    )
+    (open, gui.pressed().and_then(control))
 }
 
 /// Closes the dialog's open list, without a cue (VERA's Esc).

@@ -15,8 +15,7 @@ use super::preview::{
     ensure_zoom_texture, project_preview_start_positions, push_start_marker_sprites, zoom_draws,
 };
 use super::text::{
-    button_text_rect, localized_label, push_start_marker_labels, rect_to_text_rect, static_label,
-    status_line_label,
+    button_text_rect, push_start_marker_labels, rect_to_text_rect, static_label, status_line_label,
 };
 use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH,
@@ -64,7 +63,7 @@ pub(crate) fn render_multiplayer_setup(
         state.frontend.skirmish_preview_texture = None;
     }
     let zoom_layout = ensure_zoom_texture(state, scale, !sliding);
-    let heading = localized_label(state, view.page().title_key, view.page().title_key);
+    let heading = state.csf_label(view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
         .multiplayer_setup
@@ -239,7 +238,7 @@ pub(crate) fn render_multiplayer_setup(
                 ShellAlign::NONE
             };
             texts.push(sized(
-                &localized_label(state, key, key),
+                &state.csf_label(key, key),
                 *rect,
                 align,
                 label_rgb,
@@ -591,7 +590,7 @@ pub(crate) fn render_multiplayer_setup(
         if view.cooperative {
             for (key, x) in [("TXT_Easy", 170), ("TXT_Normal", 295), ("TXT_Hard", 430)] {
                 texts.push(text(
-                    &localized_label(state, key, key),
+                    &state.csf_label(key, key),
                     scale.scale_rect(RectPx::new(x, 190, 75, 20)),
                     ShellAlign::H_CENTER,
                     SHELL_LABEL_TEXT_RGB,
@@ -707,7 +706,7 @@ pub(crate) fn render_multiplayer_setup(
                     texts.push(shell_text::draw_in_rect_scaled(
                         font,
                         &view.dialog.button_label(button.id).map_or_else(
-                            || localized_label(state, spec.csf_key, spec.csf_key),
+                            || state.csf_label(spec.csf_key, spec.csf_key),
                             crate::i18n::tr,
                         ),
                         button_text_rect(button.rect, pressed, scale),
@@ -851,7 +850,7 @@ pub(crate) fn render_multiplayer_setup(
             let text_of = |id: i32| match u16::try_from(id).ok()? {
                 MAP_OFFER_BODY => Some(body.clone()),
                 MAP_OFFER_DOWNLOAD => Some(crate::i18n::tr("VERA:Download")),
-                MAP_OFFER_LEAVE => Some(localized_label(state, "GUI:Leave", "Leave")),
+                MAP_OFFER_LEAVE => Some(state.csf_label("GUI:Leave", "Leave")),
                 _ => None,
             };
             // Download greys while the map comes, but still takes a press.
@@ -892,20 +891,12 @@ pub(crate) fn render_multiplayer_setup(
             atlas,
             &crate::ui::skirmish_shell::compute_layout_on(scale.centred(), width, height),
         );
-        let modal = crate::ui::shell::modal::body_ok_layout(width as i32, height as i32);
-        super::modals::push_validation_modal_instances(
-            &mut overlay.controls,
-            atlas,
-            &modal,
-            look.notice_ok,
-        );
-        super::text::push_validation_modal_text_draws(
-            &mut overlay.texts,
-            state,
-            notice,
-            &modal,
-            look.notice_ok,
-        );
+        let ok = look.notice_ok;
+        let pressed = |id| ok && id == crate::ui::shell::modal::control::OK;
+        let box_look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
+        let size = (width as i32, height as i32);
+        let (sprites, texts) = (Some(&mut overlay.controls), Some((&mut overlay.texts, false)));
+        super::shell_box::push_skirmish_box(state, size, notice, pressed, box_look, sprites, texts);
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).
     if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {

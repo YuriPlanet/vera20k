@@ -13,7 +13,7 @@ use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::{Ra2tsDialogOwner, shell_reveal_path_a};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
+    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect,
     software_cursor,
 };
 use crate::app::frontend::shell_transition::{ColumnDraw, ShellSlideKind};
@@ -216,8 +216,7 @@ pub(crate) struct PanelState {
 
 /// The CSF text of a status help key; empty off every control.
 pub(crate) fn help_text(state: &AppState, key: Option<&str>) -> String {
-    key.map(|key| resolve_csf(state, key).into_owned())
-        .unwrap_or_default()
+    key.map(|key| state.csf_text(key)).unwrap_or_default()
 }
 
 /// The slide and statics of a family page other than `0xE2`: its teardown
@@ -354,7 +353,7 @@ pub(crate) fn active_page_title_text(
             return String::new();
         }
     };
-    resolve_csf(state, key).into_owned()
+    state.csf_text(key)
 }
 
 /// Paint whichever RA2TS menu page the route selects.
@@ -533,7 +532,7 @@ pub(crate) fn encode_family_page(
             continue;
         };
         labels.push(PaintLabel {
-            text: resolve_csf(state, spec_button.csf_key),
+            text: state.csf_text(spec_button.csf_key).into(),
             rect: owner_draw_button_label_rect(paint.rect, paint.pressed),
             align: ShellAlign::BUTTON_CAPTION,
             rgb: if paint.enabled {
@@ -546,7 +545,7 @@ pub(crate) fn encode_family_page(
     }
     if let Some(window) = panel.title {
         labels.push(PaintLabel {
-            text: resolve_csf(state, spec.title_key),
+            text: state.csf_text(spec.title_key).into(),
             rect: layout.title,
             align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,

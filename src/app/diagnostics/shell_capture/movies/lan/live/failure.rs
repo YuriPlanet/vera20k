@@ -411,7 +411,7 @@ impl FailureCapture {
             "removed peer retains private connection"
         );
         let lost_line = crate::assets::csf_file::format_csf(
-            &App::csf_label(state, "TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST"),
+            &state.csf_label("TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST"),
             &[crate::assets::csf_file::CsfArg::Str(&self.peer_name)],
         );
         let lost_count = state

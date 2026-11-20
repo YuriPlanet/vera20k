@@ -29,7 +29,7 @@ pub(crate) fn render_load_saved_game_page(
     if state.frontend.main_menu_shell_chrome.is_none() || state.frontend.load_saved_game.is_none() {
         return Ok(false);
     }
-    let layout = crate::app::App::load_saved_game_layout(state);
+    let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
     let panel = page_panel_state(
         state,
         ShellSlideKind::LoadSavedGame,

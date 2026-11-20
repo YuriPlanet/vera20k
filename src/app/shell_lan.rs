@@ -7,7 +7,6 @@ use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::match_runtime::session::NetworkReturnContext;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
-use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::room_limits::RoomLimits;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
@@ -199,12 +198,7 @@ impl LanShellRuntime {
 }
 
 pub(crate) fn layout(state: &AppState) -> LanLobbyLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        LanLobbyLayout::responsive(width as i32, height as i32)
-    } else {
-        LanLobbyLayout::new(width as i32, height as i32)
-    }
+    shell_layout::on(state, LanLobbyLayout::new)
 }
 
 impl App {
@@ -241,10 +235,9 @@ impl App {
         #[cfg(target_os = "android")]
         crate::util::lan_network::acquire();
         crate::app::lan_service::open(state);
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        shell_transition::invalidate_main_menu_dialog_instance(state);
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::LanLobby;
-        state.frontend.shell_controller.reset_to(PAGE.dialog, false);
+        App::destroy_current_shell_dialog(state);
+        let route = crate::app::shell_route::ShellRoute::LanLobby;
+        App::show_shell_page(state, route, PAGE.dialog);
         state.frontend.shell_first_paint_slide = None;
         state.platform.window.request_redraw();
     }
@@ -331,7 +324,8 @@ fn reserved_names(state: &AppState) -> Vec<String> {
     RESERVED_LABELS
         .iter()
         .map(|key| {
-            App::csf_label(state, key, key)
+            state
+                .csf_label(key, key)
                 .encode_utf16()
                 .map(|unit| unit as u8)
                 .take_while(|byte| *byte != 0)
@@ -544,9 +538,7 @@ fn append_chat_to(
 /// the active lobby's or room's chat ([`append_chat`]), with the system error
 /// sound.
 pub(crate) fn report_error(state: &mut AppState, key: &str) {
-    let text = crate::i18n::label(state.process_assets.csf.as_ref(), key, key)
-        .encode_utf16()
-        .collect();
+    let text = state.csf_label(key, key).encode_utf16().collect();
     //5E2700 uses -1 for the ordinary yellow message color.
     append_chat(
         state,
@@ -634,9 +626,11 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                     .push(LanServiceRequest::Join { game_id, observe });
             }
         }
-        LanLobbyAction::Back => {
-            App::leave_shell_dialog(state, shell_transition::ShellExitThen::LanBack)
-        }
+        LanLobbyAction::Back => App::leave_shell_dialog(
+            state,
+            shell_transition::ShellSlideKind::LanLobby,
+            App::commit_lan_back,
+        ),
         LanLobbyAction::ObserverChanged(value) => state
             .frontend
             .multiplayer_shell_runtime
@@ -761,7 +755,15 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             runtime.pending_join = None;
             App::leave_shell_dialog(
                 state,
-                shell_transition::ShellExitThen::LanJoinAccepted(accepted),
+                shell_transition::ShellSlideKind::LanLobby,
+                move |state| {
+                    App::open_joined_setup(
+                        state,
+                        accepted.local,
+                        accepted.observer_row,
+                        crate::ui::multiplayer_setup::SetupFlavor::Lan,
+                    );
+                },
             );
         }
         LanServiceEvent::JoinCanceled { game_id } => {
@@ -818,7 +820,7 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
         "TXT_GAME_NOW_IN_PROGRESS"
     };
     let text = crate::assets::csf_file::format_csf(
-        &App::csf_label(state, key, key),
+        &state.csf_label(key, key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
     let sound = state
@@ -860,7 +862,8 @@ fn create(state: &mut AppState, name: &str) {
     } else {
         App::leave_shell_dialog(
             state,
-            shell_transition::ShellExitThen::LanCreate { observe },
+            shell_transition::ShellSlideKind::LanLobby,
+            move |state| App::commit_lan_create(state, observe),
         );
     }
 }
@@ -1161,9 +1164,8 @@ fn lobby_command(state: &mut AppState, id: u16) {
 /// The widgets' events of the last input, in order: each control's cue,
 /// then what it does.
 fn handle_events(state: &mut AppState) {
-    let controller = &mut state.frontend.shell_controller;
-    let raw = controller.drain_events();
-    let events = page::page_events(controller.gui(), raw);
+    // The games and players lists play their own GenericClick.
+    let events = App::shell_page_events(state, false);
     if events.is_empty() {
         return;
     }
@@ -1174,9 +1176,6 @@ fn handle_events(state: &mut AppState) {
         .is_some_and(|runtime| runtime.creating);
     for event in events {
         match event {
-            // The games and players lists play their own GenericClick.
-            PageEvent::Cue(PageCue::ListClick) => {}
-            PageEvent::Cue(cue) => App::play_page_cue(state, cue),
             PageEvent::Activated(OK | CANCEL) if creating => {
                 close_create_box(state, event == PageEvent::Activated(OK))
             }
@@ -1197,7 +1196,7 @@ fn handle_events(state: &mut AppState) {
                 for action in selection.into_iter().chain(join) {
                     dispatch(state, action);
                 }
-                App::play_launcher_options_cue(state, LauncherCue::GenericClick);
+                App::play_page_cue(state, PageCue::ListClick);
             }
             // A double-click's second press only notifies LBN_DBLCLK
             // (0x0061A904..0x0061A945), which this dialog ignores.
@@ -1211,7 +1210,7 @@ fn handle_events(state: &mut AppState) {
                     .as_mut()
                     .is_some_and(|runtime| runtime.lobby.select_player(row as usize))
                 {
-                    App::play_launcher_options_cue(state, LauncherCue::GenericClick);
+                    App::play_page_cue(state, PageCue::ListClick);
                 }
             }
             PageEvent::Scrolled(CHAT_LOG) => {

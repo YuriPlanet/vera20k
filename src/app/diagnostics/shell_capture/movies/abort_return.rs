@@ -305,7 +305,9 @@ impl AbortReturnInput {
             AbortInputPhase::AbortPressed => {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu == InGameMenuState::Menu
-                        && crate::app::input::pause_menu::button_states(state)[PauseMenuButton::Abort as usize].pressed,
+                        && crate::app::input::pause_menu::button_states(state)
+                            [PauseMenuButton::Abort as usize]
+                            .pressed,
                     "the menu press changed before its presented release"
                 );
                 crate::app::input::dispatch::handle_mouse_input(
@@ -367,7 +369,10 @@ impl AbortReturnInput {
                     ElementState::Pressed,
                 );
                 ensure!(
-                    crate::app::input::dialog_page::pressed(&state.match_state.match_presentation.dialog_ui, choice.id()),
+                    crate::app::input::dialog_page::pressed(
+                        &state.match_state.match_presentation.dialog_ui,
+                        choice.id()
+                    ),
                     "physical B6 {choice:?} press missed its loaded control"
                 );
                 route.push(
@@ -399,7 +404,10 @@ impl AbortReturnInput {
                     ElementState::Pressed,
                 );
                 ensure!(
-                    crate::app::input::surrender::pressed(state, crate::app::input::surrender::SurrenderButton::Ok),
+                    crate::app::input::surrender::pressed(
+                        state,
+                        crate::app::input::surrender::SurrenderButton::Ok
+                    ),
                     "the Surrender OK press missed its control"
                 );
                 route.push(json!({"frame": frame, "action": "Surrender OK press",
@@ -445,7 +453,10 @@ impl AbortReturnInput {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu
                         == InGameMenuState::AbortConfirm
-                        && crate::app::input::dialog_page::pressed(&state.match_state.match_presentation.dialog_ui, AbortButton::Secondary.id()),
+                        && crate::app::input::dialog_page::pressed(
+                            &state.match_state.match_presentation.dialog_ui,
+                            AbortButton::Secondary.id()
+                        ),
                     "B6 secondary capture changed before its presented press/release"
                 );
                 let secondary = crate::app::input::abort::current_abort_layout(state)
@@ -502,7 +513,10 @@ impl AbortReturnInput {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu
                         == InGameMenuState::AbortConfirm
-                        && crate::app::input::dialog_page::pressed(&state.match_state.match_presentation.dialog_ui, AbortButton::Leave.id()),
+                        && crate::app::input::dialog_page::pressed(
+                            &state.match_state.match_presentation.dialog_ui,
+                            AbortButton::Leave.id()
+                        ),
                     "B6 Leave capture changed before its presented press/release"
                 );
                 let runtime = state

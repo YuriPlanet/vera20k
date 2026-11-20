@@ -12,7 +12,7 @@ use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::shell::trackbar::TrackbarRange;
 
-use super::{SkirmishShellLayout, SkirmishShellUiSound};
+use super::SkirmishShellLayout;
 
 /// The page's button: the room's button text.
 pub const GAME_OPTIONS_LABEL: &str = "GUI:GameOptions";
@@ -208,8 +208,7 @@ pub fn pointer(
     let mut close = false;
     for event in page::page_events(controller.gui(), raw) {
         let sound = match event {
-            PageEvent::Cue(PageCue::Button) => Some(SkirmishShellUiSound::MainButton),
-            PageEvent::Cue(PageCue::Checkbox) => Some(SkirmishShellUiSound::GuiCheckboxSound),
+            PageEvent::Cue(cue @ (PageCue::Button | PageCue::Checkbox)) => Some(cue),
             PageEvent::Toggled(2, on) => {
                 open.rules.terrain_deformation = on;
                 None
@@ -227,7 +226,7 @@ pub fn pointer(
             } => {
                 let limit = admitted_superweapon_limit(value);
                 let changed = std::mem::replace(&mut open.rules.superweapon_limit, limit) != limit;
-                changed.then_some(SkirmishShellUiSound::GenericClick)
+                changed.then_some(PageCue::ListClick)
             }
             PageEvent::Activated(4) => {
                 close = true;
@@ -316,7 +315,7 @@ mod tests {
         fn at(&mut self, at: Pointer, x: i32, y: i32) -> bool {
             pointer(&mut self.0, &mut self.1, &layout(), at, x, y)
         }
-        fn mouse_down(&mut self, x: i32, y: i32) -> Vec<SkirmishShellUiSound> {
+        fn mouse_down(&mut self, x: i32, y: i32) -> Vec<PageCue> {
             self.at(Pointer::Move, x, y);
             self.at(Pointer::Down, x, y);
             self.1.drain_pending_ui_sounds()
@@ -341,10 +340,7 @@ mod tests {
             ..Default::default()
         });
         let row = bar.y + bar.h - 4;
-        assert_eq!(
-            open.mouse_down(bar.x + 1, row),
-            [SkirmishShellUiSound::GenericClick]
-        );
+        assert_eq!(open.mouse_down(bar.x + 1, row), [PageCue::ListClick]);
         assert_eq!(open.rules().superweapon_limit, 0);
         open.mouse_up(bar.x + 1, row);
         // The plaque's 50 pixels stay off the track: its far end is the
@@ -356,7 +352,7 @@ mod tests {
         let check = checkbox_icon_rect(layout.terrain_deformation, layout.scale);
         assert_eq!(
             open.mouse_down(check.x + 2, check.y + 2),
-            [SkirmishShellUiSound::GuiCheckboxSound]
+            [PageCue::Checkbox]
         );
         assert!(open.rules().terrain_deformation);
 
@@ -377,10 +373,7 @@ mod tests {
     fn ok_closes_only_on_a_release_over_its_own_press() {
         let ok = layout().ok;
         let mut open = Open::new(MatchRules::default());
-        assert_eq!(
-            open.mouse_down(ok.x + 2, ok.y + 2),
-            [SkirmishShellUiSound::MainButton]
-        );
+        assert_eq!(open.mouse_down(ok.x + 2, ok.y + 2), [PageCue::Button]);
         assert!(!open.mouse_up(ok.x - 2, ok.y + 2));
         open.mouse_down(ok.x - 2, ok.y + 2);
         assert!(!open.mouse_up(ok.x + 2, ok.y + 2));

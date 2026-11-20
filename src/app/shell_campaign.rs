@@ -9,7 +9,7 @@ use super::{App, AppState};
 use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::campaign_shell::{
-    CAMPAIGN_DIALOG, CampaignLayout, CampaignRelease, CampaignShellState, CampaignSide,
+    CAMPAIGN_DIALOG, CampaignRelease, CampaignShellState, CampaignSide,
 };
 
 /// Owner id of the campaign voice handle `0x00A8F300`: a new voice stops the
@@ -20,16 +20,11 @@ impl App {
     /// State 8: create `0x94` after `0x100` is destroyed. Its proc starts the
     /// slider at OptionsClass `Difficulty` (`0x0052F114`).
     pub(super) fn open_campaign_page(state: &mut AppState) {
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+        Self::destroy_current_shell_dialog(state);
         state.frontend.campaign = Some(CampaignShellState::open(
             state.persistence.options_profile.difficulty,
         ));
-        state.frontend.shell_route = ShellRoute::Campaign;
-        state
-            .frontend
-            .shell_controller
-            .reset_to(CAMPAIGN_DIALOG, false);
+        Self::show_shell_page(state, ShellRoute::Campaign, CAMPAIGN_DIALOG);
     }
 
     /// Back's teardown has run: the art is freed (`0x0072DAA0`) and state 1
@@ -53,7 +48,7 @@ impl App {
         // always authors `0x94` at 800x600, so it takes the large set and the
         // trackbar frame of that control size.
         let small = crate::app::frontend::shell_layout::art_key_screen_width(state) == 640;
-        let layout = Self::campaign_layout(state);
+        let layout = crate::app::frontend::shell_layout::campaign_layout(state);
         let base = layout.scale.base_rect(layout.slider);
         state.frontend.campaign_art =
             crate::render::main_menu_shell_chrome::build_campaign_shell_art(
@@ -76,10 +71,6 @@ impl App {
             && state.frontend.campaign.is_some()
     }
 
-    fn campaign_layout(state: &AppState) -> CampaignLayout {
-        crate::app::frontend::shell_layout::campaign_layout(state)
-    }
-
     /// Whether Back holds the mouse since a press on it.
     fn campaign_back_pressed(state: &AppState) -> bool {
         crate::ui::shell::menu_page::pressed_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG)
@@ -87,7 +78,7 @@ impl App {
     }
 
     pub(super) fn handle_campaign_mouse_move(state: &mut AppState) {
-        let layout = Self::campaign_layout(state);
+        let layout = crate::app::frontend::shell_layout::campaign_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         // A slider holding the mouse since a press on it keeps the status
         // line and Back's paint: the dialog's hit test (`0x00622CCB`) sees
@@ -122,7 +113,7 @@ impl App {
     }
 
     pub(super) fn handle_campaign_mouse_down(state: &mut AppState) {
-        let layout = Self::campaign_layout(state);
+        let layout = crate::app::frontend::shell_layout::campaign_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         let emblem = layout.emblem_at(x, y);
         let captured = state
@@ -149,7 +140,7 @@ impl App {
     }
 
     pub(super) fn handle_campaign_mouse_up(state: &mut AppState) {
-        let layout = Self::campaign_layout(state);
+        let layout = crate::app::frontend::shell_layout::campaign_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         let back_pressed = Self::campaign_back_pressed(state);
         let Some(campaign) = state.frontend.campaign.as_mut() else {
@@ -202,7 +193,8 @@ impl App {
         }
         Self::leave_shell_dialog(
             state,
-            crate::app::frontend::shell_transition::ShellExitThen::CampaignStart(side),
+            crate::app::frontend::shell_transition::ShellSlideKind::Campaign,
+            move |state| App::commit_campaign_start(state, side),
         );
     }
 

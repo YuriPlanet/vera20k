@@ -567,15 +567,7 @@ pub(crate) struct WolBuddyLayout {
 }
 
 impl WolBuddyLayout {
-    pub(crate) fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::RETAIL)
-    }
-
-    pub(crate) fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height))
-    }
-
-    fn build(width: i32, height: i32, scale: ShellScale) -> Self {
+    pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
         let place = Placer::on(scale, width, height);
         let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
         let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
@@ -682,7 +674,7 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x116"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
-            let layout = WolBuddyLayout::new(width.parse().unwrap(), height.parse().unwrap());
+            let layout = WolBuddyLayout::new(width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL);
             for (control, child) in case["controls"].as_object().unwrap() {
                 let actual = match control.as_str() {
                     "0x71C" => layout.page.warning_monitor,

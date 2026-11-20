@@ -2,6 +2,7 @@
 //! Native driver 0x00558DD0 owns modal lifetime; MapSeed slots 0x00597760,
 //! 0x00597A30 and 0x00597D50 own persistence.
 
+use crate::app::frontend::shell_layout;
 use super::shell_random_map::{RANDOM_MAP_DESCRIPTION_FALLBACK, RANDOM_MAP_DESCRIPTION_KEY};
 use super::*;
 use crate::map::rmg::{SeedDescription, saved_seeds};
@@ -19,10 +20,6 @@ pub(super) fn saved_browser_rows(layout: &SavedSeedLayout) -> usize {
 }
 
 impl App {
-    fn skirmish_saved_seed_layout(state: &AppState, mode: SavedSeedMode) -> SavedSeedLayout {
-        crate::app::frontend::shell_layout::saved_seed_layout(state, mode)
-    }
-
     fn saved_seed_browser(state: &mut AppState) -> Option<&mut SavedSeedBrowserState> {
         state
             .frontend
@@ -40,8 +37,8 @@ impl App {
         let current = modal
             .map(|modal| modal.options.description.clone())
             .unwrap_or_default();
-        let empty = Self::csf_label(state, "TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        let rows = saved_browser_rows(&Self::skirmish_saved_seed_layout(state, mode));
+        let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
+        let rows = saved_browser_rows(&shell_layout::saved_seed_layout(state, mode));
         let time = saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now());
         let browser = SavedSeedBrowserState::open(mode, entries, current, empty.into(), time, rows);
         state.frontend.skirmish_shell_state.saved_seed_browser = Some(browser);
@@ -73,11 +70,11 @@ impl App {
         confirm: bool,
     ) -> SavedSeedPrompt<I> {
         let affirmative = if confirm {
-            Self::csf_label(state, "TXT_YES", "Yes")
+            state.csf_label("TXT_YES", "Yes")
         } else {
-            Self::csf_label(state, "TXT_OK", "OK")
+            state.csf_label("TXT_OK", "OK")
         };
-        let negative = confirm.then(|| Self::csf_label(state, "TXT_NO", "No"));
+        let negative = confirm.then(|| state.csf_label("TXT_NO", "No"));
         SavedSeedPrompt {
             purpose,
             body,
@@ -124,7 +121,7 @@ impl App {
                 "saved seed: native-style save acknowledgment despite I/O failure for {file_name}: {error}"
             );
         }
-        let body = Self::csf_label(state, "GUI:MapSaved", "Map Saved");
+        let body = state.csf_label("GUI:MapSaved", "Map Saved");
         Self::show_saved_seed_prompt(state, SavedSeedPromptPurpose::Saved, body, false);
     }
 
@@ -154,10 +151,8 @@ impl App {
                 {
                     log::warn!("saved seed: could not delete {file_name}: {error}");
                 }
-                let rows = saved_browser_rows(&Self::skirmish_saved_seed_layout(
-                    state,
-                    SavedSeedMode::Delete,
-                ));
+                let layout = shell_layout::saved_seed_layout(state, SavedSeedMode::Delete);
+                let rows = saved_browser_rows(&layout);
                 // driver 0x00558DD0 removes the row regardless of DeleteFileA's result.
                 let empty = Self::saved_seed_browser(state).is_some_and(|browser| {
                     browser.remove_entry(&file_name, rows);
@@ -178,11 +173,8 @@ impl App {
         match outcome {
             SavedSeedOutcome::Close => Self::close_saved_seed_browser(state),
             SavedSeedOutcome::Load(file_name) => {
-                let default = Self::csf_label(
-                    state,
-                    RANDOM_MAP_DESCRIPTION_KEY,
-                    RANDOM_MAP_DESCRIPTION_FALLBACK,
-                );
+                let default =
+                    state.csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK);
                 let shell = &mut state.frontend.skirmish_shell_state;
                 let Some(modal) = shell.random_map_setup_modal.as_mut() else {
                     return;
@@ -222,11 +214,8 @@ impl App {
                 description,
             } => {
                 if description.is_empty() {
-                    let body = Self::csf_label(
-                        state,
-                        "TXT_MUSTENTER_DESCRIPTION",
-                        "You must enter a description!",
-                    );
+                    let body = state
+                        .csf_label("TXT_MUSTENTER_DESCRIPTION", "You must enter a description!");
                     let purpose = SavedSeedPromptPurpose::EmptyDescription;
                     Self::show_saved_seed_prompt(state, purpose, body, false);
                     return;
@@ -242,8 +231,7 @@ impl App {
                     )
                 });
                 if native_file_name::available(&dir, &file_name) {
-                    let body =
-                        Self::csf_label(state, "TXT_CONFIRM_SAVE", "Overwrite existing save game?");
+                    let body = state.csf_label("TXT_CONFIRM_SAVE", "Overwrite existing save game?");
                     let purpose = SavedSeedPromptPurpose::Overwrite {
                         file_name,
                         description,
@@ -254,7 +242,7 @@ impl App {
                 }
             }
             SavedSeedOutcome::Delete(file_name) => {
-                let prefix = Self::csf_label(state, "TXT_DELETE_FILE_QUERY", "Delete this file?");
+                let prefix = state.csf_label("TXT_DELETE_FILE_QUERY", "Delete this file?");
                 let browser = state
                     .frontend
                     .skirmish_shell_state
@@ -315,7 +303,7 @@ impl App {
         else {
             return false;
         };
-        let layout = Self::skirmish_saved_seed_layout(state, mode);
+        let layout = shell_layout::saved_seed_layout(state, mode);
         let extent = (state.render_width(), state.render_height());
         let pointer = state.match_state.input.cursor_px();
         if let Some(browser) = Self::saved_seed_browser(state) {
@@ -340,7 +328,7 @@ impl App {
         else {
             return;
         };
-        let layout = Self::skirmish_saved_seed_layout(state, mode);
+        let layout = shell_layout::saved_seed_layout(state, mode);
         let extent = (state.render_width(), state.render_height());
         let font = &state.renderer.bit_font;
         if let Some(browser) = state
@@ -351,4 +339,5 @@ impl App {
         {
             saved_file_input::update(browser, &layout, extent, |text| font.text_width(text));
         }
-    }}
+    }
+}

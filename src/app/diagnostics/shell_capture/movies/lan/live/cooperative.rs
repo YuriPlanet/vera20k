@@ -146,8 +146,7 @@ impl CooperativeRun {
             {
                 let labels = click_cooperative_mode(state)?;
                 if self.saved {
-                    let label =
-                        crate::app::App::csf_label(state, "TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE");
+                    let label = state.csf_label("TXT_COOP_USE_SAVE", "TXT_COOP_USE_SAVE");
                     let row = labels
                         .iter()
                         .position(|row| *row == label)
@@ -226,8 +225,7 @@ impl CooperativeRun {
             && next.is_some()
             && next != self.first_map
         {
-            let notice =
-                App::csf_label(state, "TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
+            let notice = state.csf_label("TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
             let shown = state
                 .frontend
                 .multiplayer_setup

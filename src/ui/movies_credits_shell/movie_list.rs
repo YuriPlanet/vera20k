@@ -12,7 +12,7 @@ use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, dlu_rect, fit_window};
+use crate::ui::shell::geom::{RectPx, dlu_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 pub const MOVIE_LIST_DIALOG: DialogId = DialogId(0x0129);
@@ -56,14 +56,6 @@ pub fn compute_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayou
         list: dlu_rect(80, 79, 266, 187),
         prompt: dlu_rect(80, 45, 266, 24),
     }
-}
-
-/// The responsive variant of [`compute_movie_list_layout`]: the verified
-/// 800x600 `0x129` scaled to fit the window, keeping its shape. Identity at the
-/// base size. Rows grow with the scale, so the list shows the rows it shows at
-/// 800x600.
-pub fn compute_responsive_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayout {
-    fit_window(screen_w, screen_h, compute_movie_list_layout)
 }
 
 vera20k_gui::scaled_rects!(MovieListLayout { page, list, prompt });

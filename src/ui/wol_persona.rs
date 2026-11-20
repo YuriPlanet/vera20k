@@ -251,19 +251,6 @@ pub(crate) struct WolPersonaLayout {
 }
 
 impl WolPersonaLayout {
-    pub(crate) fn new(dialog: DialogId, width: i32, height: i32) -> Self {
-        Self::build(dialog, width, height, ShellScale::RETAIL)
-    }
-
-    pub(crate) fn responsive(dialog: DialogId, width: i32, height: i32) -> Self {
-        Self::build(
-            dialog,
-            width,
-            height,
-            ShellScale::from_screen(width, height),
-        )
-    }
-
     pub(crate) fn spec(dialog: DialogId) -> &'static MenuPageSpec {
         match dialog {
             LOCALE_DIALOG => &LOCALE_PAGE,
@@ -272,7 +259,7 @@ impl WolPersonaLayout {
         }
     }
 
-    fn build(dialog: DialogId, width: i32, height: i32, scale: ShellScale) -> Self {
+    pub(crate) fn new(dialog: DialogId, width: i32, height: i32, scale: ShellScale) -> Self {
         let spec = Self::spec(dialog);
         let locale = dialog == LOCALE_DIALOG;
         let place = Placer::on(scale, width, height);
@@ -340,7 +327,7 @@ mod tests {
             for (size, case) in corpus["layouts"][&key]["sizes"].as_object().unwrap() {
                 let (width, height) = size.split_once('x').unwrap();
                 let layout =
-                    WolPersonaLayout::new(dialog, width.parse().unwrap(), height.parse().unwrap());
+                    WolPersonaLayout::new(dialog, width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL);
                 for (control, child) in case["controls"].as_object().unwrap() {
                     let id = u16::from_str_radix(&control[2..], 16).unwrap();
                     let actual = match id {

@@ -14,10 +14,10 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 use super::{App, AppState};
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_transition::{self, ShellExitThen};
+use crate::app::frontend::shell_transition;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
-use crate::ui::main_menu_dialogs::{OptionsDialogState, ShellMessageBoxLabels};
+use crate::ui::main_menu_dialogs::{OptionsDialogState, shell_menu};
 use crate::ui::shell::keyboard::KeyboardParent;
 use crate::ui::shell::modal::ModalResult;
 
@@ -96,13 +96,13 @@ impl App {
         if state.frontend.skirmish_shell_chrome.is_none() {
             return;
         }
-        let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-        let labels = ShellMessageBoxLabels::shell_menu(&csf);
+        let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+        let shell_box = shell_menu(&csf);
         let settings = Box::new(Self::launcher_options_from_state(state));
         Self::open_shell_message_box(
             state,
             ShellMessageBox {
-                labels,
+                shell_box,
                 purpose: ShellMessageBoxPurpose::ShellMenu(settings),
             },
         );
@@ -159,11 +159,11 @@ impl App {
         };
         let events = settings.drain_output().events;
         if Self::run_launcher_options_events(state, events) {
-            let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-            let labels = ShellMessageBoxLabels::shell_menu(&csf);
+            let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+            let shell_box = shell_menu(&csf);
             let option_labels = Self::launcher_options_labels(state);
             if let Some(message_box) = state.frontend.shell_message_box.as_mut() {
-                message_box.labels = labels;
+                message_box.shell_box = shell_box;
                 if let Some(settings) = message_box.menu_settings_mut() {
                     settings.set_labels(option_labels);
                 }
@@ -204,7 +204,7 @@ impl App {
             ModalResult::MessageBox(0) => {
                 match shell_transition::current_shell_slide_target(state) {
                     Some(kind) => {
-                        Self::leave_shell_dialog(state, ShellExitThen::ShellMenuOptions(kind));
+                        Self::leave_shell_dialog(state, kind, App::open_launcher_options_dialog);
                     }
                     None => Self::open_launcher_options_dialog(state),
                 }

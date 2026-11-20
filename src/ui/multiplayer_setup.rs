@@ -17,7 +17,7 @@ use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self as page_nodes, PageCue, PageEvent};
 use crate::ui::shell::trackbar::{TrackbarPress, TrackbarRange};
-use crate::ui::skirmish_shell::{SkirmishStatics, SkirmishValidationModalState};
+use crate::ui::skirmish_shell::SkirmishStatics;
 
 pub(crate) const VISIBLE_SETUP_ROWS: usize = 8;
 /// The most rows and headers VERA's roster ([`SetupDialog::modern`]) shows
@@ -856,7 +856,7 @@ pub(crate) struct MultiplayerSetupState {
     /// is scrolled to ([`RosterScroll`]).
     first_visible_row: usize,
     pub(crate) chat: LanChatState,
-    pub(crate) notice: Option<SkirmishValidationModalState>,
+    pub(crate) notice: Option<crate::ui::shell::modal::ShellBox>,
     /// The row the open list belongs to. Joins, leaves, moves and paging
     /// put another row under its control, and a list whose row moved away
     /// closes, so a pick never changes whoever took its place.

@@ -8,13 +8,14 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::shell::list::ListScrollInteraction;
+use crate::ui::shell::page::PageCue;
 
 use super::super::SkirmishStatics;
 use super::super::layout::shown_player_rows;
 use super::trackbars::SkirmishTrackbarBounds;
 use super::{
     ChooseMapModalState, RandomMapSetupModalState, SkirmishModeSelection, SkirmishShellOpponent,
-    SkirmishShellUiSound, SkirmishValidationModalState, default_opponents,
+    default_opponents,
 };
 
 pub const PLAYER_NAME_DEFAULT: &str = "Player";
@@ -408,11 +409,11 @@ pub struct SkirmishShellState {
     pub saved_seed_browser: Option<super::SavedSeedBrowserState>,
     /// VERA's Setups page over the Skirmish page, its rows named by setup.
     pub setups_browser: Option<super::SavedSeedBrowserState<String>>,
-    pub validation_modal: Option<SkirmishValidationModalState>,
+    pub validation_modal: Option<crate::ui::shell::modal::ShellBox>,
     /// VERA's Game Options box, open over the page: it takes every press
     /// and key until OK, Enter or Esc closes it.
     pub game_options: Option<crate::ui::skirmish_shell::game_options::GameOptionsBox>,
-    pub pending_ui_sounds: Vec<SkirmishShellUiSound>,
+    pub pending_ui_sounds: Vec<PageCue>,
     /// The kind-1 statics; the status line holds the hover help.
     pub(crate) statics: SkirmishStatics,
 }
@@ -529,15 +530,15 @@ impl SkirmishShellState {
         self.launch_options_base = SkirmishLaunchOptions::from_game_options(options);
     }
 
-    pub(crate) fn push_ui_sound(&mut self, sound: SkirmishShellUiSound) {
+    pub(crate) fn push_ui_sound(&mut self, sound: PageCue) {
         self.pending_ui_sounds.push(sound);
     }
 
-    pub fn pending_ui_sounds(&self) -> &[SkirmishShellUiSound] {
+    pub fn pending_ui_sounds(&self) -> &[PageCue] {
         &self.pending_ui_sounds
     }
 
-    pub fn drain_pending_ui_sounds(&mut self) -> Vec<SkirmishShellUiSound> {
+    pub fn drain_pending_ui_sounds(&mut self) -> Vec<PageCue> {
         std::mem::take(&mut self.pending_ui_sounds)
     }
 
@@ -593,7 +594,7 @@ pub fn dismiss_validation_modal(state: &mut SkirmishShellState) -> bool {
     state.validation_modal.take().is_some()
 }
 
-pub fn drain_pending_ui_sounds(state: &mut SkirmishShellState) -> Vec<SkirmishShellUiSound> {
+pub fn drain_pending_ui_sounds(state: &mut SkirmishShellState) -> Vec<PageCue> {
     state.drain_pending_ui_sounds()
 }
 

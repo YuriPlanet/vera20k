@@ -163,15 +163,6 @@ pub fn main_menu_saved_game_layout(width: u32, height: u32) -> MainMenuSavedGame
     }
 }
 
-/// The main-menu `0xB7` scaled to fit the live window:
-/// the same page, list window and browser mapped out of 800x600 by one scale,
-/// so the paint side and the hit-testing side take identical rects. Identity
-/// at the base size. Rows grow with the scale, so the list shows the rows it
-/// shows at 800x600.
-pub fn main_menu_saved_game_responsive_layout(width: u32, height: u32) -> MainMenuSavedGameLayout {
-    geom::fit_window(width, height, main_menu_saved_game_layout)
-}
-
 vera20k_gui::scaled_rects!(MainMenuSavedGameLayout {
     page,
     list_window,

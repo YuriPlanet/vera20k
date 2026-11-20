@@ -78,14 +78,6 @@ pub(super) fn row_rgb(color: u32) -> [f32; 3] {
     [color as u8, (color >> 8) as u8, (color >> 16) as u8].map(|c| f32::from(c) / 255.0)
 }
 
-pub(super) fn label(state: &AppState, key: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or_else(|| key.to_owned(), |csf| csf.text(key).into_owned())
-}
-
 /// A PCX of the lobby art centred vertically in `rect`, `x` columns in.
 pub(super) fn push_icon(
     out: &mut Vec<SpriteInstance>,
@@ -139,7 +131,7 @@ pub(crate) fn paint_wol_lobby_children(
     };
     for (key, rect) in layout.labels {
         paint.texts.push(text(
-            &label(state, key),
+            &state.csf_text(key),
             rect,
             ShellAlign::NONE,
             SHELL_LABEL_TEXT_RGB,
@@ -147,7 +139,7 @@ pub(crate) fn paint_wol_lobby_children(
     }
     if let Some(rect) = layout.observer_caption {
         paint.texts.push(text(
-            &label(state, "GUI:Observe"),
+            &state.csf_text("GUI:Observe"),
             rect,
             ShellAlign::H_RIGHT,
             SHELL_LABEL_TEXT_RGB,
@@ -187,7 +179,7 @@ pub(crate) fn paint_wol_lobby_children(
                     let caption = if modern && matches!(id, SORT_ALPHA | PLAYER_SORT_ALPHA) {
                         crate::i18n::tr("VERA:SortName")
                     } else {
-                        label(state, key)
+                        state.csf_text(key)
                     };
                     paint.texts.push(text(
                         &caption,
@@ -524,7 +516,7 @@ pub(crate) fn paint_wol_lobby_popup(
         STATUS => Some(status.to_owned()),
         CREATE_WATCHING if modern => {
             let key = popup.watching()?.label_key();
-            Some(super::text::localized_label(state, key, key))
+            Some(state.csf_label(key, key))
         }
         id if modern && titled(id.into()).is_some_and(|((control, _), _)| *control == id) => {
             let key = if ui.popup_checked(id) {
@@ -532,7 +524,7 @@ pub(crate) fn paint_wol_lobby_popup(
             } else {
                 "GUI:No"
             };
-            Some(super::text::localized_label(state, key, key))
+            Some(state.csf_label(key, key))
         }
         _ => None,
     };

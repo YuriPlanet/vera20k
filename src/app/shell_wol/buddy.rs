@@ -55,18 +55,7 @@ pub(super) fn page_open(state: &AppState) -> bool {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolBuddyLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        WolBuddyLayout::responsive(width as i32, height as i32)
-    } else {
-        WolBuddyLayout::new(width as i32, height as i32)
-    }
-}
-
-/// The status help under the pointer (`0x006040B0`). The list's per-row
-/// `0x4E8`/`0x4E9` tooltips are not read, so it answers with its own key.
-pub(crate) fn status_key(state: &AppState) -> Option<&str> {
-    leaf::status_key(state, DIALOG)
+    shell_layout::on(state, WolBuddyLayout::new)
 }
 
 /// Builds and places `0x116`'s widgets; the root.
@@ -79,7 +68,7 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
 
 /// Shows the page in its widgets (under `0x115` too).
 fn present(state: &mut AppState) {
-    let unknown = service::resolve(state, UNKNOWN_STATS_KEY);
+    let unknown = state.csf_text(UNKNOWN_STATS_KEY);
     sync(state);
     let frontend = &mut state.frontend;
     let Some(root) = frontend.shell_controller.root_in(DIALOG) else {
@@ -90,35 +79,6 @@ fn present(state: &mut AppState) {
             .ui
             .present(frontend.shell_controller.gui_mut(), root, &unknown);
     }
-}
-
-/// `0x0072C060`: BuddyList.shp (800 wide only) through BuddyList.PAL, with
-/// Refresh's pictures.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_buddy_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    let mut icons: Vec<&str> = vec![REFRESH_FACES.0, REFRESH_FACES.1];
-    icons.extend([
-        "wolclan.pcx",
-        "woltrny.pcx",
-        "wolpriv.pcx",
-        "wolreslk.pcx",
-        "wolrslkob.pcx",
-        "wolob.pcx",
-    ]);
-    state.frontend.wol_buddy_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("BuddyList.shp", "BuddyList.PAL"),
-        &icons,
-    );
-    state.frontend.wol_buddy_art.is_some()
 }
 
 /// The lobby list arrived: the dialog loop starts. Step 3 leaves the
@@ -145,7 +105,7 @@ pub(super) fn open_dialog(state: &mut AppState) {
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
-    open_art(state);
+    super::leaf::open_art(state, DIALOG);
     state.frontend.shell_controller.reset_to(DIALOG, false);
     super::buddies::restart(state);
     present(state);
@@ -159,7 +119,7 @@ pub(super) fn dialog_ended(state: &mut AppState) {
         visit.page = WolPage::Lobby;
     }
     super::page::close_received(state);
-    state.frontend.wol_buddy_art = None;
+    super::leaf::free_art(state, DIALOG);
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
 }
 
@@ -181,7 +141,7 @@ pub(crate) fn stopped(state: &mut AppState) {
 /// the custom lobby; mode 6 is My Information's driver; mode 0 is the
 /// welcome.
 fn returned(state: &mut AppState) {
-    state.frontend.wol_buddy_art = None;
+    super::leaf::free_art(state, DIALOG);
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
@@ -292,7 +252,7 @@ fn texts(state: &AppState) -> BuddyTexts {
         playing,
         quick_matching,
         unknown,
-    ] = BuddyTexts::KEYS.map(|key| service::resolve(state, key));
+    ] = BuddyTexts::KEYS.map(|key| state.csf_text(key));
     BuddyTexts {
         find_disabled,
         offline,
@@ -391,7 +351,7 @@ fn stats(state: &mut AppState) {
             .collect()
     } else {
         let heading = format_csf(
-            &service::resolve(state, "GUI:UserProfileLabel"),
+            &state.csf_text("GUI:UserProfileLabel"),
             &[CsfArg::Str(&selected)],
         );
         let record = state
@@ -408,7 +368,7 @@ fn stats(state: &mut AppState) {
                 record.points,
             ]
             .map(|value| value.to_string()),
-            None => std::array::from_fn(|_| service::resolve(state, UNKNOWN_STATS_KEY)),
+            None => std::array::from_fn(|_| state.csf_text(UNKNOWN_STATS_KEY)),
         };
         std::iter::once((HEADING, heading))
             .chain(STATS.into_iter().zip(values))
@@ -428,7 +388,8 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
         WolBuddyAction::End(control) => {
             App::leave_shell_dialog(
                 state,
-                shell_transition::ShellExitThen::WolBuddyClose(control),
+                shell_transition::ShellSlideKind::WolBuddyList,
+                move |state| crate::app::shell_wol::buddy::commit_close(state, control),
             );
         }
         WolBuddyAction::Select(name) => {
@@ -548,7 +509,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     let image = pressed && layout(state).observer_image.contains(x, y);
     let events = leaf::pointer(state, at);
     if image {
-        leaf::play(state, PageCue::Checkbox);
+        App::play_page_cue(state, PageCue::Checkbox);
         if let Some(action) = page_mut(state).and_then(|dialog| dialog.ui.activate(OBSERVER_IMAGE))
         {
             apply(state, action);
@@ -560,7 +521,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         };
         let (action, doubled) = match event {
             PageEvent::Cue(cue) => {
-                leaf::play(state, cue);
+                App::play_page_cue(state, cue);
                 continue;
             }
             // LBN_SELCHANGE runs first, then LBN_DBLCLK.
@@ -570,7 +531,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             _ => continue,
         };
         if doubled {
-            leaf::play(state, PageCue::ListClick);
+            App::play_page_cue(state, PageCue::ListClick);
         }
         if let Some(action) = action {
             apply(state, action);

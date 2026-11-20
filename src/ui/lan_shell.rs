@@ -786,14 +786,7 @@ pub(crate) struct LanLobbyLayout {
 }
 
 impl LanLobbyLayout {
-    pub(crate) fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::RETAIL)
-    }
-    pub(crate) fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height))
-    }
-
-    fn build(width: i32, height: i32, scale: ShellScale) -> Self {
+    pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
         let page = menu_page::compute_layout_for(&PAGE, scale, width, height);
         let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
         // Executed original BB child setup60AAB0/include60C540/relayout60C4A0
@@ -966,7 +959,7 @@ mod tests {
 
     #[test]
     fn layout_and_help_follow_original_bb_execution() {
-        let layout = LanLobbyLayout::new(800, 600);
+        let layout = LanLobbyLayout::new(800, 600, ShellScale::RETAIL);
         for row in native()["layout_800"].as_array().unwrap() {
             let id = row["id"].as_u64().unwrap() as u32;
             let expected: Vec<i32> = serde_json::from_value(row["rect"].clone()).unwrap();

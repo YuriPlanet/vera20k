@@ -71,12 +71,12 @@ impl App {
             path.as_deref(),
         ) {
             Ok(_) => {
-                let body = Self::csf_label(state, "TXT_GAME_WAS_SAVED", "The game was saved.");
+                let body = state.csf_label("TXT_GAME_WAS_SAVED", "The game was saved.");
                 Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Saved, body, false);
             }
             Err(error) => {
                 log::warn!("Save browser: {error}");
-                let body = Self::csf_label(state, "TXT_ERROR_SAVING_GAME", "Error saving game.");
+                let body = state.csf_label("TXT_ERROR_SAVING_GAME", "Error saving game.");
                 Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Error, body, false);
             }
         }
@@ -127,11 +127,8 @@ impl App {
                 description,
             } => {
                 if description.is_empty() {
-                    let body = Self::csf_label(
-                        state,
-                        "TXT_MUSTENTER_DESCRIPTION",
-                        "You must enter a description!",
-                    );
+                    let body = state
+                        .csf_label("TXT_MUSTENTER_DESCRIPTION", "You must enter a description!");
                     Self::show_saved_game_prompt(
                         state,
                         SavedSeedPromptPurpose::EmptyDescription,
@@ -141,8 +138,7 @@ impl App {
                 } else if let Some(file_name) =
                     file_name.filter(|path| state.persistence.repository.exists(path))
                 {
-                    let body =
-                        Self::csf_label(state, "TXT_CONFIRM_SAVE", "Overwrite existing save game?");
+                    let body = state.csf_label("TXT_CONFIRM_SAVE", "Overwrite existing save game?");
                     Self::show_saved_game_prompt(
                         state,
                         SavedSeedPromptPurpose::Overwrite {
@@ -176,7 +172,7 @@ impl App {
                 }
             }
             SavedSeedOutcome::Delete(file_name) => {
-                let prefix = Self::csf_label(state, "TXT_DELETE_FILE_QUERY", "Delete this file?");
+                let prefix = state.csf_label("TXT_DELETE_FILE_QUERY", "Delete this file?");
                 let description = state
                     .match_state
                     .match_presentation
@@ -207,7 +203,7 @@ impl App {
             }
             Err(error) => {
                 log::warn!("Load browser: {}: {error}", path.display());
-                let body = Self::csf_label(state, "TXT_ERROR_LOADING_GAME", "Error loading game.");
+                let body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
                 Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Error, body, false);
             }
         }

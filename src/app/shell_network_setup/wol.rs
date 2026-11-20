@@ -541,7 +541,8 @@ pub(crate) fn local_left(state: &mut AppState) {
     let dialog = super::dialog(state);
     App::leave_shell_dialog(
         state,
-        shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+        crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+        crate::app::shell_network_setup::commit_back,
     );
 }
 
@@ -746,13 +747,7 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 super::commit_start(state, seed);
                 return Ok(());
             }
-            App::leave_shell_dialog(
-                state,
-                shell_transition::ShellExitThen::NetworkStart {
-                    dialog: super::dialog(state),
-                    agreed_seed: seed,
-                },
-            );
+            App::leave_shell_dialog_for_network_start(state, super::dialog(state), seed);
         }
         1 => crate::app::shell_wol::start_aborted(state),
         2 => {
@@ -789,7 +784,7 @@ pub(crate) fn verify_layout(state: &AppState) -> crate::ui::shell::modal::WolVer
 /// box's OK takes it when the box is open; otherwise a box's 18x18 icon
 /// (`0x006163A0` toggles on the press) or the extended roster's scrollbar.
 pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
-    use crate::ui::shell::page::{PageCue, PageEvent};
+    use crate::ui::shell::page::PageEvent;
     let at = state.match_state.input.cursor_px();
     let (width, height) = screen(state);
     let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
@@ -797,9 +792,9 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
     let Ok(verify) = verify_mut(state) else {
         return;
     };
-    for event in verify.pointer(&layout, ok, at, down) {
+    let events = verify.pointer(&layout, ok, at, down);
+    for event in App::play_page_cues(state, events, false) {
         match event {
-            PageEvent::Cue(cue) if cue != PageCue::ListClick => App::play_page_cue(state, cue),
             PageEvent::Activated(crate::ui::wol_shell::BOX_OK) => mismatch_ok(state),
             _ => {}
         }
