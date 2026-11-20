@@ -57,8 +57,11 @@ pub(crate) struct ShpInputs<'a> {
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
     pub overlay_atlas: Option<&'a crate::render::overlay_atlas::OverlayAtlas>,
     pub unit_atlas: Option<&'a crate::render::unit_atlas::UnitAtlas>,
+    /// The owner's cell (`MatchPresentationState::voxel_images`), shared with
+    /// the other Display-order visitors.
     pub voxel_images: &'a std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
-    /// The skip table the left-edge building bodies of this picture fill.
+    /// The skip table the left-edge building bodies of this picture fill
+    /// (`MatchPresentationState::zshape_skips`).
     pub zshape_skips: &'a std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     /// Renders a building gun's depth-tested image; None draws the atlas's.
     pub depth_tested_images: Option<super::units::DepthTestedImages<'a>>,

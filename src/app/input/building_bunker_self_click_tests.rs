@@ -455,6 +455,7 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             building_selection_click(
                 sim,
@@ -533,7 +534,8 @@ fn stock_installed_tank_bunker_self_click_is_inert_but_its_tank_can_deploy() {
                 Some(scene.runtime.resources.rules.overlay_registry()),
                 OrderModifier::Normal,
                 false,
-                false
+                false,
+                &mut Default::default()
             ),
             CursorFeedbackKind::Deploy
         );

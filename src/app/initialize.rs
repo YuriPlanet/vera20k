@@ -29,6 +29,7 @@ pub(super) struct InitializationJob {
     resume: Box<dyn FnOnce() -> Result<InitializationStep>>,
     deferred_window_events: Vec<winit::event::WindowEvent>,
     resume_admitted: bool,
+    /// Set by the browser's GPU request future, which shares it by `Rc`.
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     gpu_ready: Option<std::rc::Rc<std::cell::Cell<bool>>>,
 }

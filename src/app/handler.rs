@@ -477,7 +477,7 @@ impl App {
                 for event in events {
                     self.window_event(event_loop, window_id, event);
                 }
-                if let Some(state) = self.state.as_ref() {
+                if let Some(state) = self.state.as_mut() {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]

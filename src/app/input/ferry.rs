@@ -402,7 +402,8 @@ pub(crate) struct FerryState {
     routes: Vec<FerryRoute>,
     boarders: Vec<Boarder>,
     /// [`selected_transports`] and [`armed_preview`] as last answered with
-    /// the world home (`sim_host::home_answer`): the draw asks them.
+    /// the world home (`sim_host::home_answer`): the draw asks them through
+    /// `&AppState`, hence the cells.
     transports_seen: std::cell::RefCell<Vec<u64>>,
     preview_seen: std::cell::RefCell<Option<(Vec<Cell>, Cell, bool)>>,
 }

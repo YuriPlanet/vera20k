@@ -293,6 +293,7 @@ fn allied_object_ivan_cursor_consumes_the_canonical_grant() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         native_ivan_bomb_feedback("attack_friendlies_only_ivan"),
     );
@@ -501,6 +502,7 @@ fn allied_object_cursor_does_not_offer_selection_for_another_allied_house() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     let corpus = crate::test_fixture::json("tools/spatial_oracle/allied_object_action.json");
     let native = corpus["action_controls"]
@@ -608,6 +610,7 @@ fn allied_object_infantry_and_building_owners_answer_their_own_tails() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         );
         assert_eq!(
             crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -686,6 +689,7 @@ fn a_building_over_another_selected_building_does_nothing() {
         OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(
         crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -840,6 +844,7 @@ fn a_ground_owner_moves_onto_an_ally_worn_as_a_tree() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         );
         assert_eq!(
             crate::app::input::cursor::cursor_id_for_feedback(feedback),
@@ -1030,6 +1035,7 @@ fn a_receiver_the_player_cannot_control_answers_its_attack_rung_under_alt() {
             modifier,
             true,
             false,
+            &mut Default::default(),
         )
     };
     assert_ne!(

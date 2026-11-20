@@ -250,6 +250,7 @@ pub(crate) struct DisplayEffectInputs<'a> {
     /// This frame's Z-buffer row seed (`native_z::ZSeed`).
     pub z_seed: i32,
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
+    /// The owner's cell (`MatchPresentationState::detail`), stepped per draw.
     pub detail: &'a std::cell::RefCell<crate::app::presentation::detail::DetailState>,
     pub detail_level: u32,
     pub lighting: &'a crate::map::lighting::CellLightGrid,

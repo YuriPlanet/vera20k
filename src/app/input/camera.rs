@@ -1896,7 +1896,7 @@ pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> 
     }
     if let Some(zoom) = state.tactical_zoom() {
         let (width, height) = zoom.frame_size();
-        if !state.platform.pointer_held.get()
+        if !state.platform.pointer_held
             && !viewport_contains((zoom.origin.0, zoom.origin.1, width, height), pointer)
         {
             return None;

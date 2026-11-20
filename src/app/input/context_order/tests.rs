@@ -432,6 +432,7 @@ fn specialist_infiltration_keeps_c4_click_and_cursor_priority() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             expected_cursor
         );
@@ -477,6 +478,7 @@ fn specialist_infiltration_keeps_c4_click_and_cursor_priority() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         crate::app::types::CursorFeedbackKind::Enter
     );
@@ -702,6 +704,7 @@ fn a_refused_shot_moves_the_receiver_near_the_object() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             crate::app::types::CursorFeedbackKind::Invalid
         );
@@ -810,6 +813,7 @@ fn an_unarmed_receiver_selects_another_houses_object() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )
     };
 
@@ -960,6 +964,7 @@ fn a_harrier_moves_to_an_object_it_may_not_attack() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let click = |target| {
@@ -1033,6 +1038,7 @@ fn a_harrier_moves_to_an_object_it_may_not_attack() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         CursorFeedbackKind::Move
     );
@@ -1131,6 +1137,7 @@ fn campaign_shroud_over_an_object_answers_move_or_no_move() {
                 OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             cursor
         );
@@ -1217,6 +1224,7 @@ fn campaign_shroud_rewrites_the_key_chords_over_an_object() {
             modifier,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let guard_click = |sim: &Simulation, actor| {
@@ -1322,6 +1330,7 @@ fn campaign_shroud_shift_takes_the_passenger_rows() {
             OrderModifier::Shift,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let click = |sim: &Simulation| {
@@ -1392,6 +1401,7 @@ fn c4_and_infiltration_need_the_attack_foot_hands_them() {
                 modifier,
                 alt,
                 false,
+                &mut Default::default(),
             )
         };
         let attacks = infantry_arm_attacks(sim, &rules, tanya, reactor, modifier, alt, None);
@@ -1485,6 +1495,7 @@ fn a_self_click_in_a_larger_selection_dispatches_no_move() {
         OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(cursor_id_for_feedback(cursor), Some(CursorId::NoMove));
     assert_eq!(
@@ -1605,6 +1616,7 @@ fn a_harrier_over_a_flier_above_an_enemy_wall_answers_attack() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let click = |target| {
@@ -1725,6 +1737,7 @@ fn a_tank_and_a_gi_refuse_to_attack_an_immune_object() {
                 OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             )
         };
         let click = |target| {
@@ -1801,6 +1814,7 @@ fn a_tank_and_a_gi_refuse_to_attack_an_immune_object() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         CursorFeedbackKind::IvanBomb
     );
@@ -2595,6 +2609,7 @@ fn retail_nonprimary_war_factory_self_click_queues_its_primary_selection() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let nonprimary_cursor = cursor(&[second], second);
@@ -2642,6 +2657,7 @@ fn retail_nonprimary_war_factory_self_click_queues_its_primary_selection() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(
         cursor_id_for_feedback(group),
@@ -2687,6 +2703,7 @@ fn a_loaded_bio_reactor_self_click_and_hover_cursor_offer_unload() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
 
     assert_eq!(
@@ -2738,6 +2755,7 @@ fn a_loaded_transport_on_a_bridge_offers_no_deploy() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
         )
     };
@@ -2803,6 +2821,7 @@ fn retail_siege_chopper_self_click_and_cursor_offer_the_same_deploy_action() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             crate::app::types::CursorFeedbackKind::Deploy,
         );
@@ -2833,6 +2852,7 @@ fn retail_siege_chopper_self_click_and_cursor_offer_the_same_deploy_action() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(feedback, crate::app::types::CursorFeedbackKind::NoDeploy);
     assert_eq!(
@@ -3002,6 +3022,7 @@ fn bomb_click_orders() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             )
         };
         assert_eq!(

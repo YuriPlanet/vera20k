@@ -861,6 +861,7 @@ fn an_alt_click_rallies_a_war_factory_only_onto_an_object_it_can_reach() {
             OrderModifier::ForceMove,
             true,
             false,
+            &mut Default::default(),
         )
     };
     let alt = |building, target| {
