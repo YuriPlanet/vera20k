@@ -34,8 +34,9 @@ pub(super) struct PassSubmission {
     submissions: usize,
     /// Wall time spent finishing and submitting this frame's bounded batches.
     submit_time: Duration,
-    /// Every pass closed this frame, for replay pass-count tests.
-    #[cfg(test)]
+    /// Every pass closed this frame: replay pass-count tests read it, and the
+    /// frame owner logs it (`presentation::render::FramePassLog`), since the
+    /// pass count is what a weak GPU pays for most.
     closed_passes: usize,
 }
 
@@ -48,7 +49,6 @@ impl PassSubmission {
             pending_passes: 0,
             submissions: 0,
             submit_time: Duration::ZERO,
-            #[cfg(test)]
             closed_passes: 0,
         }
     }
@@ -60,10 +60,7 @@ impl PassSubmission {
         self.pending_passes = 0;
         self.submissions = 0;
         self.submit_time = Duration::ZERO;
-        #[cfg(test)]
-        {
-            self.closed_passes = 0;
-        }
+        self.closed_passes = 0;
     }
 
     /// Wall time this frame's bounded submissions took so far.
@@ -71,12 +68,10 @@ impl PassSubmission {
         self.submit_time
     }
 
-    #[cfg(test)]
     pub(super) fn submissions(&self) -> usize {
         self.submissions
     }
 
-    #[cfg(test)]
     pub(super) fn closed_passes(&self) -> usize {
         self.closed_passes
     }
@@ -85,10 +80,7 @@ impl PassSubmission {
     /// replay group immediately, rather than after an unbounded list of waves.
     pub(super) fn note_closed_passes(&mut self, encoder: &mut wgpu::CommandEncoder, passes: usize) {
         self.pending_passes += passes;
-        #[cfg(test)]
-        {
-            self.closed_passes += passes;
-        }
+        self.closed_passes += passes;
         if self.pending_passes < CLOSED_PASSES_PER_SUBMISSION {
             return;
         }
