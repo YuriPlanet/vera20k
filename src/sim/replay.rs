@@ -842,6 +842,10 @@ impl ReplayStartup {
             "the standalone replay layout requires a stock rule policy"
         );
         anyhow::ensure!(
+            !sim.session().has_custom_control_grants(),
+            "the standalone replay layout cannot store source-specific control grants"
+        );
+        anyhow::ensure!(
             sim.path_batch_stats().is_some()
                 && sim.target_scans_batched()
                 && sim.effect_anims_presented(),

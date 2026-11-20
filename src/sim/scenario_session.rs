@@ -10,8 +10,12 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 
 use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
+use crate::sim::control_authority::{
+    ControlAuthority, ControlGrant, ControlGrantError, ControlScope,
+};
 use crate::sim::game_options::GameOptions;
 use crate::sim::house_state::HouseDifficulty;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 use crate::util::native_x87::{MaskedX87Chop53, NativeF32Bits, NativeF64Bits};
@@ -934,6 +938,8 @@ pub struct ScenarioSession {
     /// source) controls, when players share Houses. Empty otherwise: every
     /// sender is then its House index, as in gamemd. Launch installs it once.
     shared_house_sources: Vec<u8>,
+    /// Source-specific command authority admitted by the scenario launch.
+    control_authority: ControlAuthority,
     /// This process's House and command source, outside the shared hash.
     view: LocalViewIdentity,
     /// Scenario+11E4 is included in Save689372's complete Scenario block and
@@ -1209,6 +1215,7 @@ impl From<SavedScenarioSession> for ScenarioSession {
             network_max_ahead_frames: saved.network_max_ahead_frames,
             network_command_timing: saved.network_command_timing,
             shared_house_sources: saved.shared_house_sources,
+            control_authority: ControlAuthority::default(),
             view: LocalViewIdentity {
                 shared_house_source: saved.source,
                 watching: saved.watching,
@@ -1262,6 +1269,11 @@ impl From<SavedScenarioSession> for ScenarioSession {
 
 impl serde::Serialize for ScenarioSession {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.has_custom_control_grants() {
+            return Err(serde::ser::Error::custom(
+                "the legacy scenario layout cannot store source-specific control grants",
+            ));
+        }
         if !self.has_stock_rule_policy() {
             return Err(serde::ser::Error::custom(
                 "the legacy scenario layout cannot store a non-stock rule policy",
@@ -1727,6 +1739,61 @@ impl ScenarioSession {
         self.view.shared_house_source = local_source;
     }
 
+    pub(crate) fn install_control_grants(
+        &mut self,
+        houses: &Houses,
+        grants: Vec<ControlGrant>,
+    ) -> Result<(), ControlGrantError> {
+        if grants.is_empty() {
+            return Ok(());
+        }
+        if self.started() || self.tick() != 0 || self.binary_frame() != 0 {
+            return Err(ControlGrantError::ScenarioAlreadyStarted);
+        }
+        if !self.execution_topology().is_lockstep() {
+            return Err(ControlGrantError::NotLockstep);
+        }
+        if self.has_custom_control_grants() {
+            return Err(ControlGrantError::GrantsAlreadyAdmitted);
+        }
+
+        let source_count = if self.shares_houses() {
+            self.shared_house_sources.len()
+        } else {
+            houses.len()
+        };
+        self.control_authority =
+            ControlAuthority::admit(grants, houses.len(), source_count, |source| {
+                let index = self.network_source_house(source)?;
+                let house = houses.order().get(index)?;
+                // The shared launch's observer roster comes from the same
+                // normalized slots as the source-to-House map.
+                (houses.get(house)?.is_human() && !self.observers.contains(house)).then_some(index)
+            })?;
+        Ok(())
+    }
+
+    pub(crate) fn control_scope_for_source(
+        &self,
+        houses: &Houses,
+        source: i8,
+        subject: InternedId,
+    ) -> ControlScope {
+        let Some(&primary) = self
+            .network_source_house(source)
+            .and_then(|index| houses.order().get(index))
+        else {
+            return ControlScope::None;
+        };
+        self.control_authority
+            .scope(source, primary, subject, houses)
+    }
+
+    /// Explicit grants require a startup format that can restore their sources.
+    pub const fn has_custom_control_grants(&self) -> bool {
+        self.control_authority.has_any_grants()
+    }
+
     /// VERA shared control: whether any players share a House, so that
     /// senders differ from House indices.
     pub fn shares_houses(&self) -> bool {
@@ -2143,6 +2210,11 @@ impl ScenarioSession {
             b"scenario-rule-policy-v1".hash(hasher);
             s.rule_policy.hash(hasher);
         }
+        if s.has_custom_control_grants() {
+            b"scenario-control-grants-v1".hash(hasher);
+            s.shared_house_sources.hash(hasher);
+            s.control_authority.grants().hash(hasher);
+        }
         s.network_max_ahead_frames.hash(hasher);
         if let Some(timing) = &s.network_command_timing {
             b"network-command-timing-v1".hash(hasher);
@@ -2420,6 +2492,7 @@ impl ScenarioSession {
             network_max_ahead_frames: None,
             network_command_timing: None,
             shared_house_sources: Vec::new(),
+            control_authority: ControlAuthority::default(),
             view: LocalViewIdentity::default(),
             start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,

@@ -4084,6 +4084,91 @@ mod tests {
     }
 
     #[test]
+    fn explicit_control_grants_change_shared_identity_and_refuse_legacy_persistence() {
+        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel, ControlScope};
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let mut sim = Simulation::with_seed(0);
+        for (name, human) in [("Shared", true), ("Third", false)] {
+            let owner = sim.intern(name);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    owner, 0, None, human, 0, 1,
+                ));
+        }
+        sim.install_session_mode(ScenarioGameMode::Lan);
+        sim.session.install_network_timing(73);
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(0));
+        let stock = sim.state_hash();
+        let units = ControlGrant {
+            source: 1,
+            house: 1,
+            level: ControlGrantLevel::UnitsOnly,
+        };
+        let full = ControlGrant {
+            source: 0,
+            level: ControlGrantLevel::FullControl,
+            ..units
+        };
+        let mut equivalent = sim.clone();
+        sim.install_control_grants(vec![units, full]).unwrap();
+        equivalent
+            .install_control_grants(vec![full, units, full])
+            .unwrap();
+        assert_ne!(sim.state_hash(), stock);
+        let granted = sim.state_hash();
+        assert_eq!(equivalent.state_hash(), granted);
+        let target = sim.interner.get("Third").unwrap();
+        assert_eq!(
+            sim.control_scope_for_source(0, target),
+            ControlScope::FullControl
+        );
+        assert_eq!(
+            sim.control_scope_for_source(1, target),
+            ControlScope::UnitsOnly
+        );
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(1));
+        assert_eq!(sim.state_hash(), granted);
+
+        let failed = GameSnapshot::save_validated_with_presentation(
+            &sim,
+            0,
+            0,
+            "custom grants",
+            0,
+            &[],
+            &[],
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            failed
+                .to_string()
+                .contains("source-specific control grants")
+        );
+
+        sim.session.publish_started();
+        let runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+        let launch = crate::headless_scenario::battle_session("record.map", &[]);
+        let source = crate::map::source::LoadedMapSource::LegacyFallback {
+            label: "record.map".to_owned(),
+        };
+        let failed =
+            crate::sim::replay::ReplayStartup::capture(&runtime, &launch, &source, 0, 22, false)
+                .unwrap_err();
+        assert!(
+            failed
+                .to_string()
+                .contains("source-specific control grants")
+        );
+    }
+
+    #[test]
     fn exact_network_mode_timing_and_observer_identity_survive_snapshot() {
         use crate::sim::scenario_session::ScenarioGameMode;
         use crate::skirmish_modes::MpModeClass;
