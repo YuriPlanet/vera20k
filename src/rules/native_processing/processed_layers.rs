@@ -388,16 +388,6 @@ impl ProcessedRulesLayers {
                 "saved Rules require a different compiled extension capability",
             ));
         }
-        // A launch reads one way, by whether its game ships `ares.mix`
-        // (`ares_switch::launch_reads`): Rules read the other way are another
-        // game's.
-        if !crate::rules::ares_switch::launch_reads(registry.reads_ares_way) {
-            return Err(RulesError::InvalidSavedState(if registry.reads_ares_way {
-                "saved Rules are from a game with Ares (ares.mix), which the game now open is not"
-            } else {
-                "saved Rules are from a game without Ares, and the game now open ships ares.mix"
-            }));
-        }
         // Only a read the Ares way fills these SuperWeaponType fields.
         if !registry.reads_ares_way
             && registry.families.values().flatten().any(|member| {

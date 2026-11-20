@@ -219,8 +219,10 @@ pub(crate) fn generate_from_game(
         false,
     )?;
     let (assets, rules, _) = process.manager_and_rules_with_tile_cache();
+    let assets = assets.context("the game files are not loaded")?;
+    assets.open_for_play();
     generate(
-        assets.context("the game files are not loaded")?,
+        assets,
         rules.context("the game's rules are not loaded")?,
         &options,
     )

@@ -2337,13 +2337,17 @@ fn ensure_session_job_asset_manager(
                 );
             }
             process_assets.note_lease_ended_without_return();
-            process_assets.reconstruct_manager(
+            let rebuilt = process_assets.reconstruct_manager(
                 session
                     .job
                     .ra2_dir
                     .as_deref()
                     .expect("RA2 directory was initialized above"),
-            )?
+            )?;
+            // The rebuilt manager is the game's from here on, so its answer
+            // is the launch's again, whatever another command published since.
+            rebuilt.open_for_play();
+            rebuilt
         };
         session.job.asset_manager = Some(asset_manager);
     }

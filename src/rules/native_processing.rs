@@ -274,7 +274,7 @@ pub struct RulesLayerStack {
     /// or the player's Ares setting is On.
     ships_ares: bool,
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
-    /// (`ares_switch::launch_keys_off`).
+    /// (`AssetManager::ares_setting`).
     ares_keys_off: bool,
 }
 
@@ -285,11 +285,12 @@ impl RulesLayerStack {
                 kind: RulesLayerKind::RulesMd,
                 ini: rulesmd,
             }],
-            // The game's owner sets this from the installed archives
-            // (`NativeRulesProcessOwner::startup_layers`); a fixture stack
-            // stands for the game `ares_switch::game_ships_ares` says.
-            ships_ares: crate::rules::ares_switch::game_ships_ares(false),
-            ares_keys_off: crate::rules::ares_switch::launch_keys_off(),
+            // The game's owner sets both from its asset manager
+            // (`NativeRulesProcessOwner::startup_layers`). A stack built
+            // without saying stands for the game its thread reads
+            // (`ares_switch::ares_way`), with the Ares setting Auto.
+            ships_ares: crate::rules::ares_switch::ares_way(),
+            ares_keys_off: false,
         }
     }
 
@@ -305,8 +306,8 @@ impl RulesLayerStack {
 
     /// VERA: the stack of a game whose player set Ares Off, where no Ares key
     /// turns Ares on. The game's owner sets it from the launch
-    /// (`NativeRulesProcessOwner::startup_layers`); a fixture stack reads the
-    /// launch's (`ares_switch::launch_keys_off`).
+    /// (`NativeRulesProcessOwner::startup_layers`); a stack built without
+    /// saying reads as Auto.
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.ares_keys_off = off;
         self

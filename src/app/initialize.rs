@@ -706,6 +706,10 @@ impl App {
                 &mut main_menu_shell_error,
             )
         });
+        // This is the game the launch plays (`util::ares_launch`).
+        if let Some(assets) = &startup_asset_manager {
+            assets.open_for_play();
+        }
         // Native process startup seeds Scenario before the MPModes loader. The
         // Cooperative factory reached by that loader then advances this cursor
         // before the first shell is shown.
