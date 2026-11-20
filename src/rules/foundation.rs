@@ -555,6 +555,30 @@ mod tests {
         );
     }
 
+    /// The membership search relies on the reader keeping a custom list
+    /// sorted and unique, whatever order the art lists its cells in.
+    #[test]
+    fn custom_cells_are_found_whatever_order_the_art_lists_them_in() {
+        use crate::rules::ini_parser::IniFile;
+        let art = IniFile::from_str(
+            "[ART]\nFoundation=Custom\nFoundation.X=3\nFoundation.Y=2\n\
+            Foundation.0=2,1\nFoundation.1=0,0\nFoundation.2=1,0\nFoundation.3=0,0\n",
+        );
+        let mut foundation = Foundation::default();
+        foundation.read_custom_pass(art.section_or_empty("ART"));
+        let listed = [(0, 0), (1, 0), (2, 1)];
+        assert_eq!(foundation.cell_offsets().collect::<Vec<_>>(), listed);
+        for dx in -1..4 {
+            for dy in -1..3 {
+                assert_eq!(
+                    foundation.contains_cell_offset((dx, dy)),
+                    listed.contains(&(dx, dy)),
+                    "({dx}, {dy})"
+                );
+            }
+        }
+    }
+
     #[test]
     fn manual_cursor_origins_match_original_foundation_bounds_and_word_wrap() {
         let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
