@@ -293,7 +293,7 @@ pub(super) struct LiveService {
     /// no lobby pages, and `finish` carries the local result.
     spawned: bool,
     /// VERA: the finish asks the lobby to give this player's game room back
-    /// (`back_to_room`), set from the visit when the match returns.
+    /// (`back_to_room`), projected from MatchSession when building finish.
     back_to_room: bool,
     /// The match's `finish` result (`ExternalMatchResult`): a spawned
     /// match's for its launcher, a lobby match's for the ranked ladder.
@@ -1701,8 +1701,9 @@ pub(crate) fn keep_network_report(
 
 pub(super) fn match_returned(state: &mut AppState) {
     let report = match_report(state);
+    let back_to_room = state.match_state.session.awaiting_wol_room_return();
     if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.match_returned(report, Instant::now());
+        visit.match_returned(report, Instant::now(), back_to_room);
     }
 }
 
@@ -1723,12 +1724,12 @@ impl super::WolVisit {
         self.problem_line.take()
     }
 
-    fn match_returned(&mut self, report: MatchReport, now: Instant) {
+    fn match_returned(&mut self, report: MatchReport, now: Instant, back_to_room: bool) {
         if self.provider != WolProvider::Online {
             return;
         }
         if let Some(service) = self.live_service.as_mut() {
-            service.back_to_room = self.back_to_room;
+            service.back_to_room = back_to_room;
             service.match_returned(report, now);
         } else if !self.requests.contains(&WolServiceRequest::MatchReturned) {
             //poll holds the SAME service across HTTP callbacks. Loading abort
@@ -1743,8 +1744,7 @@ impl super::WolVisit {
     /// for the player who left, and asks for no room back.
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn match_left_for_exit(&mut self, report: MatchReport, now: Instant) {
-        self.back_to_room = false;
-        self.match_returned(report, now);
+        self.match_returned(report, now, false);
     }
 }
 
@@ -2041,11 +2041,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             service.leave_room(Instant::now());
         }
         WolServiceRequest::MatchReturned => {
-            service.back_to_room = state
-                .frontend
-                .wol
-                .as_ref()
-                .is_some_and(|visit| visit.back_to_room);
+            service.back_to_room = state.match_state.session.awaiting_wol_room_return();
             service.match_returned(match_report(state), Instant::now());
         }
         WolServiceRequest::Logout => {
@@ -2821,7 +2817,14 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
-                if service.is_room_publication(id) {
+                if service.is_room_publication(id)
+                    && let Some(key) =
+                        crate::app::shell_network_setup::lobby_refused_building_queue(state)
+                {
+                    // The newest room rule first: a lobby from before it lists
+                    // matches, so the capability check below cannot tell.
+                    notice(state, &tr(key));
+                } else if service.is_room_publication(id) {
                     notice(state, &tr("VERA:OnlineRequestRefused"));
                     // Only a fresh 404 for this publication can confirm rollback.
                     let _ = service.requests.send(http::Request::Matches {
@@ -3331,11 +3334,14 @@ fn apply_event(
             }
             end_room(state, service);
             service.room = RoomAgreement::default();
-            if let Some(visit) = state.frontend.wol.as_mut()
-                && visit.in_game
+            if state
+                .frontend
+                .wol
+                .as_ref()
+                .is_some_and(|visit| visit.in_game)
             {
                 // The kept room closed during the match: nothing to return to.
-                visit.back_to_room = false;
+                state.match_state.session.take_network_room_return();
             }
             service_event(state, WolServiceEvent::ChannelLeft);
         }
@@ -5711,8 +5717,8 @@ mod completion_tests {
             channel: crate::ui::wol_lobby::WolChannel::default(),
             key: String::new(),
         });
-        visit.match_returned((None, None, None), now);
-        visit.match_returned((None, None, None), now); //Repeated abort callbacks keep one intent.
+        visit.match_returned((None, None, None), now, false);
+        visit.match_returned((None, None, None), now, false); //Repeated abort callbacks keep one intent.
         assert!(matches!(
             visit.take_service_requests().as_slice(),
             [
@@ -5726,7 +5732,7 @@ mod completion_tests {
         );
         assert_eq!(borrowed.match_id.as_deref(), Some("loading-match"));
         visit.live_service = Some(borrowed);
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, false);
         let http::Request::Command {
             id,
             operation,
@@ -5748,7 +5754,7 @@ mod completion_tests {
             Ok(http::Request::HoldMatch(None))
         ));
         service.clear_cleanup(); //Definitive Offline has retired the authority.
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, false);
         assert!(
             input.try_recv().is_err(),
             "expired authority cannot issue finish"
@@ -5760,10 +5766,9 @@ mod completion_tests {
         let (service, input, _output) = control_service(Some("room-match"));
         let mut visit = super::super::WolVisit::open(false);
         visit.provider = WolProvider::Online;
-        visit.back_to_room = true;
         visit.live_service = Some(service);
         let now = Instant::now();
-        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now, true);
         let sent = |input: &Receiver<http::Request>| {
             let http::Request::Command {
                 id,
@@ -5797,7 +5802,6 @@ mod completion_tests {
         let (service, input, _output) = control_service(Some("closed-match"));
         let mut visit = super::super::WolVisit::open(false);
         visit.provider = WolProvider::Online;
-        visit.back_to_room = true;
         visit.live_service = Some(service);
         let now = Instant::now();
         visit.match_left_for_exit((Some("quit"), None, Some(now)), now);

@@ -1039,6 +1039,7 @@ impl ReplayLog {
         commands: Vec<CommandEnvelope>,
         state_hash: Option<u64>,
     ) {
+        self.ending = None;
         self.ticks.push(ReplayTick {
             tick,
             commands,
@@ -1076,6 +1077,7 @@ impl ReplayLog {
     }
 
     fn record_service(&mut self, input: RecordedServiceInput) {
+        self.ending = None;
         match self.ticks.last_mut() {
             Some(frame) => frame.scenario_services.push(input),
             None => self.initial_scenario_services.push(input),
@@ -1187,6 +1189,7 @@ pub struct ReplayPlayback {
     index: usize,
     tick_ms: u32,
     network: ReplayNetworkBoundary,
+    initial_effects: Vec<crate::sim::trigger_runtime::TriggerEffect>,
     failure: Option<String>,
 }
 
@@ -1226,8 +1229,8 @@ impl ReplayPlayback {
         startup
             .session()
             .validate_restored_control_grants(sim.houses())?;
-        // Stock Cooperative restores the incoming single record immediately
-        // after Start_Scenario (0x004C6210). Its globals also reset Tag timers.
+        // Restore the incoming single record after Start_Scenario (0x004C6210),
+        // as stock Cooperative does. Its globals also reset Tag timers.
         if let Some(record) = startup.blueprint().campaign_carry_over() {
             sim.restore_campaign_carry_over(record, &runtime.resources.rules);
         }
@@ -1287,8 +1290,10 @@ impl ReplayPlayback {
         runtime
             .simulation
             .hash_state_every(std::num::NonZeroU64::MIN);
+        let mut initial_effects = Vec::new();
         for input in &replay.initial_scenario_services {
-            input.replay(&mut runtime.simulation, &runtime.resources.rules)?;
+            initial_effects
+                .extend(input.replay(&mut runtime.simulation, &runtime.resources.rules)?);
         }
         if replay.ticks.is_empty() {
             replay.validate_ending(&runtime.simulation)?;
@@ -1301,6 +1306,7 @@ impl ReplayPlayback {
             replay,
             index: 0,
             tick_ms,
+            initial_effects,
             failure: None,
             network: ReplayNetworkBoundary {
                 checksum: std::cell::RefCell::new(
@@ -1320,6 +1326,13 @@ impl ReplayPlayback {
     pub fn can_advance(&self) -> bool {
         !self.is_finished() && self.failure.is_none()
     }
+
+    /// Return frame-zero presentation effects to the caller installing playback.
+    /// This also works when the recording ends without advancing a frame.
+    pub fn take_initial_effects(&mut self) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
+        std::mem::take(&mut self.initial_effects)
+    }
+
     pub fn recorded_final_hash(&self) -> Option<u64> {
         self.replay
             .ending
@@ -1410,6 +1423,11 @@ impl ReplayPlayback {
             output
                 .trigger_effects
                 .extend(input.replay(&mut runtime.simulation, &runtime.resources.rules)?);
+        }
+        if !self.initial_effects.is_empty() {
+            let mut initial_effects = self.take_initial_effects();
+            initial_effects.append(&mut output.trigger_effects);
+            output.trigger_effects = initial_effects;
         }
         if self.index + 1 == self.replay.ticks.len() {
             self.replay.validate_ending(&runtime.simulation)?;
@@ -1655,6 +1673,117 @@ mod authored_lockstep_tests;
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cooperative_with_scripted_rules_captures_its_carry_over() {
+        use crate::rules::rule_policy::BootstrapRuleProfile;
+        use crate::sim::campaign_carry_over::CampaignCarryOver;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::skirmish_modes::MpModeClass;
+
+        let mode = ScenarioGameMode::Lan;
+        let class = Some(MpModeClass::Cooperative);
+        let policy = mode
+            .stock_rule_policy(class)
+            .with_bootstrap(BootstrapRuleProfile::Campaign);
+        let mut sim = Simulation::with_seed(73);
+        sim.install_session_admission(mode, class, policy);
+        let mut launch = crate::headless_scenario::battle_session("C1A01MD.MAP", &[]);
+        launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(3).unwrap();
+        let carry_over = CampaignCarryOver::CLEARED;
+        let blueprint = MatchStartBlueprint::capture(
+            &launch,
+            sim.session(),
+            ReplayStartOptions {
+                campaign_carry_over: Some(carry_over),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&blueprint).unwrap();
+        let decoded: MatchStartBlueprint = serde_json::from_slice(&bytes).unwrap();
+        decoded.validate().unwrap();
+        assert!(matches!(decoded.launch(), ReplayLaunch::Campaign(_)));
+        assert_eq!(decoded.campaign_carry_over(), Some(&carry_over));
+        assert_eq!(
+            decoded
+                .launch_descriptor("C1A01MD.MAP")
+                .unwrap()
+                .rule_policy_override(),
+            Some(policy)
+        );
+    }
+
+    #[test]
+    fn initial_service_effects_precede_first_frames_service_effects() {
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::trigger_runtime::TriggerEffect;
+        use crate::sim::world::FrameEffects;
+
+        let mut runtime = SimRuntime::from_simulation(Simulation::with_seed(73));
+        let mut log = ReplayLog::new(ReplayHeader {
+            version: REPLAY_VERSION,
+            tick_hz: 45,
+            seed: 73,
+            map_name: runtime.simulation.session().map_name().to_owned(),
+            rules_hash: 0,
+            pixel_conversion_bounds: runtime.simulation.session().pixel_conversion_bounds(),
+        });
+        log.initial_scenario_services
+            .push(RecordedServiceInput::Scenario(ScenarioServiceInput::Pause));
+        log.record_tick(1, Vec::new(), None);
+        log.ticks[0]
+            .scenario_services
+            .push(RecordedServiceInput::Scenario(ScenarioServiceInput::Resume));
+        let mut playback =
+            ReplayPlayback::from_runtime(&mut runtime, std::sync::Arc::new(log), 22).unwrap();
+        let output = playback
+            .advance(&mut runtime, FrameEffects::empty())
+            .unwrap()
+            .unwrap();
+        let pauses: Vec<_> = output
+            .trigger_effects
+            .iter()
+            .filter_map(|effect| match effect {
+                TriggerEffect::ScenarioPause { .. } => Some(true),
+                TriggerEffect::ScenarioResume => Some(false),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pauses, [true, false]);
+    }
+
+    #[test]
+    fn initial_service_effects_survive_a_zero_frame_playback() {
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::trigger_runtime::TriggerEffect;
+
+        let mut runtime = SimRuntime::from_simulation(Simulation::with_seed(73));
+        let mut log = ReplayLog::new(ReplayHeader {
+            version: REPLAY_VERSION,
+            tick_hz: 45,
+            seed: 73,
+            map_name: runtime.simulation.session().map_name().to_owned(),
+            rules_hash: 0,
+            pixel_conversion_bounds: runtime.simulation.session().pixel_conversion_bounds(),
+        });
+        log.initial_scenario_services
+            .push(RecordedServiceInput::Scenario(ScenarioServiceInput::Pause));
+        let mut playback =
+            ReplayPlayback::from_runtime(&mut runtime, std::sync::Arc::new(log), 22).unwrap();
+        assert!(playback.is_finished());
+        assert!(matches!(
+            playback.take_initial_effects().as_slice(),
+            [
+                TriggerEffect::ScenarioPause {
+                    outermost: true,
+                    ..
+                },
+                ..
+            ]
+        ));
+        assert!(playback.take_initial_effects().is_empty());
+    }
 
     #[test]
     #[ignore = "slow; authored retail Battle load and standalone replay reconstruction"]

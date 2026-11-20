@@ -13,8 +13,10 @@ Players turn it on with **Gameplay → Building Production Queue** in Options
 switch, as Terrain Deformation is (`rules/personal_rules.rs`): the next offline
 scenario's root gets `[General] BuildingProductionQueue=yes`, so the simulation,
 saves, replays and the rules hash all read the same value, and a match keeps
-what it started with. A network room plays without it: its host's rules
-(`HostRules`) do not carry the box yet. The key is read outside `phobos_read`,
+what it started with. A network room plays its host's box instead
+(`HostRules`, [room rules](Networking.md#room-rules)), which the host can also
+tick in the room's Game Options; a launcher's network match (`tools/spawn`) has
+no host and plays without it. The key is read outside `phobos_read`,
 so the box does not switch the rest of Phobos on.
 
 With the switch on, a BuildingType cameo press appends behind the category
@@ -85,14 +87,14 @@ to a first-party player option available in **every** build — no feature flag
 and no dependence on a Phobos ruleset. It changes how production plays, so it
 reaches the simulation as a rule of the scenario that every peer, save and
 replay reads, never as one client's preference. It materially improves the
-playing experience. Network rooms play without it until the room's shared
-rules (`HostRules`) carry it. This follows the precedent of VERA's Shift-Click
+playing experience. A network room plays its host's choice, as it does the
+host's Terrain Deformation. This follows the precedent of VERA's Shift-Click
 batch queue, which was adopted from Ares and likewise promoted to a normal,
 always-available convenience.
 
 建筑生产线虽源自 Phobos，但我们把它转正为所有构建都可用的一方玩家功能：
 不依赖 Phobos 编译开关，也不依赖 Phobos 规则集。它会改变生产的玩法，所以
 以场景规则的形式进入模拟，所有玩家、存档和录像读到的都一样，而不是某个
-客户端自己的偏好。它能显著改善玩家体验。在房间共享的规则（`HostRules`）
-带上它之前，联机房间不开启它。这与 VERA 从 Ares 引入 Shift-Click 批量
+客户端自己的偏好。它能显著改善玩家体验。联机房间使用房主的设置，与地形
+变形一样。这与 VERA 从 Ares 引入 Shift-Click 批量
 队列、并把它转成普通可用功能的先例一致。

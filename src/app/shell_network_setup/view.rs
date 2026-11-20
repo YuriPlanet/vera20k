@@ -924,6 +924,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             options.bans.spy,
             options.bans.stolen_tech,
             options.host_rules.terrain_deformation,
+            options.host_rules.building_production_queue,
         ],
         row_icons,
         headers,

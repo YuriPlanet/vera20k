@@ -596,13 +596,17 @@ pub(crate) enum WaitPass {
 }
 
 pub(crate) fn local_source(session: &MatchSession) -> Option<usize> {
+    if session.local_connection_watches() {
+        return None;
+    }
     session
         .network_setup()
         .map(|launch| launch.local_player_index)
 }
 
 /// The connection nodes `[0x00A8DA78]` (count `[0x00A8DA84]`): the local
-/// player first, then the connected peers in participant order.
+/// player first, then the connected peers in participant order. A relay
+/// viewer has no local lockstep node.
 pub(crate) fn nodes(session: &MatchSession) -> Vec<usize> {
     let Some(local) = local_source(session) else {
         return Vec::new();
