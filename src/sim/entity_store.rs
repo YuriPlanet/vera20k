@@ -380,9 +380,8 @@ impl EntityStore {
         if cell.owed == 0 {
             return;
         }
-        // Through a shared reference, as the per-visit step does: waking is
-        // not a hand-out.
-        if let Some(entity) = self.entities[slot].as_deref() {
+        // Waking is not a hand-out: no note in the touch logs.
+        if let Some(entity) = self.entities[slot].as_deref_mut() {
             entity.settle_sleep(cell.owed);
         }
     }
@@ -789,9 +788,11 @@ impl EntityStore {
     /// techno steps it every frame, and no product derived from the logs
     /// reads it. No-op if the entity is absent.
     pub(crate) fn count_mission_ai_visit(&mut self, stable_id: u64) {
-        // Through a shared reference: the counter steps without a mutable
-        // hand-out, which would wake the object and note it in the logs.
-        if let Some(entity) = self.get(stable_id) {
+        // Not a hand-out: stepping the counter neither wakes the object nor
+        // notes it in the logs.
+        if let Some(slot) = self.slot(stable_id)
+            && let Some(entity) = self.entities[slot as usize].as_deref_mut()
+        {
             entity.mission.count_ai_visit();
         }
     }
@@ -1018,7 +1019,7 @@ impl EntityStore {
     /// check).
     pub(crate) fn values_of_owners(
         &self,
-        keep: impl Fn(u64, InternedId) -> bool,
+        mut keep: impl FnMut(u64, InternedId) -> bool,
     ) -> impl Iterator<Item = &GameEntity> {
         self.ids
             .iter()
@@ -1407,7 +1408,7 @@ impl serde::Serialize for EntityStore {
             match self.owed_visits(id) {
                 0 => map.serialize_entry(&id, entity)?,
                 owed => {
-                    let settled = entity.clone();
+                    let mut settled = entity.clone();
                     settled.settle_sleep(owed);
                     map.serialize_entry(&id, &settled)?;
                 }

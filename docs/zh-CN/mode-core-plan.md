@@ -29,7 +29,7 @@ R07 守卫禁止 `rules/`、`map/` 和已迁移的玩法链读取原始模式，
 
 ## Phase 2 发令来源与阵营权限
 
-权限按 `Source × House` 查找。`ControlGrantTable` 持有规范排序和去重后的权威授权，相同授权合并，同一键的冲突授权拒绝接纳。`ControlScopeTable` 是 O(1) 紧凑平面派生表。每次使用缓存都校验实时 `house_count`，阵营数变化时按新维度重建。空授权保留 `has_any_grants` 快路径，沿用原版判定且无需分配或读取派生表。
+权限按 `Source × House` 查找。`ControlGrantTable` 持有规范排序和去重后的权威授权，相同授权合并，同一键的冲突授权拒绝接纳。查找时先在实时阵营表中找到目标阵营的槽位，再对规范排序的授权做二分查找，不保留派生缓存表。空授权保留 `has_any_grants` 快路径，沿用原版判定且无需分配。
 
 权限结果为 `OwnFull`、`FullControl`、`UnitsOnly`、`None`。主体解析与能力映射均使用穷尽 `match`，禁止用 `_ =>` 兜底吞并新增命令。
 

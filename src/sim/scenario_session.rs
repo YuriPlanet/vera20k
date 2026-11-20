@@ -1678,11 +1678,18 @@ impl ScenarioSession {
             .scope(source, primary, subject, houses)
     }
 
-    pub(crate) fn control_scope_table(
+    /// The grant admitted `source` holds on `subject`'s House, its primary
+    /// House's own authority aside.
+    pub(crate) fn delegated_control_scope(
         &self,
         houses: &Houses,
-    ) -> Option<std::sync::Arc<crate::sim::control_authority::ControlScopeTable>> {
-        self.control_authority.scope_table(houses)
+        source: i8,
+        subject: InternedId,
+    ) -> ControlScope {
+        usize::try_from(source).map_or(ControlScope::None, |source| {
+            self.control_authority
+                .delegated_scope(source, subject, houses)
+        })
     }
 
     pub(crate) fn admitted_control_source_count(&self) -> Option<usize> {

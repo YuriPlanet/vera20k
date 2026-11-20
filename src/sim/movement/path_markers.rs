@@ -236,7 +236,7 @@ pub(super) struct DeferredBridgeMarkerSearch<'a> {
     on_bridge: bool,
     urgency: u8,
     unlisted: Option<u64>,
-    search: std::cell::RefCell<Option<BridgeMarkerSearch>>,
+    search: std::cell::OnceCell<BridgeMarkerSearch>,
 }
 
 impl<'a> BridgeMarkerContext<'a> {
@@ -259,15 +259,15 @@ impl<'a> BridgeMarkerContext<'a> {
             on_bridge,
             urgency,
             unlisted,
-            search: std::cell::RefCell::new(None),
+            search: std::cell::OnceCell::new(),
         }
     }
 }
 
 impl DeferredBridgeMarkerSearch<'_> {
-    pub(super) fn prepare(&self) -> (u8, std::cell::Ref<'_, SearchMarkerOverlay>) {
-        if self.search.borrow().is_none() {
-            let search = self.context.build(
+    pub(super) fn prepare(&self) -> (u8, &SearchMarkerOverlay) {
+        let search = self.search.get_or_init(|| {
+            self.context.build(
                 self.occupancy,
                 self.entity_id,
                 self.current_cell,
@@ -275,20 +275,12 @@ impl DeferredBridgeMarkerSearch<'_> {
                 self.on_bridge,
                 self.urgency,
                 self.unlisted,
-            );
-            *self.search.borrow_mut() = Some(search);
-        }
-        let urgency = self.search.borrow().as_ref().unwrap().effective_urgency;
-        (
-            urgency,
-            self.prepared().expect("prepared marker transaction"),
-        )
+            )
+        });
+        (search.effective_urgency, &search.overlay)
     }
-    pub(super) fn prepared(&self) -> Option<std::cell::Ref<'_, SearchMarkerOverlay>> {
-        std::cell::Ref::filter_map(self.search.borrow(), |search| {
-            search.as_ref().map(|search| &search.overlay)
-        })
-        .ok()
+    pub(super) fn prepared(&self) -> Option<&SearchMarkerOverlay> {
+        self.search.get().map(|search| &search.overlay)
     }
 }
 
