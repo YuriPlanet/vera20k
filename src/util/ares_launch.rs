@@ -20,9 +20,11 @@
 //! one reader with neither: a thread outside every reading scope, which loads
 //! its INI text and reads its Rules by it (`rules::ares_switch::ares_way`).
 //! Only a launch publishes it ([`open_for_play`]), once its game's archives
-//! are open: an asset manager opened for anything else (a test, a preview, a
-//! tool's probe) leaves it alone, so it never carries another load's answer.
-//! A process that opened no game for play reads the stock way.
+//! are open: the game's start and the rebuild of its manager, and the
+//! commands that are a launch of their own (`--probe`, `--generate-map` and
+//! their browser functions, the asset tool). An asset manager opened for
+//! anything else (a test, a read-only INI probe) leaves it alone. A process
+//! that opened no game for play reads the stock way.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

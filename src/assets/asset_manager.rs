@@ -624,9 +624,10 @@ impl AssetManager {
     /// Make this the game the launch plays: its [`Self::ships_ares`] answer
     /// becomes the launch's (`util::ares_launch`), which a thread outside
     /// every reading scope loads its INIs by, as Ares.dll patches a whole
-    /// launch. Only a launch's entry point calls it, once the game's archives
-    /// are open; a manager opened for a test, a preview or a probe stays out
-    /// of it.
+    /// launch. A launch's entry point calls it once the game's archives are
+    /// open (the game, the probe and random-map commands, the asset tool),
+    /// and so does the rebuild of the game's manager; a manager opened for a
+    /// test or a read-only INI probe stays out of it.
     pub fn open_for_play(&self) {
         crate::util::ares_launch::open_for_play(self.ships_ares());
     }

@@ -72,9 +72,13 @@
 //! Its invariant: the reads a [`record`] run counts, and the reads a
 //! [`read_ares_way`] scope governs, run on the thread that opened them. The
 //! scope guards are `!Send`, so a scope cannot leave its thread, and
-//! `ares_switch_tests` checks that the Rules code these scopes run spawns no
-//! thread and uses no thread pool. Two loads on two threads keep their own
-//! records; a load nested in another keeps its reads to itself.
+//! `ares_switch_tests` checks that the Rules code under `src/rules` spawns no
+//! thread and uses no thread pool. Code outside it that a scope covers and
+//! that starts threads (the random map generator's workers) hands them their
+//! inputs already read and passes `ares` explicitly: a thread outside every
+//! scope reads by the launch's answer (`util::ares_launch`), never by this
+//! thread's. Two loads on two threads keep their own records; a load nested
+//! in another keeps its reads to itself.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
