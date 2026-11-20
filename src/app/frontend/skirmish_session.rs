@@ -2864,10 +2864,13 @@ mod tests {
         let initial =
             b"; keep this comment\r\n[Unrelated]\r\nKey=kept\r\n[Skirmish]\r\nCredits=10000\r\n";
         std::fs::write(&path, initial).expect("existing nonempty profile");
-        let seed_name = crate::util::native_file_name::NativeFileName::from("SAVE0001.SED");
         let mut seed = RmgOptions::default();
-        saved_seeds::write_browser_seed(&directory, &seed_name, &seed, false)
-            .expect("existing seed");
+        seed.description = "Earlier map".into();
+        std::fs::write(directory.join("SAVE0001.SED"), seed.to_sed_bytes(false))
+            .expect("existing root-level seed");
+        let seed_name = saved_seeds::list_saved_seeds(&directory)
+            .remove(0)
+            .file_name;
         let assets = AssetManager::from_loose_root_for_test(&directory);
         let borrowed_profile = assets
             .get_ref(profile_file::FILENAME)
@@ -2910,8 +2913,14 @@ mod tests {
 
         seed.seed = 42424;
         seed.description = "Overwritten".into();
-        saved_seeds::write_browser_seed(&directory, &seed_name, &seed, false)
-            .expect("overwrite existing seed");
+        saved_seeds::write_browser_seed(
+            &directory,
+            &seed_name,
+            &seed,
+            false,
+            saved_seeds::SeedWrite::Overwrite,
+        )
+        .expect("overwrite existing seed");
         let reread = saved_seeds::read_browser_seed(
             &directory,
             &seed_name,

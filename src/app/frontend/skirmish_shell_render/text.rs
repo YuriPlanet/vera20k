@@ -1428,6 +1428,8 @@ pub(super) fn push_choose_map_modal_text_draws(
     {
         let label = if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
             tr("VERA:OnlineMaps")
+        } else if chosen.id == crate::ui::skirmish_shell::RANDOM_MAPS_ROW {
+            tr("VERA:RandomMaps")
         } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
             tr("VERA:Favorites")
         } else {
@@ -1454,21 +1456,20 @@ pub(super) fn push_choose_map_modal_text_draws(
         );
     }
     let geometry = modal.map_geometry(layout);
-    for (visible, (index, record_idx)) in modal
-        .filtered_record_indices
-        .iter()
-        .enumerate()
+    for (visible, index) in (0..modal.map_row_count())
         .skip(modal.map_top_index)
         .take(geometry.visible_rows)
         .enumerate()
     {
-        let label = match &modal.row_labels {
-            Some(labels) => labels.get(index).cloned(),
-            None => state
-                .frontend
-                .scenario_catalog
-                .records()
-                .get(*record_idx)
+        let label = if let Some(seed) = modal.saved_seed_at(index) {
+            Some(seed.description.display_text())
+        } else if let Some(labels) = &modal.row_labels {
+            labels.get(index).cloned()
+        } else {
+            modal
+                .filtered_record_indices
+                .get(index)
+                .and_then(|&record| state.frontend.scenario_catalog.records().get(record))
                 .map(|record| {
                     // Starred maps carry a star, except under Favorites,
                     // where every map is one.
@@ -1477,7 +1478,7 @@ pub(super) fn push_choose_map_modal_text_draws(
                     } else {
                         record.display_name.clone()
                     }
-                }),
+                })
         };
         let Some(label) = label else {
             continue;
@@ -1501,8 +1502,10 @@ pub(super) fn push_choose_map_modal_text_draws(
     }
     // VERA: an empty Online Maps or Favorites list says why, wrapped down
     // the list.
-    let empty = if !modal.filtered_record_indices.is_empty() {
+    let empty = if modal.map_row_count() > 0 {
         None
+    } else if modal.random_maps_selected() && modal.search.is_empty() {
+        Some(tr("VERA:NoRandomMaps"))
     } else if modal.online_maps_selected() {
         Some(crate::app::map_library::empty_online_maps_text(state))
     } else if modal.favorites_selected() && modal.search.is_empty() {

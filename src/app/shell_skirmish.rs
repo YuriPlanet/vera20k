@@ -688,12 +688,34 @@ impl App {
             .choose_map_modal
             .as_mut()
         {
+            if crate::app::worker::THREADS {
+                modal.add_random_maps_row(&state.frontend.skirmish_modes);
+            }
             modal.add_favorites_row(favorites);
             if online {
                 modal.add_online_maps_row();
             }
         }
         Self::list_cooperative_campaigns(state, false);
+    }
+
+    /// List files only when the folder is visible, including when Save or
+    /// Delete changes it in the generator above the chooser.
+    pub(super) fn refresh_saved_random_maps(state: &mut AppState) {
+        let dir = Self::random_map_dir(state);
+        let layout = Self::skirmish_choose_map_layout(state);
+        if let Some(modal) = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+            .filter(|modal| modal.random_maps_selected())
+        {
+            let seeds = dir
+                .map(|dir| crate::map::rmg::saved_seeds::list_saved_seeds(&dir))
+                .unwrap_or_default();
+            modal.set_saved_seeds(seeds, &layout);
+        }
     }
 
     /// VeraX map hot reload: re-run the retail Choose Map scan over the game
@@ -963,6 +985,7 @@ impl App {
                 // (`0x0061AA5A`).
                 Self::play_skirmish_shell_generic_click_sound(state);
                 if rebuilt {
+                    Self::refresh_saved_random_maps(state);
                     Self::list_cooperative_campaigns(state, true);
                 }
                 state.platform.window.request_redraw();
@@ -1046,6 +1069,16 @@ impl App {
         // Every way out slides `0x6B` out first (`0x007757E0` ->
         // `ShellDialog__SlideOutAndWait`); its result runs afterwards.
         let then = match fired_button {
+            crate::ui::skirmish_shell::ChooseMapModalButton::UseMap0x6c5
+                if modal.random_maps_selected() =>
+            {
+                let Some(seed) = modal.selected_saved_seed() else {
+                    return true;
+                };
+                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap(Some(
+                    seed.file_name.clone(),
+                ))
+            }
             crate::ui::skirmish_shell::ChooseMapModalButton::UseMap0x6c5 => {
                 // No map selected: Use Map does nothing (`0x005E7160`).
                 let Some(selection) = modal.accept_selection() else {
@@ -1065,7 +1098,7 @@ impl App {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel
             }
             crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap
+                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap(None)
             }
             // VERA: stars or unstars the highlighted map.
             crate::ui::skirmish_shell::ChooseMapModalButton::Favorite => {

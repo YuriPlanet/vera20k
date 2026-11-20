@@ -339,7 +339,7 @@ pub fn game_folder_file(ra2_dir: &Path, name: &str) -> PathBuf {
 }
 
 /// Where the random-map dialog's files live: `RandMap.Sed`, its `RandMap.img`
-/// preview and the saved seeds. VERA: gamemd keeps them in its own folder
+/// preview and the Random Maps subfolder for saved seeds. gamemd keeps them in its own folder
 /// (`RandomMapSetupDialog__Run` 0x00595BC0 writes `RandMap.img`, its accepted
 /// caller 0x005E8590 `RandMap.Sed`); VERA never writes the game folder, so
 /// they are in its Maps folder. Without that folder (tests and tools), `root`.
@@ -837,7 +837,7 @@ fn install_received_asset_with_limits(
     }
     #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     if !already_cached {
-        write_staged(cache.directory(), &bytes, |stage| {
+        crate::util::file_system::write_staged(cache.directory(), &bytes, |stage| {
             std::fs::rename(stage, &path)
         })?;
     }
@@ -848,43 +848,6 @@ fn install_received_asset_with_limits(
         source_sha256: digest.to_owned(),
     };
     Ok(LoadedTransferAsset { source, content })
-}
-
-/// Writes `bytes` to a new hidden file in `dir`, syncs it, and hands its path
-/// to `publish` to move it into place. The staged file is removed when the
-/// write or `publish` fails, so no partial file is published or left behind.
-#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-fn write_staged(
-    dir: &Path,
-    bytes: &[u8],
-    publish: impl FnOnce(&Path) -> std::io::Result<()>,
-) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
-    let (stage, mut file) = loop {
-        let id = NEXT_STAGE.fetch_add(1, Ordering::Relaxed);
-        let stage = dir.join(format!(".map-{}-{id}.tmp", std::process::id()));
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&stage)
-        {
-            Ok(file) => break (stage, file),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error),
-        }
-    };
-    let result = (|| -> std::io::Result<()> {
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        drop(file);
-        publish(&stage)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&stage);
-    }
-    result
 }
 
 /// The name a received or downloaded map is kept under in VERA's Maps folder: the
@@ -994,32 +957,11 @@ fn held_file(dir: &Path, name: &str) -> Option<PathBuf> {
 /// name is already taken by a spelling [`held_file`] did not match.
 fn write_kept_map(maps_dir: &Path, name: &str, bytes: &[u8]) -> Result<bool> {
     crate::util::file_system::create_dir_all(maps_dir)?;
-    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
-    {
-        crate::util::file_system::write_new(maps_dir.join(name), bytes)?;
-        Ok(true)
-    }
-    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-    {
-        // The bytes are staged beside the name first, so Choose Map never
-        // reads half a file. Claiming the name then lets the file system
-        // refuse a spelling it treats as the same, and the staged file
-        // replaces only that claim.
-        let target = maps_dir.join(name);
-        let written = write_staged(maps_dir, bytes, |stage| {
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&target)?;
-            std::fs::rename(stage, &target).inspect_err(|_| {
-                let _ = std::fs::remove_file(&target);
-            })
-        });
-        match written {
-            Ok(()) => Ok(true),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
-            Err(error) => Err(error.into()),
-        }
+    match crate::util::file_system::write_new(maps_dir.join(name), bytes) {
+        Ok(()) => Ok(true),
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error.into()),
     }
 }
 
