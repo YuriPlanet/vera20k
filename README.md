@@ -80,6 +80,11 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+The game reads the original Yuri's Revenge archives from a copy you own. The
+[local game-files guide](tools/game_files.md) finds that copy, checks it with
+the engine's own installer check, keeps only the files the engine reads and
+points `config.toml` at it.
+
 ## How we work
 
 Most of the code is written by AI coding agents. They use Ghidra to study the original
