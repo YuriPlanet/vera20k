@@ -398,6 +398,25 @@ impl Simulation {
         kind: crate::sim::house_state::HouseOutcomeKind,
     ) {
         use crate::sim::house_state::HouseOutcomeKind;
+        let viewed_house = self.session.current_house();
+        if self.session.watcher() {
+            // A connection has no House result of its own. Use the shared
+            // elimination decision, even when another House's timer settles
+            // it. Scripted exits outside that decision end with the relay.
+            if (kind == HouseOutcomeKind::Victory || viewed_house == Some(owner))
+                && self.multiplayer_decision().is_some()
+            {
+                let followed_lost = viewed_house
+                    .and_then(|house| self.houses.get(&house))
+                    .is_some_and(|house| house.is_defeated() || house.has_lost());
+                self.session.admit_outcome(if followed_lost {
+                    HouseOutcomeKind::Defeat
+                } else {
+                    kind
+                });
+            }
+            return;
+        }
         if !self.handles_house_outcome_locally(owner) {
             return;
         }
@@ -405,7 +424,7 @@ impl Simulation {
         let local = if self.outcomes_follow_player_control() {
             house.is_human() || house.player_control()
         } else {
-            self.session.current_house() == Some(owner)
+            viewed_house == Some(owner)
         };
         let routed = if local {
             kind
@@ -429,8 +448,9 @@ impl Simulation {
     /// process's result. Canonical remote network results never choose its
     /// app route or restart its local Vox timer. Offline routing is unchanged.
     fn handles_house_outcome_locally(&self, owner: InternedId) -> bool {
-        !self.session.execution_topology().is_lockstep()
-            || self.session.current_house() == Some(owner)
+        !self.session.watcher()
+            && (!self.session.execution_topology().is_lockstep()
+                || self.session.current_house() == Some(owner))
     }
 
     /// MPlayer_Defeated4FC680/4FC6AC and TAction6DDD77/6DEA37 target

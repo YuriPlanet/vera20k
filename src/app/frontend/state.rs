@@ -176,7 +176,6 @@ pub(crate) struct FrontendState {
     /// which its next Create Game shows and its room publishes.
     pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
     /// VERA: how this player returns to its LAN room after the match.
-    pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).
     pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// `0x10F`'s background art (`0x0072C600`), freed with the dialog

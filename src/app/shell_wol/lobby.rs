@@ -1020,8 +1020,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         // first, and a failed login ends it (the welcome).
         visit.relogin = Some(postmatch);
         // The lost connection took the kept game room with it.
-        visit.back_to_room = false;
-        visit.cooperative_resume = None;
+        state.match_state.session.take_network_room_return();
         visit.lobby = None;
         visit.page = WolPage::Backdrop { wait: None };
         state.frontend.wol_lobby_art = None;
@@ -1044,9 +1043,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         .shell_controller
         .reset_to(super::WOL_LOBBY_DIALOG, false);
     let now = Instant::now();
-    let returning = postmatch && visit.back_to_room;
+    let returning = postmatch && state.match_state.session.awaiting_wol_room_return();
     if !returning {
-        visit.cooperative_resume = None;
+        state.match_state.session.take_network_room_return();
     }
     let resume = !postmatch && visit.lobby.is_some();
     if resume {
@@ -1151,17 +1150,14 @@ pub(super) fn room_refused(state: &mut AppState) {
 }
 
 pub(super) fn awaiting_room(state: &AppState) -> bool {
-    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::ReturningToRoom))
+    state.match_state.session.awaiting_wol_room_return()
 }
 
 /// VERA: the kept room is gone (it closed, or the player gave up waiting).
 /// The runner goes on as after any match: the chat-lobby list, then a join.
 /// The join itself leaves the room on the lobby if it is still there.
 fn room_not_returned(state: &mut AppState, closed: bool) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-        visit.cooperative_resume = None;
-    }
+    state.match_state.session.take_network_room_return();
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -1188,11 +1184,10 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         log::debug!("WOL room reopened after the wait ended");
         return;
     }
-    let mut resume = None;
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-        resume = visit.cooperative_resume.take();
-    }
+    let resume = match state.match_state.session.take_network_room_return() {
+        crate::app::match_runtime::session::NetworkRoomReturn::Wol { cooperative } => cooperative,
+        _ => None,
+    };
     let listed = joined.members.clone();
     let channel = joined.channel.clone();
     if let Some(lobby) = lobby_mut(state) {
@@ -1249,7 +1244,7 @@ fn open_game_room(
     state: &mut AppState,
     listed: &[WolMember],
     observe: bool,
-    resume: Option<crate::app::shell_network_setup::CooperativeResume>,
+    resume: Option<crate::app::match_runtime::session::CooperativeResume>,
 ) -> bool {
     let me = nickname(state);
     let host = listed
@@ -2712,9 +2707,7 @@ pub(crate) fn watch_admitted(state: &mut AppState) -> bool {
     }
     lobby.step = Step::Ready;
     close_wait(state);
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.back_to_room = false;
-    }
+    state.match_state.session.take_network_room_return();
     true
 }
 
@@ -3168,6 +3161,7 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
 
 /// A lobby box or wait-box button released.
 pub(super) fn box_command(state: &mut AppState, control: u16) {
+    let returning_to_room = awaiting_room(state);
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -3216,8 +3210,7 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
             super::buddy::stopped(state);
         }
         WAIT_DISCONNECT
-            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
-                && matches!(lobby.step, Step::ReturningToRoom) =>
+            if lobby.wait.as_ref().is_some_and(|wait| wait.shown) && returning_to_room =>
         {
             room_not_returned(state, false);
         }

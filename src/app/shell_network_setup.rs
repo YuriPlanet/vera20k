@@ -9,7 +9,7 @@ pub(crate) mod agreement;
 pub(crate) mod bans;
 mod cooperative;
 pub(crate) use cooperative::{
-    CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
+    chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
 };
 pub(crate) mod maps;
 #[cfg(all(test, tests_app))]
@@ -174,11 +174,6 @@ pub(crate) struct NetworkSetupProtocol {
     /// Derived from the same admitted source as the received image.
     received_preview_bounds: Option<crate::map::preview::PreviewSourceBounds>,
     received_preview_count: u32,
-    /// VERA: a kept WOL room came back after BC6's Continue
-    /// (`cooperative::resume`) in place of `+0xAC`'s rematch (`0x005C46E0`),
-    /// which seats both players without a join. The next join is the
-    /// partner coming back to that seat.
-    cooperative_rematch_seat: bool,
     /// VERA's rooms: where the host's options last put the local player
     /// (its team, and whether it watches), and where the player last asked
     /// to be, so that a move the host made is told in chat
@@ -395,7 +390,6 @@ impl NetworkSetupProtocol {
             received_preview: None,
             received_preview_bounds: None,
             received_preview_count: 0,
-            cooperative_rematch_seat: false,
             seat_place: None,
             asked_place: None,
             queue_place: None,
@@ -445,17 +439,6 @@ impl NetworkSetupProtocol {
         self.set_start_phase(StartPhase::Submitted);
         self.requests.push(NetworkSetupRequest::StartGame { users });
         true
-    }
-
-    /// VERA: the next join is the kept room's partner coming back.
-    pub(crate) fn await_cooperative_rematch_seat(&mut self) {
-        self.cooperative_rematch_seat = true;
-    }
-
-    /// Whether this join is the kept room's partner coming back: only the
-    /// first join after [`Self::await_cooperative_rematch_seat`].
-    pub(crate) fn take_cooperative_rematch_seat(&mut self) -> bool {
-        std::mem::take(&mut self.cooperative_rematch_seat)
     }
 
     pub(crate) fn lan_go_send_pending(&self) -> bool {

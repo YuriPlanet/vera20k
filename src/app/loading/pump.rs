@@ -1347,6 +1347,8 @@ fn play_startup_personal_rules(
 }
 
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
+    // Retiring the Radar FIFO can record an outgoing scenario service.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     state
         .frontend
         .multiplayer_shell_runtime
@@ -2342,6 +2344,19 @@ fn poll_network_load_wait(
     }
     if poll == NetworkLoadPoll::TimedOut {
         let timed_out = native.progress_row.incomplete_remote_indices();
+        if state
+            .match_state
+            .session
+            .retire_cooperative_start_on_timeout(&timed_out)
+        {
+            // Retire the held result and its asset lease through the normal
+            // failure path before the world can be installed.
+            state.frontend.loading_session = Some(session);
+            let text =
+                crate::app::frontend::shell_pass::resolve_csf(state, "TXT_SYSTEM_NOT_RESPONDING")
+                    .into_owned();
+            return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
+        }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {
             unreachable!()
         };

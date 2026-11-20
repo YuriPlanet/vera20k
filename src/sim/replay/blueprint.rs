@@ -137,9 +137,11 @@ impl MatchStartBlueprint {
         );
         anyhow::ensure!(
             facts.campaign_carry_over.is_none()
-                || matches!(self.launch(), ReplayLaunch::Cooperative(_))
-                    && self.admitted.execution_topology().is_lockstep(),
-            "only a Cooperative lockstep replay can inherit a campaign record"
+                || matches!(
+                    self.launch(),
+                    ReplayLaunch::Cooperative(_) | ReplayLaunch::Campaign(_)
+                ) && self.admitted.execution_topology().is_lockstep(),
+            "only a Cooperative or scripted lockstep replay can inherit a campaign record"
         );
         anyhow::ensure!(
             facts.local_player_index < facts.humans.len()

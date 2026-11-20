@@ -1337,9 +1337,9 @@ pub(crate) fn install_online_transport(
     );
     // A watcher has no source of its own: it stands in the seat of the
     // player it follows (relay README "Watchers").
+    let watching = transport.relay_watch_delay().is_some();
     anyhow::ensure!(
-        transport.relay_watch_delay().is_some()
-            || transport.relay_source().map(usize::from) == Some(launch.local_player_index),
+        watching || transport.relay_source().map(usize::from) == Some(launch.local_player_index),
         "relay identity differs from the admitted local participant"
     );
     for source in 0..launch.humans.len() {
@@ -1359,6 +1359,12 @@ pub(crate) fn install_online_transport(
         .session
         .network_endpoint(host_source)
         .ok_or_else(|| anyhow::anyhow!("online host has no admitted endpoint"))?;
+    if watching {
+        state
+            .match_state
+            .session
+            .admit_local_network_watcher(transport.primary_addr()?)?;
+    }
     let mut service = LanService::with_transport(transport);
     // The setup dialog is discarded before loading. Retain the same admitted
     // host binding as LAN so timing authority survives that handoff.
@@ -1586,7 +1592,8 @@ fn poll_direct_start(state: &mut AppState) {
         return;
     }
     if let Err(error) = super::shell_network_setup::begin_external_lan_go(state) {
-        super::App::fail_external_launch(state, &format!("direct start: {error:#}"));
+        log::warn!("Direct LAN start failed: {error:#}");
+        super::App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"));
     }
 }
 
@@ -2116,15 +2123,16 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     }
     let message = LanMessage::decode(&incoming.payload)?;
     if super::loading::pump::network_loading_active(state)
+        && let Some(departed) = state.match_state.lan_service.as_ref().and_then(|service| {
+            service
+                .loading_departure_source(&state.match_state.session, incoming.source, &message)
+                .ok()
+                .flatten()
+        })
         && state
             .match_state
-            .lan_service
-            .as_ref()
-            .is_some_and(|service| {
-                service
-                    .loading_departure_source(&state.match_state.session, incoming.source, &message)
-                    .is_ok_and(|source| source.is_some())
-            })
+            .session
+            .retire_network_start_on_departure(departed)
     {
         //Native48D81A->5DA750 has already-bound private Houses. VERA builds
         //those after synchronous loading: cancel this attempt at its safe
@@ -3740,6 +3748,14 @@ pub(crate) fn return_transport(state: &mut AppState) {
     let Some(live) = state.match_state.live_network.take() else {
         return;
     };
+    if live.watching()
+        && let Ok(endpoint) = live.primary_addr()
+    {
+        state
+            .match_state
+            .session
+            .disconnect_network_watcher(endpoint);
+    }
     if let Some(service) = state.match_state.lan_service.as_mut() {
         let mut transport = live.into_transport();
         transport.connections_mut().reset();
@@ -3791,10 +3807,7 @@ fn drain_match_requests(state: &mut AppState) {
     {
         // The held loader fails its load on the same error.
         log::warn!("Loading report failed: {error:#}");
-        super::loading::pump::cancel_network_loading(
-            state,
-            &format!("{}: {error:#}", crate::i18n::tr("VERA:LoadingFailed")),
-        );
+        super::loading::pump::cancel_network_loading(state, &crate::i18n::tr("VERA:LoadingFailed"));
     }
     let requests = state.match_state.session.take_network_send_requests();
     for request in requests {
@@ -4053,7 +4066,7 @@ fn drain_setup_requests(state: &mut AppState, now: u32) {
                 if super::shell_network_setup::external(state) {
                     super::App::fail_external_launch(
                         state,
-                        &format!("direct setup request: {error:#}"),
+                        &crate::i18n::tr("VERA:StartRefusedSetup"),
                     );
                     return;
                 }

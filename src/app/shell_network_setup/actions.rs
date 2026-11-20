@@ -708,7 +708,7 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
     if let Err(error) = try_commit_start(state, agreed_seed) {
         log::error!("Could not start the network match: {error:#}");
         if state.frontend.external_launch {
-            App::fail_external_launch(state, &format!("{error:#}"));
+            App::fail_external_launch(state, &crate::i18n::tr("VERA:StartRefusedSetup"));
         } else if super::quick_match(state) {
             crate::app::shell_wol::start_aborted(state);
         } else {
@@ -777,18 +777,29 @@ pub(super) fn try_commit_start(state: &mut AppState, agreed_seed: u32) -> anyhow
         );
     }
     // VERA's LAN room comes back after the match; the original one does not.
+    use crate::app::match_runtime::session::NetworkRoomReturn;
     let dialog = super::dialog(state);
-    state.frontend.lan_rematch = match (dialog.wol() || !dialog.modern, dialog.host) {
-        (true, _) => None,
-        (false, true) => Some(crate::app::shell_lan::LanRematch::Host),
-        (false, false) => crate::app::lan_service::admitted_host_room(state)
-            .map(|(host, game_id)| crate::app::shell_lan::LanRematch::Guest { host, game_id }),
+    let room_return = if !dialog.modern || super::external(state) {
+        NetworkRoomReturn::Lobby
+    } else if dialog.wol() {
+        if super::quick_match(state) {
+            NetworkRoomReturn::Lobby
+        } else {
+            NetworkRoomReturn::Wol { cooperative: None }
+        }
+    } else if dialog.host {
+        NetworkRoomReturn::LanHost
+    } else {
+        crate::app::lan_service::admitted_host_room(state)
+            .map(|(host, game_id)| NetworkRoomReturn::LanGuest { host, game_id, until: None })
+            .unwrap_or_default()
     };
     let startup = state
         .match_state
         .session
         .freeze_network_start(agreed_seed)
         .context("network start")?;
+    state.match_state.session.set_network_room_return(room_return);
     if state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol {
         crate::app::shell_wol::match_started(state);
     }

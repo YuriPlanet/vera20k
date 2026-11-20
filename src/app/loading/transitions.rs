@@ -595,6 +595,9 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
 }
 
 pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadResult) {
+    // Retiring Radar may record a service input after the outgoing frame.
+    // Publish that frame before the retire/reset sequence.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     crate::app::match_runtime::scenario_pause::reset_clock(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
@@ -609,7 +612,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Only fresh startup cancels its outgoing scenario-owned request. Saved
     // loading preserves the process Theme state until ThemeLoad721040.
     state.audio.cancel_scenario_theme_request();
-    crate::app::reset_scenario_exit_runtime(state);
     let startup = result.scenario.startup;
     let returns_scenario_rng_to_multiplayer_shell = startup.launch_session().is_some();
     // A loaded world is not timed until the launch handoff reaches InGame.
@@ -620,6 +622,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
+    crate::app::reset_scenario_exit_runtime(state);
     let incoming = result.scenario.simulation.zip(result.scenario.rules);
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         // Every committed replacement retires outgoing sources, including a
@@ -825,6 +828,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         );
     }
 
+    let mut initial_replay_effects = Vec::new();
     let installation = match startup {
         crate::app::match_bootstrap::LoadingStartup::Campaign(prepared) => {
             let installed = state.match_state.startup.acknowledge_campaign(
@@ -893,10 +897,13 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     "replay loader did not install an authored world"
                 )),
             };
-            if let Err(error) = playback {
-                let message = format!("Replay startup failed: {error:#}");
-                log::error!("{message}");
-                state.frontend.external_launch_error = Some(message);
+            match playback {
+                Ok(effects) => initial_replay_effects = effects,
+                Err(error) => {
+                    let message = format!("Replay startup failed: {error:#}");
+                    log::error!("{message}");
+                    state.frontend.external_launch_error = Some(message);
+                }
             }
             // A rejected replay is a frozen inspection view, never a fresh
             // playable match. Its diagnostics owner blocks every tick/input.
@@ -918,6 +925,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // Main_Game 0x0048CE7E: State_Machine's admission latch.
             state.match_state.match_presentation.modal_latch = true;
             state.frontend.screen = GameScreen::InGame;
+            if !initial_replay_effects.is_empty() {
+                crate::app::match_runtime::sim_tick::apply_trigger_effects(
+                    state,
+                    &initial_replay_effects,
+                );
+            }
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             crate::web::match_started();
             if returns_scenario_rng_to_multiplayer_shell {
