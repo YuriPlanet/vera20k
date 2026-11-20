@@ -22,7 +22,16 @@ use crate::util::time::{Duration, Instant};
 /// Keep substantial headroom for wgpu's internal buffers and the fixed frame
 /// passes outside native-object replay. This is a scheduling bound, not a
 /// claim that the backend exposes a portable command-buffer limit.
-const CLOSED_PASSES_PER_SUBMISSION: usize = 128;
+/// Closed passes per command buffer on a GPU with its own memory. Windows
+/// judges each command buffer on its own against its two-second timeout, so
+/// a frame that takes longer survives as long as no one buffer does.
+pub(crate) const CLOSED_PASSES_PER_SUBMISSION: usize = 128;
+/// The same on a GPU that draws from the system's memory
+/// (`gpu::shared_memory_graphics`): its passes take many times longer, and an
+/// Intel HD 620 lost its device to that timeout seconds into every match. A
+/// frame of short buffers stays slow, but the game keeps its device and the
+/// log keeps telling why the frame is slow.
+pub(crate) const SHARED_MEMORY_PASSES_PER_SUBMISSION: usize = 8;
 
 pub(super) struct PassSubmission {
     device: wgpu::Device,
@@ -31,6 +40,9 @@ pub(super) struct PassSubmission {
     /// frame; times nothing until the frame owner hands it the GPU's timer.
     pub(super) timer: crate::render::gpu_timer::GpuTimer,
     pending_passes: usize,
+    /// Closed passes a command buffer holds before it is submitted
+    /// ([`CLOSED_PASSES_PER_SUBMISSION`] unless the device is told otherwise).
+    passes_per_submission: usize,
     submissions: usize,
     /// Wall time spent finishing and submitting this frame's bounded batches.
     submit_time: Duration,
@@ -47,10 +59,16 @@ impl PassSubmission {
             queue: queue.clone(),
             timer: Default::default(),
             pending_passes: 0,
+            passes_per_submission: CLOSED_PASSES_PER_SUBMISSION,
             submissions: 0,
             submit_time: Duration::ZERO,
             closed_passes: 0,
         }
+    }
+
+    /// How many closed passes a command buffer holds before it is submitted.
+    pub(super) fn set_passes_per_submission(&mut self, passes: usize) {
+        self.passes_per_submission = passes.max(1);
     }
 
     /// Called by the existing per-frame target preparation owner. Previously
@@ -81,7 +99,7 @@ impl PassSubmission {
     pub(super) fn note_closed_passes(&mut self, encoder: &mut wgpu::CommandEncoder, passes: usize) {
         self.pending_passes += passes;
         self.closed_passes += passes;
-        if self.pending_passes < CLOSED_PASSES_PER_SUBMISSION {
+        if self.pending_passes < self.passes_per_submission {
             return;
         }
         let next = self

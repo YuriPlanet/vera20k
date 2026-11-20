@@ -46,6 +46,20 @@ pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 /// GPU's own, so Metal keeps [`MAX_USEFUL_TEXTURE_DIM`].
 pub(crate) const SHARED_MEMORY_TEXTURE_DIM: u32 = 8_192;
 
+/// A GPU that draws from the system's memory outside Metal: a Windows or
+/// Linux integrated chip, or the processor itself. Its texture pages are
+/// smaller ([`requested_texture_dim`]), its command buffers shorter
+/// (`terrain_submission`), and its first match frames are timed for the log.
+pub(crate) fn shared_memory_graphics(
+    backend: wgpu::Backend,
+    device_type: wgpu::DeviceType,
+) -> bool {
+    matches!(
+        device_type,
+        wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::Cpu
+    ) && backend != wgpu::Backend::Metal
+}
+
 /// The 2D texture edge this device is asked for: what the adapter offers, up
 /// to [`MAX_USEFUL_TEXTURE_DIM`], or [`SHARED_MEMORY_TEXTURE_DIM`] on a GPU
 /// that draws from the system's memory outside Metal.
@@ -54,11 +68,7 @@ pub(crate) fn requested_texture_dim(
     device_type: wgpu::DeviceType,
     adapter_max: u32,
 ) -> u32 {
-    let shared_memory = matches!(
-        device_type,
-        wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::Cpu
-    ) && backend != wgpu::Backend::Metal;
-    let useful = if shared_memory {
+    let useful = if shared_memory_graphics(backend, device_type) {
         SHARED_MEMORY_TEXTURE_DIM
     } else {
         MAX_USEFUL_TEXTURE_DIM
@@ -646,6 +656,12 @@ impl GpuContext {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) fn device_lost(&self) -> Option<&str> {
         lost_device()
+    }
+
+    /// Whether this device draws from the system's memory
+    /// ([`shared_memory_graphics`]).
+    pub(crate) fn shared_memory_graphics(&self) -> bool {
+        shared_memory_graphics(self.adapter_info.backend, self.adapter_info.device_type)
     }
 
     /// Why DirectX 12 lost the device, in the driver's own terms: a GPU that
