@@ -134,7 +134,7 @@ impl RmgGrid {
     }
 
     fn in_bounds(&self, x: i32, y: i32) -> bool {
-        x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.width
+        in_bounds(self.width, x, y)
     }
 
     pub fn get(&self, x: i32, y: i32) -> Option<&GridCell> {
@@ -208,7 +208,7 @@ impl RmgGrid {
     /// after every blob. A storage choice only: cells are still addressed by
     /// `(x, y)`, so no value or order changes.
     fn slot(&self, x: i32, y: i32) -> usize {
-        (x + y) as usize * self.width + x as usize
+        slot(self.width, x, y)
     }
 
     /// Cell lookup with the original's fallback semantics: an invalid
@@ -248,6 +248,45 @@ impl RmgGrid {
     pub fn native_cells(&self) -> AllocatedCellWalk {
         self.diamond.allocated_cells()
     }
+
+    /// Each cell of [`Self::native_cells`] with its coordinate, in that
+    /// order. A grid built from its map geometry holds every cell the walk
+    /// names.
+    pub fn cells_in_native_order(&self) -> impl Iterator<Item = ((i32, i32), &GridCell)> {
+        self.native_cells()
+            .filter_map(|(x, y)| Some(((x, y), self.get(x, y)?)))
+    }
+
+    /// Mutable variant of [`Self::cells_in_native_order`].
+    pub fn cells_in_native_order_mut(
+        &mut self,
+    ) -> impl Iterator<Item = ((i32, i32), &mut GridCell)> {
+        let walk = self.native_cells();
+        let width = self.width;
+        let mut unvisited: &mut [GridCell] = &mut self.cells;
+        let mut first_unvisited = 0;
+        walk.filter(move |&(x, y)| in_bounds(width, x, y))
+            .filter_map(move |(x, y)| {
+                // The walk raises x + y from row to row and x within a row, so
+                // its storage slots only grow: each cell is split off the part
+                // of the grid the walk has not reached yet.
+                let slot = slot(width, x, y);
+                let (_, rest) = std::mem::take(&mut unvisited).split_at_mut(slot - first_unvisited);
+                let (cell, rest) = rest.split_first_mut()?;
+                unvisited = rest;
+                first_unvisited = slot + 1;
+                Some(((x, y), cell))
+            })
+    }
+}
+
+fn in_bounds(width: usize, x: i32, y: i32) -> bool {
+    x >= 0 && y >= 0 && (x as usize) < width && (y as usize) < width
+}
+
+/// Storage slot of an in-bounds cell; see [`RmgGrid::slot`].
+fn slot(width: usize, x: i32, y: i32) -> usize {
+    (x + y) as usize * width + x as usize
 }
 
 #[cfg(all(test, tests_map))]
@@ -294,6 +333,27 @@ mod tests {
                 (5, 3), // row sum 8, 3 cells
             ]
         );
+    }
+
+    /// The cell iterators visit the walk's coordinates in its order, and each
+    /// yields the cell the coordinate names.
+    #[test]
+    fn cell_iterators_follow_the_native_walk() {
+        let mut grid = RmgGrid::new(16, 4, 8);
+        let walk: Vec<(i32, i32)> = grid.native_cells().collect();
+        let mut visited = Vec::new();
+        for (coord, cell) in grid.cells_in_native_order_mut() {
+            cell.tile = coord.0 * 100 + coord.1;
+            visited.push(coord);
+        }
+        assert_eq!(visited, walk);
+        assert_eq!(grid.get(3, 4).unwrap().tile, 304);
+        let read: Vec<_> = grid
+            .cells_in_native_order()
+            .map(|(coord, cell)| (coord, cell.tile))
+            .collect();
+        let expected: Vec<_> = walk.iter().map(|&(x, y)| ((x, y), x * 100 + y)).collect();
+        assert_eq!(read, expected);
     }
 
     #[test]

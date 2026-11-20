@@ -274,16 +274,13 @@ fn rewrite_blob(ctx: &mut RegionCtx<'_>, blob_id: i32, adopt_id: i32, adopt_leve
     } else {
         ctx.default_level
     };
-    for (x, y) in ctx.grid.native_cells().collect::<Vec<_>>() {
-        if ctx.scratch.get(x, y).region != blob_id {
+    for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
+        let record = ctx.scratch.get_mut(x, y);
+        if record.region != blob_id {
             continue;
         }
-        {
-            let record = ctx.scratch.get_mut(x, y);
-            record.region = adopt_id;
-            record.water_region = false;
-        }
-        let cell = ctx.grid.get_mut(x, y).expect("native cell");
+        record.region = adopt_id;
+        record.water_region = false;
         cell.tile = 0;
         cell.sub_tile = 0;
         cell.level = level;
@@ -321,7 +318,7 @@ fn expand(ctx: &mut RegionCtx<'_>, id: i32, level: u8, passes: i32) -> bool {
                     return false;
                 }
                 ctx.scratch.get_mut(nx, ny).region = id;
-                ctx.grid.get_mut(nx, ny).expect("in-diamond cell").level = level;
+                ctx.grid.cell_native_mut(nx, ny).level = level;
                 next.push((nx, ny));
             }
         }
@@ -681,9 +678,8 @@ fn position_of(regions: &Regions, id: i32) -> Option<usize> {
 /// walking `MapClass::CellIterator` order and reading ownership through
 /// `Rmg__GetCellRegionId @ 0x0058D0A0` (0x0058E3C0..0x0058E40C).
 fn shift_region_level(ctx: &mut RegionCtx<'_>, id: i32, delta: i32) {
-    for (x, y) in ctx.grid.native_cells().collect::<Vec<_>>() {
+    for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
         if ctx.scratch.get(x, y).region == id {
-            let cell = ctx.grid.get_mut(x, y).expect("native cell");
             cell.level = cell.level.wrapping_add(delta as u8);
         }
     }
