@@ -4246,11 +4246,8 @@ fn sequenced_push_advances_without_requests_and_repairs_a_lost_range() {
     );
 }
 
-#[test]
-fn authored_narrative_hold_stops_the_ordered_relay_clock() {
-    use crate::net::live_commands::NarrativeHold;
-
-    let (mut worlds, rules, _, boundaries, mut relay) = sequenced_pair();
+fn pausable_sequenced_pair() -> (SequencedPair, u64) {
+    let (mut worlds, rules, actor, boundaries, mut relay) = sequenced_pair();
     let mut now = 16_000;
     for _ in 0..250 {
         now += 16;
@@ -4262,15 +4259,82 @@ fn authored_narrative_hold_stops_the_ordered_relay_clock() {
         if worlds
             .iter()
             .all(|world| world.session().binary_frame() >= 12)
+            && boundaries.iter().all(|boundary| {
+                boundary
+                    .live
+                    .borrow()
+                    .multiplayer_pause()
+                    .is_some_and(|pause| pause.available)
+            })
         {
-            break;
+            return ((worlds, rules, actor, boundaries, relay), now);
         }
     }
-    assert!(
-        worlds
-            .iter()
-            .all(|world| world.session().binary_frame() >= 12)
-    );
+    panic!("players could not reach a pausable relay timeline");
+}
+
+#[test]
+fn ended_narrative_hold_stops_pause_retries_but_resumes_a_late_pause() {
+    use crate::net::live_commands::NarrativeHold;
+    use vera20k_relay_protocol::envelope::{CONTROL, Direction, HEADER_LEN, HOP_TAG_LEN, peek};
+
+    let ((mut worlds, rules, _, boundaries, mut relay), mut now) = pausable_sequenced_pair();
+    let mut host = boundaries[0].live.borrow_mut();
+    let host_endpoint = host.primary_addr().unwrap();
+    host.set_narrative_hold(Some(NarrativeHold::Host));
+    drop(host);
+
+    now += 16;
+    service_pair(&mut worlds, &boundaries, now);
+    let is_host_pause = |(from, bytes): &(SocketAddrV4, Vec<u8>)| {
+        *from == host_endpoint
+            && peek(Direction::Up, bytes).is_ok_and(|header| header.kind == CONTROL)
+            // PAUSE_REQUEST payload ends in the requested pause bit.
+            && bytes.get(HEADER_LEN) == Some(&5)
+            && bytes.get(bytes.len() - HOP_TAG_LEN - 1) == Some(&1)
+    };
+    let (delayed, other): (Vec<_>, Vec<_>) = relay.received().into_iter().partition(is_host_pause);
+    assert_eq!(delayed.len(), 1);
+    relay.answer(now, other, |_| true);
+    boundaries[0].live.borrow_mut().set_narrative_hold(None);
+
+    // More than two retry intervals pass before the original request reaches
+    // the relay. Ending the hold leaves no pending request in the retry slot.
+    for _ in 0..16 {
+        now += 16;
+        service_pair(&mut worlds, &boundaries, now);
+        let datagrams = relay.received();
+        assert!(!datagrams.iter().any(is_host_pause), "late pause retry");
+        relay.answer(now, datagrams, |_| true);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            production_frame(world, &rules, boundary);
+        }
+    }
+    let pause = boundaries[0].live.borrow().multiplayer_pause().unwrap();
+    assert_eq!(pause.epoch, 0);
+    assert!(!pause.pending);
+
+    relay.answer(now, delayed, |_| true);
+    for _ in 0..30 {
+        now += 16;
+        service_pair(&mut worlds, &boundaries, now);
+        relay.pass(now, |_| true);
+    }
+    for boundary in &boundaries {
+        let pause = boundary.live.borrow().multiplayer_pause().unwrap();
+        assert_eq!(
+            pause.epoch, 2,
+            "the sent pause and automatic resume both land"
+        );
+        assert!(!pause.paused && !pause.pending);
+    }
+}
+
+#[test]
+fn authored_narrative_hold_stops_the_ordered_relay_clock() {
+    use crate::net::live_commands::NarrativeHold;
+
+    let ((mut worlds, _, _, boundaries, mut relay), mut now) = pausable_sequenced_pair();
     for (boundary, hold) in boundaries
         .iter()
         .zip([NarrativeHold::Host, NarrativeHold::Player])

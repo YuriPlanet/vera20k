@@ -1822,11 +1822,121 @@ fn rematch_rejects_old_ack_data_and_frame_sync_before_reliable_state() {
     assert!(right.pop_received().is_none());
 }
 
-#[test]
-fn a_worker_discard_cannot_settle_a_terminal_global_send() {
+fn live_for_campaign_delivery(
+    wire: LanUdpTransport,
+    houses: u8,
+) -> crate::net::live_commands::LiveCommandSession {
     use crate::net::live_commands::{LiveCommandMode, LiveCommandSession, StartupAgreement};
     use std::num::NonZeroU32;
 
+    let rate = NonZeroU32::new(1).unwrap();
+    let agreement = StartupAgreement::new(
+        (0..houses).map(|row| (row, row as i8)),
+        0..houses,
+        1,
+        10,
+        30,
+        rate,
+        0,
+        "",
+        "",
+    )
+    .unwrap();
+    LiveCommandSession::new(agreement, wire, 0, 1, rate, LiveCommandMode::Lan, None).unwrap()
+}
+
+fn acknowledge_campaign_delivery(
+    live: &mut crate::net::live_commands::LiveCommandSession,
+    signal: crate::net::lan_messages::extended_setup::campaign::Signal,
+    now: u32,
+) {
+    use crate::net::lan_messages::extended_setup::campaign::Record;
+
+    let mut peer = transport();
+    let record = Record {
+        scope: None,
+        attempt: 1,
+        signal,
+    };
+    let snapshot = live
+        .enqueue_reliable_globals(&record.encode(), &[peer.primary_addr().unwrap()])
+        .unwrap();
+    assert!(!live.global_sends_delivered(snapshot));
+    live.service_transport(now);
+    malformed_after_receipt(&mut peer, now, 1);
+    assert_eq!(
+        Record::decode(&peer.pop_global_received().unwrap().payload),
+        Some(record)
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while live.global().queued_send_count() != 0 {
+        live.service_transport(now);
+        assert!(
+            Instant::now() < deadline,
+            "campaign control ACK did not arrive"
+        );
+        std::thread::yield_now();
+    }
+    assert!(live.global_sends_delivered(snapshot));
+}
+
+#[test]
+fn an_old_private_failure_does_not_block_an_acknowledged_stage_receipt() {
+    use crate::net::lan_messages::extended_setup::campaign::{Signal, StageChoice};
+
+    let mut wire = transport();
+    let absent = raw_peer();
+    wire.connections_mut()
+        .add_peer(1, ipv4_addr(&absent).unwrap())
+        .unwrap();
+    wire.connections_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: 1,
+        timeout: u32::MAX,
+    });
+    assert!(
+        wire.connections_mut()
+            .send_to(1, b"no ACK", Delivery::Reliable)
+    );
+    let mut live = live_for_campaign_delivery(wire, 2);
+    live.service_transport(1);
+    live.service_transport(2);
+    assert_eq!(live.service_report().unwrap().failed_peer, Some(1));
+    acknowledge_campaign_delivery(&mut live, Signal::StageBegun(StageChoice::Retry), 3);
+}
+
+#[test]
+fn an_old_global_timeout_does_not_block_an_acknowledged_narrative_release() {
+    use crate::net::lan_messages::extended_setup::campaign::Signal;
+
+    let mut live = live_for_campaign_delivery(transport(), 1);
+    let absent = raw_peer();
+    live.global_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: u32::MAX,
+        timeout: 1,
+    });
+    assert!(
+        live.enqueue_reliable_globals(b"no ACK", &[ipv4_addr(&absent).unwrap()])
+            .is_some()
+    );
+    live.service_transport(1);
+    live.service_transport(3);
+    assert_eq!(live.service_report().unwrap().discarded_global_sends, 1);
+    live.global_mut()
+        .set_timing(RetryTiming::LAN_GUEST_COMPLETED_GLOBAL);
+    acknowledge_campaign_delivery(
+        &mut live,
+        Signal::NarrativeRelease {
+            boundary: 1,
+            tick: 9,
+        },
+        64,
+    );
+}
+
+#[test]
+fn a_worker_discard_cannot_settle_a_terminal_global_send() {
     let mut wire = transport();
     let peer = raw_peer();
     let SocketAddr::V4(endpoint) = peer.local_addr().unwrap() else {
@@ -1837,23 +1947,20 @@ fn a_worker_discard_cannot_settle_a_terminal_global_send() {
         max_retries: u32::MAX,
         timeout: 1,
     });
-    assert!(wire.global_mut().send(
-        b"terminal receipt",
-        GlobalDestination::direct(endpoint),
-        Delivery::Reliable,
-        0,
-    ));
+    let snapshot = wire
+        .enqueue_reliable_globals(b"terminal receipt", &[endpoint])
+        .unwrap();
     // The worker sends the receipt, then times it out before the app polls.
     wire.lock().background_pass(1, false);
     wire.lock().background_pass(3, false);
 
-    let rate = NonZeroU32::new(1).unwrap();
-    let agreement = StartupAgreement::new([(0, 0)], [0], 1, 10, 30, rate, 0, "", "").unwrap();
-    let live =
-        LiveCommandSession::new(agreement, wire, 0, 1, rate, LiveCommandMode::Lan, None).unwrap();
+    let live = live_for_campaign_delivery(wire, 1);
     assert_eq!(live.global().queued_send_count(), 0);
     assert!(live.service_report().is_none());
-    assert!(!live.global_sends_delivered(), "retry expiry is not an ACK");
+    assert!(
+        !live.global_sends_delivered(snapshot),
+        "retry expiry is not an ACK"
+    );
 }
 
 #[test]

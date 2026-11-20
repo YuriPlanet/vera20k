@@ -502,6 +502,8 @@ pub(super) struct SequencedSession {
     next_pause_request: u64,
     narrative_hold: Option<NarrativeHold>,
     narrative_pause_epoch: Option<u64>,
+    late_narrative_pause_epoch: Option<u64>,
+    suppress_narrative_pause_notice: bool,
     last_narrative_pause_attempt: Option<u32>,
     keep_running_for_exit: bool,
     next_sequence: u64,
@@ -628,6 +630,8 @@ impl SequencedSession {
             next_pause_request: 1,
             narrative_hold: None,
             narrative_pause_epoch: None,
+            late_narrative_pause_epoch: None,
+            suppress_narrative_pause_notice: false,
             last_narrative_pause_attempt: None,
             keep_running_for_exit: false,
             next_sequence: 1,
@@ -874,6 +878,19 @@ impl SequencedSession {
     pub(super) fn set_narrative_hold(&mut self, hold: Option<NarrativeHold>) {
         if self.narrative_hold != hold {
             self.narrative_hold = hold;
+            // The barrier no longer needs to acquire this pause. Keep the
+            // possible marker, since a packet already on the wire can win.
+            // Leaving the retry slot free also permits later pause requests.
+            if hold.is_none()
+                && let Some(request) = self
+                    .pause_request
+                    .take_if(|request| request.narrative && request.paused)
+                && request.last_sent.is_some()
+                && let Some(epoch) = request.expected_epoch.checked_add(1)
+                && epoch > self.pause.epoch
+            {
+                self.late_narrative_pause_epoch = Some(epoch);
+            }
             self.last_narrative_pause_attempt = None;
             self.pace_meter.backlog_since = None;
             self.pace_meter.slow_windows = 0;
@@ -1520,20 +1537,36 @@ impl SequencedSession {
                     self.pause.paused = paused;
                     self.pause.frame = frame;
                     self.pause.epoch = epoch;
-                    // A concurrent player pause is never ours to resume.
+                    // A newer manual pause request takes precedence over a
+                    // possible late narrative pause at this same epoch.
                     self.narrative_pause_epoch = (paused
                         && source == self.local_source
-                        && self.pause_request.as_ref().is_some_and(|request| {
-                            request.narrative
-                                && request.paused
-                                && request.expected_epoch.checked_add(1) == Some(epoch)
-                        }))
+                        && self
+                            .pause_request
+                            .as_ref()
+                            .filter(|request| {
+                                request.paused
+                                    && request.expected_epoch.checked_add(1) == Some(epoch)
+                            })
+                            .map_or(self.late_narrative_pause_epoch == Some(epoch), |request| {
+                                request.narrative
+                            }))
                     .then_some(epoch);
+                    self.late_narrative_pause_epoch = self
+                        .late_narrative_pause_epoch
+                        .filter(|&possible_epoch| possible_epoch > epoch);
                     // VERA: another player's marker names them once the world
                     // reaches it; gamemd's speed line likewise skips its own
                     // sender (0x004C794B). A watcher names every player.
+                    let suppress_notice = if paused {
+                        self.narrative_hold.is_some()
+                    } else {
+                        self.suppress_narrative_pause_notice
+                    };
+                    self.suppress_narrative_pause_notice = paused && suppress_notice;
                     if let Some(house) = self.houses[usize::from(source)]
                         && (source != self.local_source || self.watch.is_some())
+                        && !suppress_notice
                     {
                         let change = MatchPauseChange { house, paused };
                         if !paused {
@@ -2669,6 +2702,55 @@ mod pace_tests {
             session.assemble(),
             Err(SequencedError::InvalidTimeline)
         ));
+    }
+
+    #[test]
+    fn narrative_pause_hides_both_notices_even_when_the_resume_arrives_after_release() {
+        let admit_pause = |session: &mut SequencedSession, sequence, paused| {
+            session
+                .receive(
+                    OrderEvent::Entry(OrderEntry::Pause {
+                        sequence,
+                        frame: 0,
+                        epoch: sequence,
+                        paused,
+                        source: 1,
+                    }),
+                    Instant::now(),
+                )
+                .unwrap();
+            session.assemble().unwrap();
+        };
+        let mut session = session_for(&[0, 4]);
+        session.set_narrative_hold(Some(NarrativeHold::Player));
+        admit_pause(&mut session, 1, true);
+        assert!(session.pause_status().paused);
+        let paused_notices = session.take_pause_changes();
+
+        session.set_narrative_hold(None);
+        admit_pause(&mut session, 2, false);
+        assert!(!session.pause_status().paused);
+        assert!(paused_notices.is_empty());
+        assert!(session.assembling.pauses.is_empty());
+
+        let mut manual = session_for(&[0, 4]);
+        admit_pause(&mut manual, 1, true);
+        assert_eq!(
+            manual.take_pause_changes(),
+            [MatchPauseChange {
+                house: 4,
+                paused: true
+            }]
+        );
+        manual.set_narrative_hold(Some(NarrativeHold::Player));
+        admit_pause(&mut manual, 2, false);
+        assert_eq!(
+            manual.assembling.pauses,
+            [MatchPauseChange {
+                house: 4,
+                paused: false
+            }]
+        );
     }
 
     /// VERA: another player's pause names them with the frame it follows, or

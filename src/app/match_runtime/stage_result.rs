@@ -2,10 +2,12 @@
 //! MatchSession owns the immutable options, vote, and handoff.
 
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
+use crate::app::lan_service::CampaignControlSend;
 use crate::app::shell_network_setup::campaign_room;
 use crate::app::{App, AppState, GameScreen};
 use crate::net::global::GlobalMessage;
 use crate::net::lan_messages::extended_setup::campaign::{Signal, StageChoice};
+use crate::net::live_commands::LiveCommandSession;
 use crate::sim::house_state::HouseOutcomeKind;
 use crate::ui::main_menu_dialogs::ShellMessageBoxLabels;
 use crate::ui::shell::modal::ModalResult;
@@ -133,15 +135,11 @@ pub(crate) fn receive(
     receipt: Option<GlobalMessage>,
 ) {
     let from_host = crate::app::lan_service::campaign_host_source(state) == Some(source);
-    let relay_retry_delta = state
-        .match_state
-        .live_network
-        .as_ref()
-        .filter(|live| {
-            live.uses_sequenced_lockstep()
-                && matches!(signal, Signal::StageBegin(_) | Signal::StageBegun(_))
-        })
-        .map(|live| live.global().retry_delta());
+    let relay_retry_delta = relay_retry_delta(
+        state.match_state.session.network_return_context(),
+        state.match_state.live_network.as_ref(),
+        signal,
+    );
     state.match_state.session.receive_campaign_stage_signal(
         source,
         from_host,
@@ -152,17 +150,29 @@ pub(crate) fn receive(
     );
 }
 
+fn relay_retry_delta(
+    context: Option<NetworkReturnContext>,
+    live: Option<&LiveCommandSession>,
+    signal: Signal,
+) -> Option<u32> {
+    if context == Some(NetworkReturnContext::Wol)
+        && matches!(signal, Signal::StageBegin(_) | Signal::StageBegun(_))
+    {
+        live.map(|live| live.global().retry_delta())
+    } else {
+        None
+    }
+}
+
 pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if state.match_state.session.campaign_result().is_none() {
         return;
     }
-    if state
-        .match_state
-        .live_network
-        .as_ref()
-        .is_some_and(crate::net::live_commands::LiveCommandSession::global_sends_delivered)
-    {
-        state.match_state.session.confirm_campaign_stage_delivery();
+    if let Some(live) = state.match_state.live_network.as_ref() {
+        state
+            .match_state
+            .session
+            .confirm_campaign_stage_delivery(|discarded| live.global_sends_delivered(discarded));
     }
     let session = &state.match_state.session;
     let Some(result) = session.campaign_result() else {
@@ -208,11 +218,13 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if !session.host() && peers.is_empty() {
         return;
     }
-    if crate::app::lan_service::send_campaign_control(state, &peers, signal) {
+    if let Some(CampaignControlSend::Queued(discarded_at_enqueue)) =
+        crate::app::lan_service::send_campaign_control(state, &peers, signal)
+    {
         state
             .match_state
             .session
-            .confirm_campaign_stage_send(signal, now_ms);
+            .confirm_campaign_stage_send(signal, now_ms, discarded_at_enqueue);
     }
 }
 
@@ -235,7 +247,7 @@ fn recipients(state: &AppState, local: usize) -> Vec<usize> {
 fn abort(state: &mut AppState, notice: Option<&str>) {
     if let Some(local) = super::network_match::local_source(&state.match_state.session) {
         let peers = recipients(state, local);
-        crate::app::lan_service::send_campaign_control(state, &peers, Signal::StageAbort);
+        let _ = crate::app::lan_service::send_campaign_control(state, &peers, Signal::StageAbort);
     }
     App::close_shell_message_box_from_controller(state);
     App::return_to_main_menu(state);
@@ -273,6 +285,50 @@ fn commit(state: &mut AppState, now_ms: u64) {
         Err(error) => {
             log::warn!("Cannot complete campaign stage handoff: {error:#}");
             abort(state, Some("VERA:CampaignStageUnavailable"));
+        }
+    }
+}
+
+#[cfg(all(test, tests_app_match))]
+mod tests {
+    use super::*;
+    use crate::net::live_commands::{LiveCommandMode, StartupAgreement};
+    use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
+    use crate::net::udp::{LanUdpTransport, UdpBindConfig};
+    use std::net::{Ipv4Addr, SocketAddrV4};
+    use std::num::NonZeroU32;
+
+    #[test]
+    fn unsequenced_wol_stage_receipts_still_have_relay_retry_timing() {
+        let timing = RetryTiming::LAN_GUEST_COMPLETED_GLOBAL;
+        let bind = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0);
+        let transport = LanUdpTransport::bind(
+            UdpBindConfig {
+                primary: bind,
+                alternate: bind,
+            },
+            LanConnections::new(LanConnectionConfig::default(), timing),
+        )
+        .unwrap();
+        let rate = NonZeroU32::new(1).unwrap();
+        let agreement = StartupAgreement::new([(0, 0)], [0], 1, 10, 30, rate, 0, "", "").unwrap();
+        let live =
+            LiveCommandSession::new(agreement, transport, 0, 1, rate, LiveCommandMode::Wol, None)
+                .unwrap();
+        assert!(!live.uses_sequenced_lockstep());
+
+        for signal in [
+            Signal::StageBegin(StageChoice::Retry),
+            Signal::StageBegun(StageChoice::Retry),
+        ] {
+            assert_eq!(
+                relay_retry_delta(Some(NetworkReturnContext::Wol), Some(&live), signal),
+                Some(timing.retry_delta)
+            );
+            assert_eq!(
+                relay_retry_delta(Some(NetworkReturnContext::LanLobby), Some(&live), signal),
+                None
+            );
         }
     }
 }

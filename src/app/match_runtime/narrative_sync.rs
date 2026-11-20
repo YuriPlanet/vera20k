@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn};
+use crate::app::lan_service::CampaignControlSend;
 use crate::app::{App, AppState, GameScreen};
 use crate::net::lan_messages::extended_setup::campaign::Signal;
 use crate::net::live_commands::NarrativeHold;
@@ -29,7 +30,7 @@ struct Barrier {
     movie_pause: bool,
     timed: bool,
     sent_ready: bool,
-    sent_release: bool,
+    release_discard_baseline: Option<u64>,
 }
 
 enum HostRelease {
@@ -79,7 +80,7 @@ impl NarrativeSync {
         let Some(barrier) = self.barrier.as_ref() else {
             return HostRelease::Wait;
         };
-        if barrier.sent_release {
+        if barrier.release_discard_baseline.is_some() {
             if delivered {
                 HostRelease::Complete
             } else {
@@ -216,7 +217,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
             movie_pause,
             timed,
             sent_ready: false,
-            sent_release: false,
+            release_discard_baseline: None,
         });
         if !session.local_connection_watches()
             && let Some(live) = state.match_state.live_network.as_mut()
@@ -323,7 +324,7 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
         || playing != barrier.playing_sources
     {
         if host {
-            crate::app::lan_service::send_campaign_control(
+            let _ = crate::app::lan_service::send_campaign_control(
                 state,
                 &peers,
                 Signal::NarrativeAbort {
@@ -355,6 +356,7 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
                     tick: point.tick,
                 },
             )
+            .is_some()
         } else {
             false
         };
@@ -372,21 +374,27 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
     if host {
         let live = state.match_state.live_network.as_ref();
         let ordered = live.is_some_and(|live| live.uses_sequenced_lockstep());
-        let delivered = sync.barrier.as_ref().is_some_and(|barrier| {
-            barrier.sent_release && live.is_some_and(|live| live.global_sends_delivered())
-        });
+        let delivered = sync
+            .barrier
+            .as_ref()
+            .and_then(|barrier| barrier.release_discard_baseline)
+            .is_some_and(|discarded| {
+                live.is_some_and(|live| live.global_sends_delivered(discarded))
+            });
         match sync.host_release(delivered) {
             HostRelease::Wait => {}
             HostRelease::Complete => release(state, wall_ms),
             HostRelease::Send => {
-                if crate::app::lan_service::send_campaign_control(
-                    state,
-                    &peers,
-                    Signal::NarrativeRelease {
-                        boundary: point.boundary,
-                        tick: point.tick,
-                    },
-                ) {
+                if let Some(CampaignControlSend::Queued(discarded_at_enqueue)) =
+                    crate::app::lan_service::send_campaign_control(
+                        state,
+                        &peers,
+                        Signal::NarrativeRelease {
+                            boundary: point.boundary,
+                            tick: point.tick,
+                        },
+                    )
+                {
                     // The reliable Release must reach every playing peer
                     // before the ordered relay starts sealing again.
                     if ordered && !peers.is_empty() {
@@ -397,7 +405,7 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
                             .barrier
                             .as_mut()
                         {
-                            barrier.sent_release = true;
+                            barrier.release_discard_baseline = Some(discarded_at_enqueue);
                         }
                     } else {
                         release(state, wall_ms);
@@ -458,7 +466,7 @@ mod tests {
             movie_pause: true,
             timed: false,
             sent_ready: false,
-            sent_release: false,
+            release_discard_baseline: None,
         });
         assert!(sync.owns_fullscreen(Some(&MovieReturn::RunningScenario)));
         assert!(!sync.owns_fullscreen(Some(&MovieReturn::StartupIntro)));
@@ -477,7 +485,7 @@ mod tests {
             movie_pause: true,
             timed: false,
             sent_ready: false,
-            sent_release: false,
+            release_discard_baseline: None,
         };
         let mut sync = NarrativeSync::default();
         sync.record_ready(0, point, &barrier.playing_sources);
@@ -489,7 +497,7 @@ mod tests {
         assert!(sync.all_ready(&barrier));
         sync.barrier = Some(barrier);
         assert!(matches!(sync.host_release(true), HostRelease::Send));
-        sync.barrier.as_mut().unwrap().sent_release = true;
+        sync.barrier.as_mut().unwrap().release_discard_baseline = Some(0);
         assert!(matches!(sync.host_release(false), HostRelease::Wait));
         assert!(matches!(sync.host_release(true), HostRelease::Complete));
     }

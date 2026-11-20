@@ -51,7 +51,7 @@ pub(crate) struct CampaignResult {
     outgoing: Option<Signal>,
     last_vote_ms: Option<u64>,
     begin_sent: bool,
-    waiting_for_receipt_delivery: bool,
+    receipt_discard_baseline: Option<u64>,
     begin: bool,
     wol_ack_grace_until_ms: Option<u64>,
     aborted: bool,
@@ -141,7 +141,7 @@ impl CampaignResult {
             outgoing: None,
             last_vote_ms: None,
             begin_sent: false,
-            waiting_for_receipt_delivery: false,
+            receipt_discard_baseline: None,
             begin: false,
             wol_ack_grace_until_ms: None,
             aborted: false,
@@ -278,7 +278,7 @@ impl CampaignResult {
                     && from_host
                     && self.prepared.is_some()
                     && self.outgoing.is_none()
-                    && !self.waiting_for_receipt_delivery
+                    && self.receipt_discard_baseline.is_none()
                     && self.choice == Some(choice) =>
             {
                 self.outgoing = Some(Signal::StageBegun(choice));
@@ -300,7 +300,13 @@ impl CampaignResult {
         false
     }
 
-    fn confirm_send(&mut self, signal: Signal, local: usize, now_ms: u64) {
+    fn confirm_send(
+        &mut self,
+        signal: Signal,
+        local: usize,
+        now_ms: u64,
+        discarded_at_enqueue: u64,
+    ) {
         if self.outgoing == Some(signal) {
             self.outgoing = None;
         }
@@ -314,7 +320,7 @@ impl CampaignResult {
                     .iter()
                     .all(|source| self.begun.contains(source));
             }
-            Signal::StageBegun(_) => self.waiting_for_receipt_delivery = true,
+            Signal::StageBegun(_) => self.receipt_discard_baseline = Some(discarded_at_enqueue),
             _ => {}
         }
     }
@@ -478,18 +484,24 @@ impl MatchSession {
             .unwrap_or_default()
     }
 
-    pub(crate) fn confirm_campaign_stage_send(&mut self, signal: Signal, now_ms: u64) {
+    pub(crate) fn confirm_campaign_stage_send(
+        &mut self,
+        signal: Signal,
+        now_ms: u64,
+        discarded_at_enqueue: u64,
+    ) {
         let Some(local) = super::super::network_match::local_source(self) else {
             return;
         };
         if let Some(result) = self.campaign_result_mut() {
-            result.confirm_send(signal, local, now_ms);
+            result.confirm_send(signal, local, now_ms, discarded_at_enqueue);
         }
     }
 
-    pub(crate) fn confirm_campaign_stage_delivery(&mut self) {
+    pub(crate) fn confirm_campaign_stage_delivery(&mut self, delivered: impl FnOnce(u64) -> bool) {
         if let Some(result) = self.campaign_result_mut()
-            && result.waiting_for_receipt_delivery
+            && !result.begin
+            && result.receipt_discard_baseline.is_some_and(delivered)
         {
             result.begin = true;
         }
@@ -789,11 +801,11 @@ mod tests {
         session.stage_prepared(next, start, 10).unwrap();
         let result = session.campaign_result().unwrap();
         let prepare = result.outgoing(true, 1, 10).unwrap();
-        session.confirm_campaign_stage_send(prepare, 10);
+        session.confirm_campaign_stage_send(prepare, 10, 0);
         let result = session.campaign_result().unwrap();
         let begin = result.outgoing(true, 1, 11).unwrap();
         assert_eq!(begin, Signal::StageBegin(choice));
-        session.confirm_campaign_stage_send(begin, 11);
+        session.confirm_campaign_stage_send(begin, 11, 0);
         let StageHandoff::Lan(LoadingStartup::Network(next)) =
             session.commit_campaign_stage(11).unwrap()
         else {
@@ -899,7 +911,7 @@ mod tests {
         let choice = StageChoice::Retry;
         let mut result = result();
         result.choice = Some(choice);
-        result.confirm_send(Signal::StageBegin(choice), 1, 0);
+        result.confirm_send(Signal::StageBegin(choice), 1, 0, 0);
         session.open_campaign_result(result).unwrap();
 
         let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -1101,7 +1113,7 @@ mod tests {
         host.verify_start(room.clone(), start.clone(), 1, true, 10)
             .unwrap();
         let prepare = host.outgoing(true, 1, 10).unwrap();
-        host.confirm_send(prepare, 1, 10);
+        host.confirm_send(prepare, 1, 10, 0);
         guest.receive(1, true, false, 0, prepare, 0);
         let mut wrong_room = serde_json::to_value(&room).unwrap();
         wrong_room["effective_map_digest"] = serde_json::json!("d".repeat(64));
@@ -1114,11 +1126,11 @@ mod tests {
         guest.verify_start(room, start, 0, false, 11).unwrap();
         assert_eq!(host.outgoing(true, 1, 11), None);
         let accepted = guest.outgoing(false, 0, 11).unwrap();
-        guest.confirm_send(accepted, 0, 11);
+        guest.confirm_send(accepted, 0, 11, 0);
         host.receive(0, false, true, 1, accepted, 0);
         let begin = host.outgoing(true, 1, 12).unwrap();
         assert_eq!(begin, Signal::StageBegin(choice));
-        host.confirm_send(begin, 1, 12);
+        host.confirm_send(begin, 1, 12, 0);
         assert!(
             !host.ready_to_commit(12),
             "begin must reach the guest before old transport retires"
@@ -1135,7 +1147,7 @@ mod tests {
         );
         let begun = guest.outgoing(false, 0, begin_received).unwrap();
         assert_eq!(begun, Signal::StageBegun(choice));
-        guest.confirm_send(begun, 0, begin_received);
+        guest.confirm_send(begun, 0, begin_received, 7);
         assert_eq!(
             guest.progress(&[0, 1], previous_deadline + 1),
             StageProgress::Waiting,
@@ -1146,7 +1158,8 @@ mod tests {
             host.progress(&[0, 1], host.deadline_ms),
             StageProgress::Commit
         );
-        guest.begin = guest.waiting_for_receipt_delivery;
+        assert_eq!(guest.receipt_discard_baseline, Some(7));
+        guest.begin = guest.receipt_discard_baseline.is_some();
         assert_eq!(
             guest.progress(&[0, 1], guest.deadline_ms),
             StageProgress::Commit

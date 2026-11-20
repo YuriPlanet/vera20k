@@ -3869,28 +3869,28 @@ pub(crate) fn campaign_host_source(state: &AppState) -> Option<usize> {
     session.network_endpoint_source(*endpoint)
 }
 
+pub(crate) enum CampaignControlSend {
+    Immediate,
+    Queued(u64),
+}
+
 pub(crate) fn send_campaign_control(
     state: &mut AppState,
     recipients: &[usize],
     signal: crate::net::lan_messages::extended_setup::campaign::Signal,
-) -> bool {
+) -> Option<CampaignControlSend> {
     use crate::net::lan_messages::extended_setup::campaign::{Record, Signal};
-    let Some((scope, attempt)) = campaign_control_scope(state) else {
-        return false;
-    };
+    let (scope, attempt) = campaign_control_scope(state)?;
     let bytes = Record {
         scope,
         attempt,
         signal,
     }
     .encode();
-    let Some(endpoints) = recipients
+    let endpoints = recipients
         .iter()
         .map(|&source| state.match_state.session.network_endpoint(source))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return false;
-    };
+        .collect::<Option<Vec<_>>>()?;
     if matches!(signal, Signal::StageAbort | Signal::NarrativeAbort { .. }) {
         // Both callers reset the match transport before the next I/O poll.
         // Write these terminal records on the still-admitted route now.
@@ -3904,30 +3904,26 @@ pub(crate) fn send_campaign_control(
         {
             transport.send_terminal_global(&bytes, &endpoints)
         } else {
-            return false;
+            return None;
         };
         if let Err(error) = sent {
             log::warn!("Cannot send campaign abort before leaving the match: {error}");
-            return false;
+            return None;
         }
-        return true;
+        return Some(CampaignControlSend::Immediate);
     }
-    let mut channel = if let Some(live) = state.match_state.live_network.as_mut() {
-        live.global_mut()
-    } else if let Some(transport) = state
-        .match_state
-        .lan_service
-        .as_mut()
-        .and_then(|service| service.transport.as_mut())
-    {
-        transport.global_mut()
+    let discarded_at_enqueue = if let Some(live) = state.match_state.live_network.as_mut() {
+        live.enqueue_reliable_globals(&bytes, &endpoints)
     } else {
-        return false;
-    };
-    channel.available_send_slots() >= endpoints.len()
-        && endpoints.into_iter().all(|endpoint| {
-            channel.send(&bytes, direct(endpoint), Delivery::Reliable, 0)
-        })
+        state
+            .match_state
+            .lan_service
+            .as_mut()?
+            .transport
+            .as_mut()?
+            .enqueue_reliable_globals(&bytes, &endpoints)
+    }?;
+    Some(CampaignControlSend::Queued(discarded_at_enqueue))
 }
 
 fn receive_campaign_control(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> {

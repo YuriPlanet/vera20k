@@ -243,13 +243,14 @@ impl UdpServiceReport {
     }
 }
 
-/// A derived global frontier and its still-unconsumed service failure, read
-/// under one I/O-owner lock. Empty after a timeout is not an acknowledged drain.
+/// The global queue and discard history read under one I/O-owner lock.
+/// The pending service failure is also used by the LAN setup drain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalTransportObservation {
     pub queued_sends: usize,
     pub response_time: u32,
     pub pending_delivery_failure: bool,
+    pub discarded_global_sends: u64,
 }
 
 #[derive(Debug)]
@@ -384,6 +385,7 @@ struct UdpIo {
     alternate_send: UdpSendQueue,
     connections: LanConnections,
     global: GlobalChannel,
+    discarded_global_sends: u64,
     broadcast_targets: Vec<SocketAddrV4>,
     relay: Option<RelayRoute>,
     // The last route was released for silence (`RELAY_ABSENT_TICKS`).
@@ -596,6 +598,37 @@ impl LanUdpTransport {
         self.write(|io| &io.global, |io| &mut io.global)
     }
 
+    /// Queue a reliable batch and take its discard baseline under the same
+    /// lock, before the worker can send or expire any of the batch.
+    pub fn enqueue_reliable_globals(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> Option<u64> {
+        use super::reliable::Delivery;
+
+        let mut io = self.lock();
+        if io.global.available_send_slots() < recipients.len() {
+            return None;
+        }
+        let snapshot = recipients
+            .iter()
+            .all(|&endpoint| {
+                io.global.send(
+                    payload,
+                    GlobalDestination::direct(endpoint),
+                    Delivery::Reliable,
+                    0,
+                )
+            })
+            .then_some(io.discarded_global_sends);
+        drop(io);
+        if snapshot.is_some() {
+            self.wake();
+        }
+        snapshot
+    }
+
     /// Send a last notification on the current LAN scope or relay route
     /// before its owner resets the match. Unlike waking the I/O worker, this
     /// returns after each socket write has been attempted.
@@ -644,6 +677,7 @@ impl LanUdpTransport {
             queued_sends: io.global.queued_send_count(),
             response_time: io.global.mean_response_time(),
             pending_delivery_failure: io.pending_report.delivery_failed(),
+            discarded_global_sends: io.discarded_global_sends,
         }
     }
 
@@ -1227,6 +1261,7 @@ impl UdpIo {
             alternate_send: UdpSendQueue::default(),
             connections,
             global,
+            discarded_global_sends: 0,
             broadcast_targets: Vec::new(),
             relay: None,
             relay_absent: false,
@@ -1811,6 +1846,9 @@ impl UdpIo {
             );
         }) {
             report.discarded_global_sends = self.global.discard_failed_sends();
+            self.discarded_global_sends = self
+                .discarded_global_sends
+                .saturating_add(report.discarded_global_sends as u64);
         }
         while let Some(response) = self.global.pop_response_time() {
             if let Some(probes) = self
