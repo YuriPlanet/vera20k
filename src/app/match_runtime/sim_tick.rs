@@ -305,12 +305,19 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
 
     let entry = local_end_game_entry(state, outcome);
     let banner = entry.as_ref().and_then(|entry| entry.banner_art());
-    // The verdict's beat is the beat, card or not: a country that names no
-    // picture still gets the retail banner's three seconds over the still
-    // battlefield before the teardown takes the screen. Requiring the picture
-    // here instead skipped the beat entirely, and with it the retail banner —
-    // the frame froze and went straight to the score page.
-    let hold_banner = state.persistence.options_profile.custom_end_game_banner && entry.is_some();
+    // Tactical SetScreenText (6D4DB0) precedes the wait and GameExit.
+    // VERA can service both before drawing. Hold a visible skirmish on the
+    // battlefield if the last presented picture omitted this verdict.
+    // A custom country's entry still holds even if it has no picture.
+    let custom_banner = state.persistence.options_profile.custom_end_game_banner && entry.is_some();
+    let visible_skirmish = state.match_state.session_mode() == SessionMode::Skirmish
+        && !state.platform.window_hidden
+        && crate::app::presentation::outcome_banner::visible_verdict(state) == Some(outcome);
+    let hold_banner = state
+        .match_state
+        .match_presentation
+        .outcome_banner_presentation
+        .hold_on_exit(outcome, custom_banner, visible_skirmish);
     log::info!(
         "Match end: verdict entry={} card={} hold_banner={hold_banner}",
         entry.is_some(),
@@ -356,11 +363,14 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     // under it, that beat is already spent and the fade may start as soon as
     // the clip ends; a verdict with no clip still gets the full beat from
     // here.
-    let cascade = match crate::app::commander_feedback::verdict_card_shown_at_ms(state) {
-        Some(card_at) => cascade.with_banner_hold_until(
+    let cascade = if custom_banner
+        && let Some(card_at) = crate::app::commander_feedback::verdict_card_shown_at_ms(state)
+    {
+        cascade.with_banner_hold_until(
             card_at.saturating_add(crate::app::match_runtime::scenario_exit::BANNER_HOLD_MS),
-        ),
-        None => cascade,
+        )
+    } else {
+        cascade
     };
     state.match_state.scenario_exit = Some(cascade);
 }
@@ -2520,6 +2530,33 @@ fn run_deferred_tick(
     resume.run(rt, due_commands, tick_lane, effects)
 }
 
+/// Collect the HUD facts carried by this visit's sound batch, independently
+/// of whether its audio was already delivered by the synchronous boundary.
+fn frame_hud_messages(
+    output: &SimFrameOutput,
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    local_owner: Option<&str>,
+) -> Vec<crate::app::input::messages::HudMessage> {
+    let events = &output.sound_events;
+    let mut messages = super::sound_dispatch::hud_messages(events, sim.interner(), local_owner);
+    if rules.ares_form() {
+        messages.extend(super::sound_dispatch::ares_superweapon_messages(
+            events,
+            sim,
+            rules,
+            local_owner,
+        ));
+    }
+    // The sim fills these labels only when Ares plays.
+    messages.extend(super::sound_dispatch::ares_tech_capture_messages(
+        events,
+        sim,
+        local_owner,
+    ));
+    messages
+}
+
 /// The frame tail on the main thread: the client takes the tick's output.
 fn finish_simulation_frame(
     state: &mut AppState,
@@ -2557,10 +2594,17 @@ fn finish_simulation_frame(
                 .match_presentation
                 .screen_shake
                 .apply_updates(&output.screen_shake_updates);
+            hud_messages = frame_hud_messages(
+                &output,
+                &rt.simulation,
+                &rt.resources.rules,
+                local_owner_name.as_deref(),
+            );
             if output.outcome_waiting {
-                // The simulation retains this frame's non-sound facts until
-                // the same House suffix finishes. Its sound prefix has already
-                // reached the synchronous boundary above exactly once.
+                // House4F860B/4F8732 pauses after MPlayer_Defeated has
+                // already posted its text (4FC271/4FC34F). The sim handed
+                // off this sound batch, which the resumed House won't return.
+                hud_messages.extend(prefix_eva_text.borrow_mut().drain(..));
                 if let Some(deferred) = deferred {
                     // A deferred frame has no synchronous boundary: the
                     // sound facts of this visit, which the simulation has
@@ -2593,11 +2637,14 @@ fn finish_simulation_frame(
                         local_owner_name.as_deref(),
                         &mut admit_radar,
                         &mut state.match_state.match_audio.sound_events,
-                        None,
+                        detailed_eva_text.then_some(&mut hud_messages),
                     );
                     // Its client writes, the outcome wait it polled among
                     // them, still reach their owners.
                     deferred.apply(state);
+                }
+                for message in hud_messages {
+                    crate::app::input::messages::post_hud_message(state, message);
                 }
                 return false;
             }
@@ -2754,25 +2801,6 @@ fn finish_simulation_frame(
                 &resources.rules,
                 local_owner_name.as_deref(),
             );
-            hud_messages = super::sound_dispatch::hud_messages(
-                &frame_sound_events,
-                sim.interner(),
-                local_owner_name.as_deref(),
-            );
-            if resources.rules.ares_form() {
-                hud_messages.extend(super::sound_dispatch::ares_superweapon_messages(
-                    &frame_sound_events,
-                    sim,
-                    &resources.rules,
-                    local_owner_name.as_deref(),
-                ));
-            }
-            // The sim fills these labels only when Ares plays, so this runs in every game.
-            hud_messages.extend(super::sound_dispatch::ares_tech_capture_messages(
-                &frame_sound_events,
-                sim,
-                local_owner_name.as_deref(),
-            ));
             assert!(
                 sound_events_delivered <= frame_sound_events.len(),
                 "frame delivered more sound facts than it produced"
@@ -3686,6 +3714,107 @@ mod tests {
             overlay_id,
             frame,
         }
+    }
+
+    #[test]
+    fn large_skirmish_outcome_wait_keeps_defeat_notices() {
+        use crate::app::input::messages::HudMessage;
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::house_state::{HouseOutcomeKind, HouseState};
+        use crate::sim::intern::InternedId;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::sim::world::{FrameEffects, OutcomeWaitBoundary, Simulation, TickLane};
+
+        struct HoldVoice;
+        impl OutcomeWaitBoundary for HoldVoice {
+            fn wait_complete(&self, _: InternedId, _: HouseOutcomeKind) -> bool {
+                false
+            }
+        }
+
+        // Make the last elimination and the start of the voice wait share a frame.
+        let patch = IniFile::from_str("[AudioVisual]\nSavourDelay=0\n");
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "Hills.mmx",
+            &patch,
+        ) else {
+            return;
+        };
+        let rules = retail.rules;
+        assert_eq!(rules.general.savour_delay_minutes, 0.0);
+        let mut sim = Simulation::with_seed(0x004F_C34F);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let last_slot = crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT - 1;
+        let owners: Vec<_> = (0..last_slot)
+            .map(|slot| {
+                let owner = sim.intern(&format!("Computer{}", slot + 1));
+                sim.houses_mut_for_test()
+                    .register(HouseState::new(owner, 0, None, false, 0, 10));
+                owner
+            })
+            .collect();
+        let local = sim.intern("Player");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(local, 0, None, true, 0, 10));
+        let session = sim.session_mut_for_test();
+        session.set_game_mode(ScenarioGameMode::Skirmish);
+        session.set_current_house_for_test(Some(local));
+        session.set_tick_for_test(20_000);
+        session.set_binary_frame_for_test(20_000);
+        sim.spawn_object("GACNST", "Player", 10, 10, 0, &rules)
+            .expect("the player holds a construction yard");
+
+        let mut runtime = SimRuntime::from_simulation(sim);
+        runtime.resources_mut().rules = rules;
+        let first = runtime
+            .advance_frame(
+                &[],
+                67,
+                TickLane::Ordinary,
+                FrameEffects::empty().with_outcome_wait(&HoldVoice),
+            )
+            .unwrap();
+        assert!(first.outcome_waiting);
+        let messages = |output, runtime: &SimRuntime| {
+            super::frame_hud_messages(
+                output,
+                &runtime.simulation,
+                &runtime.resources.rules,
+                Some("Player"),
+            )
+        };
+        let defeats: Vec<_> = messages(&first, &runtime)
+            .into_iter()
+            .filter_map(|message| match message {
+                HudMessage::PlayerDefeated(house) => Some(house),
+                _ => None,
+            })
+            .collect();
+        let last = runtime.resume_outcome_wait(FrameEffects::empty()).unwrap();
+        assert!(
+            messages(&last, &runtime)
+                .into_iter()
+                .all(|message| !matches!(message, HudMessage::PlayerDefeated(_)))
+        );
+        let verdict = runtime
+            .simulation
+            .ready_outcome_for_owner(local)
+            .unwrap()
+            .kind;
+        assert_eq!(verdict, HouseOutcomeKind::Victory);
+        let mut banner =
+            crate::app::presentation::outcome_banner::OutcomeBannerPresentation::default();
+        assert_eq!(
+            (defeats.len(), banner.hold_on_exit(verdict, false, true)),
+            (owners.len(), true),
+            "each defeat notice survives, and a verdict that had no draw gets a hold",
+        );
+        assert_eq!(defeats, owners);
+        banner.record_presented(Some(verdict));
+        assert!(!banner.hold_on_exit(verdict, false, true));
     }
 
     /// Online Neutral and Special keep the constructor's white laser colour.

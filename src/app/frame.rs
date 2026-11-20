@@ -1766,6 +1766,15 @@ impl App {
             .encode_color_vision(&mut encoder, &output.texture);
         let submission = state.renderer.gpu.hand_off_frame(encoder, output);
         let presented_at = Instant::now();
+        if let Some(render_output) = &game_render_output
+            && screen_page == ScreenPage::Battlefield
+        {
+            state
+                .match_state
+                .match_presentation
+                .outcome_banner_presentation
+                .record_presented(render_output.rendered_verdict);
+        }
         let handoff_waited = state.renderer.gpu.take_handoff_wait();
         if let Some((mut phases, handoff_started)) = measured_phases {
             // What handing frames to the driver cost this thread: every

@@ -1226,6 +1226,7 @@ impl App {
                     outcome_banner_side_art: None,
                     ares_status_texts: None,
                     end_game_banner: None,
+                    outcome_banner_presentation: Default::default(),
                     software_cursor: startup_software_cursor,
                 },
                 match_audio: Default::default(),
