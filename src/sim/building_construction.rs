@@ -313,9 +313,21 @@ impl BuildingUp {
 }
 
 /// Sale route bookkeeping; body, ready and mission state stay with their owners.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BuildingDown {
     undeploy_order: bool,
+    // The admitted order may repack its AI-owned yard across later mission visits.
+    delegated_owner: Option<crate::sim::intern::InternedId>,
+}
+
+impl std::hash::Hash for BuildingDown {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        self.undeploy_order.hash(hasher);
+        if let Some(owner) = self.delegated_owner {
+            b"delegated-redeploy".hash(hasher);
+            owner.hash(hasher);
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PackUpFrame {
@@ -326,7 +338,20 @@ pub(crate) enum PackUpFrame {
 }
 impl BuildingDown {
     pub(crate) const fn commenced(_now: i32, undeploy_order: bool) -> Self {
-        Self { undeploy_order }
+        Self {
+            undeploy_order,
+            delegated_owner: None,
+        }
+    }
+    pub(crate) const fn with_delegated_owner(
+        mut self,
+        owner: crate::sim::intern::InternedId,
+    ) -> Self {
+        self.delegated_owner = Some(owner);
+        self
+    }
+    pub(crate) const fn delegated_owner(self) -> Option<crate::sim::intern::InternedId> {
+        self.delegated_owner
     }
     pub(crate) const fn undeploy_order(self) -> bool {
         self.undeploy_order

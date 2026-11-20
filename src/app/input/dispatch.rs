@@ -38,6 +38,7 @@ use crate::app::types::OrderMode;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
 use crate::sim::selection::SelectAction;
+use crate::sim::world::ControlProjection;
 use crate::ui::sidebar::{SidebarAction, SidebarTab};
 
 #[cfg(all(test, tests_app_input_d_z))]
@@ -4141,9 +4142,12 @@ fn queue_stop_for_selected(state: &mut AppState) {
         state.match_state.input.selection_order_pending,
     );
     let qualifies = match (sim, state.rules()) {
-        (Some(sim), Some(rules)) => selected_ids
-            .iter()
-            .any(|&id| stop_qualifies(sim, rules, id)),
+        (Some(sim), Some(rules)) => {
+            let control = sim.control_projection();
+            selected_ids
+                .iter()
+                .any(|&id| stop_qualifies(sim, &control, rules, id))
+        }
         _ => false,
     };
     if qualifies && state.match_state.input.planning.active() {
@@ -4165,7 +4169,7 @@ fn queue_stop_for_selected(state: &mut AppState) {
     for sound in queue_stop_orders(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        &selected_ids,
+        selected_ids,
     ) {
         state.match_state.match_audio.sound_events.push(sound);
     }
@@ -4178,10 +4182,12 @@ fn queue_stop_for_selected(state: &mut AppState) {
 /// berserk one.
 fn stop_qualifies(
     sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
 ) -> bool {
-    (sim.local_techno_controllable(id, rules) || sim.local_techno_is_active(id, rules))
+    (sim.local_techno_controllable_with(control, id, rules)
+        || sim.local_techno_is_active_with(control, id, rules))
         && !(rules.ares()
             && sim
                 .entities()
@@ -4197,21 +4203,22 @@ fn stop_qualifies(
 fn queue_stop_orders(
     sim: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    selected: &[u64],
+    mut selected: Vec<u64>,
 ) -> Vec<crate::audio::events::GameSoundEvent> {
     if selected.is_empty() {
         return Vec::new();
     }
-    let Some(owner) = sim.control_projection().local_command_house() else {
+    let control = sim.control_projection();
+    let Some(owner) = control.local_command_house() else {
         return Vec::new();
     };
     let owner = sim.interner().resolve(owner).to_owned();
-    for &entity_id in selected {
-        if !stop_qualifies(sim, rules, entity_id) {
-            continue;
-        }
+    // A qualifying Stop actor already passed the same tactical check as
+    // the ordinary issue gate. Release the read before writing the OutList.
+    selected.retain(|&id| stop_qualifies(sim, &control, rules, id));
+    for entity_id in selected {
         let payload = Command::Stop { entity_id };
-        if super::commands::schedule_rules_command_in_sim(sim, rules, &owner, payload).is_none() {
+        if super::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
             // A refused Rust schedule fails closed, as Guard's does.
             return Vec::new();
         }
@@ -4505,7 +4512,7 @@ fn deploy_key_commands(
         entity.category() == EntityCategory::Structure
             && entity.passenger_role().occupants().count() > 0
     }) {
-        return deploy_key_command(sim, rules, building.stable_id(), local_owner)
+        return deploy_key_command_with(sim, &control, rules, building.stable_id(), local_owner)
             .into_iter()
             .collect();
     }
@@ -4526,7 +4533,8 @@ fn deploy_key_commands(
     selected
         .filter(|&id| {
             rules.is_none_or(|rules| {
-                (sim.local_techno_controllable(id, rules) || sim.local_techno_is_active(id, rules))
+                (sim.local_techno_controllable_with(&control, id, rules)
+                    || sim.local_techno_is_active_with(&control, id, rules))
                     && sim.can_deploy_slash_unload(id, rules)
             }) && sim
                 .entities()
@@ -4534,7 +4542,7 @@ fn deploy_key_commands(
                 .is_some_and(|entity| !entity.berserk.is_active())
                 && !(mixed && deployed(id) == Some(true))
         })
-        .filter_map(|id| deploy_key_command(sim, rules, id, local_owner))
+        .filter_map(|id| deploy_key_command_with(sim, &control, rules, id, local_owner))
         .collect()
 }
 
@@ -4568,14 +4576,30 @@ fn deployer_is_deployed(
 /// The walk admits a bunkered unit only through IsActive (vt+0x9C):
 /// vt+0xA0 refuses a bunker link, and a box
 /// never selects one, but a click does.
+#[cfg(test)]
 fn deploy_key_command(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     entity_id: u64,
     local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Option<Command> {
+    deploy_key_command_with(
+        sim,
+        &sim.control_projection(),
+        rules,
+        entity_id,
+        local_owner,
+    )
+}
+
+fn deploy_key_command_with(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    entity_id: u64,
+    local_owner: Option<crate::sim::intern::InternedId>,
+) -> Option<Command> {
     let entity = sim.entities().get(entity_id)?;
-    let control = sim.control_projection();
     let local_owner = if sim.session().has_custom_control_grants() {
         if !control.can_order(entity.owner()) {
             return None;
@@ -4606,15 +4630,16 @@ fn deploy_key_command(
         }
         _ => {
             // Aircraft and other deployers retain their existing routing.
-            super::transport_orders::unload_command(sim, entity, obj, local_owner).or_else(|| {
-                let object = obj?;
-                (super::context_order::is_simple_deploy_unit(entity, object)
-                    || object.deploys_into.is_some()
-                    || rules.is_some_and(|rules| {
-                        crate::sim::deploy::unit_fires_on_deploy(sim, entity, rules)
-                    }))
-                .then_some(Command::DeployMcv { entity_id })
-            })
+            super::transport_orders::unload_command_with(sim, control, entity, obj, local_owner)
+                .or_else(|| {
+                    let object = obj?;
+                    (super::context_order::is_simple_deploy_unit(entity, object)
+                        || object.deploys_into.is_some()
+                        || rules.is_some_and(|rules| {
+                            crate::sim::deploy::unit_fires_on_deploy(sim, entity, rules)
+                        }))
+                    .then_some(Command::DeployMcv { entity_id })
+                })
         }
     }
 }
@@ -7300,7 +7325,7 @@ mod stop_command_tests {
             .unwrap();
         let cue = |sounds: &[GameSoundEvent]| matches!(sounds, [GameSoundEvent::UiSound { sound_id }] if Some(sound_id) == stop_sound.as_ref());
 
-        assert!(cue(&super::queue_stop_orders(&mut sim, rules, &[own])));
+        assert!(cue(&super::queue_stop_orders(&mut sim, rules, vec![own])));
         let stops: Vec<_> = sim
             .pending_command_snapshot()
             .into_iter()
@@ -7308,9 +7333,9 @@ mod stop_command_tests {
             .collect();
         assert!(matches!(stops.as_slice(), [Command::Stop { entity_id }] if *entity_id == own));
 
-        assert!(cue(&super::queue_stop_orders(&mut sim, rules, &[enemy])));
+        assert!(cue(&super::queue_stop_orders(&mut sim, rules, vec![enemy])));
         assert_eq!(sim.pending_command_snapshot().len(), 1);
-        assert!(super::queue_stop_orders(&mut sim, rules, &[]).is_empty());
+        assert!(super::queue_stop_orders(&mut sim, rules, Vec::new()).is_empty());
     }
 }
 

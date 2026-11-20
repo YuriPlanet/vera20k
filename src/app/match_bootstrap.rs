@@ -524,9 +524,9 @@ pub enum LoadingStartup {
     /// Exact immutable recorded launch. The diagnostics owner retains and
     /// validates its log; this variant never installs a live network service.
     Replay {
-        session: SkirmishLaunchSession,
+        launch: Box<crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
         seed: MatchSeed,
-        game_mode: crate::sim::scenario_session::ScenarioGameMode,
+        game_mode: ScenarioGameMode,
         native_id_prefix: u32,
     },
     Campaign(PreparedCampaignStartup),
@@ -560,7 +560,14 @@ impl MatchSpec {
 
 impl LoadingStartup {
     pub(crate) fn match_spec(&self) -> MatchSpec {
-        self.match_spec_for_construction(self.session_mode().bootstrap_rule_profile())
+        let mut spec =
+            self.match_spec_for_construction(self.session_mode().bootstrap_rule_profile());
+        if let Self::Replay { launch, .. } = self
+            && let Some(policy) = launch.rule_policy_override()
+        {
+            spec.rules = policy;
+        }
+        spec
     }
 
     /// The admitted map family controls construction even when a replay's
@@ -568,9 +575,19 @@ impl LoadingStartup {
     pub(crate) fn match_spec_for_construction(&self, profile: BootstrapRuleProfile) -> MatchSpec {
         let class = self.launch_session().map(|launch| launch.mode.class);
         let mode = self.session_mode();
+        let rule_override = match self {
+            Self::Replay { launch, .. } => launch.rule_policy_override(),
+            Self::Network(_)
+            | Self::Campaign(_)
+            | Self::Accepted(_)
+            | Self::UnverifiedLegacy { .. }
+            | Self::Generic { .. } => None,
+        };
         MatchSpec {
             topology: mode.execution_topology(),
-            rules: mode.stock_rule_policy_for_bootstrap(profile, class),
+            rules: rule_override
+                .map(|policy| policy.with_bootstrap(profile))
+                .unwrap_or_else(|| mode.stock_rule_policy_for_bootstrap(profile, class)),
         }
     }
 
@@ -616,7 +633,8 @@ impl LoadingStartup {
                 .expect("accepted network map"),
             Self::Campaign(startup) => startup.selected_map_file(),
             Self::Accepted(startup) => startup.session.selected_map_file(),
-            Self::Replay { session, .. } => session
+            Self::Replay { launch, .. } => launch
+                .session()
                 .selected_map_file
                 .as_deref()
                 .expect("validated replay map"),
@@ -632,7 +650,7 @@ impl LoadingStartup {
             Self::Network(startup) => Some(startup.launch_session()),
             Self::Campaign(_) => None,
             Self::Accepted(startup) => Some(startup.session.launch_session()),
-            Self::Replay { session, .. } => Some(session),
+            Self::Replay { launch, .. } => Some(launch.session()),
             Self::UnverifiedLegacy { session, .. } => Some(session),
             Self::Generic { .. } => None,
         }
@@ -1057,7 +1075,12 @@ mod tests {
 
         let mut session = explicit_session();
         let replay = |game_mode| LoadingStartup::Replay {
-            session: session.clone(),
+            launch: Box::new(
+                crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(
+                    session.clone(),
+                )
+                .unwrap(),
+            ),
             seed: MatchSeed {
                 value: 73,
                 source: MatchSeedSource::SavedScenario,

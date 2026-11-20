@@ -767,6 +767,18 @@ fn dissolve_unfilled_infantry_team(clear_repeat: u8) -> Option<(Simulation, usiz
     assert!(sim.team_script_vm.team(id).is_some());
     assert!(!sim.trigger_runtime.globals_set.contains(&8));
     sim.session.set_binary_frame_for_test(delay + 1);
+    let mut retained = sim.clone();
+    retained.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        sim.session
+            .rule_policy()
+            .with_dissolve_unfilled_teams(false),
+    );
+    retained.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
+    assert!(retained.team_script_vm.team(id).is_some());
+    assert!(!retained.trigger_runtime.globals_set.contains(&8));
+
     sim.run_team_ai_pass(&rules, Some(&registry), FrameEffects::default());
     assert!(
         sim.trigger_runtime.globals_set.contains(&8),

@@ -201,3 +201,55 @@ fn the_followed_players_own_records_are_another_games() {
         [sim.houses.index_of(ann).unwrap() as i8]
     );
 }
+
+#[test]
+fn the_followed_house_can_lose_before_the_watch_ends() {
+    use crate::sim::house_state::HouseOutcomeKind;
+    use crate::sim::timer::CdTimer;
+
+    let (mut sim, ann, bob, computer) = players(ScenarioGameMode::Wol, true);
+    for house in sim.houses.values_mut() {
+        house
+            .tracking_mut_for_test()
+            .set_for_test(1, &[], (0, 0, 0), &[]);
+    }
+    let house = sim.houses.get_mut(&ann).unwrap();
+    house.mark_defeated();
+    house.supply_result_flags_for_test(false, true, CdTimer::default());
+    let first = sim
+        .advance_app_frame(
+            &[],
+            RuleSet::empty_for_test(),
+            33,
+            TickLane::Ordinary,
+            FrameEffects::empty(),
+        )
+        .unwrap();
+    assert!(first.tick.frame_committed);
+    assert_eq!(sim.session.current_house(), Some(ann));
+    assert!(sim.ready_outcome_for_owner(ann).is_none());
+    assert!(sim.network_match_winners().is_none());
+    assert_eq!(sim.houses.len(), 3);
+    assert_eq!(crate::sim::crates::human_player_count(&sim), 2);
+
+    sim.houses.get_mut(&computer).unwrap().mark_defeated();
+    sim.houses
+        .get_mut(&bob)
+        .unwrap()
+        .supply_result_flags_for_test(true, false, CdTimer::default());
+    let last = sim
+        .advance_app_frame(
+            &[],
+            RuleSet::empty_for_test(),
+            33,
+            TickLane::Ordinary,
+            FrameEffects::empty(),
+        )
+        .unwrap();
+    assert!(!last.tick.frame_committed);
+    assert_eq!(sim.network_match_winners(), Some(vec![bob]));
+    assert_eq!(
+        sim.ready_outcome_for_owner(ann).unwrap().kind,
+        HouseOutcomeKind::Defeat
+    );
+}

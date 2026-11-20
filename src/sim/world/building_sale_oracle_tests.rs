@@ -197,7 +197,12 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                 .board_forced_chain(&[(id, 1.0)]);
         }
     }
-    production::begin_selling(sim, rules, refinery, false);
+    production::begin_selling(
+        sim,
+        rules,
+        refinery,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     assert!(building.building_down(), "the sale commenced");
     building.mission.set_handler_state(1);

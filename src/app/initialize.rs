@@ -1309,7 +1309,6 @@ impl App {
                 wol_room_name: None,
                 wol_room_unranked: false,
                 wol_room_watching: Default::default(),
-                lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
                 wol_login_art: None,

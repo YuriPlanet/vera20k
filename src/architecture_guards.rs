@@ -110,7 +110,7 @@ fn production_scenario_mode_reads_stay_behind_admission() {
         "sim/world/shroud_refresh.rs",
         "sim/world/world_spawn.rs",
     ];
-    const LEGACY_READ_COUNT: usize = 30;
+    const LEGACY_READ_COUNT: usize = 29;
 
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut forbidden = Vec::new();
@@ -300,20 +300,20 @@ fn command_input_and_radar_do_not_read_raw_house_permissions() {
                 violations.push((file.rel.as_str(), symbol));
             }
         }
-        if matches!(
-            file.rel.as_str(),
-            "app/input/context_order.rs"
-                | "app/input/dispatch.rs"
-                | "app/input/selection_navigation.rs"
-                | "app/input/transport_orders.rs"
-                | "sim/world/move_cell_input.rs"
-        ) {
+        if file.rel.starts_with("app/input/") {
+            for symbol in ["techno_player_controllable", "techno_is_active"] {
+                if count_identifier(production, symbol) != 0 {
+                    violations.push((file.rel.as_str(), symbol));
+                }
+            }
+        }
+        if file.rel.starts_with("app/input/") || file.rel == "sim/world/move_cell_input.rs" {
             let compact: String = production.chars().filter(|c| !c.is_whitespace()).collect();
             for comparison in [
-                "entity.owner()==local_owner",
-                "entity.owner()!=local_owner",
-                "entity.owner()==owner",
-                "owner!=entity.owner()",
+                "entity.owner()==",
+                "entity.owner()!=",
+                "==entity.owner()",
+                "!=entity.owner()",
                 "actor.owner()==issuing_house",
                 "actor.owner()!=issuing_house",
             ] {
@@ -585,7 +585,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/production/production_tech.rs", 1),
                 ("sim/scenario_bootstrap.rs", 5),
                 // Local identity owner, legacy restoration and its accessor.
-                ("sim/scenario_session.rs", 5),
+                ("sim/scenario_session.rs", 4),
                 // Cheat input reads the local player only in offline skirmish.
                 ("sim/skirmish_cheats.rs", 1),
                 ("sim/snapshot.rs", 2),
@@ -626,7 +626,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // Includes the Ares Guard key's own-actor check (1005CAF0)
                 // in the input producer `area_guard_key_command`.
                 ("sim/world/world_commands.rs", 4),
-                ("sim/world/world_orders.rs", 2),
+                ("sim/world/world_orders.rs", 1),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
                 ("sim/world/world_spawn/wall_unlimbo.rs", 1),
@@ -688,7 +688,6 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/fly_process.rs", 1),
                 ("sim/world/lifecycle.rs", 1),
                 ("sim/world/planning.rs", 1),
-                ("sim/world/selection_voice.rs", 4),
                 ("sim/world/shroud_refresh.rs", 2),
                 ("sim/world/techno_ai.rs", 1),
                 // Native Techno control/active checks and the infiltrate cue.

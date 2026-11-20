@@ -1115,6 +1115,7 @@ pub(super) fn capability_cursor_for_hover(
         if rules.is_some_and(|rules| {
             super::context_order::vehicle_capture_action(
                 sim,
+                &control,
                 rules,
                 best_id,
                 hover.stable_id,
@@ -1138,25 +1139,18 @@ pub(super) fn capability_cursor_for_hover(
         //    carrier, Alt's Move included, an Aircraft's NoEnter over a
         //    UnitRepair= building and a Carryall's Tote over a Unit
         //    (`context_order::entry_action`).
-        if let Some(action) = rules
-            .filter(|_| {
-                matches!(
-                    hover.kind,
-                    HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit
-                )
-            })
-            .and_then(|rules| {
-                super::context_order::entry_action(
-                    sim,
-                    rules,
-                    best_id,
-                    hover.stable_id,
-                    modifier,
-                    force_move_key,
-                    overlay_registry,
-                )
-            })
-        {
+        if let Some(action) = rules.and_then(|rules| {
+            super::context_order::hovered_entry_action(
+                sim,
+                &control,
+                rules,
+                best_id,
+                hover,
+                modifier,
+                force_move_key,
+                overlay_registry,
+            )
+        }) {
             return match action {
                 crate::sim::world::EntryClickAction::NoEnter => CursorFeedbackKind::NoEnter,
                 crate::sim::world::EntryClickAction::Grind => CursorFeedbackKind::Grind,

@@ -910,7 +910,27 @@ pub(crate) fn ordinary_cell_move_goal(
     clicked: (u16, u16),
     shift: bool,
 ) -> Option<(u16, u16)> {
-    sim.cell_click_destination(viewer, entity_id, clicked, shift, rules)
+    ordinary_cell_move_goal_with(
+        sim,
+        &sim.control_projection(),
+        rules,
+        viewer,
+        entity_id,
+        clicked,
+        shift,
+    )
+}
+
+pub(crate) fn ordinary_cell_move_goal_with(
+    sim: &crate::sim::world::Simulation,
+    control: &crate::sim::world::ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    viewer: InternedId,
+    entity_id: u64,
+    clicked: (u16, u16),
+    shift: bool,
+) -> Option<(u16, u16)> {
+    sim.cell_click_destination_with(control, viewer, entity_id, clicked, shift, rules)
         .unwrap_or_else(|cause| {
             log::warn!("Cell click input: {cause}");
             None
@@ -930,11 +950,42 @@ pub(crate) fn object_move_destination(
     action: crate::sim::world::MoveAction,
     force_move_key: bool,
 ) -> Option<crate::sim::combat::TargetKind> {
-    sim.object_move_click(viewer, entity_id, target_id, action, force_move_key, rules)
-        .unwrap_or_else(|cause| {
-            log::warn!("Move click over an object: {cause}");
-            None
-        })
+    object_move_destination_with(
+        sim,
+        &sim.control_projection(),
+        rules,
+        viewer,
+        entity_id,
+        target_id,
+        action,
+        force_move_key,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn object_move_destination_with(
+    sim: &crate::sim::world::Simulation,
+    control: &crate::sim::world::ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    viewer: InternedId,
+    entity_id: u64,
+    target_id: u64,
+    action: crate::sim::world::MoveAction,
+    force_move_key: bool,
+) -> Option<crate::sim::combat::TargetKind> {
+    sim.object_move_click_with(
+        control,
+        viewer,
+        entity_id,
+        target_id,
+        action,
+        force_move_key,
+        rules,
+    )
+    .unwrap_or_else(|cause| {
+        log::warn!("Move click over an object: {cause}");
+        None
+    })
 }
 
 /// Make ordinary local mission bytes authoritative at issue time.
