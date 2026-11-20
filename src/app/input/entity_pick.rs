@@ -851,37 +851,7 @@ pub(crate) fn compute_type_select_tap_with_playfield(
         let Some(entity) = entities.get(id) else {
             continue;
         };
-        let own = interner.map_or("", |i| i.resolve(entity.type_ref()));
-        push_type_select_seed(
-            &mut seeds,
-            (entity.type_ref(), entity.category()),
-            rules,
-            interner,
-        );
-        if rules.is_none_or(RuleSet::type_select_uses_deploy)
-            && let Some(object) = rules.and_then(|r| r.object(own))
-        {
-            if let Some(deploys_into) = object.deploys_into.as_deref()
-                && let Some(type_ref) = interner.and_then(|i| i.get(deploys_into))
-            {
-                push_type_select_seed(
-                    &mut seeds,
-                    (type_ref, EntityCategory::Structure),
-                    rules,
-                    interner,
-                );
-            }
-            if let Some(undeploys_into) = object.undeploys_into.as_deref()
-                && let Some(type_ref) = interner.and_then(|i| i.get(undeploys_into))
-            {
-                push_type_select_seed(
-                    &mut seeds,
-                    (type_ref, EntityCategory::Unit),
-                    rules,
-                    interner,
-                );
-            }
-        }
+        push_type_select_entity_seeds(&mut seeds, entity, rules, interner);
     }
     if seeds.is_empty() {
         // `TypeSelectCommand::ExecuteTap @ 0x00732950` has no seedless return:
@@ -985,6 +955,44 @@ fn push_type_select_seed(
         .any(|&existing| type_selection_matches(existing, seed, rules, interner))
     {
         seeds.push(seed);
+    }
+}
+
+/// One object's TypeSelect seeds: its exact `(type, category)` and, while
+/// `General/TypeSelectUseDeploy` admits it, the types it deploys into and
+/// undeploys into (`TypeSelectCommand::ExecuteTap @ 0x00732950` seeds the walk
+/// this way). Shared by the T tap and VERA's right-click-orders double-click.
+fn push_type_select_entity_seeds(
+    seeds: &mut Vec<TypeSelectionSeed>,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) {
+    let own = interner.map_or("", |i| i.resolve(entity.type_ref()));
+    push_type_select_seed(
+        seeds,
+        (entity.type_ref(), entity.category()),
+        rules,
+        interner,
+    );
+    if rules.is_none_or(RuleSet::type_select_uses_deploy)
+        && let Some(object) = rules.and_then(|r| r.object(own))
+    {
+        if let Some(deploys_into) = object.deploys_into.as_deref()
+            && let Some(type_ref) = interner.and_then(|i| i.get(deploys_into))
+        {
+            push_type_select_seed(
+                seeds,
+                (type_ref, EntityCategory::Structure),
+                rules,
+                interner,
+            );
+        }
+        if let Some(undeploys_into) = object.undeploys_into.as_deref()
+            && let Some(type_ref) = interner.and_then(|i| i.get(undeploys_into))
+        {
+            push_type_select_seed(seeds, (type_ref, EntityCategory::Unit), rules, interner);
+        }
     }
 }
 
@@ -1129,6 +1137,82 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
         ),
         ..Default::default()
     }
+}
+
+/// VERA right-click orders: a double-click on an object selects every object
+/// of its type that the local player controls and that the screen currently
+/// shows, the T key's screen pass applied to the object under the cursor
+/// instead of the current selection.
+///
+/// `None` unless the click found an object the local player controls and the
+/// selection gates admit, so ground, an enemy and a refused object all keep
+/// the ordinary click's meaning. There is no map fallback: a type with one
+/// on-screen member keeps just that member selected, where the T tap would
+/// widen the scope to the whole map. VERA-only, reached only under the
+/// `RightClickOrders` option.
+pub(crate) fn compute_double_click_type_select_with_playfield(
+    source: impl PickSource,
+    click_order: &[u64],
+    screen_order: &[u64],
+    fog: Option<(&FogState, &crate::map::houses::HouseAllianceMap)>,
+    local_owner: Option<&str>,
+    world_x: f32,
+    world_y: f32,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    require_playfield_membership: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> Option<SelectionMutation> {
+    let clicked_id = pick_entity_at_point(
+        source,
+        click_order,
+        fog.map(|(fog, _)| fog),
+        local_owner,
+        world_x,
+        world_y,
+        interner,
+        terrain,
+    )?;
+    let entities = source.entities();
+    let control = source.selection_control();
+    let clicked = entities.get(clicked_id)?;
+    if !type_select_owner_admits(control.as_ref(), local_owner, clicked, interner) {
+        return None;
+    }
+    let type_id = interner.map_or("", |i| i.resolve(clicked.type_ref()));
+    if !static_selection_gate(clicked, type_id, rules, require_playfield_membership) {
+        return None;
+    }
+    let mut seeds = Vec::new();
+    push_type_select_entity_seeds(&mut seeds, clicked, rules, interner);
+    let visible = type_select_candidates(
+        source,
+        control.as_ref(),
+        screen_order,
+        &seeds,
+        fog,
+        local_owner,
+        rules,
+        interner,
+        true,
+        require_playfield_membership,
+    );
+    let select = type_select_final_admissions(
+        entities,
+        &visible,
+        rules,
+        interner,
+        require_playfield_membership,
+    );
+    if select.is_empty() {
+        // Never let a double-click select less than its first click would.
+        return None;
+    }
+    Some(SelectionMutation {
+        clear: true,
+        select,
+        ..Default::default()
+    })
 }
 
 pub(crate) fn compute_type_select_box_mutation_with_playfield(
@@ -1632,6 +1716,10 @@ mod invisible_tests;
 #[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_band_owner_tests.rs"]
 mod band_owner_tests;
+
+#[cfg(all(test, tests_app_input_d_z))]
+#[path = "entity_pick_double_click_tests.rs"]
+mod double_click_tests;
 
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {

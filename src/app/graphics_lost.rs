@@ -30,7 +30,14 @@ impl App {
         };
         log::info!("Closing: the graphics device is lost");
         let saved = save_match(state);
-        state.frontend.graphics_lost = Some(GraphicsLost { error, saved });
+        // Lost before startup finished: the next start draws through the
+        // other Windows API, and the box says so.
+        let retry = crate::app::persistence::startup_backend::record_loss();
+        state.frontend.graphics_lost = Some(GraphicsLost {
+            error,
+            saved,
+            retry,
+        });
         Self::close_game(state, event_loop);
         true
     }

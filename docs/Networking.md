@@ -526,6 +526,11 @@ The guest also reads the agreement before decoding the options body, so it can s
 the earlier build exchange its earlier layout. The lobby, relay, and VS31
 fragment framing keep their existing formats.
 
+In VERA Online game rooms, the lobby sends rank badges as part of the join. The
+newcomer sees the room's badges, and everyone already there sees the newcomer's badge
+as their name appears. Released clients use the same ladder messages. After a lobby
+rollback the badge arrives with the client's usual lookup. [Lobby protocol](lobby-protocol.md#ranked-games)
+
 A VERA room's Teams count, which only its host sets, travels with the host's options:
 online as `launch.options.teams` ([lobby protocol](lobby-protocol.md)), on LAN as
 `body.room.options.teams`. With it set, the host keeps every seated player on one of the

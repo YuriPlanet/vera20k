@@ -183,6 +183,9 @@ impl PreparedSavedLocalView {
         // same next-press behavior without persisting a wall-clock Instant.
         // Original reset witnesses: saved_game_layout.json/postload_clock_reset.
         input.last_control_group_press = None;
+        // VERA right-click orders: the double-click chain must not pair a
+        // click from before the load with one after it.
+        input.last_selection_click = None;
         input.build_repeat = Default::default();
         input.reset_cheer_clock();
     }
@@ -294,6 +297,11 @@ pub(crate) struct MatchInputState {
     /// state: the original stamps `timeGetTime()` here and only a recall writes
     /// it — assigning with Ctrl+digit never does.
     pub(crate) last_control_group_press: Option<(usize, crate::util::time::Instant)>,
+    /// VERA right-click orders: the last ordinary tactical selection click,
+    /// for the modern-RTS double-click select-same-type-on-screen shortcut.
+    /// Wall clock, never sim state; the host's double-click time and rectangle
+    /// decide the pair. Only an admitted selection click writes it.
+    pub(crate) last_selection_click: Option<(crate::util::time::Instant, i32, i32)>,
     /// Types the local player builds endlessly (Ctrl + left click on a cameo).
     pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
@@ -493,6 +501,33 @@ impl MatchInputState {
         }
     }
 
+    /// Record one tactical selection click and answer whether it is the
+    /// second click of a double-click. The modern-RTS
+    /// select-same-type-on-screen shortcut is a VERA extension of
+    /// `RightClickOrders`: a click it does not admit (the option off, or a
+    /// click a held T, a modifier or an armed attack-move claims) discards the
+    /// chain, so it never pairs with the next plain click.
+    /// `point` is in physical window pixels, the space the host's double-click
+    /// rectangle is measured in.
+    pub(crate) fn note_tactical_selection_click(
+        &mut self,
+        admitted: bool,
+        now: crate::util::time::Instant,
+        point: (i32, i32),
+    ) -> bool {
+        if !admitted {
+            self.last_selection_click = None;
+            return false;
+        }
+        crate::ui::shell::list::is_double_click(
+            &mut self.last_selection_click,
+            now,
+            point.0,
+            point.1,
+            crate::ui::shell::saved_file_input::host_double_click_limits(),
+        )
+    }
+
     /// Record the cursor a drawn frame shows (`None` is the normal arrow).
     pub(crate) fn note_shown_cursor(&self, kind: Option<crate::app::types::CursorFeedbackKind>) {
         self.shown_cursor.set(kind);
@@ -554,6 +589,7 @@ impl MatchInputState {
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,
             last_control_group_press: None,
+            last_selection_click: None,
             build_repeat: Default::default(),
             follow_target: None,
             targeting_mode: None,
@@ -821,6 +857,8 @@ impl MatchInputState {
         // reuses the same object ids or has the same buildable types.
         self.ferry = Default::default();
         self.build_repeat = Default::default();
+        // The double-click chain belongs to the outgoing tactical view.
+        self.last_selection_click = None;
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;
@@ -1014,6 +1052,30 @@ mod house_cheer_tests;
 #[cfg(all(test, tests_app_input_d_z))]
 #[path = "house_cheer_retail_tests.rs"]
 mod house_cheer_retail_tests;
+
+#[cfg(all(test, tests_app_input_d_z))]
+mod double_click_tests {
+    use super::*;
+
+    /// The modern-RTS double-click is a `RightClickOrders` extension: with the
+    /// option off, or after a click it does not admit, no chain accumulates,
+    /// and a pair ends it so the next click starts over. Times and the point are far inside any host window.
+    #[test]
+    fn right_click_orders_double_click_pairs_quick_same_spot_selection_clicks_only() {
+        let mut input = MatchInputState::new(Default::default());
+        let start = crate::util::time::Instant::now();
+        let point = (120, 80);
+        let shortly = |millis| start + crate::util::time::Duration::from_millis(millis);
+        assert!(!input.note_tactical_selection_click(false, start, point));
+        assert!(!input.note_tactical_selection_click(false, shortly(5), point));
+        assert!(!input.note_tactical_selection_click(true, start, point));
+        assert!(input.note_tactical_selection_click(true, shortly(5), point));
+        assert!(!input.note_tactical_selection_click(true, shortly(10), point));
+        // A Shift-click between two plain clicks ends the chain.
+        assert!(!input.note_tactical_selection_click(false, shortly(15), point));
+        assert!(!input.note_tactical_selection_click(true, shortly(20), point));
+    }
+}
 
 #[cfg(all(test, tests_app_input_d_z))]
 mod pause_resync_tests {

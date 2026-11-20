@@ -87,6 +87,7 @@ fn the_lines_match_native() {
                         json!(view.place()),
                     ),
                     TimerSource::Blackout(blackout) => (blackout, json!("Blackout"), Value::Null),
+                    TimerSource::Team(_) => unreachable!("the native list has no team lines"),
                 };
                 json!(["line", index, scheme(owner), line.seconds, label, blink])
             })
