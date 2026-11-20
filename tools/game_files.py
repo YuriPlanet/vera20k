@@ -26,7 +26,8 @@ from a second list that could drift away from them.
 
 Nothing here downloads retail files from an unofficial source. The only source
 this tool knows is a folder the player already owns; `steam` runs Valve's own
-`steamcmd` against an account that owns the game and asks the player to log in.
+`steamcmd` against an account with EA Play, which is where EA publishes this
+application, and asks the player to log in.
 """
 
 from __future__ import annotations
@@ -52,10 +53,13 @@ CONFIG = 'config.toml'
 CONFIG_EXAMPLE = 'config.toml.example'
 
 # The Steam application that carries a retail Yuri's Revenge installation:
-# "Command & Conquer Red Alert 2 and Yuri's Revenge" (appid 2229850). It is a
-# paid application: steamcmd needs the account that owns it.
+# "Command & Conquer Red Alert 2 and Yuri's Revenge" (appid 2229850). EA
+# publishes it through the EA Play subscription on Steam, so the account that
+# downloads it needs that subscription; an anonymous session is refused with
+# "No subscription".
 STEAM_APPID = '2229850'
 STEAM_APP_NAME = "Command & Conquer Red Alert 2 and Yuri's Revenge"
+EA_PLAY_APPID = '1289670'
 
 # What a slim folder keeps. Everything else in a retail folder is an
 # executable, a movie or an installer, none of which the engine reads.
@@ -281,8 +285,9 @@ def steam_install(target: Path, appid: str = STEAM_APPID, user: str | None = Non
     """Run Valve's steamcmd to install the owned game into TARGET.
 
     The player logs in with their own account; steamcmd reads the password from
-    the terminal. The application is paid, so an anonymous session cannot
-    install it.
+    the terminal. EA publishes this application through the EA Play
+    subscription on Steam, so the account needs that subscription; an
+    anonymous session is refused with "No subscription".
     """
     steamcmd = shutil.which('steamcmd')
     if steamcmd is None:
@@ -292,8 +297,10 @@ def steam_install(target: Path, appid: str = STEAM_APPID, user: str | None = Non
     command.append(f'+login {user}' if user else '+login')
     command += [f'+app_update {appid}', '+quit']
     print(f'+ {" ".join(command)}')
-    print(f'Log in with the Steam account that owns {STEAM_APP_NAME} (appid {appid}),')
-    print('then wait for the download to finish.')
+    print(f'Log in with the Steam account that has EA Play: {STEAM_APP_NAME} (appid {appid})')
+    print('is in the subscription. Then wait for the download to finish.')
+    print('If steamcmd answers "No subscription", subscribe to EA Play on Steam')
+    print(f'(appid {EA_PLAY_APPID}) and run it again.')
     return subprocess.call(command)
 
 

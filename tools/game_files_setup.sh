@@ -6,11 +6,11 @@
 #     sh tools/game_files_setup.sh "<a Yuri's Revenge folder you already have>"
 #
 # The game files are EA's. The only source this script knows is a Steam
-# account that owns "Command & Conquer Red Alert 2 and Yuri's Revenge"
-# (appid 2229850), so steamcmd asks for that account and its password here,
-# in your terminal. Nothing is downloaded from any other place, and nothing
-# leaves your machine: the retail copy stays in the ignored game-files/
-# folder of this checkout.
+# account with EA Play: EA publishes "Command & Conquer Red Alert 2 and
+# Yuri's Revenge" (appid 2229850) through the EA Play subscription on Steam,
+# so steamcmd asks for that account and its password here, in your terminal.
+# Nothing is downloaded from any other place, and nothing leaves your machine:
+# the retail copy stays in the ignored game-files/ folder of this checkout.
 #
 # A retail folder you already have needs none of this:
 #
@@ -41,7 +41,8 @@ else
     fi
 
     mkdir -p "$install_dir"
-    echo "logging in to Steam; the application is paid, so an anonymous session cannot install it"
+    echo "logging in to Steam; EA Play carries this application, so the account needs it"
+    echo "if steamcmd answers 'No subscription', subscribe to EA Play on Steam and run this again"
     steamcmd "+force_install_dir $install_dir" "+login" "+app_update $appid" "+quit"
 fi
 

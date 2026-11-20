@@ -18,7 +18,7 @@ below is one the player already has:
 
 | Source | What to do |
 | --- | --- |
-| A Steam installation | `steamcmd` with the account that owns *Command & Conquer Red Alert 2 and Yuri's Revenge* (appid `2229850`). The application is paid: an anonymous session cannot install it. |
+| An EA Play subscription on Steam | EA publishes *Command & Conquer Red Alert 2 and Yuri's Revenge* (appid `2229850`) through the EA Play subscription on Steam, so the account that downloads it needs that subscription. `steamcmd` with that account installs the retail files; an anonymous session is refused with `No subscription`. |
 | A retail YR folder | Copy it, or point the checkout at it where it already is. |
 | An unpacked disc | Extract it with the tool of your choice, then use the folder. |
 
