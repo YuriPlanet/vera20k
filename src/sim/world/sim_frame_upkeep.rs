@@ -341,10 +341,8 @@ impl Simulation {
         let wake_positions: Vec<crate::sim::anim_class::AnimWorldCoord> = self
             .substrate
             .entities
-            .keys_sorted()
-            .iter()
-            .filter_map(|id| {
-                let entity = self.substrate.entities.get(*id)?;
+            .values()
+            .filter_map(|entity| {
                 let underwater = self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.underwater);
