@@ -657,6 +657,9 @@ pub struct DebrisTypeData<'a> {
     pub debris_anim_count: usize,
     /// `RulesClass+0x14C`.
     pub metallic_debris_count: usize,
+    /// Whether the Phobos hook (`Misc/Hooks.BugFixes.cpp:149`) widens the
+    /// budget's top from the stock `MaxDebris - 1` to `MaxDebris`.
+    pub phobos: bool,
 }
 
 /// Recovery bound only for malformed or non-draining lists. Missing entries
@@ -905,9 +908,11 @@ pub fn throw_death_debris(
     // sort it.
     let mut budget = if data.max_debris <= 0 {
         0
-    } else {
+    } else if data.phobos {
         host.rng()
             .next_range_i32_inclusive(data.min_debris, data.max_debris)
+    } else {
+        debris_budget(data.min_debris, data.max_debris, host.rng())
     };
 
     budget = throw_typed_debris(
@@ -916,7 +921,7 @@ pub fn throw_death_debris(
         data.debris_maximums,
         data.debris_minimums,
         owner_house,
-        true,
+        data.phobos,
         data.debris_types_limit,
         host,
     )?;
@@ -984,6 +989,7 @@ mod tests {
             debris_types_limit: None,
             debris_anim_count,
             metallic_debris_count,
+            phobos: true,
         }
     }
 
@@ -1199,7 +1205,9 @@ mod tests {
             Some((VoxelAnimTypeId(0), &voxel_type)),
         ];
         for seed in 0..64u64 {
-            let input = data(7, 6, &types, &[5, 5], &[], 0, 20);
+            let mut input = data(7, 6, &types, &[5, 5], &[], 0, 20);
+            // The stock `MaxDebris - 1` top: 7/6 asks exactly 6.
+            input.phobos = false;
             let mut rng = SimRng::new(seed);
             let thrown = throw(&input, &mut rng);
             assert_eq!(
@@ -1368,6 +1376,7 @@ DebrisTypes.Limit=no
             debris_types_limit: tank.phobos_debris_types_limit(),
             debris_anim_count: 0,
             metallic_debris_count: 20,
+            phobos: true,
         };
         for seed in 0..8u64 {
             let mut rng = SimRng::new(seed);

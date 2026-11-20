@@ -3095,6 +3095,12 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
+        // Phobos `AnimClass_AI_Early @ 0x423B95` (`Ext/Anim/Hooks.cpp:714-740`)
+        // runs the firing-anim pass before the stock AI body; it may retype
+        // the anim, so it precedes this visit's single read.
+        if self.firing_anim_update_count() > 0 {
+            self.update_as_firing_anim(id, rules);
+        }
         // One read serves the visit's prefix and gates: most visits end at a
         // gate, and each step that may write the anim re-reads it (VERA-only,
         // results unchanged).

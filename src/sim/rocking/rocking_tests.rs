@@ -334,7 +334,7 @@ fn overlay_recoil_adds_the_type_extra_forward_tilt() {
 #[test]
 fn unit_crush_tilt_overwrites_a_nonzero_pre_crush_rate() {
     let mut value = state([0, 0, 0, 0x3e80_0000]);
-    value.tilt_after_unit_crush(NativeF32Bits::from_bits(0xbd4c_cccd));
+    value.tilt_after_unit_crush(NativeF32Bits::from_bits(0xbd4c_cccd), true);
     assert_eq!(value.vel_forwards.bits(), 0xbd4c_cccd);
 }
 
@@ -343,6 +343,6 @@ fn unit_crush_tilt_overwrites_a_nonzero_pre_crush_rate() {
 #[test]
 fn stock_unit_crush_tilt_keeps_a_nonzero_pre_crush_rate() {
     let mut value = state([0, 0, 0, 0x3e80_0000]);
-    value.tilt_after_unit_crush(NativeF32Bits::from_bits(0xbd4c_cccd));
+    value.tilt_after_unit_crush(NativeF32Bits::from_bits(0xbd4c_cccd), false);
     assert_eq!(value.vel_forwards.bits(), 0x3e80_0000);
 }

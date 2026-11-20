@@ -31,10 +31,18 @@ pub struct PhobosUnitsRepair {
 impl PhobosUnitsRepair {
     pub fn from_section(section: &IniSection) -> Self {
         Self {
-            repair_rate: section.read_phobos_nullable_double("Units.RepairRate", None),
-            repair_step: section.read_phobos_nullable_int("Units.RepairStep", None),
-            repair_percent: section.read_phobos_nullable_double("Units.RepairPercent", None),
-            use_repair_cost: section.read_phobos_nullable_bool("Units.UseRepairCost", None),
+            repair_rate: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_phobos_nullable_double("Units.RepairRate", None)
+            }),
+            repair_step: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_phobos_nullable_int("Units.RepairStep", None)
+            }),
+            repair_percent: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_phobos_nullable_double("Units.RepairPercent", None)
+            }),
+            use_repair_cost: crate::rules::phobos_switch::phobos_read(|| {
+                section.read_phobos_nullable_bool("Units.UseRepairCost", None)
+            }),
         }
     }
 }

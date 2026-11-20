@@ -146,9 +146,18 @@ impl RockingState {
     /// (`Ext/Unit/Hooks.Crushing.cpp:27-38`, hook `0x741941`) replaces the
     /// stock FCOMP block and stores its `CrushForwardTiltPerFrame` rate
     /// (default stock binary32 -0.05, `0xBD4CCCCD`) unconditionally. The
-    /// caller applies the `TiltsWhenCrushes.Vehicles` gate first.
-    pub(crate) fn tilt_after_unit_crush(&mut self, tilt: NativeF32Bits) {
-        self.vel_forwards = tilt;
+    /// caller applies the `TiltsWhenCrushes.Vehicles` gate first. Without
+    /// Phobos the stock FCOMP tail stores only on C3: an equal, either zero
+    /// or unordered forward rate.
+    pub(crate) fn tilt_after_unit_crush(&mut self, tilt: NativeF32Bits, phobos: bool) {
+        if phobos {
+            self.vel_forwards = tilt;
+            return;
+        }
+        let forwards = f32::from_bits(self.vel_forwards.bits());
+        if forwards == 0.0 || forwards.is_nan() {
+            self.vel_forwards = tilt;
+        }
     }
 
     /// Crush_Or_Prescatter_Cell's stock tail (`0x00741939..0x00741954`):

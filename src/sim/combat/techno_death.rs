@@ -337,6 +337,7 @@ pub(super) fn throw_debris_for_death(
         debris_types_limit: object_type.phobos_debris_types_limit(),
         debris_anim_count: object_type.debris_anims.len(),
         metallic_debris_count: rules.general.metallic_debris.len(),
+        phobos: rules.phobos(),
     };
     // Native702443/70254B lifts SHP debris by20 leptons. Voxel74950C
     // applies its own10-lepton lift through the existing numeric owner.

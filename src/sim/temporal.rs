@@ -1744,20 +1744,55 @@ impl Simulation {
         let frame = self.session.binary_frame();
         let location = location_coord(entity);
         let name = rules.general.chrono_sparkle1.name.clone();
-        let ports = object.max_number_occupants;
-        if ports == 0 {
-            if sparkle_frame(frame, 0, sparkle_delay(rules)) {
-                self.spawn_once_anim(&name, location, None, rules);
+        let delay = sparkle_delay(rules);
+        let (on_building, on_slots, on_occupants) = {
+            let positions = rules
+                .phobos_globals
+                .chrono_sparkle_building_display_positions;
+            (
+                positions.contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::BUILDING),
+                positions.contains(
+                    crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS,
+                ),
+                positions.contains(
+                    crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANTS,
+                ),
+            )
+        };
+        let occupant_count = if on_slots {
+            i32::try_from(object.max_number_occupants).unwrap_or(i32::MAX)
+        } else if on_occupants {
+            i32::try_from(entity.passenger_role.occupants().count()).unwrap_or(i32::MAX)
+        } else {
+            0
+        };
+        let show_occupy = occupant_count > 0 && (on_occupants || on_slots);
+        // The building sparkle sits at `GetCenterCoords` (`0x004404CF`).
+        let center = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        if show_occupy {
+            for port in 0..occupant_count {
+                if !sparkle_frame(frame, port as u32, delay) {
+                    continue;
+                }
+                if let Some(coord) = self.occupant_port_coord(id, port as usize, rules) {
+                    self.spawn_once_anim(&name, coord, Some(PORT_ANIM_Z_ADJUST), rules);
+                }
             }
-            return;
         }
-        for port in 0..ports {
-            if !sparkle_frame(frame, port, sparkle_delay(rules)) {
-                continue;
-            }
-            if let Some(coord) = self.occupant_port_coord(id, port as usize, rules) {
-                self.spawn_once_anim(&name, coord, Some(PORT_ANIM_Z_ADJUST), rules);
-            }
+        if (!show_occupy || on_building) && sparkle_frame(frame, 0, delay) {
+            self.spawn_once_anim(
+                &name,
+                AnimWorldCoord {
+                    x: center.x,
+                    y: center.y,
+                    z: center.z,
+                },
+                None,
+                rules,
+            );
         }
     }
 

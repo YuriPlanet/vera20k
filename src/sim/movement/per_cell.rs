@@ -571,7 +571,9 @@ impl Simulation {
                     },
                 );
                 if let Some(crusher) = self.substrate.entities.get_mut(id) {
-                    crusher.rocking_mut().tilt_after_unit_crush(tilt);
+                    crusher
+                        .rocking_mut()
+                        .tilt_after_unit_crush(tilt, rules.phobos());
                 }
             }
         }

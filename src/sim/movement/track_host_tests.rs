@@ -3398,7 +3398,7 @@ fn assert_crush_history_state(actor: &GameEntity, expected: &serde_json::Value) 
 /// OverrunSquare hook (`0x741941`) replaces the stock zero test with an
 /// unconditional store, so the captured stock rocking words no longer apply
 /// in a phobos build; that behaviour has its own regression tests.
-#[ignore = "stock rocking golden; the Phobos OverrunSquare hook stores unconditionally in every build"]
+#[ignore = "stock rocking golden; the remaining Phobos tilt store still moves the words"]
 #[test]
 fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
     use crate::sim::occupancy::CellListInsertion;

@@ -141,7 +141,7 @@ impl TypeHandleTable {
                 );
                 handle.map(|handle| rules.projectile_by_handle(handle))
             }
-            _ => rules.projectile(interner.resolve(id)),
+            _ => rules.projectile(interner.try_resolve(id)?),
         }
     }
 
@@ -164,7 +164,7 @@ impl TypeHandleTable {
                 );
                 handle.map(|handle| rules.warhead_by_handle(handle))
             }
-            _ => rules.warhead(interner.resolve(id)),
+            _ => rules.warhead(interner.try_resolve(id)?),
         }
     }
 
@@ -189,7 +189,7 @@ impl TypeHandleTable {
                 );
                 index
             }
-            _ => rules.type_array_index(category, interner.resolve(id)),
+            _ => rules.type_array_index(category, interner.try_resolve(id)?),
         }
     }
 
@@ -263,7 +263,7 @@ impl TypeHandleTable {
                 );
                 handle
             }
-            _ => rules.type_handle(interner.resolve(id)),
+            _ => rules.type_handle(interner.try_resolve(id)?),
         }
     }
 
