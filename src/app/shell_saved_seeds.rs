@@ -5,44 +5,46 @@
 use super::shell_random_map::{RANDOM_MAP_DESCRIPTION_FALLBACK, RANDOM_MAP_DESCRIPTION_KEY};
 use super::*;
 use crate::map::rmg::{SeedDescription, saved_seeds};
-use crate::ui::shell::list::ListMetrics;
-use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
-use crate::ui::skirmish_shell::{SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose};
+use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::ui::skirmish_shell::{
+    SavedSeedLayout, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
+};
 use crate::util::native_file_name::{self, NativeFileName};
 
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
 
+/// The rows a saved-file browser's list shows on `layout`.
+pub(super) fn saved_browser_rows(layout: &SavedSeedLayout) -> usize {
+    ShellListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale)).visible_rows
+}
+
 impl App {
-    fn skirmish_saved_seed_layout(
-        state: &AppState,
-        mode: SavedSeedMode,
-    ) -> crate::ui::skirmish_shell::SavedSeedLayout {
+    fn skirmish_saved_seed_layout(state: &AppState, mode: SavedSeedMode) -> SavedSeedLayout {
         crate::app::frontend::shell_layout::saved_seed_layout(state, mode)
+    }
+
+    fn saved_seed_browser(state: &mut AppState) -> Option<&mut SavedSeedBrowserState> {
+        state
+            .frontend
+            .skirmish_shell_state
+            .saved_seed_browser
+            .as_mut()
     }
 
     pub(super) fn open_saved_seed_browser(state: &mut AppState, mode: SavedSeedMode) {
         let entries = Self::random_map_dir(state)
             .map(|dir| saved_seeds::list_saved_seeds(&dir))
             .unwrap_or_default();
-        let current = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_ref()
+        let shell = &state.frontend.skirmish_shell_state;
+        let modal = shell.random_map_setup_modal.as_ref();
+        let current = modal
             .map(|modal| modal.options.description.clone())
             .unwrap_or_default();
         let empty = Self::csf_label(state, "TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        let layout = Self::skirmish_saved_seed_layout(state, mode);
-        let rows = SeedListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale))
-            .visible_rows;
-        state.frontend.skirmish_shell_state.saved_seed_browser = Some(SavedSeedBrowserState::open(
-            mode,
-            entries,
-            current,
-            empty.into(),
-            saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now()),
-            rows,
-        ));
+        let rows = saved_browser_rows(&Self::skirmish_saved_seed_layout(state, mode));
+        let time = saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now());
+        let browser = SavedSeedBrowserState::open(mode, entries, current, empty.into(), time, rows);
+        state.frontend.skirmish_shell_state.saved_seed_browser = Some(browser);
         state.frontend.skirmish_shell_state.player_name_edit.focused = false;
     }
 
@@ -91,12 +93,7 @@ impl App {
         confirm: bool,
     ) {
         let prompt = Self::saved_browser_prompt(state, purpose, body, confirm);
-        if let Some(browser) = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_mut()
-        {
+        if let Some(browser) = Self::saved_seed_browser(state) {
             browser.show_prompt(prompt);
         }
     }
@@ -132,28 +129,16 @@ impl App {
     }
 
     fn resolve_saved_seed_prompt(state: &mut AppState, affirmative: bool) {
-        let prompt = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_mut()
-            .and_then(|browser| {
-                browser.pressed_control = None;
-                browser.prompt.take()
-            });
-        let Some(prompt) = prompt else {
+        let Some(prompt) =
+            Self::saved_seed_browser(state).and_then(|browser| browser.take_prompt())
+        else {
             return;
         };
         match prompt.purpose {
+            // 0x00559269 explicitly restores the edit focus after this warning.
             SavedSeedPromptPurpose::EmptyDescription => {
-                // 0x00559269 explicitly restores the edit focus after this warning.
-                if let Some(browser) = state
-                    .frontend
-                    .skirmish_shell_state
-                    .saved_seed_browser
-                    .as_mut()
-                {
-                    browser.description_edit.focused = true;
+                if let Some(browser) = Self::saved_seed_browser(state) {
+                    browser.focus_edit();
                 }
             }
             SavedSeedPromptPurpose::Saved => Self::close_saved_seed_browser(state),
@@ -169,20 +154,15 @@ impl App {
                 {
                     log::warn!("saved seed: could not delete {file_name}: {error}");
                 }
-                let layout = Self::skirmish_saved_seed_layout(state, SavedSeedMode::Delete);
-                let rows =
-                    SeedListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale))
-                        .visible_rows;
-                let empty = state
-                    .frontend
-                    .skirmish_shell_state
-                    .saved_seed_browser
-                    .as_mut()
-                    .is_some_and(|browser| {
-                        // driver 0x00558DD0 removes the row regardless of DeleteFileA's result.
-                        browser.remove_entry(&file_name, rows);
-                        browser.entries.is_empty()
-                    });
+                let rows = saved_browser_rows(&Self::skirmish_saved_seed_layout(
+                    state,
+                    SavedSeedMode::Delete,
+                ));
+                // driver 0x00558DD0 removes the row regardless of DeleteFileA's result.
+                let empty = Self::saved_seed_browser(state).is_some_and(|browser| {
+                    browser.remove_entry(&file_name, rows);
+                    browser.entries.is_empty()
+                });
                 if empty {
                     Self::close_saved_seed_browser(state);
                 }
@@ -203,12 +183,8 @@ impl App {
                     RANDOM_MAP_DESCRIPTION_KEY,
                     RANDOM_MAP_DESCRIPTION_FALLBACK,
                 );
-                let Some(modal) = state
-                    .frontend
-                    .skirmish_shell_state
-                    .random_map_setup_modal
-                    .as_mut()
-                else {
+                let shell = &mut state.frontend.skirmish_shell_state;
+                let Some(modal) = shell.random_map_setup_modal.as_mut() else {
                     return;
                 };
                 match saved_seeds::read_browser_seed(
@@ -251,12 +227,8 @@ impl App {
                         "TXT_MUSTENTER_DESCRIPTION",
                         "You must enter a description!",
                     );
-                    Self::show_saved_seed_prompt(
-                        state,
-                        SavedSeedPromptPurpose::EmptyDescription,
-                        body,
-                        false,
-                    );
+                    let purpose = SavedSeedPromptPurpose::EmptyDescription;
+                    Self::show_saved_seed_prompt(state, purpose, body, false);
                     return;
                 }
                 let file_name = file_name.unwrap_or_else(|| {
@@ -272,50 +244,51 @@ impl App {
                 if native_file_name::available(&dir, &file_name) {
                     let body =
                         Self::csf_label(state, "TXT_CONFIRM_SAVE", "Overwrite existing save game?");
-                    Self::show_saved_seed_prompt(
-                        state,
-                        SavedSeedPromptPurpose::Overwrite {
-                            file_name,
-                            description,
-                        },
-                        body,
-                        true,
-                    );
+                    let purpose = SavedSeedPromptPurpose::Overwrite {
+                        file_name,
+                        description,
+                    };
+                    Self::show_saved_seed_prompt(state, purpose, body, true);
                 } else {
                     Self::finish_saved_seed_write(state, file_name, description);
                 }
             }
             SavedSeedOutcome::Delete(file_name) => {
                 let prefix = Self::csf_label(state, "TXT_DELETE_FILE_QUERY", "Delete this file?");
-                let description = state
+                let browser = state
                     .frontend
                     .skirmish_shell_state
                     .saved_seed_browser
-                    .as_ref()
-                    .and_then(|browser| browser.selected_entry())
+                    .as_ref();
+                let row = browser.and_then(|browser| browser.selected_entry());
+                let description = row
                     .map(|row| row.description.display_text())
                     .unwrap_or_default();
+                let body = format!("{prefix}\n\n{description}");
                 Self::show_saved_seed_prompt(
                     state,
                     SavedSeedPromptPurpose::Delete { file_name },
-                    format!("{prefix}\n\n{description}"),
+                    body,
                     true,
                 );
             }
         }
     }
 
-    fn apply_saved_seed_input(state: &mut AppState, result: BrowserInputResult<NativeFileName>) {
-        match result {
-            BrowserInputResult::None => {}
-            BrowserInputResult::Outcome(outcome) => Self::apply_saved_seed_outcome(state, outcome),
-            BrowserInputResult::PromptAnswer(answer) => {
-                Self::resolve_saved_seed_prompt(state, answer)
+    fn apply_saved_seed_input(
+        state: &mut AppState,
+        results: Vec<BrowserInputResult<NativeFileName>>,
+    ) {
+        for result in results {
+            match result {
+                BrowserInputResult::Outcome(outcome) => {
+                    Self::apply_saved_seed_outcome(state, outcome)
+                }
+                BrowserInputResult::PromptAnswer(answer) => {
+                    Self::resolve_saved_seed_prompt(state, answer)
+                }
+                BrowserInputResult::Cue(cue) => Self::play_page_cue(state, cue),
             }
-            BrowserInputResult::ButtonPressed | BrowserInputResult::PromptButtonPressed => {
-                Self::play_main_menu_button_sound(state)
-            }
-            BrowserInputResult::RowClicked => Self::play_skirmish_shell_generic_click_sound(state),
         }
     }
 
@@ -324,44 +297,40 @@ impl App {
         code: Option<KeyCode>,
         text: Option<&str>,
     ) {
-        let Some(browser) = state
+        if let Some(browser) = Self::saved_seed_browser(state) {
+            let results = saved_file_input::key(browser, code, text);
+            Self::apply_saved_seed_input(state, results);
+        }
+    }
+
+    /// One pointer message on the browser (`down`: `None` moves); false
+    /// when none is open.
+    fn saved_seed_browser_pointer(state: &mut AppState, down: Option<bool>) -> bool {
+        let Some(mode) = state
             .frontend
             .skirmish_shell_state
             .saved_seed_browser
-            .as_mut()
+            .as_ref()
+            .map(|b| b.mode)
         else {
-            return;
+            return false;
         };
-        let result = saved_file_input::key(browser, code, text);
-        Self::apply_saved_seed_input(state, result);
+        let layout = Self::skirmish_saved_seed_layout(state, mode);
+        let extent = (state.render_width(), state.render_height());
+        let pointer = state.match_state.input.cursor_px();
+        if let Some(browser) = Self::saved_seed_browser(state) {
+            let results = saved_file_input::pointer(browser, &layout, extent, pointer, down);
+            Self::apply_saved_seed_input(state, results);
+        }
+        true
     }
 
-    fn sync_saved_seed_edit_scroll(state: &mut AppState) {
-        let layout = Self::skirmish_saved_seed_layout(state, SavedSeedMode::Save);
-        let Some(rect) = layout.name_edit else {
-            return;
-        };
-        // The fit width is in the font's authored units, so the field's base
-        // rect is what the caret-scroll math needs.
-        let available = (crate::ui::skirmish_shell::player_name_edit_text_rect(
-            layout.scale.base_rect(rect),
-            crate::ui::shell::geom::ShellScale::RETAIL,
-        )
-        .w - 2)
-            .max(0) as u32;
-        let Some(browser) = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_mut()
-        else {
-            return;
-        };
-        let edit = &mut browser.description_edit;
-        edit.scroll_to_caret(available, |text| state.renderer.bit_font.text_width(text));
-    }
-
+    /// Each frame, and on a pointer move: the scroll repeat, a held thumb
+    /// and the edit's scroll.
     pub(super) fn update_saved_seed_browser_scroll(state: &mut AppState, pointer_moved: bool) {
+        if pointer_moved {
+            Self::saved_seed_browser_pointer(state, None);
+        }
         let Some(mode) = state
             .frontend
             .skirmish_shell_state
@@ -372,74 +341,23 @@ impl App {
             return;
         };
         let layout = Self::skirmish_saved_seed_layout(state, mode);
-        let y = state.match_state.input.cursor_y.round() as i32;
-        let browser = state
+        let extent = (state.render_width(), state.render_height());
+        let font = &state.renderer.bit_font;
+        if let Some(browser) = state
             .frontend
             .skirmish_shell_state
             .saved_seed_browser
             .as_mut()
-            .unwrap();
-        if saved_file_input::update_scroll(
-            browser,
-            &layout,
-            y,
-            pointer_moved,
-            crate::util::time::Instant::now(),
-        ) {
-            Self::sync_saved_seed_edit_scroll(state);
+        {
+            saved_file_input::update(browser, &layout, extent, |text| font.text_width(text));
         }
     }
 
     pub(super) fn handle_saved_seed_browser_mouse_down(state: &mut AppState) -> bool {
-        let Some(browser) = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_ref()
-        else {
-            return false;
-        };
-        let layout = Self::skirmish_saved_seed_layout(state, browser.mode);
-        let extent = (state.render_width(), state.render_height());
-        let pointer = state.match_state.input.cursor_px();
-        let browser = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_mut()
-            .unwrap();
-        let result = saved_file_input::mouse_down(
-            browser,
-            &layout,
-            extent,
-            pointer,
-            crate::util::time::Instant::now(),
-            saved_file_input::host_double_click_limits(),
-        );
-        Self::apply_saved_seed_input(state, result);
-        true
+        Self::saved_seed_browser_pointer(state, Some(true))
     }
 
     pub(super) fn handle_saved_seed_browser_mouse_up(state: &mut AppState) -> bool {
-        let Some(browser) = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_ref()
-        else {
-            return false;
-        };
-        let layout = Self::skirmish_saved_seed_layout(state, browser.mode);
-        let extent = (state.render_width(), state.render_height());
-        let pointer = state.match_state.input.cursor_px();
-        let browser = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_mut()
-            .unwrap();
-        let result = saved_file_input::mouse_up(browser, &layout, extent, pointer);
-        Self::apply_saved_seed_input(state, result);
-        true
+        Self::saved_seed_browser_pointer(state, Some(false))
     }
 }

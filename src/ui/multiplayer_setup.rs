@@ -5,18 +5,18 @@
 //! This leaf keeps only control interaction and emits commands for that owner.
 
 use crate::util::time::Instant;
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::lan_shell::{LanChatState, LanListState};
-use crate::ui::shell::button::ShellButtonInteraction;
-use crate::ui::shell::combobox::{ComboPopup, ComboPopupInteraction};
+use crate::ui::shell::combobox::ComboPopup;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::{DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window};
 use crate::ui::shell::layout::anchor_rect;
-use crate::ui::shell::list::{
-    ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry,
-};
+use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::shell::trackbar::{TrackbarHold, TrackbarRange};
+use crate::ui::shell::page::{self as page_nodes, PageCue, PageEvent};
+use crate::ui::shell::trackbar::{TrackbarPress, TrackbarRange};
 use crate::ui::skirmish_shell::{SkirmishStatics, SkirmishValidationModalState};
 
 pub(crate) const VISIBLE_SETUP_ROWS: usize = 8;
@@ -650,59 +650,17 @@ pub(crate) struct SetupTrackbar {
     pub(crate) visible: bool,
 }
 impl SetupTrackbar {
-    // Co-op5C21D0 sends7324AC(0), so the shared native trackbar runs with no
-    // value-plaque reserve; ordinary options retain the49-pixel plaque.
-    fn reserve(&self) -> i32 {
-        if self.id == DIFFICULTY {
-            0
-        } else {
-            crate::ui::shell::trackbar::PLAQUE_RESERVE
-        }
+    /// Its range as its window holds it: Co-op5C21D0 sends7324AC(0), so
+    /// Difficulty runs with no value-plaque reserve; ordinary options retain
+    /// the49-pixel plaque.
+    pub(crate) fn window_range(&self) -> TrackbarRange {
+        self.range.with_plaque(self.id != DIFFICULTY)
     }
     pub(crate) fn thumb_left(&self, rect: RectPx, scale: ShellScale) -> i32 {
-        crate::ui::shell::trackbar::thumb_left_at(
-            self.value - self.range.min,
-            rect,
-            self.reserve(),
-            self.range.max - self.range.min,
-            scale,
-        )
+        self.window_range().thumb_left_in(self.value, rect, scale)
     }
-    pub(crate) fn pointer_value(&self, x: i32, rect: RectPx, scale: ShellScale) -> i32 {
-        let track = crate::ui::shell::trackbar::authored_track(rect, (x, rect.y), scale);
-        self.range.stepped(
-            self.range.min
-                + crate::ui::shell::trackbar::trackbar_position_from_x(
-                    track.local_x,
-                    track.width,
-                    self.reserve(),
-                    self.range.max - self.range.min,
-                ),
-        )
-    }
-    pub(crate) fn press(
-        &self,
-        x: i32,
-        y: i32,
-        rect: RectPx,
-        scale: ShellScale,
-    ) -> crate::ui::shell::trackbar::TrackbarPress {
-        use crate::ui::shell::trackbar::{TrackbarPress, authored_track, trackbar_press};
-        let track = authored_track(rect, (x, y), scale);
-        match trackbar_press(
-            self.value - self.range.min,
-            track.local_x,
-            track.local_y,
-            track.width,
-            track.height,
-            self.reserve(),
-            self.range.max - self.range.min,
-        ) {
-            TrackbarPress::Jump(value) => {
-                TrackbarPress::Jump(self.range.stepped(self.range.min + value))
-            }
-            other => other,
-        }
+    pub(crate) fn press(&self, x: i32, y: i32, rect: RectPx, scale: ShellScale) -> TrackbarPress {
+        self.window_range().press_in(self.value, x, y, rect, scale)
     }
 }
 
@@ -979,22 +937,20 @@ pub(crate) struct MultiplayerSetupState {
     /// The first row of the page showing; in VERA's roster, the place it
     /// is scrolled to ([`RosterScroll`]).
     first_visible_row: usize,
-    /// VERA's roster's scrollbar.
-    roster_scrollbar: ListScrollInteraction,
     pub(crate) chat: LanChatState,
     pub(crate) notice: Option<SkirmishValidationModalState>,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) popup: ComboPopupInteraction<u16>,
-    /// The row the open list belongs to. Joins, leaves and moves shift VERA's
-    /// roster under it, and a list whose row moved away hides, so a pick
-    /// never changes whoever took its place.
-    popup_row: Option<u8>,
-    pub(crate) trackbar_hold: Option<TrackbarHold<u16>>,
+    /// The row the open list belongs to. Joins, leaves, moves and paging
+    /// put another row under its control, and a list whose row moved away
+    /// closes, so a pick never changes whoever took its place.
+    pub(crate) popup_row: Option<u8>,
     /// The host's drag of a roster row, while the button is down.
     pub(crate) row_drag: Option<RowDrag>,
+    /// The control under the pointer as its last move, press or release
+    /// left it: the one a press works in VERA's roster, which lights it;
+    /// a button shows pushed only under it.
+    pub(crate) hovered: Option<u16>,
     pub(crate) statics: SkirmishStatics,
     pub(crate) shown: bool,
-    pub(crate) focused_control: u16,
     focus_started: Instant,
     accept_flash_started: Option<Instant>,
     /// The box open over VERA's room; it takes the room's input.
@@ -1010,21 +966,17 @@ impl Default for MultiplayerSetupState {
     fn default() -> Self {
         Self {
             first_visible_row: 0,
-            roster_scrollbar: ListScrollInteraction::default(),
             chat: {
                 let mut chat = LanChatState::default();
                 chat.edit.focused = true;
                 chat
             },
             notice: None,
-            buttons: ShellButtonInteraction::default(),
-            popup: ComboPopupInteraction::default(),
             popup_row: None,
-            trackbar_hold: None,
             row_drag: None,
+            hovered: None,
             statics: SkirmishStatics::default(),
             shown: false,
-            focused_control: CHAT,
             focus_started: Instant::now(),
             accept_flash_started: None,
             open_box: None,
@@ -1057,13 +1009,7 @@ impl MultiplayerSetupState {
             page.saturating_sub(1)
         };
         self.first_visible_row = pages.get(page).copied().unwrap_or(0);
-        self.popup.close();
         self.cancel_pointer();
-    }
-    /// Opens `control`'s list, on `row`.
-    pub(crate) fn open_list(&mut self, control: u16, row: u8, selected: Option<usize>) {
-        self.popup.open(control, selected);
-        self.popup_row = Some(row);
     }
     /// The host presses roster row `row` at `x`, `y`: it may drag it.
     pub(crate) fn press_row(&mut self, row: u8, x: i32, y: i32) {
@@ -1076,16 +1022,22 @@ impl MultiplayerSetupState {
         });
     }
     /// The pointer moves with a row pressed: once it has left the press the
-    /// row is carried, its list closing, over the box `target` gives.
-    pub(crate) fn drag_row(&mut self, x: i32, y: i32, target: impl FnOnce(u8) -> Option<usize>) {
+    /// row is carried, over the box `target` gives. True when the carry
+    /// starts now, which closes the list the press opened.
+    pub(crate) fn drag_row(
+        &mut self,
+        x: i32,
+        y: i32,
+        target: impl FnOnce(u8) -> Option<usize>,
+    ) -> bool {
         let Some(drag) = self.row_drag.as_mut() else {
-            return;
+            return false;
         };
         drag.at = (x, y);
-        if !drag.carrying && (x - drag.from.0).abs().max((y - drag.from.1).abs()) >= ROW_DRAG_START
-        {
-            drag.carrying = true;
-            self.popup.close();
+        let starts = !drag.carrying
+            && (x - drag.from.0).abs().max((y - drag.from.1).abs()) >= ROW_DRAG_START;
+        drag.carrying |= starts;
+        if starts {
             self.popup_row = None;
         }
         drag.target = if drag.carrying {
@@ -1093,6 +1045,7 @@ impl MultiplayerSetupState {
         } else {
             None
         };
+        starts
     }
     /// The button comes up: the row and the box it was carried to.
     pub(crate) fn drop_row(&mut self) -> Option<(u8, usize)> {
@@ -1103,63 +1056,15 @@ impl MultiplayerSetupState {
     pub(crate) fn roster_top(&self, max_top: usize) -> usize {
         self.first_visible_row.min(max_top)
     }
-    /// Works VERA's roster's scrollbar with `work`. Its rows' controls move
-    /// under the pointer, so a list open on one closes when it scrolls.
-    fn scroll_roster(
-        &mut self,
-        geometry: ShellListGeometry,
-        work: impl FnOnce(&mut ListScrollInteraction, &mut usize),
-    ) {
-        let before = self.roster_top(geometry.max_top);
-        let mut top = before;
-        work(&mut self.roster_scrollbar, &mut top);
+    /// VERA's roster scrolled to place `top` (its scrollbar).
+    pub(crate) fn scroll_roster_to(&mut self, top: usize) {
         self.first_visible_row = top;
-        if top != before {
-            self.popup.close();
-        }
-    }
-    /// A press on the roster's scrollbar; `false` when it is not on it.
-    pub(crate) fn roster_scroll_press(
-        &mut self,
-        geometry: ShellListGeometry,
-        x: i32,
-        y: i32,
-        now: Instant,
-    ) -> bool {
-        let Some(part) = geometry.scroll_part_at(x, y) else {
-            return false;
-        };
-        self.scroll_roster(geometry, |bar, top| bar.press(part, geometry, top, y, now));
-        true
-    }
-    pub(crate) fn roster_scroll_moved(&mut self, geometry: ShellListGeometry, x: i32, y: i32) {
-        self.scroll_roster(geometry, |bar, top| bar.pointer_moved(geometry, top, x, y));
-    }
-    /// The scrollbar's arrow repeat; returns whether the roster or its
-    /// pressed arrow changed.
-    pub(crate) fn roster_scroll_poll(
-        &mut self,
-        geometry: ShellListGeometry,
-        x: i32,
-        y: i32,
-        now: Instant,
-    ) -> bool {
-        let mut changed = false;
-        self.scroll_roster(geometry, |bar, top| {
-            changed = bar.poll(geometry, top, x, y, now);
-        });
-        changed
-    }
-    pub(crate) fn roster_scroll_repeat_at(&self) -> Option<Instant> {
-        self.roster_scrollbar.repeat_at()
-    }
-    pub(crate) fn roster_scroll_pressed(&self) -> Option<ListScrollPart> {
-        self.roster_scrollbar.pressed_part()
     }
     /// An open roster list owns the wheel even at its ends. Once it closes,
     /// the same gesture over the roster scrolls the teams again.
     pub(crate) fn wheel(
         &mut self,
+        gui: &mut Gui,
         view: &SetupView,
         layout: &MultiplayerSetupLayout,
         x: i32,
@@ -1178,17 +1083,18 @@ impl MultiplayerSetupState {
         } else {
             step
         };
-        let wheel_top = |top: usize, max: usize| top.saturating_add_signed(-step as isize).min(max);
-        if let Some(mut popup) = self.popup_geometry(view, layout) {
-            if popup.rect.contains(x, y) {
-                popup.first = wheel_top(popup.first, popup.total - popup.visible_rows);
-                self.popup.top_index = popup.first;
-                popup.track_hot_row(&mut self.popup.hot_row, x, y);
-            }
+        if gui.wheel_popup(-step, x, y) {
             return true;
         }
         if layout.roster_area.contains(x, y) {
-            self.scroll_roster(roster, |_, top| *top = wheel_top(*top, roster.max_top));
+            let top = self.roster_top(roster.max_top);
+            self.first_visible_row = top
+                .saturating_add_signed(-step as isize)
+                .min(roster.max_top);
+            // Its rows' controls move under the pointer: a hidden list closes.
+            if self.first_visible_row != top {
+                gui.close_popup();
+            }
             return true;
         }
         false
@@ -1208,7 +1114,6 @@ impl MultiplayerSetupState {
     }
     pub(crate) fn show_box(&mut self, open: Option<RoomBox>) {
         self.open_box = open;
-        self.popup.close();
         self.cancel_pointer();
     }
     pub(crate) fn accept_highlight(&mut self, enabled: bool, now: Instant) -> bool {
@@ -1218,62 +1123,15 @@ impl MultiplayerSetupState {
         }
         crate::ui::shell::button::flash_phase(*self.accept_flash_started.get_or_insert(now), now)
     }
-    pub(crate) fn popup_geometry(
-        &self,
-        view: &SetupView,
-        layout: &MultiplayerSetupLayout,
-    ) -> Option<ComboPopup> {
-        if view.locked {
-            return None;
-        }
-        let id = self.popup.control?;
-        let combo = view.combo(id).filter(|combo| {
-            combo.visible && combo.enabled && self.popup_row.is_none_or(|row| row == combo.row)
-        })?;
-        // VERA's room shows its Player and Add AI menus whole, with no
-        // scrollbar.
-        let cap = match SetupColumn::decode(id) {
-            Some((SetupColumn::Player, _)) if view.dialog.modern => 0,
-            Some((column, _)) => column.visible_rows(),
-            None => {
-                team_add_ai_row(id)?;
-                0
-            }
-        };
-        let scale = layout.page.scale;
-        let face = layout.control_rect(id)?;
-        let mut popup =
-            ComboPopup::new(face, scale, combo.choices.len(), cap, self.popup.top_index);
-        // VERA's roster opens a list on rows as tall as its own, as wide as
-        // its cell or, if wider, its widest text and any scrollbar.
-        if layout.roster {
-            popup = popup.with_row_height(scale.scale_rect(RectPx::new(0, 0, 0, ROSTER_ROW_H)).h);
-            let text_w = scale.scale_rect(RectPx::new(0, 0, combo.list_w, 0)).w;
-            let bar_w = popup.scrollbar().map_or(0, |bar| bar.w);
-            popup.rect.w = popup.rect.w.max(text_w + bar_w);
-        }
-        Some(popup)
-    }
     pub(crate) fn caret_visible(&self, now: Instant) -> bool {
         now.saturating_duration_since(self.focus_started).as_secs() % 2 == 0
     }
     pub(crate) fn focus_chat(&mut self) {
-        if self.focused_control != CHAT {
-            self.focus_started = Instant::now();
-        }
-        self.focused_control = CHAT;
         self.chat.edit.focused = true;
     }
-    pub(crate) fn release_scrollbars(&mut self) {
-        self.popup.cancel_pointer();
-        self.chat.list.scroll.cancel();
-        self.roster_scrollbar.cancel();
-    }
     pub(crate) fn cancel_pointer(&mut self) {
-        self.buttons = ShellButtonInteraction::default();
-        self.trackbar_hold = None;
         self.row_drag = None;
-        self.release_scrollbars();
+        self.hovered = None;
     }
 }
 
@@ -1345,6 +1203,8 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) game_options: Option<GameOptionsLayout>,
     /// VERA's missing-map offer, a screen-centred two-button box.
     pub(crate) map_offer: crate::ui::shell::modal::QuitConfirmLayout,
+    /// The OK of the notice 0xCE ([`MultiplayerSetupState::notice`]).
+    pub(crate) notice_ok: RectPx,
     pub(crate) map_preview: RectPx,
     pub(crate) cooperative_description: RectPx,
     pub(crate) mode_label: RectPx,
@@ -1522,6 +1382,7 @@ impl MultiplayerSetupLayout {
             option_labels,
             game_options: None,
             map_offer: crate::ui::shell::modal::quit_confirm_layout(width, height),
+            notice_ok: crate::ui::shell::modal::body_ok_layout(width, height).ok,
             cooperative_description: rect(60, 98, 540, 143),
             map_preview: scale.scale_rect(anchor_rect(
                 crate::ui::shell::descriptor::AnchorRule::RightAnchor,
@@ -1825,104 +1686,46 @@ impl MultiplayerSetupLayout {
             TEAM_COLORS => self.team_colors,
             BALANCE => self.balance,
             MAP_OFFER_DOWNLOAD => Some(self.map_offer.ok),
+            crate::ui::shell::modal::control::OK => Some(self.notice_ok),
             MAP_OFFER_LEAVE => Some(self.map_offer.cancel),
             _ => self.page.button_rect(id),
         }
     }
-    /// An open Game Options popup takes every press; the room's own options
-    /// are only in the popup when it exists.
-    pub(crate) fn control_at(&self, view: &SetupView, x: i32, y: i32) -> Option<u16> {
-        let hit = |id: &u16| {
-            self.control_rect(*id)
-                .is_some_and(|rect| rect.contains(x, y))
-        };
-        if view.map_offer_open {
-            return [MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE].into_iter().find(hit);
-        }
-        match view.open_box {
-            Some(RoomBox::GameOptions) => {
-                return CHECKBOXES
-                    .into_iter()
-                    .chain(ROOM_CHECKBOXES)
-                    .chain(OPTION_TRACKBARS)
-                    .chain([SUPERWEAPON_LIMIT, GAME_OPTIONS_OK])
-                    .find(hit);
-            }
-            None => {}
-        }
-        let in_room = |id: &u16| {
-            *id != SUPERWEAPON_LIMIT
-                && (self.game_options.is_none() || !OPTION_TRACKBARS.contains(id))
-        };
-        let paged = view.pages.len() > 1;
-        view.combos
-            .iter()
-            .filter(|combo| combo.visible)
-            .map(|combo| combo.id)
-            .chain(
-                view.trackbars
-                    .iter()
-                    .filter(|bar| bar.visible)
-                    .map(|bar| bar.id)
-                    .filter(in_room),
-            )
-            .chain(
-                CHECKBOXES
-                    .into_iter()
-                    .filter(|_| self.game_options.is_none()),
-            )
-            .chain(
-                (0..MODERN_SETUP_ROWS)
-                    .map(team_join)
-                    .filter(|id| view.header_button(*id).is_some()),
-            )
-            .chain([CHAT, CHAT_LOG])
-            .chain(
-                [TEAM_STARTS, TEAM_COLORS, BALANCE]
-                    .into_iter()
-                    .filter(|_| view.team_bar()),
-            )
-            .chain(
-                [PREVIOUS_ROWS, NEXT_ROWS]
-                    .into_iter()
-                    .filter(|id| paged && view.enabled(*id)),
-            )
-            .chain(self.emote.map(|_| EMOTE))
-            .chain(self.page.buttons.iter().map(|button| button.id))
-            .find(hit)
-    }
-    /// What a press at `x`, `y` works: the enabled control there. In VERA's
-    /// roster a cell that opens no list lets the press through to its
-    /// group's box, which joins the group.
-    pub(crate) fn press_target(&self, view: &SetupView, x: i32, y: i32) -> Option<u16> {
-        let over = self
-            .control_at(view, x, y)
-            .filter(|id| view.enabled(*id))
-            .filter(|id| !self.roster || view.combo(*id).is_none_or(roster_cell_opens));
-        if !self.roster || over.is_some() {
-            return over;
-        }
-        (0..MODERN_SETUP_ROWS).map(team_join).find(|id| {
-            view.enabled(*id)
-                && self.group_boxes[team_join_row(*id).unwrap_or(0)]
-                    .is_some_and(|rect| rect.contains(x, y))
-        })
+    /// The screen VERA's team bar's controls draw and take the pointer at:
+    /// 78% of the shell's ([`Self::control_scale`]).
+    pub(crate) fn team_bar_screen(&self) -> Option<(i32, i32)> {
+        let window = self.page.scale.window();
+        self.team_bar
+            .map(|_| (window.w * 78 / 100, window.h * 78 / 100))
     }
     /// The scale `id`'s art draws and takes the pointer at: the team bar's
     /// controls at 78% of the shell's.
     pub(crate) fn control_scale(&self, id: u16) -> ShellScale {
-        let scale = self.page.scale;
-        if self.team_bar.is_some()
-            && matches!(
-                id,
-                TEAM_COUNT | ROOM_SIZE | TEAM_STARTS | TEAM_COLORS | BALANCE
-            )
-        {
-            let window = scale.window();
-            ShellScale::from_screen(window.w * 78 / 100, window.h * 78 / 100)
-        } else {
-            scale
+        match self.team_bar_screen() {
+            Some((w, h))
+                if matches!(
+                    id,
+                    TEAM_COUNT | ROOM_SIZE | TEAM_STARTS | TEAM_COLORS | BALANCE
+                ) =>
+            {
+                ShellScale::from_screen(w, h)
+            }
+            _ => self.page.scale,
         }
+    }
+    /// The list cell `id` of VERA's roster opens: on rows as tall as its
+    /// own, as wide as its cell or, if wider, its widest text and any
+    /// scrollbar.
+    fn roster_list(&self, id: u16, combo: &SetupCombo, cap: usize) -> Option<ComboPopup> {
+        let scale = self.page.scale;
+        let face = self.control_rect(id)?;
+        let row_h = scale.scale_rect(RectPx::new(0, 0, 0, ROSTER_ROW_H)).h;
+        let mut popup =
+            ComboPopup::new(face, scale, combo.choices.len(), cap, 0).with_row_height(row_h);
+        let text_w = scale.scale_rect(RectPx::new(0, 0, combo.list_w, 0)).w;
+        let bar_w = popup.scrollbar().map_or(0, |bar| bar.w);
+        popup.rect.w = popup.rect.w.max(text_w + bar_w);
+        Some(popup)
     }
     /// The chat's text, as a share of the shell's own size: the roster's
     /// in VERA's room.
@@ -1952,6 +1755,484 @@ impl MultiplayerSetupLayout {
             )
         })
     }
+}
+
+/// VERA's roster's scrollbar: a list whose rows are the places it scrolls
+/// to ([`RosterScroll`]), hit only on its bar.
+pub(crate) const ROSTER_SCROLL: u16 = 0x7F17;
+/// The boxes over VERA's room in the shell controller, which take the
+/// room's input while they are open.
+pub(crate) const GAME_OPTIONS_BOX: DialogId = DialogId(GAME_OPTIONS);
+pub(crate) const MAP_OFFER_BOX: DialogId = DialogId(MAP_OFFER_DOWNLOAD);
+/// The shared message box (`0x005D3490`) over the room, which owns all
+/// input while it runs.
+pub(crate) const NOTICE_BOX: DialogId = DialogId(0xCE);
+
+fn node(kind: NodeKind, id: u16) -> NodeSpec {
+    NodeSpec::new(kind).id(i32::from(id))
+}
+
+/// The room's widgets in the order a press finds them (no two overlap but a
+/// roster cell and its group's box, the cell first): the rows' combos, the
+/// options, the buttons, the chat and the roster's scrollbar. Each owner-draw
+/// checkbox toggles on the press (`0x006163A0`).
+fn page_spec(dialog: SetupDialog) -> NodeSpec {
+    let rows = 0..dialog.rows_per_page();
+    let combos = rows.clone().flat_map(move |row| {
+        let add_ai = dialog.modern.then(|| team_add_ai(row));
+        SetupColumn::ALL
+            .map(|column| column.control(row))
+            .into_iter()
+            .chain(add_ai)
+    });
+    let buttons = rows
+        .map(team_join)
+        .chain([
+            TEAM_STARTS,
+            TEAM_COLORS,
+            BALANCE,
+            PREVIOUS_ROWS,
+            NEXT_ROWS,
+            EMOTE,
+        ])
+        .chain(dialog.page().buttons().map(|button| button.id));
+    let list = |id| {
+        node(NodeKind::List, id)
+            .with(Prop::ListWindow, Value::Bool(true))
+            .with(Prop::RowCount, Value::Int(0))
+    };
+    let help = tooltip_key(dialog, CHAT).unwrap_or_default();
+    // VERA's room keeps its options in Game Options; Difficulty stays.
+    let modern = dialog.modern;
+    let native = move |ids: &'static [u16]| ids.iter().copied().filter(move |_| !modern);
+    let trackbars = native(&OPTION_TRACKBARS).chain([DIFFICULTY, TEAM_COUNT, ROOM_SIZE]);
+    NodeSpec::new(NodeKind::Dialog)
+        .children(combos.map(|id| {
+            node(NodeKind::Combo, id).with(Prop::OpenAnywhere, Value::Bool(dialog.modern))
+        }))
+        .children(option_spec(native(&CHECKBOXES), trackbars))
+        .children(buttons.map(|id| node(NodeKind::Button, id)))
+        .child(node(NodeKind::Text, CHAT).tooltip(&help))
+        .child(list(CHAT_LOG))
+        .child(list(ROSTER_SCROLL))
+}
+
+/// Checkboxes and trackbars, Difficulty's without its value plaque.
+fn option_spec(
+    checkboxes: impl IntoIterator<Item = u16>,
+    trackbars: impl IntoIterator<Item = u16>,
+) -> impl Iterator<Item = NodeSpec> {
+    let checkboxes = checkboxes
+        .into_iter()
+        .map(|id| node(NodeKind::Checkbox, id).with(Prop::ActivateOnPress, Value::Bool(true)));
+    let trackbars = trackbars.into_iter().map(|id| {
+        node(NodeKind::Trackbar, id).with(Prop::ShowValue, Value::Bool(id != DIFFICULTY))
+    });
+    checkboxes.chain(trackbars)
+}
+
+/// VERA's Game Options box: the room's options and its OK.
+fn game_options_spec() -> NodeSpec {
+    let checkboxes = CHECKBOXES.into_iter().chain(ROOM_CHECKBOXES);
+    let trackbars = OPTION_TRACKBARS.into_iter().chain([SUPERWEAPON_LIMIT]);
+    NodeSpec::new(NodeKind::Dialog)
+        .children(option_spec(checkboxes, trackbars))
+        .child(node(NodeKind::Button, GAME_OPTIONS_OK))
+}
+
+fn buttons(ids: &'static [u16]) -> impl Fn() -> NodeSpec {
+    move || {
+        NodeSpec::new(NodeKind::Dialog).children(ids.iter().map(|id| node(NodeKind::Button, *id)))
+    }
+}
+
+/// Control `id`'s rect while it shows: a combo for a shown row, a trackbar
+/// the view shows, a header's Join while it has one, the team bar's buttons
+/// with the bar, Previous and Next on a roster of pages while they lead to
+/// one, and VERA's roster's scrollbar.
+fn control_rect(view: &SetupView, layout: &MultiplayerSetupLayout, id: u16) -> Option<RectPx> {
+    let shows = match id {
+        ROSTER_SCROLL => return layout.roster.then_some(layout.roster_area),
+        TEAM_STARTS | TEAM_COLORS | BALANCE => view.team_bar(),
+        PREVIOUS_ROWS | NEXT_ROWS => view.pages.len() > 1 && view.enabled(id),
+        id if team_join_row(id).is_some() => view.header_button(id).is_some(),
+        id if view.combo(id).is_some() => view.combo(id).is_some_and(|combo| combo.visible),
+        id if layout.trackbars.iter().any(|(bar, _)| *bar == id) => {
+            view.trackbars.iter().any(|bar| bar.id == id && bar.visible)
+        }
+        id => SetupColumn::decode(id).is_none() && team_add_ai_row(id).is_none(),
+    };
+    layout.control_rect(id).filter(|_| shows)
+}
+
+/// Builds the room's widgets under the controller's page dialog (made the
+/// active dialog first with `activate`) and the boxes open over it, puts
+/// them on `layout` and shows the session; closes a list whose row moved
+/// away. The page's root.
+pub(crate) fn sync(
+    controller: &mut DialogController,
+    ui: &MultiplayerSetupState,
+    view: &SetupView,
+    layout: &MultiplayerSetupLayout,
+    activate: bool,
+) -> Option<NodeId> {
+    let page = view.page().dialog;
+    if controller.root_in(page).is_none() {
+        if !activate {
+            return None;
+        }
+        controller.ensure_active(page, false);
+    }
+    for (dialog, open) in [
+        (GAME_OPTIONS_BOX, view.open_box.is_some()),
+        (MAP_OFFER_BOX, view.map_offer_open),
+        (NOTICE_BOX, ui.notice.is_some()),
+    ] {
+        match (open, controller.root_in(dialog)) {
+            (true, None) => controller.push_modal(dialog, false),
+            (false, Some(_)) => controller.close(dialog),
+            _ => {}
+        }
+    }
+    let scale = layout.page.scale;
+    let room = view.dialog;
+    let spec_page = move || page_spec(room);
+    let roots: [(DialogId, &dyn Fn() -> NodeSpec); 4] = [
+        (page, &spec_page),
+        (GAME_OPTIONS_BOX, &game_options_spec),
+        (
+            MAP_OFFER_BOX,
+            &buttons(&[MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE]),
+        ),
+        (
+            NOTICE_BOX,
+            &buttons(&[crate::ui::shell::modal::control::OK]),
+        ),
+    ];
+    for (dialog, spec) in roots {
+        let Some(root) = controller.root_in(dialog) else {
+            continue;
+        };
+        controller.set_scale_in(dialog, scale);
+        let gui = controller.gui_mut();
+        page_nodes::ensure_built(gui, root, spec);
+        page_nodes::sync_rects(gui, root, |id| control_rect(view, layout, id));
+        let nodes: Vec<(NodeId, u16)> = gui
+            .tree()
+            .children(root)
+            .map(|children| children.to_vec())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|node| Some((node, u16::try_from(gui.id_of(node)?).ok()?)))
+            .collect();
+        for (node, id) in nodes {
+            for (prop, value) in props(ui, view, layout, id) {
+                let _ = gui.set(node, prop, value);
+            }
+        }
+    }
+    let root = controller.root_in(page)?;
+    let on_top = controller.top_id() == Some(page);
+    let gui = controller.gui_mut();
+    // A list hides while its combo does not take it, and shows again as it
+    // was once it does.
+    if let Some(node) = gui.popup().filter(|_| on_top) {
+        let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
+        let shows = id.and_then(|id| view.combo(id)).is_some_and(|combo| {
+            !view.locked
+                && combo.visible
+                && combo.enabled
+                && ui.popup_row.is_none_or(|row| row == combo.row)
+        });
+        let _ = gui.set(node, Prop::PopupHidden, Value::Bool(!shows));
+    }
+    Some(root)
+}
+
+/// What control `id` shows of the session.
+fn props(
+    ui: &MultiplayerSetupState,
+    view: &SetupView,
+    layout: &MultiplayerSetupLayout,
+    id: u16,
+) -> Vec<(Prop, Value)> {
+    // VERA's roster scrolls under a lock too.
+    let enabled = id == ROSTER_SCROLL || view.enabled(id);
+    let mut props = vec![(Prop::Enabled, Value::Bool(enabled))];
+    let scale = layout.page.scale;
+    if let Some(combo) = view.combo(id) {
+        // The rows its list shows before it scrolls; VERA's room shows its
+        // Player and Add AI menus whole.
+        let cap = match SetupColumn::decode(id) {
+            Some((SetupColumn::Player, _)) if view.dialog.modern => 0,
+            Some((column, _)) => column.visible_rows(),
+            None => 0,
+        };
+        props.extend([
+            (Prop::RowCount, Value::Int(combo.choices.len() as i32)),
+            (
+                Prop::Selected,
+                Value::Int(combo.selected.map_or(-1, |row| row as i32)),
+            ),
+            (Prop::VisibleRows, Value::Int(cap as i32)),
+            (Prop::PopupHidden, Value::Bool(false)),
+        ]);
+        // VERA's roster draws no faces: a press anywhere on a cell opens its
+        // list while it has something else to choose; any other press goes
+        // through to its group's box.
+        if layout.roster {
+            let opens = view.enabled(id) && roster_cell_opens(combo);
+            props.push((Prop::PressThrough, Value::Bool(!opens)));
+            if let Some(list) = layout.roster_list(id, combo, cap) {
+                props.extend([
+                    (Prop::PopupRowHeight, Value::Int(list.row_height)),
+                    (Prop::PopupRect, Value::Rect(list.rect)),
+                ]);
+            }
+        }
+    } else if let Some(index) = CHECKBOXES.iter().position(|check| *check == id) {
+        props.push((Prop::Checked, Value::Bool(view.checks[index])));
+    } else if let Some(index) = ROOM_CHECKBOXES.iter().position(|check| *check == id) {
+        props.push((Prop::Checked, Value::Bool(view.room_checks[index])));
+    } else if let Some(bar) = view.trackbars.iter().find(|bar| bar.id == id) {
+        props.extend([
+            (Prop::Min, Value::Int(bar.range.min)),
+            (Prop::Max, Value::Int(bar.range.max)),
+            (Prop::Step, Value::Int(bar.range.step)),
+            (Prop::Pos, Value::Int(bar.value)),
+        ]);
+        if let Some((w, h)) = layout
+            .team_bar_screen()
+            .filter(|_| layout.control_scale(id) != scale)
+        {
+            props.push((Prop::ScaleScreen, Value::Rect(RectPx::new(0, 0, w, h))));
+        }
+    } else if id == CHAT_LOG {
+        let row_h = ListMetrics::for_text(scale, layout.chat_text_scale()).row_h;
+        props.extend([
+            (Prop::RowCount, Value::Int(ui.chat.lines.len() as i32)),
+            (Prop::Top, Value::Int(ui.chat.list.top_index as i32)),
+            (Prop::Selected, Value::Int(-1)),
+            (Prop::RowHeight, Value::Int(row_h)),
+        ]);
+    } else if id == ROSTER_SCROLL {
+        let (count, max_top) = view.roster_scroll;
+        let bar = layout
+            .roster_scroll(view)
+            .and_then(|roster| roster.scrollbar);
+        props.extend([
+            (Prop::RowCount, Value::Int(count as i32)),
+            (Prop::VisibleRows, Value::Int((count - max_top) as i32)),
+            (Prop::Top, Value::Int(view.first_row as i32)),
+            (Prop::HitRect, Value::Rect(bar.unwrap_or_default())),
+        ]);
+    }
+    props
+}
+
+/// A left press at `x`, `y` on the room's top dialog: the widgets take it.
+/// A press on the chat focuses it; a list the press opens belongs to its
+/// row, and on VERA's roster the host may carry the row away from it.
+pub(crate) fn press(
+    controller: &mut DialogController,
+    ui: &mut MultiplayerSetupState,
+    view: &SetupView,
+    layout: &MultiplayerSetupLayout,
+    x: i32,
+    y: i32,
+) {
+    let page = view.page().dialog;
+    let gui = controller.gui();
+    let before = open_list(gui);
+    let target = controller
+        .root_in(page)
+        .filter(|_| before.is_none() && controller.top_id() == Some(page))
+        .and_then(|root| gui.hit_at(root, x, y, true));
+    let chat = target.and_then(|node| gui.id_of(node)) == Some(CHAT.into());
+    // A press on the combo of a hidden list opens it afresh.
+    let reopens = target.is_some() && gui.popup() == target;
+    controller.on_pointer_down(x, y, &[]);
+    if chat {
+        ui.focus_chat();
+    }
+    if reopens && let Some(node) = target {
+        let _ = controller
+            .gui_mut()
+            .set(node, Prop::PopupHidden, Value::Bool(false));
+    }
+    if before.is_none()
+        && let Some((id, _)) = open_list(controller.gui())
+        && let Some(combo) = view.combo(id)
+        && layout.roster
+    {
+        ui.popup_row = Some(combo.row);
+        if view.drag_rows.iter().any(|drag| drag.row == combo.row) {
+            ui.press_row(combo.row, x, y);
+        }
+    }
+}
+
+/// The control of the top dialog `root` under the pointer: the one whose
+/// status help shows (a disabled one too, and under an open list), or with
+/// `press`, the one a press works.
+pub(crate) fn control_at(gui: &Gui, root: NodeId, x: i32, y: i32, press: bool) -> Option<u16> {
+    u16::try_from(gui.id_of(gui.hit_at(root, x, y, press)?)?).ok()
+}
+
+/// The combo whose list is open over the room, and the list as the pointer
+/// hits it.
+pub(crate) fn open_list(gui: &Gui) -> Option<(u16, vera20k_gui::ComboDropDown)> {
+    let node = gui.popup()?;
+    Some((
+        u16::try_from(gui.id_of(node)?).ok()?,
+        gui.combo_drop_down(node)?,
+    ))
+}
+
+/// What the room paints of its widgets: the buttons shown pushed, the
+/// control a press at the pointer works (VERA's roster lights it), the open
+/// list, and the scrollbar arrows held.
+#[derive(Default)]
+pub(crate) struct RoomLook {
+    pressed: Vec<u16>,
+    pub(crate) target: Option<u16>,
+    pub(crate) open: Option<(u16, vera20k_gui::ComboDropDown)>,
+    pub(crate) roster_scroll: Option<ListScrollPart>,
+    pub(crate) chat_scroll: Option<ListScrollPart>,
+    /// The notice's OK holds the pointer.
+    pub(crate) notice_ok: bool,
+}
+impl RoomLook {
+    /// Whether button `id` shows pushed: captured, the pointer still on it.
+    pub(crate) fn pressed(&self, id: u16) -> bool {
+        self.pressed.contains(&id)
+    }
+}
+
+pub(crate) fn look(
+    controller: &DialogController,
+    ui: &MultiplayerSetupState,
+    view: &SetupView,
+) -> RoomLook {
+    let gui = controller.gui();
+    let page = view.page().dialog;
+    let mut look = RoomLook {
+        notice_ok: controller.pressed_node_in(NOTICE_BOX).is_some(),
+        target: ui.hovered,
+        ..RoomLook::default()
+    };
+    for dialog in [page, GAME_OPTIONS_BOX, MAP_OFFER_BOX] {
+        let pressed = controller
+            .pressed_node_in(dialog)
+            .and_then(|node| gui.id_of(node));
+        look.pressed.extend(
+            pressed
+                .and_then(|id| u16::try_from(id).ok())
+                .filter(|id| ui.hovered == Some(*id)),
+        );
+    }
+    let Some(root) = controller.root_in(page) else {
+        return look;
+    };
+    look.open = (controller.top_id() == Some(page))
+        .then(|| open_list(gui))
+        .flatten();
+    let scroll = |id: u16| {
+        let node = gui.find_id(root, i32::from(id))?;
+        gui.list_view(node)?.pressed
+    };
+    look.roster_scroll = scroll(ROSTER_SCROLL);
+    look.chat_scroll = scroll(CHAT_LOG);
+    look
+}
+
+/// One thing the room's widgets did, in order: a cue, or what the session
+/// is asked to do.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum RoomEvent {
+    Cue(PageCue),
+    Action(SetupAction),
+    /// The notice's OK.
+    Acknowledge,
+}
+
+/// The widgets' events since the last drain as cues and session actions;
+/// the scrollbars' new tops go to the roster and the chat log.
+pub(crate) fn room_events(
+    controller: &mut DialogController,
+    ui: &mut MultiplayerSetupState,
+    view: &SetupView,
+) -> Vec<RoomEvent> {
+    let raw = controller.drain_events();
+    let gui = controller.gui();
+    let root = controller.root_in(view.page().dialog);
+    let top = |id: u16| root.and_then(|root| page_nodes::int(gui, root, id, Prop::Top));
+    let mut out = Vec::new();
+    let mut scrolled = false;
+    for event in page_nodes::page_events(gui, raw) {
+        let action = match event {
+            // The chat log's rows take no selection.
+            PageEvent::Cue(PageCue::ListClick) => None,
+            PageEvent::Cue(cue) => {
+                out.push(RoomEvent::Cue(cue));
+                None
+            }
+            PageEvent::Activated(crate::ui::shell::modal::control::OK) => {
+                out.push(RoomEvent::Acknowledge);
+                None
+            }
+            PageEvent::Activated(control) => match control {
+                START => Some(SetupAction::Start),
+                ACCEPT => Some(SetupAction::Accept),
+                BACK => Some(SetupAction::Back),
+                CHOOSE_MAP => Some(SetupAction::ChooseMap),
+                EMOTE => Some(SetupAction::Emote),
+                PAGE => Some(SetupAction::Page),
+                PREVIOUS_ROWS => Some(SetupAction::RosterPage { forward: false }),
+                NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
+                GAME_OPTIONS => Some(SetupAction::OpenBox(Some(RoomBox::GameOptions))),
+                GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
+                TEAM_STARTS => Some(SetupAction::TeamStarts),
+                TEAM_COLORS => Some(SetupAction::TeamColors),
+                BALANCE => Some(SetupAction::Balance),
+                LOBBY => Some(SetupAction::Lobby),
+                MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
+                MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),
+                control if team_join_row(control).is_some() => Some(SetupAction::Join { control }),
+                _ => None,
+            },
+            PageEvent::Toggled(control, _) => Some(SetupAction::Toggle { control }),
+            PageEvent::Picked(control, row) => view
+                .combo(control)
+                .and_then(|combo| combo.choices.get(usize::try_from(row).ok()?))
+                .map(|choice| SetupAction::Select {
+                    control,
+                    value: choice.value,
+                }),
+            PageEvent::Slid {
+                id,
+                value,
+                final_: false,
+            } => Some(SetupAction::Trackbar { control: id, value }),
+            // Its rows' controls move under the pointer, so an open list
+            // closes when it scrolls.
+            PageEvent::Scrolled(ROSTER_SCROLL) => {
+                ui.scroll_roster_to(top(ROSTER_SCROLL).unwrap_or(0).max(0) as usize);
+                scrolled = true;
+                None
+            }
+            PageEvent::Scrolled(CHAT_LOG) => {
+                ui.chat.list.top_index = top(CHAT_LOG).unwrap_or(0).max(0) as usize;
+                None
+            }
+            _ => None,
+        };
+        out.extend(action.map(RoomEvent::Action));
+    }
+    if scrolled {
+        controller.gui_mut().close_popup();
+    }
+    out
 }
 
 /// OwnerDraw__GetTooltipStringLabel6040B0 BC/BD and C2/C9 branches. Guest
@@ -2016,6 +2297,24 @@ mod tests {
         }
     }
 
+    /// The room's widgets in a fresh shell controller.
+    fn widgets(
+        ui: &MultiplayerSetupState,
+        view: &SetupView,
+        layout: &MultiplayerSetupLayout,
+    ) -> DialogController {
+        let mut controller = DialogController::default();
+        sync(&mut controller, ui, view, layout, true);
+        controller
+    }
+
+    /// The control of the top dialog at `x`, `y`: with `press`, the one a
+    /// press works, else the one whose help shows.
+    fn hit(controller: &DialogController, (x, y): (i32, i32), press: bool) -> Option<u16> {
+        let root = controller.root_in(controller.top_id()?)?;
+        control_at(controller.gui(), root, x, y, press)
+    }
+
     #[test]
     fn the_room_looks_for_each_maps_briefing_once() {
         let mut room = MultiplayerSetupState::default();
@@ -2035,11 +2334,9 @@ mod tests {
         let mut ui = MultiplayerSetupState::default();
         let pages: Vec<usize> = (0..30).step_by(VISIBLE_SETUP_ROWS).collect();
         ui.show_row(29, VISIBLE_SETUP_ROWS);
-        ui.popup.open(SetupColumn::Country.control(5), Some(0));
         assert_eq!(ui.first_row(&pages), 24);
         ui.page_rows(&pages, false);
         assert_eq!(ui.first_row(&pages), 16);
-        assert!(ui.popup.control.is_none());
         ui.page_rows(&pages, true);
         ui.page_rows(&pages, true);
         assert_eq!(ui.first_row(&pages), 24);
@@ -2199,10 +2496,12 @@ mod tests {
         }
         // The wheel scrolls three places a notch, no further than the last.
         let mut ui = MultiplayerSetupState::default();
-        ui.wheel(&view, &layout, area.x, area.y, -1.0);
+        let mut gui = Gui::new(8);
+        ui.wheel(&mut gui, &view, &layout, area.x, area.y, -1.0);
         assert_eq!(ui.roster_top(scroll.max_top), 3);
-        ui.wheel(&view, &layout, area.x, area.y, -100.0);
+        ui.wheel(&mut gui, &view, &layout, area.x, area.y, -100.0);
         assert_eq!(ui.roster_top(scroll.max_top), scroll.max_top);
+        let mut ui = MultiplayerSetupState::default();
         // A room that fits shows no scrollbar.
         view.roster_scroll = (3, 0);
         assert!(layout.roster_scroll(&view).unwrap().scrollbar.is_none());
@@ -2233,16 +2532,21 @@ mod tests {
             });
         }
         let center = |rect: RectPx| (rect.x + rect.w / 2, rect.y + rect.h / 2);
-        let press = |row: usize| {
-            let (x, y) = center(layout.combos[row][SetupColumn::Country as usize]);
-            layout.press_target(&view, x, y)
-        };
-        assert_eq!(press(1), Some(team_join(0)));
-        assert_eq!(press(2), Some(team_join(0)));
-        assert_eq!(press(3), Some(SetupColumn::Country.control(3)));
+        let cell = |row: usize| center(layout.combos[row][SetupColumn::Country as usize]);
+        let mut controller = widgets(&ui, &view, &layout);
+        let press = |controller: &DialogController, row: usize| hit(controller, cell(row), true);
+        assert_eq!(press(&controller, 1), Some(team_join(0)));
+        assert_eq!(press(&controller, 2), Some(team_join(0)));
+        assert_eq!(press(&controller, 3), Some(SetupColumn::Country.control(3)));
+        // The status line names the cell under the pointer all the same.
+        assert_eq!(
+            hit(&controller, cell(1), false),
+            Some(SetupColumn::Country.control(1))
+        );
         // Its lists open on rows as tall as its own.
-        ui.open_list(SetupColumn::Country.control(3), 3, Some(0));
-        let popup = ui.popup_geometry(&view, &layout).unwrap();
+        let (x, y) = cell(3);
+        super::press(&mut controller, &mut ui, &view, &layout, x, y);
+        let popup = open_list(controller.gui()).unwrap().1.popup;
         assert_eq!(popup.row_height, ROSTER_ROW_H);
         assert_eq!(popup.rect.h, 2 * ROSTER_ROW_H);
         assert_eq!(
@@ -2255,7 +2559,8 @@ mod tests {
         assert_eq!(popup.rect.w, cell.w);
         let combo = view.combos.iter_mut().find(|combo| combo.id == open);
         combo.unwrap().list_w = cell.w + 40;
-        let popup = ui.popup_geometry(&view, &layout).unwrap();
+        sync(&mut controller, &ui, &view, &layout, true);
+        let popup = open_list(controller.gui()).unwrap().1.popup;
         assert_eq!(popup.rect.w, cell.w + 40);
         // A join or move that puts another player where the list opened
         // hides it, so a pick cannot change them.
@@ -2266,7 +2571,13 @@ mod tests {
             .find(|combo| combo.id == open)
             .unwrap();
         combo.row = 4;
-        assert!(ui.popup_geometry(&view, &layout).is_none());
+        sync(&mut controller, &ui, &view, &layout, true);
+        assert!(open_list(controller.gui()).is_none());
+        // It hides, and shows again as it was once its row is back.
+        let combo = view.combos.iter_mut().find(|combo| combo.id == open);
+        combo.unwrap().row = 3;
+        sync(&mut controller, &ui, &view, &layout, true);
+        assert!(open_list(controller.gui()).is_some_and(|(id, _)| id == open));
 
         // Fifteen teams of two: from every place, the column ends above
         // its bottom with no header left without its first row.
@@ -2360,14 +2671,12 @@ mod tests {
         assert_eq!(view.drop_group(3, 0), Some(SetupGroup::Team(0)));
         assert_eq!(view.drop_group(2, 2), None);
 
+        // The list the press opened stays open until the row is carried.
         let mut ui = MultiplayerSetupState::default();
-        ui.open_list(SetupColumn::Player.control(1), 1, Some(0));
         ui.press_row(1, 100, 100);
-        ui.drag_row(103, 105, |_| Some(2));
-        assert!(ui.popup.control.is_some());
+        assert!(!ui.drag_row(103, 105, |_| Some(2)));
         assert_eq!(ui.row_drag.and_then(|drag| drag.target), None);
-        ui.drag_row(100, 106, |_| Some(2));
-        assert!(ui.popup.control.is_none());
+        assert!(ui.drag_row(100, 106, |_| Some(2)));
         assert_eq!(ui.drop_row(), Some((1, 2)));
         assert_eq!(ui.row_drag, None);
     }
@@ -2457,11 +2766,14 @@ mod tests {
         }
         let mut view = vera_room_view();
         view.open_box = Some(RoomBox::GameOptions);
+        let ui = MultiplayerSetupState::default();
+        let mut controller = widgets(&ui, &view, &popup_layout);
         let center = |rect: RectPx| (rect.x + rect.w / 2, rect.y + rect.h / 2);
-        let (x, y) = center(popup_layout.checkboxes[0]);
-        assert_eq!(popup_layout.control_at(&view, x, y), Some(CHECKBOXES[0]));
-        let (x, y) = center(popup_layout.chat);
-        assert_eq!(popup_layout.control_at(&view, x, y), None);
+        assert_eq!(
+            hit(&controller, center(popup_layout.checkboxes[0]), false),
+            Some(CHECKBOXES[0])
+        );
+        assert_eq!(hit(&controller, center(popup_layout.chat), false), None);
         // The team bar under the roster holds the Teams count, the host's
         // Room size, Team Starts and Team Colors and, online, Balance; a LAN
         // room has no Balance, a guest no Team Starts.
@@ -2496,8 +2808,8 @@ mod tests {
                     && rect.y + rect.h <= bar.y + bar.h,
                 "{id:#x} at {rect:?}"
             );
-            let (x, y) = center(rect);
-            assert_eq!(popup_layout.control_at(&view, x, y), Some(id));
+            sync(&mut controller, &ui, &view, &popup_layout, true);
+            assert_eq!(hit(&controller, center(rect), false), Some(id));
         }
         // At 800x600 Room size stacks under the Teams count, the two
         // trackbars in one column, and the buttons stand evenly apart.
@@ -2543,21 +2855,26 @@ mod tests {
         view.open_box = None;
         // VERA's missing-map offer takes every press until it is answered.
         view.map_offer_open = true;
-        let (x, y) = center(popup_layout.chat);
-        assert_eq!(popup_layout.control_at(&view, x, y), None);
-        let (x, y) = center(popup_layout.map_offer.ok);
+        sync(&mut controller, &ui, &view, &popup_layout, true);
+        assert_eq!(hit(&controller, center(popup_layout.chat), false), None);
         assert_eq!(
-            popup_layout.control_at(&view, x, y),
+            hit(&controller, center(popup_layout.map_offer.ok), false),
             Some(MAP_OFFER_DOWNLOAD)
         );
         view.map_offer_open = false;
-        let (x, y) = center(popup_layout.checkboxes[0]);
-        assert_ne!(popup_layout.control_at(&view, x, y), Some(CHECKBOXES[0]));
+        sync(&mut controller, &ui, &view, &popup_layout, true);
+        assert_ne!(
+            hit(&controller, center(popup_layout.checkboxes[0]), false),
+            Some(CHECKBOXES[0])
+        );
         view.dialog = dialog(true, SetupFlavor::Wol, false);
         let native = MultiplayerSetupLayout::new(view.dialog, 800, 600, false);
         assert!(native.game_options.is_none());
-        let (x, y) = center(native.checkboxes[0]);
-        assert_eq!(native.control_at(&view, x, y), Some(CHECKBOXES[0]));
+        let controller = widgets(&ui, &view, &native);
+        assert_eq!(
+            hit(&controller, center(native.checkboxes[0]), false),
+            Some(CHECKBOXES[0])
+        );
     }
 
     #[test]

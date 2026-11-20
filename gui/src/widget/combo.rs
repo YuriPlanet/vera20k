@@ -97,6 +97,9 @@ fn popup_at(tree: &Tree, node: NodeId, scale: ShellScale, top: usize) -> Option<
         face.w += n.int_prop(Prop::PopupWiden, 0);
     }
     let mut popup = ComboPopup::new(face, scale, total, cap, top);
+    if let Some(Value::Int(row_h)) = n.props.get(&Prop::PopupRowHeight) {
+        popup = popup.with_row_height(*row_h);
+    }
     if let Some(Value::Int(bottom)) = n.props.get(&Prop::PopupBottom) {
         popup.rect.y = popup.rect.y.min((bottom - popup.rect.h).max(0));
     }
@@ -278,6 +281,24 @@ pub(crate) fn popup_move(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     let before = st.list.top_index;
     st.pointer = (x, y);
     st.list.pointer_moved(popup, x, y);
+    sync_top(ctx, node, before);
+}
+
+/// The wheel over the open list (VERA's roster): `rows` rows on, kept in
+/// range, the hot row following the pointer.
+pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, rows: i32, x: i32, y: i32) {
+    let Some(mut popup) = open_popup(ctx, node) else {
+        *ctx.popup = None;
+        return;
+    };
+    let Some(st) = state_mut(ctx.tree, node) else {
+        return;
+    };
+    let before = st.list.top_index;
+    let max = popup.total - popup.visible_rows;
+    popup.first = popup.first.saturating_add_signed(rows as isize).min(max);
+    st.list.top_index = popup.first;
+    popup.track_hot_row(&mut st.list.hot_row, x, y);
     sync_top(ctx, node, before);
 }
 

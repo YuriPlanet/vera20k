@@ -8,7 +8,7 @@ mod opponent_scroll;
 mod player_name;
 mod random_map_extras;
 mod random_map_setup;
-mod saved_seed_browser;
+pub(crate) mod saved_seed_browser;
 mod saved_setup;
 mod team_starts;
 mod trackbars;
@@ -54,7 +54,6 @@ pub use random_map_setup::{
 pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
-    SeedDescriptionEdit,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
 pub use team_starts::starts_by_team;

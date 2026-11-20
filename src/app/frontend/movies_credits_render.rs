@@ -12,8 +12,7 @@ use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_grown, push_entry_scaled,
-    push_entry_window_crop,
+    SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_scaled, push_entry_window_crop,
 };
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
@@ -24,8 +23,8 @@ use crate::ui::movies_credits_shell::{
 };
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::list::{
-    ListFrameTone, ListMetrics, ListScrollPart, ShellListGeometry, grip_tiles, list_frame_lines,
-    scrollbar_arrow_origins, scrollbar_edge_lines, scrollbar_interior,
+    ListFrameTone, ListMetrics, ListScrollPart, ShellListGeometry, list_frame_lines,
+    scrollbar_edge_lines, scrollbar_interior,
 };
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 use vera20k_gui::ListView;
@@ -55,16 +54,7 @@ fn push_solid(
     if rect.w <= 0 || rect.h <= 0 {
         return;
     }
-    out.push(SpriteInstance {
-        position: [rect.x as f32, rect.y as f32],
-        size: [rect.w as f32, rect.h as f32],
-        uv_origin: white.uv_origin,
-        uv_size: white.uv_size,
-        depth,
-        tint: rgb(color),
-        alpha: 1.0,
-        ..Default::default()
-    });
+    shell_paint::push_tinted_entry(out, white, rect, rgb(color), depth);
 }
 
 /// The list's two frame rings around window `w` (`0x00619230`).
@@ -129,55 +119,14 @@ fn push_list_scrollbar(
     }
     let interior = scrollbar_interior(bar);
     backdrop.push_pixels(out, backdrop.background, interior, LIST_FILL_DEPTH);
-    let art = &atlas.list_scroll;
-    let x = interior.x;
-    let arrow_h = geometry.metrics.arrow_h;
-    for ((released, pressed_art, part), (x, y)) in [
-        (art.up_released, art.up_pressed, ListScrollPart::Up),
-        (art.down_released, art.down_pressed, ListScrollPart::Down),
-    ]
-    .into_iter()
-    .zip(scrollbar_arrow_origins(bar, arrow_h))
-    {
-        let entry = if pressed == Some(part) {
-            pressed_art.or(released)
-        } else {
-            released
-        };
-        if let Some(entry) = entry {
-            push_entry_grown(out, entry, x, y, scale, LIST_DEPTH - 0.00001);
-        }
-    }
-    if let Some(mid) = art.grip_mid {
-        let [tile_w, tile_h] = scale.art_size(mid.pixel_size[0], mid.pixel_size[1]);
-        let tile_h = tile_h.round() as i32;
-        for (y, h) in grip_tiles(thumb, tile_h) {
-            out.push(SpriteInstance {
-                position: [x as f32, y as f32],
-                size: [tile_w, h as f32],
-                uv_origin: mid.uv_origin,
-                uv_size: [mid.uv_size[0], mid.uv_size[1] * h as f32 / tile_h as f32],
-                depth: LIST_DEPTH - 0.00001,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
-        }
-    }
-    if let Some(top) = art.grip_top {
-        push_entry_grown(out, top, x, thumb.y, scale, LIST_DEPTH - 0.00002);
-    }
-    if let Some(bottom) = art.grip_bottom {
-        let h = scale.art_size(bottom.pixel_size[0], bottom.pixel_size[1])[1].round() as i32;
-        push_entry_grown(
-            out,
-            bottom,
-            x,
-            thumb.y + thumb.h - h,
-            scale,
-            LIST_DEPTH - 0.00002,
-        );
-    }
+    shell_paint::push_list_scroll_art(
+        out,
+        &atlas.list_scroll,
+        (bar, thumb, geometry.metrics.arrow_h),
+        pressed,
+        scale,
+        (LIST_DEPTH - 0.00001, LIST_DEPTH - 0.00002),
+    );
 }
 
 /// The family pages' parent background (`0x0060D20B`: MNSCRNL, MNSCRNS at

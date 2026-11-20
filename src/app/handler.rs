@@ -1146,8 +1146,8 @@ impl ApplicationHandler for App {
                     {
                         lobby.ui.cancel_pointer();
                     }
-                    if let Some(setup) = state.frontend.multiplayer_setup.as_mut() {
-                        setup.cancel_pointer();
+                    if state.frontend.multiplayer_setup.is_some() {
+                        crate::app::input::multiplayer_setup::drop_pointer(state, false);
                     }
                     if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                         dialog.shell_cancel_pointer_gesture();

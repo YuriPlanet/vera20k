@@ -140,10 +140,12 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 && let Some(ui) = state.frontend.multiplayer_setup.as_mut()
             {
                 ui.page_rows(&view.pages, forward);
+                crate::app::input::multiplayer_setup::drop_pointer(state, true);
             }
             Ok(())
         }
         SetupAction::OpenBox(open) => {
+            crate::app::input::multiplayer_setup::drop_pointer(state, true);
             if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
                 ui.show_box(open);
             }
@@ -162,10 +164,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             Ok(())
         }
         SetupAction::MapOffer { download } => {
+            crate::app::input::multiplayer_setup::drop_pointer(state, false);
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
             };
-            ui.cancel_pointer();
             if download {
                 if let Some(offer) = ui.map_offer.as_mut() {
                     offer.downloading = true;

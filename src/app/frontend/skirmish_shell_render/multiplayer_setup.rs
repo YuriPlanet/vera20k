@@ -3,7 +3,7 @@
 
 use super::chrome::*;
 use super::controls::{
-    ControlPaint, dropdown_scroll_part, house_color_tint, list_controls, paint_control,
+    ControlPaint, dropdown_scroll_part, house_color_tint, list_view_controls, paint_control,
     push_new_edit, push_popup_instances, team_caption_tint,
 };
 use super::in_game_shell::{
@@ -96,6 +96,7 @@ pub(crate) fn render_multiplayer_setup(
         ))
         .collect::<Vec<_>>()
     };
+    let look = crate::app::input::multiplayer_setup::room_look(state, &view);
     let ui = state
         .frontend
         .multiplayer_setup
@@ -231,7 +232,7 @@ pub(crate) fn render_multiplayer_setup(
                     continue;
                 }
                 let rect = layout.control_rect(id).expect("roster navigation rect");
-                let pressed = ui.buttons.is_pressed(id);
+                let pressed = look.pressed(id);
                 buttons.push(ModalButton {
                     rect,
                     pressed,
@@ -299,7 +300,7 @@ pub(crate) fn render_multiplayer_setup(
             let id = team_join(row);
             let rect = layout.control_rect(id).expect("header button rect");
             let enabled = view.enabled(id);
-            let pressed = enabled && ui.buttons.is_pressed(id);
+            let pressed = enabled && look.pressed(id);
             // VERA's roster: Join is text at the column's right end, like
             // its cells, lit with its group's box under the pointer and grey
             // while it is closed.
@@ -310,7 +311,7 @@ pub(crate) fn render_multiplayer_setup(
                     ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
                     if !enabled {
                         ROOM_CLOSED_TEXT_RGB
-                    } else if pressed || ui.buttons.hovered == Some(id) {
+                    } else if pressed || look.target == Some(id) {
                         [1.0, 1.0, 1.0]
                     } else {
                         ROOM_TEXT_RGB
@@ -361,7 +362,7 @@ pub(crate) fn render_multiplayer_setup(
                 let lit = target == Some(row)
                     || header.join.is_some()
                         && view.enabled(id)
-                        && (ui.buttons.hovered == Some(id) || ui.buttons.is_pressed(id));
+                        && (look.target == Some(id) || look.pressed(id));
                 push_rect_outline(
                     &mut controls,
                     atlas,
@@ -405,7 +406,7 @@ pub(crate) fn render_multiplayer_setup(
                     ControlPaint::ScrollBar {
                         scrollbar,
                         thumb,
-                        pressed_part: ui.roster_scroll_pressed().map(dropdown_scroll_part),
+                        pressed_part: look.roster_scroll.map(dropdown_scroll_part),
                     },
                     scale,
                 );
@@ -448,7 +449,7 @@ pub(crate) fn render_multiplayer_setup(
                     continue;
                 };
                 let enabled = view.enabled(id);
-                let pressed = enabled && ui.buttons.is_pressed(id);
+                let pressed = enabled && look.pressed(id);
                 controls.extend(shell_paint::paint_modal_sprites(
                     None,
                     type3_button_frames(atlas),
@@ -503,7 +504,8 @@ pub(crate) fn render_multiplayer_setup(
                     &layout,
                     combo,
                     rect,
-                    ui.buttons.hovered == Some(combo.id) || ui.popup.control == Some(combo.id),
+                    look.target == Some(combo.id)
+                        || look.open.is_some_and(|(id, _)| id == combo.id),
                 );
                 continue;
             }
@@ -515,7 +517,7 @@ pub(crate) fn render_multiplayer_setup(
                     swatch: selected
                         .and_then(|item| item.swatch)
                         .map(|index| house_color_tint(state.rules(), index)),
-                    open: ui.popup.control == Some(combo.id),
+                    open: look.open.is_some_and(|(id, _)| id == combo.id),
                     disabled: !view.enabled(combo.id),
                 },
                 scale,
@@ -648,7 +650,13 @@ pub(crate) fn render_multiplayer_setup(
             scale,
         );
         let chat = layout.chat_list(&ui.chat.list, ui.chat.lines.len());
-        list_controls(&mut controls, atlas, chat, &ui.chat.list, false, scale);
+        list_view_controls(
+            &mut controls,
+            atlas,
+            chat,
+            (None, ui.chat.list.top_index, look.chat_scroll),
+            scale,
+        );
         for (visible, line) in ui
             .chat
             .lines
@@ -738,7 +746,7 @@ pub(crate) fn render_multiplayer_setup(
                 }
             }
             for button in &layout.page.buttons {
-                let pressed = ui.buttons.is_pressed(button.id);
+                let pressed = look.pressed(button.id);
                 push_right_panel_button_shp(
                     &mut art,
                     atlas,
@@ -773,7 +781,7 @@ pub(crate) fn render_multiplayer_setup(
         if let Some(rect) = layout.emote
             && let (Some(released), pressed_art) = atlas.wol_emote_images()
         {
-            let mut entry = if ui.buttons.is_pressed(EMOTE) {
+            let mut entry = if look.pressed(EMOTE) {
                 pressed_art.unwrap_or(released)
             } else {
                 released
@@ -798,9 +806,10 @@ pub(crate) fn render_multiplayer_setup(
             &labels,
             scale.factor(),
         ));
-        if let Some(popup) = ui.popup_geometry(&view, &layout)
-            && let Some(combo) = ui.popup.control.and_then(|id| view.combo(id))
+        if let Some((id, list)) = look.open
+            && let Some(combo) = view.combo(id)
         {
+            let popup = list.popup;
             let swatches = (popup.first..popup.first + popup.visible_rows).filter_map(|index| {
                 Some((
                     scale.derive_rect(popup.row_rect(index)?, |row| {
@@ -813,10 +822,10 @@ pub(crate) fn render_multiplayer_setup(
                 &mut overlay.controls,
                 atlas,
                 popup.rect,
-                ui.popup.hot_row.and_then(|index| popup.row_rect(index)),
+                list.hot_row.and_then(|index| popup.row_rect(index)),
                 swatches,
                 popup.scrollbar().zip(popup.thumb()),
-                ui.popup.scroll.pressed_part().map(dropdown_scroll_part),
+                list.pressed_part.map(dropdown_scroll_part),
                 scale,
                 SHELL_DROPDOWN_DEPTH - 0.00003,
             );
@@ -844,7 +853,7 @@ pub(crate) fn render_multiplayer_setup(
             && let Some(popup) = layout.game_options
         {
             let button = |id: u16, rect: RectPx, text: String| {
-                let pressed = ui.buttons.is_pressed(id);
+                let pressed = look.pressed(id);
                 let enabled = view.enabled(id);
                 let label = PaintLabel {
                     text: text.into(),
@@ -901,7 +910,7 @@ pub(crate) fn render_multiplayer_setup(
         {
             use crate::ui::shell::geom::ShellScale;
             let boxed = layout.map_offer;
-            let pressed = |id| ui.buttons.is_pressed(id);
+            let pressed = |id| look.pressed(id);
             let progress = offer
                 .downloading
                 .then(|| {
@@ -1005,22 +1014,18 @@ pub(crate) fn render_multiplayer_setup(
             &crate::ui::skirmish_shell::compute_layout_on(scale.centred(), width, height),
         );
         let modal = crate::ui::shell::modal::body_ok_layout(width as i32, height as i32);
-        let pressed = state.frontend.shell_controller.top_id()
-            == Some(crate::ui::shell::descriptor::DialogId(0xCE))
-            && state.frontend.shell_controller.pressed()
-                == Some(crate::ui::shell::modal::control::OK);
         super::modals::push_validation_modal_instances(
             &mut overlay.controls,
             atlas,
             &modal,
-            pressed,
+            look.notice_ok,
         );
         super::text::push_validation_modal_text_draws(
             &mut overlay.texts,
             state,
             notice,
             &modal,
-            pressed,
+            look.notice_ok,
         );
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).

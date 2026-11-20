@@ -10,34 +10,9 @@ use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::main_menu_dialogs::options::shell::{LauncherOptionsLayout, LauncherStatusHelp};
-use crate::ui::main_menu_dialogs::options::{
-    ColorVisionMode, HealthBarMode, LauncherCheckboxId, LauncherComboId, OptionsDialogState,
-    SidebarColumns, SidebarSize, Zoom,
-};
+use crate::ui::main_menu_dialogs::options::OptionsDialogState;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
-
-/// A Zoom row: the zoom and the battle's size in game pixels in this window,
-/// what `App::sync_zoom_pass` will give the match.
-pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape: bool) -> String {
-    use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
-    let shape = if original_shape {
-        FrameShape::Original
-    } else {
-        FrameShape::Window
-    };
-    let geometry = ZoomGeometry::new(width, height, zoom.percent(width, height), shape);
-    let (width, height) = (&geometry.src_width, &geometry.src_height);
-    match zoom {
-        Zoom::Auto => {
-            crate::i18n::tr_fill("VERA:ZoomAuto", &[("width", width), ("height", height)])
-        }
-        Zoom::Percent(percent) => crate::i18n::tr_fill(
-            "VERA:ZoomPercent",
-            &[("percent", &percent), ("width", width), ("height", height)],
-        ),
-    }
-}
 
 fn text_draw(
     font: &BitFont,
@@ -184,25 +159,9 @@ pub(super) fn build_text(
         })
     };
     for &(combo, rect) in &layout.combos {
-        let text = match combo {
-            LauncherComboId::Zoom => zoom_label(
-                dialog.shell_selected_zoom(layout),
-                layout.screen(),
-                dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape),
-            ),
-            LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label(),
-            LauncherComboId::SidebarColumns => dialog.shell_selected_sidebar_columns().label(),
-            LauncherComboId::Display => dialog.shell_display_label(),
-            LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label(),
-            LauncherComboId::ColorVision => dialog.shell_selected_color_vision().label(),
-            LauncherComboId::Ares => {
-                crate::ui::main_menu_dialogs::options::ares_label(dialog.shell_selected_ares())
-            }
-            LauncherComboId::Language => dialog.shell_language_label(),
-        };
         out.push(text_draw(
             font,
-            &text,
+            &dialog.shell_list(combo, layout).face,
             face_text(rect),
             ShellAlign::V_CENTER,
             SHELL_LABEL_TEXT_RGB,
@@ -256,37 +215,7 @@ pub(super) fn build_open_list(
         SHELL_DROPDOWN_DEPTH,
     );
     let text_inset = (3.0 * scale.factor()).round() as i32;
-    let original_shape = dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape);
-    let rows: Vec<String> = match popup.combo {
-        LauncherComboId::Zoom => layout
-            .zoom_choices()
-            .into_iter()
-            .map(|zoom| zoom_label(zoom, layout.screen(), original_shape))
-            .collect(),
-        LauncherComboId::Sidebar => layout
-            .sidebar_choices()
-            .into_iter()
-            .map(SidebarSize::label)
-            .collect(),
-        LauncherComboId::SidebarColumns => SidebarColumns::choices()
-            .into_iter()
-            .map(SidebarColumns::label)
-            .collect(),
-        LauncherComboId::Display => dialog.shell_display_rows(),
-        LauncherComboId::HealthBars => HealthBarMode::choices()
-            .into_iter()
-            .map(HealthBarMode::label)
-            .collect(),
-        LauncherComboId::Ares => crate::ui::main_menu_dialogs::options::ares_choices()
-            .into_iter()
-            .map(crate::ui::main_menu_dialogs::options::ares_label)
-            .collect(),
-        LauncherComboId::ColorVision => ColorVisionMode::choices()
-            .into_iter()
-            .map(ColorVisionMode::label)
-            .collect(),
-        LauncherComboId::Language => dialog.shell_language_rows(),
-    };
+    let rows = dialog.shell_list(popup.combo, layout).rows;
     for (i, row_text) in rows.iter().enumerate() {
         let rect = popup.row_rect(i);
         if popup.hovered.unwrap_or(popup.selected) == i {
@@ -374,12 +303,7 @@ pub(super) fn launcher_background_instances(
 ) -> Vec<SpriteInstance> {
     let common = crate::ui::skirmish_shell::compute_layout_on(scale, width, height);
     let mut out = Vec::new();
-    let background = if common.authored_width() == 640 {
-        atlas.generic_background_640_mnscrns_shell
-    } else {
-        atlas.generic_background_large_mnscrnl_shell
-    };
-    if let Some(background) = background {
+    if let Some(background) = super::modals::generic_shell_background_entry(atlas, &common) {
         if scale.is_retail() {
             push_entry_native(&mut out, background, 0, 0, SHELL_PARENT_BACKGROUND_DEPTH);
         } else {
@@ -633,8 +557,8 @@ pub(crate) fn render_launcher_options(
 
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
-    use super::{LauncherOptionsLayout, without_text_under, zoom_label};
-    use crate::ui::main_menu_dialogs::options::{LauncherComboId, OptionsDialogState, Zoom};
+    use super::{LauncherOptionsLayout, without_text_under};
+    use crate::ui::main_menu_dialogs::options::{LauncherComboId, OptionsDialogState, Zoom, zoom_label};
     use crate::ui::shell::geom::ShellScale;
 
     /// The open list covers the values in its column. The four setting

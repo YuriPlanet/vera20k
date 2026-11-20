@@ -1741,14 +1741,7 @@ impl LanCapture {
                         );
                         setup_click(state, arrow);
                         ensure!(
-                            state
-                                .frontend
-                                .multiplayer_setup
-                                .as_ref()
-                                .context("BC popup")?
-                                .popup
-                                .control
-                                == Some(control),
+                            setup_input::open_list(state).map(|(id, _)| id) == Some(control),
                             "actual combo arrow did not open its popup"
                         );
                         self.route
@@ -1807,13 +1800,7 @@ impl LanCapture {
                         "trackbar did not change canonical options"
                     );
                     ensure!(
-                        state
-                            .frontend
-                            .multiplayer_setup
-                            .as_ref()
-                            .context("BC trackbar release")?
-                            .trackbar_hold
-                            .is_none(),
+                        !setup_input::slider_held(state),
                         "trackbar capture survived mouse release"
                     );
                     ensure!(
@@ -1864,15 +1851,12 @@ impl LanCapture {
             } if rendered == PresentedShell::NetworkSetup => {
                 use crate::ui::multiplayer_setup::SetupColumn;
                 let view = setup::view(state).context("presented settings popup")?;
-                let layout = setup_input::layout(state);
-                let ui = state.frontend.multiplayer_setup.as_ref().context("BC")?;
+                let open = setup_input::open_list(state);
                 ensure!(
-                    ui.popup.control == Some(control),
+                    open.map(|(id, _)| id) == Some(control),
                     "settings popup changed before presentation"
                 );
-                let popup = ui
-                    .popup_geometry(&view, &layout)
-                    .context("presented popup geometry")?;
+                let popup = open.context("presented popup geometry")?.1.popup;
                 ensure!(
                     view.combo(control)
                         .and_then(|combo| combo.choices.get(index))
@@ -1883,14 +1867,7 @@ impl LanCapture {
                 let row_rect = popup.row_rect(index).context("visible popup choice")?;
                 setup_click(state, row_rect);
                 ensure!(
-                    state
-                        .frontend
-                        .multiplayer_setup
-                        .as_ref()
-                        .context("BC")?
-                        .popup
-                        .control
-                        .is_none(),
+                    setup_input::open_list(state).is_none(),
                     "choice click did not close popup"
                 );
                 let (column, row) =

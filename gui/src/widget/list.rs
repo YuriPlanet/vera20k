@@ -87,6 +87,9 @@ fn row_count(n: &Node) -> usize {
 pub(crate) fn view(tree: &Tree, node: NodeId) -> Option<ListView> {
     let n = tree.node(node).ok()?;
     let pressed = match &n.state {
+        WidgetState::List(state) if n.bool_prop(Prop::HeldArrow, false) => {
+            state.list.scroll.captured_part().filter(|p| matches!(p, ListScrollPart::Up | ListScrollPart::Down))
+        }
         WidgetState::List(state) => state.list.scroll.pressed_part(),
         _ => None,
     };
@@ -106,8 +109,11 @@ fn with_list<R>(
     f: impl FnOnce(&mut ListState, Rect, ListMetrics, &mut Vec<UiEvent>) -> R,
 ) -> Option<R> {
     let mut rect = ctx.tree.screen_rect(node).ok()?;
-    let metrics = ListMetrics::scaled(ctx.scale);
+    let mut metrics = ListMetrics::scaled(ctx.scale);
     let n = ctx.tree.node_mut(node).ok()?;
+    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
+        metrics.row_h = (*row_h).max(1);
+    }
     if n.bool_prop(Prop::ListWindow, false) {
         // The substrate grows its window by one: hand it one less.
         rect = Rect::new(rect.x, rect.y, rect.w - 1, rect.h - 1);
@@ -122,6 +128,10 @@ fn with_list<R>(
     state.list.rows.resize(count, ());
     state.list.top = top;
     state.list.selected = selected;
+    state.list.visible_rows = match n.props.get(&Prop::VisibleRows) {
+        Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
+        _ => None,
+    };
     let result = f(&mut state, rect, metrics, ctx.events);
     let (new_top, new_selected) = (state.list.top, state.list.selected);
     let n = ctx.tree.node_mut(node).ok()?;
@@ -149,9 +159,11 @@ pub(crate) fn cancel_scroll(tree: &mut Tree, node: NodeId) {
     }
 }
 
-/// A press on another node ends the list's double-click sequence.
+/// A press on another node ends the list's double-click sequence, unless
+/// the list keeps it (`DoubleClickAcross`).
 pub(crate) fn forget_press(tree: &mut Tree, node: NodeId) {
     if let Ok(n) = tree.node_mut(node)
+        && !n.bool_prop(Prop::DoubleClickAcross, false)
         && let WidgetState::List(state) = &mut n.state
     {
         state.list.last_press = None;
@@ -271,9 +283,15 @@ pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
 /// Timers (scroll-arrow repeat): the next time the list wants a poll.
 pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<UiMs> {
     let now = instant(ctx.now);
+    let held = ctx.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::HeldArrow, false));
     with_list(ctx, node, |s, rect, metrics, _| {
         let (x, y) = s.pointer;
-        s.list.scroll_poll(rect, metrics, x, y, now);
+        if held {
+            let geometry = s.list.geometry(rect, metrics);
+            s.list.scroll.poll_held(geometry.max_top, &mut s.list.top, now);
+        } else {
+            s.list.scroll_poll(rect, metrics, x, y, now);
+        }
         s.list.scroll.repeat_at().map(ui_ms)
     })
     .flatten()
@@ -447,6 +465,25 @@ mod tests {
         );
         assert_eq!(g.poll(600), None);
         assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(2)));
+    }
+
+    #[test]
+    fn a_held_arrow_list_steps_off_the_pointer_and_pairs_across_other_presses() {
+        let (mut g, list) = list_page(Value::Items(vec![String::new(); 60]));
+        g.set(list, Prop::HeldArrow, Value::Bool(true)).unwrap();
+        g.set(list, Prop::DoubleClickAcross, Value::Bool(true)).unwrap();
+        g.input(InputEvent::PointerMove { x: 400, y: 270 }, 0);
+        g.input(InputEvent::PointerDown { x: 400, y: 270, button: MouseButton::Left }, 0);
+        g.input(InputEvent::PointerMove { x: 50, y: 50 }, 10);
+        assert_eq!(g.list_view(list).unwrap().pressed, Some(crate::shell::list::ListScrollPart::Down));
+        g.poll(500);
+        assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(2)));
+        g.input(InputEvent::PointerUp { x: 50, y: 50, button: MouseButton::Left }, 510);
+        // Row, a press on nothing, the row again: still a double-click.
+        let row = 20 + 19 + 5;
+        click(&mut g, 50, row, 2000);
+        click(&mut g, 600, 500, 2100);
+        assert_eq!(click(&mut g, 50, row, 2200), vec![UiEvent::ListDoubleClicked { node: list, row: 3 }]);
     }
 
     #[test]

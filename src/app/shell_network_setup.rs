@@ -1288,6 +1288,8 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
 /// VERA asks first: a guest's online room offers its map before the
 /// transfer downloads it (`shell_wol::live_service::maps`).
 pub(crate) fn offer_missing_map(state: &mut AppState, name: String, message: String) {
+    // The offer takes the pointer from a row's open list too.
+    crate::app::input::multiplayer_setup::drop_pointer(state, true);
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.map_offer = Some(crate::ui::multiplayer_setup::MapOffer {
             name,
@@ -1295,9 +1297,6 @@ pub(crate) fn offer_missing_map(state: &mut AppState, name: String, message: Str
             downloading: false,
             opened: Instant::now(),
         });
-        // The offer takes the pointer from a row's open list too.
-        ui.cancel_pointer();
-        ui.popup.close();
     }
     state.platform.window.request_redraw();
 }
@@ -1326,7 +1325,8 @@ pub(crate) fn acknowledge_notice(state: &mut AppState) {
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.notice = None;
     }
-    state.frontend.shell_controller.pop();
+    let notice = crate::ui::multiplayer_setup::NOTICE_BOX;
+    state.frontend.shell_controller.close(notice);
     if state
         .frontend
         .network_setup_protocol

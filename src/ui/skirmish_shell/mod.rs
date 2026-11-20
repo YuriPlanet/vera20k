@@ -17,7 +17,7 @@ pub use layout::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H,
     COMBO_DROPDOWN_SCROLLBAR_W, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalButton,
     AdvancedField, ChooseMapModalLayout, ColorComboId, DropdownMetrics, RANDOM_MAP_TITLE_KEY, RIGHT_PANEL_WIDTH,
-    RandomMapSetupControl, RandomMapSetupLayout, RectPx, SavedSeedControl, SavedSeedLayout,
+    RandomMapSetupControl, RandomMapSetupLayout, RectPx, SavedSeedLayout,
     SavedSeedMode, ShellControlId, SkirmishCheckboxId, SkirmishCheckboxRect,
     SkirmishColumnLabelRects, SkirmishRightPanelTextRects, SkirmishRowRects, SkirmishShellLayout,
     SkirmishTrackbarId, SkirmishTrackbarLabelRects, SkirmishTrackbarRects, checkbox_icon_rect,
@@ -30,7 +30,7 @@ pub use layout::{
     compute_responsive_random_map_setup_layout,
     compute_responsive_saved_seed_layout, compute_responsive_setups_layout, compute_saved_seed_layout,
     compute_setups_layout, player_name_edit_client_rect,
-    player_name_edit_text_rect, random_map_setup_dropdown_rect, saved_seed_control_at,
+    player_name_edit_text_rect, random_map_setup_dropdown_rect,
 };
 pub(crate) use state::CountryMenuCatalog;
 pub(crate) use state::status_help_key_for_hover_with_catalog;
@@ -45,7 +45,6 @@ pub use state::{
     EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SETUP_COMBO_ROWS, SavedSeedBrowserRow, SavedSeedBrowserState,
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
-    SeedDescriptionEdit,
     SetupCombo, SetupComboItem, SkirmishAiRowType, SkirmishComboId, SkirmishComboItem,
     SkirmishCountryChoice, SkirmishHoverTarget, SkirmishSavedSetup, SkirmishSetupComputer,
     starts_by_team,
@@ -64,4 +63,4 @@ pub use state::{
     };
 
 pub mod game_options;
-pub mod seed_list;
+pub(crate) use state::saved_seed_browser;

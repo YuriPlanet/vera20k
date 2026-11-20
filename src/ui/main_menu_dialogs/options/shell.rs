@@ -11,30 +11,13 @@
 //! with the shared widget painter.
 
 use super::{
-    ARES_HELP, ARES_LABEL, AUTO_REPAIR_HELP, AUTO_REPAIR_LABEL, BUILDING_PRODUCTION_QUEUE_HELP,
-    BUILDING_PRODUCTION_QUEUE_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL,
-    COLOR_VISION_HELP, COLOR_VISION_LABEL, COMMANDER_FEEDBACK_HELP, COMMANDER_FEEDBACK_LABEL,
-    COMPACT_SUPER_TIMERS_HELP, COMPACT_SUPER_TIMERS_LABEL, CONTROLS_LABEL, CONVENIENCE_HELP_HELP,
-    CONVENIENCE_HELP_LABEL, CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL,
-    CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP,
-    CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, DETAILED_EVA_TEXT_HELP,
-    DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget,
-    EDIT_LAYOUT_HELP, EDIT_LAYOUT_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, GENERAL_LABEL,
-    HAS_CHECK_FOR_UPDATES, HAS_MODS, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP,
-    HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL,
-    HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
-    IN_GAME_OPTIONS_BACK_HELP, IN_GAME_OPTIONS_HELP, LANGUAGE_HELP, LANGUAGE_LABEL,
-    LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId,
-    LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
-    MINIMAP_BEACONS_HELP, MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL,
-    NOT_IN_MATCH_HELP, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
-    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_COLUMNS_HELP,
-    SIDEBAR_COLUMNS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
-    SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
-    Setting, SidebarColumns, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
-    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, Category, ColorVisionMode, DISPLAY_AUTO_LABEL,
+    EDIT_LAYOUT_HELP, EDIT_LAYOUT_LABEL, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES, HAS_MODS,
+    HAS_SET_WINDOW_SIZE, HealthBarMode, IN_GAME_OPTIONS_BACK_HELP, IN_GAME_OPTIONS_HELP, LANGUAGE_LABEL,
+    LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent,
+    LauncherParentResult, LauncherTrackbarId, NOT_IN_MATCH_HELP, OptionsDialogState,
+    PERFORMANCE_STATS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, Setting, SidebarColumns,
+    SidebarSize, Zoom,
 };
 use std::borrow::Cow;
 
@@ -53,15 +36,19 @@ use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageSpec};
 use crate::ui::shell::modal::esc_menu_box_layout_on;
 use crate::ui::skirmish_shell::COMBO_FACE_H;
 
-/// What the status line says for a control.
+/// What the status line says for a control, and the key of a caption the
+/// dialog shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherStatusHelp {
-    /// A retail `STT:` string-table key.
+    /// A retail `STT:` string-table key; for a caption, one of
+    /// [`super::LAUNCHER_LABEL_SPECS`].
     Csf(&'static str),
     /// A label of VERA's language files ([`crate::i18n`]), for the controls
     /// retail never had.
     Vera(&'static str),
 }
+
+use LauncherStatusHelp::{Csf, Vera};
 
 /// A control of the dialog, as the node standing for it in the tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +85,7 @@ impl Control {
         matches!(self, Self::Label(_) | Self::Slider(_) | Self::Check(_))
     }
 }
+
 
 /// One control the layout asks for, with what its node shows.
 struct Wanted {
@@ -888,6 +876,33 @@ impl LauncherComboPopup {
     }
 }
 
+
+/// A list's rows on a layout, the row and text its face shows, and what a pick
+/// of each row publishes.
+pub(crate) struct LauncherList {
+    pub(crate) rows: Vec<String>,
+    pub(crate) shown: Option<usize>,
+    pub(crate) face: String,
+    picks: Vec<LauncherOptionsEvent>,
+}
+
+impl LauncherList {
+    /// `choices` with `shown` on the face.
+    fn new<T: PartialEq>(
+        choices: Vec<T>,
+        shown: &T,
+        label: impl Fn(&T) -> String,
+        pick: fn(T) -> LauncherOptionsEvent,
+    ) -> Self {
+        Self {
+            rows: choices.iter().map(&label).collect(),
+            shown: choices.iter().position(|choice| choice == shown),
+            face: label(shown),
+            picks: choices.into_iter().map(pick).collect(),
+        }
+    }
+}
+
 impl OptionsDialogState {
     /// Native61E3AF..61E44E drops held/drag state once MK_LBUTTON is absent.
     /// Focus loss is the host's authoritative lost-gesture boundary; an open
@@ -928,27 +943,6 @@ impl OptionsDialogState {
         (&self.shell.gui, self.shell.widgets)
     }
 
-    #[cfg(test)]
-    pub(crate) fn shell_labels(
-        &self,
-        layout: &LauncherOptionsLayout,
-    ) -> Vec<LauncherShellLabel<'_>> {
-        let mut result = vec![LauncherShellLabel {
-            rect: layout.title,
-            text: Cow::Borrowed(self.shell_title_text()),
-        }];
-        result.extend(
-            layout
-                .labels
-                .iter()
-                .map(|&(rect, label)| LauncherShellLabel {
-                    rect,
-                    text: self.page_label(layout, label).0,
-                }),
-        );
-        result
-    }
-
     /// A page label's text and alignment: left, but a step name sits
     /// right-aligned over its track's end.
     fn page_label(
@@ -959,11 +953,12 @@ impl OptionsDialogState {
         let (left, right) = (ShellAlign::NONE, ShellAlign::H_RIGHT);
         match label {
             PageLabel::Heading => (self.shell_category_label(layout.category), left),
-            PageLabel::List(id) => (Cow::Owned(list_caption(id)), left),
+            PageLabel::List(id) => (Cow::Owned(tr(id.text().0)), left),
             PageLabel::Localized(key) => (Cow::Owned(tr(key)), left),
-            PageLabel::Slider(id) => (self.slider_caption(id), left),
+            PageLabel::Slider(LauncherTrackbarId::GameSpeed) => (self.game_speed_caption.as_str().into(), left),
+            PageLabel::Slider(id) => (self.text(id.text().0), left),
             PageLabel::Step(id) => (Cow::Borrowed(self.slider_step(id)), right),
-            PageLabel::Blank => (Cow::Borrowed(self.labels.blank.as_str()), left),
+            PageLabel::Blank => (Cow::Borrowed(self.labels.get("GUI:Blank")), left),
         }
     }
 
@@ -971,44 +966,24 @@ impl OptionsDialogState {
     /// has, VERA's own for Controls and General, and the in-game menu's own
     /// button for Game Controls.
     pub(crate) fn shell_category_label(&self, category: Category) -> Cow<'_, str> {
-        Cow::Borrowed(match category {
-            Category::Display => &self.labels.display_options,
-            Category::Gameplay => &self.labels.game_options,
-            Category::Interface => &self.labels.ui_options,
-            Category::Audio => &self.labels.audio_options,
-            Category::Controls => return Cow::Owned(tr(CONTROLS_LABEL)),
-            Category::General => return Cow::Owned(tr(GENERAL_LABEL)),
-            Category::GameControls => &self.labels.game_controls,
-        })
-    }
-
-    fn slider_caption(&self, id: LauncherTrackbarId) -> Cow<'_, str> {
-        Cow::Borrowed(match id {
-            LauncherTrackbarId::Detail => &self.labels.visual_details,
-            LauncherTrackbarId::Difficulty => &self.labels.difficulty,
-            LauncherTrackbarId::Scroll => &self.labels.scroll_rate,
-            LauncherTrackbarId::Score => &self.labels.music_volume,
-            LauncherTrackbarId::Sound => &self.labels.sound_volume,
-            LauncherTrackbarId::Voice => &self.labels.voice_volume,
-            LauncherTrackbarId::HouseColorStrength => {
-                return Cow::Owned(tr(HOUSE_COLOR_STRENGTH_LABEL));
-            }
-            LauncherTrackbarId::GameSpeed => &self.game_speed_caption,
+        self.text(match category {
+            Category::Display => Csf("GUI:DisplayOptions"),
+            Category::Gameplay => Csf("GUI:GameOptions"),
+            Category::Interface => Csf("GUI:UIOptions"),
+            Category::Audio => Csf("GUI:AudioOptions"),
+            Category::Controls => Vera("VERA:Controls"),
+            Category::General => Vera("VERA:General"),
+            Category::GameControls => Csf("GUI:GameControls"),
         })
     }
 
     /// The step name a plaque-less slider prints; a plaque slider shows its
     /// value on the plaque instead.
-    fn slider_step(&self, id: LauncherTrackbarId) -> &str {
+    pub(super) fn slider_step(&self, id: LauncherTrackbarId) -> &str {
+        let position = usize::from(self.trackbar_position(id));
         match id {
-            LauncherTrackbarId::Detail => &self.detail_caption,
-            LauncherTrackbarId::Difficulty => &self.difficulty_caption,
-            LauncherTrackbarId::Scroll => &self.scroll_caption,
-            LauncherTrackbarId::GameSpeed => self
-                .game_speed_names
-                .get(usize::from(self.game_speed_position))
-                .map_or("", String::as_str),
-            _ => "",
+            LauncherTrackbarId::GameSpeed => self.game_speed_names.get(position).map_or("", String::as_str),
+            _ => id.text().2.get(position).map_or("", |key| self.labels.get(key)),
         }
     }
 
@@ -1019,73 +994,35 @@ impl OptionsDialogState {
         id: LauncherCheckboxId,
     ) -> Cow<'_, str> {
         if matches!(layout.surface, OptionsSurface::EscMenu(_)) {
-            return Cow::Borrowed(if self.shell_checkbox_checked(id) {
-                &self.labels.yes
-            } else {
-                &self.labels.no
-            });
+            let checked = self.shell_checkbox_checked(id);
+            return Cow::Borrowed(self.labels.get(if checked { "GUI:Yes" } else { "GUI:No" }));
         }
         self.shell_checkbox_label(id)
     }
 
-    fn shell_checkbox_label(&self, id: LauncherCheckboxId) -> Cow<'_, str> {
-        Cow::Owned(tr(match id {
-            LauncherCheckboxId::Tooltips => return Cow::Borrowed(&self.labels.tooltips),
-            LauncherCheckboxId::TargetLines => return Cow::Borrowed(&self.labels.target_lines),
-            LauncherCheckboxId::ShowHidden => return Cow::Borrowed(&self.labels.show_hidden),
-            LauncherCheckboxId::FullScreen => FULL_SCREEN_LABEL,
-            LauncherCheckboxId::OriginalShape => ORIGINAL_SHAPE_LABEL,
-            LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
-            LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
-            LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
-            LauncherCheckboxId::MinimapBeacons => MINIMAP_BEACONS_LABEL,
-            LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
-            LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
-            LauncherCheckboxId::HdRadar => HD_RADAR_LABEL,
-            LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
-            LauncherCheckboxId::SmoothOnlineMenus => SMOOTH_ONLINE_MENUS_LABEL,
-            LauncherCheckboxId::VSync => super::VSYNC_LABEL,
-            LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
-            LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
-            LauncherCheckboxId::AutoRepair => AUTO_REPAIR_LABEL,
-            LauncherCheckboxId::PerformanceStats => PERFORMANCE_STATS_LABEL,
-            LauncherCheckboxId::ShowStringKeys => SHOW_STRING_KEYS_LABEL,
-            LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
-            LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
-            LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
-            LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
-            LauncherCheckboxId::CommanderFeedback => COMMANDER_FEEDBACK_LABEL,
-            LauncherCheckboxId::DetailedEvaText => DETAILED_EVA_TEXT_LABEL,
-            LauncherCheckboxId::ConvenienceHelp => CONVENIENCE_HELP_LABEL,
-            LauncherCheckboxId::BuildingProductionQueue => BUILDING_PRODUCTION_QUEUE_LABEL,
-            LauncherCheckboxId::CompactSuperTimers => COMPACT_SUPER_TIMERS_LABEL,
-        }))
+    pub(crate) fn shell_checkbox_label(&self, id: LauncherCheckboxId) -> Cow<'_, str> {
+        self.text(id.spec().0)
     }
 
     pub(crate) fn shell_button_label(&self, id: LauncherButton) -> Cow<'_, str> {
-        match id {
-            LauncherButton::Exit(LauncherParentResult::Keyboard) => {
-                Cow::Borrowed(&self.labels.keyboard)
+        self.text(match id {
+            LauncherButton::Exit(LauncherParentResult::Keyboard) | LauncherButton::InGameKeyboard => {
+                Csf("GUI:Keyboard")
             }
-            LauncherButton::Exit(LauncherParentResult::Back) => {
-                Cow::Borrowed(&self.labels.main_menu)
-            }
-            LauncherButton::Exit(LauncherParentResult::Mods) => {
-                Cow::Owned(tr(crate::ui::mods_shell::TITLE_KEY))
-            }
-            LauncherButton::Exit(LauncherParentResult::Terminal) => Cow::Borrowed(""),
-            LauncherButton::Category(category) => self.shell_category_label(category),
-            LauncherButton::InGameOptions => Cow::Borrowed(&self.labels.options),
-            LauncherButton::InGameBack => Cow::Borrowed(&self.labels.back),
-            LauncherButton::CheckForUpdates => Cow::Owned(tr(CHECK_FOR_UPDATES_LABEL)),
-            LauncherButton::EditLayout => Cow::Owned(tr(EDIT_LAYOUT_LABEL)),
+            LauncherButton::Exit(LauncherParentResult::Back) => Csf("GUI:MainMenu"),
+            LauncherButton::Exit(LauncherParentResult::Mods) => Vera(crate::ui::mods_shell::TITLE_KEY),
+            LauncherButton::Exit(LauncherParentResult::Terminal) => return Cow::Borrowed(""),
+            LauncherButton::Category(category) => return self.shell_category_label(category),
+            LauncherButton::InGameOptions => Csf("GUI:OptionsMenu"),
+            LauncherButton::InGameBack => Csf("GUI:Back"),
+            LauncherButton::CheckForUpdates => Vera(CHECK_FOR_UPDATES_LABEL),
+            LauncherButton::EditLayout => Vera(EDIT_LAYOUT_LABEL),
             LauncherButton::SetWindowSize => {
                 let (width, height) = self.launch_window_size;
-                Cow::Owned(format!("{width}x{height}"))
+                return Cow::Owned(format!("{width}x{height}"));
             }
-            LauncherButton::InGameKeyboard => Cow::Borrowed(&self.labels.keyboard),
-            LauncherButton::InGameSound => Cow::Borrowed(&self.in_game_sound_label),
-        }
+            LauncherButton::InGameSound => return Cow::Borrowed(&self.in_game_sound_label),
+        })
     }
 
     /// Whether `id` is the column button of the page that shows.
@@ -1095,23 +1032,7 @@ impl OptionsDialogState {
 
     /// The dialog's heading, the same on every page.
     pub(crate) fn shell_title_text(&self) -> &str {
-        &self.labels.options
-    }
-
-    #[cfg(test)]
-    pub(crate) fn shell_trackbar_thumb_left(
-        &self,
-        id: LauncherTrackbarId,
-        window: RectPx,
-        scale: ShellScale,
-    ) -> i32 {
-        crate::ui::shell::trackbar::thumb_left_at(
-            i32::from(self.trackbar_position(id)),
-            window,
-            id.plaque_reserve(),
-            i32::from(id.maximum()),
-            scale,
-        )
+        self.labels.get("GUI:OptionsMenu")
     }
 
     /// The zoom the face shows: a fixed choice this window can't reach shows
@@ -1122,6 +1043,7 @@ impl OptionsDialogState {
             fixed => Zoom::Percent(fixed.percent(layout.screen.0, layout.screen.1)),
         }
     }
+
     /// The pushed look: the button holds the press and the pointer is still
     /// on it (612B70).
     pub(crate) fn shell_button_pressed(&self, id: LauncherButton) -> bool {
@@ -1137,138 +1059,56 @@ impl OptionsDialogState {
         self.values.sidebar.in_effect(width, height)
     }
 
-    /// The Sidebar Columns face's text: the retained choice.
-    pub(crate) fn shell_selected_sidebar_columns(&self) -> SidebarColumns {
-        self.values.sidebar_columns
-    }
-
-    /// The Health Bars face's text: the retained choice.
-    pub(crate) fn shell_selected_health_bars(&self) -> HealthBarMode {
-        self.values.health_bars
-    }
-
-    pub(crate) fn shell_selected_ares(&self) -> crate::util::ares_launch::AresSetting {
-        self.values.ares
-    }
-
-    /// The Colour Vision face's text: the retained choice.
-    pub(crate) fn shell_selected_color_vision(&self) -> ColorVisionMode {
-        self.values.color_vision
-    }
-
-    /// The Display list's rows, top to bottom: Auto, then every screen the
-    /// window layer reported. Auto is first so a profile whose saved screen is
-    /// gone still shows a picked row.
-    pub(crate) fn display_choices(&self) -> Vec<DisplayTarget> {
-        std::iter::once(DisplayTarget::Auto)
-            .chain(
-                self.displays
-                    .iter()
-                    .map(|choice| DisplayTarget::Fixed(choice.id.clone())),
-            )
-            .collect()
-    }
-
-    /// The Display face's text: the picked screen's row text, or just the id
-    /// when the window layer no longer lists it.
-    pub(crate) fn shell_display_label(&self) -> String {
-        match &self.display {
-            DisplayTarget::Auto => tr(DISPLAY_AUTO_LABEL),
-            DisplayTarget::Fixed(id) => self
-                .displays
-                .iter()
-                .position(|choice| &choice.id == id)
-                .map_or_else(|| id.clone(), |index| self.displays[index].label(index + 1)),
-        }
-    }
-
-    /// The Display popup's rows, top to bottom: [`DISPLAY_AUTO_LABEL`], then
-    /// each screen's `DisplayChoice::label`, numbered from 1.
-    pub(crate) fn shell_display_rows(&self) -> Vec<String> {
-        std::iter::once(tr(DISPLAY_AUTO_LABEL))
-            .chain(
-                self.displays
-                    .iter()
-                    .enumerate()
-                    .map(|(index, choice)| choice.label(index + 1)),
-            )
-            .collect()
-    }
-
-    /// The Language face's text: the language in use, by its own name.
-    pub(crate) fn shell_language_label(&self) -> String {
-        self.languages
-            .iter()
-            .find(|choice| choice.tag == self.language)
-            .map_or_else(|| self.language.clone(), |choice| choice.name.clone())
-    }
-
-    /// The Language popup's rows, top to bottom: each language's own name.
-    pub(crate) fn shell_language_rows(&self) -> Vec<String> {
-        self.languages
-            .iter()
-            .map(|choice| choice.name.clone())
-            .collect()
-    }
-
-    /// The rows `combo`'s list offers on this page, and the one its face shows.
-    fn combo_rows(
-        &self,
-        combo: LauncherComboId,
-        layout: &LauncherOptionsLayout,
-    ) -> (usize, Option<usize>) {
+    /// `combo`'s list on this page. The Display list shows a screen the window
+    /// layer no longer lists by its id, numbering the others from 1; the
+    /// Language list names each language in its own words.
+    pub(crate) fn shell_list(&self, combo: LauncherComboId, layout: &LauncherOptionsLayout) -> LauncherList {
+        use LauncherOptionsEvent as E;
+        let v = &self.values;
         match combo {
             LauncherComboId::Zoom => {
-                let choices = layout.zoom_choices();
-                let shown = self.shell_selected_zoom(layout);
-                let selected = choices.iter().position(|zoom| *zoom == shown);
-                (choices.len(), selected)
+                let (screen, original_shape) = (layout.screen, v.original_shape);
+                let label = |zoom: &Zoom| super::zoom_label(*zoom, screen, original_shape);
+                LauncherList::new(layout.zoom_choices(), &self.shell_selected_zoom(layout), label, E::ZoomSelected)
             }
             LauncherComboId::Sidebar => {
-                let choices = layout.sidebar_choices();
                 let shown = self.shell_selected_sidebar(layout);
-                let selected = choices.iter().position(|size| *size == shown);
-                (choices.len(), selected)
+                LauncherList::new(layout.sidebar_choices(), &shown, |size| size.label(), E::SidebarSelected)
             }
             LauncherComboId::SidebarColumns => {
                 let choices = SidebarColumns::choices();
-                let selected = choices
-                    .iter()
-                    .position(|columns| *columns == self.values.sidebar_columns);
-                (choices.len(), selected)
-            }
-            LauncherComboId::Display => {
-                let rows = self.display_choices();
-                let selected = rows.iter().position(|target| target == &self.display);
-                (rows.len(), selected)
+                LauncherList::new(choices, &v.sidebar_columns, |c| c.label(), E::SidebarColumnsSelected)
             }
             LauncherComboId::HealthBars => {
-                let choices = HealthBarMode::choices();
-                let selected = choices
-                    .iter()
-                    .position(|mode| *mode == self.values.health_bars);
-                (choices.len(), selected)
+                LauncherList::new(HealthBarMode::choices(), &v.health_bars, |m| m.label(), E::HealthBarModeSelected)
             }
             LauncherComboId::ColorVision => {
                 let choices = ColorVisionMode::choices();
-                let selected = choices
-                    .iter()
-                    .position(|mode| *mode == self.values.color_vision);
-                (choices.len(), selected)
+                LauncherList::new(choices, &v.color_vision, |m| m.label(), E::ColorVisionModeSelected)
             }
             LauncherComboId::Ares => {
-                let choices = super::ares_choices();
-                let selected = choices
-                    .iter()
-                    .position(|setting| *setting == self.values.ares);
-                (choices.len(), selected)
+                LauncherList::new(super::ares_choices(), &v.ares, |s| super::ares_label(*s), E::AresSelected)
+            }
+            LauncherComboId::Display => {
+                let label = |target: &super::DisplayTarget| match target {
+                    super::DisplayTarget::Auto => tr(DISPLAY_AUTO_LABEL),
+                    super::DisplayTarget::Fixed(id) => self
+                        .displays
+                        .iter()
+                        .position(|choice| &choice.id == id)
+                        .map_or_else(|| id.clone(), |index| self.displays[index].label(index + 1)),
+                };
+                LauncherList::new(self.display_choices(), &self.display, label, E::DisplaySelected)
             }
             LauncherComboId::Language => {
-                let selected = self
-                    .languages
-                    .iter()
-                    .position(|choice| choice.tag == self.language);
-                (self.languages.len(), selected)
+                let tags = self.languages.iter().map(|choice| choice.tag.clone()).collect();
+                let label = |tag: &String| {
+                    self.languages
+                        .iter()
+                        .find(|choice| &choice.tag == tag)
+                        .map_or_else(|| tag.clone(), |choice| choice.name.clone())
+                };
+                LauncherList::new(tags, &self.language, label, E::LanguageSelected)
             }
         }
     }
@@ -1290,7 +1130,7 @@ impl OptionsDialogState {
             rect: popup.rect,
             row_height: popup.row_height,
             rows: popup.total,
-            selected: self.combo_rows(combo, layout).1.unwrap_or(0),
+            selected: self.shell_list(combo, layout).shown.unwrap_or(0),
             hovered: self.shell.popup_hovered,
         })
     }
@@ -1310,98 +1150,38 @@ impl OptionsDialogState {
     ) -> Option<LauncherStatusHelp> {
         let id = match control {
             Control::Button(id) => id,
-            Control::Slider(id) => return Some(self.slider_help(id)),
-            Control::Check(id) => return Some(checkbox_help(id)),
-            Control::List(combo) => {
-                return Some(LauncherStatusHelp::Vera(match combo {
-                    LauncherComboId::Zoom => ZOOM_HELP,
-                    LauncherComboId::Sidebar => SIDEBAR_HELP,
-                    LauncherComboId::SidebarColumns => SIDEBAR_COLUMNS_HELP,
-                    LauncherComboId::Display => DISPLAY_HELP,
-                    LauncherComboId::HealthBars => HEALTH_BARS_HELP,
-                    LauncherComboId::ColorVision => COLOR_VISION_HELP,
-                    LauncherComboId::Ares => ARES_HELP,
-                    LauncherComboId::Language => LANGUAGE_HELP,
-                }));
-            }
+            // A slider greyed for want of sound keeps its own help.
+            Control::Slider(id) if self.in_match && id.fixed_in_match() => return Some(Vera(NOT_IN_MATCH_HELP)),
+            Control::Slider(id) => return Some(id.text().1),
+            Control::Check(id) => return Some(id.spec().1),
+            Control::List(combo) => return Some(Vera(combo.text().1)),
             Control::Label(_) => return None,
         };
-        let control = match id {
-            LauncherButton::Category(category) => {
-                return category.help().map(LauncherStatusHelp::Vera);
-            }
-            LauncherButton::InGameOptions => {
-                return Some(LauncherStatusHelp::Vera(IN_GAME_OPTIONS_HELP));
-            }
-            LauncherButton::InGameBack => {
-                return Some(LauncherStatusHelp::Vera(IN_GAME_OPTIONS_BACK_HELP));
-            }
-            LauncherButton::CheckForUpdates => {
-                return Some(LauncherStatusHelp::Vera(if self.button_enabled(id) {
-                    CHECK_FOR_UPDATES_HELP
-                } else {
-                    NOT_IN_MATCH_HELP
-                }));
-            }
+        let in_game = layout.surface == OptionsSurface::InGame;
+        Some(match id {
+            LauncherButton::Category(category) => return category.help().map(Vera),
+            LauncherButton::InGameOptions => Vera(IN_GAME_OPTIONS_HELP),
+            LauncherButton::InGameBack => Vera(IN_GAME_OPTIONS_BACK_HELP),
+            LauncherButton::CheckForUpdates if self.button_enabled(id) => Vera(CHECK_FOR_UPDATES_HELP),
+            LauncherButton::CheckForUpdates => Vera(NOT_IN_MATCH_HELP),
             // Its help starts with "in a match", so the greyed button
             // says why as well.
-            LauncherButton::EditLayout => {
-                return Some(LauncherStatusHelp::Vera(EDIT_LAYOUT_HELP));
-            }
-            LauncherButton::Exit(LauncherParentResult::Mods) => {
-                return Some(LauncherStatusHelp::Vera(
-                    crate::ui::mods_shell::BUTTON_HELP_KEY,
-                ));
-            }
+            LauncherButton::EditLayout => Vera(EDIT_LAYOUT_HELP),
+            LauncherButton::Exit(LauncherParentResult::Mods) => Vera(crate::ui::mods_shell::BUTTON_HELP_KEY),
             // The main menu's Esc box has no status line; the in-game
             // menu has.
-            LauncherButton::SetWindowSize => {
-                return (layout.surface == OptionsSurface::InGame)
-                    .then_some(LauncherStatusHelp::Vera(SET_WINDOW_SIZE_HELP));
-            }
+            LauncherButton::SetWindowSize => return in_game.then_some(Vera(SET_WINDOW_SIZE_HELP)),
             // Retail's strings for the in-game Game Options buttons.
-            LauncherButton::InGameKeyboard => {
-                return Some(LauncherStatusHelp::Csf(IN_GAME_KEYBOARD_HELP));
+            LauncherButton::InGameKeyboard => Csf(IN_GAME_KEYBOARD_HELP),
+            LauncherButton::Exit(LauncherParentResult::Keyboard) if in_game => Csf(IN_GAME_KEYBOARD_HELP),
+            LauncherButton::InGameSound => Csf("STT:IGGameOptButtonSound"),
+            LauncherButton::Exit(LauncherParentResult::Keyboard) => {
+                return OPTIONS_PAGE.button(KEYBOARD_BUTTON).map(|button| Csf(button.tooltip_key));
             }
-            LauncherButton::Exit(LauncherParentResult::Keyboard)
-                if layout.surface == OptionsSurface::InGame =>
-            {
-                return Some(LauncherStatusHelp::Csf(IN_GAME_KEYBOARD_HELP));
-            }
-            LauncherButton::InGameSound => {
-                return Some(LauncherStatusHelp::Csf("STT:IGGameOptButtonSound"));
-            }
-            LauncherButton::Exit(LauncherParentResult::Keyboard) => KEYBOARD_BUTTON,
             LauncherButton::Exit(LauncherParentResult::Back | LauncherParentResult::Terminal) => {
-                MAIN_MENU_BUTTON
+                return OPTIONS_PAGE.button(MAIN_MENU_BUTTON).map(|button| Csf(button.tooltip_key));
             }
-        };
-        OPTIONS_PAGE
-            .button(control)
-            .map(|button| LauncherStatusHelp::Csf(button.tooltip_key))
-    }
-
-    fn slider_help(&self, id: LauncherTrackbarId) -> LauncherStatusHelp {
-        // A slider greyed for want of sound keeps its own help.
-        if self.in_match && id.fixed_in_match() {
-            return LauncherStatusHelp::Vera(NOT_IN_MATCH_HELP);
-        }
-        match id {
-            LauncherTrackbarId::Detail => LauncherStatusHelp::Csf("STT:MainOptSliderVisual"),
-            LauncherTrackbarId::Difficulty => {
-                LauncherStatusHelp::Csf("STT:MainOptSliderDifficulty")
-            }
-            LauncherTrackbarId::Scroll => LauncherStatusHelp::Csf("STT:MainOptSliderScroll"),
-            LauncherTrackbarId::Score => LauncherStatusHelp::Csf("STT:MainOptSliderMusic"),
-            LauncherTrackbarId::Sound => LauncherStatusHelp::Csf("STT:MainOptSliderSound"),
-            LauncherTrackbarId::Voice => LauncherStatusHelp::Csf("STT:MainOptSliderVoice"),
-            // VERA's own slider: retail has no string for it.
-            LauncherTrackbarId::HouseColorStrength => {
-                LauncherStatusHelp::Vera(HOUSE_COLOR_STRENGTH_HELP)
-            }
-            // Retail's string for the Game Options speed slider.
-            LauncherTrackbarId::GameSpeed => LauncherStatusHelp::Csf("STT:GameOptSliderSpeed"),
-        }
+        })
     }
 
     /// What the layout's controls are, as nodes: their rects, values,
@@ -1436,10 +1216,7 @@ impl OptionsDialogState {
                     (Prop::Min, Value::Int(base)),
                     (Prop::Max, Value::Int(base + i32::from(id.maximum()))),
                     (Prop::Step, Value::Int(1)),
-                    (
-                        Prop::Pos,
-                        Value::Int(base + i32::from(self.trackbar_position(id))),
-                    ),
+                    (Prop::Pos, Value::Int(base + i32::from(self.trackbar_position(id)))),
                     (Prop::ShowValue, Value::Bool(id.plaque_reserve() > 0)),
                     (Prop::Enabled, Value::Bool(self.trackbar_enabled(id))),
                 ],
@@ -1449,22 +1226,12 @@ impl OptionsDialogState {
             // The boxes toggle on the press (`0x006163A0`).
             let mut props = vec![
                 (Prop::Checked, Value::Bool(self.shell_checkbox_checked(id))),
-                (
-                    Prop::Text,
-                    Value::Text(self.shell_checkbox_face_text(layout, id).into_owned()),
-                ),
+                (Prop::Text, Value::Text(self.shell_checkbox_face_text(layout, id).into_owned())),
                 (Prop::ActivateOnPress, Value::Bool(true)),
             ];
             if let OptionsSurface::EscMenu(body) = layout.surface {
                 // The label and the Yes/No value are both part of this row.
-                props.push((
-                    Prop::HitRect,
-                    Value::Rect(RectPx {
-                        x: body.x,
-                        w: body.w,
-                        ..rect
-                    }),
-                ));
+                props.push((Prop::HitRect, Value::Rect(RectPx { x: body.x, w: body.w, ..rect })));
             }
             want(Control::Check(id), rect, props);
         }
@@ -1472,10 +1239,7 @@ impl OptionsDialogState {
             // Selected stays unset: a pick publishes even the row the face
             // shows, and the painted highlight is the dialog's own.
             let mut props = vec![
-                (
-                    Prop::RowCount,
-                    Value::Int(self.combo_rows(combo, layout).0 as i32),
-                ),
+                (Prop::RowCount, Value::Int(self.shell_list(combo, layout).rows.len() as i32)),
                 (Prop::Selected, Value::Int(-1)),
                 // VERA's lists open from anywhere on their face.
                 (Prop::OpenAnywhere, Value::Bool(true)),
@@ -1490,11 +1254,7 @@ impl OptionsDialogState {
         }
         for &(id, rect) in &layout.buttons {
             // A disabled button takes the press and does nothing.
-            want(
-                Control::Button(id),
-                rect,
-                vec![(Prop::Enabled, Value::Bool(self.button_enabled(id)))],
-            );
+            want(Control::Button(id), rect, vec![(Prop::Enabled, Value::Bool(self.button_enabled(id)))]);
         }
         wanted
     }
@@ -1516,12 +1276,7 @@ impl OptionsDialogState {
         if !held {
             self.shell.status_help = self.shell.hovered_help();
         }
-        if let Some(open) = self
-            .shell
-            .gui
-            .popup()
-            .and_then(|node| self.shell.gui.combo_drop_down(node))
-        {
+        if let Some(open) = self.shell.gui.popup().and_then(|node| self.shell.gui.combo_drop_down(node)) {
             self.shell.popup_hovered = open.popup.row_at(x, y);
         }
     }
@@ -1529,14 +1284,11 @@ impl OptionsDialogState {
     /// The caller routes all pointer messages here while this parent is topmost.
     pub(crate) fn shell_mouse_down(&mut self, x: i32, y: i32, layout: &LauncherOptionsLayout) {
         self.shell_sync(layout);
+        let down = InputEvent::PointerDown { x, y, button: MouseButton::Left };
         if self.shell_list_open() {
             // ComboDropWin 0x0060E4E9..0x0060E500 plays Rules+0x1A8
             // (GUIComboCloseSound) before selection or outside dismissal.
-            self.shell.input(InputEvent::PointerDown {
-                x,
-                y,
-                button: MouseButton::Left,
-            });
+            self.shell.input(down);
             self.shell_events(layout);
             self.shell.status_help = None;
             self.shell.popup_hovered = None;
@@ -1546,11 +1298,7 @@ impl OptionsDialogState {
             return;
         }
         self.shell_pointer_moved(x, y);
-        self.shell.input(InputEvent::PointerDown {
-            x,
-            y,
-            button: MouseButton::Left,
-        });
+        self.shell.input(down);
         self.shell_events(layout);
     }
 
@@ -1562,11 +1310,7 @@ impl OptionsDialogState {
 
     pub(crate) fn shell_mouse_up(&mut self, x: i32, y: i32, layout: &LauncherOptionsLayout) {
         self.shell_sync(layout);
-        let up = InputEvent::PointerUp {
-            x,
-            y,
-            button: MouseButton::Left,
-        };
+        let up = InputEvent::PointerUp { x, y, button: MouseButton::Left };
         // A slider lets go before the hit test runs again; a button's release
         // still sees its own capture.
         if self.shell.held_slider().is_some() {
@@ -1582,31 +1326,22 @@ impl OptionsDialogState {
     /// What the tree's widgets did, in order, as the dialog's events.
     fn shell_events(&mut self, layout: &LauncherOptionsLayout) {
         for event in self.shell.gui.drain_events() {
+            let cue = |cue| LauncherOptionsEvent::Cue(cue);
             match event {
                 // gamemd-derived: ordinary `0xD5` owner-draw buttons emit
                 // `[AudioVisual] GUIMainButtonSound` on admitted primary
                 // mouse-down; `OptionsClass__ShowLauncherDialog @ 0x0055FC80`
                 // observes the distinct Back/Keyboard result only on the later
-                // activation release.
+                // activation release. Like gamemd's combo owner `0x00617250`,
+                // a press on a list emits GUIComboOpen first.
                 UiEvent::Pressed { node } => match self.shell.control(node) {
-                    Some(Control::Button(_)) => self
-                        .pending_events
-                        .push(LauncherOptionsEvent::Cue(LauncherCue::MainButton)),
-                    // Like gamemd's combo owner `0x00617250`, a press emits
-                    // GUIComboOpen first.
-                    Some(Control::List(_)) => self
-                        .pending_events
-                        .push(LauncherOptionsEvent::Cue(LauncherCue::ComboOpen)),
+                    Some(Control::Button(_)) => self.pending_events.push(cue(LauncherCue::MainButton)),
+                    Some(Control::List(_)) => self.pending_events.push(cue(LauncherCue::ComboOpen)),
                     _ => {}
                 },
-                UiEvent::ComboOpened { .. } => {
-                    self.pending_events
-                        .push(LauncherOptionsEvent::Cue(LauncherCue::ComboOpen));
-                    self.shell.popup_hovered = None;
-                }
-                UiEvent::ComboClosed { .. } => {
-                    self.pending_events
-                        .push(LauncherOptionsEvent::Cue(LauncherCue::ComboClose));
+                UiEvent::ComboOpened { .. } | UiEvent::ComboClosed { .. } => {
+                    let open = matches!(event, UiEvent::ComboOpened { .. });
+                    self.pending_events.push(cue(if open { LauncherCue::ComboOpen } else { LauncherCue::ComboClose }));
                     self.shell.popup_hovered = None;
                 }
                 UiEvent::Changed { node, value, .. } => match (self.shell.control(node), value) {
@@ -1617,8 +1352,9 @@ impl OptionsDialogState {
                         }
                     }
                     (Some(Control::List(combo)), Value::Int(row)) => {
-                        if let Ok(row) = usize::try_from(row) {
-                            self.select_row(combo, row, layout);
+                        let picks = self.shell_list(combo, layout).picks;
+                        if let Some(pick) = usize::try_from(row).ok().and_then(|row| picks.into_iter().nth(row)) {
+                            self.publish(pick);
                         }
                     }
                     _ => {}
@@ -1633,128 +1369,70 @@ impl OptionsDialogState {
         }
     }
 
-    /// A row picked off `combo`'s open list.
-    fn select_row(&mut self, combo: LauncherComboId, row: usize, layout: &LauncherOptionsLayout) {
-        match combo {
-            LauncherComboId::Zoom => {
-                if let Some(zoom) = layout.zoom_choices().get(row).copied() {
-                    self.select_zoom(zoom);
-                }
-            }
-            LauncherComboId::Sidebar => {
-                if let Some(size) = layout.sidebar_choices().get(row).copied() {
-                    self.select_sidebar(size);
-                }
-            }
-            LauncherComboId::SidebarColumns => {
-                if let Some(columns) = SidebarColumns::choices().get(row).copied() {
-                    self.select_sidebar_columns(columns);
-                }
-            }
-            LauncherComboId::Display => {
-                if let Some(target) = self.display_choices().get(row).cloned() {
-                    self.select_display(target);
-                }
-            }
-            LauncherComboId::HealthBars => {
-                if let Some(mode) = HealthBarMode::choices().get(row).copied() {
-                    self.select_health_bars(mode);
-                }
-            }
-            LauncherComboId::Ares => {
-                if let Some(setting) = super::ares_choices().get(row).copied() {
-                    self.select_ares(setting);
-                }
-            }
-            LauncherComboId::ColorVision => {
-                if let Some(mode) = ColorVisionMode::choices().get(row).copied() {
-                    self.select_color_vision(mode);
-                }
-            }
-            LauncherComboId::Language => {
-                if let Some(choice) = self.languages.get(row).cloned() {
-                    self.select_language(&choice.tag);
-                }
-            }
-        }
-    }
-
     /// A button's release over itself.
     fn activate_button(&mut self, id: LauncherButton) {
-        match id {
-            LauncherButton::Exit(result) => self.request_result(result),
-            LauncherButton::Category(category) => self.select_category(category),
-            LauncherButton::InGameOptions => self.select_category(Category::ALL[0]),
-            LauncherButton::InGameBack => self.select_category(Category::GameControls),
-            LauncherButton::CheckForUpdates => self.request_update_check(),
-            LauncherButton::EditLayout => self
-                .pending_events
-                .push(LauncherOptionsEvent::EditLayoutRequested),
-            LauncherButton::SetWindowSize => self
-                .pending_events
-                .push(LauncherOptionsEvent::SetWindowSizeRequested),
-            LauncherButton::InGameKeyboard => self
-                .pending_events
-                .push(LauncherOptionsEvent::InGameKeyboardRequested),
-            LauncherButton::InGameSound => self
-                .pending_events
-                .push(LauncherOptionsEvent::InGameSoundRequested),
-        }
+        let event = match id {
+            LauncherButton::Exit(result) => return self.request_result(result),
+            LauncherButton::Category(category) => return self.select_category(category),
+            LauncherButton::InGameOptions => return self.select_category(Category::ALL[0]),
+            LauncherButton::InGameBack => return self.select_category(Category::GameControls),
+            LauncherButton::CheckForUpdates => return self.request_update_check(),
+            LauncherButton::EditLayout => LauncherOptionsEvent::EditLayoutRequested,
+            LauncherButton::SetWindowSize => LauncherOptionsEvent::SetWindowSizeRequested,
+            LauncherButton::InGameKeyboard => LauncherOptionsEvent::InGameKeyboardRequested,
+            LauncherButton::InGameSound => LauncherOptionsEvent::InGameSoundRequested,
+        };
+        self.pending_events.push(event);
     }
-}
-
-/// A box's status help.
-fn checkbox_help(id: LauncherCheckboxId) -> LauncherStatusHelp {
-    use LauncherStatusHelp::{Csf, Vera};
-    match id {
-        LauncherCheckboxId::Tooltips => Csf("STT:MainOptCBoxTooltips"),
-        LauncherCheckboxId::TargetLines => Csf("STT:MainOptCBoxTargetLines"),
-        LauncherCheckboxId::ShowHidden => Csf("STT:MainOptCBoxHidden"),
-        LauncherCheckboxId::FullScreen => Vera(FULL_SCREEN_HELP),
-        LauncherCheckboxId::OriginalShape => Vera(ORIGINAL_SHAPE_HELP),
-        LauncherCheckboxId::YrOriginalStyle => Vera(YR_ORIGINAL_STYLE_HELP),
-        LauncherCheckboxId::MouseWheelZoom => Vera(MOUSE_WHEEL_ZOOM_HELP),
-        LauncherCheckboxId::RightClickOrders => Vera(RIGHT_CLICK_ORDERS_HELP),
-        LauncherCheckboxId::MinimapBeacons => Vera(MINIMAP_BEACONS_HELP),
-        LauncherCheckboxId::LockCursor => Vera(LOCK_CURSOR_HELP),
-        LauncherCheckboxId::VeraIcon => Vera(VERA_ICON_HELP),
-        LauncherCheckboxId::HdRadar => Vera(HD_RADAR_HELP),
-        LauncherCheckboxId::SmoothSidebar => Vera(SMOOTH_SIDEBAR_HELP),
-        LauncherCheckboxId::SmoothOnlineMenus => Vera(SMOOTH_ONLINE_MENUS_HELP),
-        LauncherCheckboxId::VSync => Vera(super::VSYNC_HELP),
-        LauncherCheckboxId::HdMapPreviews => Vera(HD_MAP_PREVIEWS_HELP),
-        LauncherCheckboxId::ShiftQueue => Vera(SHIFT_QUEUE_HELP),
-        LauncherCheckboxId::AutoRepair => Vera(AUTO_REPAIR_HELP),
-        LauncherCheckboxId::PerformanceStats => Vera(PERFORMANCE_STATS_HELP),
-        LauncherCheckboxId::ShowStringKeys => Vera(SHOW_STRING_KEYS_HELP),
-        LauncherCheckboxId::SkipIntro => Vera(SKIP_INTRO_HELP),
-        LauncherCheckboxId::CustomEndGameBanner => Vera(CUSTOM_END_GAME_BANNER_HELP),
-        LauncherCheckboxId::CustomEndGameScore => Vera(CUSTOM_END_GAME_SCORE_HELP),
-        LauncherCheckboxId::CustomEndGameMovie => Vera(CUSTOM_END_GAME_MOVIE_HELP),
-        LauncherCheckboxId::CommanderFeedback => Vera(COMMANDER_FEEDBACK_HELP),
-        LauncherCheckboxId::DetailedEvaText => Vera(DETAILED_EVA_TEXT_HELP),
-        LauncherCheckboxId::ConvenienceHelp => Vera(CONVENIENCE_HELP_HELP),
-        LauncherCheckboxId::BuildingProductionQueue => Vera(BUILDING_PRODUCTION_QUEUE_HELP),
-        LauncherCheckboxId::CompactSuperTimers => Vera(COMPACT_SUPER_TIMERS_HELP),
-    }
-}
-
-/// A list's caption: VERA's own, as retail has no such lists.
-fn list_caption(id: LauncherComboId) -> String {
-    tr(match id {
-        LauncherComboId::Zoom => ZOOM_LABEL,
-        LauncherComboId::Sidebar => SIDEBAR_LABEL,
-        LauncherComboId::SidebarColumns => SIDEBAR_COLUMNS_LABEL,
-        LauncherComboId::Display => DISPLAY_LABEL,
-        LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
-        LauncherComboId::ColorVision => COLOR_VISION_LABEL,
-        LauncherComboId::Ares => ARES_LABEL,
-        LauncherComboId::Language => LANGUAGE_LABEL,
-    })
 }
 
 #[cfg(test)]
 impl OptionsDialogState {
+    pub(crate) fn shell_labels(&self, layout: &LauncherOptionsLayout) -> Vec<LauncherShellLabel<'_>> {
+        let title = LauncherShellLabel { rect: layout.title, text: Cow::Borrowed(self.shell_title_text()) };
+        std::iter::once(title)
+            .chain(layout.labels.iter().map(|&(rect, label)| LauncherShellLabel {
+                rect,
+                text: self.page_label(layout, label).0,
+            }))
+            .collect()
+    }
+
+    pub(crate) fn shell_trackbar_thumb_left(&self, id: LauncherTrackbarId, window: RectPx, scale: ShellScale) -> i32 {
+        crate::ui::shell::trackbar::thumb_left_at(
+            i32::from(self.trackbar_position(id)),
+            window,
+            id.plaque_reserve(),
+            i32::from(id.maximum()),
+            scale,
+        )
+    }
+
+    /// A list that needs no window: its rows don't depend on the layout.
+    fn shell_list_anywhere(&self, combo: LauncherComboId) -> LauncherList {
+        self.shell_list(combo, &LauncherOptionsLayout::new(800, 600, Category::Display))
+    }
+
+    pub(crate) fn shell_selected_health_bars(&self) -> HealthBarMode {
+        self.values.health_bars
+    }
+
+    pub(crate) fn shell_display_label(&self) -> String {
+        self.shell_list_anywhere(LauncherComboId::Display).face
+    }
+
+    pub(crate) fn shell_display_rows(&self) -> Vec<String> {
+        self.shell_list_anywhere(LauncherComboId::Display).rows
+    }
+
+    pub(crate) fn shell_language_label(&self) -> String {
+        self.shell_list_anywhere(LauncherComboId::Language).face
+    }
+
+    pub(crate) fn shell_language_rows(&self) -> Vec<String> {
+        self.shell_list_anywhere(LauncherComboId::Language).rows
+    }
+
     /// The slider holding the mouse, and whether it follows the pointer.
     pub(crate) fn shell_trackbar_hold(
         &self,
@@ -1769,12 +1447,7 @@ impl OptionsDialogState {
 
     /// The list that is open.
     pub(crate) fn shell_open_list(&self) -> Option<LauncherComboId> {
-        match self
-            .shell
-            .gui
-            .popup()
-            .and_then(|node| self.shell.control(node))
-        {
+        match self.shell.gui.popup().and_then(|node| self.shell.control(node)) {
             Some(Control::List(combo)) => Some(combo),
             _ => None,
         }
@@ -1795,8 +1468,10 @@ mod tests {
     use super::*;
     use crate::rules::house_colors::{STRENGTH_MAX, STRENGTH_RETAIL};
     use crate::ui::main_menu_dialogs::options::{
-        DisplayChoice, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
-        LauncherOptionsValues,
+        COMMANDER_FEEDBACK_LABEL, CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_LABEL,
+        CUSTOM_END_GAME_SCORE_LABEL, DisplayChoice, DisplayTarget, FULL_SCREEN_HELP, LauncherCue,
+        LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsValues, ORIGINAL_SHAPE_HELP,
+        ORIGINAL_SHAPE_LABEL, PERFORMANCE_STATS_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP,
     };
     use crate::ui::shell::pause_menu::{
         PauseMenuButton, PauseMenuLayout, PauseMenuTemplate, pause_menu_layout,

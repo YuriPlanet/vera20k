@@ -1573,15 +1573,16 @@ pub(super) fn push_saved_browser_contents_text<I>(
     browser: &crate::ui::skirmish_shell::SavedSeedBrowserState<I>,
 ) {
     let scale = layout.scale;
-    let geometry = crate::ui::skirmish_shell::seed_list::SeedListGeometry::new(
+    let top = browser.top();
+    let geometry = crate::ui::shell::list::ShellListGeometry::new(
         layout.list,
         browser.entries.len(),
-        browser.top_index,
+        top,
         ListMetrics::scaled(scale),
     );
     let visible = geometry.visible_rows;
     for row in 0..visible {
-        let Some(entry) = browser.entries.get(browser.top_index + row) else {
+        let Some(entry) = browser.entries.get(top + row) else {
             break;
         };
         let rect = geometry.row(row);
@@ -1640,12 +1641,7 @@ pub(super) fn push_saved_browser_contents_text<I>(
         push_text_draw(
             out,
             state,
-            &String::from_utf16_lossy(
-                &browser.description_edit.units[browser
-                    .description_edit
-                    .first_visible_unit
-                    .min(browser.description_edit.units.len())..],
-            ),
+            &browser.edit().painted_text(),
             rect_to_text_rect(player_name_edit_text_rect(edit, scale)),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
@@ -1826,8 +1822,7 @@ pub(super) fn push_saved_browser_prompt_text<I>(
             text: prompt.affirmative.as_str().into(),
             rect: button_label_rect_px(
                 yes,
-                browser.pressed_control
-                    == Some(crate::ui::skirmish_shell::SavedSeedControl::Action),
+                browser.pressed(crate::ui::skirmish_shell::saved_seed_browser::YES),
                 ShellScale::RETAIL,
             ),
             rgb: SHELL_LABEL_TEXT_RGB,
@@ -1839,8 +1834,7 @@ pub(super) fn push_saved_browser_prompt_text<I>(
                 text: caption.as_str().into(),
                 rect: button_label_rect_px(
                     rect,
-                    browser.pressed_control
-                        == Some(crate::ui::skirmish_shell::SavedSeedControl::Back0x686),
+                    browser.pressed(crate::ui::skirmish_shell::saved_seed_browser::NO),
                     ShellScale::RETAIL,
                 ),
                 rgb: SHELL_LABEL_TEXT_RGB,

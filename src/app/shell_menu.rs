@@ -17,7 +17,6 @@ use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition::{self, ShellExitThen};
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
-use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
 use crate::ui::main_menu_dialogs::{OptionsDialogState, ShellMessageBoxLabels};
 use crate::ui::shell::keyboard::KeyboardParent;
 use crate::ui::shell::modal::ModalResult;
@@ -83,11 +82,8 @@ impl App {
             ScreenPage::NetworkSetup => {
                 crate::ui::skirmish_shell::random_map_page::close_list(
                     &mut state.frontend.shell_controller,
-                ) || state.frontend.multiplayer_setup.as_mut().is_some_and(|ui| {
-                    let open = ui.popup.control.is_some();
-                    ui.popup.close();
-                    open
-                })
+                ) || (state.frontend.multiplayer_setup.is_some()
+                    && state.frontend.shell_controller.gui_mut().close_popup())
             }
             ScreenPage::Wol => Self::close_wol_open_list(state),
             _ => false,
@@ -162,15 +158,7 @@ impl App {
             return;
         };
         let events = settings.drain_output().events;
-        let language = events
-            .iter()
-            .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
-        for event in events {
-            crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
-                state, event,
-            );
-        }
-        if language {
+        if Self::run_launcher_options_events(state, events) {
             let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
             let labels = ShellMessageBoxLabels::shell_menu(&csf);
             let option_labels = Self::launcher_options_labels(state);

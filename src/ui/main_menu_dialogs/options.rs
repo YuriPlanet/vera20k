@@ -5,9 +5,14 @@
 //! The `shell` child supplies retail resource geometry and physical-pixel input;
 //! the app shell renderer paints that model through the shared retail compositor.
 //! Retail's controls and VERA's own share one dialog, sorted into the
-//! [`Category`] pages its right-hand column picks between.
+//! [`Category`] pages its right-hand column picks between. Each control's
+//! caption, status help and value come from one table per kind
+//! ([`LauncherCheckboxId::spec`], [`LauncherTrackbarId::text`],
+//! [`LauncherComboId::text`]).
 
 pub(crate) mod shell;
+
+use shell::LauncherStatusHelp::{self as Key, Csf, Vera};
 
 /// gamemd-derived: launcher owner `OptionsClass__ShowLauncherDialog @
 /// 0x0055FC80` and its primary-proc slice `0x0055FDB0..0x0056047A` bind the
@@ -15,8 +20,10 @@ pub(crate) mod shell;
 /// template's slider captions (`GUI:HigherDetail`, `GUI:Harder`,
 /// `GUI:Faster`) never show: the init renames them by position. The combo's
 /// own caption, `GUI:SetResolution`, left with the resolution list: the combo
-/// is VERA's [`Zoom`] list now.
-pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 29] = [
+/// is VERA's [`Zoom`] list now. The last four are captions `0xD5` itself never
+/// shows: the in-game menu's Back and Game Controls page, and the Yes and No
+/// beside the boxes of VERA's Esc menu.
+pub(crate) const LAUNCHER_LABEL_SPECS: &[(&str, &str)] = &[
     ("GUI:OptionsMenu", "Options"),
     ("GUI:MainMenu", "Main Menu"),
     ("GUI:Keyboard", "Keyboard"),
@@ -46,143 +53,44 @@ pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 29] = [
     ("TXT_FAST", "Fast"),
     ("TXT_FASTER", "Faster"),
     ("TXT_FASTEST", "Fastest"),
+    ("GUI:Back", "Back"),
+    ("GUI:GameControls", "Game Controls"),
+    ("GUI:Yes", "Yes"),
+    ("GUI:No", "No"),
 ];
-
-/// Retail captions `0xD5` itself never shows, for the in-game menu's Options
-/// column: its Back, and the menu's own Game Controls page.
-const IN_GAME_LABEL_SPECS: [(&str, &str); 2] =
-    [("GUI:Back", "Back"), ("GUI:GameControls", "Game Controls")];
 
 /// VERA's own captions and status help on this page, as labels of VERA's
 /// language files ([`crate::i18n`]): the retail string table has nothing for
 /// full screen, zoom, the battle shape or the Red Alert 2 loading screen and
-/// menu movie.
-pub(crate) const ZOOM_LABEL: &str = "VERA:Zoom";
+/// menu movie. The other boxes, lists and buttons name theirs in their tables.
 pub(crate) const ZOOM_HELP: &str = "VERA:ZoomHelp";
-pub(crate) const SIDEBAR_LABEL: &str = "VERA:Sidebar";
-pub(crate) const SIDEBAR_HELP: &str = "VERA:SidebarHelp";
-/// VERA's cameo column count, 2 to 5, laid inside the sidebar's own width.
-pub(crate) const SIDEBAR_COLUMNS_LABEL: &str = "VERA:SidebarColumns";
-pub(crate) const SIDEBAR_COLUMNS_HELP: &str = "VERA:SidebarColumnsHelp";
 pub(crate) const FULL_SCREEN_LABEL: &str = "VERA:FullScreen";
 pub(crate) const FULL_SCREEN_HELP: &str = "VERA:FullScreenHelp";
 pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "VERA:OriginalShape";
 pub(crate) const ORIGINAL_SHAPE_HELP: &str = "VERA:OriginalShapeHelp";
 pub(crate) const YR_ORIGINAL_STYLE_LABEL: &str = "VERA:YrOriginalStyle";
-pub(crate) const YR_ORIGINAL_STYLE_HELP: &str = "VERA:YrOriginalStyleHelp";
-pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "VERA:MouseWheelZoom";
-pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "VERA:MouseWheelZoomHelp";
-pub(crate) const RIGHT_CLICK_ORDERS_LABEL: &str = "VERA:RightClickOrders";
-pub(crate) const RIGHT_CLICK_ORDERS_HELP: &str = "VERA:RightClickOrdersHelp";
-/// VERA's beacon box (`docs/minimap-beacons.md`).
-pub(crate) const MINIMAP_BEACONS_LABEL: &str = "VERA:MinimapBeacons";
-pub(crate) const MINIMAP_BEACONS_HELP: &str = "VERA:MinimapBeaconsHelp";
-pub(crate) const LOCK_CURSOR_LABEL: &str = "VERA:LockCursor";
-pub(crate) const LOCK_CURSOR_HELP: &str = "VERA:LockCursorHelp";
-pub(crate) const VERA_ICON_LABEL: &str = "VERA:VeraIcon";
-pub(crate) const VERA_ICON_HELP: &str = "VERA:VeraIconHelp";
-pub(crate) const HD_RADAR_LABEL: &str = "VERA:HdRadar";
-pub(crate) const HD_RADAR_HELP: &str = "VERA:HdRadarHelp";
-pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "VERA:SmoothSidebar";
-pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "VERA:SmoothSidebarHelp";
-pub(crate) const SMOOTH_ONLINE_MENUS_LABEL: &str = "VERA:SmoothOnlineMenus";
-pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
-/// The Display page's VSync (`GpuContext::set_vsync`). The browser presents
-/// with the page's own refresh, so its build has no box.
-pub(crate) const HAS_VSYNC: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
-pub(crate) const VSYNC_LABEL: &str = "VERA:VSync";
-pub(crate) const VSYNC_HELP: &str = "VERA:VSyncHelp";
-/// The General page's HD Map Previews (`app::map_picture`). The browser
-/// build cannot start the hidden run that draws a map's picture.
-pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
-    !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
-pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "VERA:HdMapPreviews";
-pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "VERA:HdMapPreviewsHelp";
-pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:ShiftQueue";
-pub(crate) const AUTO_REPAIR_LABEL: &str = "VERA:AutoRepair";
-/// The two category pages retail's string table has no band name for.
-pub(crate) const CONTROLS_LABEL: &str = "VERA:Controls";
-pub(crate) const GENERAL_LABEL: &str = "VERA:General";
+pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
+pub(crate) const PERFORMANCE_STATS_HELP: &str = "VERA:PerformanceStatsHelp";
+pub(crate) const CUSTOM_END_GAME_BANNER_LABEL: &str = "VERA:CustomEndGameBanner";
+pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "VERA:CustomEndGameScore";
+pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "VERA:CustomEndGameMovie";
+pub(crate) const COMMANDER_FEEDBACK_LABEL: &str = "VERA:CommanderFeedback";
+pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
 /// The in-game menu's Options button, and the Back that ends its column.
 pub(crate) const IN_GAME_OPTIONS_HELP: &str = "VERA:InGameOptionsHelp";
 pub(crate) const IN_GAME_OPTIONS_BACK_HELP: &str = "VERA:InGameOptionsBackHelp";
 /// What a greyed control says on the in-game menu: a setting the next game
 /// starts with ([`LauncherTrackbarId::fixed_in_match`]), or Check for Updates.
 pub(crate) const NOT_IN_MATCH_HELP: &str = "VERA:NotInMatchHelp";
-pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
-pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
-pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
-pub(crate) const PERFORMANCE_STATS_HELP: &str = "VERA:PerformanceStatsHelp";
-/// VERA's developer box: arms Ctrl+Alt+K, which switches every label between
-/// its text and its own string-table key, VERA's own `VERA:` labels included.
-/// Saved in `[VERA] ShowStringKeys=`; a start shows the texts.
-pub(crate) const SHOW_STRING_KEYS_LABEL: &str = "VERA:ShowStringKeys";
-pub(crate) const SHOW_STRING_KEYS_HELP: &str = "VERA:ShowStringKeysHelp";
-/// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
-/// stages. The verdict is what the match shows where it is decided; the score
-/// page is the dialog after it. Each stage owns its picture *and* its music, so
-/// a player can keep one stage and drop the other.
-pub(crate) const CUSTOM_END_GAME_BANNER_LABEL: &str = "VERA:CustomEndGameBanner";
-pub(crate) const CUSTOM_END_GAME_BANNER_HELP: &str = "VERA:CustomEndGameBannerHelp";
-pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "VERA:CustomEndGameScore";
-pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "VERA:CustomEndGameScoreHelp";
-pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "VERA:CustomEndGameMovie";
-pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp";
-/// VERA's commander box (`docs/ini-commander-personalities.md`).
-pub(crate) const COMMANDER_FEEDBACK_LABEL: &str = "VERA:CommanderFeedback";
-pub(crate) const COMMANDER_FEEDBACK_HELP: &str = "VERA:CommanderFeedbackHelp";
-/// VERA's accessibility box: retail's string table has nothing for it.
-pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
-pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
-/// VERA's convenience-help box: the umbrella switch for quick status rows
-/// (repair/reload countdowns today, more later).
-pub(crate) const CONVENIENCE_HELP_LABEL: &str = "VERA:ConvenienceHelp";
-pub(crate) const CONVENIENCE_HELP_HELP: &str = "VERA:ConvenienceHelpHelp";
-/// VERA's build-queue box: retail's string table has nothing for it.
-pub(crate) const BUILDING_PRODUCTION_QUEUE_LABEL: &str = "VERA:BuildingProductionQueue";
-pub(crate) const BUILDING_PRODUCTION_QUEUE_HELP: &str = "VERA:BuildingProductionQueueHelp";
-/// VERA's timer box: retail's string table has nothing for it.
-pub(crate) const COMPACT_SUPER_TIMERS_LABEL: &str = "VERA:CompactSuperTimers";
-pub(crate) const COMPACT_SUPER_TIMERS_HELP: &str = "VERA:CompactSuperTimersHelp";
-pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
-pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
-pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
-pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
-/// VERA's health-bar list. The retail string table has nothing for it.
-pub(crate) const HEALTH_BARS_LABEL: &str = "VERA:HealthBars";
-pub(crate) const HEALTH_BARS_HELP: &str = "VERA:HealthBarsHelp";
-pub(crate) const ARES_LABEL: &str = "VERA:AresSetting";
-pub(crate) const ARES_HELP: &str = "VERA:AresSettingHelp";
-
-/// The `[VERA] Ares=` list's rows, top to bottom; the first is the default.
-pub(crate) fn ares_choices() -> Vec<crate::util::ares_launch::AresSetting> {
-    use crate::util::ares_launch::AresSetting;
-    vec![AresSetting::Auto, AresSetting::On, AresSetting::Off]
-}
-
-/// The `[VERA] Ares=` list's row text.
-pub(crate) fn ares_label(setting: crate::util::ares_launch::AresSetting) -> String {
-    use crate::util::ares_launch::AresSetting;
-    crate::i18n::tr(match setting {
-        AresSetting::Auto => "VERA:AresSettingAuto",
-        AresSetting::On => "VERA:AresSettingOn",
-        AresSetting::Off => "VERA:AresSettingOff",
-    })
-}
-/// VERA's strength slider for the `[Colors]` team-colour bands. Retail's
-/// string table has nothing for it.
-pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:HouseColorStrength";
-pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "VERA:HouseColorStrengthHelp";
-/// VERA's whole-viewport colour-vision filter. Retail's string table has
-/// nothing for it.
-pub(crate) const COLOR_VISION_LABEL: &str = "VERA:ColorVision";
-pub(crate) const COLOR_VISION_HELP: &str = "VERA:ColorVisionHelp";
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
-/// VERA's Language list on the General page. Its rows are each language's
-/// own name for itself, so they need no translation.
-pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
-pub(crate) const LANGUAGE_HELP: &str = "VERA:LanguageHelp";
+/// The Display page's VSync (`GpuContext::set_vsync`). The browser presents
+/// with the page's own refresh, so its build has no box.
+pub(crate) const HAS_VSYNC: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
+/// The General page's HD Map Previews (`app::map_picture`). The browser
+/// build cannot start the hidden run that draws a map's picture.
+pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
+    !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 /// The General page's Check for Updates: the desktop updater
 /// (`app::updater`) checks once the dialog has slid out. The browser build
 /// has no updater, and the in-game menu shows it greyed: no slide-out
@@ -208,6 +116,38 @@ pub(crate) const HAS_SET_WINDOW_SIZE: bool = !cfg!(any(
 ));
 pub(crate) const SET_WINDOW_SIZE_LABEL: &str = "VERA:SetWindowSize";
 pub(crate) const SET_WINDOW_SIZE_HELP: &str = "VERA:SetWindowSizeHelp";
+
+/// The `[VERA] Ares=` list's rows, top to bottom; the first is the default.
+pub(crate) fn ares_choices() -> Vec<crate::util::ares_launch::AresSetting> {
+    use crate::util::ares_launch::AresSetting;
+    vec![AresSetting::Auto, AresSetting::On, AresSetting::Off]
+}
+
+/// The `[VERA] Ares=` list's row text.
+pub(crate) fn ares_label(setting: crate::util::ares_launch::AresSetting) -> String {
+    use crate::util::ares_launch::AresSetting;
+    crate::i18n::tr(match setting {
+        AresSetting::Auto => "VERA:AresSettingAuto",
+        AresSetting::On => "VERA:AresSettingOn",
+        AresSetting::Off => "VERA:AresSettingOff",
+    })
+}
+
+/// A Zoom row: the zoom and the battle's size in game pixels in this window,
+/// what `App::sync_zoom_pass` will give the match.
+pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape: bool) -> String {
+    use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+    let shape = if original_shape { FrameShape::Original } else { FrameShape::Window };
+    let geometry = ZoomGeometry::new(width, height, zoom.percent(width, height), shape);
+    let (width, height) = (&geometry.src_width, &geometry.src_height);
+    match zoom {
+        Zoom::Auto => crate::i18n::tr_fill("VERA:ZoomAuto", &[("width", width), ("height", height)]),
+        Zoom::Percent(percent) => crate::i18n::tr_fill(
+            "VERA:ZoomPercent",
+            &[("percent", &percent), ("width", width), ("height", height)],
+        ),
+    }
+}
 
 /// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -666,6 +606,7 @@ impl DisplayTarget {
     }
 }
 
+
 /// The page's lists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherComboId {
@@ -678,93 +619,56 @@ pub(crate) enum LauncherComboId {
     HealthBars,
     /// The `[VERA] ColorVisionMode=` list: the whole-viewport filter.
     ColorVision,
-    /// The `[VERA] Language=` list: VERA's interface language.
+    /// The `[VERA] Language=` list: VERA's interface language. Its rows are
+    /// each language's own name for itself, so they need no translation.
     Language,
     /// The `[VERA] Ares=` list: the Ares extension setting, from the next
     /// start (`util::ares_launch::AresSetting`).
     Ares,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LauncherOptionsLabels {
-    pub(crate) options: String,
-    pub(crate) main_menu: String,
-    pub(crate) keyboard: String,
-    pub(crate) display_options: String,
-    pub(crate) game_options: String,
-    pub(crate) ui_options: String,
-    pub(crate) audio_options: String,
-    pub(crate) visual_details: String,
-    pub(crate) difficulty: String,
-    pub(crate) tooltips: String,
-    pub(crate) scroll_rate: String,
-    pub(crate) target_lines: String,
-    pub(crate) show_hidden: String,
-    pub(crate) music_volume: String,
-    pub(crate) sound_volume: String,
-    pub(crate) voice_volume: String,
-    pub(crate) blank: String,
-    /// [`IN_GAME_LABEL_SPECS`]: the in-game Options column's Back, and the
-    /// menu's Game Controls page.
-    pub(crate) back: String,
-    pub(crate) game_controls: String,
-    /// Localized states beside the two checkbox lamps in VERA's Esc menu.
-    yes: String,
-    no: String,
-    low: String,
-    high: String,
-    easy: String,
-    normal: String,
-    hard: String,
-    scroll_tokens: [String; 7],
+impl LauncherComboId {
+    /// The list's caption and status help: VERA's own, as retail has no such
+    /// lists.
+    pub(crate) const fn text(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Zoom => ("VERA:Zoom", ZOOM_HELP),
+            Self::Sidebar => ("VERA:Sidebar", "VERA:SidebarHelp"),
+            Self::SidebarColumns => ("VERA:SidebarColumns", "VERA:SidebarColumnsHelp"),
+            Self::Display => ("VERA:Display", "VERA:DisplayHelp"),
+            Self::HealthBars => ("VERA:HealthBars", "VERA:HealthBarsHelp"),
+            Self::ColorVision => ("VERA:ColorVision", "VERA:ColorVisionHelp"),
+            Self::Language => (LANGUAGE_LABEL, "VERA:LanguageHelp"),
+            Self::Ares => ("VERA:AresSetting", "VERA:AresSettingHelp"),
+        }
+    }
 }
+
+/// The retail captions of [`LAUNCHER_LABEL_SPECS`], read from the string table
+/// when the dialog opens and again after a language change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LauncherOptionsLabels(Vec<(&'static str, String)>);
 
 impl LauncherOptionsLabels {
     pub(crate) fn resolve(csf: &dyn Fn(&str) -> Option<String>) -> Self {
-        let label = |index: usize| {
-            let (key, fallback) = LAUNCHER_LABEL_SPECS[index];
-            csf(key).unwrap_or_else(|| fallback.to_string())
-        };
-        let in_game = |index: usize| {
-            let (key, fallback) = IN_GAME_LABEL_SPECS[index];
-            csf(key).unwrap_or_else(|| fallback.to_string())
-        };
-        Self {
-            back: in_game(0),
-            game_controls: in_game(1),
-            yes: csf("GUI:Yes").unwrap_or_else(|| "Yes".to_owned()),
-            no: csf("GUI:No").unwrap_or_else(|| "No".to_owned()),
-            options: label(0),
-            main_menu: label(1),
-            keyboard: label(2),
-            display_options: label(3),
-            game_options: label(4),
-            ui_options: label(5),
-            audio_options: label(6),
-            visual_details: label(7),
-            difficulty: label(8),
-            tooltips: label(9),
-            scroll_rate: label(10),
-            target_lines: label(11),
-            show_hidden: label(12),
-            music_volume: label(13),
-            sound_volume: label(14),
-            voice_volume: label(15),
-            blank: label(16),
-            low: label(17),
-            high: label(18),
-            easy: label(19),
-            normal: label(20),
-            hard: label(21),
-            scroll_tokens: [
-                label(22),
-                label(23),
-                label(24),
-                label(25),
-                label(26),
-                label(27),
-                label(28),
-            ],
+        Self(
+            LAUNCHER_LABEL_SPECS
+                .iter()
+                .map(|&(key, fallback)| (key, csf(key).unwrap_or_else(|| fallback.to_owned())))
+                .collect(),
+        )
+    }
+
+    /// `key`'s text; empty for a key the table doesn't hold.
+    pub(crate) fn get(&self, key: &str) -> &str {
+        self.0.iter().find(|(k, _)| *k == key).map_or("", |(_, text)| text)
+    }
+
+    /// Show `text` for `key`: VERA's Esc menu opens Options over a page, and
+    /// its Main Menu button returns there as Back.
+    pub(crate) fn set(&mut self, key: &str, text: String) {
+        if let Some(entry) = self.0.iter_mut().find(|(k, _)| *k == key) {
+            entry.1 = text;
         }
     }
 }
@@ -803,8 +707,6 @@ impl LauncherTrackbarId {
         }
     }
 
-    /// The value plaque's reserve; Detail, Difficulty and Scroll turn the
-    /// plaque off (`0x4AC` with 0).
     /// The slider's value at position 0. VERA's strength slider runs on the
     /// levels it stands for, so its plaque reads the level.
     const fn value_base(self) -> i32 {
@@ -814,6 +716,8 @@ impl LauncherTrackbarId {
         }
     }
 
+    /// The value plaque's reserve; Detail, Difficulty and Scroll turn the
+    /// plaque off (`0x4AC` with 0).
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
             Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
@@ -832,6 +736,48 @@ impl LauncherTrackbarId {
     /// mission's restart keeps its own.
     pub(crate) const fn fixed_in_match(self) -> bool {
         matches!(self, Self::Difficulty | Self::HouseColorStrength)
+    }
+
+    /// The caption (Game Speed's is the in-game menu's own), the status help
+    /// (`0x00604729..0x00604838`), and the names a plaque-less slider prints
+    /// for its positions. The 0x497 init sets each trackbar's range and
+    /// position; every change sends WM_HSCROLL (0x0061E609..0x0061E6AF), whose
+    /// handler (0x0055FF68) names the position (tables 0x0082A248, of which
+    /// Detail shows entries 0 and 2, 0x0082A254 and 0x0082A260), so the
+    /// resource captions never show.
+    const fn text(self) -> (Key, Key, &'static [&'static str]) {
+        match self {
+            Self::Detail => (Csf("GUI:VisualDetails"), Csf("STT:MainOptSliderVisual"), &["TXT_LOW", "TXT_HIGH"]),
+            Self::Difficulty => {
+                (Csf("GUI:Difficulty"), Csf("STT:MainOptSliderDifficulty"), &["TXT_EASY", "TXT_NORMAL", "TXT_HARD"])
+            }
+            Self::Scroll => (Csf("GUI:ScrollRate"), Csf("STT:MainOptSliderScroll"), &[
+                "TXT_SLOWEST", "TXT_SLOWER", "TXT_SLOW", "TXT_MEDIUM", "TXT_FAST", "TXT_FASTER", "TXT_FASTEST",
+            ]),
+            Self::Score => (Csf("GUI:MusicVolume"), Csf("STT:MainOptSliderMusic"), &[]),
+            Self::Sound => (Csf("GUI:SoundVolume"), Csf("STT:MainOptSliderSound"), &[]),
+            Self::Voice => (Csf("GUI:VoiceVolume"), Csf("STT:MainOptSliderVoice"), &[]),
+            // VERA's own slider: retail has no string for it.
+            Self::HouseColorStrength => {
+                (Vera("VERA:HouseColorStrength"), Vera("VERA:HouseColorStrengthHelp"), &[])
+            }
+            // Retail's string for the Game Options speed slider.
+            Self::GameSpeed => (Csf(""), Csf("STT:GameOptSliderSpeed"), &[]),
+        }
+    }
+
+    /// Where its position lives.
+    fn slot(self, values: &mut LauncherOptionsValues) -> &mut u8 {
+        match self {
+            Self::Detail => &mut values.detail_position,
+            Self::Difficulty => &mut values.difficulty_position,
+            Self::Scroll => &mut values.scroll_position,
+            Self::Score => &mut values.score_position,
+            Self::Sound => &mut values.sound_position,
+            Self::Voice => &mut values.voice_position,
+            Self::HouseColorStrength => &mut values.house_color_position,
+            Self::GameSpeed => &mut values.game_speed_position,
+        }
     }
 }
 
@@ -867,7 +813,8 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA-only alternative controls: left selects, right commands.
     RightClickOrders,
     /// VERA's own box: in Place Beacon mode a left click on the radar
-    /// places the beacon there (`app::input::radar`). It applies at once.
+    /// places the beacon there (`app::input::radar`, `docs/minimap-beacons.md`).
+    /// It applies at once.
     MinimapBeacons,
     /// VERA's cursor lock: the pointer stays inside the game window. It
     /// applies at once and is saved.
@@ -906,10 +853,16 @@ pub(crate) enum LauncherCheckboxId {
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
     SkipIntro,
     /// VERA's developer box: arms Ctrl+Alt+K, which switches every label
-    /// between its text and its own string-table key. Saved; a start shows
-    /// the texts until the hotkey asks for keys.
+    /// between its text and its own string-table key, VERA's own `VERA:`
+    /// labels included. Saved in `[VERA] ShowStringKeys=`; a start shows the
+    /// texts until the hotkey asks for keys.
     ShowStringKeys,
-    /// VERA's box: the score page draws the country's own victory or defeat
+    /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
+    /// stages: the verdict is what the match shows where it is decided; the
+    /// score page is the dialog after it. Each stage owns its picture *and*
+    /// its music, so a player can keep one stage and drop the other.
+    ///
+    /// This box: the score page draws the country's own victory or defeat
     /// picture from `[EndGameScreens]` instead of the side's `MP*SCRN` art. On
     /// by default — a rules set that names pictures shows them — and it covers
     /// the picture only. The next finished match reads it, so it needs no live
@@ -923,14 +876,15 @@ pub(crate) enum LauncherCheckboxId {
     /// losing clip before the score page opens and the battle is torn down.
     /// Read when the match ends, so it needs no live apply either.
     CustomEndGameMovie,
-    /// VERA's box: the computer commanders a mod or map adds play their clips
-    /// in the radar in skirmish. On by default; the clip layer reads it every
-    /// pass, so unticking it in a match silences them at once.
+    /// VERA's box (`docs/ini-commander-personalities.md`): the computer
+    /// commanders a mod or map adds play their clips in the radar in
+    /// skirmish. On by default; the clip layer reads it every pass, so
+    /// unticking it in a match silences them at once.
     CommanderFeedback,
     /// VERA-only accessibility box: detailed EVA text rows, default off.
     DetailedEvaText,
-    /// VERA's umbrella box: quick status rows (repair/reload and more), default
-    /// off. Independent of [`Self::DetailedEvaText`].
+    /// VERA's umbrella box: quick status rows (repair/reload countdowns today,
+    /// more later), default off. Independent of [`Self::DetailedEvaText`].
     ConvenienceHelp,
     /// VERA's gameplay box: a structure PRODUCE queues behind a running or
     /// completed building instead of being dropped. A rule switch the next
@@ -939,6 +893,80 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's box: the super weapon timer list shows six lines and pages the
     /// rest. Default off; the next timer draw reads it.
     CompactSuperTimers,
+}
+
+/// A box's caption and status help, where its value lives, and what a toggle
+/// publishes. Retail's three apply with the accepted pack (`0x0055FAA0`);
+/// VERA's publish each change.
+type CheckboxSpec = (
+    Key,
+    Key,
+    fn(&mut LauncherOptionsValues) -> &mut bool,
+    Option<fn(bool) -> LauncherOptionsEvent>,
+);
+
+impl LauncherCheckboxId {
+    pub(crate) fn spec(self) -> CheckboxSpec {
+        use LauncherOptionsEvent as E;
+        match self {
+            Self::Tooltips => (Csf("GUI:Tooltips"), Csf("STT:MainOptCBoxTooltips"), |v| &mut v.tooltips, None),
+            Self::TargetLines => (Csf("GUI:TargetLines"), Csf("STT:MainOptCBoxTargetLines"),
+                |v| &mut v.target_lines, None),
+            Self::ShowHidden => (Csf("GUI:ShowHidden"), Csf("STT:MainOptCBoxHidden"), |v| &mut v.show_hidden, None),
+            Self::FullScreen => (Vera(FULL_SCREEN_LABEL), Vera(FULL_SCREEN_HELP),
+                |v| &mut v.full_screen, Some(E::FullScreenChanged)),
+            Self::OriginalShape => (Vera(ORIGINAL_SHAPE_LABEL), Vera(ORIGINAL_SHAPE_HELP),
+                |v| &mut v.original_shape, Some(E::OriginalShapeChanged)),
+            Self::YrOriginalStyle => (Vera(YR_ORIGINAL_STYLE_LABEL), Vera("VERA:YrOriginalStyleHelp"),
+                |v| &mut v.yr_original_style, Some(E::YrOriginalStyleChanged)),
+            Self::ShiftQueue => (Vera("VERA:ShiftQueue"), Vera("VERA:ShiftQueueHelp"),
+                |v| &mut v.shift_queue, Some(E::ShiftQueueChanged)),
+            Self::AutoRepair => (Vera("VERA:AutoRepair"), Vera("VERA:AutoRepairHelp"),
+                |v| &mut v.auto_repair, Some(E::AutoRepairChanged)),
+            Self::MouseWheelZoom => (Vera("VERA:MouseWheelZoom"), Vera("VERA:MouseWheelZoomHelp"),
+                |v| &mut v.mouse_wheel_zoom, Some(E::MouseWheelZoomChanged)),
+            Self::RightClickOrders => (Vera("VERA:RightClickOrders"), Vera("VERA:RightClickOrdersHelp"),
+                |v| &mut v.right_click_orders, Some(E::RightClickOrdersChanged)),
+            Self::MinimapBeacons => (Vera("VERA:MinimapBeacons"), Vera("VERA:MinimapBeaconsHelp"),
+                |v| &mut v.minimap_beacons, Some(E::MinimapBeaconsChanged)),
+            Self::LockCursor => (Vera("VERA:LockCursor"), Vera("VERA:LockCursorHelp"),
+                |v| &mut v.lock_cursor, Some(E::LockCursorChanged)),
+            Self::VeraIcon => (Vera("VERA:VeraIcon"), Vera("VERA:VeraIconHelp"),
+                |v| &mut v.vera_icon, Some(E::VeraIconChanged)),
+            Self::HdRadar => (Vera("VERA:HdRadar"), Vera("VERA:HdRadarHelp"),
+                |v| &mut v.hd_radar, Some(E::HdRadarChanged)),
+            Self::SmoothSidebar => (Vera("VERA:SmoothSidebar"), Vera("VERA:SmoothSidebarHelp"),
+                |v| &mut v.smooth_sidebar, Some(E::SmoothSidebarChanged)),
+            Self::SmoothOnlineMenus => (Vera("VERA:SmoothOnlineMenus"), Vera("VERA:SmoothOnlineMenusHelp"),
+                |v| &mut v.smooth_online_menus, Some(E::SmoothOnlineMenusChanged)),
+            Self::VSync => (Vera("VERA:VSync"), Vera("VERA:VSyncHelp"),
+                |v| &mut v.vsync, Some(E::VSyncChanged)),
+            Self::HdMapPreviews => (Vera("VERA:HdMapPreviews"), Vera("VERA:HdMapPreviewsHelp"),
+                |v| &mut v.hd_map_previews, Some(E::HdMapPreviewsChanged)),
+            Self::PerformanceStats => (Vera(PERFORMANCE_STATS_LABEL), Vera(PERFORMANCE_STATS_HELP),
+                |v| &mut v.performance_stats, Some(E::PerformanceStatsChanged)),
+            Self::SkipIntro => (Vera("VERA:SkipIntro"), Vera("VERA:SkipIntroHelp"),
+                |v| &mut v.skip_intro, Some(E::SkipIntroChanged)),
+            Self::ShowStringKeys => (Vera("VERA:ShowStringKeys"), Vera("VERA:ShowStringKeysHelp"),
+                |v| &mut v.show_string_keys, Some(E::ShowStringKeysChanged)),
+            Self::CustomEndGameBanner => (Vera(CUSTOM_END_GAME_BANNER_LABEL), Vera("VERA:CustomEndGameBannerHelp"),
+                |v| &mut v.custom_end_game_banner, Some(E::CustomEndGameBannerChanged)),
+            Self::CustomEndGameScore => (Vera(CUSTOM_END_GAME_SCORE_LABEL), Vera("VERA:CustomEndGameScoreHelp"),
+                |v| &mut v.custom_end_game_score, Some(E::CustomEndGameScoreChanged)),
+            Self::CustomEndGameMovie => (Vera(CUSTOM_END_GAME_MOVIE_LABEL), Vera("VERA:CustomEndGameMovieHelp"),
+                |v| &mut v.custom_end_game_movie, Some(E::CustomEndGameMovieChanged)),
+            Self::CommanderFeedback => (Vera(COMMANDER_FEEDBACK_LABEL), Vera("VERA:CommanderFeedbackHelp"),
+                |v| &mut v.commander_feedback, Some(E::CommanderFeedbackChanged)),
+            Self::DetailedEvaText => (Vera("VERA:DetailedEvaText"), Vera("VERA:DetailedEvaTextHelp"),
+                |v| &mut v.detailed_eva_text, Some(E::DetailedEvaTextChanged)),
+            Self::ConvenienceHelp => (Vera("VERA:ConvenienceHelp"), Vera("VERA:ConvenienceHelpHelp"),
+                |v| &mut v.convenience_help, Some(E::ConvenienceHelpChanged)),
+            Self::BuildingProductionQueue => (Vera("VERA:BuildingProductionQueue"), Vera("VERA:BuildingProductionQueueHelp"),
+                |v| &mut v.building_production_queue, Some(E::BuildingProductionQueueChanged)),
+            Self::CompactSuperTimers => (Vera("VERA:CompactSuperTimers"), Vera("VERA:CompactSuperTimersHelp"),
+                |v| &mut v.compact_super_timers, Some(E::CompactSuperTimersChanged)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -962,22 +990,19 @@ impl From<crate::ui::shell::combobox::ComboCue> for LauncherCue {
 #[derive(Debug, Clone, PartialEq)]
 /// gamemd-derived: notification order in launcher primary-proc slice
 /// `0x0055FDB0..0x0056047A`; owner `OptionsClass__ShowLauncherDialog @
-/// 0x0055FC80` consumes these before any parent-result teardown.
+/// 0x0055FC80` consumes these before any parent-result teardown. A list's pick
+/// and a VERA box's change publish at once; see their ids for what each does.
 pub(crate) enum LauncherOptionsEvent {
     Cue(LauncherCue),
     ZoomSelected(Zoom),
     SidebarSelected(SidebarSize),
-    /// The Sidebar Columns list's pick, applied at once like Sidebar.
     SidebarColumnsSelected(SidebarColumns),
-    /// The Health Bars list's pick, applied at once like Sidebar.
     HealthBarModeSelected(HealthBarMode),
-    /// The `[VERA] Ares=` list's pick, played from the next start.
+    /// Played from the next start.
     AresSelected(crate::util::ares_launch::AresSetting),
-    /// The Colour Vision list's pick, applied to the very next frame.
     ColorVisionModeSelected(ColorVisionMode),
-    /// The Display list's pick, applied to the window at once.
     DisplaySelected(DisplayTarget),
-    /// The Language list's pick, a language tag, applied at once.
+    /// A language tag.
     LanguageSelected(String),
     FullScreenChanged(bool),
     /// The Esc menu's Set Window Size button, applied to the window at once.
@@ -1043,6 +1068,8 @@ pub(crate) struct LauncherOptionsFrameOutput {
     pub(crate) check_for_updates: bool,
 }
 
+/// The dialog's values: a field per box ([`LauncherCheckboxId`]) and list, and
+/// a position per slider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LauncherOptionsValues {
     pub(crate) detail_position: u8,
@@ -1069,28 +1096,15 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) minimap_beacons: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
-    /// `[VERA] ShowStringKeys=`, the String Keys box, then each toggle.
     pub(crate) show_string_keys: bool,
     pub(crate) skip_intro: bool,
-    /// The country's own end-game picture is allowed; see
-    /// [`LauncherCheckboxId::CustomEndGameBanner`].
     pub(crate) custom_end_game_banner: bool,
-    /// The country's own end-game music is allowed; see
-    /// [`LauncherCheckboxId::CustomEndGameScore`].
     pub(crate) custom_end_game_score: bool,
-    /// The exit waits for the closing commander clip; see
-    /// [`LauncherCheckboxId::CustomEndGameMovie`].
     pub(crate) custom_end_game_movie: bool,
-    /// The commanders' clips are allowed; see
-    /// [`LauncherCheckboxId::CommanderFeedback`].
     pub(crate) commander_feedback: bool,
-    /// The accessibility box; see [`LauncherCheckboxId::DetailedEvaText`].
     pub(crate) detailed_eva_text: bool,
-    /// The convenience-help box; see [`LauncherCheckboxId::ConvenienceHelp`].
     pub(crate) convenience_help: bool,
-    /// The build-queue box; see [`LauncherCheckboxId::BuildingProductionQueue`].
     pub(crate) building_production_queue: bool,
-    /// The timer box; see [`LauncherCheckboxId::CompactSuperTimers`].
     pub(crate) compact_super_timers: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
@@ -1110,6 +1124,9 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) score_position: u8,
     pub(crate) sound_position: u8,
     pub(crate) voice_position: u8,
+    /// The in-game menu's Game Speed slider, set by
+    /// [`OptionsDialogState::set_in_game_controls`]; no profile pack holds it.
+    pub(crate) game_speed_position: u8,
 }
 
 impl Default for LauncherOptionsValues {
@@ -1156,6 +1173,7 @@ impl Default for LauncherOptionsValues {
             score_position: 4,
             sound_position: 7,
             voice_position: 7,
+            game_speed_position: 0,
         }
     }
 }
@@ -1194,25 +1212,6 @@ pub(crate) fn admitted_volume_position(volume: f32) -> u8 {
     admitted_initial_position(request.trunc() as i64, 10)
 }
 
-/// Detail caption by position: `TXT_LOW`, else `TXT_HIGH` (table
-/// `0x0082A248` entries 0 and 2).
-fn detail_caption(labels: &LauncherOptionsLabels, position: u8) -> String {
-    if position == 0 {
-        labels.low.clone()
-    } else {
-        labels.high.clone()
-    }
-}
-
-/// Difficulty caption by position (table `0x0082A254`).
-fn difficulty_caption(labels: &LauncherOptionsLabels, position: u8) -> String {
-    match position {
-        0 => labels.easy.clone(),
-        1 => labels.normal.clone(),
-        _ => labels.hard.clone(),
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct OptionsDialogState {
     labels: LauncherOptionsLabels,
@@ -1231,20 +1230,16 @@ pub(crate) struct OptionsDialogState {
     /// Window Size button names. Set by [`Self::set_launch_window_size`]; zero
     /// until then.
     launch_window_size: (u32, u32),
-    /// The in-game menu's Game Speed slider: its position, and the caption
-    /// and one value name per position. Set by [`Self::set_in_game_controls`].
-    game_speed_position: u8,
+    /// The in-game menu's Game Speed caption and one value name per
+    /// position, and its Sound button caption. Set by
+    /// [`Self::set_in_game_controls`].
     game_speed_caption: String,
     game_speed_names: Vec<String>,
-    /// The in-game menu's Sound button caption. Set with the speed.
     in_game_sound_label: String,
     /// Whether the dialog is the in-game menu's, set with the speed: a
     /// running match greys what it keeps as it began.
     in_match: bool,
     launcher_audio_available: bool,
-    detail_caption: String,
-    difficulty_caption: String,
-    scroll_caption: String,
     pending_events: Vec<LauncherOptionsEvent>,
     pending_result: Option<LauncherParentResult>,
     /// The category whose page shows.
@@ -1272,8 +1267,8 @@ impl Default for OptionsDialogState {
 impl OptionsDialogState {
     /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80`
     /// creates each fresh `0xD5` parent, while primary-proc slice
-    /// `0x0055FDB0..0x0056047A` admits initial positions and preserves the
-    /// resource Detail/Difficulty/Scroll captions until a changed notification.
+    /// `0x0055FDB0..0x0056047A` admits initial positions; the sliders name
+    /// their positions from the start ([`LauncherTrackbarId::text`]).
     /// `displays` and `display` are VERA's own Display list, which gamemd's
     /// `0xD5` has no control for.
     pub(crate) fn new(
@@ -1284,30 +1279,16 @@ impl OptionsDialogState {
         displays: Vec<DisplayChoice>,
         display: DisplayTarget,
     ) -> Self {
-        values.detail_position = admitted_initial_position(i64::from(values.detail_position), 1);
-        values.difficulty_position =
-            admitted_initial_position(i64::from(values.difficulty_position), 2);
-        values.scroll_position = admitted_initial_position(i64::from(values.scroll_position), 6);
-        values.score_position = admitted_initial_position(i64::from(values.score_position), 10);
-        values.sound_position = admitted_initial_position(i64::from(values.sound_position), 10);
-        values.voice_position = admitted_initial_position(i64::from(values.voice_position), 10);
+        use LauncherTrackbarId as Slider;
+        for id in [Slider::Detail, Slider::Difficulty, Slider::Scroll, Slider::Score, Slider::Sound, Slider::Voice] {
+            let slot = id.slot(&mut values);
+            *slot = admitted_initial_position(i64::from(*slot), id.maximum());
+        }
         // VERA's own slider takes the top level for a position past its range:
         // there is no boost above it to ask for, and the profile never holds
         // one either.
-        values.house_color_position = values
-            .house_color_position
-            .min(LauncherTrackbarId::HouseColorStrength.maximum());
-        // The 0x497 init sets each trackbar's range and position; every change
-        // sends WM_HSCROLL (0x0061E609..0x0061E6AF), whose handler
-        // (0x0055FF68) names the position (tables 0x0082A248 / 0x0082A254 /
-        // 0x0082A260), so the resource captions never show.
-        let detail_caption = detail_caption(&labels, values.detail_position);
-        let difficulty_caption = difficulty_caption(&labels, values.difficulty_position);
-        let scroll_caption = labels.scroll_tokens[usize::from(values.scroll_position)].clone();
+        values.house_color_position = values.house_color_position.min(Slider::HouseColorStrength.maximum());
         Self {
-            detail_caption,
-            difficulty_caption,
-            scroll_caption,
             labels,
             values,
             zoom,
@@ -1316,7 +1297,6 @@ impl OptionsDialogState {
             languages: Vec::new(),
             language: String::new(),
             launch_window_size: (0, 0),
-            game_speed_position: 0,
             game_speed_caption: String::new(),
             game_speed_names: Vec::new(),
             in_game_sound_label: String::new(),
@@ -1348,18 +1328,16 @@ impl OptionsDialogState {
     /// After a language change: the retail captions read from the string
     /// table again, and the slider steps they name with them.
     pub(crate) fn set_labels(&mut self, labels: LauncherOptionsLabels) {
-        self.detail_caption = detail_caption(&labels, self.values.detail_position);
-        self.difficulty_caption = difficulty_caption(&labels, self.values.difficulty_position);
-        self.scroll_caption =
-            labels.scroll_tokens[usize::from(self.values.scroll_position)].clone();
         self.labels = labels;
     }
 
-    /// The screens the Display list offers, in the window layer's order. The
-    /// shell's own drawing reads the field; only the tests need them back.
-    #[cfg(test)]
-    pub(crate) fn displays(&self) -> &[DisplayChoice] {
-        &self.displays
+    /// A caption: retail's from the labels the dialog holds, VERA's from its
+    /// language files.
+    fn text(&self, key: Key) -> std::borrow::Cow<'_, str> {
+        match key {
+            Csf(key) => self.labels.get(key).into(),
+            Vera(key) => crate::i18n::tr(key).into(),
+        }
     }
 
     /// Whether a trackbar window is enabled: `0x00560361..0x00560467` (as
@@ -1389,20 +1367,17 @@ impl OptionsDialogState {
     /// `OptionsClass__ApplyFromLauncherDialog @ 0x0055FAA0` maps the six
     /// positions and three normalized checkboxes exactly as below.
     pub(crate) fn pack(&self) -> LauncherOptionsPacked {
+        let v = &self.values;
         LauncherOptionsPacked {
-            detail_level: if self.values.detail_position == 0 {
-                0
-            } else {
-                2
-            },
-            difficulty: i32::from(self.values.difficulty_position),
-            unit_action_lines: self.values.target_lines,
-            show_hidden: self.values.show_hidden,
-            tooltips: self.values.tooltips,
-            scroll_rate: 6 - i32::from(self.values.scroll_position),
-            score_volume: f32::from(self.values.score_position) * 0.1,
-            sound_volume: f32::from(self.values.sound_position) * 0.1,
-            voice_volume: f32::from(self.values.voice_position) * 0.1,
+            detail_level: if v.detail_position == 0 { 0 } else { 2 },
+            difficulty: i32::from(v.difficulty_position),
+            unit_action_lines: v.target_lines,
+            show_hidden: v.show_hidden,
+            tooltips: v.tooltips,
+            scroll_rate: 6 - i32::from(v.scroll_position),
+            score_volume: f32::from(v.score_position) * 0.1,
+            sound_volume: f32::from(v.sound_position) * 0.1,
+            voice_volume: f32::from(v.voice_position) * 0.1,
         }
     }
 
@@ -1419,34 +1394,15 @@ impl OptionsDialogState {
     ) {
         self.game_speed_caption = speed_caption;
         self.game_speed_names = speed_names;
-        self.game_speed_position = if speed_position > LauncherTrackbarId::GameSpeed.maximum() {
-            0
-        } else {
-            speed_position
-        };
+        self.values.game_speed_position =
+            admitted_initial_position(speed_position.into(), LauncherTrackbarId::GameSpeed.maximum());
         self.in_game_sound_label = sound_label;
         self.in_match = true;
     }
 
     pub(crate) fn trackbar_position(&self, id: LauncherTrackbarId) -> u8 {
-        match id {
-            LauncherTrackbarId::GameSpeed => self.game_speed_position,
-            LauncherTrackbarId::Detail => self.values.detail_position,
-            LauncherTrackbarId::Difficulty => self.values.difficulty_position,
-            LauncherTrackbarId::Scroll => self.values.scroll_position,
-            LauncherTrackbarId::Score => self.values.score_position,
-            LauncherTrackbarId::Sound => self.values.sound_position,
-            LauncherTrackbarId::Voice => self.values.voice_position,
-            LauncherTrackbarId::HouseColorStrength => self.values.house_color_position,
-        }
-    }
-
-    /// VERA's team-colour strength as the level the profile stores: the
-    /// slider's position lifted onto the
-    /// [`crate::rules::house_colors`] scale.
-    #[cfg(test)]
-    pub(crate) const fn house_color_strength(&self) -> u8 {
-        self.values.house_color_position + crate::rules::house_colors::STRENGTH_MIN
+        let mut values = self.values;
+        *id.slot(&mut values)
     }
 
     /// gamemd-derived: primary-proc slice `0x0055FDB0..0x0056047A` changes
@@ -1456,157 +1412,46 @@ impl OptionsDialogState {
         if position > id.maximum() || !self.trackbar_enabled(id) {
             return;
         }
-        let slot = match id {
-            LauncherTrackbarId::GameSpeed => &mut self.game_speed_position,
-            LauncherTrackbarId::Detail => &mut self.values.detail_position,
-            LauncherTrackbarId::Difficulty => &mut self.values.difficulty_position,
-            LauncherTrackbarId::Scroll => &mut self.values.scroll_position,
-            LauncherTrackbarId::Score => &mut self.values.score_position,
-            LauncherTrackbarId::Sound => &mut self.values.sound_position,
-            LauncherTrackbarId::Voice => &mut self.values.voice_position,
-            LauncherTrackbarId::HouseColorStrength => &mut self.values.house_color_position,
-        };
+        let slot = id.slot(&mut self.values);
         if *slot == position {
             return;
         }
         *slot = position;
-        match id {
-            LauncherTrackbarId::Detail => {
-                self.detail_caption = detail_caption(&self.labels, position);
-                self.pending_events
-                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
-            }
-            LauncherTrackbarId::Difficulty => {
-                self.difficulty_caption = difficulty_caption(&self.labels, position);
-                self.pending_events
-                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
-            }
-            LauncherTrackbarId::Scroll => {
-                self.scroll_caption = self.labels.scroll_tokens[usize::from(position)].clone();
-                self.pending_events
-                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
-            }
-            // 61E609..61E6DD: a changed position plays the cue. The speed
-            // itself applies when the menu closes.
-            LauncherTrackbarId::GameSpeed => {
-                self.pending_events
-                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
-            }
-            LauncherTrackbarId::Score => self.pending_events.push(
-                LauncherOptionsEvent::ScorePreview(f32::from(position) * 0.1),
-            ),
-            LauncherTrackbarId::Sound => self.pending_events.push(
-                LauncherOptionsEvent::SoundPreview(f32::from(position) * 0.1),
-            ),
-            LauncherTrackbarId::Voice => self.pending_events.push(
-                LauncherOptionsEvent::VoicePreview(f32::from(position) * 0.1),
-            ),
+        let volume = f32::from(position) * 0.1;
+        let click = LauncherOptionsEvent::Cue(LauncherCue::GenericClick);
+        self.pending_events.extend(match id {
+            LauncherTrackbarId::Score => vec![LauncherOptionsEvent::ScorePreview(volume)],
+            LauncherTrackbarId::Sound => vec![LauncherOptionsEvent::SoundPreview(volume)],
+            LauncherTrackbarId::Voice => vec![LauncherOptionsEvent::VoicePreview(volume)],
             // A once-per-drag setting rather than a live preview: the battle
             // this applies to is loaded later, and the accept writes it out.
             // With no audible preview to audition, the retail notch click is
             // the drag's only feedback, as on the detail, difficulty and
             // scroll sliders.
-            LauncherTrackbarId::HouseColorStrength => {
-                self.pending_events
-                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
-                self.pending_events
-                    .push(LauncherOptionsEvent::HouseColorStrengthChanged(
-                        position + crate::rules::house_colors::STRENGTH_MIN,
-                    ))
-            }
-        }
-    }
-
-    /// Where box `id`'s value lives.
-    fn checkbox_slot(values: &mut LauncherOptionsValues, id: LauncherCheckboxId) -> &mut bool {
-        match id {
-            LauncherCheckboxId::Tooltips => &mut values.tooltips,
-            LauncherCheckboxId::TargetLines => &mut values.target_lines,
-            LauncherCheckboxId::ShowHidden => &mut values.show_hidden,
-            LauncherCheckboxId::FullScreen => &mut values.full_screen,
-            LauncherCheckboxId::OriginalShape => &mut values.original_shape,
-            LauncherCheckboxId::YrOriginalStyle => &mut values.yr_original_style,
-            LauncherCheckboxId::ShiftQueue => &mut values.shift_queue,
-            LauncherCheckboxId::AutoRepair => &mut values.auto_repair,
-            LauncherCheckboxId::MouseWheelZoom => &mut values.mouse_wheel_zoom,
-            LauncherCheckboxId::RightClickOrders => &mut values.right_click_orders,
-            LauncherCheckboxId::MinimapBeacons => &mut values.minimap_beacons,
-            LauncherCheckboxId::LockCursor => &mut values.lock_cursor,
-            LauncherCheckboxId::VeraIcon => &mut values.vera_icon,
-            LauncherCheckboxId::HdRadar => &mut values.hd_radar,
-            LauncherCheckboxId::SmoothSidebar => &mut values.smooth_sidebar,
-            LauncherCheckboxId::SmoothOnlineMenus => &mut values.smooth_online_menus,
-            LauncherCheckboxId::VSync => &mut values.vsync,
-            LauncherCheckboxId::HdMapPreviews => &mut values.hd_map_previews,
-            LauncherCheckboxId::PerformanceStats => &mut values.performance_stats,
-            LauncherCheckboxId::ShowStringKeys => &mut values.show_string_keys,
-            LauncherCheckboxId::SkipIntro => &mut values.skip_intro,
-            LauncherCheckboxId::CustomEndGameBanner => &mut values.custom_end_game_banner,
-            LauncherCheckboxId::CustomEndGameScore => &mut values.custom_end_game_score,
-            LauncherCheckboxId::CustomEndGameMovie => &mut values.custom_end_game_movie,
-            LauncherCheckboxId::CommanderFeedback => &mut values.commander_feedback,
-            LauncherCheckboxId::DetailedEvaText => &mut values.detailed_eva_text,
-            LauncherCheckboxId::ConvenienceHelp => &mut values.convenience_help,
-            LauncherCheckboxId::BuildingProductionQueue => &mut values.building_production_queue,
-            LauncherCheckboxId::CompactSuperTimers => &mut values.compact_super_timers,
-        }
+            LauncherTrackbarId::HouseColorStrength => vec![
+                click,
+                LauncherOptionsEvent::HouseColorStrengthChanged(
+                    position + crate::rules::house_colors::STRENGTH_MIN,
+                ),
+            ],
+            // 61E609..61E6DD: a changed position plays the cue. Game Speed
+            // applies when the menu closes.
+            _ => vec![click],
+        });
     }
 
     pub(crate) fn shell_checkbox_checked(&self, id: LauncherCheckboxId) -> bool {
         let mut values = self.values;
-        *Self::checkbox_slot(&mut values, id)
+        *id.spec().2(&mut values)
     }
 
     fn toggle_checkbox(&mut self, id: LauncherCheckboxId) {
-        let slot = Self::checkbox_slot(&mut self.values, id);
+        let (_, _, slot, changed) = id.spec();
+        let slot = slot(&mut self.values);
         *slot = !*slot;
         let checked = *slot;
-        self.pending_events
-            .push(LauncherOptionsEvent::Cue(LauncherCue::Checkbox));
-        // Retail's three boxes apply with the accepted pack (`0x0055FAA0`);
-        // VERA's publish each change.
-        let changed: fn(bool) -> LauncherOptionsEvent = match id {
-            LauncherCheckboxId::FullScreen => LauncherOptionsEvent::FullScreenChanged,
-            LauncherCheckboxId::OriginalShape => LauncherOptionsEvent::OriginalShapeChanged,
-            LauncherCheckboxId::YrOriginalStyle => LauncherOptionsEvent::YrOriginalStyleChanged,
-            LauncherCheckboxId::ShiftQueue => LauncherOptionsEvent::ShiftQueueChanged,
-            LauncherCheckboxId::AutoRepair => LauncherOptionsEvent::AutoRepairChanged,
-            LauncherCheckboxId::MouseWheelZoom => LauncherOptionsEvent::MouseWheelZoomChanged,
-            LauncherCheckboxId::RightClickOrders => LauncherOptionsEvent::RightClickOrdersChanged,
-            LauncherCheckboxId::MinimapBeacons => LauncherOptionsEvent::MinimapBeaconsChanged,
-            LauncherCheckboxId::LockCursor => LauncherOptionsEvent::LockCursorChanged,
-            LauncherCheckboxId::VeraIcon => LauncherOptionsEvent::VeraIconChanged,
-            LauncherCheckboxId::HdRadar => LauncherOptionsEvent::HdRadarChanged,
-            LauncherCheckboxId::SmoothSidebar => LauncherOptionsEvent::SmoothSidebarChanged,
-            LauncherCheckboxId::SmoothOnlineMenus => LauncherOptionsEvent::SmoothOnlineMenusChanged,
-            LauncherCheckboxId::VSync => LauncherOptionsEvent::VSyncChanged,
-            LauncherCheckboxId::HdMapPreviews => LauncherOptionsEvent::HdMapPreviewsChanged,
-            LauncherCheckboxId::PerformanceStats => LauncherOptionsEvent::PerformanceStatsChanged,
-            LauncherCheckboxId::ShowStringKeys => LauncherOptionsEvent::ShowStringKeysChanged,
-            LauncherCheckboxId::SkipIntro => LauncherOptionsEvent::SkipIntroChanged,
-            LauncherCheckboxId::CustomEndGameBanner => {
-                LauncherOptionsEvent::CustomEndGameBannerChanged
-            }
-            LauncherCheckboxId::CustomEndGameScore => {
-                LauncherOptionsEvent::CustomEndGameScoreChanged
-            }
-            LauncherCheckboxId::CustomEndGameMovie => {
-                LauncherOptionsEvent::CustomEndGameMovieChanged
-            }
-            LauncherCheckboxId::CommanderFeedback => LauncherOptionsEvent::CommanderFeedbackChanged,
-            LauncherCheckboxId::DetailedEvaText => LauncherOptionsEvent::DetailedEvaTextChanged,
-            LauncherCheckboxId::ConvenienceHelp => LauncherOptionsEvent::ConvenienceHelpChanged,
-            LauncherCheckboxId::BuildingProductionQueue => {
-                LauncherOptionsEvent::BuildingProductionQueueChanged
-            }
-            LauncherCheckboxId::CompactSuperTimers => {
-                LauncherOptionsEvent::CompactSuperTimersChanged
-            }
-            LauncherCheckboxId::Tooltips
-            | LauncherCheckboxId::TargetLines
-            | LauncherCheckboxId::ShowHidden => return,
-        };
-        self.pending_events.push(changed(checked));
+        self.pending_events.push(LauncherOptionsEvent::Cue(LauncherCue::Checkbox));
+        self.pending_events.extend(changed.map(|changed| changed(checked)));
     }
 
     /// Follow a full-screen change the page didn't make (the window's own
@@ -1620,78 +1465,37 @@ impl OptionsDialogState {
         self.values.performance_stats = shown;
     }
 
-    /// Like gamemd's resolution row (primary-proc slice
-    /// `0x0055FDB0..0x0056047A`), a picked zoom row is published at once; the
-    /// accepted projection `0x0055FAA0` never owns it.
-    pub(crate) fn select_zoom(&mut self, zoom: Zoom) {
-        self.zoom = zoom;
-        self.pending_events
-            .push(LauncherOptionsEvent::ZoomSelected(zoom));
-    }
-
-    /// The Sidebar list publishes its pick at once, like Zoom.
-    pub(crate) fn select_sidebar(&mut self, size: SidebarSize) {
-        self.values.sidebar = size;
-        self.pending_events
-            .push(LauncherOptionsEvent::SidebarSelected(size));
-    }
-
-    /// The Sidebar Columns list publishes its pick at once too.
-    pub(crate) fn select_sidebar_columns(&mut self, columns: SidebarColumns) {
-        self.values.sidebar_columns = columns;
-        self.pending_events
-            .push(LauncherOptionsEvent::SidebarColumnsSelected(columns));
-    }
-
-    /// The Ares list publishes its pick for the profile; the game reads it at
-    /// its next start.
-    pub(crate) fn select_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
-        self.values.ares = setting;
-        self.pending_events
-            .push(LauncherOptionsEvent::AresSelected(setting));
-    }
-
-    /// The Health Bars list publishes its pick at once too.
-    pub(crate) fn select_health_bars(&mut self, mode: HealthBarMode) {
-        self.values.health_bars = mode;
-        self.pending_events
-            .push(LauncherOptionsEvent::HealthBarModeSelected(mode));
-    }
-
-    /// The Colour Vision list publishes its pick at once too: the filter reads
-    /// the profile every frame, so no atlas or ramp has to be rebuilt.
-    pub(crate) fn select_color_vision(&mut self, mode: ColorVisionMode) {
-        self.values.color_vision = mode;
-        self.pending_events
-            .push(LauncherOptionsEvent::ColorVisionModeSelected(mode));
-    }
-
-    /// The Display list publishes its pick at once too: the window moves to
-    /// that screen straight away. Picking the screen already chosen, or one the
-    /// window layer did not list, changes nothing.
-    pub(crate) fn select_display(&mut self, display: DisplayTarget) {
-        let listed = match &display {
-            DisplayTarget::Auto => true,
-            DisplayTarget::Fixed(id) => self.displays.iter().any(|choice| &choice.id == id),
-        };
-        if !listed || self.display == display {
-            return;
+    /// A list's pick, published at once: like gamemd's resolution row
+    /// (primary-proc slice `0x0055FDB0..0x0056047A`), the accepted projection
+    /// `0x0055FAA0` never owns it. The window moves to a picked screen and a
+    /// picked language reads from the next frame, so picking the screen or
+    /// language already in use changes nothing.
+    fn publish(&mut self, event: LauncherOptionsEvent) {
+        use LauncherOptionsEvent as E;
+        let v = &mut self.values;
+        match &event {
+            E::ZoomSelected(zoom) => self.zoom = *zoom,
+            E::SidebarSelected(size) => v.sidebar = *size,
+            E::SidebarColumnsSelected(columns) => v.sidebar_columns = *columns,
+            E::HealthBarModeSelected(mode) => v.health_bars = *mode,
+            E::AresSelected(setting) => v.ares = *setting,
+            E::ColorVisionModeSelected(mode) => v.color_vision = *mode,
+            E::DisplaySelected(display) if *display == self.display => return,
+            E::DisplaySelected(display) => self.display = display.clone(),
+            E::LanguageSelected(tag) if *tag == self.language => return,
+            E::LanguageSelected(tag) => self.language = tag.clone(),
+            _ => {}
         }
-        self.display = display.clone();
-        self.pending_events
-            .push(LauncherOptionsEvent::DisplaySelected(display));
+        self.pending_events.push(event);
     }
 
-    /// The Language list publishes its pick at once: the next frame draws in
-    /// that language. The language in use, or one the list does not offer,
-    /// changes nothing.
-    pub(crate) fn select_language(&mut self, tag: &str) {
-        if self.language == tag || !self.languages.iter().any(|choice| choice.tag == tag) {
-            return;
-        }
-        self.language = tag.to_owned();
-        self.pending_events
-            .push(LauncherOptionsEvent::LanguageSelected(tag.to_owned()));
+    /// The Display list's rows, top to bottom: Auto, then every screen the
+    /// window layer reported. Auto is first so a profile whose saved screen is
+    /// gone still shows a picked row.
+    pub(crate) fn display_choices(&self) -> Vec<DisplayTarget> {
+        std::iter::once(DisplayTarget::Auto)
+            .chain(self.displays.iter().map(|choice| DisplayTarget::Fixed(choice.id.clone())))
+            .collect()
     }
 
     /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` gives
@@ -1740,6 +1544,28 @@ impl OptionsDialogState {
             result: self.pending_result.take(),
             check_for_updates: std::mem::take(&mut self.pending_update_check),
         }
+    }
+}
+
+#[cfg(test)]
+impl OptionsDialogState {
+    /// The Display list's pick; one the window layer did not list changes
+    /// nothing.
+    pub(crate) fn select_display(&mut self, display: DisplayTarget) {
+        if self.display_choices().contains(&display) {
+            self.publish(LauncherOptionsEvent::DisplaySelected(display));
+        }
+    }
+
+    /// The screens the Display list offers, in the window layer's order.
+    pub(crate) fn displays(&self) -> &[DisplayChoice] {
+        &self.displays
+    }
+
+    /// VERA's team-colour strength as the level the profile stores: the
+    /// slider's position lifted onto the [`crate::rules::house_colors`] scale.
+    pub(crate) const fn house_color_strength(&self) -> u8 {
+        self.values.house_color_position + crate::rules::house_colors::STRENGTH_MIN
     }
 }
 
@@ -1973,8 +1799,8 @@ mod tests {
         .unwrap();
         assert!(!csf.is_empty());
         let labels = LauncherOptionsLabels::resolve(&|key| csf.get(key).map(str::to_owned));
-        assert_eq!(labels.options, "Localized Options");
-        assert_eq!(labels.main_menu, "Main Menu");
+        assert_eq!(labels.get("GUI:OptionsMenu"), "Localized Options");
+        assert_eq!(labels.get("GUI:MainMenu"), "Main Menu");
         assert_eq!(csf.text("GUI:MainMenu"), "MISSING:'GUI:MainMenu'");
     }
 
@@ -2028,16 +1854,16 @@ mod tests {
             DisplayTarget::Auto,
         );
         // Retail opens with the positions named (TXT_LOW/HARD/SLOWEST here).
-        assert_eq!(state.detail_caption, "Low");
-        assert_eq!(state.difficulty_caption, "Hard");
-        assert_eq!(state.scroll_caption, "Slowest");
+        assert_eq!(state.slider_step(LauncherTrackbarId::Detail), "Low");
+        assert_eq!(state.slider_step(LauncherTrackbarId::Difficulty), "Hard");
+        assert_eq!(state.slider_step(LauncherTrackbarId::Scroll), "Slowest");
 
         state.set_trackbar_position(LauncherTrackbarId::Detail, 1);
         state.set_trackbar_position(LauncherTrackbarId::Difficulty, 2);
         state.set_trackbar_position(LauncherTrackbarId::Scroll, 6);
-        assert_eq!(state.detail_caption, "High");
-        assert_eq!(state.difficulty_caption, "Hard", "an unchanged move");
-        assert_eq!(state.scroll_caption, "Fastest");
+        assert_eq!(state.slider_step(LauncherTrackbarId::Detail), "High");
+        assert_eq!(state.slider_step(LauncherTrackbarId::Difficulty), "Hard", "an unchanged move");
+        assert_eq!(state.slider_step(LauncherTrackbarId::Scroll), "Fastest");
         assert_eq!(
             state.drain_output().events,
             [

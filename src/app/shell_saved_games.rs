@@ -1,14 +1,13 @@
 //! B5's saved-game children. Original558DD0 owns the shared modal transaction;
 //! the VERA repository and PreparedLoad remain the save/restore authorities.
 
+use super::shell_saved_seeds::saved_browser_rows;
 use super::{App, AppState};
 use crate::map::rmg::SeedDescription;
 use crate::ui::pause_menu::InGameMenuState;
-use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
-use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
 use crate::ui::skirmish_shell::{
-    SavedSeedLayout, SavedSeedMode, SavedSeedOutcome, SavedSeedPromptPurpose,
+    SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome, SavedSeedPromptPurpose,
 };
 use std::path::PathBuf;
 use winit::keyboard::KeyCode;
@@ -30,15 +29,18 @@ impl App {
         let Some(layout) = Self::saved_game_layout(state, mode) else {
             return;
         };
-        let browser = Self::open_saved_game_rows(
-            state,
-            mode,
-            SeedListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale))
-                .visible_rows,
-        );
+        let browser = Self::open_saved_game_rows(state, mode, saved_browser_rows(&layout));
         // The child replaces its hidden parent and owns all subsequent input.
         state.match_state.match_presentation.saved_game_browser = Some(browser);
         Self::enter_in_game_menu_state(state, InGameMenuState::SavedGame(mode));
+    }
+
+    fn saved_game_browser(state: &mut AppState) -> Option<&mut SavedSeedBrowserState<PathBuf>> {
+        state
+            .match_state
+            .match_presentation
+            .saved_game_browser
+            .as_mut()
     }
 
     fn close_saved_game_browser(state: &mut AppState) {
@@ -53,12 +55,7 @@ impl App {
         confirm: bool,
     ) {
         let prompt = Self::saved_browser_prompt(state, purpose, body, confirm);
-        if let Some(browser) = state
-            .match_state
-            .match_presentation
-            .saved_game_browser
-            .as_mut()
-        {
+        if let Some(browser) = Self::saved_game_browser(state) {
             browser.show_prompt(prompt);
         }
     }
@@ -86,27 +83,15 @@ impl App {
     }
 
     fn resolve_saved_game_prompt(state: &mut AppState, affirmative: bool) {
-        let prompt = state
-            .match_state
-            .match_presentation
-            .saved_game_browser
-            .as_mut()
-            .and_then(|browser| {
-                browser.pressed_control = None;
-                browser.prompt.take()
-            });
-        let Some(prompt) = prompt else {
+        let Some(prompt) =
+            Self::saved_game_browser(state).and_then(|browser| browser.take_prompt())
+        else {
             return;
         };
         match prompt.purpose {
             SavedSeedPromptPurpose::EmptyDescription => {
-                if let Some(browser) = state
-                    .match_state
-                    .match_presentation
-                    .saved_game_browser
-                    .as_mut()
-                {
-                    browser.description_edit.focused = true;
+                if let Some(browser) = Self::saved_game_browser(state) {
+                    browser.focus_edit();
                 }
             }
             SavedSeedPromptPurpose::Saved => Self::close_saved_game_browser(state),
@@ -120,21 +105,12 @@ impl App {
                 if let Err(error) = state.persistence.repository.delete(&file_name) {
                     log::warn!("Delete browser: {}: {error}", file_name.display());
                 }
-                let rows = Self::saved_game_layout(state, SavedSeedMode::Delete)
-                    .map(|layout| {
-                        SeedListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale))
-                            .visible_rows
-                    })
-                    .unwrap_or(1);
-                let empty = state
-                    .match_state
-                    .match_presentation
-                    .saved_game_browser
-                    .as_mut()
-                    .is_some_and(|browser| {
-                        browser.remove_entry(&file_name, rows);
-                        browser.entries.is_empty()
-                    });
+                let layout = Self::saved_game_layout(state, SavedSeedMode::Delete);
+                let rows = layout.as_ref().map_or(1, saved_browser_rows);
+                let empty = Self::saved_game_browser(state).is_some_and(|browser| {
+                    browser.remove_entry(&file_name, rows);
+                    browser.entries.is_empty()
+                });
                 if empty {
                     Self::close_saved_game_browser(state);
                 }
@@ -237,40 +213,36 @@ impl App {
         }
     }
 
-    fn apply_saved_game_input(state: &mut AppState, result: BrowserInputResult<PathBuf>) {
-        match result {
-            BrowserInputResult::None => {}
-            BrowserInputResult::Outcome(outcome) => Self::apply_saved_game_outcome(state, outcome),
-            BrowserInputResult::PromptAnswer(answer) => {
-                Self::resolve_saved_game_prompt(state, answer)
+    fn apply_saved_game_input(state: &mut AppState, results: Vec<BrowserInputResult<PathBuf>>) {
+        for result in results {
+            match result {
+                BrowserInputResult::Outcome(outcome) => {
+                    Self::apply_saved_game_outcome(state, outcome)
+                }
+                BrowserInputResult::PromptAnswer(answer) => {
+                    Self::resolve_saved_game_prompt(state, answer)
+                }
+                // B7/2B4/2B5's action and Back are owner-draw (0x0061376B).
+                BrowserInputResult::Cue(cue) => Self::play_page_cue(state, cue),
             }
-            // B7/2B4/2B5's action and Back are owner-draw (0x0061376B).
-            BrowserInputResult::ButtonPressed | BrowserInputResult::PromptButtonPressed => {
-                Self::play_main_menu_button_sound(state)
-            }
-            BrowserInputResult::RowClicked => Self::play_skirmish_shell_generic_click_sound(state),
         }
     }
 
     pub(crate) fn saved_game_key(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-        if let Some(browser) = state
-            .match_state
-            .match_presentation
-            .saved_game_browser
-            .as_mut()
-        {
-            let result = saved_file_input::key(browser, code, text);
-            Self::apply_saved_game_input(state, result);
+        if let Some(browser) = Self::saved_game_browser(state) {
+            let results = saved_file_input::key(browser, code, text);
+            Self::apply_saved_game_input(state, results);
         }
     }
 
-    pub(crate) fn saved_game_mouse(state: &mut AppState, pressed: bool) {
+    /// One pointer message on the browser (`down`: `None` moves).
+    fn saved_game_pointer(state: &mut AppState, down: Option<bool>) {
         let Some(mode) = state
             .match_state
             .match_presentation
             .saved_game_browser
             .as_ref()
-            .map(|browser| browser.mode)
+            .map(|b| b.mode)
         else {
             return;
         };
@@ -279,65 +251,43 @@ impl App {
         };
         let extent = (layout.screen.w as u32, layout.screen.h as u32);
         let pointer = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-        let browser = state
-            .match_state
-            .match_presentation
-            .saved_game_browser
-            .as_mut()
-            .unwrap();
-        let result = if pressed {
-            saved_file_input::mouse_down(
-                browser,
-                &layout,
-                extent,
-                pointer,
-                crate::util::time::Instant::now(),
-                saved_file_input::host_double_click_limits(),
-            )
-        } else {
-            saved_file_input::mouse_up(browser, &layout, extent, pointer)
-        };
-        Self::apply_saved_game_input(state, result);
+        if let Some(browser) = Self::saved_game_browser(state) {
+            let results = saved_file_input::pointer(browser, &layout, extent, pointer, down);
+            Self::apply_saved_game_input(state, results);
+        }
     }
 
+    pub(crate) fn saved_game_mouse(state: &mut AppState, pressed: bool) {
+        Self::saved_game_pointer(state, Some(pressed));
+    }
+
+    /// Each frame, and on a pointer move: the scroll repeat, a held thumb
+    /// and the edit's scroll.
     pub(crate) fn update_saved_game_browser(state: &mut AppState, pointer_moved: bool) {
+        if pointer_moved {
+            Self::saved_game_pointer(state, None);
+        }
         let Some(mode) = state
             .match_state
             .match_presentation
             .saved_game_browser
             .as_ref()
-            .map(|browser| browser.mode)
+            .map(|b| b.mode)
         else {
             return;
         };
         let Some(layout) = Self::saved_game_layout(state, mode) else {
             return;
         };
-        let (_, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-        let browser = state
+        let extent = (layout.screen.w as u32, layout.screen.h as u32);
+        let font = &state.renderer.bit_font;
+        if let Some(browser) = state
             .match_state
             .match_presentation
             .saved_game_browser
             .as_mut()
-            .unwrap();
-        if !saved_file_input::update_scroll(
-            browser,
-            &layout,
-            y,
-            pointer_moved,
-            crate::util::time::Instant::now(),
-        ) {
-            return;
-        }
-        if let Some(rect) = layout.name_edit {
-            let available = (crate::ui::skirmish_shell::player_name_edit_text_rect(
-                rect,
-                crate::ui::shell::geom::ShellScale::RETAIL,
-            )
-            .w - 2)
-                .max(0) as u32;
-            let edit = &mut browser.description_edit;
-            edit.scroll_to_caret(available, |text| state.renderer.bit_font.text_width(text));
+        {
+            saved_file_input::update(browser, &layout, extent, |text| font.text_width(text));
         }
     }
 }

@@ -87,213 +87,6 @@ impl AppState {
     }
 }
 
-impl crate::app::persistence::options::launcher::LauncherPreviewOperations for AppState {
-    fn play_cue(&mut self, cue: crate::ui::main_menu_dialogs::options::LauncherCue) {
-        App::play_launcher_options_cue(self, cue);
-    }
-    fn store_zoom(&mut self, zoom: crate::ui::main_menu_dialogs::options::Zoom) {
-        self.persistence.options_profile.zoom = zoom;
-        App::sync_zoom_pass(self);
-    }
-    fn store_sidebar(&mut self, size: crate::ui::main_menu_dialogs::options::SidebarSize) {
-        // The next battle frame lays out and draws the sidebar at this size.
-        self.persistence.options_profile.sidebar = size;
-    }
-    fn store_sidebar_columns(
-        &mut self,
-        columns: crate::ui::main_menu_dialogs::options::SidebarColumns,
-    ) {
-        // The spec is rebuilt from this every refresh, so the next frame lays
-        // the cameo grid out again; Options' accept writes it out.
-        self.persistence.options_profile.sidebar_columns = columns;
-    }
-    fn store_health_bars(&mut self, mode: crate::ui::main_menu_dialogs::options::HealthBarMode) {
-        // Presentation reads it every frame, so the next frame draws the new
-        // strip policy; Options' accept writes it out.
-        self.persistence.options_profile.health_bars = mode;
-    }
-    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
-        // Read at start, as the mod is: this launch keeps the setting it
-        // opened its files with. Options' accept writes it out.
-        self.persistence.options_profile.ares = setting;
-    }
-    fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
-        // The final-frame pass reads the profile every frame, so the very next
-        // frame is corrected; no atlas or ramp has to be rebuilt. Options'
-        // accept writes it out.
-        self.persistence.options_profile.color_vision = mode;
-    }
-    fn set_display(&mut self, display: crate::ui::main_menu_dialogs::options::DisplayTarget) {
-        // Applied at once, like Full Screen: the window moves to the picked
-        // screen (or back to the system's choice) before the page is accepted.
-        self.persistence.options_profile.display = display.clone();
-        let displays = crate::app::display_target::current_displays(&self.platform.window);
-        crate::app::display_target::apply(&self.platform.window, &displays, &display);
-    }
-    fn set_full_screen(&mut self, full_screen: bool) {
-        App::set_full_screen(self, full_screen);
-    }
-    fn restore_launch_window(&mut self) {
-        App::restore_launch_window(self);
-    }
-    fn set_performance_stats(&mut self, shown: bool) {
-        // Live state only; no profile stores it, so each launch starts hidden.
-        self.renderer.performance_overlay.set_visible(shown);
-    }
-    fn set_show_string_keys(&mut self, shown: bool) {
-        // Saved, and applied at once: the box arms the hotkey but leaves the
-        // texts showing, so ticking it never swaps the page under the pointer.
-        // The loaded table and the language catalog both answer with keys once
-        // the hotkey asks; map titles follow, as on a language change.
-        self.persistence.options_profile.show_string_keys = shown;
-        crate::i18n::set_show_string_keys(shown);
-        self.refresh_string_key_labels();
-    }
-    fn store_original_shape(&mut self, original_shape: bool) {
-        self.persistence.options_profile.original_shape = original_shape;
-        App::sync_zoom_pass(self);
-    }
-    fn store_yr_original_style(&mut self, yr_original_style: bool) {
-        // The menu movie's session identity carries the choice, so its next
-        // paint loads the selected game copy; the splash follows next launch.
-        // The shell atlas carries the same profile value; it is rebuilt (or
-        // built) now, before another shell screen can paint.
-        self.persistence.options_profile.yr_original_style = yr_original_style;
-        let _ = App::ensure_skirmish_shell_chrome(self);
-    }
-    fn store_skip_intro(&mut self, skip: bool) {
-        // Read once at the next launch; Options' accept writes it out.
-        self.persistence.options_profile.skip_intro = skip;
-    }
-    fn store_custom_end_game_banner(&mut self, enabled: bool) {
-        // Read when a match result is admitted: the verdict's picture and its
-        // music are chosen together, so a match already on screen keeps what it
-        // started with and the next one obeys the box.
-        self.persistence.options_profile.custom_end_game_banner = enabled;
-    }
-    fn store_custom_end_game_score(&mut self, enabled: bool) {
-        // Same moment as the verdict: the model that becomes the score page is
-        // built once, when the match ends.
-        self.persistence.options_profile.custom_end_game_score = enabled;
-    }
-    fn store_custom_end_game_movie(&mut self, enabled: bool) {
-        // Read when a match ends; a teardown already waiting for a clip keeps
-        // waiting, so the switch never cuts a line that is halfway said.
-        self.persistence.options_profile.custom_end_game_movie = enabled;
-    }
-    fn store_commander_feedback(&mut self, enabled: bool) {
-        // The clip layer's next pass reads it, so a match mutes or unmutes
-        // its commanders at once; muted, it still spends what it sees.
-        self.persistence.options_profile.commander_feedback = enabled;
-    }
-    fn store_shift_queue(&mut self, shift_queue: bool) {
-        // The next cameo press reads it; Options' accept writes it out.
-        self.persistence.options_profile.shift_queue = shift_queue;
-    }
-    fn store_auto_repair(&mut self, enabled: bool) {
-        // The next logic frame's pass reads it; Options' accept writes it out.
-        self.persistence.options_profile.auto_repair = enabled;
-    }
-    fn store_minimap_beacons(&mut self, enabled: bool) {
-        // The next radar click reads it; Options' accept writes it out.
-        self.persistence.options_profile.minimap_beacons = enabled;
-    }
-    fn store_detailed_eva_text(&mut self, enabled: bool) {
-        // Presentation only: the next EVA text line reads it.
-        self.persistence.options_profile.detailed_eva_text = enabled;
-    }
-    fn store_convenience_help(&mut self, enabled: bool) {
-        // Presentation only: the next status-row draw reads it.
-        self.persistence.options_profile.convenience_help = enabled;
-    }
-    fn store_building_production_queue(&mut self, enabled: bool) {
-        // A rule switch, as Terrain Deformation is: the next offline
-        // scenario's rules read it, so a running match keeps what it started
-        // with and every peer, save and replay plays the same rules.
-        self.persistence.options_profile.building_production_queue = enabled;
-        self.process_assets.set_building_production_queue(enabled);
-    }
-    fn store_compact_super_timers(&mut self, enabled: bool) {
-        // Presentation only: the next timer draw reads it.
-        self.persistence.options_profile.compact_super_timers = enabled;
-    }
-    fn store_lock_cursor(&mut self, locked: bool) {
-        // Saved, and applied at once: the window holds or frees the pointer.
-        self.persistence.options_profile.lock_cursor = locked;
-        self.platform.cursor_confined = locked;
-        crate::app::input::cursor::apply_cursor_confinement(self);
-    }
-    fn store_vera_icon(&mut self, vera_icon: bool) {
-        // Saved, and shown at once. Unticked in an install without the red
-        // star, the window keeps VERA's icon until the next launch, which
-        // starts with the program's own.
-        self.persistence.options_profile.vera_icon = vera_icon;
-        // Android's launcher icon is a compiled resource carried by the two
-        // activity aliases, and changing it closes the app, so the choice has to
-        // be on disk first. Every other platform applies the icon to the live
-        // window below and keeps its own write timing.
-        #[cfg(target_os = "android")]
-        {
-            crate::app::persistence::options::persist_options_profile(self);
-            crate::util::app_icon::apply(vera_icon);
-        }
-        if self.platform.window.is_visible() == Some(false) {
-            return;
-        }
-        let ra2_dir = self
-            .platform
-            .game_config
-            .as_ref()
-            .map(|config| config.paths.ra2_dir.as_path());
-        if let Some(icon) = crate::app::window_icon::WindowIcon::chosen(vera_icon, ra2_dir) {
-            icon.show_on(&self.platform.window);
-        }
-    }
-    fn store_right_click_orders(&mut self, enabled: bool) {
-        self.persistence.options_profile.right_click_orders = enabled;
-    }
-    fn store_hd_radar(&mut self, enabled: bool) {
-        // A battle's next frame sizes the sidebar and radar from it.
-        self.persistence.options_profile.hd_radar = enabled;
-    }
-    fn store_smooth_sidebar(&mut self, enabled: bool) {
-        // A battle's next frame sizes the sidebar and scales its art from it.
-        self.persistence.options_profile.smooth_sidebar = enabled;
-    }
-    fn store_smooth_online_menus(&mut self, enabled: bool) {
-        // The online client's next frame draws its art by it.
-        self.persistence.options_profile.smooth_online_menus = enabled;
-    }
-    fn store_vsync(&mut self, vsync: bool) {
-        // Applied at once: the window's surface presents by it from the
-        // next frame.
-        self.persistence.options_profile.vsync = vsync;
-        App::sync_present_mode(self);
-    }
-    fn store_hd_map_previews(&mut self, enabled: bool) {
-        // The next setup screen picks its preview from it.
-        self.persistence.options_profile.hd_map_previews = enabled;
-    }
-    fn store_language(&mut self, tag: String) {
-        // The open Options page reads its captions again once the events
-        // have run; Options' accept writes the choice out.
-        if self.use_language(&tag) {
-            self.persistence.options_profile.language = Some(tag);
-        }
-    }
-    fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
-        self.persistence.options_profile.mouse_wheel_zoom = enabled;
-        if !enabled {
-            crate::app::input::camera::reset_view_distance(self);
-        }
-    }
-    fn store_house_color_strength(&mut self, strength: u8) {
-        // Baked into a battle's colour tables when it loads, like the
-        // sprite atlas that reads them; Options' accept writes it out.
-        self.persistence.options_profile.house_color_strength = strength;
-    }
-}
-
 struct AppStateLauncherParentOperations<'a> {
     state: &'a mut AppState,
 }
@@ -1292,7 +1085,7 @@ impl App {
             });
         // VERA's Esc menu opens Options over a page: the button returns there.
         if state.frontend.shell_route != crate::app::shell_route::ShellRoute::MainMenu {
-            labels.main_menu = Self::csf_label(state, "GUI:Back", "Back");
+            labels.set("GUI:MainMenu", Self::csf_label(state, "GUI:Back", "Back"));
         }
         labels
     }
@@ -1320,6 +1113,21 @@ impl App {
             && state.frontend.skirmish_shell_chrome.is_some()
     }
 
+    /// Run an Options dialog's preview events in order; true when one picked a
+    /// language, after which the dialog's captions read again
+    /// ([`Self::launcher_options_labels`]).
+    pub(crate) fn run_launcher_options_events(
+        state: &mut AppState,
+        events: Vec<crate::ui::main_menu_dialogs::options::LauncherOptionsEvent>,
+    ) -> bool {
+        use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
+        let language = events.iter().any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
+        for event in events {
+            crate::app::persistence::options::launcher::dispatch_launcher_preview_event(state, event);
+        }
+        language
+    }
+
     /// Both physical shell input and the assetless fallback drain the same
     /// semantic transaction; profile and audio authority remain in their owners.
     fn dispatch_launcher_options_output(
@@ -1327,17 +1135,7 @@ impl App {
         mut dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
         output: crate::ui::main_menu_dialogs::options::LauncherOptionsFrameOutput,
     ) {
-        use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
-        let relabel = output
-            .events
-            .iter()
-            .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
-        for event in output.events {
-            crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
-                state, event,
-            );
-        }
-        if relabel {
+        if Self::run_launcher_options_events(state, output.events) {
             dialog.set_labels(Self::launcher_options_labels(state));
         }
         match output.result {

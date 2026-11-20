@@ -357,7 +357,7 @@ impl CountryMenuCatalog {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SkirmishShellState {
     pub(crate) country_catalog: CountryMenuCatalog,
     /// The colours the loaded rules list for a lobby: every colour combo,

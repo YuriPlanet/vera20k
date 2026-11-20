@@ -1,17 +1,16 @@
 //! Active-YR launcher Options parent projection and transaction ordering.
 //!
 //! The retained `RetailOptionsProfile` stays authoritative. This module owns
-//! the pure projection plus narrow operation seams for the live preview and
-//! accepted parent boundary; UI drawing, the window, concrete audio,
-//! persistence I/O, and child routing remain with their established owners.
+//! the pure projection, the live preview's effects and a narrow operation seam
+//! for the accepted parent boundary; UI drawing, concrete audio, persistence
+//! I/O, and child routing remain with their established owners.
 
-use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
+use super::audio::{AudioVolume, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::options::{
-    ColorVisionMode, DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent,
-    LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult,
-    OptionsDialogState, SidebarColumns, SidebarSize, Zoom, admitted_initial_position,
-    admitted_volume_position,
+    LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues,
+    LauncherParentResult, OptionsDialogState, admitted_initial_position, admitted_volume_position,
 };
 
 /// Project the retained signed profile into the fresh native-shaped controls.
@@ -72,6 +71,7 @@ pub(crate) fn launcher_values_from_profile(
         score_position: admitted_volume_position(profile.score_volume),
         sound_position: admitted_volume_position(profile.sound_volume),
         voice_position: admitted_volume_position(profile.voice_volume),
+        game_speed_position: 0,
     }
 }
 
@@ -104,184 +104,146 @@ pub(crate) fn launcher_dialog_from_profile(
     )
 }
 
-/// Concrete effects admitted by one launcher UI frame.
-///
-/// The common audio predicate is deliberately queried again at dispatch so a
-/// forged or stale audio event cannot store a profile value or touch output.
-pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
-    fn play_cue(&mut self, cue: LauncherCue);
-    fn store_zoom(&mut self, zoom: Zoom);
-    fn store_sidebar(&mut self, size: SidebarSize);
-    /// The `[VERA] SidebarColumns=` list's pick; presentation only.
-    fn store_sidebar_columns(&mut self, columns: SidebarColumns);
-    /// The `[VERA] HealthBars=` list's pick; presentation only.
-    fn store_health_bars(&mut self, mode: HealthBarMode);
-    /// The `[VERA] Ares=` list's pick; the game reads it at its next start.
-    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting);
-    /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
-    /// the final frame pass on the very next frame.
-    fn store_color_vision(&mut self, mode: ColorVisionMode);
-    /// Move the window to the picked screen, or hand it back to the system.
-    fn set_display(&mut self, display: DisplayTarget);
-    fn set_full_screen(&mut self, full_screen: bool);
-    /// Put the window back as a launch opens it.
-    fn restore_launch_window(&mut self);
-    fn store_original_shape(&mut self, original_shape: bool);
-    fn store_yr_original_style(&mut self, yr_original_style: bool);
-    fn store_mouse_wheel_zoom(&mut self, enabled: bool);
-    fn store_right_click_orders(&mut self, enabled: bool);
-    fn store_lock_cursor(&mut self, locked: bool);
-    /// Show VERA's artwork or the red star on the window, taskbar and Dock.
-    fn store_vera_icon(&mut self, vera_icon: bool);
-    /// Draw the radar at the sidebar's window scale (`[VERA] HdRadar=`).
-    fn store_hd_radar(&mut self, enabled: bool);
-    /// Draw the sidebar's art from lightly smoothed xBR copies (`[VERA] SmoothSidebar=`).
-    fn store_smooth_sidebar(&mut self, enabled: bool);
-    /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
-    fn store_smooth_online_menus(&mut self, enabled: bool);
-    /// Present in step with the display, or as soon as a frame is drawn
-    /// (`[VERA] VSync=`).
-    fn store_vsync(&mut self, vsync: bool);
-    /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
-    fn store_hd_map_previews(&mut self, enabled: bool);
-    /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
-    fn store_language(&mut self, tag: String);
-    fn store_shift_queue(&mut self, shift_queue: bool);
-    /// Send the Repair order for damaged buildings by itself (`[VERA] AutoRepair=`).
-    fn store_auto_repair(&mut self, enabled: bool);
-    /// Place a beacon with a radar click in Place Beacon mode (`[VERA] MinimapBeacons=`).
-    fn store_minimap_beacons(&mut self, enabled: bool);
-    fn set_performance_stats(&mut self, shown: bool);
-    /// Show each label's string-table key instead of its text.
-    fn set_show_string_keys(&mut self, shown: bool);
-    fn store_skip_intro(&mut self, skip: bool);
-    /// Whether a finished match draws the country's own end-game picture.
-    fn store_custom_end_game_banner(&mut self, enabled: bool);
-    /// Whether a finished match starts the country's own end-game music.
-    fn store_custom_end_game_score(&mut self, enabled: bool);
-    /// Whether the exit lets the closing commander clip finish.
-    fn store_custom_end_game_movie(&mut self, enabled: bool);
-    /// Whether computer commanders play their clips.
-    fn store_commander_feedback(&mut self, enabled: bool);
-    /// VERA-only accessibility text rows; default off.
-    fn store_detailed_eva_text(&mut self, enabled: bool);
-    /// VERA's umbrella quick-status-rows switch; default off.
-    fn store_convenience_help(&mut self, enabled: bool);
-    /// VERA's structure build queue option; default off.
-    fn store_building_production_queue(&mut self, enabled: bool);
-    /// VERA's six-line super weapon timer list; default off.
-    fn store_compact_super_timers(&mut self, enabled: bool);
-    /// VERA's team-colour strength, as the level the profile stores.
-    fn store_house_color_strength(&mut self, strength: u8);
-}
-
 /// Dispatch one already-ordered UI event without an INI write. The three audio
-/// paths preserve native profile -> output -> cue order; the five display
-/// choices and Shift-Click Batch Queue take effect at once.
-pub(crate) fn dispatch_launcher_preview_event(
-    operations: &mut impl LauncherPreviewOperations,
-    event: LauncherOptionsEvent,
-) {
+/// paths preserve native profile -> output -> cue order. A list's pick and a
+/// VERA box take effect at once: most store the profile value that the next
+/// frame, cameo press, radar click, battle, match result or launch reads (and
+/// Options' accept writes out); the rest also apply here to the window, the
+/// renderer or the rules. The audio predicate is queried again in
+/// [`apply_volume`] so a forged or stale audio event stores nothing.
+pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: LauncherOptionsEvent) {
+    use LauncherOptionsEvent as E;
+    let profile = &mut state.persistence.options_profile;
     match event {
-        LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
-        LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
-        LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
-        LauncherOptionsEvent::SidebarColumnsSelected(columns) => {
-            operations.store_sidebar_columns(columns)
+        E::Cue(cue) => App::play_launcher_options_cue(state, cue),
+        E::ZoomSelected(zoom) => {
+            profile.zoom = zoom;
+            App::sync_zoom_pass(state);
         }
-        LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
-        LauncherOptionsEvent::AresSelected(setting) => operations.store_ares(setting),
-        LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
-        LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
-        LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
-        LauncherOptionsEvent::FullScreenChanged(full_screen) => {
-            operations.set_full_screen(full_screen);
+        E::OriginalShapeChanged(original_shape) => {
+            profile.original_shape = original_shape;
+            App::sync_zoom_pass(state);
         }
-        LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
+        E::SidebarSelected(size) => profile.sidebar = size,
+        E::SidebarColumnsSelected(columns) => profile.sidebar_columns = columns,
+        E::HealthBarModeSelected(mode) => profile.health_bars = mode,
+        // Read at start, as the mod is: this launch keeps the setting it
+        // opened its files with.
+        E::AresSelected(setting) => profile.ares = setting,
+        // The final-frame pass reads the profile every frame; no atlas or
+        // ramp has to be rebuilt.
+        E::ColorVisionModeSelected(mode) => profile.color_vision = mode,
+        // Applied at once, like Full Screen: the window moves to the picked
+        // screen (or back to the system's choice) before the page is accepted.
+        E::DisplaySelected(display) => {
+            profile.display = display.clone();
+            let displays = crate::app::display_target::current_displays(&state.platform.window);
+            crate::app::display_target::apply(&state.platform.window, &displays, &display);
+        }
+        // The open Options page reads its captions again once the events
+        // have run.
+        E::LanguageSelected(tag) => {
+            if state.use_language(&tag) {
+                state.persistence.options_profile.language = Some(tag);
+            }
+        }
+        E::FullScreenChanged(full_screen) => App::set_full_screen(state, full_screen),
+        E::SetWindowSizeRequested => App::restore_launch_window(state),
         // The in-game menu opens these dialogs, and starts the layout edit
         // mode, itself (`app::input::pause_menu`).
-        LauncherOptionsEvent::InGameKeyboardRequested
-        | LauncherOptionsEvent::InGameSoundRequested
-        | LauncherOptionsEvent::EditLayoutRequested => {}
-        LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
-            operations.store_original_shape(original_shape);
+        E::InGameKeyboardRequested | E::InGameSoundRequested | E::EditLayoutRequested => {}
+        // The menu movie's session identity carries the choice, so its next
+        // paint loads the selected game copy; the splash follows next launch.
+        // The shell atlas carries the same profile value; it is rebuilt (or
+        // built) now, before another shell screen can paint.
+        E::YrOriginalStyleChanged(yr_original_style) => {
+            profile.yr_original_style = yr_original_style;
+            let _ = App::ensure_skirmish_shell_chrome(state);
         }
-        LauncherOptionsEvent::YrOriginalStyleChanged(yr_original_style) => {
-            operations.store_yr_original_style(yr_original_style)
+        E::MouseWheelZoomChanged(enabled) => {
+            profile.mouse_wheel_zoom = enabled;
+            if !enabled {
+                crate::app::input::camera::reset_view_distance(state);
+            }
         }
-        LauncherOptionsEvent::MouseWheelZoomChanged(enabled) => {
-            operations.store_mouse_wheel_zoom(enabled);
+        E::RightClickOrdersChanged(enabled) => profile.right_click_orders = enabled,
+        E::LockCursorChanged(locked) => {
+            profile.lock_cursor = locked;
+            state.platform.cursor_confined = locked;
+            crate::app::input::cursor::apply_cursor_confinement(state);
         }
-        LauncherOptionsEvent::RightClickOrdersChanged(enabled) => {
-            operations.store_right_click_orders(enabled);
+        E::VeraIconChanged(vera_icon) => store_vera_icon(state, vera_icon),
+        E::HdRadarChanged(enabled) => profile.hd_radar = enabled,
+        E::SmoothSidebarChanged(enabled) => profile.smooth_sidebar = enabled,
+        E::SmoothOnlineMenusChanged(enabled) => profile.smooth_online_menus = enabled,
+        E::VSyncChanged(vsync) => {
+            profile.vsync = vsync;
+            App::sync_present_mode(state);
         }
-        LauncherOptionsEvent::LockCursorChanged(locked) => operations.store_lock_cursor(locked),
-        LauncherOptionsEvent::VeraIconChanged(vera_icon) => operations.store_vera_icon(vera_icon),
-        LauncherOptionsEvent::HdRadarChanged(enabled) => operations.store_hd_radar(enabled),
-        LauncherOptionsEvent::SmoothSidebarChanged(enabled) => {
-            operations.store_smooth_sidebar(enabled);
+        E::HdMapPreviewsChanged(enabled) => profile.hd_map_previews = enabled,
+        E::ShiftQueueChanged(shift_queue) => profile.shift_queue = shift_queue,
+        E::AutoRepairChanged(enabled) => profile.auto_repair = enabled,
+        E::MinimapBeaconsChanged(enabled) => profile.minimap_beacons = enabled,
+        // Live state only; no profile stores it, so each launch starts hidden.
+        E::PerformanceStatsChanged(shown) => state.renderer.performance_overlay.set_visible(shown),
+        // The box arms the hotkey but leaves the texts showing, so ticking it
+        // never swaps the page under the pointer. The loaded table and the
+        // language catalog both answer with keys once the hotkey asks; map
+        // titles follow, as on a language change.
+        E::ShowStringKeysChanged(shown) => {
+            profile.show_string_keys = shown;
+            crate::i18n::set_show_string_keys(shown);
+            state.refresh_string_key_labels();
         }
-        LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
-            operations.store_smooth_online_menus(enabled);
+        E::SkipIntroChanged(skip) => profile.skip_intro = skip,
+        // Read when a match result is admitted or a match ends, so a match
+        // already on screen keeps what it started with, and a teardown already
+        // waiting for a clip keeps waiting.
+        E::CustomEndGameBannerChanged(enabled) => profile.custom_end_game_banner = enabled,
+        E::CustomEndGameScoreChanged(enabled) => profile.custom_end_game_score = enabled,
+        E::CustomEndGameMovieChanged(enabled) => profile.custom_end_game_movie = enabled,
+        // The clip layer's next pass reads it, so a match mutes or unmutes
+        // its commanders at once; muted, it still spends what it sees.
+        E::CommanderFeedbackChanged(enabled) => profile.commander_feedback = enabled,
+        E::DetailedEvaTextChanged(enabled) => profile.detailed_eva_text = enabled,
+        E::ConvenienceHelpChanged(enabled) => profile.convenience_help = enabled,
+        // A rule switch, as Terrain Deformation is: the next offline
+        // scenario's rules read it, so a running match keeps what it started
+        // with and every peer, save and replay plays the same rules.
+        E::BuildingProductionQueueChanged(enabled) => {
+            profile.building_production_queue = enabled;
+            state.process_assets.set_building_production_queue(enabled);
         }
-        LauncherOptionsEvent::VSyncChanged(vsync) => operations.store_vsync(vsync),
-        LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
-            operations.store_hd_map_previews(enabled);
-        }
-        LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
-            operations.store_shift_queue(shift_queue);
-        }
-        LauncherOptionsEvent::AutoRepairChanged(enabled) => {
-            operations.store_auto_repair(enabled);
-        }
-        LauncherOptionsEvent::MinimapBeaconsChanged(enabled) => {
-            operations.store_minimap_beacons(enabled);
-        }
-        LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
-            operations.set_performance_stats(shown)
-        }
-        LauncherOptionsEvent::ShowStringKeysChanged(shown) => {
-            operations.set_show_string_keys(shown)
-        }
-        LauncherOptionsEvent::SkipIntroChanged(skip) => {
-            operations.store_skip_intro(skip);
-        }
-        LauncherOptionsEvent::CustomEndGameBannerChanged(enabled) => {
-            operations.store_custom_end_game_banner(enabled);
-        }
-        LauncherOptionsEvent::CustomEndGameScoreChanged(enabled) => {
-            operations.store_custom_end_game_score(enabled);
-        }
-        LauncherOptionsEvent::CustomEndGameMovieChanged(enabled) => {
-            operations.store_custom_end_game_movie(enabled);
-        }
-        LauncherOptionsEvent::CommanderFeedbackChanged(enabled) => {
-            operations.store_commander_feedback(enabled);
-        }
-        LauncherOptionsEvent::DetailedEvaTextChanged(enabled) => {
-            operations.store_detailed_eva_text(enabled);
-        }
-        LauncherOptionsEvent::ConvenienceHelpChanged(enabled) => {
-            operations.store_convenience_help(enabled);
-        }
-        LauncherOptionsEvent::BuildingProductionQueueChanged(enabled) => {
-            operations.store_building_production_queue(enabled);
-        }
-        LauncherOptionsEvent::CompactSuperTimersChanged(enabled) => {
-            operations.store_compact_super_timers(enabled);
-        }
-        LauncherOptionsEvent::HouseColorStrengthChanged(strength) => {
-            operations.store_house_color_strength(strength);
-        }
-        LauncherOptionsEvent::ScorePreview(volume) => {
-            apply_volume(operations, AudioVolume::Score, volume, true)
-        }
-        LauncherOptionsEvent::SoundPreview(volume) => {
-            apply_volume(operations, AudioVolume::Sound, volume, true)
-        }
-        LauncherOptionsEvent::VoicePreview(volume) => {
-            apply_volume(operations, AudioVolume::Voice, volume, true)
-        }
+        E::CompactSuperTimersChanged(enabled) => profile.compact_super_timers = enabled,
+        // Baked into a battle's colour tables when it loads, like the sprite
+        // atlas that reads them.
+        E::HouseColorStrengthChanged(strength) => profile.house_color_strength = strength,
+        E::ScorePreview(volume) => apply_volume(state, AudioVolume::Score, volume, true),
+        E::SoundPreview(volume) => apply_volume(state, AudioVolume::Sound, volume, true),
+        E::VoicePreview(volume) => apply_volume(state, AudioVolume::Voice, volume, true),
+    }
+}
+
+/// Saved, and shown at once. Unticked in an install without the red star, the
+/// window keeps VERA's icon until the next launch, which starts with the
+/// program's own.
+fn store_vera_icon(state: &mut AppState, vera_icon: bool) {
+    state.persistence.options_profile.vera_icon = vera_icon;
+    // Android's launcher icon is a compiled resource carried by the two
+    // activity aliases, and changing it closes the app, so the choice has to
+    // be on disk first. Every other platform applies the icon to the live
+    // window below and keeps its own write timing.
+    #[cfg(target_os = "android")]
+    {
+        crate::app::persistence::options::persist_options_profile(state);
+        crate::util::app_icon::apply(vera_icon);
+    }
+    if state.platform.window.is_visible() == Some(false) {
+        return;
+    }
+    let ra2_dir = state.platform.game_config.as_ref().map(|config| config.paths.ra2_dir.as_path());
+    if let Some(icon) = crate::app::window_icon::WindowIcon::chosen(vera_icon, ra2_dir) {
+        icon.show_on(&state.platform.window);
     }
 }
 

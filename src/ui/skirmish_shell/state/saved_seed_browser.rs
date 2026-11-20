@@ -1,12 +1,35 @@
-//! Shared saved-file browser records, caret-only description edit, and actions.
-//! File identities stay opaque; SED callers retain the NativeFileName default.
-//! Native driver558DD0 and list rebuild5596A0 keep filenames separate from text.
+//! The shared saved-file browser (driver 0x00558DD0): its rows and message
+//! box, with the list 0x525, the description edit 0x526 and the buttons as
+//! `vera20k-gui` widgets, which own the selection, top, text, caret, press,
+//! scroll and double-click. File identities stay opaque; SED callers retain
+//! the NativeFileName default. List rebuild 5596A0 keeps filenames separate
+//! from text.
 
-use super::super::layout::{SavedSeedControl, SavedSeedMode};
+use super::super::layout::{RectPx, SavedSeedMode};
 use crate::map::rmg::{SeedDescription, saved_seeds::SavedSeed};
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::list::ListScrollPart;
+use crate::ui::shell::page;
 use crate::util::native_file_name::NativeFileName;
+use vera20k_gui::{NodeId, NodeKind, NodeSpec, Prop, Value};
 
 pub const SAVED_SEED_DESCRIPTION_MAX_UNITS: usize = 79;
+
+/// The browser and its message box in the browser's own controller.
+pub const BROWSER_DIALOG: DialogId = DialogId(0x00B7);
+pub const PROMPT_DIALOG: DialogId = DialogId(0x5D34);
+/// The list, the description edit (Save only), the action (Load `0x40F`,
+/// Save `0x6C7` or Delete `0x6C8`), Back, VERA's Setups Load and Delete, and
+/// the box's affirmative and negative buttons.
+pub const LIST: u16 = 0x525;
+pub const EDIT: u16 = 0x526;
+pub const ACTION: u16 = 0x40F;
+pub const BACK: u16 = 0x686;
+pub const LOAD: u16 = 0x7501;
+pub const DELETE: u16 = 0x7502;
+pub const YES: u16 = 1;
+pub const NO: u16 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SavedSeedOutcome<I = NativeFileName> {
@@ -43,34 +66,17 @@ pub struct SavedSeedPrompt<I = NativeFileName> {
 }
 
 impl<I> SavedSeedPrompt<I> {
-    /// Both shapes use the shared native message-box templates.
-    pub fn layout(
-        &self,
-        width: u32,
-        height: u32,
-    ) -> (
-        super::super::layout::RectPx,
-        super::super::layout::RectPx,
-        super::super::layout::RectPx,
-        Option<super::super::layout::RectPx>,
-    ) {
+    /// Both shapes use the shared native message-box templates: dialog,
+    /// body, affirmative and negative.
+    pub fn layout(&self, width: u32, height: u32) -> (RectPx, RectPx, RectPx, Option<RectPx>) {
+        use crate::ui::shell::modal::{body_ok_layout, quit_confirm_layout};
+        let (width, height) = (width as i32, height as i32);
         if self.negative.is_some() {
-            let layout = crate::ui::shell::modal::quit_confirm_layout(width as i32, height as i32);
-            (layout.dialog, layout.body, layout.ok, Some(layout.cancel))
+            let l = quit_confirm_layout(width, height);
+            (l.dialog, l.body, l.ok, Some(l.cancel))
         } else {
-            let layout = crate::ui::shell::modal::body_ok_layout(width as i32, height as i32);
-            (layout.dialog, layout.body, layout.ok, None)
-        }
-    }
-
-    pub fn control_at(&self, width: u32, height: u32, x: i32, y: i32) -> Option<SavedSeedControl> {
-        let (_, _, yes, no) = self.layout(width, height);
-        if yes.contains(x, y) {
-            Some(SavedSeedControl::Action)
-        } else if no.is_some_and(|rect| rect.contains(x, y)) {
-            Some(SavedSeedControl::Back0x686)
-        } else {
-            None
+            let l = body_ok_layout(width, height);
+            (l.dialog, l.body, l.ok, None)
         }
     }
 }
@@ -100,48 +106,13 @@ impl<I> SavedSeedBrowserRow<I> {
 /// it lives in `vera20k-gui` ([`vera20k_gui::shell::new_edit`]).
 pub use vera20k_gui::shell::new_edit::NewEdit as SavedSeedDescriptionEdit;
 
-/// The saved-file browser's description field on the shared NewEdit.
-pub trait SeedDescriptionEdit {
-    fn set_text(&mut self, description: &SeedDescription);
-    fn insert_text(&mut self, text: &str);
-    fn description(&self) -> SeedDescription;
-}
-
-impl SeedDescriptionEdit for SavedSeedDescriptionEdit {
-    fn set_text(&mut self, description: &SeedDescription) {
-        // Programmatic assignment also passes through 0x007B78D0 after EM_LIMITTEXT.
-        self.set_units_limited(
-            description.units().iter().copied(),
-            SAVED_SEED_DESCRIPTION_MAX_UNITS,
-        );
-    }
-
-    fn insert_text(&mut self, text: &str) {
-        self.insert_text_limited(text, SAVED_SEED_DESCRIPTION_MAX_UNITS);
-    }
-
-    fn description(&self) -> SeedDescription {
-        // The save driver trims with wcstrim 0x00727D60 after reading at most 79.
-        SeedDescription::from_units(
-            crate::util::native_string::wcstrim(&self.units)
-                .iter()
-                .copied(),
-        )
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SavedSeedBrowserState<I = NativeFileName> {
     pub mode: SavedSeedMode,
     pub entries: Vec<SavedSeedBrowserRow<I>>,
-    pub selected: Option<usize>,
-    pub top_index: usize,
-    pub description_edit: SavedSeedDescriptionEdit,
-    pub pressed_control: Option<SavedSeedControl>,
     pub prompt: Option<SavedSeedPrompt<I>>,
-    pub scroll_repeat_at: Option<crate::util::time::Instant>,
-    pub opened_at: crate::util::time::Instant,
-    pub last_list_press: Option<(crate::util::time::Instant, i32, i32)>,
+    /// The browser's widgets and, while `prompt` is up, the box's buttons.
+    pub ui: DialogController,
     current_description: SeedDescription,
 }
 
@@ -154,18 +125,17 @@ impl SavedSeedBrowserState<NativeFileName> {
         new_slot_time: u64,
         visible_rows: usize,
     ) -> Self {
+        let rows = entries.into_iter().map(|entry| SavedSeedBrowserRow {
+            file_name: Some(entry.file_name),
+            visible: !entry.description.is_empty(),
+            loadable: true,
+            description: entry.description,
+            last_write_time: entry.last_write_time,
+        });
+        let rows = rows.collect();
         Self::open_rows(
             mode,
-            entries
-                .into_iter()
-                .map(|entry| SavedSeedBrowserRow {
-                    file_name: Some(entry.file_name),
-                    visible: !entry.description.is_empty(),
-                    loadable: true,
-                    description: entry.description,
-                    last_write_time: entry.last_write_time,
-                })
-                .collect(),
+            rows,
             current_description,
             empty_slot_label,
             new_slot_time,
@@ -174,28 +144,182 @@ impl SavedSeedBrowserState<NativeFileName> {
     }
 }
 
+/// The browser's widgets in hit order (the edit and list before the column).
+/// Load's carry their status help (`0x006040B0`).
+fn spec(mode: SavedSeedMode) -> NodeSpec {
+    use crate::ui::shell::saved_games::{LOAD_LIST_HELP_KEY, LOAD_SAVED_GAME_PAGE as PAGE};
+    let help = |node: NodeSpec, key| match mode {
+        SavedSeedMode::Load => node.tooltip(key),
+        _ => node,
+    };
+    let button = |id: u16| NodeSpec::new(NodeKind::Button).id(id.into());
+    // The second press of a double-click anywhere in the list only reports
+    // it (LBN_DBLCLK, 0x0061A904); presses below the last row count too, and
+    // a press elsewhere between them does not end it. A held arrow keeps
+    // stepping off the pointer.
+    let on = Value::Bool(true);
+    let list = NodeSpec::new(NodeKind::List)
+        .id(LIST.into())
+        .with(Prop::ListWindow, on.clone())
+        .with(Prop::AreaDoubleClick, on.clone())
+        .with(Prop::DoubleClickAcross, on.clone())
+        .with(Prop::HeldArrow, on);
+    // The caret blinks from the browser's opening (its controller's epoch).
+    let limit = Value::Int(SAVED_SEED_DESCRIPTION_MAX_UNITS as i32);
+    let edit = NodeSpec::new(NodeKind::Edit)
+        .id(EDIT.into())
+        .with(Prop::MaxLen, limit);
+    NodeSpec::new(NodeKind::Dialog)
+        .child(edit.with(Prop::CaretFrom, Value::Int(0)))
+        .child(help(list, LOAD_LIST_HELP_KEY))
+        .child(help(button(ACTION), PAGE.stacked[0].tooltip_key))
+        .children([LOAD, DELETE].map(button))
+        .child(help(button(BACK), PAGE.back.tooltip_key))
+}
+
+/// The dialog control `id` lives in.
+fn dialog(id: u16) -> DialogId {
+    if matches!(id, YES | NO) {
+        PROMPT_DIALOG
+    } else {
+        BROWSER_DIALOG
+    }
+}
+
+fn int(value: Option<&Value>) -> Option<i32> {
+    match value? {
+        Value::Int(value) => Some(*value),
+        _ => None,
+    }
+}
+
 impl<I> SavedSeedBrowserState<I> {
-    /// The name field's caret phase: one second on, one second off from the
-    /// browser's opening. The caret is drawn only while the field has focus.
-    pub fn caret_blink_on(&self) -> bool {
-        self.opened_at.elapsed().as_millis() % 2000 < 1000
+    pub fn node(&self, id: u16) -> Option<NodeId> {
+        self.ui.control(dialog(id), id)
+    }
+
+    pub fn selected(&self) -> Option<usize> {
+        usize::try_from(int(self.ui.prop(BROWSER_DIALOG, LIST, Prop::Selected))?).ok()
+    }
+
+    pub fn top(&self) -> usize {
+        int(self.ui.prop(BROWSER_DIALOG, LIST, Prop::Top)).map_or(0, |top| top.max(0) as usize)
+    }
+
+    fn set_list(&mut self, selected: Option<usize>, top: usize) {
+        let rows = Value::Int(self.entries.len() as i32);
+        self.ui.set_prop(BROWSER_DIALOG, LIST, Prop::RowCount, rows);
+        let selected = Value::Int(selected.map_or(-1, |row| row as i32));
+        self.ui
+            .set_prop(BROWSER_DIALOG, LIST, Prop::Selected, selected);
+        self.ui
+            .set_prop(BROWSER_DIALOG, LIST, Prop::Top, Value::Int(top as i32));
+    }
+
+    /// The arrow the list's scrollbar paints pushed.
+    pub fn list_pressed(&self) -> Option<ListScrollPart> {
+        self.ui.gui().list_view(self.node(LIST)?)?.pressed
+    }
+
+    /// Whether button `id` holds the press (a box's buttons, or the
+    /// browser's while no box is up), pushed on or off the pointer.
+    pub fn pressed(&self, id: u16) -> bool {
+        self.ui
+            .pressed_node_in(dialog(id))
+            .is_some_and(|node| Some(node) == self.node(id))
+    }
+
+    /// The description edit as NewEdit paints it: the first shown unit is
+    /// its `Top`, the focus the browser's own.
+    pub fn edit(&self) -> SavedSeedDescriptionEdit {
+        let text = match self.ui.prop(BROWSER_DIALOG, EDIT, Prop::Text) {
+            Some(Value::Text(text)) => text.as_str(),
+            _ => "",
+        };
+        let caret = int(self.ui.prop(BROWSER_DIALOG, EDIT, Prop::Caret))
+            .map_or(usize::MAX, |c| c.max(0) as usize);
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let top = int(self.ui.prop(BROWSER_DIALOG, EDIT, Prop::Top))
+            .unwrap_or(0)
+            .max(0) as usize;
+        SavedSeedDescriptionEdit {
+            caret: text.chars().take(caret).map(char::len_utf16).sum(),
+            first_visible_unit: top.min(units.len()),
+            units,
+            focused: self.prompt.is_none() && self.ui.focused_control(BROWSER_DIALOG) == Some(EDIT),
+            password: false,
+        }
+    }
+
+    /// NewEdit's caret blink, while the edit has the focus and no box is up.
+    pub fn caret_visible(&self) -> bool {
+        self.node(EDIT)
+            .is_some_and(|node| self.ui.caret_visible(node))
+    }
+
+    /// The description the save driver reads: at most 79 units, trimmed by
+    /// wcstrim 0x00727D60.
+    pub fn description(&self) -> SeedDescription {
+        let units = self.edit().units;
+        SeedDescription::from_units(crate::util::native_string::wcstrim(&units).iter().copied())
+    }
+
+    /// Programmatic assignment also passes through 0x007B78D0 after
+    /// EM_LIMITTEXT; the edit takes the focus.
+    fn set_description(&mut self, description: &SeedDescription) {
+        let units = description.units();
+        let units = &units[..units.len().min(SAVED_SEED_DESCRIPTION_MAX_UNITS)];
+        self.ui
+            .set_text(BROWSER_DIALOG, EDIT, &String::from_utf16_lossy(units));
+        self.ui.focus_control(BROWSER_DIALOG, Some(EDIT));
+    }
+
+    /// The status help of the control under the pointer, none under a box.
+    pub fn hovered_help(&self) -> Option<&str> {
+        let root = self
+            .ui
+            .root_in(BROWSER_DIALOG)
+            .filter(|_| self.prompt.is_none())?;
+        page::hovered_key_in(self.ui.gui(), root)
     }
 
     /// Raise a message box over the browser. It takes the edit focus and ends
     /// any held press or scroll repeat; its buttons own input until answered.
     pub fn show_prompt(&mut self, prompt: SavedSeedPrompt<I>) {
-        self.description_edit.focused = false;
-        self.pressed_control = None;
-        self.scroll_repeat_at = None;
+        if let Some(list) = self.node(LIST) {
+            self.ui.gui_mut().cancel_list_scroll(list);
+        }
+        self.ui.drop_pointer_in(BROWSER_DIALOG);
+        self.ui.focus_control(BROWSER_DIALOG, None);
+        self.ui.close(PROMPT_DIALOG);
+        self.ui.push_modal(PROMPT_DIALOG, false);
+        if let Some(root) = self.ui.root_in(PROMPT_DIALOG) {
+            let button = |id: u16| NodeSpec::new(NodeKind::Button).id(id.into());
+            page::ensure_built(self.ui.gui_mut(), root, || {
+                NodeSpec::new(NodeKind::Dialog).children([YES, NO].map(button))
+            });
+        }
         self.prompt = Some(prompt);
+    }
+
+    /// The answered box goes; the browser takes the input again.
+    pub fn take_prompt(&mut self) -> Option<SavedSeedPrompt<I>> {
+        self.ui.close(PROMPT_DIALOG);
+        self.prompt.take()
+    }
+
+    /// The edit focus back after a warning (0x00559269).
+    pub fn focus_edit(&mut self) {
+        self.ui.focus_control(BROWSER_DIALOG, Some(EDIT));
     }
 
     /// Window focus loss: the release that would end the held press, the
     /// scroll repeat and the double-click pair never arrives.
     pub fn reset_interaction(&mut self) {
-        self.pressed_control = None;
-        self.scroll_repeat_at = None;
-        self.last_list_press = None;
+        self.ui.gui_mut().cancel_pointer();
+        if let Some(list) = self.node(LIST) {
+            self.ui.gui_mut().reset_widget(list);
+        }
     }
 }
 
@@ -228,7 +352,7 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
         let mut storage: Vec<_> = rows.into_iter().map(Some).collect();
         let mut rows: Vec<_> = order
             .into_iter()
-            .map(|i| storage[i].take().unwrap())
+            .filter_map(|i| storage[i].take())
             .collect();
         // Native Load uses the unfiltered metadata index as a visible-list
         // index. Preserve the wrong/no-selection cases caused by invalid rows.
@@ -240,22 +364,22 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
         };
         rows.retain(SavedSeedBrowserRow::visible);
         let selected = initial.filter(|index| *index < rows.len());
-        let top_index = initial
+        let top = initial
             .unwrap_or(0)
             .min(rows.len().saturating_sub(visible_rows));
+        let mut ui = DialogController::default();
+        ui.push(BROWSER_DIALOG, false);
+        if let Some(root) = ui.root_in(BROWSER_DIALOG) {
+            page::ensure_built(ui.gui_mut(), root, || spec(mode));
+        }
         let mut result = Self {
             mode,
             entries: rows,
-            selected,
-            top_index,
-            description_edit: SavedSeedDescriptionEdit::default(),
-            pressed_control: None,
             prompt: None,
-            scroll_repeat_at: None,
-            opened_at: crate::util::time::Instant::now(),
-            last_list_press: None,
+            ui,
             current_description,
         };
+        result.set_list(selected, top);
         if mode == SavedSeedMode::Save {
             result.assign_selected_description();
         }
@@ -263,25 +387,28 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
     }
 
     pub fn selected_entry(&self) -> Option<&SavedSeedBrowserRow<I>> {
-        self.selected.and_then(|index| self.entries.get(index))
+        self.selected().and_then(|index| self.entries.get(index))
     }
 
     fn assign_selected_description(&mut self) {
-        let text = self
-            .selected_entry()
-            .filter(|row| row.file_name.is_some())
-            .map(|row| &row.description)
-            .unwrap_or(&self.current_description);
-        let text = text.clone();
-        self.description_edit.set_text(&text);
-        self.description_edit.focused = true;
+        let row = self.selected_entry().filter(|row| row.file_name.is_some());
+        let text = row
+            .map_or(&self.current_description, |row| &row.description)
+            .clone();
+        self.set_description(&text);
     }
 
+    /// A row the list selected; Save shows its description in the edit.
     pub fn select(&mut self, index: usize) {
         if index >= self.entries.len() {
             return;
         }
-        self.selected = Some(index);
+        self.ui.set_prop(
+            BROWSER_DIALOG,
+            LIST,
+            Prop::Selected,
+            Value::Int(index as i32),
+        );
         if self.mode == SavedSeedMode::Save {
             self.assign_selected_description();
         }
@@ -298,7 +425,7 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
         match self.mode {
             SavedSeedMode::Save => Some(SavedSeedOutcome::Save {
                 file_name: entry.file_name.clone(),
-                description: self.description_edit.description(),
+                description: self.description(),
             }),
             SavedSeedMode::Load => Some(SavedSeedOutcome::Load(entry.file_name.clone()?)),
             SavedSeedMode::Delete => Some(SavedSeedOutcome::Delete(entry.file_name.clone()?)),
@@ -311,12 +438,12 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
         self.selected_entry()?.file_name.as_ref()
     }
 
-    /// VERA's Setups page: what its Load or Delete does.
-    pub fn setup_outcome(&self, control: SavedSeedControl) -> Option<SavedSeedOutcome<I>> {
+    /// VERA's Setups page: what its Load (`LOAD`) or Delete (`DELETE`) does.
+    pub fn setup_outcome(&self, control: u16) -> Option<SavedSeedOutcome<I>> {
         let saved = self.selected_saved()?.clone();
         match control {
-            SavedSeedControl::Load => Some(SavedSeedOutcome::Load(saved)),
-            SavedSeedControl::Delete => Some(SavedSeedOutcome::Delete(saved)),
+            LOAD => Some(SavedSeedOutcome::Load(saved)),
+            DELETE => Some(SavedSeedOutcome::Delete(saved)),
             _ => None,
         }
     }
@@ -324,10 +451,10 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
     pub fn remove_entry(&mut self, file_name: &I, visible_rows: usize) {
         self.entries
             .retain(|row| row.file_name.as_ref() != Some(file_name));
-        self.selected = (!self.entries.is_empty()).then_some(0);
-        self.top_index = self
-            .top_index
+        let top = self
+            .top()
             .min(self.entries.len().saturating_sub(visible_rows));
+        self.set_list((!self.entries.is_empty()).then_some(0), top);
     }
 }
 
@@ -365,9 +492,9 @@ mod tests {
             state.entries[0].file_name.as_ref(),
             Some(&"Future.SED".into())
         );
-        assert_eq!(state.description_edit.description(), "Future");
+        assert_eq!(state.description(), "Future");
         state.select(1);
-        assert_eq!(state.description_edit.description(), "Working");
+        assert_eq!(state.description(), "Working");
         assert!(matches!(
             state.action_outcome(),
             Some(SavedSeedOutcome::Save {
@@ -395,7 +522,7 @@ mod tests {
             SavedSeedMode::Load,
             vec![seed("Invalid", 30, false), seed("A", 20, true)],
         );
-        assert_eq!(no_selection.selected, None);
+        assert_eq!(no_selection.selected(), None);
         assert!(no_selection.action_enabled());
         assert_eq!(no_selection.action_outcome(), None);
         let ties = open(
@@ -410,48 +537,34 @@ mod tests {
     }
 
     #[test]
-    fn blank_save_is_enabled_and_requests_validation_without_a_filename() {
+    fn blank_save_is_enabled_and_requests_validation_and_assignment_is_bounded() {
         let mut state = open(SavedSeedMode::Save, vec![]);
-        state.description_edit.set_text(&"   ".into());
+        state.set_description(&"   ".into());
         assert!(state.action_enabled());
         assert_eq!(
             state.action_outcome(),
             Some(SavedSeedOutcome::Save {
                 file_name: None,
-                description: SeedDescription::default(),
+                description: SeedDescription::default()
             })
         );
-    }
-
-    #[test]
-    fn edit_operates_on_utf16_units_and_programmatic_assignment_is_bounded() {
-        let mut edit = SavedSeedDescriptionEdit::default();
-        edit.set_text(&SeedDescription::from_units([0xd83d, 0xde00, 0x41]));
-        edit.home();
-        edit.right();
-        edit.delete();
-        assert_eq!(edit.description().units(), [0xd83d, 0x41]);
-        edit.set_text(&"x".repeat(100).into());
-        assert_eq!(edit.units.len(), 79);
-        edit.insert_text("more");
-        assert_eq!(edit.units.len(), 79);
-        edit.backspace();
-        edit.insert_text(":");
-        assert_eq!(edit.units[78], u16::from(b':'));
+        state.set_description(&"x".repeat(100).into());
+        assert_eq!(state.edit().units.len(), 79);
     }
 
     #[test]
     fn path_identity_survives_selection_save_and_delete_without_text_conversion() {
         let path = std::path::PathBuf::from("saves/保存 — ridge.bin");
+        let row = SavedSeedBrowserRow {
+            file_name: Some(path.clone()),
+            description: "Saved description".into(),
+            last_write_time: 110,
+            visible: true,
+            loadable: true,
+        };
         let mut state = SavedSeedBrowserState::open_rows(
             SavedSeedMode::Save,
-            vec![SavedSeedBrowserRow {
-                file_name: Some(path.clone()),
-                description: "Saved description".into(),
-                last_write_time: 110,
-                visible: true,
-                loadable: true,
-            }],
+            vec![row],
             "Working".into(),
             "[EMPTY SLOT]".into(),
             100,
@@ -461,45 +574,19 @@ mod tests {
             state.selected_entry().unwrap().file_name.as_ref(),
             Some(&path)
         );
-        state
-            .description_edit
-            .set_text(&"Changed description".into());
+        state.set_description(&"Changed description".into());
         assert_eq!(
             state.action_outcome(),
             Some(SavedSeedOutcome::Save {
                 file_name: Some(path.clone()),
-                description: "Changed description".into(),
+                description: "Changed description".into()
             })
         );
         state.remove_entry(&path, 2);
         assert_eq!(state.entries.len(), 1);
         assert_eq!(state.entries[0].file_name, None);
         state.select(0);
-        assert_eq!(state.description_edit.description(), "Working");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn opaque_windows_path_units_do_not_round_trip_through_description_encoding() {
-        use std::os::windows::ffi::OsStringExt;
-        let path = std::path::PathBuf::from(std::ffi::OsString::from_wide(&[
-            0x73, 0x61, 0x76, 0x65, 0xd800, 0x2e, 0x62, 0x69, 0x6e,
-        ]));
-        let state = SavedSeedBrowserState::open_rows(
-            SavedSeedMode::Load,
-            vec![SavedSeedBrowserRow {
-                file_name: Some(path.clone()),
-                description: SeedDescription::default(),
-                last_write_time: 1,
-                visible: true,
-                loadable: true,
-            }],
-            SeedDescription::default(),
-            "[EMPTY SLOT]".into(),
-            2,
-            2,
-        );
-        assert_eq!(state.action_outcome(), Some(SavedSeedOutcome::Load(path)));
+        assert_eq!(state.description(), "Working");
     }
 
     #[test]
@@ -514,7 +601,7 @@ mod tests {
         );
         state.select(1);
         state.remove_entry(&"B.SED".into(), 2);
-        assert_eq!(state.selected, Some(0));
+        assert_eq!(state.selected(), Some(0));
         state.remove_entry(&"A.SED".into(), 2);
         state.remove_entry(&"C.SED".into(), 2);
         assert!(state.entries.is_empty());

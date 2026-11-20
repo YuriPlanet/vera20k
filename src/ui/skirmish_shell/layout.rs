@@ -1262,27 +1262,6 @@ impl SavedSeedMode {
     }
 }
 
-/// Clickable controls of the saved-seed browser.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SavedSeedControl {
-    /// Load 0x40F / Save 0x6C7 / Delete 0x6C8, by mode.
-    Action,
-    /// Back 0x686, shared by all three.
-    Back0x686,
-    /// The list, 0x525 / 0x527 / 0x528.
-    List,
-    /// The file-name edit 0x526; Save only.
-    NameEdit0x526,
-    /// VERA's Setups page's Load and Delete, under its Save; the retail
-    /// browsers have one action each.
-    Load,
-    Delete,
-    ScrollUp,
-    ScrollDown,
-    ScrollThumb,
-    ScrollTrack,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SavedSeedLayout {
     /// The 800x600 -> window mapping these rects went through.
@@ -1583,31 +1562,6 @@ pub fn compute_responsive_saved_seed_layout(
     compute_saved_seed_layout(mode, SHELL_BASE_W as u32, SHELL_BASE_H as u32).scaled_rects(scale)
 }
 
-/// Topmost saved-seed control at `(x, y)`, or `None`.
-pub fn saved_seed_control_at(layout: &SavedSeedLayout, x: i32, y: i32) -> Option<SavedSeedControl> {
-    if let Some(edit) = layout.name_edit
-        && edit.contains(x, y)
-    {
-        return Some(SavedSeedControl::NameEdit0x526);
-    }
-    if layout.list.contains(x, y) {
-        return Some(SavedSeedControl::List);
-    }
-    if layout.action.contains(x, y) {
-        return Some(SavedSeedControl::Action);
-    }
-    if layout.load.is_some_and(|rect| rect.contains(x, y)) {
-        return Some(SavedSeedControl::Load);
-    }
-    if layout.delete.is_some_and(|rect| rect.contains(x, y)) {
-        return Some(SavedSeedControl::Delete);
-    }
-    if layout.back.contains(x, y) {
-        return Some(SavedSeedControl::Back0x686);
-    }
-    None
-}
-
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::AdvancedField;
@@ -1678,12 +1632,10 @@ mod tests {
     }
 
     /// VERA's Setups page puts Load and Delete on the two tiles under Save,
-    /// above Back on the smallest window too, and a press on each finds it
-    /// (at 640x480 the browser's list reaches under the column's left edge,
-    /// Save's too, so the press lands on the right).
+    /// above Back on the smallest window too.
     #[test]
     fn setups_page_stacks_load_and_delete_under_save_above_back() {
-        use super::{SDBTNBKGD_H, SavedSeedControl, compute_setups_layout, saved_seed_control_at};
+        use super::{SDBTNBKGD_H, compute_setups_layout};
         for layout in [
             compute_setups_layout(640, 480),
             compute_setups_layout(800, 600),
@@ -1693,14 +1645,6 @@ mod tests {
             assert_eq!(load, layout.action.translate(0, SDBTNBKGD_H));
             assert_eq!(delete, load.translate(0, SDBTNBKGD_H));
             assert!(delete.y + delete.h <= layout.back.y, "{layout:?}");
-            assert_eq!(
-                saved_seed_control_at(&layout, load.x + load.w - 4, load.y + 4),
-                Some(SavedSeedControl::Load)
-            );
-            assert_eq!(
-                saved_seed_control_at(&layout, delete.x + delete.w - 4, delete.y + 4),
-                Some(SavedSeedControl::Delete)
-            );
         }
         // The retail browsers have neither.
         let seeds = compute_saved_seed_layout(SavedSeedMode::Save, 800, 600);

@@ -13,10 +13,12 @@ use anyhow::{Context, Result};
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
-use crate::assets::pcx_file::PcxFile;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
-use crate::render::chrome_atlas::{ChromeAtlasEntry, ChromePiece, pack_chrome_atlas};
+use crate::render::chrome_atlas::{
+    ChromeArt, ChromeAtlasEntry, ChromePiece, Need, load_palette, pack_chrome_atlas, pcx_piece,
+    read_palette, shp_file_piece, shp_piece, solid_piece,
+};
 use crate::render::gpu::GpuContext;
 
 /// SDBTNANM.SHP frames baked for the first-paint slide ramp. The reveal animates
@@ -24,6 +26,8 @@ use crate::render::gpu::GpuContext;
 /// so the full 0..=16 set is loaded; missing frames stay `None` and the wave
 /// clamps to the nearest available frame.
 const SDBTNANM_WAVE_FRAMES: usize = 17;
+
+const ATLAS_NAME: &str = "Main-menu shell chrome";
 
 pub type MainMenuShellChromeEntry = ChromeAtlasEntry;
 
@@ -105,6 +109,16 @@ fn blend_black_rgb565(rgba: &[u8], alpha: u8) -> Vec<u8> {
         .collect()
 }
 
+/// `piece` under [`blend_black_rgb565`], labelled `label`.
+fn blended_black(piece: &ChromePiece, label: String, alpha: u8) -> ChromePiece {
+    ChromePiece {
+        label,
+        width: piece.width,
+        height: piece.height,
+        rgba: blend_black_rgb565(&piece.rgba, alpha),
+    }
+}
+
 /// The `+0xD5` top panel's shapes, indexed by frame; `None` where missing.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TopPanelArt {
@@ -117,123 +131,96 @@ pub fn build_main_menu_shell_chrome_atlas(
     batch: &BatchRenderer,
     assets: &AssetManager,
 ) -> Result<MainMenuShellChromeAtlas> {
-    let mut rendered = load_main_menu_button_frames(assets)?;
+    let mut art = ChromeArt::new(assets, "main-menu shell");
+    art.pieces = load_main_menu_button_frames(assets)?;
 
     // Right-panel + lower-side chrome SHPs. These render with SHELL.PAL,
     // except SDBTNBKGD which uses SHELL2.PAL.
-    let shell_palette = load_named_palette(assets, "SHELL.PAL");
-    let shell2_palette = load_named_palette(assets, "SHELL2.PAL");
-    if let Some(pal) = shell_palette.as_ref() {
-        push_optional_shp(&mut rendered, assets, "SDTP.SHP", pal, 0);
-        rendered.extend(render_shp_frames(assets, "SDTP.SHP", pal, "top"));
-        rendered.extend(render_shp_frames(assets, "SDWRNTMP.SHP", pal, "warning"));
-        push_optional_shp(&mut rendered, assets, "SDBTM.SHP", pal, 0);
-        push_optional_shp(&mut rendered, assets, "LWSCRNS.SHP", pal, 0);
-        push_optional_shp(&mut rendered, assets, "LWSCRNL.SHP", pal, 0);
-        // Parent backgrounds that fill the screen behind the movie + chrome.
-        // Native SHP canvas size is read at parse time (not hardcoded).
-        push_optional_shp(&mut rendered, assets, "MNSCRNS.SHP", pal, 0);
-        push_optional_shp(&mut rendered, assets, "MNSCRNL.SHP", pal, 0);
-        let darkened: Vec<ChromePiece> = rendered
+    if let Some(pal) = load_palette(assets, "SHELL.PAL").as_ref() {
+        art.shp("SDTP.SHP", pal, 0..1, "sdtp.shp", Need::Optional);
+        art.shp_run("SDTP.SHP", pal, "sdtp.shp:top", usize::MAX);
+        art.shp_run("SDWRNTMP.SHP", pal, "sdwrntmp.shp:warning", usize::MAX);
+        // Parent backgrounds MNSCRNS/MNSCRNL fill the screen behind the movie
+        // + chrome; the native SHP canvas size is read at parse time.
+        for name in [
+            "SDBTM.SHP",
+            "LWSCRNS.SHP",
+            "LWSCRNL.SHP",
+            "MNSCRNS.SHP",
+            "MNSCRNL.SHP",
+        ] {
+            art.shp(name, pal, 0..1, &name.to_ascii_lowercase(), Need::Optional);
+        }
+        let darkened: Vec<ChromePiece> = art
+            .pieces
             .iter()
-            .filter(|entry| entry.label == "mnscrns.shp" || entry.label == "mnscrnl.shp")
-            .map(|entry| ChromePiece {
-                label: format!("{}:list", entry.label),
-                width: entry.width,
-                height: entry.height,
-                rgba: blend_black_rgb565(&entry.rgba, 0),
-            })
+            .filter(|piece| piece.label == "mnscrns.shp#0" || piece.label == "mnscrnl.shp#0")
+            .map(|piece| blended_black(piece, format!("{}:list", piece.label), 0))
             .collect();
-        rendered.extend(darkened);
+        art.pieces.extend(darkened);
     } else {
         log::warn!("Missing SHELL.PAL; skipping main-menu right-panel chrome SHPs");
     }
-    if let Some(pal) = shell2_palette.as_ref() {
-        push_optional_shp(&mut rendered, assets, "SDBTNBKGD.SHP", pal, 0);
+    if let Some(pal) = load_palette(assets, "SHELL2.PAL").as_ref() {
+        art.shp("SDBTNBKGD.SHP", pal, 0..1, "sdbtnbkgd.shp", Need::Optional);
         // Static 0x71C: every SDWRNANM frame through the SHELL2 path
         // (0x00603776), in frame order.
-        rendered.extend(render_shp_frames(assets, "SDWRNANM.SHP", pal, "monitor"));
+        art.shp_run("SDWRNANM.SHP", pal, "sdwrnanm.shp:monitor", usize::MAX);
     } else {
         log::warn!("Missing SHELL2.PAL; skipping main-menu right-panel tile and monitor SHPs");
     }
+    art.pcx(
+        [
+            "UPARROWR.PCX",
+            "UPARROWP.PCX",
+            "DNARROWR.PCX",
+            "DNARROWP.PCX",
+            "SBGRIPT.PCX",
+            "SBGRIPM.PCX",
+            "SBGRIPB.PCX",
+        ],
+        false,
+        Need::Silent,
+    );
+    art.push(solid_piece("white", 2, 2, [0xFF; 4]));
 
-    for name in [
-        "UPARROWR.PCX",
-        "UPARROWP.PCX",
-        "DNARROWR.PCX",
-        "DNARROWP.PCX",
-        "SBGRIPT.PCX",
-        "SBGRIPM.PCX",
-        "SBGRIPB.PCX",
-    ] {
-        if let Some(entry) = render_pcx_entry(assets, name) {
-            rendered.push(entry);
-        }
-    }
-
-    rendered.push(ChromePiece {
-        label: "white".into(),
-        width: 2,
-        height: 2,
-        rgba: vec![0xFF; 2 * 2 * 4],
-    });
-
-    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)
+    let (texture, labels) = art
+        .pack(gpu, batch, ATLAS_NAME)
         .context("Could not pack the required game-menu artwork")?;
-    let mut by_label: std::collections::HashMap<String, MainMenuShellChromeEntry> =
-        std::collections::HashMap::new();
-    for (entry, placed) in rendered.iter().zip(packed.iter().copied()) {
-        by_label.insert(entry.label.clone(), placed);
-    }
     log::info!("Main-menu shell chrome atlas loaded");
-    // The loader validates these three required states before uploading the atlas.
-    let button_default = by_label["sdbtnanm.shp:wave#2"];
-    let button_hover = by_label["sdbtnanm.shp:wave#3"];
-    let button_pressed = by_label["sdbtnanm.shp:wave#4"];
+    let button_wave_frames = labels.frames("sdbtnanm.shp:wave");
+    let first = |label: &str| labels.frame(label, 0);
     Ok(MainMenuShellChromeAtlas {
         texture,
-        button_default,
-        button_hover,
-        button_pressed,
-        button_wave_frames: std::array::from_fn(|frame| {
-            by_label.get(&format!("sdbtnanm.shp:wave#{frame}")).copied()
-        }),
-        right_panel_top_sdtp: by_label.get("sdtp.shp").copied(),
+        // The loader validates these three required states before uploading the atlas.
+        button_default: button_wave_frames[2].context("SDBTNANM frame 2")?,
+        button_hover: button_wave_frames[3].context("SDBTNANM frame 3")?,
+        button_pressed: button_wave_frames[4].context("SDBTNANM frame 4")?,
+        button_wave_frames,
+        right_panel_top_sdtp: first("sdtp.shp"),
         top_panel: TopPanelArt {
-            sdtp: std::array::from_fn(|frame| {
-                by_label.get(&format!("sdtp.shp:top#{frame}")).copied()
-            }),
-            warning: std::array::from_fn(|frame| {
-                by_label
-                    .get(&format!("sdwrntmp.shp:warning#{frame}"))
-                    .copied()
-            }),
+            sdtp: labels.frames("sdtp.shp:top"),
+            warning: labels.frames("sdwrntmp.shp:warning"),
         },
-        right_panel_tile_sdbtnbkgd: by_label.get("sdbtnbkgd.shp").copied(),
-        right_panel_bottom_sdbtm: by_label.get("sdbtm.shp").copied(),
-        lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),
-        lower_side_large_lwscrnl: by_label.get("lwscrnl.shp").copied(),
-        parent_background_640_mnscrns: by_label.get("mnscrns.shp").copied(),
-        parent_background_large_mnscrnl: by_label.get("mnscrnl.shp").copied(),
-        parent_background_640_mnscrns_list: by_label.get("mnscrns.shp:list").copied(),
-        parent_background_large_mnscrnl_list: by_label.get("mnscrnl.shp:list").copied(),
+        right_panel_tile_sdbtnbkgd: first("sdbtnbkgd.shp"),
+        right_panel_bottom_sdbtm: first("sdbtm.shp"),
+        lower_side_640_lwscrns: first("lwscrns.shp"),
+        lower_side_large_lwscrnl: first("lwscrnl.shp"),
+        parent_background_640_mnscrns: first("mnscrns.shp"),
+        parent_background_large_mnscrnl: first("mnscrnl.shp"),
+        parent_background_640_mnscrns_list: labels.get("mnscrns.shp#0:list"),
+        parent_background_large_mnscrnl_list: labels.get("mnscrnl.shp#0:list"),
         list_scroll: ListScrollArt {
-            up_released: by_label.get("uparrowr.pcx").copied(),
-            up_pressed: by_label.get("uparrowp.pcx").copied(),
-            down_released: by_label.get("dnarrowr.pcx").copied(),
-            down_pressed: by_label.get("dnarrowp.pcx").copied(),
-            grip_top: by_label.get("sbgript.pcx").copied(),
-            grip_mid: by_label.get("sbgripm.pcx").copied(),
-            grip_bottom: by_label.get("sbgripb.pcx").copied(),
+            up_released: labels.get("uparrowr.pcx"),
+            up_pressed: labels.get("uparrowp.pcx"),
+            down_released: labels.get("dnarrowr.pcx"),
+            down_pressed: labels.get("dnarrowp.pcx"),
+            grip_top: labels.get("sbgript.pcx"),
+            grip_mid: labels.get("sbgripm.pcx"),
+            grip_bottom: labels.get("sbgripb.pcx"),
         },
-        warning_monitor_frames: (0..)
-            .map_while(|frame| {
-                by_label
-                    .get(&format!("sdwrnanm.shp:monitor#{frame}"))
-                    .copied()
-            })
-            .collect(),
-        white_pixel: by_label.get("white").copied().map(|mut entry| {
+        warning_monitor_frames: labels.run("sdwrnanm.shp:monitor"),
+        white_pixel: labels.get("white").map(|mut entry| {
             // Sample only the block's center so filtering never reaches padding.
             entry.uv_origin[0] += entry.uv_size[0] * 0.25;
             entry.uv_origin[1] += entry.uv_size[1] * 0.25;
@@ -272,18 +259,18 @@ pub(crate) fn inspect_main_menu_button_art(assets: &AssetManager) -> Vec<String>
 
 fn read_main_menu_button_palette(assets: &AssetManager) -> Result<Palette> {
     // Preserve the existing SHELL2 fallback when the dedicated palette is unavailable.
-    read_named_palette(assets, "SDBTNANM.PAL").or_else(|primary| {
-        read_named_palette(assets, "SHELL2.PAL").with_context(|| {
+    read_palette(assets, "SDBTNANM.PAL").or_else(|primary| {
+        read_palette(assets, "SHELL2.PAL").with_context(|| {
             format!("Game-menu button palette failed: {primary:#}; fallback also failed")
         })
     })
 }
 
 fn read_main_menu_button_shape(assets: &AssetManager) -> Result<ShpFile> {
-    let load = assets
-        .load_file_from_mix("SDBTNANM.SHP")
+    let bytes = assets
+        .get_ref("SDBTNANM.SHP")
         .context("Required game-menu artwork SDBTNANM.SHP is missing or unreadable")?;
-    let shp = ShpFile::from_bytes(&load.bytes).context("Could not parse SDBTNANM.SHP")?;
+    let shp = ShpFile::from_bytes(bytes).context("Could not parse SDBTNANM.SHP")?;
     anyhow::ensure!(
         shp.frames.len() >= 5,
         "SDBTNANM.SHP has {} frames; game-menu buttons require frames 2, 3 and 4",
@@ -294,15 +281,7 @@ fn read_main_menu_button_shape(assets: &AssetManager) -> Result<ShpFile> {
 
 fn render_main_menu_button_frames(shp: &ShpFile, palette: &Palette) -> Result<Vec<ChromePiece>> {
     (0..shp.frames.len().min(SDBTNANM_WAVE_FRAMES))
-        .map(|frame| {
-            shp_frame_entry(
-                shp,
-                "SDBTNANM.SHP",
-                palette,
-                frame,
-                Some(&format!("wave#{frame}")),
-            )
-        })
+        .map(|frame| shp_piece(shp, &format!("sdbtnanm.shp:wave#{frame}"), palette, frame))
         .collect()
 }
 
@@ -347,51 +326,33 @@ pub fn build_campaign_shell_art(
     slider: (u32, u32),
 ) -> Option<CampaignShellArt> {
     let [allied_pal, soviet_pal, background_pal] =
-        CAMPAIGN_ART_PALETTES.map(|name| load_named_palette(assets, name));
+        CAMPAIGN_ART_PALETTES.map(|name| load_palette(assets, name));
     let [allied, soviet, background] = campaign_art_names(small);
-    let mut rendered = render_shp_frames(assets, allied, &allied_pal?, "frame");
-    let allied_count = rendered.len();
-    rendered.extend(render_shp_frames(assets, soviet, &soviet_pal?, "frame"));
-    let soviet_count = rendered.len() - allied_count;
-    let mut labels: Vec<&str> = Vec::new();
-    if let Some(entry) = render_shp_entry(assets, background, &background_pal?, 0, None) {
-        rendered.push(ChromePiece {
-            label: "background:dark".into(),
-            width: entry.width,
-            height: entry.height,
-            rgba: blend_black_rgb565(&entry.rgba, 0),
-        });
-        rendered.push(entry);
-        labels.extend(["background:dark", "background"]);
+    let mut art = ChromeArt::new(assets, "campaign shell");
+    art.shp_run(allied, &allied_pal?, "allied", usize::MAX);
+    art.shp_run(soviet, &soviet_pal?, "soviet", usize::MAX);
+    if let Some(piece) = shp_file_piece(assets, background, "background", &background_pal?, 0) {
+        art.push(blended_black(&piece, "background:dark".into(), 0));
+        art.push(piece);
     }
-    if let Some(entry) = render_pcx_entry(assets, "TRAKGRIP.PCX") {
-        rendered.push(entry);
-        labels.push("thumb");
-    }
-    let (frame_w, frame_h, frame_rgba) =
+    art.pcx(["TRAKGRIP.PCX"], false, Need::Silent);
+    let (width, height, rgba) =
         crate::render::skirmish_shell_chrome::trackbar_frame_rgba(slider.0, slider.1, 0);
-    rendered.push(ChromePiece {
+    art.push(ChromePiece {
         label: "slider:frame".into(),
-        width: frame_w,
-        height: frame_h,
-        rgba: frame_rgba,
+        width,
+        height,
+        rgba,
     });
-    labels.push("frame");
-    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)?;
-    let extra = |name: &str| {
-        labels
-            .iter()
-            .position(|label| *label == name)
-            .map(|index| packed[allied_count + soviet_count + index])
-    };
+    let (texture, labels) = art.pack(gpu, batch, ATLAS_NAME)?;
     Some(CampaignShellArt {
         texture,
-        allied: packed[..allied_count].to_vec(),
-        soviet: packed[allied_count..allied_count + soviet_count].to_vec(),
-        background: extra("background"),
-        background_dark: extra("background:dark"),
-        slider_thumb: extra("thumb"),
-        slider_frame: extra("frame"),
+        allied: labels.run("allied"),
+        soviet: labels.run("soviet"),
+        background: labels.get("background"),
+        background_dark: labels.get("background:dark"),
+        slider_thumb: labels.get("trakgrip.pcx"),
+        slider_frame: labels.get("slider:frame"),
     })
 }
 
@@ -406,28 +367,6 @@ pub struct WolPageArt {
     pub background: Option<MainMenuShellChromeEntry>,
     /// The kind-2 icon statics' PCX images by lower-case file name.
     pub icons: Vec<(String, MainMenuShellChromeEntry)>,
-}
-
-/// Magenta is transparent in a kind-2 image static, compared in the surface's
-/// packed format (`OwnerDraw_Static_006153E0`).
-const IMAGE_STATIC_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
-
-/// A kind-2 image static's PCX (the PCX cache `0x006BA140`), keyed to its
-/// transparent colour and labelled by its lower-case name.
-fn render_image_static_pcx(assets: &AssetManager, file: &str) -> Option<ChromePiece> {
-    let bytes = assets.get_ref(file)?;
-    let pcx = PcxFile::from_bytes(bytes)
-        .map_err(|err| log::warn!("Could not parse {file}: {err:#}"))
-        .ok()?;
-    let mut rgba = pcx.to_rgba(None);
-    crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
-        .apply_packed_color_key_rgba8(&mut rgba, IMAGE_STATIC_TRANSPARENT_RGB);
-    Some(ChromePiece {
-        label: file.to_ascii_lowercase(),
-        width: pcx.width as u32,
-        height: pcx.height as u32,
-        rgba,
-    })
 }
 
 /// Score screen `0x108` art for the local side: the dialog background and the
@@ -492,39 +431,26 @@ pub fn build_campaign_score_art(
     let (background_name, scrt_name, scra_name, palette_name) =
         campaign_score_art_names(side, screen_w);
     let background_name = score_name(art.campaign_background, background_name);
-    let scrt_name = score_name(art.campaign_transition, scrt_name);
-    let scra_name = score_name(art.campaign_animation, scra_name);
-    let palette_name = score_name(art.campaign_palette, palette_name);
-    let palette = load_named_palette(assets, palette_name)?;
-    let background = render_shp_entry(assets, background_name, &palette, 0, None)?;
-    let (texture, mut entries) =
-        pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &[background])?;
+    let palette = load_palette(assets, score_name(art.campaign_palette, palette_name))?;
+    let background = shp_file_piece(assets, background_name, background_name, &palette, 0)?;
+    let (texture, mut entries) = pack_chrome_atlas(gpu, batch, ATLAS_NAME, &[background])?;
     // SCRT and SCRA are distinct native SHPs. Keep their strips in separate
     // atlases so every frame remains independently addressable.
-    let scrt = build_campaign_score_frame_strip(gpu, batch, assets, &palette, scrt_name);
-    let scra = build_campaign_score_frame_strip(gpu, batch, assets, &palette, scra_name);
+    let strip = |name: &str| {
+        let mut frames = ChromeArt::new(assets, "campaign score");
+        if frames.shp_run(name, &palette, name, usize::MAX) == 0 {
+            log::warn!("Could not load campaign score shape frames {name}");
+            return None;
+        }
+        let (texture, frames) = pack_chrome_atlas(gpu, batch, ATLAS_NAME, &frames.pieces)?;
+        Some(CampaignScoreFrameStrip { texture, frames })
+    };
     Some(CampaignScoreArt {
         texture,
         background: entries.pop()?,
-        scrt,
-        scra,
+        scrt: strip(score_name(art.campaign_transition, scrt_name)),
+        scra: strip(score_name(art.campaign_animation, scra_name)),
     })
-}
-
-fn build_campaign_score_frame_strip(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    assets: &AssetManager,
-    palette: &Palette,
-    name: &str,
-) -> Option<CampaignScoreFrameStrip> {
-    let rendered = render_shp_frames(assets, name, palette, "frame");
-    if rendered.is_empty() {
-        log::warn!("Could not load campaign score shape frames {name}");
-        return None;
-    }
-    let (texture, frames) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)?;
-    Some(CampaignScoreFrameStrip { texture, frames })
 }
 
 /// Background shape and palette by side (`0x0072D830`, `0x0072D730`): the
@@ -561,6 +487,18 @@ pub fn score_bar_name(bars: Option<&str>, side: i32, band: usize) -> Option<Stri
     Some(format!("mp{side}scrnlbar{:02}.pcx", band + 1))
 }
 
+/// A page background: frame 0 of `shape` through `palette`, `None` (logged)
+/// when either is unavailable.
+fn background_piece(assets: &AssetManager, (shape, palette): (&str, &str)) -> Option<ChromePiece> {
+    shp_file_piece(
+        assets,
+        shape,
+        "background",
+        &load_palette(assets, palette)?,
+        0,
+    )
+}
+
 pub fn build_score_art(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -572,19 +510,10 @@ pub fn build_score_art(
     let (shape, palette) = score_art_names(side, screen_w);
     let shape = score_name(art.multiplayer_background, shape);
     let palette = score_name(art.multiplayer_palette, palette);
-    let mut rendered = Vec::new();
-    let mut labels: Vec<String> = Vec::new();
-    if let Some(palette) = load_named_palette(assets, palette)
-        && let Some(entry) = render_shp_entry(assets, shape, &palette, 0, None)
-    {
-        rendered.push(ChromePiece {
-            label: "background:shaded".into(),
-            width: entry.width,
-            height: entry.height,
-            rgba: blend_black_rgb565(&entry.rgba, 0x9F),
-        });
-        rendered.push(entry);
-        labels.extend(["background:shaded".into(), "background".into()]);
+    let mut pieces = ChromeArt::new(assets, "score");
+    if let Some(piece) = background_piece(assets, (shape, palette)) {
+        pieces.push(blended_black(&piece, "background:shaded".into(), 0x9F));
+        pieces.push(piece);
     } else {
         log::warn!("Missing score background {shape}");
     }
@@ -592,26 +521,19 @@ pub fn build_score_art(
         let Some(file) = score_bar_name(art.multiplayer_bars, side, band) else {
             break;
         };
-        match render_image_static_pcx(assets, &file) {
-            Some(entry) => {
-                rendered.push(entry);
-                labels.push(format!("bar:{band}"));
-            }
-            None => log::warn!("Missing score bar {file}"),
-        }
+        // Kind-2 image statics key magenta (`0x006153E0`).
+        let bar = pcx_piece(assets, &file, true).map(|piece| ChromePiece {
+            label: format!("bar:{band}"),
+            ..piece
+        });
+        pieces.push_or(bar, &file, Need::Optional);
     }
-    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)?;
-    let find = |name: &str| {
-        labels
-            .iter()
-            .position(|label| label == name)
-            .map(|index| packed[index])
-    };
+    let (texture, labels) = pieces.pack(gpu, batch, ATLAS_NAME)?;
     Some(ScoreArt {
         texture,
-        background: find("background"),
-        background_shaded: find("background:shaded"),
-        bars: std::array::from_fn(|band| find(&format!("bar:{band}"))),
+        background: labels.get("background"),
+        background_shaded: labels.get("background:shaded"),
+        bars: std::array::from_fn(|band| labels.get(&format!("bar:{band}"))),
     })
 }
 
@@ -624,166 +546,29 @@ pub fn build_wol_page_art(
     background: (&str, &str),
     icon_files: &[&str],
 ) -> Option<WolPageArt> {
-    let mut rendered = Vec::new();
-    let mut labels: Vec<String> = Vec::new();
-    let (shape, palette) = background;
+    let mut art = ChromeArt::new(assets, "Westwood Online page");
     if screen_w == 800
-        && let Some(palette) = load_named_palette(assets, palette)
-        && let Some(entry) = render_shp_entry(assets, shape, &palette, 0, None)
+        && let Some(piece) = background_piece(assets, background)
     {
-        rendered.push(entry);
-        labels.push("background".into());
+        art.push(piece);
     }
     for file in icon_files {
         let name = file.to_ascii_lowercase();
-        if labels.contains(&name) {
-            continue;
-        }
-        let Some(entry) = render_image_static_pcx(assets, file) else {
-            log::warn!("Missing Westwood Online glossary icon {file}");
-            continue;
-        };
-        rendered.push(entry);
-        labels.push(name);
-    }
-    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)?;
-    let mut background = None;
-    let mut icons = Vec::new();
-    for (label, entry) in labels.into_iter().zip(packed) {
-        if label == "background" {
-            background = Some(entry);
-        } else {
-            icons.push((label, entry));
+        if !art.pieces.iter().any(|piece| piece.label == name) {
+            // Kind-2 image statics key magenta (`0x006153E0`).
+            art.pcx([*file], true, Need::Optional);
         }
     }
+    let (texture, labels) = art.pack(gpu, batch, ATLAS_NAME)?;
     Some(WolPageArt {
         texture,
-        background,
-        icons,
-    })
-}
-
-fn load_named_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
-    read_named_palette(assets, name)
-        .map_err(|err| log::warn!("{err:#}"))
-        .ok()
-}
-
-/// Shell palettes come from ConvertClass__BuildFromPaletteFile `0x0072ADE0`
-/// (SHELL.PAL is read at `0x0072ABDC`), the shared palette conversion.
-fn read_named_palette(assets: &AssetManager, name: &str) -> Result<Palette> {
-    let bytes = assets
-        .get_ref(name)
-        .with_context(|| format!("Palette {name} is missing or unreadable"))?;
-    Palette::from_bytes(bytes).with_context(|| format!("Could not parse palette {name}"))
-}
-
-fn push_optional_shp(
-    out: &mut Vec<ChromePiece>,
-    assets: &AssetManager,
-    file_name: &str,
-    palette: &Palette,
-    frame: usize,
-) {
-    match render_shp_entry(assets, file_name, palette, frame, None) {
-        Some(entry) => out.push(entry),
-        None => log::warn!("Missing optional main-menu shell asset {file_name}"),
-    }
-}
-
-fn render_shp_entry(
-    assets: &AssetManager,
-    file_name: &str,
-    palette: &Palette,
-    frame: usize,
-    tag: Option<&str>,
-) -> Option<ChromePiece> {
-    let load = assets.load_file_from_mix(file_name)?;
-    let shp = ShpFile::from_bytes(&load.bytes).ok()?;
-    shp_frame_entry(&shp, file_name, palette, frame, tag).ok()
-}
-
-/// Every frame of one SHP, parsed once, labelled `<file>:<prefix>#<frame>`.
-fn render_shp_frames(
-    assets: &AssetManager,
-    file_name: &str,
-    palette: &Palette,
-    tag_prefix: &str,
-) -> Vec<ChromePiece> {
-    let Some(load) = assets.load_file_from_mix(file_name) else {
-        return Vec::new();
-    };
-    let Ok(shp) = ShpFile::from_bytes(&load.bytes) else {
-        log::warn!("Could not parse {file_name}");
-        return Vec::new();
-    };
-    (0..shp.frames.len())
-        .map_while(|frame| {
-            shp_frame_entry(
-                &shp,
-                file_name,
-                palette,
-                frame,
-                Some(&format!("{tag_prefix}#{frame}")),
-            )
-            .ok()
-        })
-        .collect()
-}
-
-/// One frame placed on its full SHP canvas.
-fn shp_frame_entry(
-    shp: &ShpFile,
-    file_name: &str,
-    palette: &Palette,
-    frame: usize,
-    tag: Option<&str>,
-) -> Result<ChromePiece> {
-    let frame_rgba = shp
-        .frame_to_rgba(frame, palette)
-        .with_context(|| format!("Could not render {file_name} frame {frame}"))?;
-    let canvas_w = shp.width as u32;
-    let canvas_h = shp.height as u32;
-    let shp_frame = &shp.frames[frame];
-    let frame_w = shp_frame.frame_width as u32;
-    let frame_h = shp_frame.frame_height as u32;
-    let frame_x = shp_frame.frame_x as u32;
-    let frame_y = shp_frame.frame_y as u32;
-    let rgba = if frame_w == canvas_w && frame_h == canvas_h && frame_x == 0 && frame_y == 0 {
-        frame_rgba
-    } else {
-        let mut canvas = vec![0u8; (canvas_w * canvas_h * 4) as usize];
-        for row in 0..frame_h {
-            let src = (row * frame_w * 4) as usize;
-            let dst = (((frame_y + row) * canvas_w + frame_x) * 4) as usize;
-            let len = (frame_w * 4) as usize;
-            if src + len <= frame_rgba.len() && dst + len <= canvas.len() {
-                canvas[dst..dst + len].copy_from_slice(&frame_rgba[src..src + len]);
-            }
-        }
-        canvas
-    };
-    let label = match tag {
-        Some(t) => format!("{}:{}", file_name.to_ascii_lowercase(), t),
-        None => file_name.to_ascii_lowercase(),
-    };
-    Ok(ChromePiece {
-        label,
-        width: canvas_w,
-        height: canvas_h,
-        rgba,
-    })
-}
-
-/// A PCX in its own palette, full canvas.
-fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiece> {
-    let bytes = assets.get_ref(file_name)?;
-    let pcx = PcxFile::from_bytes(bytes).ok()?;
-    Some(ChromePiece {
-        label: file_name.to_ascii_lowercase(),
-        width: pcx.width as u32,
-        height: pcx.height as u32,
-        rgba: pcx.to_rgba(None),
+        background: labels.get("background"),
+        icons: art
+            .pieces
+            .iter()
+            .filter(|piece| piece.label != "background")
+            .filter_map(|piece| Some((piece.label.clone(), labels.get(&piece.label)?)))
+            .collect(),
     })
 }
 

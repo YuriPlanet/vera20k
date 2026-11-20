@@ -17,7 +17,7 @@ use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::shell::saved_games::{saved_game_layout, saved_game_title_label};
-use crate::ui::skirmish_shell::SavedSeedControl;
+use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK};
 
 pub(crate) fn render_saved_game_shell(
     state: &mut AppState,
@@ -76,24 +76,18 @@ pub(crate) fn render_saved_game_shell(
     let (action_key, action_fallback) = browser.mode.action_label();
     for (id, rect, key, fallback, enabled) in [
         (
-            SavedSeedControl::Action,
+            ACTION,
             layout.action,
             action_key,
             action_fallback,
             browser.action_enabled(),
         ),
-        (
-            SavedSeedControl::Back0x686,
-            layout.back,
-            "GUI:Back",
-            "Back",
-            true,
-        ),
+        (BACK, layout.back, "GUI:Back", "Back", true),
     ] {
-        // A confirmation owns pressed_control while open; its buttons are
-        // painted by the common prompt renderer, not the underlying column.
+        // A confirmation drops the browser's press while open; its buttons
+        // are painted by the common prompt renderer, not the underlying column.
         let button = PauseMenuButtonState {
-            pressed: browser.prompt.is_none() && browser.pressed_control == Some(id),
+            pressed: browser.prompt.is_none() && browser.pressed(id),
             highlighted: false,
             enabled,
         };

@@ -164,6 +164,34 @@ pub enum Prop {
     /// off the scrollbar) continues a double-click sequence; a press on the
     /// frame or the scrollbar ends it (Choose Map's lists).
     ContentDoubleClick,
+    /// Combo: the drop-down's rows are this many px tall (VERA's roster,
+    /// whose rows are smaller than the shell's).
+    PopupRowHeight,
+    /// List: rows this many px tall, not the shell's (VERA's room's chat at
+    /// its smaller text). With `VisibleRows`, the scrollbar ranges over the
+    /// tops that keep that many rows showing (VERA's roster).
+    RowHeight,
+    /// Trackbar: hits and drags at `ShellScale::from_screen` of this rect's
+    /// size, not its dialog's scale (VERA's team bar, drawn at 78%).
+    ScaleScreen,
+    /// The node hovers, but a press or release passes to the node under it
+    /// (VERA's roster: a cell whose list does not open lets the press join
+    /// its group's box).
+    PressThrough,
+    /// Combo: its open list neither shows nor takes input until cleared,
+    /// and then shows again as it was (VERA's room hides a list whose row
+    /// moved away).
+    PopupHidden,
+    /// List: a held scrollbar arrow keeps its pushed look and its repeat off
+    /// the pointer, and the track takes no hold (the saved-file browser's
+    /// own scrollbar, 0x00558DD0).
+    HeldArrow,
+    /// List: a press on another control or on nothing keeps the list's
+    /// double-click sequence (the saved-file browser's).
+    DoubleClickAcross,
+    /// Edit: the caret blinks from this UI time, not from the focus (the
+    /// saved-file browser's, from its opening).
+    CaretFrom,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -208,6 +236,10 @@ impl Prop {
             | Prop::ComboScrollbar
             | Prop::AreaDoubleClick
             | Prop::ContentDoubleClick
+            | Prop::PressThrough
+            | Prop::PopupHidden
+            | Prop::HeldArrow
+            | Prop::DoubleClickAcross
             | Prop::ByteOnly => ValueType::Bool,
             Prop::Items | Prop::Swatches => ValueType::Items,
             Prop::Text
@@ -220,7 +252,7 @@ impl Prop {
             | Prop::Allowed => {
                 ValueType::Text
             }
-            Prop::Rect | Prop::HitRect | Prop::PopupRect => ValueType::Rect,
+            Prop::Rect | Prop::HitRect | Prop::PopupRect | Prop::ScaleScreen => ValueType::Rect,
             Prop::Color => ValueType::Rgba,
             Prop::Id
             | Prop::OffsetX
@@ -239,6 +271,9 @@ impl Prop {
             | Prop::PopupBottom
             | Prop::PopupWiden
             | Prop::PopupFlipBelow
+            | Prop::PopupRowHeight
+            | Prop::RowHeight
+            | Prop::CaretFrom
             | Prop::Font => ValueType::Int,
         }
     }
@@ -257,8 +292,14 @@ impl Prop {
             | Prop::PopupFlipBelow
             | Prop::Truncate
             | Prop::ComboScrollbar
+            | Prop::PopupRowHeight
             | Prop::PopupRect => kind == NodeKind::Combo,
-            Prop::AreaDoubleClick | Prop::ContentDoubleClick => kind == NodeKind::List,
+            Prop::RowHeight => kind == NodeKind::List,
+            Prop::ScaleScreen => kind == NodeKind::Trackbar,
+            Prop::AreaDoubleClick | Prop::ContentDoubleClick | Prop::HeldArrow | Prop::DoubleClickAcross => {
+                kind == NodeKind::List
+            }
+            Prop::CaretFrom => kind == NodeKind::Edit,
             Prop::Min | Prop::Max | Prop::Step => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
             _ => true,
         }

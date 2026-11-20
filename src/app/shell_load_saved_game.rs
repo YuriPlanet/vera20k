@@ -4,7 +4,6 @@
 //! it is a family page (right panel, heading, status line, slides). Back
 //! (result 2) tears it down and state 1 recreates Single Player.
 
-use crate::ui::shell::list::ListMetrics;
 use std::path::PathBuf;
 
 use winit::keyboard::KeyCode;
@@ -13,7 +12,6 @@ use super::{App, AppState};
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
 use crate::ui::shell::saved_games::{LOAD_SAVED_GAME_PAGE, MainMenuSavedGameLayout};
-use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserState, SavedSeedMode, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
@@ -26,16 +24,13 @@ impl App {
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
         // The error message box paints from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
-        let layout = Self::load_saved_game_layout(state);
-        let rows = SeedListGeometry::new(
-            layout.browser.list,
-            0,
-            0,
-            ListMetrics::scaled(layout.browser.scale),
-        )
-        .visible_rows;
+        let rows = super::shell_saved_seeds::saved_browser_rows(
+            &Self::load_saved_game_layout(state).browser,
+        );
         let browser = Self::open_saved_game_rows(state, SavedSeedMode::Load, rows);
         state.frontend.load_saved_game = Some(browser);
+        // The status help is the cursor's from the first frame.
+        Self::load_saved_game_pointer(state, None);
         state.frontend.shell_route = ShellRoute::LoadSavedGame;
         state
             .frontend
@@ -60,33 +55,27 @@ impl App {
         crate::app::frontend::shell_layout::load_saved_game_layout(state)
     }
 
-    pub(super) fn handle_load_saved_game_mouse(state: &mut AppState, pressed: bool) {
+    /// One pointer message on the page (`down`: `None` moves).
+    fn load_saved_game_pointer(state: &mut AppState, down: Option<bool>) {
         let layout = Self::load_saved_game_layout(state);
         let extent = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
         );
         let pointer = state.match_state.input.cursor_px();
-        let Some(browser) = state.frontend.load_saved_game.as_mut() else {
-            return;
-        };
-        let result = if pressed {
-            saved_file_input::mouse_down(
-                browser,
-                &layout.browser,
-                extent,
-                pointer,
-                crate::util::time::Instant::now(),
-                saved_file_input::host_double_click_limits(),
-            )
-        } else {
-            saved_file_input::mouse_up(browser, &layout.browser, extent, pointer)
-        };
-        Self::apply_load_saved_game_input(state, result);
+        if let Some(browser) = state.frontend.load_saved_game.as_mut() {
+            let results =
+                saved_file_input::pointer(browser, &layout.browser, extent, pointer, down);
+            Self::apply_load_saved_game_input(state, results);
+        }
+    }
+
+    pub(super) fn handle_load_saved_game_mouse(state: &mut AppState, pressed: bool) {
+        Self::load_saved_game_pointer(state, Some(pressed));
     }
 
     pub(super) fn handle_load_saved_game_mouse_move(state: &mut AppState) {
-        Self::update_load_saved_game_scroll(state, true);
+        Self::load_saved_game_pointer(state, None);
         // Every hover message repaints the status line (0x00615EF7).
         state.frontend.shell_status_line.repaint();
         state.platform.window.request_redraw();
@@ -105,70 +94,76 @@ impl App {
     /// they answer the error message box while it is up.
     pub(super) fn handle_load_saved_game_key(state: &mut AppState, code: KeyCode) {
         if let Some(browser) = state.frontend.load_saved_game.as_mut() {
-            let result = saved_file_input::key(browser, Some(code), None);
-            Self::apply_load_saved_game_input(state, result);
+            let results = saved_file_input::key(browser, Some(code), None);
+            Self::apply_load_saved_game_input(state, results);
         }
     }
 
-    /// Scrollbar drag and arrow repeat (`0x0061C690`).
-    pub(super) fn update_load_saved_game_scroll(state: &mut AppState, pointer_moved: bool) {
+    /// Scrollbar arrow repeat (`0x0061C690`), each frame.
+    pub(super) fn update_load_saved_game_scroll(state: &mut AppState, _pointer_moved: bool) {
         if !Self::load_saved_game_active(state) {
             return;
         }
         let layout = Self::load_saved_game_layout(state);
-        let (_, y) = state.match_state.input.cursor_px();
+        let extent = (
+            state.renderer.gpu.config.width,
+            state.renderer.gpu.config.height,
+        );
+        let font = &state.renderer.bit_font;
         if let Some(browser) = state.frontend.load_saved_game.as_mut() {
-            saved_file_input::update_scroll(
-                browser,
-                &layout.browser,
-                y,
-                pointer_moved,
-                crate::util::time::Instant::now(),
-            );
+            saved_file_input::update(browser, &layout.browser, extent, |text| {
+                font.text_width(text)
+            });
         }
     }
 
-    fn apply_load_saved_game_input(state: &mut AppState, result: BrowserInputResult<PathBuf>) {
-        match result {
-            BrowserInputResult::None => {}
-            // Owner-draw buttons play GUIMainButtonSound on the press
-            // (0x00613667..0x00613771).
-            BrowserInputResult::ButtonPressed | BrowserInputResult::PromptButtonPressed => {
-                Self::play_main_menu_button_sound(state)
-            }
-            BrowserInputResult::RowClicked => Self::play_generic_click_sound(state),
-            BrowserInputResult::PromptAnswer(_) => {
-                if let Some(browser) = state.frontend.load_saved_game.as_mut() {
-                    browser.pressed_control = None;
-                    browser.prompt = None;
-                }
-            }
-            BrowserInputResult::Outcome(SavedSeedOutcome::Close) => Self::leave_shell_dialog(
-                state,
-                crate::app::frontend::shell_transition::ShellExitThen::LoadSavedGameBack,
-            ),
-            BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) => {
-                let loadable = state
-                    .frontend
-                    .load_saved_game
-                    .as_ref()
-                    .and_then(|browser| browser.selected_entry())
-                    .is_none_or(|row| row.loadable);
-                if loadable {
-                    crate::app::persistence::commands::request_saved_game_load(state, path)
-                } else {
-                    let affirmative = Self::csf_label(state, "TXT_OK", "OK");
+    fn show_load_saved_game_error(state: &mut AppState, body: String) {
+        let affirmative = Self::csf_label(state, "TXT_OK", "OK");
+        if let Some(browser) = state.frontend.load_saved_game.as_mut() {
+            let purpose = SavedSeedPromptPurpose::Error;
+            browser.show_prompt(SavedSeedPrompt {
+                purpose,
+                body,
+                affirmative,
+                negative: None,
+            });
+        }
+    }
+
+    fn apply_load_saved_game_input(
+        state: &mut AppState,
+        results: Vec<BrowserInputResult<PathBuf>>,
+    ) {
+        for result in results {
+            match result {
+                // Owner-draw buttons play GUIMainButtonSound on the press
+                // (0x00613667..0x00613771); a row press GenericClick.
+                BrowserInputResult::Cue(cue) => Self::play_page_cue(state, cue),
+                // The page's status help follows the cursor again at once.
+                BrowserInputResult::PromptAnswer(_) => {
                     if let Some(browser) = state.frontend.load_saved_game.as_mut() {
-                        browser.show_prompt(SavedSeedPrompt {
-                            purpose: SavedSeedPromptPurpose::Error,
-                            body: crate::i18n::tr("VERA:SaveFromOtherVersionText"),
-                            affirmative,
-                            negative: None,
-                        });
+                        browser.take_prompt();
+                    }
+                    Self::load_saved_game_pointer(state, None);
+                }
+                BrowserInputResult::Outcome(SavedSeedOutcome::Close) => Self::leave_shell_dialog(
+                    state,
+                    crate::app::frontend::shell_transition::ShellExitThen::LoadSavedGameBack,
+                ),
+                BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) => {
+                    let browser = state.frontend.load_saved_game.as_ref();
+                    let row = browser.and_then(|browser| browser.selected_entry());
+                    if row.is_none_or(|row| row.loadable) {
+                        crate::app::persistence::commands::request_saved_game_load(state, path)
+                    } else {
+                        Self::show_load_saved_game_error(
+                            state,
+                            crate::i18n::tr("VERA:SaveFromOtherVersionText"),
+                        );
                     }
                 }
+                BrowserInputResult::Outcome(_) => {}
             }
-            BrowserInputResult::Outcome(_) => {}
         }
     }
 
@@ -188,35 +183,18 @@ impl App {
             Err(error) => log::warn!("Load Saved Game: {}: {error}", path.display()),
         }
         let body = Self::csf_label(state, "TXT_ERROR_LOADING_GAME", "Error loading game.");
-        let affirmative = Self::csf_label(state, "TXT_OK", "OK");
-        if let Some(browser) = state.frontend.load_saved_game.as_mut() {
-            browser.pressed_control = None;
-            browser.scroll_repeat_at = None;
-            browser.prompt = Some(SavedSeedPrompt {
-                purpose: SavedSeedPromptPurpose::Error,
-                body,
-                affirmative,
-                negative: None,
-            });
-        }
+        Self::show_load_saved_game_error(state, body);
     }
 
     /// Status help of the control under the cursor (`0x006040B0`): the list,
     /// Load or Back, enabled or not.
-    pub(crate) fn load_saved_game_status_key(state: &AppState) -> Option<&'static str> {
-        use crate::ui::skirmish_shell::SavedSeedControl;
-        let browser = state.frontend.load_saved_game.as_ref()?;
-        if browser.prompt.is_some() {
-            return None;
-        }
-        let layout = Self::load_saved_game_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        match crate::ui::skirmish_shell::saved_seed_control_at(&layout.browser, x, y)? {
-            SavedSeedControl::List => Some(crate::ui::shell::saved_games::LOAD_LIST_HELP_KEY),
-            SavedSeedControl::Action => Some(LOAD_SAVED_GAME_PAGE.stacked[0].tooltip_key),
-            SavedSeedControl::Back0x686 => Some(LOAD_SAVED_GAME_PAGE.back.tooltip_key),
-            _ => None,
-        }
+    pub(crate) fn load_saved_game_status_key(state: &AppState) -> Option<String> {
+        state
+            .frontend
+            .load_saved_game
+            .as_ref()?
+            .hovered_help()
+            .map(str::to_owned)
     }
 
     /// The description a new save of the running match gets by default.

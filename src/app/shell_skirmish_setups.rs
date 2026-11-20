@@ -4,11 +4,10 @@
 //! dialog (driver `0x00558DD0`: list, name field, message boxes) with Load and
 //! Delete under its Save; `MultiplayerShellRuntime` owns the setups.
 
+use super::shell_saved_seeds::saved_browser_rows;
 use super::*;
 use crate::map::rmg::{SeedDescription, saved_seeds};
-use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
-use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserRow, SavedSeedBrowserState, SavedSeedOutcome, SavedSeedPromptPurpose,
 };
@@ -44,10 +43,8 @@ impl App {
             .map(|map| map.display_name.trim().to_owned())
             .unwrap_or_default();
         let empty = Self::csf_label(state, "TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        let layout = crate::app::frontend::shell_layout::setups_layout(state);
         let visible_rows =
-            SeedListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale))
-                .visible_rows;
+            saved_browser_rows(&crate::app::frontend::shell_layout::setups_layout(state));
         let browser = SavedSeedBrowserState::open_rows(
             SavedSeedMode::Save,
             rows,
@@ -154,46 +151,41 @@ impl App {
         let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
             return;
         };
-        browser.pressed_control = None;
-        let Some(prompt) = browser.prompt.take() else {
+        let Some(prompt) = browser.take_prompt() else {
             return;
         };
         match prompt.purpose {
-            SetupPurpose::EmptyDescription => browser.description_edit.focused = true,
+            SetupPurpose::EmptyDescription => browser.focus_edit(),
             SetupPurpose::Saved => Self::close_skirmish_setups(state),
             SetupPurpose::Overwrite { file_name, .. } if affirmative => {
                 Self::save_skirmish_setup(state, &file_name);
             }
             SetupPurpose::Delete { file_name } if affirmative => {
-                let layout = crate::app::frontend::shell_layout::setups_layout(state);
-                let visible_rows =
-                    SeedListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale))
-                        .visible_rows;
+                let rows =
+                    saved_browser_rows(&crate::app::frontend::shell_layout::setups_layout(state));
                 state
                     .frontend
                     .multiplayer_shell_runtime
                     .delete_named_setup(&file_name);
                 if let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() {
-                    browser.remove_entry(&file_name, visible_rows);
+                    browser.remove_entry(&file_name, rows);
                 }
             }
             _ => {}
         }
     }
 
-    fn apply_skirmish_setups_input(state: &mut AppState, result: BrowserInputResult<String>) {
-        match result {
-            BrowserInputResult::None => {}
-            BrowserInputResult::Outcome(outcome) => {
-                Self::apply_skirmish_setups_outcome(state, outcome)
+    fn apply_skirmish_setups_input(state: &mut AppState, results: Vec<BrowserInputResult<String>>) {
+        for result in results {
+            match result {
+                BrowserInputResult::Outcome(outcome) => {
+                    Self::apply_skirmish_setups_outcome(state, outcome)
+                }
+                BrowserInputResult::PromptAnswer(answer) => {
+                    Self::resolve_skirmish_setups_prompt(state, answer)
+                }
+                BrowserInputResult::Cue(cue) => Self::play_page_cue(state, cue),
             }
-            BrowserInputResult::PromptAnswer(answer) => {
-                Self::resolve_skirmish_setups_prompt(state, answer)
-            }
-            BrowserInputResult::ButtonPressed | BrowserInputResult::PromptButtonPressed => {
-                Self::play_main_menu_button_sound(state)
-            }
-            BrowserInputResult::RowClicked => Self::play_skirmish_shell_generic_click_sound(state),
         }
         state.platform.window.request_redraw();
     }
@@ -211,78 +203,42 @@ impl App {
             Self::close_skirmish_setups(state);
             return;
         }
-        let result = saved_file_input::key(browser, code, text);
-        Self::apply_skirmish_setups_input(state, result);
-        Self::sync_skirmish_setups_edit_scroll(state);
+        let results = saved_file_input::key(browser, code, text);
+        Self::apply_skirmish_setups_input(state, results);
+        Self::update_skirmish_setups_scroll(state, false);
     }
 
-    fn sync_skirmish_setups_edit_scroll(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::setups_layout(state);
-        let Some(rect) = layout.name_edit else {
-            return;
-        };
-        // As the seed browser's: the fit width is in the font's authored units.
-        let available = (crate::ui::skirmish_shell::player_name_edit_text_rect(
-            layout.scale.base_rect(rect),
-            crate::ui::shell::geom::ShellScale::RETAIL,
-        )
-        .w - 2)
-            .max(0) as u32;
-        let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
-            return;
-        };
-        browser
-            .description_edit
-            .scroll_to_caret(available, |text| state.renderer.bit_font.text_width(text));
-    }
-
+    /// Each frame, and on a pointer move: the scroll repeat, a held thumb
+    /// and the edit's scroll.
     pub(super) fn update_skirmish_setups_scroll(state: &mut AppState, pointer_moved: bool) {
-        if state.frontend.skirmish_shell_state.setups_browser.is_none() {
-            return;
+        if pointer_moved {
+            Self::skirmish_setups_pointer(state, None);
         }
         let layout = crate::app::frontend::shell_layout::setups_layout(state);
-        let y = state.match_state.input.cursor_y.round() as i32;
+        let extent = (state.render_width(), state.render_height());
+        let font = &state.renderer.bit_font;
+        if let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() {
+            saved_file_input::update(browser, &layout, extent, |text| font.text_width(text));
+        }
+    }
+
+    fn skirmish_setups_pointer(state: &mut AppState, down: Option<bool>) {
+        let layout = crate::app::frontend::shell_layout::setups_layout(state);
+        let extent = (state.render_width(), state.render_height());
+        let pointer = state.match_state.input.cursor_px();
         let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
             return;
         };
-        if saved_file_input::update_scroll(
-            browser,
-            &layout,
-            y,
-            pointer_moved,
-            crate::util::time::Instant::now(),
-        ) {
-            Self::sync_skirmish_setups_edit_scroll(state);
-        }
+        let results = saved_file_input::pointer(browser, &layout, extent, pointer, down);
+        Self::apply_skirmish_setups_input(state, results);
     }
 
     pub(super) fn handle_skirmish_setups_mouse_down(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::setups_layout(state);
-        let extent = (state.render_width(), state.render_height());
-        let pointer = state.match_state.input.cursor_px();
-        let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
-            return;
-        };
-        let result = saved_file_input::mouse_down(
-            browser,
-            &layout,
-            extent,
-            pointer,
-            crate::util::time::Instant::now(),
-            saved_file_input::host_double_click_limits(),
-        );
-        Self::apply_skirmish_setups_input(state, result);
-        Self::sync_skirmish_setups_edit_scroll(state);
+        Self::skirmish_setups_pointer(state, Some(true));
+        Self::update_skirmish_setups_scroll(state, false);
     }
 
     pub(super) fn handle_skirmish_setups_mouse_up(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::setups_layout(state);
-        let extent = (state.render_width(), state.render_height());
-        let pointer = state.match_state.input.cursor_px();
-        let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
-            return;
-        };
-        let result = saved_file_input::mouse_up(browser, &layout, extent, pointer);
-        Self::apply_skirmish_setups_input(state, result);
+        Self::skirmish_setups_pointer(state, Some(false));
     }
 }

@@ -11,7 +11,7 @@ use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
     ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, RandomMapSetupControl,
     RandomMapSetupLayout, RandomMapSetupModalState, RectPx, SETUP_COMBO_ROWS,
-    SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout, SkirmishShellLayout,
+    SavedSeedBrowserState, SavedSeedLayout, SkirmishShellLayout,
     SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect,
 };
 
@@ -815,43 +815,31 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
     interior: BackdropInteriorPaint,
     column_buttons: bool,
 ) {
-    use crate::ui::shell::list::{ListScrollPart, ShellListGeometry};
-    let pressed = match browser.pressed_control {
-        Some(SavedSeedControl::ScrollUp) => Some(ListScrollPart::Up),
-        Some(SavedSeedControl::ScrollDown) => Some(ListScrollPart::Down),
-        Some(SavedSeedControl::ScrollThumb) => Some(ListScrollPart::Thumb),
-        Some(SavedSeedControl::ScrollTrack) => Some(ListScrollPart::Track),
-        _ => None,
-    };
-    super::list::paint_list(
-        out,
-        atlas,
-        ShellListGeometry::new(
-            layout.list,
-            browser.entries.len(),
-            browser.top_index,
-            ListMetrics::scaled(layout.scale),
-        ),
-        browser.top_index,
-        browser.selected,
-        pressed,
-        interior.paints_solid_fill(),
-        layout.scale,
+    use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, DELETE, LOAD};
+    let top = browser.top();
+    let geometry = crate::ui::shell::list::ShellListGeometry::new(
+        layout.list,
+        browser.entries.len(),
+        top,
+        ListMetrics::scaled(layout.scale),
     );
+    let (selected, pressed) = (browser.selected(), browser.list_pressed());
+    let solid = interior.paints_solid_fill();
+    super::list::paint_list(out, atlas, geometry, top, selected, pressed, solid, layout.scale);
     // The name field is a plain sunken plate; Save is the only mode that has one.
     if let Some(edit) = layout.name_edit {
         super::controls::push_new_edit_instances(
             out,
             atlas,
             font,
-            &browser.description_edit,
+            &browser.edit(),
             super::controls::NewEditPaint {
                 frame: edit,
                 text: crate::ui::skirmish_shell::player_name_edit_text_rect(edit, layout.scale),
                 background: Some(SHELL_MODAL_PANEL_RGB),
                 frame_depth: SHELL_DROPDOWN_DEPTH - 0.00011,
                 caret_depth: SHELL_DROPDOWN_DEPTH - 0.00012,
-                caret_visible: browser.caret_blink_on(),
+                caret_visible: browser.caret_visible(),
             },
             layout.scale,
         );
@@ -859,26 +847,24 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
     if column_buttons {
         // VERA's Setups page adds Load and Delete, which act on a saved row.
         for (rect, control) in [
-            (Some(layout.action), SavedSeedControl::Action),
-            (layout.load, SavedSeedControl::Load),
-            (layout.delete, SavedSeedControl::Delete),
-            (Some(layout.back), SavedSeedControl::Back0x686),
+            (Some(layout.action), ACTION),
+            (layout.load, LOAD),
+            (layout.delete, DELETE),
+            (Some(layout.back), BACK),
         ] {
             let Some(rect) = rect else {
                 continue;
             };
             let disabled = match control {
-                SavedSeedControl::Action => !browser.action_enabled(),
-                SavedSeedControl::Load | SavedSeedControl::Delete => {
-                    browser.selected_saved().is_none()
-                }
+                ACTION => !browser.action_enabled(),
+                LOAD | DELETE => browser.selected_saved().is_none(),
                 _ => false,
             };
             push_right_panel_button_shp(
                 out,
                 atlas,
                 rect,
-                browser.pressed_control == Some(control),
+                browser.pressed(control),
                 disabled,
                 SHELL_DROPDOWN_DEPTH - 0.00012,
             );
@@ -898,13 +884,13 @@ pub(super) fn push_saved_browser_prompt_instances<I: Clone + PartialEq>(
         let (dialog, _, yes, no) = prompt.layout(layout.screen.w as u32, layout.screen.h as u32);
         let mut buttons = vec![shell_paint::ModalButton {
             rect: yes,
-            pressed: browser.pressed_control == Some(SavedSeedControl::Action),
+            pressed: browser.pressed(crate::ui::skirmish_shell::saved_seed_browser::YES),
             enabled: true,
         }];
         if let Some(rect) = no {
             buttons.push(shell_paint::ModalButton {
                 rect,
-                pressed: browser.pressed_control == Some(SavedSeedControl::Back0x686),
+                pressed: browser.pressed(crate::ui::skirmish_shell::saved_seed_browser::NO),
                 enabled: true,
             });
         }

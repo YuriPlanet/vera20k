@@ -587,29 +587,10 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
     match action {
         // VERA's lobby asks for its room's limits first.
         LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
-            let RoomLimits {
-                players,
-                spectators,
-            } = state.frontend.room_limits;
+            let limits = state.frontend.room_limits;
             state.frontend.lan.as_mut().expect("active BB").creating = true;
-            let range = crate::ui::room_limits::PLAYERS;
-            push_box(
-                state,
-                box_spec(&[OK, CANCEL])
-                    .child(
-                        NodeSpec::new(NodeKind::Trackbar)
-                            .id(ROOM_PLAYERS.into())
-                            .with(Prop::Min, Value::Int(range.min))
-                            .with(Prop::Max, Value::Int(range.max))
-                            .with(Prop::Pos, Value::Int(players.into())),
-                    )
-                    .child(
-                        NodeSpec::new(NodeKind::Checkbox)
-                            .id(ROOM_SPECTATORS.into())
-                            .with(Prop::Checked, Value::Bool(spectators))
-                            .with(Prop::ActivateOnPress, Value::Bool(true)),
-                    ),
-            );
+            let choices = crate::ui::room_limits::widgets(limits, ROOM_PLAYERS, ROOM_SPECTATORS);
+            push_box(state, box_spec(&[OK, CANCEL]).children(choices));
         }
         LanLobbyAction::Create { observe: _ } => create(state, &name),
         LanLobbyAction::Join { game_id, observe } => {

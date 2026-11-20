@@ -126,6 +126,20 @@ impl ListScrollInteraction {
             _ => {}
         }
     }
+    /// [`Self::poll`] for a scrollbar whose held arrow steps on and off the
+    /// pointer; a hold on the thumb or track ends the repeat.
+    pub fn poll_held(&mut self, max_top: usize, top: &mut usize, now: Instant) {
+        if !self.repeat_at.is_some_and(|deadline| now >= deadline) {
+            return;
+        }
+        match self.captured {
+            Some(part @ (ListScrollPart::Up | ListScrollPart::Down)) => {
+                Self::step(part, max_top, top);
+                self.repeat_at = Some(now + Duration::from_millis(25));
+            }
+            _ => self.repeat_at = None,
+        }
+    }
     pub fn pressed_part(&self) -> Option<ListScrollPart> {
         match (self.captured, self.hovered) {
             (Some(ListScrollPart::Thumb) | None, _) => None,
@@ -279,6 +293,9 @@ pub struct ListBoxState<Row> {
     pub last_press: Option<(Instant, i32, i32)>,
     /// Scrollbar capture and arrow repeat (`0x0061C690`).
     pub scroll: ListScrollInteraction,
+    /// Rows its owner shows at once, when it lays them out itself
+    /// ([`ShellListGeometry::with_visible_rows`]); `None` fits the window.
+    pub visible_rows: Option<usize>,
 }
 
 impl<Row> ListBoxState<Row> {
@@ -289,12 +306,19 @@ impl<Row> ListBoxState<Row> {
             top: 0,
             last_press: None,
             scroll: ListScrollInteraction::default(),
+            visible_rows: None,
         }
     }
 
     /// List and scrollbar geometry ([`list_box_geometry`]).
     pub fn geometry(&self, list: RectPx, metrics: ListMetrics) -> ShellListGeometry {
-        list_box_geometry(list, self.rows.len(), self.top, metrics)
+        match self.visible_rows {
+            Some(rows) => {
+                let outer = RectPx::new(list.x, list.y, list.w + 1, list.h + 1);
+                ShellListGeometry::with_visible_rows(outer, self.rows.len(), rows, self.top, metrics)
+            }
+            None => list_box_geometry(list, self.rows.len(), self.top, metrics),
+        }
     }
 
     /// A press on the scrollbar child: capture it, step an arrow or jump the

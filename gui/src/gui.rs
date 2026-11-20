@@ -343,7 +343,7 @@ impl Gui {
     pub fn input(&mut self, event: InputEvent, now: UiMs) -> InputResult {
         let Some(top) = self.dialogs.last() else { return InputResult::default() };
         let (root, modal) = (top.root, top.kind == DialogKind::Modal);
-        if let Some(popup) = top.pointer.popup {
+        if let Some(popup) = top.pointer.popup.filter(|n| !self.popup_hidden(*n)) {
             match event {
                 InputEvent::PointerDown { x, y, button: MouseButton::Left } => {
                     self.with_ctx(now, |ctx| widget::combo::popup_press(ctx, popup, x, y));
@@ -392,7 +392,7 @@ impl Gui {
                 InputResult { consumed: over.is_some() || modal }
             }
             InputEvent::PointerDown { x, y, button: MouseButton::Left } => {
-                let over = self.hit(root, x, y);
+                let over = self.hit_at(root, x, y, true);
                 let enabled = over.filter(|n| self.tree.effective(*n, Prop::Enabled));
                 self.top_mut().pointer.pressed = None;
                 let before = std::mem::replace(&mut self.top_mut().pointer.last_down, over);
@@ -405,7 +405,7 @@ impl Gui {
                 InputResult { consumed: over.is_some() || modal }
             }
             InputEvent::PointerUp { x, y, button: MouseButton::Left } => {
-                let over = self.hit(root, x, y);
+                let over = self.hit_at(root, x, y, true);
                 let pointer = &mut self.top_mut().pointer;
                 let held = pointer.pressed.take();
                 pointer.dragging = false;
@@ -444,7 +444,7 @@ impl Gui {
     /// Runs the widget timers (scroll-arrow repeat) of the top dialog's
     /// captured node; returns when the next poll is due.
     pub fn poll(&mut self, now: UiMs) -> Option<UiMs> {
-        if let Some(popup) = self.top_pointer().popup {
+        if let Some(popup) = self.top_pointer().popup.filter(|n| !self.popup_hidden(*n)) {
             return self.with_ctx(now, |ctx| widget::combo::poll(ctx, popup));
         }
         let held = self.top_pointer().pressed?;
@@ -468,8 +468,10 @@ impl Gui {
     /// a modal keeps.
     pub fn caret_visible_in(&self, dialog: DialogId, node: NodeId, now: UiMs) -> bool {
         self.dialog(dialog).is_some_and(|d| d.pointer.focus == Some(node))
-            && self.tree.node(node).is_ok_and(|n| match &n.state {
-                widget::WidgetState::Edit(s) => s.caret_visible(now),
+            && self.tree.node(node).is_ok_and(|n| match (n.props.get(&Prop::CaretFrom), &n.state) {
+                // The host's blink origin (`CaretFrom`) stands for the focus's.
+                (Some(Value::Int(from)), _) => crate::shell::new_edit::caret_visible(*from as UiMs, now),
+                (_, widget::WidgetState::Edit(s)) => s.caret_visible(now),
                 _ => widget::edit::EditState::default().caret_visible(now),
             })
     }
@@ -546,9 +548,27 @@ impl Gui {
         true
     }
 
+    /// The wheel for the top dialog's open drop-down, for a host whose lists
+    /// take it (VERA's roster): `rows` on when the pointer at `x`, `y` is
+    /// over the list. True when a list is open, which then owns the wheel.
+    pub fn wheel_popup(&mut self, rows: i32, x: i32, y: i32) -> bool {
+        let Some(node) = self.popup().filter(|n| !self.popup_hidden(*n)) else { return false };
+        if self.combo_drop_down(node).is_some_and(|d| d.popup.rect.contains(x, y)) {
+            self.with_ctx(0, |ctx| widget::combo::wheel(ctx, node, rows, x, y));
+        }
+        true
+    }
+
+    fn popup_hidden(&self, node: NodeId) -> bool {
+        matches!(self.tree.get(node, Prop::PopupHidden), Ok(Some(Value::Bool(true))))
+    }
+
     /// The open drop-down of combo `node` (in any dialog), on the geometry its
     /// pointer input hits, for the host to paint.
     pub fn combo_drop_down(&self, node: NodeId) -> Option<widget::combo::ComboDropDown> {
+        if self.popup_hidden(node) {
+            return None;
+        }
         let d = self.dialogs.iter().find(|d| d.pointer.popup == Some(node))?;
         widget::combo::drop_down(&self.tree, node, d.scale)
     }
@@ -616,7 +636,7 @@ impl Gui {
                 let range = trackbar_range(n);
                 let value = n.int_prop(Prop::Pos, range.min);
                 let rect = self.tree.screen_rect(node).unwrap_or_default();
-                let scale = self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale);
+                let scale = self.trackbar_scale(n);
                 match range.press_in(value, x, y, rect, scale) {
                     TrackbarPress::Miss => {}
                     TrackbarPress::Hold => self.top_mut().pointer.pressed = Some(node),
@@ -666,8 +686,16 @@ impl Gui {
         let Ok(n) = self.tree.node(node) else { return };
         let range = trackbar_range(n);
         let rect = self.tree.screen_rect(node).unwrap_or_default();
-        let scale = self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale);
+        let scale = self.trackbar_scale(n);
         self.move_trackbar(node, range.value_at_in(x, rect, scale));
+    }
+
+    /// The scale trackbar `n` hits at: its `ScaleScreen`'s, else its dialog's.
+    fn trackbar_scale(&self, n: &crate::node::Node) -> ShellScale {
+        match n.props.get(&Prop::ScaleScreen) {
+            Some(Value::Rect(r)) => ShellScale::from_screen(r.w, r.h),
+            _ => self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale),
+        }
     }
 
     fn move_trackbar(&mut self, node: NodeId, to: i32) {
@@ -724,11 +752,19 @@ impl Gui {
     /// interactive kind, first in tree order (§8.7; the shell's controls do
     /// not overlap). Disabled nodes still hit, for hover.
     fn hit(&self, root: NodeId, x: i32, y: i32) -> Option<NodeId> {
+        self.hit_at(root, x, y, false)
+    }
+
+    /// [`Self::hit`] for the host, under any open drop-down; `press` skips
+    /// `PressThrough` nodes, as a press and its release do.
+    pub fn hit_at(&self, root: NodeId, x: i32, y: i32, press: bool) -> Option<NodeId> {
         let mut found = None;
         self.walk(root, &mut |id, kind| {
             // A static with status help hovers too (it takes no press).
             let help = kind == NodeKind::Text && self.tree.get(id, Prop::Tooltip).is_ok_and(|t| t.is_some());
+            let through = press && matches!(self.tree.get(id, Prop::PressThrough), Ok(Some(Value::Bool(true))));
             if found.is_none()
+                && !through
                 && (kind.is_focusable() || help)
                 && self.tree.effective(id, Prop::Visible)
                 && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
@@ -765,6 +801,18 @@ pub fn hover_flash_on(started: UiMs, now: UiMs) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_caret_from_the_host_blinks_from_that_time_not_the_focus() {
+        let mut g = Gui::new(8);
+        let root = g.create(NodeKind::Dialog, None).unwrap();
+        let edit = g.create(NodeKind::Edit, Some(root)).unwrap();
+        g.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        g.focus_edit(Some(edit), 1500).unwrap();
+        assert!(g.caret_visible(edit, 1500), "the focus starts a shown second");
+        g.set(edit, Prop::CaretFrom, Value::Int(0)).unwrap();
+        assert!(!g.caret_visible(edit, 1500), "1.5 s after the origin it is hidden");
+    }
 
     fn page_with_two_buttons() -> (Gui, NodeId, NodeId) {
         let mut g = Gui::new(16);

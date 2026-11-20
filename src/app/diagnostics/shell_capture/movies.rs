@@ -2165,7 +2165,7 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         "map_name": entry.header.map_name,
         "game_speed": saved.session().game_options().game_speed,
         "pending_speed_input": pending_speed,
-        "new_save_description": browser.description_edit.display_text(),
+        "new_save_description": browser.edit().display_text(),
         "observation": "ordinary save browser model; dialog not opened",
     }))
 }

@@ -4,7 +4,6 @@
 //! status line `0x695`, Load and Back, and the list `0x525`. The template has
 //! no monitor and no movie static, and the prompt `0x40C` is hidden.
 
-use crate::ui::shell::list::ListMetrics;
 use anyhow::Result;
 
 use crate::app::AppState;
@@ -17,9 +16,9 @@ use crate::app::frontend::movies_credits_render::{
 use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_paint::PaintButton;
-use crate::ui::shell::list::{ListScrollPart, ShellListGeometry};
+use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::saved_games::{LOAD_BUTTON, LOAD_SAVED_GAME_PAGE};
-use crate::ui::skirmish_shell::SavedSeedControl;
+use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, LIST};
 
 /// Paint `0xB7`. Returns `false` when the shell chrome is missing.
 pub(crate) fn render_load_saved_game_page(
@@ -35,7 +34,7 @@ pub(crate) fn render_load_saved_game_page(
         state,
         ShellSlideKind::LoadSavedGame,
         false,
-        |state| crate::app::App::load_saved_game_status_key(state).map(str::to_owned),
+        crate::app::App::load_saved_game_status_key,
         layout.page.status_help,
     );
     let leaving = panel.leaving;
@@ -55,31 +54,27 @@ pub(crate) fn render_load_saved_game_page(
         layout.page.screen.h,
         layout.page.scale,
     );
-    // The browser's own input owns the buttons; a message box owns the press
-    // while it is up, so the page buttons paint released under it.
-    let pressed = browser
-        .prompt
-        .is_none()
-        .then_some(browser.pressed_control)
-        .flatten();
+    // The browser's own widgets hold the buttons' press; a message box drops
+    // it, so the page buttons paint released under it.
     let buttons = layout
         .page
         .buttons
         .iter()
         .map(|button| {
-            let (control, enabled) = if button.id == LOAD_BUTTON {
-                (SavedSeedControl::Action, browser.action_enabled())
-            } else {
-                (SavedSeedControl::Back0x686, true)
+            let (control, enabled) = match button.id {
+                LOAD_BUTTON => (ACTION, browser.action_enabled()),
+                _ => (BACK, true),
+            };
+            let pressed = enabled && browser.pressed(control);
+            let paint = PaintButton {
+                rect: button.rect,
+                pressed,
+                hovered: false,
+                enabled,
             };
             PageButton {
                 id: button.id,
-                paint: PaintButton {
-                    rect: button.rect,
-                    pressed: enabled && pressed == Some(control),
-                    hovered: false,
-                    enabled,
-                },
+                paint,
             }
         })
         .collect();
@@ -97,31 +92,22 @@ pub(crate) fn render_load_saved_game_page(
         instances: background,
     });
     if !leaving {
-        let geometry = ShellListGeometry::new(
-            layout.browser.list,
-            browser.entries.len(),
-            browser.top_index,
-            ListMetrics::scaled(layout.browser.scale),
-        );
-        let pressed = match browser.pressed_control {
-            Some(SavedSeedControl::ScrollUp) => Some(ListScrollPart::Up),
-            Some(SavedSeedControl::ScrollDown) => Some(ListScrollPart::Down),
-            Some(SavedSeedControl::ScrollThumb) => Some(ListScrollPart::Thumb),
-            Some(SavedSeedControl::ScrollTrack) => Some(ListScrollPart::Track),
-            _ => None,
-        };
-        let view = vera20k_gui::ListView {
-            rows: browser.entries.len(),
-            top: browser.top_index,
-            selected: browser.selected,
-            pressed,
-        };
+        let view = browser
+            .node(LIST)
+            .and_then(|list| browser.ui.gui().list_view(list));
+        let metrics = ListMetrics::scaled(layout.browser.scale);
+        let lists = view.map(|view| {
+            (
+                ShellListGeometry::new(layout.browser.list, view.rows, view.top, metrics),
+                view,
+            )
+        });
         push_family_list(
             &mut frame.over_panel,
             chrome,
             &backdrop,
             layout.list_window,
-            Some(&(geometry, view)),
+            lists.as_ref(),
         );
     }
     let prompt = crate::app::frontend::skirmish_shell_render::family_saved_game_overlays(
