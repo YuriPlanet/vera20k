@@ -277,16 +277,11 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
     ),
     (
         "rules/ares_switch.rs",
-        7,
-        "the Ares switch: every INI reader lookup reports its key to this thread's \
-         recorder, and the recorded reads decide whether Ares plays and which syntax \
-         later reads follow",
-    ),
-    (
-        "rules/phobos_switch.rs",
         4,
-        "this thread's open Phobos-reader scopes, which mark the recorded reads that \
-         turn Phobos on",
+        "this thread's reader recorder: every INI reader lookup reports its key and \
+         the kind of reader that asked, about 3,600 calls that take only the section; \
+         its scope guards are `!Send` and `ares_switch_tests` keeps threads out of \
+         `src/rules`",
     ),
     (
         "rules/ruleset.rs",
@@ -337,9 +332,9 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
     (
         "sim/rng.rs",
         4,
-        "Main, the unsynced stream outside the hash and saves, as `Arc<Mutex<SimRng>>`: \
-         the app's process cell is drawn on the main and audio output threads, and the \
-         simulation draws its own cell through `&` borrows of the world",
+        "`MainRng`, the app's process cell of the unsynced stream outside the hash \
+         and saves, drawn on the main and audio output threads; the simulation owns \
+         its Main as a plain `SimRng`",
     ),
     (
         "sim/world/entry_facts.rs",
