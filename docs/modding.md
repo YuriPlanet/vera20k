@@ -380,8 +380,9 @@ If you write a map editor or tool, the [map format](map-format.md) has the detai
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
 the same selected Rules, Art and AI, theater INIs (such as `snowmd.ini`) and
-terrain tiles. **Terrain Deformation** and the **Superweapon Limit** don't need to match: a
-room plays its host's. With a mod in use,
+terrain tiles. **Terrain Deformation**, the **Superweapon Limit** and the **Building
+Production Queue** don't need to match: a room plays its host's, and a match a launcher
+starts plays without the queue. With a mod in use,
 everyone also needs the same files in the mod's folder: every file there is compared by
 its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
@@ -394,7 +395,7 @@ what it changes from the original game (its mod, or files such as a loose `rules
 or that it plays the original, so the difference is in another player's game.
 
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
-game, without anyone's Terrain Deformation or Superweapon Limit. With a mod in use it tells
+game, without anyone's Terrain Deformation, Superweapon Limit or Building Production Queue. With a mod in use it tells
 you to pick **No mod** in the Mods menu first. It also names
 any files in the game folder that change the original rules or terrain tiles, such as a
 loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left there.

@@ -1084,6 +1084,7 @@ impl App {
     /// The teardown every finished scenario shares, the co-op continuation
     /// included, which never reaches Main_Game's shell return.
     pub(crate) fn retire_finished_scenario(state: &mut AppState) {
+        crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
         if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {

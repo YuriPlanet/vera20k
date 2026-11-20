@@ -318,7 +318,7 @@ impl MatchDiagnosticsState {
         runtime: &mut crate::sim::runtime::SimRuntime,
         source: &crate::map::source::LoadedMapSource,
         map_hash: u64,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<crate::sim::trigger_runtime::TriggerEffect>> {
         let replay = match self.replay_playback.take() {
             Some(ReplayPlaybackState::Loading(replay)) => replay,
             other => {
@@ -327,9 +327,10 @@ impl MatchDiagnosticsState {
             }
         };
         match crate::sim::replay::ReplayPlayback::prepare(runtime, replay, source, map_hash) {
-            Ok(playback) => {
+            Ok(mut playback) => {
+                let effects = playback.take_initial_effects();
                 self.replay_playback = Some(ReplayPlaybackState::Playing(playback));
-                Ok(())
+                Ok(effects)
             }
             Err(error) => {
                 self.replay_playback = Some(ReplayPlaybackState::Failed(format!("{error:#}")));

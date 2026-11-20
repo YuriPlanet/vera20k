@@ -172,6 +172,45 @@ fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
     )
 }
 
+#[test]
+fn a_connection_watcher_adds_no_row_and_a_native_observer_keeps_light_grey() {
+    let mut scene = fixture();
+    scene.sim.install_session_mode(SessionMode::Wol);
+    let before = rows(&scene, SKIRMISH).rows;
+    scene.sim.install_watcher();
+    assert!(scene.sim.session().observer_houses().is_empty());
+    assert_eq!(rows(&scene, SKIRMISH).rows, before);
+    assert_eq!(crate::sim::crates::human_player_count(&scene.sim), 1);
+    assert_eq!(scene.sim.houses().len(), 4);
+
+    let mut classic = fixture();
+    classic.sim.install_session_mode(SessionMode::Wol);
+    let country = classic.sim.intern("Russians");
+    let observer = classic.sim.intern("ClassicObserver");
+    let mut house = HouseState::new(observer, 0, Some(country), true, 0, 10);
+    house.set_ui_name_for_test(crate::sim::house_state::HouseUiName::handle(
+        "Classic Observer",
+    ));
+    classic.sim.houses_mut_for_test().register(house);
+    classic
+        .sim
+        .session_mut_for_test()
+        .install_observer_houses_for_test(vec![observer]);
+    let light_grey = HouseUiSources {
+        csf: None,
+        computer: "Computer",
+        schemes: &classic.schemes,
+        colors: &classic.colors,
+    }
+    .named_scheme_rgb("LightGrey")
+    .unwrap();
+    let rows = rows(&classic, SKIRMISH).rows;
+    assert_eq!(rows.len(), 8);
+    let visible = rows[4].as_ref().unwrap();
+    assert_eq!(visible.name, "Classic Observer");
+    assert_eq!(visible.rgb, light_grey);
+}
+
 fn ally(sim: &mut Simulation, asker: &str, other: &str) {
     sim.house_alliances_mut_for_test()
         .entry(asker.to_ascii_uppercase())

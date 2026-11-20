@@ -734,11 +734,6 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
             if !back_to_room {
                 protocol.requests.push(NetworkSetupRequest::Leave);
             }
-            if let Some(visit) = state.frontend.wol.as_mut() {
-                visit.back_to_room = back_to_room;
-                // A new match voids an earlier BC6 resume no room took.
-                visit.cooperative_resume = None;
-            }
             state.frontend.skirmish_preview_texture = None;
             if quick_match {
                 // 0x130 closes without a slide and no setup dialog exists.
