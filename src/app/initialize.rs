@@ -1367,6 +1367,7 @@ impl App {
                 screen_presentation:
                     crate::render::screen_presentation::ScreenPresentationPass::new(),
                 terrain_draw_renderer,
+                pass_log: Default::default(),
                 instance_pool: crate::render::batch::InstanceBufferPool::new(),
                 depth_view,
                 shell_surface_presenter,

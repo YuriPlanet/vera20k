@@ -194,6 +194,49 @@ pub(crate) struct GameRenderTimes {
     pub message_ms: Option<u64>,
 }
 
+/// The frame's render pass and bounded submission counts, in the log while
+/// they are news: the first frames of the process, every frame that sets a
+/// new maximum, and one line a minute. A render pass is what an integrated
+/// GPU pays for most, loading and storing its attachments through shared
+/// memory each time; a frame of hundreds is slow there and invisible on a
+/// desktop card, and an Intel HD 620 whose frames took a second each lost
+/// its device to Windows' timeout seconds into every match.
+#[derive(Default)]
+pub(crate) struct FramePassLog {
+    frames: u64,
+    max_passes: usize,
+    last_logged: Option<Instant>,
+}
+
+impl FramePassLog {
+    const FIRST_FRAMES: u64 = 3;
+    const SUMMARY_EVERY: Duration = Duration::from_secs(60);
+
+    pub(crate) fn note(&mut self, passes: usize, submissions: usize, recording: Option<Duration>) {
+        self.frames += 1;
+        let now = Instant::now();
+        let since = self.last_logged.map(|last| now.duration_since(last));
+        let first = self.frames <= Self::FIRST_FRAMES;
+        let grew =
+            passes > self.max_passes && since.is_none_or(|since| since >= Duration::from_secs(1));
+        let due = since.is_some_and(|since| since >= Self::SUMMARY_EVERY);
+        if !(first || grew || due) {
+            return;
+        }
+        self.max_passes = self.max_passes.max(passes);
+        self.last_logged = Some(now);
+        let recorded = recording.map_or(String::new(), |recording| {
+            format!(", recorded in {:.1} ms", recording.as_secs_f64() * 1e3)
+        });
+        log::info!(
+            "Frame {}: {passes} render passes in {} submissions (most so far {}){recorded}",
+            self.frames,
+            submissions + 1,
+            self.max_passes
+        );
+    }
+}
+
 /// Names of the render phases, in the same order as [`RenderPhases::spans`].
 /// The perf recorder uses these as CSV column names.
 #[cfg(feature = "perf")]
@@ -858,6 +901,13 @@ pub(crate) fn render_game(
     // The bounded submissions made while recording belong to the hand-off;
     // the frame owner adds its final submission and present.
     let submitted = state.renderer.terrain_draw_renderer.frame_submit_time();
+    state.renderer.pass_log.note(
+        state.renderer.terrain_draw_renderer.closed_passes(),
+        state.renderer.terrain_draw_renderer.submissions(),
+        render_started
+            .zip(finished)
+            .map(|(started, finished)| finished.duration_since(started)),
+    );
     let phases = render_started.map(|render_started| RenderPhases {
         snapshot: after_snapshot.unwrap().duration_since(render_started),
         terrain: world.spans.terrain,

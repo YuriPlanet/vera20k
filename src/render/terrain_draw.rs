@@ -757,13 +757,11 @@ impl TerrainDrawRenderer {
         self.submission.timer = timer;
     }
 
-    #[cfg(test)]
     pub(crate) fn submissions(&self) -> usize {
         self.submission.submissions()
     }
 
     /// Every pass closed since the last `prepare`, ordinary passes included.
-    #[cfg(test)]
     pub(crate) fn closed_passes(&self) -> usize {
         self.submission.closed_passes()
     }
