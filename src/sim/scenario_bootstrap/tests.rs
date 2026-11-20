@@ -3926,9 +3926,9 @@ fn quick_coop_starts_replace_the_mode_chooser_in_the_prefix() {
 }
 
 /// Prepare a launch prefix on another thread and return its refusal. A start
-/// assignment that loops forever fails the test after ten seconds instead of
-/// hanging the run.
-fn prefix_refusal_within_ten_seconds(
+/// assignment that loops forever fails the test after a minute instead of
+/// hanging the run; the longest refusal takes a few seconds on a busy machine.
+fn prefix_refusal_before_hang_guard(
     fixture: impl FnOnce() -> (MatchLaunchDescriptor, MapFile) + Send + 'static,
 ) -> PreFillScenarioPrefixPlanError {
     let (sender, receiver) = std::sync::mpsc::channel();
@@ -3939,7 +3939,7 @@ fn prefix_refusal_within_ten_seconds(
         let _ = sender.send(refusal);
     });
     receiver
-        .recv_timeout(std::time::Duration::from_secs(10))
+        .recv_timeout(std::time::Duration::from_secs(60))
         .expect("start assignment finishes")
         .expect("the launch is refused")
 }
@@ -3976,7 +3976,7 @@ fn quick_coop_refuses_a_launch_whose_preset_ai_start_leaves_an_ai_no_start() {
 
 #[test]
 fn cooperative_refuses_more_humans_than_the_maps_human_start_spots() {
-    let refusal = prefix_refusal_within_ten_seconds(|| {
+    let refusal = prefix_refusal_before_hang_guard(|| {
         use LaunchStartPosition::Auto;
         let mut session = quick_coop_session([Auto, Auto], [Auto, Auto]);
         session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
@@ -3995,7 +3995,7 @@ fn cooperative_refuses_more_humans_than_the_maps_human_start_spots() {
 
 #[test]
 fn gather_refuses_a_map_with_no_room_for_a_missing_start() {
-    let refusal = prefix_refusal_within_ten_seconds(|| {
+    let refusal = prefix_refusal_before_hang_guard(|| {
         // No authored start, and a zero-width LocalSize leaves no playfield
         // cell for the 8x8 rect's corner.
         let mut map = prefix_map_with_starts(&[]);
