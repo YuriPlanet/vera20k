@@ -13,7 +13,6 @@
 //! `MatchSession` owns; this leaf keeps only the dialog's interaction.
 
 use crate::ui::lan_shell::LanChatState;
-use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::descriptor::{AnchorRule, DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
 use crate::ui::shell::geom::{RectPx, child_window};
 use crate::ui::shell::layout::{anchor_rect, status_line_rect};
@@ -480,21 +479,28 @@ pub enum CoopScoreAction {
     Chat(Vec<u16>),
 }
 
-/// BC6's interaction state: the chat, the pressed button and focus.
+/// The page's buttons and body controls as nodes in hit order, the buttons
+/// first: each hovers with its help, and only the buttons press.
+pub fn nodes() -> vera20k_gui::NodeSpec {
+    let body = COOP_SCORE_CONTROLS.iter().map(|spec| spec.id);
+    COOP_SCORE_PAGE.nodes().children(
+        body.chain([PREVIEW, MODE_LABEL, MAP_LABEL])
+            .map(|id| menu_page::hover_target(id, help_key(id).unwrap_or_default())),
+    )
+}
+
+/// BC6's own interaction state: the chat and its focus (the buttons are
+/// nodes).
 #[derive(Debug, Clone)]
 pub struct CoopScoreState {
     pub chat: LanChatState,
-    pub buttons: ShellButtonInteraction<u16>,
 }
 
 impl Default for CoopScoreState {
     fn default() -> Self {
         let mut chat = LanChatState::default();
         chat.edit.focused = true;
-        Self {
-            chat,
-            buttons: ShellButtonInteraction::default(),
-        }
+        Self { chat }
     }
 }
 

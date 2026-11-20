@@ -136,6 +136,10 @@ impl ListScrollInteraction {
     pub fn repeat_at(&self) -> Option<Instant> {
         self.repeat_at
     }
+    /// The part a press holds until the release.
+    pub fn captured_part(&self) -> Option<ListScrollPart> {
+        self.captured
+    }
     /// Whether a press holds the scrollbar's capture, until the release.
     pub fn captured(&self) -> bool {
         self.captured.is_some()

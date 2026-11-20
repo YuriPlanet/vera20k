@@ -254,6 +254,7 @@ pub(super) fn push_choose_map_modal_control_instances(
     shell: &SkirmishShellState,
     search_display: &str,
     steady: bool,
+    look: crate::ui::skirmish_shell::choose_map_page::ChooserLook,
 ) {
     let Some(modal) = shell.choose_map_modal.as_ref() else {
         return;
@@ -265,7 +266,7 @@ pub(super) fn push_choose_map_modal_control_instances(
         modal.mode_geometry(layout),
         modal.mode_top_index,
         modal.selected_mode_row(),
-        modal.mode_scroll.pressed_part(),
+        look.mode_arrow,
         interior.paints_solid_fill(),
         layout.scale,
     );
@@ -275,7 +276,7 @@ pub(super) fn push_choose_map_modal_control_instances(
         modal.map_geometry(layout),
         modal.map_top_index,
         modal.highlighted_filtered_index,
-        modal.map_scroll.pressed_part(),
+        look.map_arrow,
         interior.paints_solid_fill(),
         layout.scale,
     );
@@ -324,7 +325,7 @@ pub(super) fn push_choose_map_modal_control_instances(
             out,
             atlas,
             button,
-            modal.pressed_button == Some(id),
+            look.pressed == Some(id),
             !modal.button_enabled(id),
             SHELL_DROPDOWN_DEPTH - 0.00011,
         );
@@ -499,6 +500,11 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     modal: &RandomMapSetupModalState,
     // The right column and the top panel paint only while no slide runs.
     steady: bool,
+    // The open list and the pushed button ([`random_map_page::view`]).
+    (open, pressed): (
+        Option<crate::ui::skirmish_shell::SetupCombo>,
+        Option<RandomMapSetupControl>,
+    ),
 ) {
     let chrome = atlas.control_chrome();
     // Rows 0..4 are combos; row 5 is the players trackbar. A collapsed combo
@@ -583,7 +589,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             ControlPaint::Combo {
                 rect: face,
                 swatch: None,
-                open: modal.open_combo == Some(*control),
+                open: open == Some(*control),
                 disabled: !modal.is_enabled(SETUP_COMBO_CONTROLS[row]),
             },
             layout.scale,
@@ -635,7 +641,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     .into_iter()
     .map(|(rect, control)| shell_paint::ModalButton {
         rect,
-        pressed: modal.pressed_control == Some(control),
+        pressed: pressed == Some(control),
         enabled: modal.is_enabled(control),
     })
     .collect();
@@ -685,7 +691,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             out,
             atlas,
             rect,
-            modal.pressed_control == Some(control),
+            pressed == Some(control),
             !modal.is_enabled(control),
             SHELL_DROPDOWN_DEPTH - 0.00011,
         );
@@ -714,7 +720,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     }
 
     // An open list paints last so it covers the rows beneath it.
-    if let Some(combo) = modal.open_combo {
+    if let Some(combo) = open {
         let row = combo.row();
         let items = modal.combo_items(combo);
         let list = random_map_setup_dropdown_rect(layout, row, items.len());

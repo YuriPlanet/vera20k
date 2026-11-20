@@ -3,11 +3,16 @@
 //! and Terrain Deformation also seed a host's network room. Allow cheat codes
 //! applies only to typed commands during offline skirmish.
 
-use crate::rules::personal_rules::{SUPERWEAPON_LIMIT_MAX, admitted_superweapon_limit};
-use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
-use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress, TrackbarRange};
+use vera20k_gui::{NodeId, NodeKind, NodeSpec, Prop, Value};
 
-use super::{SkirmishShellLayout, SkirmishShellUiSound, checkbox_icon_rect};
+use crate::rules::personal_rules::{SUPERWEAPON_LIMIT_MAX, admitted_superweapon_limit};
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
+use crate::ui::shell::page::{self, PageCue, PageEvent};
+use crate::ui::shell::trackbar::TrackbarRange;
+
+use super::{SkirmishShellLayout, SkirmishShellUiSound};
 
 /// The page's button: the room's button text.
 pub const GAME_OPTIONS_LABEL: &str = "GUI:GameOptions";
@@ -46,14 +51,23 @@ pub struct MatchRules {
     pub skirmish_cheats: bool,
 }
 
-/// A control of the open box.
+/// A control of the open box, by its id in [`DIALOG`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameOptionsControl {
-    SuperweaponLimit,
-    TerrainDeformation,
-    SkirmishCheats,
-    Ok,
+    SuperweaponLimit = 1,
+    TerrainDeformation = 2,
+    SkirmishCheats = 3,
+    Ok = 4,
 }
+
+const CONTROLS: [GameOptionsControl; 4] = [
+    GameOptionsControl::SuperweaponLimit,
+    GameOptionsControl::TerrainDeformation,
+    GameOptionsControl::SkirmishCheats,
+    GameOptionsControl::Ok,
+];
+/// The slider's caption static, which shows its help too.
+const LIMIT_LABEL: u16 = 5;
 
 impl GameOptionsControl {
     /// Its status help: VERA's own lines; OK has none, as the shell's
@@ -68,108 +82,171 @@ impl GameOptionsControl {
     }
 }
 
-/// The open box: the rules it shows and the press it holds.
+/// The open box over the page in the shell controller.
+pub const DIALOG: DialogId = DialogId(0x7103);
+
+/// The open box: the rules it shows. Its widgets hold the press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GameOptionsBox {
     pub rules: MatchRules,
-    /// OK, while the press that went down on it is held.
-    pub ok_pressed: bool,
-    /// The slider, while a press on it holds the mouse.
-    pub hold: Option<TrackbarHold>,
-}
-
-/// What a press, move or release in the open box asks of the page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameOptionsOutcome {
-    /// Nothing: the press missed every control, or changed nothing.
-    Stay,
-    /// The press went down on OK, which sounds as the shell's buttons do.
-    OkPressed,
-    /// A rule changed, with the sound the page's own control makes.
-    Changed(SkirmishShellUiSound),
-    /// OK came up over itself: the box closes and the app stores its rules.
-    Close,
 }
 
 impl GameOptionsBox {
     pub fn new(rules: MatchRules) -> Self {
-        Self {
-            rules,
-            ok_pressed: false,
-            hold: None,
-        }
+        Self { rules }
     }
 
     /// The slider's value: 1 while off, else the limit.
     pub fn superweapon_limit_value(&self) -> i32 {
         i32::from(self.rules.superweapon_limit.max(1))
     }
+}
 
-    fn set_superweapon_limit_value(&mut self, value: i32) -> GameOptionsOutcome {
-        let limit = admitted_superweapon_limit(value);
-        if limit == self.rules.superweapon_limit {
-            return GameOptionsOutcome::Stay;
-        }
-        self.rules.superweapon_limit = limit;
-        // A pointer-driven change clicks, as the page's sliders do
-        // (`0x0061E6DD`).
-        GameOptionsOutcome::Changed(SkirmishShellUiSound::GenericClick)
+/// The box's widgets, pushed over the page when they are not on top, on
+/// `layout` and showing `open`; their root.
+pub fn sync(
+    controller: &mut DialogController,
+    open: &GameOptionsBox,
+    layout: &GameOptionsLayout,
+) -> Option<NodeId> {
+    if controller.top_id() != Some(DIALOG) {
+        controller.push(DIALOG, false);
     }
-
-    /// A left press at `(x, y)`. The box takes every press, so one that
-    /// misses its controls does nothing; the page beneath never sees it.
-    pub fn mouse_down(&mut self, layout: &GameOptionsLayout, x: i32, y: i32) -> GameOptionsOutcome {
-        if layout.ok.contains(x, y) {
-            self.ok_pressed = true;
-            return GameOptionsOutcome::OkPressed;
-        }
-        for (rect, checked) in [
-            (
-                layout.terrain_deformation,
-                &mut self.rules.terrain_deformation,
-            ),
-            (layout.skirmish_cheats, &mut self.rules.skirmish_cheats),
-        ] {
-            if checkbox_icon_rect(rect, layout.scale).contains(x, y) {
-                *checked = !*checked;
-                return GameOptionsOutcome::Changed(SkirmishShellUiSound::GuiCheckboxSound);
+    controller.set_scale(layout.scale);
+    let root = controller.root_in(DIALOG)?;
+    let gui = controller.gui_mut();
+    page::ensure_built(gui, root, || {
+        let label = NodeSpec::new(NodeKind::Text)
+            .id(LIMIT_LABEL.into())
+            .tooltip(SUPERWEAPON_LIMIT_HELP)
+            .with(Prop::Align, Value::Int(0))
+            .with(
+                Prop::Text,
+                Value::Text(crate::i18n::tr(SUPERWEAPON_LIMIT_LABEL)),
+            );
+        let controls = CONTROLS.map(|control| {
+            let spec = match control {
+                GameOptionsControl::SuperweaponLimit => NodeSpec::new(NodeKind::Trackbar)
+                    .with(Prop::Min, Value::Int(SUPERWEAPON_LIMIT_RANGE.min))
+                    .with(Prop::Max, Value::Int(SUPERWEAPON_LIMIT_RANGE.max))
+                    .with(Prop::Step, Value::Int(SUPERWEAPON_LIMIT_RANGE.step)),
+                GameOptionsControl::TerrainDeformation | GameOptionsControl::SkirmishCheats => {
+                    let label = match control {
+                        GameOptionsControl::TerrainDeformation => TERRAIN_DEFORMATION_LABEL,
+                        _ => SKIRMISH_CHEATS_LABEL,
+                    };
+                    NodeSpec::new(NodeKind::Checkbox)
+                        .with(Prop::ActivateOnPress, Value::Bool(true))
+                        .with(Prop::Text, Value::Text(crate::i18n::tr(label)))
+                }
+                GameOptionsControl::Ok => NodeSpec::new(NodeKind::Button),
+            };
+            let spec = spec.id(control as i32);
+            match control.status_help_key() {
+                Some(key) => spec.tooltip(key),
+                None => spec,
             }
-        }
-        let press = SUPERWEAPON_LIMIT_RANGE.press_in(
-            self.superweapon_limit_value(),
-            x,
-            y,
-            layout.superweapon_limit,
-            layout.scale,
-        );
-        self.hold = press.hold(());
-        match press {
-            TrackbarPress::Jump(value) => self.set_superweapon_limit_value(value),
-            _ => GameOptionsOutcome::Stay,
-        }
-    }
+        });
+        NodeSpec::new(NodeKind::Dialog)
+            .child(label)
+            .children(controls)
+    });
+    page::sync_rects(gui, root, |id| match id {
+        LIMIT_LABEL => Some(layout.superweapon_limit_label),
+        1 => Some(layout.superweapon_limit),
+        2 => Some(layout.terrain_deformation),
+        3 => Some(layout.skirmish_cheats),
+        4 => Some(layout.ok),
+        _ => None,
+    });
+    let limit = Value::Int(open.superweapon_limit_value());
+    page::set(gui, root, 1, Prop::Pos, limit);
+    let shown = superweapon_limit_text(open.rules.superweapon_limit);
+    page::set(gui, root, 1, Prop::Text, Value::Text(shown));
+    page::set(
+        gui,
+        root,
+        2,
+        Prop::Checked,
+        Value::Bool(open.rules.terrain_deformation),
+    );
+    page::set(
+        gui,
+        root,
+        3,
+        Prop::Checked,
+        Value::Bool(open.rules.skirmish_cheats),
+    );
+    Some(root)
+}
 
-    /// The pointer moved with the button held: a thumb the press grabbed
-    /// follows it.
-    pub fn mouse_move(&mut self, layout: &GameOptionsLayout, x: i32) -> GameOptionsOutcome {
-        match self.hold {
-            Some(hold) if hold.dragging => self.set_superweapon_limit_value(
-                SUPERWEAPON_LIMIT_RANGE.value_at_in(x, layout.superweapon_limit, layout.scale),
-            ),
-            _ => GameOptionsOutcome::Stay,
+/// The pointer at `x`, `y` over the open box, which takes every press, move
+/// and release over the page. Its cues wait in the page's sounds; true when
+/// OK came up over its own press and the box closes.
+pub fn pointer(
+    controller: &mut DialogController,
+    state: &mut super::SkirmishShellState,
+    layout: &GameOptionsLayout,
+    at: super::page::Pointer,
+    x: i32,
+    y: i32,
+) -> bool {
+    let Some(open) = state.game_options.as_mut() else {
+        return false;
+    };
+    if sync(controller, open, layout).is_none() {
+        return false;
+    }
+    match at {
+        super::page::Pointer::Down => controller.on_pointer_down(x, y, &[]),
+        super::page::Pointer::Move => controller.on_pointer_move(x, y, &[]),
+        super::page::Pointer::Up => {
+            controller.on_pointer_up(x, y, &[]);
         }
     }
+    let raw = controller.drain_events();
+    let mut close = false;
+    for event in page::page_events(controller.gui(), raw) {
+        let sound = match event {
+            PageEvent::Cue(PageCue::Button) => Some(SkirmishShellUiSound::MainButton),
+            PageEvent::Cue(PageCue::Checkbox) => Some(SkirmishShellUiSound::GuiCheckboxSound),
+            PageEvent::Toggled(2, on) => {
+                open.rules.terrain_deformation = on;
+                None
+            }
+            PageEvent::Toggled(3, on) => {
+                open.rules.skirmish_cheats = on;
+                None
+            }
+            // A pointer-driven change clicks, as the page's sliders do
+            // (`0x0061E6DD`).
+            PageEvent::Slid {
+                value,
+                final_: false,
+                ..
+            } => {
+                let limit = admitted_superweapon_limit(value);
+                let changed = std::mem::replace(&mut open.rules.superweapon_limit, limit) != limit;
+                changed.then_some(SkirmishShellUiSound::GenericClick)
+            }
+            PageEvent::Activated(4) => {
+                close = true;
+                None
+            }
+            _ => None,
+        };
+        state.pending_ui_sounds.extend(sound);
+    }
+    close
+}
 
-    /// The left button came up at `(x, y)`: OK closes the box when the press
-    /// that went down on it comes up on it too.
-    pub fn mouse_up(&mut self, layout: &GameOptionsLayout, x: i32, y: i32) -> GameOptionsOutcome {
-        self.hold = None;
-        if std::mem::take(&mut self.ok_pressed) && layout.ok.contains(x, y) {
-            GameOptionsOutcome::Close
-        } else {
-            GameOptionsOutcome::Stay
-        }
+/// The box's control under the pointer, for its status help.
+pub fn hovered(gui: &vera20k_gui::Gui) -> Option<GameOptionsControl> {
+    let id = gui.id_of(gui.hovered()?)?;
+    if id == i32::from(LIMIT_LABEL) {
+        return Some(GameOptionsControl::SuperweaponLimit);
     }
+    CONTROLS.into_iter().find(|control| *control as i32 == id)
 }
 
 /// The box's rects on screen, in the page's mapping.
@@ -213,31 +290,44 @@ impl GameOptionsLayout {
             scale,
         }
     }
-
-    /// The control under `(x, y)`, for its status help.
-    pub fn control_at(&self, x: i32, y: i32) -> Option<GameOptionsControl> {
-        if self.ok.contains(x, y) {
-            Some(GameOptionsControl::Ok)
-        } else if self.superweapon_limit.contains(x, y)
-            || self.superweapon_limit_label.contains(x, y)
-        {
-            Some(GameOptionsControl::SuperweaponLimit)
-        } else if self.terrain_deformation.contains(x, y) {
-            Some(GameOptionsControl::TerrainDeformation)
-        } else if self.skirmish_cheats.contains(x, y) {
-            Some(GameOptionsControl::SkirmishCheats)
-        } else {
-            None
-        }
-    }
 }
 
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::skirmish_shell::page::Pointer;
+    use crate::ui::skirmish_shell::{SkirmishShellState, checkbox_icon_rect};
 
     fn layout() -> GameOptionsLayout {
         GameOptionsLayout::over(&crate::ui::skirmish_shell::compute_layout(800, 600))
+    }
+
+    /// The box open over a page, driven as the app drives it.
+    struct Open(DialogController, SkirmishShellState);
+
+    impl Open {
+        fn new(rules: MatchRules) -> Self {
+            let state = SkirmishShellState {
+                game_options: Some(GameOptionsBox::new(rules)),
+                ..Default::default()
+            };
+            Open(DialogController::default(), state)
+        }
+        fn at(&mut self, at: Pointer, x: i32, y: i32) -> bool {
+            pointer(&mut self.0, &mut self.1, &layout(), at, x, y)
+        }
+        fn mouse_down(&mut self, x: i32, y: i32) -> Vec<SkirmishShellUiSound> {
+            self.at(Pointer::Move, x, y);
+            self.at(Pointer::Down, x, y);
+            self.1.drain_pending_ui_sounds()
+        }
+        fn mouse_up(&mut self, x: i32, y: i32) -> bool {
+            self.at(Pointer::Move, x, y);
+            self.at(Pointer::Up, x, y)
+        }
+        fn rules(&self) -> MatchRules {
+            self.1.game_options.unwrap().rules
+        }
     }
 
     /// The slider stores what the profile and the room read: off at its
@@ -246,66 +336,55 @@ mod tests {
     fn the_box_stores_off_at_the_left_end_and_the_limit_beyond() {
         let layout = layout();
         let bar = layout.superweapon_limit;
-        let mut open = GameOptionsBox::new(MatchRules {
+        let mut open = Open::new(MatchRules {
             superweapon_limit: 6,
             ..Default::default()
         });
         let row = bar.y + bar.h - 4;
         assert_eq!(
-            open.mouse_down(&layout, bar.x + 1, row),
-            GameOptionsOutcome::Changed(SkirmishShellUiSound::GenericClick)
+            open.mouse_down(bar.x + 1, row),
+            [SkirmishShellUiSound::GenericClick]
         );
-        assert_eq!(open.rules.superweapon_limit, 0);
-        open.mouse_up(&layout, bar.x + 1, row);
+        assert_eq!(open.rules().superweapon_limit, 0);
+        open.mouse_up(bar.x + 1, row);
         // The plaque's 50 pixels stay off the track: its far end is the
         // most the limit allows.
-        open.mouse_down(&layout, bar.x + bar.w - 51, row);
-        assert_eq!(open.rules.superweapon_limit, SUPERWEAPON_LIMIT_MAX);
-        open.mouse_up(&layout, bar.x + bar.w - 51, row);
+        open.mouse_down(bar.x + bar.w - 51, row);
+        assert_eq!(open.rules().superweapon_limit, SUPERWEAPON_LIMIT_MAX);
+        open.mouse_up(bar.x + bar.w - 51, row);
 
         let check = checkbox_icon_rect(layout.terrain_deformation, layout.scale);
         assert_eq!(
-            open.mouse_down(&layout, check.x + 2, check.y + 2),
-            GameOptionsOutcome::Changed(SkirmishShellUiSound::GuiCheckboxSound)
+            open.mouse_down(check.x + 2, check.y + 2),
+            [SkirmishShellUiSound::GuiCheckboxSound]
         );
-        assert!(open.rules.terrain_deformation);
+        assert!(open.rules().terrain_deformation);
 
         let check = checkbox_icon_rect(layout.skirmish_cheats, layout.scale);
         let (x, y) = (check.x + 2, check.y + 2);
+        open.at(Pointer::Move, x, y);
         assert_eq!(
-            layout
-                .control_at(x, y)
-                .and_then(GameOptionsControl::status_help_key),
+            hovered(open.0.gui()).and_then(GameOptionsControl::status_help_key),
             Some(SKIRMISH_CHEATS_HELP),
         );
-        assert!(!open.rules.skirmish_cheats);
-        open.mouse_down(&layout, x, y);
-        assert!(open.rules.skirmish_cheats);
+        assert!(!open.rules().skirmish_cheats);
+        open.mouse_down(x, y);
+        assert!(open.rules().skirmish_cheats);
     }
 
     /// OK closes the box only when the press and the release are both on it.
     #[test]
     fn ok_closes_only_on_a_release_over_its_own_press() {
-        let layout = layout();
-        let ok = layout.ok;
-        let mut open = GameOptionsBox::new(MatchRules::default());
+        let ok = layout().ok;
+        let mut open = Open::new(MatchRules::default());
         assert_eq!(
-            open.mouse_down(&layout, ok.x + 2, ok.y + 2),
-            GameOptionsOutcome::OkPressed
+            open.mouse_down(ok.x + 2, ok.y + 2),
+            [SkirmishShellUiSound::MainButton]
         );
-        assert_eq!(
-            open.mouse_up(&layout, ok.x - 2, ok.y + 2),
-            GameOptionsOutcome::Stay
-        );
-        open.mouse_down(&layout, ok.x - 2, ok.y + 2);
-        assert_eq!(
-            open.mouse_up(&layout, ok.x + 2, ok.y + 2),
-            GameOptionsOutcome::Stay
-        );
-        open.mouse_down(&layout, ok.x + 2, ok.y + 2);
-        assert_eq!(
-            open.mouse_up(&layout, ok.x + 2, ok.y + 2),
-            GameOptionsOutcome::Close
-        );
+        assert!(!open.mouse_up(ok.x - 2, ok.y + 2));
+        open.mouse_down(ok.x - 2, ok.y + 2);
+        assert!(!open.mouse_up(ok.x + 2, ok.y + 2));
+        open.mouse_down(ok.x + 2, ok.y + 2);
+        assert!(open.mouse_up(ok.x + 2, ok.y + 2));
     }
 }

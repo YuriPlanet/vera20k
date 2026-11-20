@@ -1163,7 +1163,6 @@ pub(super) fn show_text_box(state: &mut AppState, body: &str) -> bool {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return false;
     };
-    visit.status_help = None;
     visit.page = WolPage::Message {
         message,
         then: WolBoxThen::Welcome,
@@ -1206,7 +1205,6 @@ fn apply(state: &mut AppState, step: WolStep) {
             let message = message_box(state, key, yes_no);
             let dialog = message.dialog();
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
-            visit.status_help = None;
             visit.page = WolPage::Message { message, then };
             state.frontend.shell_controller.reset_to(dialog, false);
         }
@@ -1603,14 +1601,13 @@ mod tests {
     #[test]
     fn login_slide_policy_has_only_the_modern_or_native_forms_buttons() {
         use crate::app::frontend::shell_transition::ShellSlideKind;
-        use crate::ui::wol_login::{LoginPolicy, WolAccountGlobals, WolLoginState};
+        use crate::ui::wol_login::{LoginCx, LoginPolicy, WolAccountGlobals, WolLoginState};
         let mut visit = visit();
         let mut globals = WolAccountGlobals::default();
-        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(
-            &mut globals,
-            None,
-            None,
-        )));
+        let mut ui = crate::ui::shell::controller::DialogController::default();
+        ui.push(crate::ui::wol_login::DIALOG, true);
+        let cx = &mut LoginCx { ui: &mut ui, globals: &mut globals, credentials: &[] };
+        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(cx, None, None)));
         let modern = visit.login().unwrap().policy.page_spec();
         assert_eq!(modern, LoginPolicy::Online.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
@@ -1619,7 +1616,9 @@ mod tests {
             (4, true),
             "Play and the three account buttons"
         );
-        visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
+        ui.reset_to(crate::ui::wol_login::DIALOG, true);
+        let cx = &mut LoginCx { ui: &mut ui, globals: &mut globals, credentials: &[] };
+        visit.page = WolPage::Login(Box::new(WolLoginState::open(cx)));
         let native = visit.login().unwrap().policy.page_spec();
         assert_eq!(native, LoginPolicy::Legacy.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(native));

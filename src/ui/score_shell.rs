@@ -48,6 +48,14 @@ pub const SCORE_PAGE: MenuPageSpec = MenuPageSpec {
     },
 };
 
+/// Continue and VERA's paging pair as nodes; only Continue has help.
+pub fn nodes() -> vera20k_gui::NodeSpec {
+    use vera20k_gui::{NodeKind, NodeSpec};
+    SCORE_PAGE.nodes().children(
+        [PREVIOUS_PAGE, NEXT_PAGE].map(|id| NodeSpec::new(NodeKind::Button).id(i32::from(id))),
+    )
+}
+
 /// Player rows the template declares.
 pub const SCORE_ROW_SLOTS: usize = 8;
 
@@ -372,6 +380,13 @@ impl ScoreLayout {
             })
     }
 
+    /// Continue, and VERA's paging pair when the result spans pages.
+    pub fn control_rect(&self, id: u16, paged: bool) -> Option<RectPx> {
+        self.page
+            .button_rect(id)
+            .or_else(|| paged.then(|| self.paging_button(id)).flatten())
+    }
+
     pub fn continue_button(&self) -> RectPx {
         self.page
             .button_rect(CONTINUE_BUTTON)
@@ -466,81 +481,31 @@ impl ScorePage {
     }
 
     fn rebuild_table(&mut self, now: Instant) {
-        let model = &self.model;
-        let texts = &self.texts;
+        use ScoreAlign::{Left, Right};
         let layout = ScoreTableLayout::template();
+        let texts = &self.texts;
+        let cell = |id, window, align, rgb, params, text: &str| {
+            ScoreTableStatic::new(id, window, align, rgb, params, text, now)
+        };
+        let label =
+            |id, window, align, text: &str| cell(id, window, align, None, LABEL_KIND1, text);
         let mut table = vec![
-            ScoreTableStatic::new(
-                GAME_LABEL,
-                layout.game_label,
-                ScoreAlign::Left,
-                None,
-                LABEL_KIND1,
-                &texts.game,
-                now,
-            ),
-            ScoreTableStatic::new(
-                TIME_LABEL,
-                layout.time_label,
-                ScoreAlign::Right,
-                None,
-                LABEL_KIND1,
-                &texts.time,
-                now,
-            ),
+            label(GAME_LABEL, layout.game_label, Left, &texts.game),
+            label(TIME_LABEL, layout.time_label, Right, &texts.time),
         ];
-        for (column, ((id, window), text)) in HEADER_IDS
-            .into_iter()
-            .zip(layout.header.cells())
-            .zip(&texts.headers)
-            .enumerate()
-        {
-            let align = if column == 0 {
-                ScoreAlign::Left
-            } else {
-                ScoreAlign::Right
-            };
-            table.push(ScoreTableStatic::new(
-                id,
-                window,
-                align,
-                None,
-                LABEL_KIND1,
-                text,
-                now,
-            ));
+        let header = HEADER_IDS.into_iter().zip(layout.header.cells());
+        for (column, ((id, window), text)) in header.zip(&texts.headers).enumerate() {
+            let align = if column == 0 { Left } else { Right };
+            table.push(label(id, window, align, text));
         }
-        for ((row, rects), ids) in model.rows[self.visible_range()]
-            .iter()
-            .zip(layout.rows)
-            .zip(ROW_CELL_IDS)
-        {
-            let rgb = Some(row.rgb);
-            let [name, kills, losses, built, score] = rects.cells();
-            table.push(ScoreTableStatic::new(
-                ids[0],
-                name,
-                ScoreAlign::Left,
-                rgb,
-                LABEL_KIND1,
-                &row.name,
-                now,
-            ));
-            for ((id, window), value) in ids[1..].iter().zip([kills, losses, built, score]).zip([
-                row.kills.to_string(),
-                row.losses.to_string(),
-                row.built.to_string(),
-                row.score.to_string(),
-            ]) {
-                table.push(ScoreTableStatic::new(
-                    *id,
-                    window,
-                    ScoreAlign::Right,
-                    rgb,
-                    NUMBER_KIND1,
-                    &value,
-                    now,
-                ));
+        let rows = self.model.rows[self.visible_range()].iter();
+        for ((row, rects), ids) in rows.zip(layout.rows).zip(ROW_CELL_IDS) {
+            let (rgb, windows) = (Some(row.rgb), rects.cells());
+            table.push(cell(ids[0], windows[0], Left, rgb, LABEL_KIND1, &row.name));
+            let values = [row.kills, row.losses, row.built].map(|n| n.to_string());
+            let values = values.into_iter().chain([row.score.to_string()]);
+            for ((id, window), value) in ids[1..].iter().zip(&windows[1..]).zip(values) {
+                table.push(cell(*id, *window, Right, rgb, NUMBER_KIND1, &value));
             }
         }
         self.table = table;

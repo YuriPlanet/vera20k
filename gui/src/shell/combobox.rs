@@ -209,6 +209,7 @@ impl ComboPopup {
         self.content()
             .contains(x, y)
             .then(|| self.first + ((y - self.rect.y) / self.row_height) as usize)
+            .filter(|row| *row < self.first + self.visible_rows)
     }
     /// A press while this list is open: [`ComboPress::Scroll`],
     /// [`ComboPress::Pick`] or [`ComboPress::Dismiss`].

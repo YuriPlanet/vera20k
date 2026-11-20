@@ -8,19 +8,17 @@
 //! mirror, the ladder table and the runner belong to the app's WOL owners,
 //! which run each returned [`WolBuddyAction`].
 
-use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
+use vera20k_gui::{Gui, InputEvent, Key, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::lan_shell::LanEditKey;
-use crate::ui::shell::button::ShellButtonInteraction;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
 };
 use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::page;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
+use crate::ui::shell::page;
 use crate::ui::wol_lobby::{AdmissionContext, LOBBY_PREFIX, WolChannel, WolLobbyRow, admit};
 
 pub(crate) const DIALOG: DialogId = DialogId(0x0116);
@@ -325,75 +323,65 @@ pub(crate) enum WolBuddyAction {
     CloseAdd,
 }
 
-/// The Add Buddy popup `0x115` while it runs.
+/// The Add Buddy popup `0x115` while it runs. Its edit and Add's enable
+/// live in its widgets ([`add_spec`]) under [`ADD_DIALOG`], the top dialog.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct WolAddBuddy {
-    pub(crate) edit: SavedSeedDescriptionEdit,
-    /// `0x702`, created disabled; `0x0079C520` of the text.
-    pub(crate) add_enabled: bool,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) focus_at: Option<crate::util::time::Instant>,
-}
+pub(crate) struct WolAddBuddy;
 
 /// `EM_LIMITTEXT 9` and `0x4D1(1)` (byte characters only). VERA deviation:
 /// the lobby's names run to 24 characters.
 const NAME_LIMIT: usize = crate::ui::wol_account::NAME_LIMIT;
 
+/// `0x115`'s widgets (`0x497`): the empty edit, which takes the focus, and
+/// Add created disabled.
+pub(crate) fn add_spec() -> NodeSpec {
+    NodeSpec::new(NodeKind::Dialog)
+        .child(
+            NodeSpec::new(NodeKind::Button)
+                .id(ADD.into())
+                .with(Prop::Enabled, Value::Bool(false)),
+        )
+        .child(NodeSpec::new(NodeKind::Button).id(BACK.into()))
+        .child(
+            NodeSpec::new(NodeKind::Edit)
+                .id(NAME.into())
+                .with(Prop::MaxLen, Value::Int(NAME_LIMIT as i32))
+                .with(Prop::ByteOnly, Value::Bool(true)),
+        )
+}
+
 impl WolAddBuddy {
-    /// `0x497`: an empty edit with the focus, Add disabled.
-    pub(crate) fn new() -> Self {
-        let mut popup = Self {
-            focus_at: Some(crate::util::time::Instant::now()),
-            ..Self::default()
-        };
-        popup.edit.focused = true;
-        popup
+    pub(crate) fn text(c: &DialogController) -> String {
+        c.text(ADD_DIALOG, NAME)
     }
 
-    pub(crate) fn text(&self) -> String {
-        self.edit.narrow_text(usize::MAX)
-    }
-
-    /// Every edit notification re-reads the text: Add follows `valid`.
-    pub(crate) fn insert_text(&mut self, text: &str, valid: &dyn Fn(&str) -> bool) {
-        for unit in text.encode_utf16() {
-            if self.edit.insert_unit_filtered(unit, NAME_LIMIT, true, &[]) {
-                self.add_enabled = valid(&self.text());
-            }
-        }
-    }
-
-    /// Enter (`0x4DA`) posts `BM_CLICK` to Add, which a disabled button
-    /// ignores.
-    pub(crate) fn key(
-        &mut self,
-        key: LanEditKey,
+    /// A key or typed text into the edit: every edit notification re-reads
+    /// the text, and Add follows `valid`. Enter (`0x4DA`) posts `BM_CLICK`
+    /// to Add, which a disabled button ignores.
+    pub(crate) fn input(
+        c: &mut DialogController,
+        event: InputEvent,
         valid: &dyn Fn(&str) -> bool,
     ) -> Option<WolBuddyAction> {
-        let before = self.edit.units.clone();
-        match key {
-            LanEditKey::Enter => return self.activate(ADD),
-            LanEditKey::Backspace => self.edit.backspace(),
-            LanEditKey::Delete => self.edit.delete(),
-            LanEditKey::Left => self.edit.left(),
-            LanEditKey::Right => self.edit.right(),
-            LanEditKey::Home => self.edit.home(),
-            LanEditKey::End => self.edit.end(),
-            LanEditKey::Tab => {}
-        }
-        if self.edit.units != before {
-            self.add_enabled = valid(&self.text());
+        match event {
+            InputEvent::Key(Key::Enter) => return Self::activate(c, ADD),
+            InputEvent::Key(Key::Escape | Key::Tab) => {}
+            event => page::edit_input(c, event, |c| {
+                let enabled = Value::Bool(valid(&Self::text(c)));
+                c.set_prop(ADD_DIALOG, ADD, Prop::Enabled, enabled);
+            }),
         }
         None
     }
 
     /// `0x702` reads and clears the edit and always ends the dialog; Back
     /// ends it.
-    pub(crate) fn activate(&mut self, control: u16) -> Option<WolBuddyAction> {
+    pub(crate) fn activate(c: &mut DialogController, control: u16) -> Option<WolBuddyAction> {
+        c.root_in(ADD_DIALOG)?;
         match control {
-            ADD if self.add_enabled => {
-                let text = self.text();
-                self.edit.set_units_limited([], 0);
+            ADD if c.flag(ADD_DIALOG, ADD, Prop::Enabled, true) => {
+                let text = Self::text(c);
+                c.set_text(ADD_DIALOG, NAME, "");
                 Some(WolBuddyAction::Add(text))
             }
             BACK => Some(WolBuddyAction::CloseAdd),
@@ -448,18 +436,29 @@ impl WolBuddyPage {
     pub(crate) fn present(&self, gui: &mut Gui, root: NodeId, unknown: &str) {
         let mut set = |id: u16, prop: Prop, value: Value| page::set(gui, root, id, prop, value);
         set(LIST, Prop::RowCount, Value::Int(self.rows.len() as i32));
-        set(LIST, Prop::Selected, Value::Int(self.selected.map_or(-1, |row| row as i32)));
+        set(
+            LIST,
+            Prop::Selected,
+            Value::Int(self.selected.map_or(-1, |row| row as i32)),
+        );
         for id in [JOIN, PAGE_BUTTON, REMOVE, REFRESH] {
             set(id, Prop::Enabled, Value::Bool(self.enabled(id)));
         }
         set(OBSERVER_TOGGLE, Prop::Checked, Value::Bool(self.observer));
         for id in std::iter::once(HEADING).chain(STATS) {
             let text = match &self.texts {
-                Some(texts) => texts.iter().find(|(control, _)| *control == id).map(|(_, text)| text.as_str()),
+                Some(texts) => texts
+                    .iter()
+                    .find(|(control, _)| *control == id)
+                    .map(|(_, text)| text.as_str()),
                 None if id == HEADING => None,
                 None => Some(unknown),
             };
-            set(id, Prop::Text, Value::Text(text.unwrap_or_default().to_owned()));
+            set(
+                id,
+                Prop::Text,
+                Value::Text(text.unwrap_or_default().to_owned()),
+            );
         }
     }
 
@@ -655,10 +654,18 @@ pub(crate) fn spec() -> NodeSpec {
         }
     };
     let labels = LABELS.iter().enumerate().map(|(index, (key, _))| {
-        let a = if index < 2 { ShellAlign::NONE } else { ShellAlign::H_RIGHT };
-        NodeSpec::new(NodeKind::Text).id(i32::from(LABEL_IDS) + index as i32).label(key).with(Prop::Align, align(a))
+        let a = if index < 2 {
+            ShellAlign::NONE
+        } else {
+            ShellAlign::H_RIGHT
+        };
+        NodeSpec::new(NodeKind::Text)
+            .id(i32::from(LABEL_IDS) + index as i32)
+            .label(key)
+            .with(Prop::Align, align(a))
     });
-    let observer = help(NodeKind::Checkbox, OBSERVER_TOGGLE).with(Prop::ActivateOnPress, Value::Bool(true));
+    let observer =
+        help(NodeKind::Checkbox, OBSERVER_TOGGLE).with(Prop::ActivateOnPress, Value::Bool(true));
     NodeSpec::new(NodeKind::Dialog)
         .children(page::menu_buttons(&PAGE))
         .child(help(NodeKind::Button, REFRESH))
@@ -670,7 +677,9 @@ pub(crate) fn spec() -> NodeSpec {
         )
         .children(labels)
         .child(help(NodeKind::Text, HEADING).with(Prop::Align, align(ShellAlign::H_CENTER)))
-        .children(STATS.map(|id| help(NodeKind::Text, id).with(Prop::Align, align(ShellAlign::NONE))))
+        .children(
+            STATS.map(|id| help(NodeKind::Text, id).with(Prop::Align, align(ShellAlign::NONE))),
+        )
 }
 
 #[cfg(all(test, tests_ui))]
@@ -889,20 +898,35 @@ mod tests {
     #[test]
     fn add_buddy_enables_by_validity_and_always_closes() {
         let valid = |name: &str| name != "Tester" && !name.contains(',');
-        let mut add = WolAddBuddy::new();
-        assert_eq!(add.key(LanEditKey::Enter, &valid), None);
-        add.insert_text("Tester", &valid);
-        assert!(!add.add_enabled);
-        add.key(LanEditKey::Backspace, &valid);
-        assert!(add.add_enabled);
-        // The edit keeps VERA's 24 characters.
-        add.insert_text("ABCDEFGHIJKLMNOPQRSTU", &valid);
-        assert_eq!(add.text(), "TesteABCDEFGHIJKLMNOPQRS");
+        let mut c = DialogController::default();
+        c.push(ADD_DIALOG, false);
+        let root = c.root_in(ADD_DIALOG).unwrap();
+        page::ensure_built(c.gui_mut(), root, add_spec);
+        c.focus_control(ADD_DIALOG, Some(NAME));
+        let add_enabled = |c: &DialogController| c.flag(ADD_DIALOG, ADD, Prop::Enabled, true);
         assert_eq!(
-            add.key(LanEditKey::Enter, &valid),
+            WolAddBuddy::input(&mut c, InputEvent::Key(Key::Enter), &valid),
+            None
+        );
+        WolAddBuddy::input(&mut c, InputEvent::Text("Tester".into()), &valid);
+        assert!(!add_enabled(&c));
+        WolAddBuddy::input(&mut c, InputEvent::Key(Key::Backspace), &valid);
+        assert!(add_enabled(&c));
+        // The edit keeps VERA's 24 characters.
+        WolAddBuddy::input(
+            &mut c,
+            InputEvent::Text("ABCDEFGHIJKLMNOPQRSTU".into()),
+            &valid,
+        );
+        assert_eq!(WolAddBuddy::text(&c), "TesteABCDEFGHIJKLMNOPQRS");
+        assert_eq!(
+            WolAddBuddy::input(&mut c, InputEvent::Key(Key::Enter), &valid),
             Some(WolBuddyAction::Add("TesteABCDEFGHIJKLMNOPQRS".into()))
         );
-        assert_eq!(add.text(), "");
-        assert_eq!(add.activate(BACK), Some(WolBuddyAction::CloseAdd));
+        assert_eq!(WolAddBuddy::text(&c), "");
+        assert_eq!(
+            WolAddBuddy::activate(&mut c, BACK),
+            Some(WolBuddyAction::CloseAdd)
+        );
     }
 }

@@ -214,11 +214,6 @@ pub(crate) struct PanelState {
     pub(crate) status: Option<PaintLabel<'static>>,
 }
 
-/// Status help of `spec`'s hovered button, for a page still on fed buttons.
-pub(crate) fn status_csf_key(spec: &MenuPageSpec, hovered: Option<u16>) -> Option<&'static str> {
-    spec.button(hovered?).map(|button| button.tooltip_key)
-}
-
 /// The CSF text of a status help key; empty off every control.
 pub(crate) fn help_text(state: &AppState, key: Option<&str>) -> String {
     key.map(|key| resolve_csf(state, key).into_owned())
@@ -448,6 +443,8 @@ pub(crate) struct FamilyFrame<'a> {
     pub(crate) under: Vec<TexturedDraw<'a>>,
     /// Chrome-atlas sprites over the panel, under its button column (a list).
     pub(crate) over_panel: Vec<SpriteInstance>,
+    /// Other art over the panel, under the buttons (a score page's own).
+    pub(crate) over_panel_art: Vec<TexturedDraw<'a>>,
     /// The page's own text, drawn before the captions and statics.
     pub(crate) labels: Vec<PaintLabel<'a>>,
     /// Drawn over the buttons, with text after all other text (a prompt).
@@ -474,6 +471,7 @@ impl<'a> FamilyFrame<'a> {
             buttons,
             under: Vec::new(),
             over_panel: Vec::new(),
+            over_panel_art: Vec::new(),
             labels: Vec::new(),
             over: None,
             over_text: Vec::new(),
@@ -503,6 +501,7 @@ pub(crate) fn encode_family_page(
         buttons,
         mut under,
         over_panel,
+        over_panel_art,
         mut labels,
         over,
         over_text,
@@ -570,6 +569,7 @@ pub(crate) fn encode_family_page(
         texture: &chrome.texture,
         instances: panel_sprites,
     });
+    under.extend(over_panel_art);
     under.push(TexturedDraw {
         texture: &chrome.texture,
         instances: button_sprites,

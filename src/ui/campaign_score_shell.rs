@@ -126,128 +126,25 @@ pub struct CampaignScoreControlSpec {
 /// current SCRA frame; its 100 ms interval is `ShellStatic__AnimationInterval`
 /// `0x006033F0`'s `0x103`/`0x72B` branch. The art itself is owned by the
 /// renderer (`SCRT` panel plus the `SCRA` sequence), not by this layout module.
-pub const CAMPAIGN_SCORE_CONTROLS: [CampaignScoreControlSpec; 12] = [
-    CampaignScoreControlSpec {
-        id: CONTINUE_BUTTON,
-        kind: CampaignScoreControlKind::Button,
-        template_dlu: RectPx::new(425, 346, 108, 23),
-        native_style: 0x5000_000B,
-        caption_key: Some("GUI:Continue"),
-        tooltip_key: Some("STT:StandScoreButtonReturn"),
-        action: Some(CampaignScoreAction::Continue),
-        reveal: None,
-    },
-    CampaignScoreControlSpec {
-        id: PAR_TIME_LABEL_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(125, 266, 55, 10),
-        native_style: 0x5000_0001,
-        caption_key: Some("GUI:ParTime"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: YOUR_TIME_LABEL_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(242, 266, 55, 10),
-        native_style: 0x5000_0001,
-        caption_key: Some("GUI:YourTime"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: PAR_TIME_VALUE_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(125, 277, 55, 10),
-        native_style: 0x5000_0001,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreParTime"),
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: YOUR_TIME_VALUE_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(242, 277, 55, 10),
-        native_style: 0x5000_0001,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreYourTime"),
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: RANK_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(85, 35, 257, 10),
-        native_style: 0x5000_0000,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreTitle"),
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: COMMENDATION_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(85, 50, 257, 40),
-        native_style: 0x5000_0000,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreMessage"),
-        action: None,
-        reveal: Some(LONG_TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: ENEMIES_DESTROYED_LABEL_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(85, 100, 110, 10),
-        native_style: 0x5000_0000,
-        caption_key: Some("GUI:HeadsTaken"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: ENEMIES_DESTROYED_VALUE_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(200, 100, 142, 10),
-        native_style: 0x5000_0000,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: Some("STT:StandScoreKills"),
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: STATUS_HELP_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(10, 357, 303, 12),
-        native_style: 0x5000_0200,
-        caption_key: Some("GUI:Blank"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(LONG_TEXT_REVEAL),
-    },
-    CampaignScoreControlSpec {
-        id: SCORE_ART_REGION_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(72, 115, 282, 141),
-        native_style: 0x5000_0007,
-        caption_key: None,
-        tooltip_key: None,
-        action: None,
-        reveal: None,
-    },
-    CampaignScoreControlSpec {
-        id: TITLE_STATIC,
-        kind: CampaignScoreControlKind::Static,
-        template_dlu: RectPx::new(425, 1, 108, 10),
-        native_style: 0x5002_0001,
-        caption_key: Some("GUI:StandaloneScore"),
-        tooltip_key: None,
-        action: None,
-        reveal: Some(TEXT_REVEAL),
-    },
-];
+#[rustfmt::skip]
+pub const CAMPAIGN_SCORE_CONTROLS: [CampaignScoreControlSpec; 12] = {
+    use CampaignScoreControlKind::{Button, Static};
+    const BLANK: Option<&str> = Some("GUI:Blank");
+    [
+        control(CONTINUE_BUTTON, Button, RectPx::new(425, 346, 108, 23), 0x5000_000B, Some("GUI:Continue"), Some("STT:StandScoreButtonReturn"), None),
+        control(PAR_TIME_LABEL_STATIC, Static, RectPx::new(125, 266, 55, 10), 0x5000_0001, Some("GUI:ParTime"), None, Some(TEXT_REVEAL)),
+        control(YOUR_TIME_LABEL_STATIC, Static, RectPx::new(242, 266, 55, 10), 0x5000_0001, Some("GUI:YourTime"), None, Some(TEXT_REVEAL)),
+        control(PAR_TIME_VALUE_STATIC, Static, RectPx::new(125, 277, 55, 10), 0x5000_0001, BLANK, Some("STT:StandScoreParTime"), Some(TEXT_REVEAL)),
+        control(YOUR_TIME_VALUE_STATIC, Static, RectPx::new(242, 277, 55, 10), 0x5000_0001, BLANK, Some("STT:StandScoreYourTime"), Some(TEXT_REVEAL)),
+        control(RANK_STATIC, Static, RectPx::new(85, 35, 257, 10), 0x5000_0000, BLANK, Some("STT:StandScoreTitle"), Some(TEXT_REVEAL)),
+        control(COMMENDATION_STATIC, Static, RectPx::new(85, 50, 257, 40), 0x5000_0000, BLANK, Some("STT:StandScoreMessage"), Some(LONG_TEXT_REVEAL)),
+        control(ENEMIES_DESTROYED_LABEL_STATIC, Static, RectPx::new(85, 100, 110, 10), 0x5000_0000, Some("GUI:HeadsTaken"), None, Some(TEXT_REVEAL)),
+        control(ENEMIES_DESTROYED_VALUE_STATIC, Static, RectPx::new(200, 100, 142, 10), 0x5000_0000, BLANK, Some("STT:StandScoreKills"), Some(TEXT_REVEAL)),
+        control(STATUS_HELP_STATIC, Static, RectPx::new(10, 357, 303, 12), 0x5000_0200, BLANK, None, Some(LONG_TEXT_REVEAL)),
+        control(SCORE_ART_REGION_STATIC, Static, RectPx::new(72, 115, 282, 141), 0x5000_0007, None, None, None),
+        control(TITLE_STATIC, Static, RectPx::new(425, 1, 108, 10), 0x5002_0001, Some("GUI:StandaloneScore"), None, Some(TEXT_REVEAL)),
+    ]
+};
 
 /// The LAN Cooperative campaign-end dialog `0xBC7`
 /// (`CampaignEndScoreClass vt+4` `0x00471420`, proc `0x00470D30`).
@@ -292,7 +189,8 @@ const HEADER_REVEAL: CampaignScoreRevealSpec = CampaignScoreRevealSpec {
     highlight_range: 16,
 };
 
-const fn end_control(
+/// One template control; each dialog's Continue is its only action.
+const fn control(
     id: u16,
     kind: CampaignScoreControlKind,
     template_dlu: RectPx,
@@ -308,7 +206,7 @@ const fn end_control(
         native_style,
         caption_key,
         tooltip_key,
-        action: if id == CAMPAIGN_END_CONTINUE {
+        action: if id == CONTINUE_BUTTON || id == CAMPAIGN_END_CONTINUE {
             Some(CampaignScoreAction::Continue)
         } else {
             None
@@ -324,36 +222,36 @@ pub const CAMPAIGN_END_CONTROLS: [CampaignScoreControlSpec; 30] = {
     use CampaignScoreControlKind::{Button, Static, Text};
     const BLANK: Option<&str> = Some("GUI:Blank");
     [
-        end_control(0x06D1, Button, RectPx::new(425, 130, 108, 23), 0x5000_000B, Some("GUI:Continue"), Some("STT:MPScoreButtonContinue"), None),
-        end_control(0x0736, Static, RectPx::new(113, 232, 74, 10), 0x5000_0001, Some("GUI:FirstPlace"), None, Some(PLACE_LABEL_REVEAL)),
-        end_control(0x0737, Static, RectPx::new(233, 232, 68, 10), 0x5000_0001, Some("GUI:SecondPlace"), None, Some(PLACE_LABEL_REVEAL)),
-        end_control(0x073A, Static, RectPx::new(123, 242, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelPlayer"), Some(PLACE_REVEAL)),
-        end_control(0x0739, Static, RectPx::new(240, 242, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelPlayer"), Some(PLACE_REVEAL)),
-        end_control(0x0733, Static, RectPx::new(83, 4, 257, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelCampaignName"), Some(TEXT_REVEAL)),
-        end_control(0x0735, Static, RectPx::new(83, 19, 64, 10), 0x5000_0000, BLANK, Some("STT:MPCampEndCampaignNumber"), Some(TEXT_REVEAL)),
-        end_control(STATUS_HELP_STATIC, Static, RectPx::new(10, 356, 303, 12), 0x5000_0200, BLANK, None, Some(LONG_TEXT_REVEAL)),
-        end_control(SCORE_ART_REGION_STATIC, Static, RectPx::new(70, 84, 282, 141), 0x5000_0007, None, None, None),
-        end_control(TITLE_STATIC, Static, RectPx::new(425, 1, 108, 10), 0x5002_0001, Some("GUI:CampaignResults"), None, Some(TEXT_REVEAL)),
-        end_control(0x0732, Static, RectPx::new(167, 19, 87, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelDifficulty"), Some(TEXT_REVEAL)),
-        end_control(0x03EA, Static, RectPx::new(257, 19, 80, 10), 0x5000_0002, BLANK, Some("STT:MPCampEndTime"), Some(TEXT_REVEAL)),
-        end_control(0x0738, Static, RectPx::new(240, 254, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelScore"), Some(PLACE_REVEAL)),
-        end_control(0x073B, Static, RectPx::new(123, 254, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelScore"), Some(PLACE_REVEAL)),
-        end_control(0x073C, Static, RectPx::new(83, 31, 49, 10), 0x5000_0000, Some("GUI:Player"), None, Some(HEADER_REVEAL)),
-        end_control(0x073D, Static, RectPx::new(149, 31, 41, 10), 0x5000_0002, Some("GUI:Kills"), None, Some(HEADER_REVEAL)),
-        end_control(0x073E, Static, RectPx::new(202, 31, 41, 10), 0x5000_0002, Some("GUI:Losses"), None, Some(HEADER_REVEAL)),
-        end_control(0x073F, Static, RectPx::new(247, 31, 41, 10), 0x5000_0002, Some("GUI:Built"), None, Some(HEADER_REVEAL)),
-        end_control(0x0740, Static, RectPx::new(294, 31, 41, 10), 0x5000_0002, Some("GUI:Score"), None, Some(HEADER_REVEAL)),
-        end_control(0x0781, Text, RectPx::new(83, 40, 68, 10), 0x5000_0000, BLANK, None, None),
-        end_control(0x0782, Text, RectPx::new(83, 51, 68, 10), 0x5000_0000, BLANK, None, None),
-        end_control(0x0783, Text, RectPx::new(149, 40, 37, 10), 0x5000_0002, BLANK, None, None),
-        end_control(0x0784, Text, RectPx::new(149, 51, 37, 10), 0x5000_0002, BLANK, None, None),
-        end_control(0x0785, Text, RectPx::new(197, 40, 39, 10), 0x5000_0002, BLANK, None, None),
-        end_control(0x0786, Text, RectPx::new(197, 51, 39, 10), 0x5000_0002, BLANK, None, None),
-        end_control(0x0787, Text, RectPx::new(252, 40, 34, 10), 0x5000_0002, BLANK, None, None),
-        end_control(0x0788, Text, RectPx::new(252, 51, 34, 10), 0x5000_0002, BLANK, None, None),
-        end_control(0x0789, Text, RectPx::new(293, 40, 41, 8), 0x5000_0002, BLANK, None, None),
-        end_control(0x078A, Text, RectPx::new(293, 51, 41, 8), 0x5000_0002, BLANK, None, None),
-        end_control(CAMPAIGN_END_MONITOR, Static, RectPx::new(449, 29, 61, 33), 0x5000_0007, None, None, None),
+        control(0x06D1, Button, RectPx::new(425, 130, 108, 23), 0x5000_000B, Some("GUI:Continue"), Some("STT:MPScoreButtonContinue"), None),
+        control(0x0736, Static, RectPx::new(113, 232, 74, 10), 0x5000_0001, Some("GUI:FirstPlace"), None, Some(PLACE_LABEL_REVEAL)),
+        control(0x0737, Static, RectPx::new(233, 232, 68, 10), 0x5000_0001, Some("GUI:SecondPlace"), None, Some(PLACE_LABEL_REVEAL)),
+        control(0x073A, Static, RectPx::new(123, 242, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelPlayer"), Some(PLACE_REVEAL)),
+        control(0x0739, Static, RectPx::new(240, 242, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelPlayer"), Some(PLACE_REVEAL)),
+        control(0x0733, Static, RectPx::new(83, 4, 257, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelCampaignName"), Some(TEXT_REVEAL)),
+        control(0x0735, Static, RectPx::new(83, 19, 64, 10), 0x5000_0000, BLANK, Some("STT:MPCampEndCampaignNumber"), Some(TEXT_REVEAL)),
+        control(STATUS_HELP_STATIC, Static, RectPx::new(10, 356, 303, 12), 0x5000_0200, BLANK, None, Some(LONG_TEXT_REVEAL)),
+        control(SCORE_ART_REGION_STATIC, Static, RectPx::new(70, 84, 282, 141), 0x5000_0007, None, None, None),
+        control(TITLE_STATIC, Static, RectPx::new(425, 1, 108, 10), 0x5002_0001, Some("GUI:CampaignResults"), None, Some(TEXT_REVEAL)),
+        control(0x0732, Static, RectPx::new(167, 19, 87, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelDifficulty"), Some(TEXT_REVEAL)),
+        control(0x03EA, Static, RectPx::new(257, 19, 80, 10), 0x5000_0002, BLANK, Some("STT:MPCampEndTime"), Some(TEXT_REVEAL)),
+        control(0x0738, Static, RectPx::new(240, 254, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelScore"), Some(PLACE_REVEAL)),
+        control(0x073B, Static, RectPx::new(123, 254, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelScore"), Some(PLACE_REVEAL)),
+        control(0x073C, Static, RectPx::new(83, 31, 49, 10), 0x5000_0000, Some("GUI:Player"), None, Some(HEADER_REVEAL)),
+        control(0x073D, Static, RectPx::new(149, 31, 41, 10), 0x5000_0002, Some("GUI:Kills"), None, Some(HEADER_REVEAL)),
+        control(0x073E, Static, RectPx::new(202, 31, 41, 10), 0x5000_0002, Some("GUI:Losses"), None, Some(HEADER_REVEAL)),
+        control(0x073F, Static, RectPx::new(247, 31, 41, 10), 0x5000_0002, Some("GUI:Built"), None, Some(HEADER_REVEAL)),
+        control(0x0740, Static, RectPx::new(294, 31, 41, 10), 0x5000_0002, Some("GUI:Score"), None, Some(HEADER_REVEAL)),
+        control(0x0781, Text, RectPx::new(83, 40, 68, 10), 0x5000_0000, BLANK, None, None),
+        control(0x0782, Text, RectPx::new(83, 51, 68, 10), 0x5000_0000, BLANK, None, None),
+        control(0x0783, Text, RectPx::new(149, 40, 37, 10), 0x5000_0002, BLANK, None, None),
+        control(0x0784, Text, RectPx::new(149, 51, 37, 10), 0x5000_0002, BLANK, None, None),
+        control(0x0785, Text, RectPx::new(197, 40, 39, 10), 0x5000_0002, BLANK, None, None),
+        control(0x0786, Text, RectPx::new(197, 51, 39, 10), 0x5000_0002, BLANK, None, None),
+        control(0x0787, Text, RectPx::new(252, 40, 34, 10), 0x5000_0002, BLANK, None, None),
+        control(0x0788, Text, RectPx::new(252, 51, 34, 10), 0x5000_0002, BLANK, None, None),
+        control(0x0789, Text, RectPx::new(293, 40, 41, 8), 0x5000_0002, BLANK, None, None),
+        control(0x078A, Text, RectPx::new(293, 51, 41, 8), 0x5000_0002, BLANK, None, None),
+        control(CAMPAIGN_END_MONITOR, Static, RectPx::new(449, 29, 61, 33), 0x5000_0007, None, None, None),
     ]
 };
 
@@ -391,6 +289,17 @@ impl CampaignScoreDialog {
 
     pub const fn continue_button(self) -> u16 {
         self.page().back.id
+    }
+
+    /// The controls as nodes: Continue presses, and each static with status
+    /// help only hovers.
+    pub fn nodes(self) -> vera20k_gui::NodeSpec {
+        use vera20k_gui::{NodeKind, NodeSpec};
+        let node = |c: &CampaignScoreControlSpec| match (c.action, c.tooltip_key) {
+            (Some(_), _) => Some(NodeSpec::new(NodeKind::Button).id(i32::from(c.id))),
+            (None, help) => help.map(|key| menu_page::hover_target(c.id, key)),
+        };
+        NodeSpec::new(NodeKind::Dialog).children(self.controls().iter().filter_map(node))
     }
 
     pub fn control(self, id: u16) -> Option<&'static CampaignScoreControlSpec> {

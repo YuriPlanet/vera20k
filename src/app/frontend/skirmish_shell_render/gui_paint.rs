@@ -99,6 +99,27 @@ fn items(gui: &Gui, node: NodeId) -> &[String] {
     }
 }
 
+/// An `Edit` node as the NewEdit its paint reads: text, caret, the first
+/// shown unit the host keeps in `Top` ([`crate::app::shell_wol::leaf`]
+/// scrolls it), the password mask and whether it holds the focus.
+pub(crate) fn new_edit(gui: &Gui, node: NodeId) -> crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
+    let text = match gui.get(node, Prop::Text).ok().flatten() {
+        Some(Value::Text(text)) => text.as_str(),
+        _ => "",
+    };
+    let chars = text.chars().count();
+    let caret_chars = usize::try_from(int(gui, node, Prop::Caret, chars as i32)).unwrap_or(0).min(chars);
+    let caret = text.chars().take(caret_chars).map(char::len_utf16).sum();
+    let units: Vec<u16> = text.encode_utf16().collect();
+    crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
+        first_visible_unit: usize::try_from(int(gui, node, Prop::Top, 0)).unwrap_or(0).min(units.len()),
+        units,
+        caret,
+        focused: gui.focus() == Some(node),
+        password: flag(gui, node, Prop::Password, false),
+    }
+}
+
 /// The widgets under `root`, in tree order. Invisible subtrees are skipped.
 pub(crate) fn paint_gui_children(state: &AppState, gui: &Gui, root: NodeId, scale: ShellScale) -> GuiPaint {
     paint_gui_children_under(state, gui, root, scale, &[])
@@ -114,10 +135,23 @@ pub(crate) fn paint_gui_children_under(
     scale: ShellScale,
     overlays: &[RectPx],
 ) -> GuiPaint {
+    match state.frontend.skirmish_shell_chrome.as_ref() {
+        Some(atlas) => paint_gui_with(state, atlas, gui, root, scale, overlays),
+        None => GuiPaint::default(),
+    }
+}
+
+/// [`paint_gui_children_under`] on `atlas`, for a renderer that holds the
+/// shell chrome while it paints (the Skirmish family's).
+pub(crate) fn paint_gui_with(
+    state: &AppState,
+    atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
+    gui: &Gui,
+    root: NodeId,
+    scale: ShellScale,
+    overlays: &[RectPx],
+) -> GuiPaint {
     let mut paint = GuiPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
-        return paint;
-    };
     let chrome = atlas.control_chrome();
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
@@ -157,9 +191,14 @@ pub(crate) fn paint_gui_children_under(
                 if plaque && !covered {
                     // A disabled trackbar's value text takes [0xAC1CB4] (`0x0061E2B1`).
                     let color = if enabled { SHELL_LABEL_TEXT_RGB } else { SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F };
+                    // A host value text (`Text`) stands in for the position.
+                    let shown = match gui.get(node, Prop::Text).ok().flatten() {
+                        Some(Value::Text(shown)) => shown.clone(),
+                        _ => range.stepped(value).to_string(),
+                    };
                     paint.texts.push(text(
                         state,
-                        &range.stepped(value).to_string(),
+                        &shown,
                         value_text_rect(rect, scale),
                         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                         scale,
@@ -187,7 +226,18 @@ pub(crate) fn paint_gui_children_under(
                     scale,
                 );
                 let items = items(gui, node);
-                if let Some(face) = selected.and_then(|row| items.get(row)) {
+                // A host caption (`Text`) stands in for the selected row's;
+                // `Truncate` cuts captions as gamemd's owner-draw combo does.
+                let truncate = flag(gui, node, Prop::Truncate, false);
+                let own_scrollbar = flag(gui, node, Prop::ComboScrollbar, false);
+                let face = match gui.get(node, Prop::Text).ok().flatten() {
+                    Some(Value::Text(face)) => Some(face),
+                    _ => selected.and_then(|row| items.get(row)),
+                };
+                if truncate && let Some(face) = face {
+                    let color = combo_face_text_color(!enabled);
+                    super::text::push_combo_face_label_draw_with_color(&mut paint.texts, state, face, rect, color, scale);
+                } else if let Some(face) = face {
                     paint.texts.push(text(
                         state,
                         face,
@@ -208,13 +258,22 @@ pub(crate) fn paint_gui_children_under(
                         let at = scale.derive_rect(popup.row_rect(row)?, |r| RectPx::new(r.x + 2, r.y + 2, r.w - 4, 19));
                         Some((at, swatch(row)?))
                     }),
-                    popup.scrollbar().zip(popup.thumb()),
+                    // The combo's own scrollbar draws its thumb across the bar.
+                    popup.scrollbar().zip(popup.thumb()).map(|(bar, thumb)| match own_scrollbar {
+                        true => (bar, RectPx::new(bar.x, thumb.y, bar.w, thumb.h)),
+                        false => (bar, thumb),
+                    }),
                     drop_down.pressed_part.map(dropdown_scroll_part),
                     scale,
                     SHELL_DROPDOWN_DEPTH - 0.00002,
                 );
                 for row in popup.first..popup.first + popup.visible_rows {
                     let (Some(at), Some(item)) = (popup.row_rect(row), items.get(row)) else { continue };
+                    if truncate {
+                        let visible = row - popup.first;
+                        super::text::push_combo_dropdown_label(&mut paint.popup_texts, state, item, popup.content(), visible, scale);
+                        continue;
+                    }
                     paint.popup_texts.push(text_at_depth(
                         state,
                         item,
@@ -242,6 +301,25 @@ pub(crate) fn paint_gui_children_under(
                     let at = RectPx::new(r.x + 2, r.y, r.w - 2, r.h);
                     paint.texts.push(text(state, row, at, ShellAlign::V_CENTER, scale, SHELL_LABEL_TEXT_RGB));
                 }
+            }
+            // NewEdit `0x00614B30` as `push_new_edit` paints it; the open IME
+            // composition shows in the focused one.
+            NodeKind::Edit => {
+                let edit = new_edit(gui, node);
+                let composition = state.platform.ime.open_composition().filter(|_| edit.focused);
+                super::controls::push_new_edit(
+                    &mut paint.controls,
+                    &mut paint.texts,
+                    atlas,
+                    &state.renderer.bit_font,
+                    &edit,
+                    composition,
+                    rect,
+                    state.frontend.shell_controller.caret_visible(node),
+                    rgb(gui, node, SHELL_LABEL_TEXT_RGB),
+                    SHELL_CONTROL_TEXT_DEPTH,
+                    scale,
+                );
             }
             NodeKind::Text => {
                 if let Some(label) = caption(state, gui, node).filter(|t| !covered && !t.is_empty()) {

@@ -5,8 +5,8 @@
 use std::collections::VecDeque;
 
 use crate::util::time::Instant;
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
-use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
@@ -71,6 +71,37 @@ pub(crate) fn tooltip_key(control: u16) -> Option<&'static str> {
         OBSERVER_TOGGLE => "STT:ObserverToggle",
         _ => return None,
     })
+}
+
+/// BB's widgets, each with its status help: the right-panel buttons, the
+/// two NewEdits (hover only: their text stays the lobby's), the lists (their
+/// rows painted by BB, hit inside their frame) and the observer box, which
+/// toggles on the press (`0x5DDBD0`'s BN_CLICKED off the icon). The
+/// observer image `0x75F` is a static the page hit-tests itself.
+pub(crate) fn spec() -> NodeSpec {
+    let node = |kind: NodeKind, id: u16| {
+        NodeSpec::new(kind)
+            .id(i32::from(id))
+            .tooltip(tooltip_key(id).unwrap_or_default())
+    };
+    let list = |id: u16| {
+        node(NodeKind::List, id)
+            .with(Prop::RowCount, Value::Int(0))
+            .with(Prop::ListWindow, Value::Bool(true))
+    };
+    NodeSpec::new(NodeKind::Dialog)
+        .children(crate::ui::shell::page::menu_buttons(&PAGE))
+        .child(node(NodeKind::Text, NAME))
+        .child(node(NodeKind::Text, CHAT))
+        .children([GAMES, PLAYERS, CHAT_LOG].map(|id| {
+            // The players list counts a press below its last row toward a
+            // double-click too (its proc ignores LBN_DBLCLK).
+            list(id).with(Prop::AreaDoubleClick, Value::Bool(id == PLAYERS))
+        }))
+        .child(
+            node(NodeKind::Checkbox, OBSERVER_TOGGLE)
+                .with(Prop::ActivateOnPress, Value::Bool(true)),
+        )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -460,6 +491,10 @@ fn chat_graphic_unit(unit: u16) -> bool {
         && char::from_u32(u32::from(unit)).is_some_and(|c| !c.is_whitespace() && !c.is_control())
 }
 
+/// BB's lobby: its edits, discovery rows and admission gates. The lists'
+/// scroll, the buttons and the observer box are widgets in the shell tree
+/// ([`spec`]); the selections are the lobby's (the join target, the roster's
+/// by-name rule), which the tree shows.
 #[derive(Debug, Clone)]
 pub(crate) struct LanLobbyState {
     pub(crate) name: SavedSeedDescriptionEdit,
@@ -467,11 +502,10 @@ pub(crate) struct LanLobbyState {
     /// Excludes the always-present TXT_LOBBY sentinel at displayed index0.
     pub(crate) games: Vec<LanGameRow>,
     pub(crate) players: Vec<LanPlayerRow>,
-    pub(crate) game_list: LanListState,
-    pub(crate) player_list: LanListState,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
+    /// The selected games row; `0x549` always has one (index 0 the Lobby).
+    pub(crate) selected_game: usize,
+    pub(crate) selected_player: Option<usize>,
     pub(crate) focused_control: u16,
-    pub(crate) observer: bool,
     pub(crate) enabled: bool,
     /// Projected native membership gate<=0; no membership authority lives here.
     pub(crate) selection_enabled: bool,
@@ -482,7 +516,7 @@ pub(crate) struct LanLobbyState {
 }
 
 impl LanLobbyState {
-    pub(crate) fn new(name: &str, observer: bool) -> Self {
+    pub(crate) fn new(name: &str) -> Self {
         let mut name_edit = SavedSeedDescriptionEdit::default();
         name_edit.set_units_limited(name.encode_utf16(), NAME_LIMIT);
         let notified_name = name_text(&name_edit);
@@ -497,14 +531,9 @@ impl LanLobbyState {
             },
             games: Vec::new(),
             players: Vec::new(),
-            game_list: LanListState {
-                selected: Some(0),
-                ..Default::default()
-            },
-            player_list: LanListState::default(),
-            buttons: ShellButtonInteraction::default(),
+            selected_game: 0,
+            selected_player: None,
             focused_control: CHAT,
-            observer,
             enabled: true,
             selection_enabled: true,
             pending_command: false,
@@ -518,21 +547,16 @@ impl LanLobbyState {
     }
 
     pub(crate) fn selected_game(&self) -> Option<&LanGameRow> {
-        self.game_list
-            .selected
-            .and_then(|index| index.checked_sub(1))
-            .and_then(|index| self.games.get(index))
+        self.games.get(self.selected_game.checked_sub(1)?)
     }
 
     pub(crate) fn replace_games(&mut self, games: Vec<LanGameRow>) -> Option<LanLobbyAction> {
-        let before = self.game_list.selected.unwrap_or(0);
+        let before = self.selected_game;
         self.games = games;
         //5DB9B0 clamps the numeric selection, preserving top index; it does
         // not reselect by name when discovery rows are reordered.
-        let selected = before.min(self.games.len());
-        self.game_list.reconcile(self.game_count());
-        self.game_list.selected = Some(selected);
-        (selected != before).then(|| LanLobbyAction::SelectGame {
+        self.selected_game = before.min(self.games.len());
+        (self.selected_game != before).then(|| LanLobbyAction::SelectGame {
             game_id: self.selected_game().map(|row| row.id),
             change: LanSelectionChange::Clamped,
         })
@@ -544,13 +568,11 @@ impl LanLobbyState {
     /// `0x4CA`, `_wcsicmp`), or none.
     pub(crate) fn replace_players(&mut self, players: Vec<LanPlayerRow>) {
         let selected = self
-            .player_list
-            .selected
+            .selected_player
             .and_then(|index| self.players.get(index))
             .map(|row| row.name.clone());
         self.players = players;
-        self.player_list.reconcile(self.players.len());
-        self.player_list.selected = selected.and_then(|name| {
+        self.selected_player = selected.and_then(|name| {
             self.players.iter().position(|row| {
                 saved_player_name_matches(&name, &row.name, PlayerNameMatch::IgnoreAsciiCase)
             })
@@ -564,7 +586,7 @@ impl LanLobbyState {
         if index >= self.players.len() {
             return false;
         }
-        self.player_list.selected = Some(index);
+        self.selected_player = Some(index);
         true
     }
 
@@ -573,18 +595,6 @@ impl LanLobbyState {
         if enabled {
             self.pending_command = false;
         }
-        if !enabled {
-            self.cancel_pointer();
-        }
-    }
-
-    pub(crate) fn cancel_pointer(&mut self) {
-        self.buttons = ShellButtonInteraction::default();
-        self.game_list.scroll.cancel();
-        self.player_list.scroll.cancel();
-        self.chat.list.scroll.cancel();
-        self.game_list.last_press = None;
-        self.player_list.last_press = None;
     }
 
     pub(crate) fn focus(&mut self, control: u16) {
@@ -615,12 +625,12 @@ impl LanLobbyState {
         {
             return None;
         }
-        let change = if self.game_list.selected == Some(index) {
+        let change = if self.selected_game == index {
             LanSelectionChange::Unchanged
         } else {
             LanSelectionChange::Changed
         };
-        self.game_list.selected = Some(index);
+        self.selected_game = index;
         // The roster follows through `replace_players` (the 0x549 LBN_SELCHANGE
         // handler's `0x005DAFE0`), which keeps the selected player by name.
         Some(LanLobbyAction::SelectGame {
@@ -629,22 +639,21 @@ impl LanLobbyState {
         })
     }
 
-    pub(crate) fn activate(&mut self, control: u16) -> Option<LanLobbyAction> {
+    /// Control `control` activated, with the player's observer choice
+    /// `observer` (the preference owner's).
+    pub(crate) fn activate(&mut self, control: u16, observer: bool) -> Option<LanLobbyAction> {
         if !self.enabled || self.pending_command {
             return None;
         }
         let action = match control {
-            CREATE => LanLobbyAction::Create {
-                observe: self.observer,
-            },
+            CREATE => LanLobbyAction::Create { observe: observer },
             JOIN | OBSERVE => LanLobbyAction::Join {
                 game_id: self.selected_game().map(|row| row.id),
-                observe: control == OBSERVE || self.observer,
+                observe: control == OBSERVE || observer,
             },
             BACK => LanLobbyAction::Back,
             OBSERVER_IMAGE | OBSERVER_TOGGLE => {
-                self.observer = !self.observer;
-                return Some(LanLobbyAction::ObserverChanged(self.observer));
+                return Some(LanLobbyAction::ObserverChanged(!observer));
             }
             _ => return None,
         };
@@ -828,26 +837,17 @@ impl LanLobbyLayout {
         }
     }
 
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        for button in &self.page.buttons {
-            if button.rect.contains(x, y) {
-                return Some(button.id);
-            }
-        }
-        for (id, rect) in [
-            (NAME, self.name),
-            (CHAT, self.chat),
-            (GAMES, self.games),
-            (PLAYERS, self.players),
-            (CHAT_LOG, self.chat_log),
-            (OBSERVER_IMAGE, self.observer_image),
-            (OBSERVER_TOGGLE, self.observer_toggle),
-        ] {
-            if rect.contains(x, y) {
-                return Some(id);
-            }
-        }
-        None
+    /// Control `id`'s window; none for a control BB does not show.
+    pub(crate) fn rect(&self, id: u16) -> Option<RectPx> {
+        Some(match id {
+            NAME => self.name,
+            CHAT => self.chat,
+            GAMES => self.games,
+            PLAYERS => self.players,
+            CHAT_LOG => self.chat_log,
+            OBSERVER_TOGGLE => self.observer_toggle,
+            _ => return self.page.button_rect(id),
+        })
     }
 }
 
@@ -870,15 +870,15 @@ mod tests {
             host: false,
             accepted: false,
         };
-        let mut lobby = LanLobbyState::new("Tester", false);
+        let mut lobby = LanLobbyState::new("Tester");
         lobby.replace_players(vec![player("A"), player("B")]);
         assert!(lobby.select_player(1));
         assert!(!lobby.select_player(2));
-        assert_eq!(lobby.player_list.selected, Some(1));
+        assert_eq!(lobby.selected_player, Some(1));
         lobby.replace_players(vec![player("b"), player("A")]);
-        assert_eq!(lobby.player_list.selected, Some(0));
+        assert_eq!(lobby.selected_player, Some(0));
         lobby.replace_players(vec![player("A")]);
-        assert_eq!(lobby.player_list.selected, None);
+        assert_eq!(lobby.selected_player, None);
     }
 
     #[test]
@@ -894,7 +894,7 @@ mod tests {
 
     #[test]
     fn chat_retains_501_rows_and_does_not_jump_a_scrolled_view() {
-        let mut lobby = LanLobbyState::new("Tester", false);
+        let mut lobby = LanLobbyState::new("Tester");
         for value in 0..501 {
             let chat = &mut lobby.chat;
             append_row(
@@ -964,7 +964,7 @@ mod tests {
     fn chat_enter_matches_original_newedit_parent_getter_and_clear_chain() {
         for row in native()["chat"].as_array().unwrap() {
             let units: Vec<u16> = serde_json::from_value(row["input"].clone()).unwrap();
-            let mut lobby = LanLobbyState::new("Tester", false);
+            let mut lobby = LanLobbyState::new("Tester");
             lobby.chat.edit.set_units_limited(units, 0);
             let sent = match lobby.edit_key(LanEditKey::Enter) {
                 Some(LanLobbyAction::SendChat(units)) => vec![units],
@@ -1033,7 +1033,7 @@ mod tests {
 
     #[test]
     fn name_input_takes_16_code_page_bytes_rejects_commas_and_keeps_literal_spaces() {
-        let mut lobby = LanLobbyState::new("", false);
+        let mut lobby = LanLobbyState::new("");
         assert_eq!(lobby.focused_control, CHAT);
         lobby.focus(NAME);
         lobby.insert_text("  A,é€B");
@@ -1042,7 +1042,7 @@ mod tests {
         let saved = crate::util::native_string::acp_encode(&lobby.name.display_text());
         assert_eq!(saved.len(), 16);
         assert_eq!(lobby.edit_key(LanEditKey::Enter), None);
-        let retained = LanLobbyState::new(" A ", false);
+        let retained = LanLobbyState::new(" A ");
         assert_eq!(retained.name.display_text(), " A ");
     }
 
@@ -1050,7 +1050,7 @@ mod tests {
     /// name as shown, not its characters' low bytes (`玩家` as `©¶`).
     #[test]
     fn name_edit_reports_the_name_it_shows() {
-        let mut lobby = LanLobbyState::new("玩家", false);
+        let mut lobby = LanLobbyState::new("玩家");
         lobby.focus(NAME);
         assert_eq!(
             lobby.insert_text("x"),
@@ -1064,7 +1064,7 @@ mod tests {
 
     #[test]
     fn discovery_clamps_selection_and_join_remains_an_intent() {
-        let mut lobby = LanLobbyState::new("Tester", false);
+        let mut lobby = LanLobbyState::new("Tester");
         let rows = (0..3)
             .map(|id| LanGameRow {
                 id,
@@ -1088,21 +1088,21 @@ mod tests {
             })
         );
         assert_eq!(
-            lobby.activate(JOIN),
+            lobby.activate(JOIN, false),
             Some(LanLobbyAction::Join {
                 game_id: None,
                 observe: false
             })
         );
         assert!(!lobby.enabled);
-        assert_eq!(lobby.activate(CREATE), None);
+        assert_eq!(lobby.activate(CREATE, false), None);
         lobby.set_enabled(true);
         assert_eq!(
-            lobby.activate(OBSERVER_IMAGE),
+            lobby.activate(OBSERVER_IMAGE, false),
             Some(LanLobbyAction::ObserverChanged(true))
         );
         assert_eq!(
-            lobby.activate(CREATE),
+            lobby.activate(CREATE, true),
             Some(LanLobbyAction::Create { observe: true })
         );
     }

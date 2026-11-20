@@ -15,11 +15,291 @@ use crate::skirmish_launch::{
 use crate::skirmish_modes::stock_skirmish_modes;
 use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold};
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
+use crate::ui::skirmish_shell::page;
 use crate::ui::skirmish_shell::{
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_W,
     COMBO_FACE_H, RectPx, checkbox_text_rect, combo_face_rect, compute_layout,
     compute_layout_for_rows,
 };
+
+// The page's widgets driven as the app drives them ([`page::pointer`]): one
+// shell controller per test thread, with the layout and maps of the last
+// call for the reads that take neither.
+thread_local! {
+    static PAGE: std::cell::RefCell<(
+        crate::ui::shell::controller::DialogController,
+        Option<(super::super::SkirmishShellLayout, Vec<MapMenuEntry>)>,
+        (i32, i32),
+    )> = Default::default();
+}
+
+fn drive(
+    shell: &mut SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    at: page::Pointer,
+    x: i32,
+    y: i32,
+) -> Option<SkirmishShellAction> {
+    PAGE.with_borrow_mut(|(controller, seen, last)| {
+        *seen = Some((layout.clone(), maps.to_vec()));
+        *last = (x, y);
+        page::pointer(
+            controller,
+            shell,
+            layout,
+            maps,
+            &Default::default(),
+            at,
+            x,
+            y,
+        )
+    })
+}
+
+fn handle_option_mouse_down(
+    shell: &mut SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    x: i32,
+    y: i32,
+) -> SkirmishShellAction {
+    drive(shell, layout, maps, page::Pointer::Down, x, y).unwrap_or(SkirmishShellAction::None)
+}
+
+fn handle_option_mouse_move(
+    shell: &mut SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    x: i32,
+    y: i32,
+) {
+    drive(shell, layout, maps, page::Pointer::Move, x, y);
+}
+
+/// The release where the pointer last was.
+fn handle_option_mouse_up(shell: &mut SkirmishShellState) {
+    let (seen, (x, y)) = PAGE.with_borrow(|(_, seen, last)| (seen.clone(), *last));
+    let (layout, maps) = seen.expect("a press came first");
+    drive(shell, &layout, &maps, page::Pointer::Up, x, y);
+}
+
+fn handle_option_mouse_wheel(
+    shell: &mut SkirmishShellState,
+    maps: &[MapMenuEntry],
+    lines: f32,
+) -> bool {
+    let open = PAGE.with_borrow(|(controller, ..)| controller.gui().popup().is_some());
+    super::handle_option_mouse_wheel(shell, maps, lines, open)
+}
+
+fn seen_layout() -> super::super::SkirmishShellLayout {
+    PAGE.with_borrow(|(_, seen, _)| seen.as_ref().map(|(layout, _)| layout.clone()))
+        .unwrap_or_else(|| compute_layout(800, 600))
+}
+
+/// Opens `id`'s list from its arrow.
+fn open_list(
+    shell: &mut SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) {
+    let face = combo_rect(layout, shell, id).expect("the combo shows");
+    handle_option_mouse_down(shell, layout, maps, face.x + face.w - 2, face.y + 2);
+    assert_eq!(open_combo_dropdown(shell).map(|open| open.id), Some(id));
+}
+
+/// Reads the synced page.
+fn read_page<R>(
+    shell: &SkirmishShellState,
+    read: impl FnOnce(&vera20k_gui::Gui, vera20k_gui::NodeId) -> R,
+) -> R {
+    PAGE.with_borrow_mut(|(controller, seen, _)| {
+        let (layout, maps) = seen
+            .clone()
+            .unwrap_or_else(|| (compute_layout(800, 600), Vec::new()));
+        let root = page::sync_page(controller, shell, &layout, &maps, &Default::default()).unwrap();
+        read(controller.gui(), root)
+    })
+}
+
+fn hovered_shell_control(
+    layout: &super::super::SkirmishShellLayout,
+    shell: &SkirmishShellState,
+    maps: &[MapMenuEntry],
+    x: i32,
+    y: i32,
+) -> Option<SkirmishHoverTarget> {
+    PAGE.with_borrow_mut(|(controller, seen, _)| {
+        *seen = Some((layout.clone(), maps.to_vec()));
+        let root = page::sync_page(controller, shell, layout, maps, &Default::default());
+        controller.on_pointer_move(x, y, &[]);
+        controller.drain_events();
+        page::hover_target(controller.gui(), root, shell, maps, x, y)
+    })
+}
+
+fn hit_test_owner_draw_button(
+    layout: &super::super::SkirmishShellLayout,
+    x: i32,
+    y: i32,
+) -> Option<OwnerDrawButton> {
+    match hovered_shell_control(layout, &SkirmishShellState::default(), &[], x, y) {
+        Some(SkirmishHoverTarget::OwnerDrawButton(button)) => Some(button),
+        _ => None,
+    }
+}
+
+fn open_combo_dropdown(shell: &SkirmishShellState) -> Option<OpenComboDropdown> {
+    read_page(shell, |gui, _| page::open_combo(gui, shell))
+}
+
+/// The list `id` opens, as its widget lays it out: the open one, or one
+/// opened from its arrow and shut again.
+fn combo_list(
+    shell: &SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> Option<vera20k_gui::ComboDropDown> {
+    PAGE.with_borrow_mut(|(controller, seen, _)| {
+        *seen = Some((layout.clone(), maps.to_vec()));
+        page::sync_page(controller, shell, layout, maps, &Default::default())?;
+        let gui = controller.gui();
+        if let Some(node) = gui.popup()
+            && page::open_combo(gui, shell).is_some_and(|open| open.id == id)
+        {
+            return gui.combo_drop_down(node);
+        }
+        let face = combo_rect(layout, shell, id)?;
+        controller.gui_mut().close_popup();
+        controller.on_pointer_down(face.x + face.w - 2, face.y + 2, &[]);
+        let gui = controller.gui();
+        let list = gui.popup().and_then(|node| gui.combo_drop_down(node));
+        controller.gui_mut().close_popup();
+        controller.drain_events();
+        list
+    })
+}
+
+fn combo_dropdown_rect(
+    shell: &SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> Option<RectPx> {
+    Some(combo_list(shell, layout, maps, id)?.popup.rect)
+}
+
+fn combo_dropdown_content_rect(
+    shell: &SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> Option<RectPx> {
+    Some(combo_list(shell, layout, maps, id)?.popup.content())
+}
+
+fn combo_dropdown_scrollbar_rect(
+    shell: &SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> Option<RectPx> {
+    combo_list(shell, layout, maps, id)?.popup.scrollbar()
+}
+
+fn combo_dropdown_scroll_thumb_rect(
+    shell: &SkirmishShellState,
+    layout: &super::super::SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> Option<RectPx> {
+    let popup = combo_list(shell, layout, maps, id)?.popup;
+    let (bar, thumb) = (popup.scrollbar()?, popup.thumb()?);
+    Some(RectPx::new(bar.x, thumb.y, bar.w, thumb.h))
+}
+
+fn combo_dropdown_needs_scrollbar(
+    shell: &SkirmishShellState,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> bool {
+    let layout = seen_layout();
+    combo_dropdown_scrollbar_rect(shell, &layout, maps, id).is_some()
+}
+
+fn combo_dropdown_visible_row_count(
+    shell: &SkirmishShellState,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> usize {
+    let layout = seen_layout();
+    combo_list(shell, &layout, maps, id).map_or(0, |list| list.popup.visible_rows)
+}
+
+fn combo_dropdown_max_top_index(
+    shell: &SkirmishShellState,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> usize {
+    let layout = seen_layout();
+    combo_list(shell, &layout, maps, id)
+        .map_or(0, |list| list.popup.total - list.popup.visible_rows)
+}
+
+/// The scrollbar part a press on the open list holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DropdownScrollbarPressState {
+    id: SkirmishComboId,
+    part: DropdownScrollbarPart,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DropdownScrollDragState {
+    id: SkirmishComboId,
+}
+
+fn dropdown_scroll_press(shell: &SkirmishShellState) -> Option<DropdownScrollbarPressState> {
+    use crate::ui::shell::list::ListScrollPart;
+    read_page(shell, |gui, _| {
+        let open = page::open_combo(gui, shell)?;
+        let part = gui.combo_drop_down(gui.popup()?)?.captured_part?;
+        let part = match part {
+            ListScrollPart::Up => DropdownScrollbarPart::UpArrow,
+            ListScrollPart::Down => DropdownScrollbarPart::DownArrow,
+            ListScrollPart::Thumb => DropdownScrollbarPart::Thumb,
+            ListScrollPart::Track => DropdownScrollbarPart::Track,
+        };
+        Some(DropdownScrollbarPressState { id: open.id, part })
+    })
+}
+
+fn dropdown_scroll_drag(shell: &SkirmishShellState) -> Option<DropdownScrollDragState> {
+    dropdown_scroll_press(shell)
+        .filter(|press| press.part == DropdownScrollbarPart::Thumb)
+        .map(|press| DropdownScrollDragState { id: press.id })
+}
+
+/// The slider holding the mouse, and whether it follows the pointer.
+fn trackbar_hold(shell: &SkirmishShellState) -> Option<TrackbarHold<SkirmishTrackbarId>> {
+    read_page(shell, |gui, _| {
+        let id = gui.id_of(gui.pressed()?)?;
+        let id = [
+            (0x529, SkirmishTrackbarId::GameSpeed0x529),
+            (0x511, SkirmishTrackbarId::Credits0x511),
+            (0x50C, SkirmishTrackbarId::UnitCount0x50c),
+        ]
+        .into_iter()
+        .find(|(node, _)| *node == id)?
+        .1;
+        Some(TrackbarHold {
+            id,
+            dragging: gui.dragging(),
+        })
+    })
+}
 
 fn test_map_entry(name: &str) -> MapMenuEntry {
     test_map_entry_with_starts(name, 8)
@@ -142,7 +422,12 @@ fn choose_map_modal_open_filters_and_highlights_current_record() {
     assert_eq!(modal.filtered_record_indices, vec![0, 1]);
     assert_eq!(modal.highlighted_filtered_index, Some(1));
     assert_eq!(modal.selected_record_index(), Some(1));
-    assert_eq!(modal.pressed_button, None);
+    let mut ui = crate::ui::shell::controller::DialogController::default();
+    crate::ui::skirmish_shell::choose_map_page::sync_page(&mut ui, &modal, &layout);
+    assert_eq!(
+        crate::ui::skirmish_shell::choose_map_page::look(&ui).pressed,
+        None
+    );
 }
 
 #[test]
@@ -332,11 +617,11 @@ fn extra_credit_presets_are_reachable_by_drag_and_reach_the_launched_match() {
 fn player_name_focus_selects_all_and_typing_replaces_default() {
     let mut shell = controlled_country_shell();
 
-    assert!(focus_player_name_edit(&mut shell));
+    assert!(shell.player_name_edit.focus_select_all());
     assert_eq!(shell.player_name_edit.selection, Some((0, 6)));
     assert_eq!(shell.player_name_edit.caret, 6);
 
-    assert!(insert_player_name_text(&mut shell, "Commander"));
+    assert!(shell.player_name_edit.insert_text("Commander"));
     assert_eq!(shell.player_name_edit.text, "Commander");
     assert_eq!(shell.player_name_edit.selection, None);
     assert_eq!(shell.player_name_edit.caret, 9);
@@ -359,10 +644,10 @@ fn player_name_user_entry_stops_at_nineteen_acp_bytes() {
 #[test]
 fn player_name_enter_and_tab_do_not_insert_control_text() {
     let mut shell = controlled_country_shell();
-    focus_player_name_edit(&mut shell);
-    insert_player_name_text(&mut shell, "Ace");
+    shell.player_name_edit.focus_select_all();
+    shell.player_name_edit.insert_text("Ace");
 
-    assert!(!insert_player_name_text(&mut shell, "\r\n\t"));
+    assert!(!shell.player_name_edit.insert_text("\r\n\t"));
     assert_eq!(shell.player_name_edit.text, "Ace");
     assert!(!shell.player_name_edit.text.contains('\r'));
     assert!(!shell.player_name_edit.text.contains('\n'));
@@ -372,18 +657,18 @@ fn player_name_enter_and_tab_do_not_insert_control_text() {
 #[test]
 fn player_name_backspace_and_delete_remove_selection_first() {
     let mut shell = controlled_country_shell();
-    focus_player_name_edit(&mut shell);
-    insert_player_name_text(&mut shell, "Alpha");
+    shell.player_name_edit.focus_select_all();
+    shell.player_name_edit.insert_text("Alpha");
     shell.player_name_edit.selection = Some((1, 4));
     shell.player_name_edit.caret = 4;
 
-    assert!(handle_player_name_backspace(&mut shell));
+    assert!(shell.player_name_edit.backspace());
     assert_eq!(shell.player_name_edit.text, "Aa");
     assert_eq!(shell.player_name_edit.caret, 1);
 
     shell.player_name_edit.selection = Some((0, 1));
     shell.player_name_edit.caret = 1;
-    assert!(handle_player_name_delete(&mut shell));
+    assert!(shell.player_name_edit.delete());
     assert_eq!(shell.player_name_edit.text, "a");
     assert_eq!(shell.player_name_edit.caret, 0);
 }
@@ -394,18 +679,18 @@ fn player_name_scroll_keeps_caret_visible_with_five_pixel_margin() {
     shell.player_name_edit.text = "1234567890123456789".to_string();
     shell.player_name_edit.caret = PLAYER_NAME_EDIT_LIMIT_BYTES;
 
-    assert!(update_player_name_scroll_for_caret(&mut shell, 50, 120));
+    assert!(shell.player_name_edit.scroll_to_caret(50, 120));
     assert_eq!(shell.player_name_edit.scroll_x, 75);
 
     shell.player_name_edit.caret = 0;
-    assert!(update_player_name_scroll_for_caret(&mut shell, 50, 0));
+    assert!(shell.player_name_edit.scroll_to_caret(50, 0));
     assert_eq!(shell.player_name_edit.scroll_x, 0);
 }
 
 #[test]
 fn player_name_focus_survives_status_hover_update() {
     let mut shell = controlled_country_shell();
-    focus_player_name_edit(&mut shell);
+    shell.player_name_edit.focus_select_all();
 
     assert!(set_status_help_text(&mut shell, "Start Game"));
 
@@ -486,11 +771,7 @@ fn hovered_shell_control_resolves_core_controls_and_dropdown_rows() {
         Some(SkirmishHoverTarget::ComboFace(SkirmishComboId::Side(0)))
     );
 
-    shell.open_combo_dropdown = Some(OpenComboDropdown {
-        id: SkirmishComboId::AiType(0),
-        top_index: 0,
-        hot_row: None,
-    });
+    open_list(&mut shell, &layout, &maps, SkirmishComboId::AiType(0));
     let content =
         combo_dropdown_content_rect(&shell, &layout, &maps, SkirmishComboId::AiType(0)).unwrap();
     assert_eq!(
@@ -703,6 +984,20 @@ fn status_help_color_row_uses_item_specific_stt_with_generic_miss_fallback() {
     );
 }
 
+/// The chooser control the pointer at `x`, `y` hovers on its widgets.
+fn hovered_choose_map_modal_control(
+    layout: &super::super::ChooseMapModalLayout,
+    modal: &ChooseMapModalState,
+    x: i32,
+    y: i32,
+) -> Option<ChooseMapHoverTarget> {
+    use crate::ui::skirmish_shell::choose_map_page;
+    let mut ui = crate::ui::shell::controller::DialogController::default();
+    choose_map_page::sync_page(&mut ui, modal, layout);
+    ui.on_pointer_move(x, y, &[]);
+    choose_map_page::hover_target(ui.gui(), modal, layout, x, y)
+}
+
 #[test]
 fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
     let layout = compute_choose_map_modal_layout(800, 600);
@@ -794,7 +1089,7 @@ fn a_press_above_the_admitted_strip_only_holds_the_mouse() {
         handle_option_mouse_move(&mut shell, &layout, &[], rect.x, first_admitted_row(rect));
         assert_eq!(shell.starting_credits, CREDITS_MAX, "y={y}");
         assert_eq!(
-            shell.trackbar_hold,
+            trackbar_hold(&shell),
             Some(TrackbarHold {
                 id: SkirmishTrackbarId::Credits0x511,
                 dragging: false,
@@ -872,7 +1167,7 @@ fn trackbar_mouse_move_updates_while_capture_active() {
     handle_option_mouse_up(&mut shell);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x + 1000, y);
     assert_eq!(shell.starting_credits, 5000);
-    assert_eq!(shell.trackbar_hold, None);
+    assert_eq!(trackbar_hold(&shell), None);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
@@ -892,7 +1187,7 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
     let selected = shell.starting_credits;
     assert!((5000..10000).contains(&selected));
     assert_eq!(
-        shell.trackbar_hold,
+        trackbar_hold(&shell),
         Some(TrackbarHold {
             id: SkirmishTrackbarId::Credits0x511,
             dragging: false,
@@ -906,7 +1201,7 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
     handle_option_mouse_up(&mut shell);
     handle_option_mouse_move(&mut shell, &layout, &[], rect.x - 100, 319);
     assert_eq!(shell.starting_credits, selected);
-    assert_eq!(shell.trackbar_hold, None);
+    assert_eq!(trackbar_hold(&shell), None);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
@@ -1384,11 +1679,12 @@ fn accepted_map_shrink_resets_and_hides_complete_opponent_rows_atomically() {
         opponent.start_position = LaunchStartPosition::Position(4);
         opponent.team = 1;
     }
-    shell.open_combo_dropdown = Some(OpenComboDropdown {
-        id: SkirmishComboId::Team(3),
-        top_index: 0,
-        hot_row: None,
-    });
+    open_list(
+        &mut shell,
+        &compute_layout(800, 600),
+        &maps,
+        SkirmishComboId::Team(3),
+    );
 
     assert!(accept_selected_map(&mut shell, &maps, 1));
 
@@ -1404,7 +1700,7 @@ fn accepted_map_shrink_resets_and_hides_complete_opponent_rows_atomically() {
         assert_eq!(opponent.start_position, LaunchStartPosition::Auto);
         assert_eq!(opponent.team, 3);
     }
-    assert!(shell.open_combo_dropdown.is_none());
+    assert!(open_combo_dropdown(&shell).is_none());
 }
 
 #[test]
@@ -1714,7 +2010,7 @@ fn disabled_team_combo_cannot_be_opened_or_reselected_in_free_for_all() {
             handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1),
             SkirmishShellAction::None
         );
-        assert!(shell.open_combo_dropdown.is_none());
+        assert!(open_combo_dropdown(&shell).is_none());
         assert!(shell.drain_pending_ui_sounds().is_empty());
     }
 
@@ -1772,25 +2068,25 @@ fn dropdown_hover_uses_scrolled_rows_and_only_click_commits_the_choice() {
     );
     handle_option_mouse_up(&mut shell);
     shell.drain_pending_ui_sounds();
-    assert_eq!(shell.open_combo_dropdown.unwrap().top_index, 1);
+    assert_eq!(open_combo_dropdown(&shell).unwrap().top_index, 1);
 
     let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
     let x = content.x + 1;
     let y = content.y + 2 * COMBO_DROPDOWN_ROW_H + 1;
     handle_option_mouse_move(&mut shell, &layout, &maps, x, y);
-    assert_eq!(shell.open_combo_dropdown.unwrap().hot_row, Some(3));
+    assert_eq!(open_combo_dropdown(&shell).unwrap().hot_row, Some(3));
     assert_eq!(selected_combo_item(&shell, id), saved);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 
     // The scrollbar is popup chrome, not another selectable row.
     handle_option_mouse_move(&mut shell, &layout, &maps, scrollbar.x + 1, scrollbar.y + 1);
-    assert_eq!(shell.open_combo_dropdown.unwrap().hot_row, Some(3));
+    assert_eq!(open_combo_dropdown(&shell).unwrap().hot_row, Some(3));
     assert_eq!(selected_combo_item(&shell, id), saved);
 
     let picked = combo_items(&shell, &maps, id)[3];
     handle_option_mouse_down(&mut shell, &layout, &maps, x, y);
     assert_eq!(selected_combo_item(&shell, id), Some(picked));
-    assert!(shell.open_combo_dropdown.is_none());
+    assert!(open_combo_dropdown(&shell).is_none());
     assert_eq!(
         shell.drain_pending_ui_sounds(),
         vec![SkirmishShellUiSound::GuiComboCloseSound],
@@ -1812,7 +2108,7 @@ fn dropdown_wheel_is_inert_and_content_click_uses_top_index() {
     // No verified retail wheel-scroll: the wheel neither consumes the event
     // nor moves the open dropdown's top index.
     assert!(!handle_option_mouse_wheel(&mut shell, &maps, -1.0));
-    assert_eq!(shell.open_combo_dropdown.unwrap().top_index, 0);
+    assert_eq!(open_combo_dropdown(&shell).unwrap().top_index, 0);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 
     let content =
@@ -1825,7 +2121,7 @@ fn dropdown_wheel_is_inert_and_content_click_uses_top_index() {
             .first()
             .copied()
     );
-    assert_eq!(shell.open_combo_dropdown, None);
+    assert_eq!(open_combo_dropdown(&shell), None);
     assert_eq!(
         shell.drain_pending_ui_sounds(),
         vec![SkirmishShellUiSound::GuiComboCloseSound]
@@ -1853,9 +2149,9 @@ fn dropdown_scrollbar_arrows_step_and_drag_clamp_top_index() {
         scrollbar.x + 1,
         scrollbar.y + scrollbar.h - 1,
     );
-    assert_eq!(shell.open_combo_dropdown.unwrap().top_index, 1);
+    assert_eq!(open_combo_dropdown(&shell).unwrap().top_index, 1);
     assert_eq!(
-        shell.dropdown_scroll_press,
+        dropdown_scroll_press(&shell),
         Some(DropdownScrollbarPressState {
             id: SkirmishComboId::Side(0),
             part: DropdownScrollbarPart::DownArrow,
@@ -1867,13 +2163,13 @@ fn dropdown_scrollbar_arrows_step_and_drag_clamp_top_index() {
         combo_dropdown_scroll_thumb_rect(&shell, &layout, &maps, SkirmishComboId::Side(0)).unwrap();
     handle_option_mouse_down(&mut shell, &layout, &maps, thumb.x + 1, thumb.y + 1);
     assert_eq!(
-        shell.dropdown_scroll_drag,
+        dropdown_scroll_drag(&shell),
         Some(DropdownScrollDragState {
             id: SkirmishComboId::Side(0),
         })
     );
     assert_eq!(
-        shell.dropdown_scroll_press,
+        dropdown_scroll_press(&shell),
         Some(DropdownScrollbarPressState {
             id: SkirmishComboId::Side(0),
             part: DropdownScrollbarPart::Thumb,
@@ -1882,9 +2178,9 @@ fn dropdown_scrollbar_arrows_step_and_drag_clamp_top_index() {
     assert!(shell.drain_pending_ui_sounds().is_empty());
     // Native61D4AD captures without moving. The next mouse move uses
     //61C8B3's pointer-centered projection, even at the original grab point.
-    assert_eq!(shell.open_combo_dropdown.unwrap().top_index, 1);
+    assert_eq!(open_combo_dropdown(&shell).unwrap().top_index, 1);
     handle_option_mouse_move(&mut shell, &layout, &maps, thumb.x + 1, thumb.y + 1);
-    assert_eq!(shell.open_combo_dropdown.unwrap().top_index, 0);
+    assert_eq!(open_combo_dropdown(&shell).unwrap().top_index, 0);
     handle_option_mouse_move(
         &mut shell,
         &layout,
@@ -1893,13 +2189,13 @@ fn dropdown_scrollbar_arrows_step_and_drag_clamp_top_index() {
         scrollbar.y + scrollbar.h,
     );
     assert_eq!(
-        shell.open_combo_dropdown.unwrap().top_index,
+        open_combo_dropdown(&shell).unwrap().top_index,
         combo_dropdown_max_top_index(&shell, &maps, SkirmishComboId::Side(0))
     );
     assert!(shell.drain_pending_ui_sounds().is_empty());
     handle_option_mouse_up(&mut shell);
-    assert_eq!(shell.dropdown_scroll_drag, None);
-    assert_eq!(shell.dropdown_scroll_press, None);
+    assert_eq!(dropdown_scroll_drag(&shell), None);
+    assert_eq!(dropdown_scroll_press(&shell), None);
     assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
@@ -1917,30 +2213,27 @@ fn skirmish_side_dropdown_scrollbar_track_click_jumps_to_native_top_index() {
     let max_top = combo_dropdown_max_top_index(&shell, &maps, SkirmishComboId::Side(0));
     let click_y = scrollbar.y + scrollbar.h - COMBO_DROPDOWN_SCROLLBAR_BUTTON_H - 1;
     let selected_before = selected_combo_item(&shell, SkirmishComboId::Side(0));
-    let expected = top_index_from_scrollbar_track_click(
-        &shell,
-        &layout,
-        &maps,
-        SkirmishComboId::Side(0),
-        click_y,
-    )
-    .unwrap();
+    let expected = combo_list(&shell, &layout, &maps, SkirmishComboId::Side(0))
+        .unwrap()
+        .popup
+        .scroll_geometry()
+        .top_at_pointer(click_y);
 
     handle_option_mouse_down(&mut shell, &layout, &maps, scrollbar.x + 1, click_y);
 
     assert!(expected > 1);
     assert!(expected <= max_top);
-    assert_eq!(shell.open_combo_dropdown.unwrap().top_index, expected);
+    assert_eq!(open_combo_dropdown(&shell).unwrap().top_index, expected);
     assert_eq!(
         selected_combo_item(&shell, SkirmishComboId::Side(0)),
         selected_before
     );
     assert_eq!(
-        shell.open_combo_dropdown.unwrap().id,
+        open_combo_dropdown(&shell).unwrap().id,
         SkirmishComboId::Side(0)
     );
     assert_eq!(
-        shell.dropdown_scroll_press,
+        dropdown_scroll_press(&shell),
         Some(DropdownScrollbarPressState {
             id: SkirmishComboId::Side(0),
             part: DropdownScrollbarPart::Track,
@@ -1969,7 +2262,7 @@ fn combo_arrow_opens_dropdown_and_selects_color_row() {
     );
 
     assert_eq!(
-        shell.open_combo_dropdown,
+        open_combo_dropdown(&shell),
         Some(OpenComboDropdown {
             id: SkirmishComboId::Color(0),
             top_index: 0,
@@ -1987,7 +2280,7 @@ fn combo_arrow_opens_dropdown_and_selects_color_row() {
     );
 
     assert_eq!(shell.player_color_index, 3);
-    assert_eq!(shell.open_combo_dropdown, None);
+    assert_eq!(open_combo_dropdown(&shell), None);
     assert_eq!(
         shell.drain_pending_ui_sounds(),
         vec![SkirmishShellUiSound::GuiComboCloseSound]
@@ -2045,7 +2338,7 @@ fn collapsed_combo_face_click_plays_open_sound_without_opening() {
     // Click the left/text portion of the collapsed face (not the arrow zone).
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + 2, rect.y + 1);
 
-    assert_eq!(shell.open_combo_dropdown, None);
+    assert_eq!(open_combo_dropdown(&shell), None);
     assert_eq!(
         shell.drain_pending_ui_sounds(),
         vec![SkirmishShellUiSound::GuiComboOpenSound]
@@ -2054,7 +2347,7 @@ fn collapsed_combo_face_click_plays_open_sound_without_opening() {
     // Click the rightmost arrow zone: open sound plays AND the dropdown opens.
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
     assert_eq!(
-        shell.open_combo_dropdown.map(|open| open.id),
+        open_combo_dropdown(&shell).map(|open| open.id),
         Some(SkirmishComboId::Side(0))
     );
     assert_eq!(
@@ -2079,7 +2372,7 @@ fn switching_combos_closes_first_without_opening_second() {
         combo_a.y + 1,
     );
     assert_eq!(
-        shell.open_combo_dropdown.map(|open| open.id),
+        open_combo_dropdown(&shell).map(|open| open.id),
         Some(SkirmishComboId::Side(0))
     );
     shell.drain_pending_ui_sounds();
@@ -2093,7 +2386,7 @@ fn switching_combos_closes_first_without_opening_second() {
         combo_b.x + combo_b.w - 1,
         combo_b.y + 1,
     );
-    assert_eq!(shell.open_combo_dropdown, None);
+    assert_eq!(open_combo_dropdown(&shell), None);
     assert_eq!(
         shell.drain_pending_ui_sounds(),
         vec![SkirmishShellUiSound::GuiComboCloseSound]
@@ -2108,7 +2401,7 @@ fn switching_combos_closes_first_without_opening_second() {
         combo_b.y + 1,
     );
     assert_eq!(
-        shell.open_combo_dropdown.map(|open| open.id),
+        open_combo_dropdown(&shell).map(|open| open.id),
         Some(SkirmishComboId::Start(0))
     );
     assert_eq!(
@@ -2174,7 +2467,7 @@ fn inactive_ai_sibling_combo_does_not_open() {
 
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
 
-    assert_eq!(shell.open_combo_dropdown, None);
+    assert_eq!(open_combo_dropdown(&shell), None);
 }
 
 #[test]
@@ -2678,4 +2971,17 @@ fn a_low_row_of_the_longer_list_opens_its_list_upward() {
     assert_eq!(list.y + list.h, face.y - 1);
     let (list, face) = list_and_face(SkirmishComboId::Start(1));
     assert_eq!(list.y, face.y + face.h + 1);
+}
+
+#[test]
+fn a_pressed_page_button_stays_pushed_off_the_pointer_until_the_release() {
+    let layout = compute_layout(800, 600);
+    let mut shell = controlled_country_shell();
+    let start = layout.start_button;
+    handle_option_mouse_down(&mut shell, &layout, &[], start.x + 2, start.y + 2);
+    handle_option_mouse_move(&mut shell, &layout, &[], start.x - 50, start.y + 2);
+    let pushed = |shell: &SkirmishShellState| read_page(shell, page::pressed_button);
+    assert_eq!(pushed(&shell), Some(OwnerDrawButton::StartGame0x617));
+    handle_option_mouse_up(&mut shell);
+    assert_eq!(pushed(&shell), None);
 }

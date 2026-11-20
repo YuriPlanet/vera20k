@@ -337,7 +337,6 @@ pub(crate) fn commit_close(state: &mut AppState, control: u16) {
     };
     visit.mode = Some(crate::ui::wol_shell::WolMode::PlayBuddy);
     visit.return_mode = Some(crate::ui::wol_shell::WolMode::MyInformation);
-    visit.status_help = None;
     visit.page = WolPage::Backdrop { wait: None };
     super::apply_wol_preferences(state);
     service::begin_flow(state);

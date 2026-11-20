@@ -75,12 +75,14 @@ impl App {
     /// A dropdown the page has open closes first.
     fn close_page_dropdown(state: &mut AppState, screen: ScreenPage) -> bool {
         match screen {
-            ScreenPage::Skirmish => crate::ui::skirmish_shell::close_combo_dropdown(
-                &mut state.frontend.skirmish_shell_state,
-            ),
+            ScreenPage::Skirmish => {
+                crate::ui::skirmish_shell::random_map_page::close_list(
+                    &mut state.frontend.shell_controller,
+                ) || Self::close_skirmish_list(state)
+            }
             ScreenPage::NetworkSetup => {
-                crate::ui::skirmish_shell::close_combo_dropdown(
-                    &mut state.frontend.skirmish_shell_state,
+                crate::ui::skirmish_shell::random_map_page::close_list(
+                    &mut state.frontend.shell_controller,
                 ) || state.frontend.multiplayer_setup.as_mut().is_some_and(|ui| {
                     let open = ui.popup.control.is_some();
                     ui.popup.close();

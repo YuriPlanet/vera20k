@@ -675,35 +675,23 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         }
         _ => None,
     };
-    let pressed = state.frontend.shell_controller.pressed();
-    let ok_pressed = pressed == Some(modal::control::OK);
+    let controller = &state.frontend.shell_controller;
+    let pressed = controller
+        .top_id()
+        .and_then(|top| crate::ui::shell::menu_page::pressed_id(controller, top));
     let frames = crate::app::frontend::skirmish_shell_render::type3_button_frames(atlas);
-    let mut buttons = vec![shell_paint::ModalButton {
-        rect: layout.ok,
-        pressed: ok_pressed,
-        enabled: true,
+    // Body left-top wrapped; each button's caption centred on it with the
+    // MNBTTN press sink — same conventions as the skirmish validation modal.
+    let mut buttons = Vec::new();
+    let mut labels = vec![PaintLabel {
+        text: (&modal_state.title).into(),
+        rect: layout.body,
+        align: ShellAlign::NONE,
+        rgb: SHELL_TEXT_RGB_ENABLED,
+        path_a_reveal: None,
     }];
-    // Body left-top wrapped; OK/Cancel centered on their buttons with the MNBTTN
-    // press sink — same conventions as the skirmish validation modal.
-    let mut labels = vec![
-        PaintLabel {
-            text: (&modal_state.title).into(),
-            rect: layout.body,
-            align: ShellAlign::NONE,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        },
-        PaintLabel {
-            text: (&modal_state.confirm).into(),
-            rect: layout.scale.derive_rect(layout.ok, |rect| {
-                owner_draw_button_label_rect(rect, ok_pressed)
-            }),
-            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        },
-    ];
     for (rect, text, control) in [
+        (Some(layout.ok), &modal_state.confirm, modal::control::OK),
         (layout.third, &modal_state.third, modal::control::THIRD),
         (layout.cancel, &modal_state.cancel, modal::control::CANCEL),
     ] {

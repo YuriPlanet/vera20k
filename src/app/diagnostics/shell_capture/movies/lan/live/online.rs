@@ -616,7 +616,9 @@ impl LiveRoundFlow {
                         .wol
                         .as_ref()
                         .and_then(|visit| visit.login())
-                        .is_some_and(|login| login.button_enabled(crate::ui::wol_login::PLAY)),
+                        .is_some_and(|login| {
+                            login.button_enabled(&state.frontend.shell_controller, crate::ui::wol_login::PLAY)
+                        }),
                     "the online username did not enable Play"
                 );
                 App::handle_wol_key(state, Some(KeyCode::Enter), true, None);
@@ -1491,9 +1493,8 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
     let geometry =
         lobby
             .ui
-            .game_list
-            .geometry(layout.games, lobby.ui.game_rows.len(), layout.page.scale);
-    let top = lobby.ui.game_list.top_index;
+            .shown_geometry(crate::ui::wol_lobby::GAMES, layout.games, lobby.ui.game_rows.len(), layout.page.scale);
+    let top = lobby.ui.list_top(crate::ui::wol_lobby::GAMES);
     if row < top || row >= top + geometry.visible_rows {
         let rect = if let Some(bar) = geometry.scrollbar {
             let y = if row < top {

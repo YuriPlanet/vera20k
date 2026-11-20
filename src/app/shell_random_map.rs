@@ -6,8 +6,6 @@ use crate::map::skirmish_scenarios::{RANDMAP_PREVIEW, RANDMAP_SED};
 /// becomes the sentinel row's displayed name.
 pub(super) const RANDOM_MAP_DESCRIPTION_KEY: &str = "TXT_RANDOM_MAP_DESCRIPTION";
 pub(super) const RANDOM_MAP_DESCRIPTION_FALLBACK: &str = "Random Map";
-/// The players slider is the last of the setup dialog's six option rows.
-const SETUP_PLAYERS_ROW: usize = 5;
 /// Retail's `[General] CliffBackImpassability=`; the preview only needs it
 /// because terrain resolution takes it, not because cliffs affect the image.
 const RANDOM_MAP_PREVIEW_CLIFF_BACK_IMPASSABILITY: u8 = 2;
@@ -1747,235 +1745,118 @@ impl App {
         crate::app::frontend::shell_layout::random_map_setup_layout(state)
     }
 
+    /// The pointer on `0x105`'s widgets: their cues play; the button the
+    /// user activated.
+    fn random_map_pointer(
+        state: &mut AppState,
+        at: crate::ui::skirmish_shell::page::Pointer,
+    ) -> Option<crate::ui::skirmish_shell::RandomMapSetupControl> {
+        let layout = Self::skirmish_random_map_setup_layout(state);
+        let (x, y) = state.match_state.input.cursor_px();
+        let modal = state.frontend.skirmish_shell_state.random_map_setup_modal.as_mut()?;
+        let (sounds, activated) = crate::ui::skirmish_shell::random_map_page::pointer(
+            &mut state.frontend.shell_controller,
+            modal,
+            &layout,
+            at,
+            x,
+            y,
+        );
+        for sound in sounds {
+            match sound {
+                crate::ui::skirmish_shell::SkirmishShellUiSound::MainButton => {
+                    Self::play_main_menu_button_sound(state)
+                }
+                sound => Self::play_skirmish_shell_ui_sound(state, sound),
+            }
+        }
+        state.platform.window.request_redraw();
+        activated
+    }
+
     pub(super) fn handle_random_map_setup_mouse_down(state: &mut AppState) -> bool {
         let layout = Self::skirmish_random_map_setup_layout(state);
         // VERA: a press on the preview enlarges it, as on the other setup
         // screens (`preview_zoom`), while the dialog rests: no list open and
         // no generation running.
-        if state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_ref()
-            .is_some_and(|modal| !modal.generating && modal.open_combo.is_none())
-            && crate::app::frontend::preview_zoom::press_on_box(state, layout.preview)
-        {
-            return true;
-        }
-        let (x, y) = state.match_state.input.cursor_px();
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_mut()
-        else {
-            return false;
-        };
-        // The combos act on press, ahead of the buttons: an open list takes
-        // every press, and an enabled face never arms a button press.
-        if let Some(cue) = modal.press_combos(&layout, x, y) {
-            Self::play_skirmish_shell_ui_sound(state, cue);
-            return true;
-        }
-        if let Some(control) = crate::ui::skirmish_shell::random_map_setup_control_at_view(
-            &layout,
-            x,
-            y,
-            modal.advanced,
-            modal.extras_page.is_some(),
-            modal.ares,
-            modal.advanced_page,
-        ) {
-            // VERA: the Advanced scrollbar acts on press, like the sliders.
-            if control == crate::ui::skirmish_shell::RandomMapSetupControl::AdvancedScrollbar {
-                use crate::ui::skirmish_shell::{AdvancedField, DropdownScrollbarPart};
-                let page = match AdvancedField::advanced_scrollbar_part_at(
-                    &layout,
-                    modal.advanced_page,
-                    x,
-                    y,
-                ) {
-                    Some(DropdownScrollbarPart::UpArrow) => modal.scroll_advanced(-1),
-                    Some(DropdownScrollbarPart::DownArrow) => modal.scroll_advanced(1),
-                    Some(DropdownScrollbarPart::Thumb | DropdownScrollbarPart::Track) => {
-                        modal.advanced_scroll_hold = true;
-                        let page = AdvancedField::advanced_scrollbar_page_at_pointer(
-                            &layout,
-                            modal.advanced_page,
-                            y,
-                        );
-                        modal.set_advanced_scroll(page)
-                    }
-                    None => false,
-                };
-                if page {
-                    Self::play_skirmish_shell_generic_click_sound(state);
-                }
-                return true;
-            }
-            // VERA: an Advanced slider acts on press, like the Players one.
-            if let crate::ui::skirmish_shell::RandomMapSetupControl::Advanced(field) = control {
-                let rect = layout.advanced_control_rects[field.page_row()];
-                if modal.is_enabled(control)
-                    && modal.press_advanced(field, x, y, rect, layout.scale)
-                {
-                    Self::play_skirmish_shell_generic_click_sound(state);
-                }
-                return true;
-            }
-            // The players slider is not a button: it acts on press, not on
-            // release, so it never arms a pressed control.
-            if control == crate::ui::skirmish_shell::RandomMapSetupControl::Players0x3eb {
-                let rect = layout.control_rects[SETUP_PLAYERS_ROW];
-                if modal.is_enabled(control) && modal.press_players(x, y, rect, layout.scale) {
-                    Self::play_skirmish_shell_generic_click_sound(state);
-                }
-                return true;
-            }
-            // A disabled control swallows the click without arming a press, so
-            // releasing over it cannot fire.
-            if modal.is_enabled(control) {
-                modal.pressed_control = Some(control);
-                Self::play_main_menu_button_sound(state);
-            }
-            return true;
-        }
-        layout.dialog.contains(x, y)
-    }
-
-    pub(super) fn handle_random_map_setup_mouse_move(state: &mut AppState) {
-        let layout = Self::skirmish_random_map_setup_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        // `0x105`'s proc runs the common handler first (`0x0059631A`): every
-        // move writes the help of the control under the pointer, or an empty
-        // one, and repaints the status line. An open list holds the mouse
-        // capture instead (`ComboDropWin` `0x0060E0F1`); its own move handler
-        // (`0x0060E262`) asks the dialog for the row's help (`0x4E9`), which
-        // `0x105` never answers, so the status line keeps its text. So does a
-        // Players slider holding the mouse since a press on it.
-        let mouse_held = state
+        let resting = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_ref()
             .is_some_and(|modal| {
-                modal.open_combo.is_some()
-                    || modal.players_hold.is_some()
-                    || modal.advanced_hold.is_some()
-                    || modal.advanced_scroll_hold
+                !modal.generating
+                    && crate::ui::skirmish_shell::random_map_page::view(
+                        &state.frontend.shell_controller,
+                        modal,
+                    )
+                    .0
+                    .is_none()
             });
-        let (advanced, extras, ares, advanced_page) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_ref()
-            .map_or((false, false, false, 0), |modal| {
-                (
-                    modal.advanced,
-                    modal.extras_page.is_some(),
-                    modal.ares,
-                    modal.advanced_page,
-                )
-            });
-        if !mouse_held {
-            let help = crate::ui::skirmish_shell::random_map_setup_control_at_view(
-                &layout,
-                x,
-                y,
-                advanced,
-                extras,
-                ares,
-                advanced_page,
-            )
-            .map(|control| {
-                // VERA: an Extras row's help is its entry's, not the row's.
-                let key = match control {
-                    crate::ui::skirmish_shell::RandomMapSetupControl::ExtrasRow(row) => state
-                        .frontend
-                        .skirmish_shell_state
-                        .random_map_setup_modal
-                        .as_ref()
-                        .and_then(|modal| modal.extras_row(row))
-                        .map_or("", crate::ui::skirmish_shell::ExtrasRow::help),
-                    control => {
-                        crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control)
-                    }
-                };
-                Self::localized_status_help_text(state, key)
-            })
-            .unwrap_or_default();
-            if let Some(setup) = state
-                .frontend
-                .skirmish_shell_state
-                .random_map_setup_modal
-                .as_mut()
-                && setup
-                    .statics
-                    .hover(&help, crate::util::time::Instant::now())
-            {
-                state.platform.window.request_redraw();
-            }
+        if !(resting && crate::app::frontend::preview_zoom::press_on_box(state, layout.preview)) {
+            Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Down);
         }
-        let Some(modal) = state
+        true
+    }
+
+    pub(super) fn handle_random_map_setup_mouse_move(state: &mut AppState) {
+        Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Move);
+        Self::update_random_map_status_help(state);
+    }
+
+    /// `0x105`'s proc runs the common handler first (`0x0059631A`): every move
+    /// writes the help of the control under the pointer, or an empty one, and
+    /// repaints the status line. An open list holds the mouse capture instead
+    /// (`ComboDropWin` `0x0060E0F1`); its own move handler (`0x0060E262`) asks
+    /// the dialog for the row's help (`0x4E9`), which `0x105` never answers,
+    /// so the status line keeps its text. So does a slider holding the mouse
+    /// since a press on it.
+    fn update_random_map_status_help(state: &mut AppState) {
+        use crate::ui::skirmish_shell::random_map_page;
+        let controller = &state.frontend.shell_controller;
+        let Some(modal) = state.frontend.skirmish_shell_state.random_map_setup_modal.as_ref()
+        else {
+            return;
+        };
+        if random_map_page::holding(controller, modal) {
+            return;
+        }
+        let help = random_map_page::hovered_help(controller, modal)
+            .map(|key| Self::localized_status_help_text(state, key))
+            .unwrap_or_default();
+        if let Some(setup) = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_mut()
-        else {
-            return;
-        };
-        if let Some(hold) = modal.advanced_hold {
-            let rect = layout.advanced_control_rects[hold.id.page_row()];
-            if modal.drag_advanced(x, rect, layout.scale) {
-                Self::play_skirmish_shell_generic_click_sound(state);
-            }
+            && setup
+                .statics
+                .hover(&help, crate::util::time::Instant::now())
+        {
             state.platform.window.request_redraw();
-            return;
         }
-        if modal.advanced_scroll_hold {
-            let page = crate::ui::skirmish_shell::AdvancedField::advanced_scrollbar_page_at_pointer(
-                &layout,
-                modal.advanced_page,
-                y,
-            );
-            if modal.set_advanced_scroll(page) {
-                Self::play_skirmish_shell_generic_click_sound(state);
-            }
-            state.platform.window.request_redraw();
-            return;
-        }
-        if modal.players_hold.is_none() {
-            return;
-        }
-        let rect = layout.control_rects[SETUP_PLAYERS_ROW];
-        if modal.drag_players(x, rect, layout.scale) {
-            Self::play_skirmish_shell_generic_click_sound(state);
-        }
-        state.platform.window.request_redraw();
     }
 
     pub(super) fn handle_random_map_setup_mouse_up(state: &mut AppState) -> bool {
         use crate::ui::skirmish_shell::RandomMapSetupControl as Control;
 
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_mut()
+        let Some(modal) = state.frontend.skirmish_shell_state.random_map_setup_modal.as_ref()
         else {
             return false;
         };
         // The release goes to a slider holding the mouse; freeing it lets the
         // dialog's hit test run again.
-        if modal.players_hold.take().is_some()
-            | modal.advanced_hold.take().is_some()
-            | std::mem::replace(&mut modal.advanced_scroll_hold, false)
-        {
-            Self::handle_random_map_setup_mouse_move(state);
-            return true;
+        let held = crate::ui::skirmish_shell::random_map_page::holding(
+            &state.frontend.shell_controller,
+            modal,
+        );
+        let released = Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Up);
+        if held {
+            Self::update_random_map_status_help(state);
         }
-        let layout = Self::skirmish_random_map_setup_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
+        let Some(released) = released else {
+            return true;
+        };
         // RMGMD.INI drives the randomizer's vegetation bounds; without it the
         // derived vegetation collapses to zero and randomized maps lose trees.
         let settings = state
@@ -1999,19 +1880,6 @@ impl App {
         else {
             return false;
         };
-        let pressed = modal.pressed_control.take();
-        let released = crate::ui::skirmish_shell::random_map_setup_control_at_view(
-            &layout,
-            x,
-            y,
-            modal.advanced,
-            modal.extras_page.is_some(),
-            modal.ares,
-            modal.advanced_page,
-        );
-        if pressed.is_none() || pressed != released {
-            return layout.dialog.contains(x, y) || pressed.is_some();
-        }
 
         let mut close_setup = false;
         // Generating needs the whole app state, so it cannot run while the modal
@@ -2023,7 +1891,7 @@ impl App {
         let mut main = crate::ui::skirmish_shell::MainRngRanged(
             crate::app::state::process_main_draws(&state.frontend.frontend_main_rng),
         );
-        match released.expect("checked equal to pressed control") {
+        match released {
             Control::Randomize0x621 => {
                 modal.randomize_options(&settings, &mut main, &description);
             }
@@ -2143,8 +2011,7 @@ impl App {
             Control::Delete0x6c4 => open_browser = Some(SavedSeedMode::Delete),
             // Hit-tested only when Ares.dll is loaded (`modal.ares`).
             Control::UrbanAreas5000 => modal.toggle_urban_areas(),
-            // The combos act on press (`press_combos`) and never arm a press;
-            // dragging the players slider is a separate input mode.
+            // The combos and the Players slider act on their own events.
             Control::MapType0x405
             | Control::Time0x3ea
             | Control::Theater0x407

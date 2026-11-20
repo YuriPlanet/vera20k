@@ -98,6 +98,27 @@ pub fn int(gui: &Gui, root: NodeId, id: u16, prop: Prop) -> Option<i32> {
     }
 }
 
+/// A key, or typed text one character at a time, into the top dialog's
+/// focused edit, for a screen that runs the edit's notifications itself:
+/// `changed` runs after each change (an admitted character's `EN_CHANGE`).
+pub fn edit_input(
+    c: &mut super::controller::DialogController,
+    event: vera20k_gui::InputEvent,
+    mut changed: impl FnMut(&mut super::controller::DialogController),
+) {
+    use vera20k_gui::InputEvent;
+    let events = match event {
+        InputEvent::Text(text) => text.chars().map(|ch| InputEvent::Text(ch.into())).collect(),
+        event => vec![event],
+    };
+    for event in events {
+        c.on_input(event);
+        if c.drain_events().iter().any(|event| matches!(event, UiEvent::TextChanged { .. })) {
+            changed(c);
+        }
+    }
+}
+
 /// [`hovered_help`] of the tree's hovered control, borrowed from the tree.
 pub fn hovered_key(gui: &Gui) -> Option<&str> {
     match gui.get(gui.hovered()?, Prop::Tooltip).ok().flatten()? {

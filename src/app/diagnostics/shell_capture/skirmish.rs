@@ -294,11 +294,10 @@ fn guard(
                             | RandomMapTarget::EjectBox
                     ))
                 ))
-            || shell.open_combo_dropdown.is_some()
-            || shell.trackbar_hold.is_some()
-            || shell.dropdown_scroll_drag.is_some()
-            || shell.dropdown_scroll_press.is_some()
-            || shell.pressed_owner_draw_button.is_some()
+            || (state.frontend.shell_controller.top_id()
+                == Some(crate::ui::skirmish_shell::page::DIALOG)
+                && (state.frontend.shell_controller.gui().popup().is_some()
+                    || state.frontend.shell_controller.gui().pressed().is_some()))
             || shell.player_name_edit.focused,
     }
     .validate()
@@ -780,10 +779,14 @@ impl SkirmishCapture {
             ),
         );
         App::handle_skirmish_shell_mouse_down(state);
+        App::handle_skirmish_shell_mouse_up(state);
         let shell = &state.frontend.skirmish_shell_state;
         let maps = state.frontend.scenario_catalog.shell_maps();
-        let list = crate::ui::skirmish_shell::combo_dropdown_content_rect(shell, &layout, maps, id)
-            .filter(|_| shell.open_combo_dropdown.is_some())
+        let gui = state.frontend.shell_controller.gui();
+        let list = gui
+            .popup()
+            .and_then(|node| gui.combo_drop_down(node))
+            .map(|list| list.popup.content())
             .context("AI row 2's type list did not open")?;
         let row = crate::ui::skirmish_shell::combo_items(shell, maps, id)
             .iter()
@@ -795,7 +798,7 @@ impl SkirmishCapture {
             (list.x + list.w / 2, list.y + row * row_h + row_h / 2),
         );
         App::handle_skirmish_shell_mouse_down(state);
-        crate::ui::skirmish_shell::handle_option_mouse_up(&mut state.frontend.skirmish_shell_state);
+        App::handle_skirmish_shell_mouse_up(state);
         Self::set_pointer(state, self.rest_point());
         ensure!(
             state
@@ -1237,7 +1240,14 @@ impl SkirmishCapture {
                                 .skirmish_shell_state
                                 .random_map_setup_modal
                                 .as_ref()
-                                .is_some_and(|setup| setup.open_combo.is_some()),
+                                .is_some_and(|setup| {
+                                    crate::ui::skirmish_shell::random_map_page::view(
+                                        &state.frontend.shell_controller,
+                                        setup,
+                                    )
+                                    .0
+                                    .is_some()
+                                }),
                             "Terrain Type's list did not open"
                         );
                         Self::set_pointer(state, RANDOM_MAP_MAP_SIZE_FACE_POINT);

@@ -140,6 +140,24 @@ fn with_list<R>(
     Some(result)
 }
 
+/// Drops the list's scrollbar hold.
+pub(crate) fn cancel_scroll(tree: &mut Tree, node: NodeId) {
+    if let Ok(n) = tree.node_mut(node)
+        && let WidgetState::List(state) = &mut n.state
+    {
+        state.list.scroll.cancel();
+    }
+}
+
+/// A press on another node ends the list's double-click sequence.
+pub(crate) fn forget_press(tree: &mut Tree, node: NodeId) {
+    if let Ok(n) = tree.node_mut(node)
+        && let WidgetState::List(state) = &mut n.state
+    {
+        state.list.last_press = None;
+    }
+}
+
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture {
     let now = instant(ctx.now);
     let (ms, w, h) = ctx.double_click;
@@ -148,13 +166,38 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
         .tree
         .node(node)
         .is_ok_and(|n| n.bool_prop(Prop::DoubleClick, true));
-    let window = ctx.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::ListWindow, false));
+    let n = ctx.tree.node(node).ok();
+    let prop = |prop| n.is_some_and(|n| n.bool_prop(prop, false));
+    let (window, area, content_only) =
+        (prop(Prop::ListWindow), prop(Prop::AreaDoubleClick), prop(Prop::ContentDoubleClick));
     with_list(ctx, node, |s, rect, metrics, events| {
         s.pointer = (x, y);
         // The scrollbar child (0x0061C690) captures its own presses and
         // plays no sound: arrow step, track jump or thumb capture.
         if s.list.scroll_press(rect, metrics, x, y, now) {
+            if content_only {
+                s.list.last_press = None;
+            }
             return Capture::Yes;
+        }
+        if window && area {
+            // Any press in the rows' area counts toward a double-click,
+            // below the last row too; the second only reports it.
+            let geometry = s.list.geometry(rect, metrics);
+            if content_only && !geometry.content.contains(x, y) {
+                s.list.last_press = None;
+                return Capture::No;
+            }
+            let row = geometry.row_at(s.list.rows.len(), s.list.top, x, y);
+            if double_click && s.list.is_double_click(now, x, y, limits) {
+                if let Some(row) = s.list.selected {
+                    events.push(UiEvent::ListDoubleClicked { node, row: row as u32 });
+                }
+            } else if let Some(row) = row {
+                s.list.selected = Some(row);
+                events.push(UiEvent::ListSelected { node, row: row as u32 });
+            }
+            return Capture::No;
         }
         if window {
             // The screen's own list: rows hit inside the frame, and only a
@@ -326,6 +369,35 @@ mod tests {
         assert_eq!(click(&mut g, 50, below, 4000), vec![]);
         assert_eq!(click(&mut g, 50, 21 + 19, 4100), vec![UiEvent::ListSelected { node: list, row: 1 }]);
         assert_eq!(click(&mut g, 51, 21 + 19, 4200), vec![UiEvent::ListDoubleClicked { node: list, row: 1 }]);
+    }
+
+    #[test]
+    fn an_area_list_doubles_below_its_rows_and_a_content_list_ends_on_its_scrollbar() {
+        // The LAN players list: a press below the last row counts too, and the
+        // second press only reports the selection.
+        let (mut g, list) = list_page(Value::Int(3));
+        g.set(list, Prop::ListWindow, Value::Bool(true)).unwrap();
+        g.set(list, Prop::AreaDoubleClick, Value::Bool(true)).unwrap();
+        let (row1, below) = (21 + 19, 21 + 19 * 4);
+        assert_eq!(click(&mut g, 50, row1, 0), vec![UiEvent::ListSelected { node: list, row: 1 }]);
+        assert_eq!(click(&mut g, 50, below, 2000), vec![]);
+        assert_eq!(click(&mut g, 51, below, 2100), vec![UiEvent::ListDoubleClicked { node: list, row: 1 }]);
+        assert_eq!(g.get(list, Prop::Selected).unwrap(), Some(&Value::Int(1)));
+        // Choose Map's lists: a press on the scrollbar ends the sequence.
+        let (mut g, list) = list_page(Value::Items(vec![String::new(); 60]));
+        for prop in [Prop::ListWindow, Prop::AreaDoubleClick, Prop::ContentDoubleClick] {
+            g.set(list, prop, Value::Bool(true)).unwrap();
+        }
+        assert_eq!(click(&mut g, 50, row1, 0), vec![UiEvent::ListSelected { node: list, row: 1 }]);
+        click(&mut g, 400, 150, 100);
+        g.drain_events();
+        let after = click(&mut g, 51, row1, 200);
+        assert!(matches!(after[..], [UiEvent::ListSelected { .. }]), "{after:?}");
+        // A rebuilt list drops its scrollbar hold.
+        g.input(InputEvent::PointerDown { x: 400, y: 270, button: MouseButton::Left }, 5000);
+        assert_eq!(g.pressed(), Some(list));
+        g.cancel_list_scroll(list);
+        assert_eq!((g.pressed(), g.list_view(list).unwrap().pressed), (None, None));
     }
 
     #[test]

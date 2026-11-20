@@ -868,79 +868,53 @@ impl App {
         crate::app::frontend::shell_layout::score_layout(state)
     }
 
-    /// Continue and VERA result paging through the shared controller.
-    fn score_input(
-        state: &mut AppState,
-    ) -> (
-        crate::ui::score_shell::ScoreLayout,
-        Vec<crate::ui::shell::layout::LaidOutControl>,
-        (i32, i32),
-    ) {
+    /// Continue and VERA's result paging. Only Continue has help. Everywhere
+    /// else the proc's common handler (`0x00622B50`, `WM_NCHITTEST` at
+    /// `0x00622CCB..0x00622E83`) finds the dialog, a band (bands sit above
+    /// the cells in Z-order) or another static without help and writes an
+    /// empty text: every move writes the status line, which repaints it
+    /// (`0x00615EF7`). Continue (`0x6D1`, result 1 at `0x005CA06C`) tears
+    /// `0x108` down with its slide; the match then ends and the shell resumes.
+    fn handle_score_shell_mouse(state: &mut AppState, down: Option<bool>) {
+        use crate::ui::score_shell::{self as score, NEXT_PAGE, PREVIOUS_PAGE};
         let layout = Self::score_layout(state);
-        let mut feed = Self::menu_page_button_feed(&layout.page);
-        if state
+        let paged = state
             .frontend
             .score_page
             .as_ref()
-            .is_some_and(|page| page.page_count() > 1)
-        {
-            for id in [
-                crate::ui::score_shell::PREVIOUS_PAGE,
-                crate::ui::score_shell::NEXT_PAGE,
-            ] {
-                feed.push(crate::ui::shell::layout::LaidOutControl {
-                    id,
-                    rect: layout.paging_button(id).expect("paging button"),
-                });
-            }
+            .is_some_and(|page| page.page_count() > 1);
+        let dialog = score::SCORE_DIALOG;
+        state.frontend.shell_controller.ensure_active(dialog, false);
+        let rect_of = |id| layout.control_rect(id, paged);
+        let activated = Self::page_pointer(state, dialog, score::nodes, rect_of, &[], down);
+        if down.is_none() {
+            state.frontend.shell_status_line.repaint();
         }
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(crate::ui::score_shell::SCORE_DIALOG, false);
-        let cursor = state.match_state.input.cursor_px();
-        (layout, feed, cursor)
-    }
-
-    /// Only Continue has help. Everywhere else the proc's common handler
-    /// (`0x00622B50`, `WM_NCHITTEST` at `0x00622CCB..0x00622E83`) finds the
-    /// dialog, a band (bands sit above the cells in Z-order) or another
-    /// static without help and writes an empty text: every move writes the
-    /// status line, which repaints it (`0x00615EF7`).
-    pub(super) fn handle_score_shell_mouse_move(state: &mut AppState) {
-        let (_, feed, (x, y)) = Self::score_input(state);
-        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        state.frontend.shell_status_line.repaint();
-    }
-
-    pub(super) fn handle_score_shell_mouse_down(state: &mut AppState) {
-        let (_, feed, (x, y)) = Self::score_input(state);
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        // GUIMainButtonSound through the owner-draw subclass (0x0061376B).
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
-    }
-
-    /// Continue (`0x6D1`, result 1 at `0x005CA06C`) tears `0x108` down with
-    /// its slide; the match then ends and the shell resumes.
-    pub(super) fn handle_score_shell_mouse_up(state: &mut AppState) {
-        let (_, feed, (x, y)) = Self::score_input(state);
-        match state.frontend.shell_controller.on_pointer_up(x, y, &feed) {
-            Some(crate::ui::score_shell::CONTINUE_BUTTON) => Self::leave_shell_dialog(
+        match activated {
+            Some(score::CONTINUE_BUTTON) => Self::leave_shell_dialog(
                 state,
                 crate::app::frontend::shell_transition::ShellExitThen::ScoreContinue,
             ),
-            Some(
-                id @ (crate::ui::score_shell::PREVIOUS_PAGE | crate::ui::score_shell::NEXT_PAGE),
-            ) => {
+            Some(id @ (PREVIOUS_PAGE | NEXT_PAGE)) => {
                 if let Some(page) = state.frontend.score_page.as_mut() {
-                    page.change_page(id == crate::ui::score_shell::NEXT_PAGE, Instant::now());
+                    page.change_page(id == NEXT_PAGE, Instant::now());
                 }
                 state.platform.window.request_redraw();
             }
             _ => {}
         }
+    }
+
+    pub(super) fn handle_score_shell_mouse_move(state: &mut AppState) {
+        Self::handle_score_shell_mouse(state, None);
+    }
+
+    pub(super) fn handle_score_shell_mouse_down(state: &mut AppState) {
+        Self::handle_score_shell_mouse(state, Some(true));
+    }
+
+    pub(super) fn handle_score_shell_mouse_up(state: &mut AppState) {
+        Self::handle_score_shell_mouse(state, Some(false));
     }
 
     fn campaign_score_layout(
@@ -954,86 +928,23 @@ impl App {
         )
     }
 
-    fn campaign_score_input(
-        state: &mut AppState,
-    ) -> (
-        crate::ui::campaign_score_shell::CampaignScoreLayout,
-        Vec<crate::ui::shell::layout::LaidOutControl>,
-        Vec<crate::ui::shell::layout::LaidOutControl>,
-        (i32, i32),
-    ) {
+    /// `0x103`'s and `0xBC7`'s pointer: hover tracks the value statics' help,
+    /// and only Continue presses. Native `0x103` Continue (`0x423`, result 1)
+    /// tears the dialog down with its slide before GameExit::Victory advances
+    /// the campaign; `0xBC7`'s (`0x6D1`, result 1) before Main_Game returns
+    /// to the shell.
+    fn handle_campaign_score_mouse(state: &mut AppState, down: Option<bool>) {
+        use crate::app::frontend::shell_transition::ShellExitThen;
+        use crate::ui::campaign_score_shell::CampaignScoreDialog;
         let dialog = Self::campaign_score_dialog(state);
         let layout = Self::campaign_score_layout(state);
-        // Hover tracks the value statics' help strings. Keep the separate
-        // button-only press feed so those static ids are never pressed.
-        let hover_feed = dialog
-            .controls()
-            .iter()
-            .filter(|control| control.action.is_some() || control.tooltip_key.is_some())
-            .filter_map(|control| {
-                layout.control_rect(control.id).map(|rect| {
-                    crate::ui::shell::layout::LaidOutControl {
-                        id: control.id,
-                        rect,
-                    }
-                })
-            })
-            .collect();
-        let press_feed = vec![crate::ui::shell::layout::LaidOutControl {
-            id: dialog.continue_button(),
-            rect: layout.continue_button,
-        }];
         state
             .frontend
             .shell_controller
             .ensure_active(dialog.id(), false);
-        let cursor = state.match_state.input.cursor_px();
-        (layout, hover_feed, press_feed, cursor)
-    }
-
-    pub(super) fn handle_campaign_score_mouse_move(state: &mut AppState) {
-        let (_, hover_feed, _, (x, y)) = Self::campaign_score_input(state);
-        state
-            .frontend
-            .shell_controller
-            .on_pointer_move(x, y, &hover_feed);
-    }
-
-    pub(super) fn handle_campaign_score_mouse_down(state: &mut AppState) {
-        let (_, _, press_feed, (x, y)) = Self::campaign_score_input(state);
-        state
-            .frontend
-            .shell_controller
-            .on_pointer_down(x, y, &press_feed);
-        if state.frontend.shell_controller.pressed()
-            == Some(Self::campaign_score_dialog(state).continue_button())
-        {
-            Self::play_main_menu_button_sound(state);
-        }
-    }
-
-    fn campaign_score_dialog(
-        state: &AppState,
-    ) -> crate::ui::campaign_score_shell::CampaignScoreDialog {
-        state
-            .frontend
-            .campaign_score_page
-            .as_ref()
-            .map_or_else(Default::default, |page| page.dialog)
-    }
-
-    /// Native `0x103` Continue (`0x423`, result 1) tears the dialog down with
-    /// its slide before GameExit::Victory advances the campaign; `0xBC7`'s
-    /// (`0x6D1`, result 1) before Main_Game returns to the shell.
-    pub(super) fn handle_campaign_score_mouse_up(state: &mut AppState) {
-        use crate::app::frontend::shell_transition::ShellExitThen;
-        use crate::ui::campaign_score_shell::CampaignScoreDialog;
-        let dialog = Self::campaign_score_dialog(state);
-        let (_, _, press_feed, (x, y)) = Self::campaign_score_input(state);
-        if state
-            .frontend
-            .shell_controller
-            .on_pointer_up(x, y, &press_feed)
+        let rect_of = |id| layout.control_rect(id);
+        let nodes = || dialog.nodes();
+        if Self::page_pointer(state, dialog.id(), nodes, rect_of, &[], down)
             != Some(dialog.continue_button())
         {
             return;
@@ -1048,6 +959,28 @@ impl App {
                 Self::leave_shell_dialog(state, ShellExitThen::CampaignEndContinue)
             }
         }
+    }
+
+    pub(super) fn handle_campaign_score_mouse_move(state: &mut AppState) {
+        Self::handle_campaign_score_mouse(state, None);
+    }
+
+    pub(super) fn handle_campaign_score_mouse_down(state: &mut AppState) {
+        Self::handle_campaign_score_mouse(state, Some(true));
+    }
+
+    pub(super) fn handle_campaign_score_mouse_up(state: &mut AppState) {
+        Self::handle_campaign_score_mouse(state, Some(false));
+    }
+
+    fn campaign_score_dialog(
+        state: &AppState,
+    ) -> crate::ui::campaign_score_shell::CampaignScoreDialog {
+        state
+            .frontend
+            .campaign_score_page
+            .as_ref()
+            .map_or_else(Default::default, |page| page.dialog)
     }
 
     /// Shared teardown for both result-screen forms: flush the deterministic log
@@ -1182,10 +1115,11 @@ impl App {
         // to 0x100 cannot continue the pre-Skirmish RA2TS timeline.
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::Skirmish;
+        // A fresh `0x102`: its widgets build on the first sync.
         state
             .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
+            .shell_controller
+            .reset_to(crate::ui::skirmish_shell::page::DIALOG, false);
         // A new 0x102 creates its kind-1 statics hidden (0x0060A5B0).
         state.frontend.skirmish_shell_state.statics.reset();
         // Native constructs 0x102 fresh on every visit, and
@@ -1211,15 +1145,7 @@ impl App {
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
         state.frontend.skirmish_shell_state.game_options = None;
-        state.frontend.skirmish_shell_state.open_combo_dropdown = None;
-        state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
-        state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
-        state.frontend.skirmish_shell_state.trackbar_hold = None;
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
-        crate::ui::skirmish_shell::blur_player_name_edit(&mut state.frontend.skirmish_shell_state);
+        state.frontend.skirmish_shell_state.player_name_edit.blur();
         state.frontend.skirmish_preview_texture = None;
         Self::open_single_player_shell(state);
     }
@@ -1563,8 +1489,6 @@ impl App {
         page: FamilyPage,
         down: Option<bool>,
     ) -> Option<u16> {
-        use crate::ui::shell::page::{PageEvent, page_events};
-        use vera20k_gui::{InputEvent, MouseButton};
         let layout = page.layout(state);
         let campaign = (page == FamilyPage::Campaign)
             .then(|| crate::app::frontend::shell_layout::campaign_layout(state));
@@ -1573,6 +1497,39 @@ impl App {
             None => layout.button_rect(id),
         };
         let enabled = page.enabled(state);
+        state
+            .frontend
+            .shell_controller
+            .ensure_active(page.dialog(), false);
+        let activated = Self::page_pointer(
+            state,
+            page.dialog(),
+            || page.nodes(),
+            rect_of,
+            enabled.as_slice(),
+            down,
+        );
+        if down.is_none() {
+            state.frontend.shell_status_line.repaint();
+        }
+        activated
+    }
+
+    /// One pointer message (`down`: `None` moves) on the top dialog `dialog`,
+    /// whose controls are `nodes`: builds them once, keeps them on `rect_of`
+    /// with the `enabled` overrides, routes the pointer and plays each
+    /// control's cue (an enabled button's GUIMainButtonSound on mouse DOWN,
+    /// `0x0061374B`). Returns the activated control.
+    pub(crate) fn page_pointer(
+        state: &mut AppState,
+        dialog: crate::ui::shell::descriptor::DialogId,
+        nodes: impl FnOnce() -> vera20k_gui::NodeSpec,
+        rect_of: impl Fn(u16) -> Option<crate::ui::shell::geom::RectPx>,
+        enabled: &[(u16, bool)],
+        down: Option<bool>,
+    ) -> Option<u16> {
+        use crate::ui::shell::page::{PageEvent, page_events};
+        use vera20k_gui::{InputEvent, MouseButton};
         let (x, y) = state.match_state.input.cursor_px();
         let button = MouseButton::Left;
         let event = match down {
@@ -1581,20 +1538,10 @@ impl App {
             Some(false) => InputEvent::PointerUp { x, y, button },
         };
         let controller = &mut state.frontend.shell_controller;
-        controller.ensure_active(page.dialog(), false);
-        crate::ui::shell::menu_page::sync_nodes(
-            controller,
-            page.dialog(),
-            || page.nodes(),
-            rect_of,
-            enabled.as_slice(),
-        );
+        crate::ui::shell::menu_page::sync_nodes(controller, dialog, nodes, rect_of, enabled);
         controller.on_input(event);
         let events = controller.drain_events();
         let events = page_events(controller.gui(), events);
-        if down.is_none() {
-            state.frontend.shell_status_line.repaint();
-        }
         let mut activated = None;
         for event in events {
             match event {
@@ -1691,75 +1638,48 @@ impl App {
         Self::handle_menu_page_mouse(state, Some(false));
     }
 
-    /// Count-rule message-box controls share the rendered template and geometry.
-    fn shell_message_box_feed(
-        state: &AppState,
-    ) -> Option<(
-        crate::ui::shell::descriptor::DialogId,
-        Vec<crate::ui::shell::layout::LaidOutControl>,
-    )> {
-        use crate::ui::shell::layout::LaidOutControl;
-        use crate::ui::shell::modal;
-        let kind = state.frontend.shell_message_box.as_ref()?.labels.kind();
-        let layout = crate::app::frontend::shell_layout::shell_message_box_layout(state, kind);
-        let mut feed = vec![LaidOutControl {
-            id: modal::control::OK,
-            rect: layout.ok,
-        }];
-        if let Some(rect) = layout.cancel {
-            feed.push(LaidOutControl {
-                id: modal::control::CANCEL,
-                rect,
-            });
-        }
-        if let Some(rect) = layout.third {
-            feed.push(LaidOutControl {
-                id: modal::control::THIRD,
-                rect,
-            });
-        }
-        Some((
-            crate::ui::shell::descriptor::DialogId(kind.template_id()),
-            feed,
-        ))
-    }
-
     pub(super) fn handle_shell_message_box_mouse_down(state: &mut AppState) {
-        let Some((dialog, feed)) = Self::shell_message_box_feed(state) else {
-            return;
-        };
-        let (x, y) = state.match_state.input.cursor_px();
-        if state.frontend.shell_controller.top_id() != Some(dialog) {
-            return;
-        }
-        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-        if crate::app::updater::notes::pointer_button(state, true) {
-            return;
-        }
-        if Self::shell_menu_pointer(state, Some(true)) {
-            return;
-        }
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        // The message box (`0x005D3490`, proc `0x005D36A0`) subclasses its
-        // owner-draw OK/Cancel to `0x00612B70`, which plays
-        // GUIMainButtonSound on the press (`0x0061374B`).
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
+        Self::shell_message_box_pointer(state, true);
     }
 
     pub(super) fn handle_shell_message_box_mouse_up(state: &mut AppState) {
-        let Some((dialog, feed)) = Self::shell_message_box_feed(state) else {
+        Self::shell_message_box_pointer(state, false);
+    }
+
+    /// A press (`down`) or release on the open box, after the update offer's
+    /// change list and the Esc menu's settings (a press either takes is
+    /// theirs). The box (`0x005D3490`, proc `0x005D36A0`) subclasses its
+    /// owner-draw OK/Cancel to `0x00612B70`, which plays GUIMainButtonSound
+    /// on the press (`0x0061374B`).
+    fn shell_message_box_pointer(state: &mut AppState, down: bool) {
+        let Some(kind) = state
+            .frontend
+            .shell_message_box
+            .as_ref()
+            .map(|b| b.labels.kind())
+        else {
             return;
         };
-        let (x, y) = state.match_state.input.cursor_px();
+        let dialog = crate::ui::shell::descriptor::DialogId(kind.template_id());
         if state.frontend.shell_controller.top_id() != Some(dialog) {
             return;
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-        crate::app::updater::notes::pointer_button(state, false);
-        Self::shell_menu_pointer(state, Some(false));
-        let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
+        if crate::app::updater::notes::pointer_button(state, down) && down {
+            return;
+        }
+        if Self::shell_menu_pointer(state, Some(down)) && down {
+            return;
+        }
+        let layout = crate::app::frontend::shell_layout::shell_message_box_layout(state, kind);
+        let activated = Self::page_pointer(
+            state,
+            dialog,
+            crate::ui::shell::modal::MessageBoxLayout::nodes,
+            |id| layout.button_rect(id),
+            &[],
+            Some(down),
+        );
         if let Some(result) =
             activated.and_then(crate::ui::shell::modal::ModalResult::from_message_box_control)
         {
@@ -2358,7 +2278,7 @@ impl App {
         let dialog =
             crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id());
         if state.frontend.shell_controller.top_id() != Some(dialog) {
-            state.frontend.shell_controller.push(dialog, true);
+            state.frontend.shell_controller.push_modal(dialog, true);
         }
     }
 

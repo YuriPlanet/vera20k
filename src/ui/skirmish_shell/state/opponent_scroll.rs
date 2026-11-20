@@ -39,7 +39,7 @@ pub fn opponent_scroll_geometry(
 
 /// A press on the scrollbar: an arrow steps a row, the track jumps there and
 /// the thumb captures for a drag. Returns whether the press was on it.
-pub(super) fn press_opponent_scrollbar(
+pub fn press_opponent_scrollbar(
     state: &mut SkirmishShellState,
     layout: &SkirmishShellLayout,
     maps: &[MapMenuEntry],
@@ -61,7 +61,7 @@ pub(super) fn press_opponent_scrollbar(
 
 /// Pointer motion while the scrollbar holds the mouse: a held thumb follows
 /// the pointer, a held arrow shows pressed only under it.
-pub(super) fn move_opponent_scrollbar(
+pub fn move_opponent_scrollbar(
     state: &mut SkirmishShellState,
     layout: &SkirmishShellLayout,
     maps: &[MapMenuEntry],
@@ -107,14 +107,16 @@ pub fn opponent_scroll_held(state: &SkirmishShellState) -> bool {
 }
 
 /// The wheel: a notch moves the rows one row, wheel up toward the first.
-/// Not while a combo's list is open, which takes no wheel. Returns whether
-/// the rows moved.
-pub(super) fn wheel_opponents(
+/// Not while a combo's list is open (`list_open`), which takes no wheel: no
+/// owner-draw combo, drop-down or scrollbar callback has a wheel handler.
+/// Returns whether the rows moved.
+pub fn handle_option_mouse_wheel(
     state: &mut SkirmishShellState,
     maps: &[MapMenuEntry],
     lines: f32,
+    list_open: bool,
 ) -> bool {
-    if state.open_combo_dropdown.is_some() || state.opponent_scroll.captured() {
+    if list_open || state.opponent_scroll.captured() {
         return false;
     }
     let last = last_first_opponent(selected_player_rows(state, maps)) as i64;

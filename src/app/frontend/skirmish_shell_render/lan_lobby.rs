@@ -2,7 +2,7 @@
 //! NewEdit614B30, list619230 and scrollbar61C690. Discovery rows are UI views.
 
 use super::chrome::*;
-use super::controls::{ControlPaint, list_controls, paint_control, push_new_edit};
+use super::controls::{ControlPaint, list_view_controls, paint_control, push_new_edit};
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
@@ -15,7 +15,7 @@ use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::lan_shell::{JOIN, PAGE};
+use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
 
@@ -28,15 +28,23 @@ fn row_rgb(color: Option<u32>) -> [f32; 3] {
     }
 }
 
-/// VERA's Create Game box (`LanShellRuntime::create`): the online box's art
-/// and buttons, with its room's limits.
+/// Whether box button `id` shows pushed (612B70).
+fn box_pressed(state: &AppState, id: i32) -> bool {
+    let gui = state.frontend.shell_controller.gui();
+    gui.dialogs()
+        .last()
+        .and_then(|d| gui.find_id(gui.dialog_root(d)?, id))
+        .is_some_and(|node| gui.shows_pressed(node))
+}
+
+/// VERA's Create Game box (`LanShellRuntime::creating`): the online box's
+/// art and buttons, with its room's limits as its widgets hold them.
 fn paint_create_box(
     state: &AppState,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
-    lobby: &crate::ui::lan_shell::LanLobbyState,
-    picker: &crate::ui::room_limits::RoomLimitsPicker,
     overlay: &mut ShellFrameOverlay,
 ) {
+    let limits = crate::app::shell_lan::room_limits(state);
     let layout = crate::ui::shell::modal::lan_create_game_layout(
         state.render_width() as i32,
         state.render_height() as i32,
@@ -44,7 +52,7 @@ fn paint_create_box(
     let mut buttons = Vec::new();
     let mut labels = Vec::new();
     for (id, rect, key) in [(1, layout.ok, "GUI:OK"), (2, layout.cancel, "GUI:Cancel")] {
-        let pressed = lobby.buttons.is_pressed(id);
+        let pressed = box_pressed(state, id);
         buttons.push(ModalButton {
             rect,
             pressed,
@@ -63,7 +71,7 @@ fn paint_create_box(
         atlas,
         &mut controls,
         &mut labels,
-        picker.limits.players,
+        limits.players,
         layout.room.players,
         ShellScale::RETAIL,
     );
@@ -72,7 +80,7 @@ fn paint_create_box(
         &atlas.control_chrome(),
         ControlPaint::Checkbox {
             rect: layout.room.spectators,
-            checked: picker.limits.spectators,
+            checked: limits.spectators,
         },
         ShellScale::RETAIL,
     );
@@ -122,7 +130,7 @@ pub(crate) fn render_lan_lobby(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::shell_lan::update_geometry(state);
+    crate::app::shell_lan::sync_gui(state);
     let now = Instant::now();
     let layout = crate::app::shell_lan::layout(state);
     let scale = layout.page.scale;
@@ -150,12 +158,8 @@ pub(crate) fn render_lan_lobby(
     let status = if sliding {
         None
     } else {
-        let help = state
-            .frontend
-            .lan
-            .as_ref()
-            .and_then(|runtime| runtime.lobby.buttons.hovered)
-            .and_then(crate::ui::lan_shell::tooltip_key)
+        let gui = state.frontend.shell_controller.gui();
+        let help = crate::ui::shell::page::hovered_key(gui)
             .map(|key| localized_label(state, key, ""))
             .unwrap_or_default();
         crate::app::frontend::menu_page_render::paint_shell_status_line(
@@ -210,8 +214,9 @@ pub(crate) fn render_lan_lobby(
     };
     // VERA's Create Game box shows over the bare backdrop, as the online
     // lobby's does.
-    let creating = runtime.create.as_ref();
-    if !leaving && creating.is_none() {
+    let gui = state.frontend.shell_controller.gui();
+    let root = state.frontend.shell_controller.root_in(PAGE.dialog);
+    if !leaving && !runtime.creating {
         for (key, rect) in layout.labels {
             texts.push(text(
                 &localized_label(state, key, key),
@@ -242,16 +247,11 @@ pub(crate) fn render_lan_lobby(
                 scale,
             );
         }
-        paint_control(
-            &mut controls,
-            &atlas.control_chrome(),
-            ControlPaint::Checkbox {
-                rect: layout.observer_toggle,
-                checked: lobby.observer,
-            },
-            scale,
-        );
-        if let Some(entry) = atlas.lan_observer_toggle(lobby.observer) {
+        let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+        if let Some(root) = root {
+            controls.extend(super::gui_paint::paint_gui_children(state, gui, root, scale).controls);
+        }
+        if let Some(entry) = atlas.lan_observer_toggle(observer) {
             push_flag_entry_clipped_centered(
                 &mut controls,
                 entry,
@@ -260,27 +260,36 @@ pub(crate) fn render_lan_lobby(
                 SHELL_CONTROL_DEPTH,
             );
         }
-        let games = lobby
-            .game_list
-            .geometry(layout.games, lobby.game_count(), scale);
-        let players = lobby
-            .player_list
-            .geometry(layout.players, lobby.players.len(), scale);
-        let chat = lobby
-            .chat
-            .list
-            .geometry(layout.chat_log, lobby.chat.lines.len(), scale);
-        list_controls(&mut controls, atlas, games, &lobby.game_list, true, scale);
-        list_controls(
-            &mut controls,
-            atlas,
-            players,
-            &lobby.player_list,
-            true,
-            scale,
-        );
-        list_controls(&mut controls, atlas, chat, &lobby.chat.list, false, scale);
-        for (visible, index) in (lobby.game_list.top_index..lobby.game_count())
+        // The lists' frames and scrollbars as their widgets hold them; the
+        // chat log selects nothing.
+        let metrics = crate::ui::shell::list::ListMetrics::scaled(scale);
+        let [(games, games_top), (players, players_top), (chat, chat_top)] = [
+            (GAMES, layout.games),
+            (PLAYERS, layout.players),
+            (CHAT_LOG, layout.chat_log),
+        ]
+        .map(|(id, rect)| {
+            let view = root
+                .and_then(|root| gui.find_id(root, id.into()))
+                .and_then(|node| gui.list_view(node))
+                .unwrap_or(vera20k_gui::ListView {
+                    rows: 0,
+                    top: 0,
+                    selected: None,
+                    pressed: None,
+                });
+            let geometry = view.window_geometry(rect, metrics);
+            let selected = view.selected.filter(|_| id != CHAT_LOG);
+            list_view_controls(
+                &mut controls,
+                atlas,
+                geometry,
+                (selected, view.top, view.pressed),
+                scale,
+            );
+            (geometry, view.top)
+        });
+        for (visible, index) in (games_top..lobby.game_count())
             .take(games.visible_rows)
             .enumerate()
         {
@@ -303,7 +312,7 @@ pub(crate) fn render_lan_lobby(
         for (visible, player) in lobby
             .players
             .iter()
-            .skip(lobby.player_list.top_index)
+            .skip(players_top)
             .take(players.visible_rows)
             .enumerate()
         {
@@ -324,7 +333,7 @@ pub(crate) fn render_lan_lobby(
             .chat
             .lines
             .iter()
-            .skip(lobby.chat.list.top_index)
+            .skip(chat_top)
             .take(chat.visible_rows)
             .enumerate()
         {
@@ -355,8 +364,9 @@ pub(crate) fn render_lan_lobby(
             ));
         }
         if !sliding {
-            for button in &layout.page.buttons {
-                let pressed = lobby.buttons.is_pressed(button.id);
+            let looks = crate::ui::shell::page::menu_button_looks(gui, root, &layout.page.buttons);
+            for (button, pressed, _) in &looks {
+                let pressed = *pressed;
                 push_right_panel_button_shp(
                     &mut art,
                     atlas,
@@ -366,7 +376,7 @@ pub(crate) fn render_lan_lobby(
                     SHELL_CONTROL_DEPTH,
                 );
                 if let Some(spec) = PAGE.button(button.id) {
-                    let key = if button.id == JOIN && lobby.observer {
+                    let key = if button.id == JOIN && observer {
                         "GUI:Observe"
                     } else {
                         spec.csf_key
@@ -395,7 +405,7 @@ pub(crate) fn render_lan_lobby(
         ));
         if let Some(key) = runtime.modal {
             let modal = crate::ui::shell::modal::body_ok_layout(width as i32, height as i32);
-            let pressed = lobby.buttons.is_pressed(1);
+            let pressed = box_pressed(state, 1);
             super::modals::push_validation_modal_instances(
                 &mut overlay.controls,
                 atlas,
@@ -424,8 +434,8 @@ pub(crate) fn render_lan_lobby(
             ));
         }
     }
-    if let Some(picker) = creating {
-        paint_create_box(state, atlas, lobby, picker, &mut overlay);
+    if runtime.creating {
+        paint_create_box(state, atlas, &mut overlay);
     }
     in_game_shell::render_shell_frame(
         state,

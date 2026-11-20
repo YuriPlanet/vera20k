@@ -1165,136 +1165,6 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
     }
 }
 
-/// Topmost interactive control at `(x, y)`, or `None`.
-///
-/// Tested in draw order: the option rows first, then the action row, then the
-/// right column — matching `choose_map_modal_button_at`. `ares`: Ares.dll is
-/// loaded (the game is read the Ares way), which adds its Urban Areas box.
-pub fn random_map_setup_control_at(
-    layout: &RandomMapSetupLayout,
-    x: i32,
-    y: i32,
-    ares: bool,
-) -> Option<RandomMapSetupControl> {
-    const ROW_CONTROLS: [RandomMapSetupControl; 6] = [
-        RandomMapSetupControl::MapType0x405,
-        RandomMapSetupControl::Time0x3ea,
-        RandomMapSetupControl::Theater0x407,
-        RandomMapSetupControl::Size0x406,
-        RandomMapSetupControl::Resources0x408,
-        RandomMapSetupControl::Players0x3eb,
-    ];
-    // A closed combo only occupies its face, not the dropdown extent the
-    // resource reserves, so hit-test the face height the shell already uses.
-    for (row, control) in ROW_CONTROLS.iter().enumerate() {
-        let rect = layout.control_rects[row];
-        let face_h = if row == 5 {
-            rect.h
-        } else {
-            combo_face_rect(rect, layout.scale).h
-        };
-        if RectPx::new(rect.x, rect.y, rect.w, face_h).contains(x, y) {
-            return Some(*control);
-        }
-    }
-    let others = [
-        (layout.randomize, RandomMapSetupControl::Randomize0x621),
-        (layout.generate, RandomMapSetupControl::Generate0x620),
-        (layout.use_map, RandomMapSetupControl::Ok0x6c5),
-        (layout.load, RandomMapSetupControl::Load0x6c2),
-        (layout.save, RandomMapSetupControl::Save0x6c3),
-        (layout.delete, RandomMapSetupControl::Delete0x6c4),
-        (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
-    ];
-    let control = others
-        .iter()
-        .find(|(rect, _)| rect.contains(x, y))
-        .map(|(_, control)| *control);
-    if ares {
-        control.or_else(|| {
-            layout
-                .urban_areas
-                .contains(x, y)
-                .then_some(RandomMapSetupControl::UrbanAreas5000)
-        })
-    } else {
-        control
-    }
-}
-
-/// [`random_map_setup_control_at`] with VERA's buttons, for a dialog that may
-/// show the Advanced view: there the sliders take the option rows. With
-/// `extras` the Advanced rows are the Extras view's, by row.
-pub fn random_map_setup_control_at_view(
-    layout: &RandomMapSetupLayout,
-    x: i32,
-    y: i32,
-    advanced: bool,
-    extras: bool,
-    ares: bool,
-    advanced_page: usize,
-) -> Option<RandomMapSetupControl> {
-    if layout.advanced.contains(x, y) {
-        return Some(RandomMapSetupControl::AdvancedToggle);
-    }
-    if layout.export.contains(x, y) {
-        return Some(RandomMapSetupControl::ExportMap);
-    }
-    if layout.fair_starts.contains(x, y) {
-        return Some(RandomMapSetupControl::FairStartsToggle);
-    }
-    if layout.preset.contains(x, y) {
-        return Some(RandomMapSetupControl::PresetCycle);
-    }
-    if !advanced {
-        return random_map_setup_control_at(layout, x, y, ares);
-    }
-    // VERA: the scrollbar belongs only to the Advanced sliders; the Extras
-    // view has its own paging row and keeps the same physical area.
-    if !extras && AdvancedField::advanced_scrollbar_rect(layout).contains(x, y) {
-        return Some(RandomMapSetupControl::AdvancedScrollbar);
-    }
-    if extras {
-        // The Extras view owns its own paging; a row is the seven reusable
-        // slider windows, so hit-test by raw row as before.
-        if let Some(field) = AdvancedField::ALL
-            .into_iter()
-            .take(AdvancedField::PAGE_SIZE)
-            .find(|field| layout.advanced_control_rects[field.row()].contains(x, y))
-        {
-            return Some(RandomMapSetupControl::ExtrasRow(field.row()));
-        }
-    } else if let Some(field) = AdvancedField::ALL.into_iter().find(|field| {
-        field.page() == advanced_page
-            && layout.advanced_control_rects[field.page_row()].contains(x, y)
-    }) {
-        return Some(RandomMapSetupControl::Advanced(field));
-    }
-    // Everything but the option rows hit-tests as in the basic view; Ares'
-    // Urban Areas box sits under the seventh slider and is basic-only.
-    random_map_setup_control_at(layout, x, y, ares).filter(|control| {
-        SETUP_BASIC_ROW_CONTROLS
-            .iter()
-            .all(|row_control| row_control != control)
-            && !is_ares_urban_areas_box(*control, ares)
-    })
-}
-
-/// Ares' Urban Areas box, which only the basic view shows, when Ares.dll is
-/// loaded (the game is read the Ares way).
-fn is_ares_urban_areas_box(control: RandomMapSetupControl, ares: bool) -> bool {
-    ares && control == RandomMapSetupControl::UrbanAreas5000
-}
-
-const SETUP_BASIC_ROW_CONTROLS: [RandomMapSetupControl; 6] = [
-    RandomMapSetupControl::MapType0x405,
-    RandomMapSetupControl::Time0x3ea,
-    RandomMapSetupControl::Theater0x407,
-    RandomMapSetupControl::Size0x406,
-    RandomMapSetupControl::Resources0x408,
-    RandomMapSetupControl::Players0x3eb,
-];
-
 /// The open list of a combo row: directly under the face, as tall as its
 /// entries. The resource reserves a taller extent per combo, but a Windows
 /// dropdown sizes itself to the item count up to that reserve, and none of
@@ -1322,22 +1192,6 @@ pub fn random_map_setup_dropdown_rect(
         }
     }
     RectPx::new(face.x, top, face.w, bottom - top)
-}
-
-/// Which entry of an open dropdown `(x, y)` falls on.
-pub fn random_map_setup_dropdown_row_at(
-    layout: &RandomMapSetupLayout,
-    row: usize,
-    item_count: usize,
-    x: i32,
-    y: i32,
-) -> Option<usize> {
-    let list = random_map_setup_dropdown_rect(layout, row, item_count);
-    if !list.contains(x, y) {
-        return None;
-    }
-    let index = ((y - list.y) / DropdownMetrics::scaled(layout.scale).row_h) as usize;
-    (index < item_count).then_some(index)
 }
 
 // Saved-seed browser (Load 0xB7 / Save 0x2B4 / Delete 0x2B5). All three share
@@ -1754,40 +1608,56 @@ pub fn saved_seed_control_at(layout: &SavedSeedLayout, x: i32, y: i32) -> Option
     None
 }
 
-pub fn choose_map_modal_button_at(
-    layout: &ChooseMapModalLayout,
-    x: i32,
-    y: i32,
-) -> Option<ChooseMapModalButton> {
-    if layout.use_map_button.contains(x, y) {
-        return Some(ChooseMapModalButton::UseMap0x6c5);
-    }
-    if layout.cancel_button.contains(x, y) {
-        return Some(ChooseMapModalButton::Cancel0x5c0);
-    }
-    if layout.create_random_map_button.contains(x, y) {
-        return Some(ChooseMapModalButton::CreateRandomMap0x583);
-    }
-    if layout.favorite_button.contains(x, y) {
-        return Some(ChooseMapModalButton::Favorite);
-    }
-    None
-}
-
 #[cfg(all(test, tests_ui))]
 mod tests {
+    use super::AdvancedField;
     use super::RandomMapSetupControl;
-    use super::{AdvancedField, random_map_setup_control_at_view};
+    use crate::ui::skirmish_shell::random_map_page::control_at as random_map_setup_control_at_view;
+
+    /// The basic view's control the pointer at `x`, `y` hovers.
+    fn random_map_setup_control_at(
+        layout: &super::RandomMapSetupLayout,
+        x: i32,
+        y: i32,
+        ares: bool,
+    ) -> Option<RandomMapSetupControl> {
+        random_map_setup_control_at_view(layout, x, y, false, false, ares, 0)
+    }
     use super::{
         ChooseMapModalButton, RectPx, SavedSeedMode, ShellScale, SkirmishCheckboxId,
-        checkbox_icon_rect, checkbox_text_rect, choose_map_modal_button_at, combo_arrow_rect,
+        checkbox_icon_rect, checkbox_text_rect, combo_arrow_rect,
         combo_face_rect, combo_swatch_rect, combo_text_rect, compute_choose_map_modal_layout,
         compute_fixed_800_layout, compute_layout, compute_random_map_setup_layout,
         compute_responsive_choose_map_modal_layout, compute_responsive_layout,
         compute_responsive_random_map_setup_layout, compute_responsive_saved_seed_layout,
         compute_saved_seed_layout, dlu_rect, player_name_edit_client_rect,
-        player_name_edit_text_rect, random_map_setup_control_at,
+        player_name_edit_text_rect,
     };
+
+    /// The chooser button the pointer at `x`, `y` hovers on its widgets.
+    fn choose_map_modal_button_at(
+        layout: &super::ChooseMapModalLayout,
+        x: i32,
+        y: i32,
+    ) -> Option<ChooseMapModalButton> {
+        use crate::ui::skirmish_shell::{ChooseMapHoverTarget, choose_map_page};
+        let modes = crate::skirmish_modes::stock_skirmish_modes();
+        let modal = crate::ui::skirmish_shell::ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            None,
+            &modes,
+            &[],
+            layout,
+        );
+        let mut ui = crate::ui::shell::controller::DialogController::default();
+        choose_map_page::sync_page(&mut ui, &modal, layout);
+        ui.on_pointer_move(x, y, &[]);
+        match choose_map_page::hover_target(ui.gui(), &modal, layout, x, y) {
+            Some(ChooseMapHoverTarget::Button(button)) => Some(button),
+            _ => None,
+        }
+    }
 
     #[test]
     fn responsive_layouts_keep_the_window_as_screen_and_centre_the_shell() {

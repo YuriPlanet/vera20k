@@ -1,21 +1,16 @@
-//! Combo-box item, dropdown, scrollbar, and selection helpers for the skirmish shell.
+//! The skirmish shell's combo rows: their items, selections and what a pick
+//! does to the session. The widgets themselves are [`super::super::page`]'s.
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
     HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, SKIRMISH_MAX_SLOT_COUNT,
     SKIRMISH_PLAYER_SLOT_COUNT,
 };
-use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 
-use super::super::layout::{
-    DropdownMetrics, RectPx, SKIRMISH_ROW_COUNT, SkirmishShellLayout, combo_face_rect,
-};
-use crate::ui::skirmish_shell::ScrollModel;
+use super::super::layout::{RectPx, SkirmishShellLayout};
 use super::{
-    DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, OpenComboDropdown,
     SkirmishAiRowType, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,
-    SkirmishShellOpponent, SkirmishShellState, SkirmishShellUiSound, inactive_ai_team_default,
-    player_row_visible,
+    SkirmishShellOpponent, SkirmishShellState, inactive_ai_team_default, player_row_visible,
 };
 
 /// The control rect of `id`'s player row; `None` while VERA's scrollbar
@@ -36,99 +31,12 @@ pub fn combo_rect(
     .copied()
 }
 
-pub fn combo_dropdown_rect(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> Option<RectPx> {
-    Some(combo_popup(state, layout, maps, id, 0)?.rect)
-}
-
-fn combo_popup(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    top_index: usize,
-) -> Option<ComboPopup> {
-    if !combo_enabled(state, maps, id) {
-        return None;
-    }
-    let rect = combo_rect(layout, state, id)?;
-    let item_count = combo_items(state, maps, id).len() as i32;
-    if item_count == 0 {
-        return None;
-    }
-    let cap = combo_dropdown_max_visible_rows(id);
-    let mut face = combo_face_rect(rect, layout.scale);
-    // ComboDropWin__WndProc (0x0060D540) narrows a scrolling list by its
-    // scrollbar and cuts each caption at the client width less 0x14
-    // (0x0060DF38). gamemd's Start list never passes its nine rows, so it never
-    // scrolls; VERA's thirty starts would leave the 38 px Start list no width
-    // for a caption. A scrolling Start list grows by the scrollbar instead, so
-    // its rows keep the face's width.
-    if matches!(id, SkirmishComboId::Start(_)) && item_count > cap {
-        face.w += DropdownMetrics::scaled(layout.scale).scrollbar_w;
-    }
-    let mut popup = ComboPopup::new(
-        face,
-        layout.scale,
-        item_count as usize,
-        cap as usize,
-        top_index,
-    );
-    // VERA: on the longer player list a low row's list would run over the
-    // status line or off the screen, so it opens upward instead. gamemd's
-    // eight rows never reach it, and the retail page never flips.
-    if layout.shown_rows > SKIRMISH_ROW_COUNT && popup.rect.y + popup.rect.h > layout.status_help.y
-    {
-        popup.rect.y = face.y - 1 - popup.rect.h;
-    }
-    Some(popup)
-}
-
 pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
     match id {
         SkirmishComboId::Side(_) => 7,
         SkirmishComboId::Color(_) | SkirmishComboId::Start(_) => 9,
         SkirmishComboId::AiType(_) | SkirmishComboId::Team(_) => 0,
     }
-}
-
-pub fn combo_dropdown_visible_row_count(
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> usize {
-    let item_count = combo_items(state, maps, id).len();
-    ScrollModel::combo(combo_dropdown_max_visible_rows(id)).visible_rows(item_count)
-}
-
-fn combo_dropdown_item_count(
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> usize {
-    combo_items(state, maps, id).len()
-}
-
-pub fn combo_dropdown_needs_scrollbar(
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> bool {
-    combo_dropdown_item_count(state, maps, id) > combo_dropdown_visible_row_count(state, maps, id)
-}
-
-pub(super) fn combo_dropdown_max_top_index(
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> usize {
-    let item_count = combo_dropdown_item_count(state, maps, id);
-    let visible_rows = combo_dropdown_visible_row_count(state, maps, id);
-    ScrollModel::combo(combo_dropdown_max_visible_rows(id)).max_top_index(item_count, visible_rows)
 }
 
 /// A row's colour as the lobby shows it: a listed priority is itself, and
@@ -146,138 +54,6 @@ fn listed_color_index(
     } else {
         color_index.min(HOUSE_COLOR_COUNT - 1)
     }
-}
-
-pub fn combo_dropdown_scrollbar_rect(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> Option<RectPx> {
-    if !combo_dropdown_needs_scrollbar(state, maps, id) {
-        return None;
-    }
-    let dropdown = combo_dropdown_rect(state, layout, maps, id)?;
-    let scrollbar_w = DropdownMetrics::scaled(layout.scale).scrollbar_w;
-    Some(RectPx::new(
-        dropdown.x + dropdown.w - scrollbar_w,
-        dropdown.y,
-        scrollbar_w,
-        dropdown.h,
-    ))
-}
-
-pub fn combo_dropdown_content_rect(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> Option<RectPx> {
-    let dropdown = combo_dropdown_rect(state, layout, maps, id)?;
-    let width = if combo_dropdown_needs_scrollbar(state, maps, id) {
-        dropdown.w - DropdownMetrics::scaled(layout.scale).scrollbar_w
-    } else {
-        dropdown.w
-    };
-    Some(RectPx::new(
-        dropdown.x,
-        dropdown.y,
-        width.max(0),
-        dropdown.h,
-    ))
-}
-
-pub fn combo_dropdown_scroll_thumb_rect(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> Option<RectPx> {
-    let scrollbar = combo_dropdown_scrollbar_rect(state, layout, maps, id)?;
-    let model = ScrollModel::combo_at(
-        combo_dropdown_max_visible_rows(id),
-        DropdownMetrics::scaled(layout.scale),
-    );
-    let visible_rows = combo_dropdown_visible_row_count(state, maps, id);
-    let item_count = combo_dropdown_item_count(state, maps, id);
-    let thumb_h = model.thumb_height(visible_rows, item_count, scrollbar.h);
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let open_top = state
-        .open_combo_dropdown
-        .filter(|open| open.id == id)
-        .map(|open| open.top_index.min(max_top))
-        .unwrap_or(0);
-    let thumb_y = model.thumb_y(scrollbar, thumb_h, open_top, max_top);
-    Some(RectPx::new(scrollbar.x, thumb_y, scrollbar.w, thumb_h))
-}
-
-pub(super) fn set_open_combo_top_index(
-    state: &mut SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    top_index: usize,
-) {
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    if let Some(open) = state
-        .open_combo_dropdown
-        .as_mut()
-        .filter(|open| open.id == id)
-    {
-        open.top_index = top_index.min(max_top);
-    }
-}
-
-pub(super) fn scroll_open_combo_by_rows(
-    state: &mut SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    rows: i32,
-) -> bool {
-    let Some(open) = state.open_combo_dropdown.filter(|open| open.id == id) else {
-        return false;
-    };
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let next = if rows < 0 {
-        open.top_index.saturating_sub((-rows) as usize)
-    } else {
-        (open.top_index + rows as usize).min(max_top)
-    };
-    set_open_combo_top_index(state, maps, id, next);
-    next != open.top_index
-}
-
-pub(super) fn top_index_from_thumb_y(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    mouse_y: i32,
-) -> Option<usize> {
-    let scrollbar = combo_dropdown_scrollbar_rect(state, layout, maps, id)?;
-    let thumb = combo_dropdown_scroll_thumb_rect(state, layout, maps, id)?;
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let model = ScrollModel::combo_at(
-        combo_dropdown_max_visible_rows(id),
-        DropdownMetrics::scaled(layout.scale),
-    );
-    Some(model.top_index_at_pointer(scrollbar, thumb.h, max_top, mouse_y))
-}
-
-pub(super) fn top_index_from_scrollbar_track_click(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    mouse_y: i32,
-) -> Option<usize> {
-    let scrollbar = combo_dropdown_scrollbar_rect(state, layout, maps, id)?;
-    let thumb = combo_dropdown_scroll_thumb_rect(state, layout, maps, id)?;
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let model = ScrollModel::combo_at(
-        combo_dropdown_max_visible_rows(id),
-        DropdownMetrics::scaled(layout.scale),
-    );
-    Some(model.top_index_at_pointer(scrollbar, thumb.h, max_top, mouse_y))
 }
 
 pub fn combo_items(
@@ -484,7 +260,7 @@ pub fn combo_enabled(
 
 /// Whether the combo takes a pick wherever its row shows: the row's player
 /// type and the mode's `AlliesAllowed` decide.
-pub(super) fn combo_open(state: &SkirmishShellState, id: SkirmishComboId) -> bool {
+pub(crate) fn combo_open(state: &SkirmishShellState, id: SkirmishComboId) -> bool {
     match id {
         SkirmishComboId::AiType(_) => true,
         SkirmishComboId::Side(0) | SkirmishComboId::Color(0) | SkirmishComboId::Start(0) => true,
@@ -610,40 +386,7 @@ fn evict_other_color_claimants(state: &mut SkirmishShellState, row: usize, color
     }
 }
 
-fn combo_hit_order(state: &SkirmishShellState, shown: usize) -> Vec<SkirmishComboId> {
-    let mut ids = Vec::new();
-    for slot in (0..shown).rev() {
-        let row = state.slot_row(slot);
-        ids.push(SkirmishComboId::Team(row));
-        ids.push(SkirmishComboId::Start(row));
-        ids.push(SkirmishComboId::Color(row));
-        ids.push(SkirmishComboId::Side(row));
-        if row > 0 {
-            ids.push(SkirmishComboId::AiType(row - 1));
-        }
-    }
-    ids
-}
-
-/// The enabled combo whose collapsed face is under the press, with its
-/// control rect.
-fn combo_face_at(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) -> Option<(SkirmishComboId, RectPx)> {
-    combo_hit_order(state, layout.shown_rows)
-        .into_iter()
-        .find_map(|id| {
-            let rect = combo_rect(layout, state, id)?;
-            (combo_enabled(state, maps, id) && combo_face_rect(rect, layout.scale).contains(x, y))
-                .then_some((id, rect))
-        })
-}
-
-pub(super) fn apply_combo_selection(
+pub(crate) fn apply_combo_selection(
     state: &mut SkirmishShellState,
     id: SkirmishComboId,
     item: SkirmishComboItem,
@@ -729,104 +472,4 @@ pub(super) fn apply_combo_selection(
         }
         _ => {}
     }
-}
-
-pub(super) fn handle_combo_mouse_move(
-    state: &mut SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) {
-    let Some(open) = state.open_combo_dropdown else {
-        return;
-    };
-    let Some(popup) = combo_popup(state, layout, maps, open.id, open.top_index) else {
-        return;
-    };
-    if let Some(open) = state.open_combo_dropdown.as_mut() {
-        popup.track_hot_row(&mut open.hot_row, x, y);
-    }
-}
-
-pub(super) fn handle_combo_mouse_down(
-    state: &mut SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) -> bool {
-    if let Some(open) = state.open_combo_dropdown {
-        let metrics = DropdownMetrics::scaled(layout.scale);
-        if let Some(scrollbar) = combo_dropdown_scrollbar_rect(state, layout, maps, open.id)
-            && scrollbar.contains(x, y)
-        {
-            if y < scrollbar.y + metrics.button_h {
-                state.dropdown_scroll_press = Some(DropdownScrollbarPressState {
-                    id: open.id,
-                    part: DropdownScrollbarPart::UpArrow,
-                });
-                scroll_open_combo_by_rows(state, maps, open.id, -1);
-            } else if y >= scrollbar.y + scrollbar.h - metrics.button_h {
-                state.dropdown_scroll_press = Some(DropdownScrollbarPressState {
-                    id: open.id,
-                    part: DropdownScrollbarPart::DownArrow,
-                });
-                scroll_open_combo_by_rows(state, maps, open.id, 1);
-            } else if let Some(thumb) =
-                combo_dropdown_scroll_thumb_rect(state, layout, maps, open.id)
-            {
-                if thumb.contains(x, y) {
-                    state.dropdown_scroll_press = Some(DropdownScrollbarPressState {
-                        id: open.id,
-                        part: DropdownScrollbarPart::Thumb,
-                    });
-                    state.dropdown_scroll_drag = Some(DropdownScrollDragState { id: open.id });
-                } else if let Some(top_index) =
-                    top_index_from_scrollbar_track_click(state, layout, maps, open.id, y)
-                {
-                    state.dropdown_scroll_press = Some(DropdownScrollbarPressState {
-                        id: open.id,
-                        part: DropdownScrollbarPart::Track,
-                    });
-                    set_open_combo_top_index(state, maps, open.id, top_index);
-                }
-            }
-            return true;
-        }
-        // Past this dialog's own scrollbar, ComboDropWin picks or dismisses.
-        let press = combo_popup(state, layout, maps, open.id, open.top_index)
-            .map_or(ComboPress::Dismiss, |popup| popup.press(x, y));
-        if let ComboPress::Pick(row) = press
-            && let Some(item) = combo_items(state, maps, open.id).get(row).copied()
-        {
-            apply_combo_selection(state, open.id, item);
-        }
-        state.open_combo_dropdown = None;
-        state.dropdown_scroll_drag = None;
-        state.dropdown_scroll_press = None;
-        if let Some(cue) = press.cue() {
-            state.push_ui_sound(SkirmishShellUiSound::combo(cue));
-        }
-        return true;
-    }
-
-    if let Some((id, rect)) = combo_face_at(state, layout, maps, x, y) {
-        let press = ComboPress::on_face(rect, layout.scale, x, y);
-        if press == ComboPress::Open {
-            state.open_combo_dropdown = Some(OpenComboDropdown {
-                id,
-                top_index: 0,
-                hot_row: selected_combo_item_index(state, maps, id),
-            });
-            state.dropdown_scroll_drag = None;
-            state.dropdown_scroll_press = None;
-        }
-        if let Some(cue) = press.cue() {
-            state.push_ui_sound(SkirmishShellUiSound::combo(cue));
-        }
-        return true;
-    }
-
-    false
 }

@@ -16,11 +16,11 @@ use super::leaf::{self, Pointer};
 use super::service;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
-use crate::ui::lan_shell::LanEditKey;
+use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::ui::wol_buddy::*;
-use vera20k_gui::NodeId;
 use crate::ui::wol_shell::WolMode;
+use vera20k_gui::NodeId;
 use winit::keyboard::KeyCode;
 
 /// `SetTimer(dlg, 0, 1000)`.
@@ -72,7 +72,9 @@ pub(crate) fn status_key(state: &AppState) -> Option<&str> {
 /// Builds and places `0x116`'s widgets; the root.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let layout = layout(state);
-    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| layout.rect_of(id))
+    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| {
+        layout.rect_of(id)
+    })
 }
 
 /// Shows the page in its widgets (under `0x115` too).
@@ -84,7 +86,9 @@ fn present(state: &mut AppState) {
         return;
     };
     if let Some(WolPage::Buddy(dialog)) = frontend.wol.as_ref().map(|visit| &visit.page) {
-        dialog.ui.present(frontend.shell_controller.gui_mut(), root, &unknown);
+        dialog
+            .ui
+            .present(frontend.shell_controller.gui_mut(), root, &unknown);
     }
 }
 
@@ -153,8 +157,8 @@ pub(super) fn open_dialog(state: &mut AppState) {
 pub(super) fn dialog_ended(state: &mut AppState) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.page = WolPage::Lobby;
-        visit.page_received = None;
     }
+    super::page::close_received(state);
     state.frontend.wol_buddy_art = None;
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
 }
@@ -434,10 +438,13 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
         WolBuddyAction::Page => super::page::open_received_modal(state),
         WolBuddyAction::OpenAdd => {
             if let Some(dialog) = page_mut(state) {
-                dialog.ui.add = Some(WolAddBuddy::new());
+                dialog.ui.add = Some(WolAddBuddy);
             }
             // 0x115 runs over 0x116, which keeps its list.
             state.frontend.shell_controller.push(ADD_DIALOG, false);
+            if sync_add(state).is_some() {
+                leaf::focus(state, ADD_DIALOG, Some(NAME));
+            }
         }
         WolBuddyAction::Add(name) => {
             close_add(state);
@@ -487,27 +494,29 @@ fn close_add(state: &mut AppState) {
     controller.ensure_active(DIALOG, false);
 }
 
-/// The `0x115` control under the pointer.
-fn add_control_at(state: &AppState, x: i32, y: i32) -> Option<u16> {
+/// Builds and places `0x115`'s widgets (the box's retail pixels); its
+/// NewEdit keeps its caret in view (`0x00623880`).
+fn sync_add(state: &mut AppState) -> Option<NodeId> {
     let (width, height) = (
         state.renderer.gpu.config.width as i32,
         state.renderer.gpu.config.height as i32,
     );
     let layout = crate::ui::shell::modal::wol_add_buddy_layout(width, height);
-    [(ADD, layout.add), (BACK, layout.back), (NAME, layout.name)]
-        .into_iter()
-        .find_map(|(id, rect)| rect.contains(x, y).then_some(id))
+    leaf::sync(state, ADD_DIALOG, ShellScale::RETAIL, add_spec, |id| {
+        layout.rect_of(id)
+    })
+}
+
+fn add_open(state: &AppState) -> bool {
+    page(state).is_some_and(|dialog| dialog.ui.add.is_some())
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let (x, y) = state.match_state.input.cursor_px();
-    let add_over = add_control_at(state, x, y);
-    if let Some(add) = page_mut(state).and_then(|dialog| dialog.ui.add.as_mut()) {
-        add.buttons.hovered = add_over.filter(|id| matches!(*id, ADD | BACK));
-        state.platform.window.request_redraw();
-        return;
+    if add_open(state) {
+        sync_add(state);
+    } else {
+        sync(state);
     }
-    sync(state);
     leaf::pointer(state, Pointer::Move);
 }
 
@@ -515,38 +524,30 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     if shell_transition::blocks_shell_input(state) {
         return;
     }
-    let (x, y) = state.match_state.input.cursor_px();
-    let add_over = add_control_at(state, x, y);
-    if let Some(add) = page_mut(state).and_then(|dialog| dialog.ui.add.as_mut()) {
-        let mut action = None;
-        if pressed {
-            match add_over {
-                Some(ADD) if !add.add_enabled => {}
-                Some(id @ (ADD | BACK)) => {
-                    add.buttons.press(Some(id));
-                    App::play_main_menu_button_sound(state);
-                }
-                _ => add.buttons.press(None),
+    let at = if pressed { Pointer::Down } else { Pointer::Up };
+    if add_open(state) {
+        sync_add(state);
+        for event in leaf::pointer(state, at) {
+            if let PageEvent::Activated(id) = event
+                && let Some(action) =
+                    WolAddBuddy::activate(&mut state.frontend.shell_controller, id)
+            {
+                apply(state, action);
             }
-        } else {
-            let over = add_over.filter(|id| matches!(*id, ADD | BACK));
-            action = add.buttons.release(over).and_then(|id| add.activate(id));
         }
-        if let Some(action) = action {
-            apply(state, action);
-        }
-        state.platform.window.request_redraw();
         return;
     }
+    let (x, y) = state.match_state.input.cursor_px();
     if sync(state).is_none() {
         return;
     }
     // The observer image 0x75F toggles on a press anywhere on it.
     let image = pressed && layout(state).observer_image.contains(x, y);
-    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    let events = leaf::pointer(state, at);
     if image {
         leaf::play(state, PageCue::Checkbox);
-        if let Some(action) = page_mut(state).and_then(|dialog| dialog.ui.activate(OBSERVER_IMAGE)) {
+        if let Some(action) = page_mut(state).and_then(|dialog| dialog.ui.activate(OBSERVER_IMAGE))
+        {
             apply(state, action);
         }
     }
@@ -600,52 +601,14 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let local = local_nickname(state);
     let names = state.frontend.wol_buddies.names().to_vec();
     let valid = |name: &str| super::buddies::valid_new_buddy(&names, name, &local);
-    let key = match code {
-        Some(KeyCode::Backspace) => Some(LanEditKey::Backspace),
-        Some(KeyCode::Delete) => Some(LanEditKey::Delete),
-        Some(KeyCode::ArrowLeft) => Some(LanEditKey::Left),
-        Some(KeyCode::ArrowRight) => Some(LanEditKey::Right),
-        Some(KeyCode::Home) => Some(LanEditKey::Home),
-        Some(KeyCode::End) => Some(LanEditKey::End),
-        Some(KeyCode::Tab) => Some(LanEditKey::Tab),
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(LanEditKey::Enter),
-        Some(KeyCode::Escape) => return,
-        _ => None,
-    };
-    let Some(add) = page_mut(state).and_then(|dialog| dialog.ui.add.as_mut()) else {
+    let Some(event) = leaf::input_of(code, text).filter(|_| add_open(state)) else {
         return;
     };
-    let action = match key {
-        Some(key) => add.key(key, &valid),
-        None => {
-            add.insert_text(text.unwrap_or_default(), &valid);
-            None
-        }
-    };
-    if let Some(action) = action {
+    if let Some(action) = WolAddBuddy::input(&mut state.frontend.shell_controller, event, &valid) {
         apply(state, action);
     }
-    scroll_add_to_caret(state);
+    sync_add(state);
     state.platform.window.request_redraw();
-}
-
-/// `0x115`'s NewEdit keeps its caret in view: `0x00623880` paints from the
-/// first visible unit. Widths are the box's retail pixels.
-fn scroll_add_to_caret(state: &mut AppState) {
-    let (width, height) = (
-        state.renderer.gpu.config.width as i32,
-        state.renderer.gpu.config.height as i32,
-    );
-    let rect = crate::ui::shell::modal::wol_add_buddy_layout(width, height).name;
-    let font = &state.renderer.bit_font;
-    let Some(WolPage::Buddy(dialog)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page)
-    else {
-        return;
-    };
-    if let Some(add) = dialog.ui.add.as_mut() {
-        add.edit
-            .scroll_to_caret((rect.w - 3).max(0) as u32, |text| font.text_width(text));
-    }
 }
 
 /// `0x116`'s timers (the 1000 ms status refresh and Refresh's 3000 ms
@@ -663,7 +626,11 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         dialog.refresh_at = None;
         dialog.ui.set_enabled(REFRESH, true);
     }
-    let deadlines = [Some(dialog.timer_at), dialog.refresh_at, leaf::poll(state, true)];
+    let deadlines = [
+        Some(dialog.timer_at),
+        dialog.refresh_at,
+        leaf::poll(state, true),
+    ];
     if tick {
         super::buddies::timer(state, now);
     }

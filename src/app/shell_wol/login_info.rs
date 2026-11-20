@@ -36,13 +36,12 @@ impl LoginInfo {
     /// day's games, each by its text key. A count of none is left out, as
     /// vera20k.org's front page leaves it.
     pub(crate) fn counts(&self) -> impl Iterator<Item = (&'static str, u32)> {
-        let stats = self.stats;
-        [
-            ("VERA:PlayersOnline", stats.map(|stats| stats.online)),
-            ("VERA:RecentGames", stats.map(|stats| stats.games_24h)),
-        ]
-        .into_iter()
-        .filter_map(|(key, count)| Some((key, count.filter(|count| *count > 0)?)))
+        let (online, games) = self
+            .stats
+            .map_or((0, 0), |stats| (stats.online, stats.games_24h));
+        [("VERA:PlayersOnline", online), ("VERA:RecentGames", games)]
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
     }
 
     /// The counts as they arrive. Captures read nothing: they set them here.

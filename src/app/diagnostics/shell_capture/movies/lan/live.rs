@@ -981,7 +981,7 @@ impl LiveLanCapture {
                     lobby::key_press(state, Some(KeyCode::Delete), None);
                 }
                 lobby::key_press(state, None, Some(name));
-                if state.frontend.lan.as_ref().context("BB")?.lobby.observer {
+                if state.frontend.multiplayer_shell_runtime.lan_observer() {
                     lobby_click(state, lobby::layout(state).observer_toggle);
                 }
                 self.event(frame, "BB name entered through normal input");
@@ -1007,13 +1007,14 @@ impl LiveLanCapture {
                     // selection handler, which emits the real query packet.
                     let layout = lobby::layout(state);
                     let lobby_state = &state.frontend.lan.as_ref().context("BB")?.lobby;
-                    let geometry = lobby_state.game_list.geometry(
+                    let top = lobby::list_top(state, crate::ui::lan_shell::GAMES);
+                    let geometry = crate::ui::shell::list::ShellListGeometry::new(
                         layout.games,
                         lobby_state.game_count(),
-                        layout.page.scale,
+                        top,
+                        crate::ui::shell::list::ListMetrics::scaled(layout.page.scale),
                     );
-                    let (x, y) =
-                        list_row_point(geometry, index + 1, lobby_state.game_list.top_index);
+                    let (x, y) = list_row_point(geometry, index + 1, top);
                     lobby_click(state, RectPx::new(x, y, 2, 2));
                     lobby_button(state, crate::ui::lan_shell::JOIN)?;
                     self.event(frame, "discovered host selected; real Join request");

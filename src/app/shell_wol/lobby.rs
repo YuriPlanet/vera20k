@@ -30,9 +30,7 @@ use super::service::{self, WolServiceEvent, WolServiceRequest};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::shell_network_setup as setup;
 use crate::app::{App, AppState};
-use crate::ui::lan_shell::{LanChatLine, LanEditKey};
-use crate::ui::main_menu_dialogs::options::LauncherCue;
-use crate::ui::room_limits::RoomLimitsPress;
+use crate::ui::lan_shell::LanChatLine;
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::wol_chat::{self, WolChatFilter, WolChatLine, WolLobbyChatLine};
 use crate::ui::wol_lobby::*;
@@ -1065,7 +1063,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         }
         lobby.shown = true;
         lobby.covered = false;
-        lobby.ui.observer = observer;
+        lobby.ui.set_observer(observer);
         lobby.step = Step::Ready;
         refill_players(state);
         switch_lobby(state);
@@ -1356,7 +1354,7 @@ fn host_changed(state: &mut AppState, name: String, channel: Option<WolChannel>)
         if let (Some(lobby), Some((shown, covered))) = (lobby_mut(state), shown) {
             lobby.shown = shown;
             lobby.covered = covered;
-            lobby.ui.enable_commands(join);
+            lobby.ui.set_commands(true, join, false);
         }
     }
     if let Some(old) = old {
@@ -1472,7 +1470,7 @@ fn show_visit(state: &mut AppState) {
     if let Some(lobby) = lobby_mut(state) {
         lobby.shown = true;
         lobby.covered = false;
-        lobby.ui.enable_commands(join);
+        lobby.ui.set_commands(true, join, false);
     }
     refill_players(state);
     request_games(state);
@@ -1482,7 +1480,7 @@ fn show_visit(state: &mut AppState) {
 /// Whether the selected game row admits Join, as a player or a spectator.
 fn selected_admits(state: &mut AppState) -> bool {
     lobby(state)
-        .and_then(|lobby| lobby.ui.game_list.selected)
+        .and_then(|lobby| lobby.ui.selected_row(GAMES))
         .is_some_and(|row| {
             admit_row(state, row, false, false) || admit_row(state, row, true, false)
         })
@@ -1566,7 +1564,7 @@ fn visit_settles(state: &mut AppState, line: String) {
     if let Some(lobby) = lobby_mut(state) {
         lobby.current = Some(visit.channel);
         lobby.members = visit.members;
-        lobby.ui.enable_commands(join);
+        lobby.ui.set_commands(true, join, false);
     }
     refill_players(state);
     message_line(state, line);
@@ -1760,7 +1758,7 @@ pub(super) fn buddy_dialog_opens(state: &mut AppState) {
         lobby.message = None;
         lobby.step = Step::Ready;
         lobby.covered = false;
-        lobby.ui.popup = None;
+        lobby.ui.close_popup();
         lobby.joining = None;
     }
 }
@@ -1854,7 +1852,12 @@ fn refill_games(state: &mut AppState) {
     let Some(lobby) = lobby(state) else {
         return;
     };
-    let mut rows = game_rows(&lobby.games, sort, lobby.ui.observer, lobby.ui.is_modern());
+    let mut rows = game_rows(
+        &lobby.games,
+        sort,
+        lobby.ui.observer(),
+        lobby.ui.is_modern(),
+    );
     // VERA: the modern list tags a room whose exInfo names a co-op
     // campaign's map with the Cooperative mode's name (MPModesMD.ini).
     let tag = state
@@ -1871,14 +1874,13 @@ fn refill_games(state: &mut AppState) {
     if lobby.ui.is_modern() {
         rows.extend(watch_rows(&lobby.matches, &crate::i18n::tr(WATCH_LIST_TAG)));
     }
-    let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     if let Some(lobby) = lobby_mut(state) {
         lobby.ui.replace_games(rows);
         // VERA: the list is refilled every few seconds, and a pointer resting
         // on a row keeps that row's status help.
         if lobby.ui.popup.is_none() {
-            lobby.ui.hover_games(&layout, x, y);
+            lobby.ui.hover_games(x, y);
         }
     }
 }
@@ -2040,7 +2042,7 @@ fn selected_channel(lobby: &WolLobby) -> Option<WolChannel> {
 /// without skipping crowded lobbies, the join; no lobby closes the runner.
 fn switch_lobby(state: &mut AppState) {
     if let Some(lobby) = lobby_mut(state) {
-        lobby.ui.begin_lobby_switch();
+        lobby.ui.set_commands(false, false, true);
     }
     if !join_picked_lobby(state, false, false) {
         if let Some(lobby) = lobby_mut(state) {
@@ -2282,9 +2284,9 @@ fn join_failed_locally(state: &mut AppState, game: bool) {
     lobby.covered = false;
     lobby.step = Step::Ready;
     if game {
-        lobby.ui.enable_commands(true);
+        lobby.ui.set_commands(true, true, false);
     } else {
-        lobby.ui.lobby_switched(false);
+        lobby.ui.set_commands(true, false, true);
     }
 }
 
@@ -2360,7 +2362,7 @@ pub(crate) fn commit_hide(state: &mut AppState) {
     let deferred = lobby_mut(state).and_then(|lobby| {
         lobby.shown = false;
         lobby.covered = false;
-        lobby.ui.enable_commands(true);
+        lobby.ui.set_commands(true, true, false);
         lobby.deferred.take()
     });
     if let Some(result) = deferred {
@@ -2585,8 +2587,8 @@ fn create_confirmed(
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
-    lobby.ui.popup = None;
-    lobby.ui.observer = observe;
+    lobby.ui.close_popup();
+    lobby.ui.set_observer(observe);
     leave_then_create(state, channel, key, observe, ranked);
 }
 
@@ -2636,7 +2638,7 @@ fn create_ended(state: &mut AppState) {
     if let Some(lobby) = lobby_mut(state) {
         lobby.covered = false;
         lobby.step = Step::Ready;
-        lobby.ui.enable_commands(false);
+        lobby.ui.set_commands(true, false, false);
     }
     state
         .frontend
@@ -2664,7 +2666,7 @@ fn begin_join(state: &mut AppState, row: usize, show: bool) {
     let Some(channel) = selected_channel(lobby) else {
         return;
     };
-    lobby.ui.disable_commands();
+    lobby.ui.set_commands(false, false, false);
     continue_join(state, channel);
 }
 
@@ -2685,7 +2687,7 @@ fn begin_watch(state: &mut AppState, match_id: String) {
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
-    lobby.ui.disable_commands();
+    lobby.ui.set_commands(false, false, false);
     lobby.step = Step::Watching {
         match_id: match_id.clone(),
         request: None,
@@ -2773,7 +2775,7 @@ fn continue_join(state: &mut AppState, channel: WolChannel) {
         // Shell__DrawEmptyBackdrop, then 0xE1.
         if let Some(lobby) = lobby_mut(state) {
             lobby.covered = true;
-            lobby.ui.popup = Some(WolLobbyPopup::password());
+            lobby.ui.open_password();
             lobby.joining = Some(channel);
         }
         state
@@ -2841,13 +2843,13 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
         }
         WolPopupAction::CreateCancelled => {
             if let Some(lobby) = lobby_mut(state) {
-                lobby.ui.popup = None;
+                lobby.ui.close_popup();
             }
             create_ended(state);
         }
         WolPopupAction::PasswordConfirmed(password) => {
             let channel = lobby_mut(state).and_then(|lobby| {
-                lobby.ui.popup = None;
+                lobby.ui.close_popup();
                 lobby.joining.take()
             });
             state
@@ -2864,7 +2866,7 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
         }
         WolPopupAction::PasswordCancelled => {
             if let Some(lobby) = lobby_mut(state) {
-                lobby.ui.popup = None;
+                lobby.ui.close_popup();
                 lobby.joining = None;
             }
             state
@@ -3023,8 +3025,8 @@ pub(super) fn begin_create(state: &mut AppState) {
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
-    lobby.ui.disable_commands();
-    lobby.ui.game_list.selected = None;
+    lobby.ui.set_commands(false, false, false);
+    lobby.ui.select_row(GAMES, None);
     lobby.covered = true;
     // +0x13 starts as [0xAC10C8] == 1. VERA's lobby also offers its room's
     // limits, name, Ranked game and Watching, from the host's last choice.
@@ -3032,7 +3034,7 @@ pub(super) fn begin_create(state: &mut AppState) {
         .ui
         .is_modern()
         .then_some((room, name.as_str(), ranked, watching));
-    lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer, room));
+    lobby.ui.open_create(width, limit, squad, observer, room);
     state
         .frontend
         .shell_controller
@@ -3047,7 +3049,7 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             let Some(lobby) = lobby(state) else {
                 return;
             };
-            let Some(row) = lobby.ui.game_list.selected else {
+            let Some(row) = lobby.ui.selected_row(GAMES) else {
                 return;
             };
             let show = lobby.ui.join_row != Some(row);
@@ -3183,7 +3185,9 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
             BoxThen::CreateFailed => create_ended(state),
             BoxThen::WatchFailed => {
                 if let Some(lobby) = lobby_mut(state) {
-                    lobby.ui.enable_commands(lobby.ui.selected_game().is_some());
+                    lobby
+                        .ui
+                        .set_commands(true, lobby.ui.selected_game().is_some(), false);
                 }
             }
             BoxThen::Resolution { channel } => {
@@ -3400,7 +3404,7 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     }
     let join = selected_admits(state);
     if let Some(lobby) = lobby_mut(state) {
-        lobby.ui.lobby_switched(join);
+        lobby.ui.set_commands(true, join, true);
     }
     refill_lobbies(state);
     refill_players(state);
@@ -4312,10 +4316,13 @@ pub(super) fn page_received(state: &mut AppState, from: WolMember, text: Vec<u16
     App::play_shell_ui_sound_by_id(state, sound.as_deref());
 }
 
-pub(crate) fn update_geometry(state: &mut AppState) {
+/// Puts `0x113`'s children and the open popup's on their layouts, the
+/// lists in range and the edits' carets in view (text widths in the box's
+/// authored pixels).
+pub(crate) fn sync(state: &mut AppState) {
     let layout = layout(state);
-    let create_rects = create_layout(state);
-    let password_rect = password_layout(state).password;
+    let create = create_layout(state);
+    let password = password_layout(state);
     let font = &state.renderer.bit_font;
     let Some(lobby) = state
         .frontend
@@ -4326,40 +4333,17 @@ pub(crate) fn update_geometry(state: &mut AppState) {
         return;
     };
     let ui = &mut lobby.ui;
-    let scale = layout.page.scale;
-    for (list, rect, count) in [
-        (&mut ui.lobby_list, layout.lobbies, ui.lobby_rows.len()),
-        (&mut ui.game_list, layout.games, ui.game_rows.len()),
-        (&mut ui.player_list, layout.players, ui.player_rows.len()),
-        (&mut ui.chat.list, layout.chat_log, ui.chat.lines.len()),
-    ] {
-        list.reconcile_geometry(rect, count, scale);
-    }
-    ui.chat
-        .edit
-        .scroll_to_caret((scale.base_rect(layout.chat).w - 3).max(0) as u32, |text| {
-            font.text_width(text)
-        });
-    if let Some(popup) = ui.popup.as_mut() {
-        // Text widths are in the box's authored pixels.
-        let available =
-            |rect: crate::ui::shell::geom::RectPx| (scale.base_rect(rect).w - 3).max(0) as u32;
-        match &mut popup.kind {
-            WolPopupKind::Create(create) => {
-                create
-                    .password
-                    .scroll_to_caret(available(create_rects.password), |text| {
-                        font.text_width(text)
-                    });
-                if let (Some(name), Some((_, rect))) = (create.name.as_mut(), create_rects.name) {
-                    name.scroll_to_caret(available(rect), |text| font.text_width(text));
-                }
-            }
-            WolPopupKind::Password(edit) => {
-                edit.scroll_to_caret(available(password_rect), |text| font.text_width(text))
-            }
-        }
-    }
+    ui.sync(&layout);
+    let create_popup = ui
+        .popup
+        .as_ref()
+        .is_some_and(|popup| popup.create.is_some());
+    ui.sync_popup(|id| match create_popup {
+        true => create_rect(&create, id),
+        false => password_rect(&password, id),
+    });
+    ui.scroll_edits(&|text| font.text_width(text));
+    super::player_card::sync(state);
 }
 
 /// The chat NewEdit while it takes keys, for the input method
@@ -4378,7 +4362,23 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .map(|_| layout(state).chat)
 }
 
+/// What the lobby's widgets did: their cues, a player card opened and the
+/// dialog's actions, in order.
+fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
+    for effect in effects {
+        match effect {
+            WolLobbyEffect::Cue(cue) => super::leaf::play(state, cue),
+            WolLobbyEffect::Card(name) => super::player_card::opened(state, &name),
+            WolLobbyEffect::CardButton(id) => super::player_card::button(state, id),
+            WolLobbyEffect::Action(action) => dispatch(state, action),
+        }
+    }
+    state.frontend.shell_status_line.repaint();
+    state.platform.window.request_redraw();
+}
+
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
+    use vera20k_gui::Key;
     if shell_transition::blocks_shell_input(state)
         || !lobby(state).is_some_and(WolLobby::interactive)
         || super::player_card::key_press(state, code)
@@ -4386,83 +4386,24 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         return;
     }
     let key = match code {
-        Some(KeyCode::Backspace) => Some(LanEditKey::Backspace),
-        Some(KeyCode::Delete) => Some(LanEditKey::Delete),
-        Some(KeyCode::ArrowLeft) => Some(LanEditKey::Left),
-        Some(KeyCode::ArrowRight) => Some(LanEditKey::Right),
-        Some(KeyCode::Home) => Some(LanEditKey::Home),
-        Some(KeyCode::End) => Some(LanEditKey::End),
-        Some(KeyCode::Tab) => Some(LanEditKey::Tab),
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(LanEditKey::Enter),
-        // The NewEdits consume Escape; 0x113 has no IDCANCEL case.
-        Some(KeyCode::Escape) => return,
+        Some(KeyCode::Backspace) => Some(Key::Backspace),
+        Some(KeyCode::Delete) => Some(Key::Delete),
+        Some(KeyCode::ArrowLeft) => Some(Key::Left),
+        Some(KeyCode::ArrowRight) => Some(Key::Right),
+        Some(KeyCode::Home) => Some(Key::Home),
+        Some(KeyCode::End) => Some(Key::End),
+        Some(KeyCode::Tab) => Some(Key::Tab),
+        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(Key::Enter),
+        Some(KeyCode::Escape) => Some(Key::Escape),
         _ => None,
     };
-    let lobby = lobby_mut(state).expect("checked");
-    let action = match key {
-        Some(key) => lobby.ui.edit_key(key),
-        None => {
-            lobby.ui.insert_text(text.unwrap_or_default());
-            None
-        }
-    };
-    update_geometry(state);
-    if let Some(action) = action {
-        dispatch(state, action);
-    }
-    state.platform.window.request_redraw();
-}
-
-/// The popup control under the pointer.
-fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
-    let (x, y) = state.match_state.input.cursor_px();
-    let controls = match popup.kind {
-        WolPopupKind::Create(_) => {
-            let layout = create_layout(state);
-            [
-                Some((POPUP_OK, layout.ok)),
-                Some((POPUP_CANCEL, layout.cancel)),
-                layout.clan.map(|rect| (CREATE_CLAN, rect)),
-                Some((CREATE_LIMIT, layout.limit)),
-                layout.observe.map(|rect| (CREATE_OBSERVE, rect)),
-                Some((POPUP_PASSWORD, layout.password)),
-                layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
-                layout.ranked.map(|rect| (CREATE_RANKED, rect)),
-                layout.watching.map(|rect| (CREATE_WATCHING, rect)),
-            ]
-            .into_iter()
-            .flatten()
-            .map(|(id, rect)| {
-                if layout.name.is_some() && !matches!(id, POPUP_OK | POPUP_CANCEL) {
-                    let label = layout.setting_label(rect);
-                    (
-                        id,
-                        crate::ui::shell::geom::RectPx::new(
-                            label.x,
-                            rect.y,
-                            rect.x + rect.w - label.x,
-                            rect.h,
-                        ),
-                    )
-                } else {
-                    (id, rect)
-                }
-            })
-            .collect()
-        }
-        WolPopupKind::Password(_) => {
-            let layout = password_layout(state);
-            vec![
-                (POPUP_OK, layout.ok),
-                (POPUP_CANCEL, layout.cancel),
-                (POPUP_PASSWORD, layout.password),
-            ]
-        }
-    };
-    controls
-        .into_iter()
-        .find(|(_, rect)| rect.contains(x, y))
-        .map(|(id, _)| id)
+    sync(state);
+    let effects = lobby_mut(state)
+        .expect("checked")
+        .ui
+        .key(key, text.filter(|_| key.is_none()));
+    sync(state);
+    apply(state, effects);
 }
 
 /// The popups follow the lobby page's shell mapping, so they grow with it.
@@ -4487,63 +4428,36 @@ pub(crate) fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCre
     )
 }
 
-fn password_layout(state: &AppState) -> crate::ui::shell::modal::WolChannelPasswordLayout {
+pub(crate) fn password_layout(
+    state: &AppState,
+) -> crate::ui::shell::modal::WolChannelPasswordLayout {
     let (width, height) = popup_screen(state);
     crate::ui::shell::modal::wol_channel_password_layout_on(width, height, popup_scale(state))
 }
 
-/// Where VERA's online Create Game has its room's limits.
-fn popup_room_layout(state: &AppState) -> Option<crate::ui::room_limits::RoomLimitsLayout> {
-    create_layout(state).room
+/// The pointer moved, pressed or released over the popup, else the open
+/// player card, else `0x113`'s children.
+fn pointer(state: &mut AppState, press: Option<bool>) {
+    let popup = lobby(state).is_some_and(|lobby| lobby.ui.popup.is_some());
+    let card = !popup
+        && match press {
+            None => super::player_card::cursor_moved(state),
+            Some(pressed) => super::player_card::mouse(state, pressed),
+        };
+    if card {
+        return;
+    }
+    sync(state);
+    let (x, y) = state.match_state.input.cursor_px();
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    let effects = lobby.ui.pointer(x, y, press);
+    apply(state, effects);
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let popup_over = lobby(state)
-        .and_then(|lobby| lobby.ui.popup.as_ref())
-        .map(|popup| popup_control(state, popup));
-    let room = popup_room_layout(state);
-    let popup_scale = popup_scale(state);
-    let Some(lobby) = lobby_mut(state) else {
-        return;
-    };
-    if let (Some(over), Some(popup)) = (popup_over, lobby.ui.popup.as_mut()) {
-        popup.buttons.hovered = over;
-        if let (Some(picker), Some(room)) = (popup.room_mut(), room) {
-            picker.drag(&room, popup_scale, x);
-        }
-        state.platform.window.request_redraw();
-        return;
-    }
-    if super::player_card::cursor_moved(state) {
-        return;
-    }
-    let Some(lobby) = lobby_mut(state) else {
-        return;
-    };
-    let ui = &mut lobby.ui;
-    ui.buttons.hovered = layout.control_at(x, y);
-    let scale = layout.page.scale;
-    for (list, rect, count) in [
-        (&mut ui.lobby_list, layout.lobbies, ui.lobby_rows.len()),
-        (&mut ui.game_list, layout.games, ui.game_rows.len()),
-        (&mut ui.player_list, layout.players, ui.player_rows.len()),
-        (&mut ui.chat.list, layout.chat_log, ui.chat.lines.len()),
-    ] {
-        let geometry = list.geometry(rect, count, scale);
-        list.hot_row = geometry.row_at(count, list.top_index, x, y);
-        list.scroll
-            .pointer_moved(geometry, &mut list.top_index, x, y);
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
-}
-
-enum Press {
-    Nothing,
-    Button,
-    Cue(LauncherCue),
+    pointer(state, None);
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
@@ -4552,216 +4466,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     {
         return;
     }
-    update_geometry(state);
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let scale = layout.page.scale;
-    if let Some(popup) = lobby(state).and_then(|lobby| lobby.ui.popup.clone()) {
-        let over = popup_control(state, &popup);
-        let rects = create_layout(state);
-        let lobby = lobby_mut(state).expect("checked");
-        let popup = lobby.ui.popup.as_mut().expect("checked");
-        if !pressed {
-            if let Some(picker) = popup.room_mut() {
-                picker.release();
-            }
-            let action = popup
-                .buttons
-                .release(over)
-                .and_then(|control| popup.activate(control));
-            if let Some(action) = action {
-                dispatch(state, WolLobbyAction::Popup(action));
-            }
-            state.platform.window.request_redraw();
-            return;
-        }
-        let picked = popup
-            .room_mut()
-            .zip(rects.room)
-            .map(|(picker, room)| picker.press(&room, scale, x, y));
-        let press = match (picked, over) {
-            (Some(RoomLimitsPress::Players), _) => Press::Nothing,
-            (Some(RoomLimitsPress::Spectators), _) => Press::Cue(LauncherCue::Checkbox),
-            (
-                _,
-                Some(
-                    control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE | CREATE_RANKED
-                    | CREATE_WATCHING),
-                ),
-            ) => {
-                let window = match control {
-                    CREATE_CLAN => rects.clan,
-                    CREATE_LIMIT => Some(rects.limit),
-                    CREATE_RANKED => rects.ranked,
-                    CREATE_WATCHING => rects.watching,
-                    _ => rects.observe,
-                };
-                if window.is_some_and(|window| {
-                    crate::ui::skirmish_shell::checkbox_icon_rect(window, scale).contains(x, y)
-                }) && popup.toggle(control)
-                {
-                    Press::Cue(LauncherCue::Checkbox)
-                } else {
-                    Press::Nothing
-                }
-            }
-            (_, Some(control @ (POPUP_OK | POPUP_CANCEL))) if popup.enabled(control) => {
-                popup.buttons.press(Some(control));
-                Press::Button
-            }
-            (_, Some(control @ (POPUP_PASSWORD | CREATE_NAME))) => {
-                popup.focus(control);
-                popup.buttons.press(None);
-                Press::Nothing
-            }
-            _ => {
-                popup.buttons.press(None);
-                Press::Nothing
-            }
-        };
-        play(state, press);
-        state.platform.window.request_redraw();
-        return;
-    }
-    if super::player_card::mouse(state, pressed) {
-        return;
-    }
-    let over = layout.control_at(x, y);
-    let lobby = lobby_mut(state).expect("checked");
-    let ui = &mut lobby.ui;
-    if !pressed {
-        for list in [
-            &mut ui.lobby_list,
-            &mut ui.game_list,
-            &mut ui.player_list,
-            &mut ui.chat.list,
-        ] {
-            list.scroll.cancel();
-        }
-        let action = ui
-            .buttons
-            .release(over)
-            .and_then(|control| ui.activate(control));
-        if let Some(action) = action {
-            dispatch(state, action);
-        }
-        state.platform.window.request_redraw();
-        return;
-    }
-    let now = Instant::now();
-    let mut action = None;
-    let mut card = None;
-    let mut press = Press::Nothing;
-    let mut scrolled = false;
-    let enabled = [LOBBIES, GAMES, PLAYERS, CHAT_LOG].map(|id| ui.enabled(id));
-    for (enabled, list, rect, count) in [
-        (
-            enabled[0],
-            &mut ui.lobby_list,
-            layout.lobbies,
-            ui.lobby_rows.len(),
-        ),
-        (
-            enabled[1],
-            &mut ui.game_list,
-            layout.games,
-            ui.game_rows.len(),
-        ),
-        (
-            enabled[2],
-            &mut ui.player_list,
-            layout.players,
-            ui.player_rows.len(),
-        ),
-        (
-            enabled[3],
-            &mut ui.chat.list,
-            layout.chat_log,
-            ui.chat.lines.len(),
-        ),
-    ] {
-        if enabled {
-            let geometry = list.geometry(rect, count, scale);
-            if let Some(part) = geometry.scroll_part_at(x, y) {
-                list.scroll
-                    .press(part, geometry, &mut list.top_index, y, now);
-                scrolled = true;
-                break;
-            }
-        }
-    }
-    if !scrolled {
-        match over {
-            Some(control @ (LOBBIES | GAMES | PLAYERS)) => {
-                let (rect, count, top) = match control {
-                    LOBBIES => (layout.lobbies, ui.lobby_rows.len(), ui.lobby_list.top_index),
-                    GAMES => (layout.games, ui.game_rows.len(), ui.game_list.top_index),
-                    _ => (
-                        layout.players,
-                        ui.player_rows.len(),
-                        ui.player_list.top_index,
-                    ),
-                };
-                let geometry = crate::ui::shell::list::ShellListGeometry::new(
-                    rect,
-                    count,
-                    top,
-                    crate::ui::shell::list::ListMetrics::scaled(scale),
-                );
-                if let Some(row) = geometry.row_at(count, top, x, y) {
-                    action = match control {
-                        LOBBIES => ui.select_lobby(row),
-                        GAMES => {
-                            let double = crate::ui::shell::list::is_double_click(
-                                &mut ui.game_list.last_press,
-                                now,
-                                x,
-                                y,
-                                crate::ui::shell::saved_file_input::host_double_click_limits(),
-                            );
-                            ui.select_game(row, double)
-                        }
-                        _ => {
-                            card = ui.press_player(row);
-                            None
-                        }
-                    };
-                    press = Press::Cue(LauncherCue::GenericClick);
-                }
-            }
-            Some(control @ (OBSERVER_IMAGE | OBSERVER_TOGGLE)) => {
-                let icon_hit = control == OBSERVER_IMAGE
-                    || crate::ui::skirmish_shell::checkbox_icon_rect(layout.observer_toggle, scale)
-                        .contains(x, y);
-                if icon_hit {
-                    action = ui.activate(control);
-                    press = Press::Cue(LauncherCue::Checkbox);
-                }
-            }
-            Some(control) if control != CHAT && control != CHAT_LOG && ui.enabled(control) => {
-                ui.buttons.press(Some(control));
-                press = Press::Button;
-            }
-            _ => ui.buttons.press(None),
-        }
-    }
-    play(state, press);
-    if let Some(name) = card {
-        super::player_card::opened(state, &name);
-    }
-    if let Some(action) = action {
-        dispatch(state, action);
-    }
-    state.platform.window.request_redraw();
-}
-
-fn play(state: &mut AppState, press: Press) {
-    match press {
-        Press::Cue(cue) => App::play_launcher_options_cue(state, cue),
-        // Owner-draw buttons play GUIMainButtonSound on the press.
-        Press::Button => App::play_main_menu_button_sound(state),
-        Press::Nothing => {}
-    }
+    pointer(state, Some(pressed));
 }
 
 /// The runner's timeouts, the wait box reveal, the dialog's timers (only
@@ -4770,8 +4475,6 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     // Every pass polls: build the layout only while a lobby runs.
     lobby(state)?;
     let now = Instant::now();
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
     let mut redraw = false;
     let page_open = super::page::page_dialog(state).is_some();
     let lobby = lobby_mut(state)?;
@@ -4868,18 +4571,10 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         }
         deadlines.push(lobby.games_at);
         deadlines.push(lobby.lobbies_at);
-        let ui = &mut lobby.ui;
-        let scale = layout.page.scale;
-        for (list, rect, count) in [
-            (&mut ui.lobby_list, layout.lobbies, ui.lobby_rows.len()),
-            (&mut ui.game_list, layout.games, ui.game_rows.len()),
-            (&mut ui.player_list, layout.players, ui.player_rows.len()),
-            (&mut ui.chat.list, layout.chat_log, ui.chat.lines.len()),
-        ] {
-            let geometry = list.geometry(rect, count, scale);
-            redraw |= list.scroll.poll(geometry, &mut list.top_index, x, y, now);
-            deadlines.extend(list.scroll.repeat_at());
-        }
+        // A held scroll arrow's repeat.
+        let repeat = lobby.ui.poll();
+        redraw |= repeat.is_some();
+        deadlines.extend(repeat);
     }
     for request in requests {
         self::request(state, request);
@@ -4896,28 +4591,22 @@ pub(crate) fn status_help(state: &AppState) -> String {
     let Some(lobby) = lobby(state) else {
         return String::new();
     };
-    if let Some(popup) = lobby.ui.popup.as_ref() {
-        return match popup.kind {
-            WolPopupKind::Create(_) => popup.buttons.hovered.and_then(create_tooltip_key),
-            WolPopupKind::Password(_) => None,
-        }
-        .map(|key| csf(state, key))
-        .unwrap_or_default();
+    let ui = &lobby.ui;
+    if let Some(popup) = ui.popup.as_ref() {
+        return (popup.create.is_some().then(|| ui.hovered()).flatten())
+            .and_then(create_tooltip_key)
+            .map(|key| csf(state, key))
+            .unwrap_or_default();
     }
     if let Some(help) = super::player_card::status_help(state) {
         return help;
     }
-    let ui = &lobby.ui;
-    match ui.buttons.hovered {
-        Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
+    match ui.hovered() {
+        Some(GAMES) => match ui.hot_game.and_then(|row| ui.game_rows.get(row)) {
             Some(row) if !row.watch => game_help(state, row, ui.is_modern()),
             _ => csf(state, "STT:LobbyListGames"),
         },
-        Some(PLAYERS) => match ui
-            .player_list
-            .hot_row
-            .and_then(|row| ui.player_rows.get(row))
-        {
+        Some(PLAYERS) => match ui.hot_player.and_then(|row| ui.player_rows.get(row)) {
             None => csf(state, "STT:LobbyListUsers"),
             Some(row) if ui.is_modern() => modern_user_help(state, row),
             Some(row) => {

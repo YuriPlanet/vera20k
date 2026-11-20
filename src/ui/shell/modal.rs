@@ -259,6 +259,26 @@ pub struct MessageBoxLayout {
 }
 
 impl MessageBoxLayout {
+    /// The owner-draw button `id`'s rect, `None` when the template has none.
+    pub fn button_rect(&self, id: u16) -> Option<RectPx> {
+        match id {
+            control::OK => Some(self.ok),
+            control::CANCEL => self.cancel,
+            control::THIRD => self.third,
+            _ => None,
+        }
+    }
+
+    /// The box's owner-draw buttons as nodes, OK first; [`Self::button_rect`]
+    /// hides the ones the template leaves out.
+    pub fn nodes() -> vera20k_gui::NodeSpec {
+        use vera20k_gui::{NodeKind, NodeSpec};
+        NodeSpec::new(NodeKind::Dialog).children(
+            [control::OK, control::CANCEL, control::THIRD]
+                .map(|id| NodeSpec::new(NodeKind::Button).id(i32::from(id))),
+        )
+    }
+
     fn scaled(self, scale: geom::ShellScale) -> Self {
         if scale.is_retail() {
             return self;
@@ -372,27 +392,6 @@ pub fn quit_confirm_layout_in(area: RectPx) -> QuitConfirmLayout {
         body: layout.body,
         ok: layout.ok,
         cancel: layout.cancel.expect("Confirm has Cancel"),
-    }
-}
-
-/// The Westwood Online Yes/No box `0x126` (`0x005E2CD0` style 4): its
-/// template places body `0x5B0` (40,40,220,50), Yes 6 (207,155,83,15) and
-/// No 7 (207,175,83,15), the rects of `0x120`'s body, OK and Cancel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct YesNoLayout {
-    pub dialog: RectPx,
-    pub body: RectPx,
-    pub yes: RectPx,
-    pub no: RectPx,
-}
-
-pub fn yes_no_layout(screen_w: i32, screen_h: i32) -> YesNoLayout {
-    let shared = quit_confirm_layout(screen_w, screen_h);
-    YesNoLayout {
-        dialog: shared.dialog,
-        body: shared.body,
-        yes: shared.ok,
-        no: shared.cancel,
     }
 }
 
@@ -832,6 +831,20 @@ pub struct WolPageLayout {
     pub cancel: RectPx,
 }
 
+impl WolPageLayout {
+    /// Where `0xCF`'s control `id` sits.
+    pub fn rect_of(&self, id: u16) -> Option<RectPx> {
+        Some(match id {
+            0x5C1 => self.name,
+            0x540 => self.text,
+            0x5B5 => self.transcript,
+            0x5C2 => self.send,
+            control::CANCEL => self.cancel,
+            _ => return None,
+        })
+    }
+}
+
 pub fn wol_page_layout(screen_w: i32, screen_h: i32) -> WolPageLayout {
     wol_page_layout_in(menu_popup_area(screen_w, screen_h))
 }
@@ -872,6 +885,19 @@ pub struct WolPageReceivedLayout {
     pub back: RectPx,
 }
 
+impl WolPageReceivedLayout {
+    /// Where `0x11E`'s control `id` sits.
+    pub fn rect_of(&self, id: u16) -> Option<RectPx> {
+        Some(match id {
+            0x53F => self.transcript,
+            0x540 => self.reply,
+            0x5C2 => self.send,
+            0x686 => self.back,
+            _ => return None,
+        })
+    }
+}
+
 pub fn wol_page_received_layout(screen_w: i32, screen_h: i32) -> WolPageReceivedLayout {
     wol_page_received_layout_in(menu_popup_area(screen_w, screen_h))
 }
@@ -905,6 +931,18 @@ pub struct WolAddBuddyLayout {
     pub back: RectPx,
     /// The status line `0x695` along the box's foot.
     pub status: RectPx,
+}
+
+impl WolAddBuddyLayout {
+    /// Where `0x115`'s control `id` sits.
+    pub fn rect_of(&self, id: u16) -> Option<RectPx> {
+        Some(match id {
+            0x540 => self.name,
+            0x702 => self.add,
+            0x686 => self.back,
+            _ => return None,
+        })
+    }
 }
 
 pub fn wol_add_buddy_layout(screen_w: i32, screen_h: i32) -> WolAddBuddyLayout {
@@ -1252,9 +1290,12 @@ mod tests {
         assert_eq!(wait.text, RectPx::new(168, 144, 297, 89));
         assert_eq!(wait.check_status, RectPx::new(255, 332, 126, 25));
         assert_eq!(wait.animation, RectPx::new(193, 386, 249, 34));
-        let yes_no = yes_no_layout(800, 600);
+        // The Yes/No box 0x126 (0x005E2CD0 style 4): its template places
+        // body 0x5B0 (40,40,220,50), Yes 6 (207,155,83,15) and No 7
+        // (207,175,83,15), the rects of 0x120's body, OK and Cancel.
+        let yes_no = message_box_layout_on(ModalKind::Confirm, 800, 600, geom::ShellScale::RETAIL);
         let quit = quit_confirm_layout(800, 600);
-        assert_eq!((yes_no.yes, yes_no.no), (quit.ok, quit.cancel));
+        assert_eq!((yes_no.ok, yes_no.cancel), (quit.ok, Some(quit.cancel)));
     }
 
     #[test]

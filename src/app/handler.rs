@@ -1127,13 +1127,16 @@ impl ApplicationHandler for App {
                     if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
                         dialog.reset_interaction();
                     }
-                    if let Some(lan) = state.frontend.lan.as_mut() {
-                        lan.lobby.cancel_pointer();
+                    if state.frontend.lan.is_some() {
+                        state.frontend.shell_controller.gui_mut().cancel_pointer();
                     }
-                    if let Some(crate::app::shell_wol::WolPage::Login(login)) =
-                        state.frontend.wol.as_mut().map(|visit| &mut visit.page)
+                    // The login page's own buttons let go; an account
+                    // popup over it keeps its press.
+                    if let Some(crate::app::shell_wol::WolPage::Login(_)) =
+                        state.frontend.wol.as_ref().map(|visit| &visit.page)
                     {
-                        login.cancel_pointer();
+                        let dialog = crate::ui::wol_login::DIALOG;
+                        state.frontend.shell_controller.drop_pointer_in(dialog);
                     }
                     if let Some(lobby) = state
                         .frontend
@@ -1152,11 +1155,14 @@ impl ApplicationHandler for App {
                     // A shell slider holding the mouse loses it with the
                     // focus. Native keeps its hold bytes until the next move
                     // without the button releases them (`0x0061E3AF`).
-                    let skirmish = &mut state.frontend.skirmish_shell_state;
-                    skirmish.trackbar_hold = None;
-                    if let Some(setup) = skirmish.random_map_setup_modal.as_mut() {
-                        setup.players_hold = None;
-                        setup.advanced_hold = None;
+                    if [
+                        crate::ui::skirmish_shell::page::DIALOG,
+                        crate::ui::skirmish_shell::random_map_page::DIALOG,
+                    ]
+                    .map(Some)
+                    .contains(&state.frontend.shell_controller.top_id())
+                    {
+                        state.frontend.shell_controller.gui_mut().cancel_pointer();
                     }
                     if let Some(campaign) = state.frontend.campaign.as_mut() {
                         campaign.slider_release();

@@ -645,7 +645,10 @@ pub(super) fn click_campaign_continue(state: &mut AppState) -> Result<()> {
     App::handle_campaign_score_mouse_move(state);
     App::handle_campaign_score_mouse_down(state);
     ensure!(
-        state.frontend.shell_controller.pressed() == Some(CONTINUE_BUTTON),
+        crate::ui::shell::menu_page::pressed_id(
+            &state.frontend.shell_controller,
+            crate::ui::campaign_score_shell::CAMPAIGN_SCORE_DIALOG
+        ) == Some(CONTINUE_BUTTON),
         "campaign Continue probe did not press control 0x423"
     );
     App::handle_campaign_score_mouse_up(state);

@@ -11,6 +11,9 @@
 //! components and shows `TXT_APIMISSING` in the message box `0xD0`, then
 //! returns to `0xE2` (-2).
 
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
@@ -19,6 +22,7 @@ use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{
     self, MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
 };
+use crate::ui::shell::modal::{MessageBoxLayout, ModalKind, message_box_layout_on};
 
 pub const WOL_WELCOME_DIALOG: DialogId = DialogId(0x010E);
 pub const QUICK_MATCH: u16 = 0x06E0;
@@ -33,17 +37,12 @@ pub const MAIN_MENU: u16 = 0x0686;
 /// The custom lobby `0x113`'s heading `0x694` (`GUI:CustomMatch`).
 pub const WOL_LOBBY_TITLE_KEY: &str = "GUI:CustomMatch";
 
-const fn button(
-    id: u16,
-    dlu_top: i32,
-    csf_key: &'static str,
-    tooltip_key: &'static str,
-) -> MenuPageButtonSpec {
+const fn button(id: u16, top: i32, key: &'static str, help: &'static str) -> MenuPageButtonSpec {
     MenuPageButtonSpec {
         id,
-        dlu_top,
-        csf_key,
-        tooltip_key,
+        dlu_top: top,
+        csf_key: key,
+        tooltip_key: help,
         result: None,
     }
 }
@@ -51,36 +50,17 @@ const fn button(
 /// RT_DIALOG `0x10E` as a family page: six top buttons (`0x00608CD0`, all
 /// visible) snapped by their template tops, Main Menu on the bottom row
 /// (`0x00609730`). Status help from `0x006040B0`.
+#[rustfmt::skip]
 pub const WOL_WELCOME_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: WOL_WELCOME_DIALOG,
     title_key: "GUI:WOLWelcome",
     stacked: &[
-        button(
-            QUICK_MATCH,
-            116,
-            "GUI:QuickMatch",
-            "STT:WOLWelcomeQuickMatch",
-        ),
+        button(QUICK_MATCH, 116, "GUI:QuickMatch", "STT:WOLWelcomeQuickMatch"),
         button(QUICK_COOP, 144, "GUI:QuickCoop", "STT:QuickCoop"),
-        button(
-            CUSTOM_MATCH,
-            172,
-            "GUI:CustomMatch",
-            "STT:WOLWelcomeCustomMatch",
-        ),
+        button(CUSTOM_MATCH, 172, "GUI:CustomMatch", "STT:WOLWelcomeCustomMatch"),
         button(PLAY_BUDDY, 200, "GUI:PlayBuddy", "STT:WOLBuddy"),
-        button(
-            MY_INFORMATION,
-            228,
-            "GUI:MyInformation",
-            "STT:WOLWelcomeMyInformation",
-        ),
-        button(
-            COMMUNITY,
-            256,
-            "GUI:YuriWebSite",
-            "STT:MainButtonYuriWebSite",
-        ),
+        button(MY_INFORMATION, 228, "GUI:MyInformation", "STT:WOLWelcomeMyInformation"),
+        button(COMMUNITY, 256, "GUI:YuriWebSite", "STT:MainButtonYuriWebSite"),
     ],
     back: MenuPageButtonSpec {
         id: MAIN_MENU,
@@ -160,35 +140,38 @@ pub fn action_for_control(id: u16) -> Option<WolWelcomeAction> {
     })
 }
 
-/// Text alignment of a kind-0 static (`SS_LEFT` / `SS_CENTER` / `SS_RIGHT`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StaticAlign {
-    Left,
-    Center,
-    Right,
-}
-
-/// A text static of the left side: id (status help), caption key, template
-/// rect and alignment. Kind 0: painted at once, without a reveal.
+/// A kind-0 text static of the left side, painted at once without a reveal:
+/// its control id (the id-less captions get [`CAPTION_IDS`] + n), caption
+/// key, template rect, alignment (`SS_LEFT` / `SS_CENTER` / `SS_RIGHT`) and
+/// status help (`0x006040B0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolTextStatic {
-    pub id: Option<u16>,
+    pub id: u16,
     pub key: &'static str,
     pub dlu: (i32, i32, i32, i32),
-    pub align: StaticAlign,
+    pub align: ShellAlign,
+    pub help: Option<&'static str>,
 }
 
+/// The ids given to the captions the template leaves without one.
+pub const CAPTION_IDS: u16 = 0xFF00;
+const L: ShellAlign = ShellAlign::NONE;
+const C: ShellAlign = ShellAlign::H_CENTER;
+const R: ShellAlign = ShellAlign::H_RIGHT;
+
 const fn text(
-    id: Option<u16>,
+    id: u16,
     key: &'static str,
     dlu: (i32, i32, i32, i32),
-    align: StaticAlign,
+    align: ShellAlign,
+    help: Option<&'static str>,
 ) -> WolTextStatic {
     WolTextStatic {
         id,
         key,
         dlu,
         align,
+        help,
     }
 }
 
@@ -196,124 +179,60 @@ const fn text(
 /// With a nickname, init fills the heading `0x6EF`, the five values and
 /// `0x797` from the persona (`0x007989AA` -> `0x0077A9F0`); without one the
 /// values keep `GUI:UnknownStats` and `0x6EF` and `0x797` stay empty.
+#[rustfmt::skip]
 pub const WOL_TEXT_STATICS: [WolTextStatic; 20] = [
     // The persona heading: centred (`0x50020001`), empty caption.
-    text(Some(0x06EF), "", (86, 41, 254, 12), StaticAlign::Center),
-    text(
-        None,
-        "GUI:IconGlossary",
-        (60, 167, 308, 13),
-        StaticAlign::Center,
-    ),
-    text(
-        None,
-        "GUI:LadderWins",
-        (87, 63, 115, 12),
-        StaticAlign::Right,
-    ),
-    text(
-        None,
-        "GUI:LadderLosses",
-        (87, 79, 115, 12),
-        StaticAlign::Right,
-    ),
-    text(
-        None,
-        "GUI:Disconnects",
-        (87, 95, 115, 12),
-        StaticAlign::Right,
-    ),
-    text(
-        None,
-        "GUI:LadderRank",
-        (87, 111, 115, 12),
-        StaticAlign::Right,
-    ),
-    text(
-        None,
-        "GUI:LadderPoints",
-        (87, 127, 115, 12),
-        StaticAlign::Right,
-    ),
-    text(
-        Some(0x06F0),
-        "GUI:UnknownStats",
-        (214, 63, 110, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x06F1),
-        "GUI:UnknownStats",
-        (214, 79, 110, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x0701),
-        "GUI:UnknownStats",
-        (214, 95, 110, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x06F4),
-        "GUI:UnknownStats",
-        (214, 111, 110, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x06F5),
-        "GUI:UnknownStats",
-        (214, 127, 110, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x0797),
-        "GUI:Blank",
-        (95, 143, 229, 12),
-        StaticAlign::Center,
-    ),
-    text(
-        Some(0x074C),
-        "GUI:NormalGameIconDesc",
-        (89, 200, 257, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x074E),
-        "GUI:ClanGameIconDesc",
-        (89, 215, 257, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x074F),
-        "GUI:ResolutionLimitIconDesc",
-        (89, 230, 257, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x0750),
-        "GUI:ObserverAllowedIconDesc",
-        (89, 245, 257, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        Some(0x0753),
-        "GUI:PasswordIconDesc",
-        (89, 260, 257, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        None,
-        "GUI:LatencyIconDesc",
-        (103, 275, 243, 12),
-        StaticAlign::Left,
-    ),
-    text(
-        None,
-        "GUI:BadgesOfHonor",
-        (113, 290, 221, 12),
-        StaticAlign::Left,
-    ),
+    text(0x06EF, "", (86, 41, 254, 12), C, None),
+    text(CAPTION_IDS, "GUI:IconGlossary", (60, 167, 308, 13), C, None),
+    text(CAPTION_IDS + 1, "GUI:LadderWins", (87, 63, 115, 12), R, None),
+    text(CAPTION_IDS + 2, "GUI:LadderLosses", (87, 79, 115, 12), R, None),
+    text(CAPTION_IDS + 3, "GUI:Disconnects", (87, 95, 115, 12), R, None),
+    text(CAPTION_IDS + 4, "GUI:LadderRank", (87, 111, 115, 12), R, None),
+    text(CAPTION_IDS + 5, "GUI:LadderPoints", (87, 127, 115, 12), R, None),
+    text(0x06F0, "GUI:UnknownStats", (214, 63, 110, 12), L, Some("STT:WOLMyInformationWins")),
+    text(0x06F1, "GUI:UnknownStats", (214, 79, 110, 12), L, Some("STT:WOLMyInformationLosses")),
+    text(0x0701, "GUI:UnknownStats", (214, 95, 110, 12), L, Some("STT:WOLMyInformationDisconnects")),
+    text(0x06F4, "GUI:UnknownStats", (214, 111, 110, 12), L, Some("STT:WOLMyInformationRank")),
+    text(0x06F5, "GUI:UnknownStats", (214, 127, 110, 12), L, Some("STT:WOLMyInformationPoints")),
+    text(0x0797, "GUI:Blank", (95, 143, 229, 12), C, Some("STT:WelcomeUpdate")),
+    text(0x074C, "GUI:NormalGameIconDesc", (89, 200, 257, 12), L, None),
+    text(0x074E, "GUI:ClanGameIconDesc", (89, 215, 257, 12), L, None),
+    text(0x074F, "GUI:ResolutionLimitIconDesc", (89, 230, 257, 12), L, None),
+    text(0x0750, "GUI:ObserverAllowedIconDesc", (89, 245, 257, 12), L, None),
+    text(0x0753, "GUI:PasswordIconDesc", (89, 260, 257, 12), L, None),
+    text(CAPTION_IDS + 6, "GUI:LatencyIconDesc", (103, 275, 243, 12), L, None),
+    text(CAPTION_IDS + 7, "GUI:BadgesOfHonor", (113, 290, 221, 12), L, None),
 ];
+
+/// `0x10E`'s widgets: the buttons in Z-order with their status help, then
+/// the statics (before the group boxes in the template, so hit first; only
+/// the stats values and `0x797` have help). `filled` holds the persona
+/// texts init wrote, by control id; the rest keep their template caption.
+pub fn spec(filled: &[(u16, String)]) -> NodeSpec {
+    let buttons = WOL_BUTTON_Z_ORDER
+        .iter()
+        .filter_map(|id| WOL_WELCOME_PAGE.button(*id));
+    let button = |b: &MenuPageButtonSpec| button_node(b.id).tooltip(b.tooltip_key);
+    let texts = WOL_TEXT_STATICS.iter().map(|text| {
+        let node = NodeSpec::new(NodeKind::Text)
+            .id(text.id.into())
+            .with(Prop::Align, Value::Int(text.align.0.into()));
+        let node = match text.help {
+            Some(help) => node.tooltip(help),
+            None => node,
+        };
+        match filled.iter().find(|(id, _)| *id == text.id) {
+            Some((_, value)) => node.with(Prop::Text, Value::Text(value.clone())),
+            // An empty template caption is no label: the persona heading
+            // stays blank without a nickname.
+            None if text.key.is_empty() => node,
+            None => node.label(text.key),
+        }
+    });
+    NodeSpec::new(NodeKind::Dialog)
+        .children(buttons.map(button))
+        .children(texts)
+}
 
 /// A kind-2 image static the proc's `0x497` sets (`0x00603D30`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -329,6 +248,7 @@ const fn icon(id: u16, dlu: (i32, i32, i32, i32), file: &'static str) -> WolIcon
 
 /// The glossary icons: template rect and PCX. `0x79F` is shifted one pixel
 /// right by `0x0060C002`.
+#[rustfmt::skip]
 pub const WOL_ICONS: [WolIcon; 13] = [
     icon(0x0746, (67, 200, 18, 12), "gt18.pcx"),
     icon(0x0748, (67, 215, 18, 12), "wolclan.pcx"),
@@ -344,19 +264,6 @@ pub const WOL_ICONS: [WolIcon; 13] = [
     icon(0x07A1, (84, 290, 12, 12), "cooperat.pcx"),
     icon(0x07A2, (96, 290, 12, 12), "comchief.pcx"),
 ];
-
-/// Status help of the stats values and `0x797` (`0x006040B0`).
-fn static_help(id: u16) -> Option<&'static str> {
-    Some(match id {
-        0x06F0 => "STT:WOLMyInformationWins",
-        0x06F1 => "STT:WOLMyInformationLosses",
-        0x0701 => "STT:WOLMyInformationDisconnects",
-        0x06F4 => "STT:WOLMyInformationRank",
-        0x06F5 => "STT:WOLMyInformationPoints",
-        0x0797 => "STT:WelcomeUpdate",
-        _ => return None,
-    })
-}
 
 /// The two group boxes (`BS_GROUPBOX`): ladder stats and icon glossary.
 pub const WOL_GROUP_BOXES: [(i32, i32, i32, i32); 2] = [(81, 52, 255, 106), (61, 186, 289, 126)];
@@ -378,39 +285,9 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
     // The heading template is 108x11 DLU here (the family's is 108x10): the
     // relayout keeps the family place and the window is one row taller.
     page.title.h = dlu_rect(423, 4, 108, 11).h + 1;
-    let status_help = status_line_rect(
-        RectPx::new(2, 355, 316, 12),
-        screen_w as i32,
-        screen_h as i32,
-    );
-    let texts = WOL_TEXT_STATICS
-        .iter()
-        .map(|text| {
-            let (x, y, w, h) = text.dlu;
-            (*text, child_window(x, y, w, h))
-        })
-        .collect();
-    let icons = WOL_ICONS
-        .iter()
-        .map(|icon| {
-            let (x, y, w, h) = icon.dlu;
-            let mut window = child_window(x, y, w, h);
-            if icon.id == 0x079F {
-                window.x += 1;
-            }
-            (icon.file, window)
-        })
-        .collect();
-    WolWelcomeLayout {
-        page,
-        status_help,
-        texts,
-        icons,
-        group_boxes: WOL_GROUP_BOXES
-            .into_iter()
-            .map(|(x, y, w, h)| child_window(x, y, w, h))
-            .collect(),
-    }
+    let template = RectPx::new(2, 355, 316, 12);
+    let status_help = status_line_rect(template, screen_w as i32, screen_h as i32);
+    with_children(page, status_help, ShellScale::RETAIL)
 }
 
 /// The responsive variant of [`compute_layout`]: the verified 800x600 `0x10E`
@@ -422,24 +299,26 @@ pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayo
     // The heading override is authored 11 DLU tall, so it stretches from the
     // overridden base rect rather than the family's 10.
     page.title = scale.scale_rect(base.page.title);
+    with_children(page, scale.scale_rect(base.status_help), scale)
+}
+
+/// The left-side children at their template places, scaled with the page.
+fn with_children(page: MenuPageLayout, status_help: RectPx, scale: ShellScale) -> WolWelcomeLayout {
+    let px = |(x, y, w, h)| scale.scale_rect(child_window(x, y, w, h));
+    let icon = |icon: &WolIcon| {
+        let mut window = child_window(icon.dlu.0, icon.dlu.1, icon.dlu.2, icon.dlu.3);
+        window.x += i32::from(icon.id == 0x079F);
+        (icon.file, scale.scale_rect(window))
+    };
     WolWelcomeLayout {
         page,
-        status_help: scale.scale_rect(base.status_help),
-        texts: base
-            .texts
+        status_help,
+        texts: WOL_TEXT_STATICS
             .iter()
-            .map(|(text, window)| (*text, scale.scale_rect(*window)))
+            .map(|text| (*text, px(text.dlu)))
             .collect(),
-        icons: base
-            .icons
-            .iter()
-            .map(|(file, window)| (*file, scale.scale_rect(*window)))
-            .collect(),
-        group_boxes: base
-            .group_boxes
-            .into_iter()
-            .map(|window| scale.scale_rect(window))
-            .collect(),
+        icons: WOL_ICONS.iter().map(icon).collect(),
+        group_boxes: WOL_GROUP_BOXES.into_iter().map(px).collect(),
     }
 }
 
@@ -448,60 +327,55 @@ impl WolWelcomeLayout {
         &WOL_WELCOME_PAGE
     }
 
-    /// The page's buttons in hit-test order.
-    pub fn buttons_in_z_order(&self) -> Vec<MenuPageButtonRect> {
-        WOL_BUTTON_Z_ORDER
+    /// Where control `id` of [`spec`] sits.
+    pub fn rect_of(&self, id: u16) -> Option<RectPx> {
+        let text = self.texts.iter().find(|(text, _)| text.id == id);
+        self.page.button_rect(id).or(text.map(|(_, rect)| *rect))
+    }
+
+    /// The buttons whose faces show, in Z-order. Siblings do not clip each
+    /// other and paint down the Z-order, so where two share a row (Community
+    /// and Main Menu at 640x480) the later one covers the earlier, unless the
+    /// earlier is pressed and repaints alone (inferred from Win32 paint
+    /// order; uncaptured).
+    pub fn painted_buttons(&self, pressed: Option<u16>) -> Vec<MenuPageButtonRect> {
+        let order: Vec<MenuPageButtonRect> = WOL_BUTTON_Z_ORDER
             .iter()
             .filter_map(|id| self.page.buttons.iter().find(|button| button.id == *id))
             .copied()
-            .collect()
-    }
-
-    /// The buttons whose faces show. Siblings do not clip each other and
-    /// paint down the Z-order, so where two share a row (Community and Main
-    /// Menu at 640x480) the later one covers the earlier, unless the earlier
-    /// is pressed and repaints alone (inferred from Win32 paint order;
-    /// uncaptured).
-    pub fn painted_buttons(&self, pressed: Option<u16>) -> Vec<MenuPageButtonRect> {
-        let order = self.buttons_in_z_order();
+            .collect();
         let shows = |index: usize, button: &MenuPageButtonRect| {
-            if pressed == Some(button.id) {
-                return true;
-            }
-            let row_pressed = order
-                .iter()
-                .any(|other| other.rect == button.rect && pressed == Some(other.id));
-            !row_pressed
-                && !order[index + 1..]
+            let row = |other: &MenuPageButtonRect| other.rect == button.rect;
+            pressed == Some(button.id)
+                || (!order
                     .iter()
-                    .any(|other| other.rect == button.rect)
+                    .any(|other| row(other) && pressed == Some(other.id))
+                    && !order[index + 1..].iter().any(row))
         };
-        order
+        let shown = order
             .iter()
             .enumerate()
-            .filter(|(index, button)| shows(*index, button))
-            .map(|(_, button)| *button)
-            .collect()
+            .filter(|(index, button)| shows(*index, button));
+        shown.map(|(_, button)| *button).collect()
     }
+}
 
-    /// Status help of the child under `(x, y)`: the buttons' keys, then the
-    /// stats values and `0x797`; other children have none. The statics come
-    /// before the group boxes in the template, so they are hit first.
-    pub fn status_help_key(&self, x: i32, y: i32) -> Option<&'static str> {
-        if let Some(button) = self
-            .buttons_in_z_order()
-            .into_iter()
-            .find(|button| button.rect.contains(x, y))
-        {
-            return WOL_WELCOME_PAGE
-                .button(button.id)
-                .map(|spec| spec.tooltip_key);
-        }
-        self.texts
-            .iter()
-            .find(|(_, rect)| rect.contains(x, y))
-            .and_then(|(text, _)| text.id.and_then(static_help))
-    }
+/// A box as it paints and takes the pointer: its window, the body text with
+/// its rect and alignment, and its owner-draw buttons with their captions.
+pub struct WolBoxParts<'a> {
+    pub dialog: RectPx,
+    pub body: (&'a str, RectPx, ShellAlign),
+    pub buttons: Vec<(u16, RectPx, &'a str)>,
+}
+
+/// Every button a box can have, each placed (or hidden) by its parts.
+pub fn box_spec() -> NodeSpec {
+    let ids = [BOX_OK, BOX_YES, BOX_NO, WAIT_DISCONNECT, WAIT_CHECK_STATUS];
+    NodeSpec::new(NodeKind::Dialog).children(ids.map(button_node))
+}
+
+fn button_node(id: u16) -> NodeSpec {
+    NodeSpec::new(NodeKind::Button).id(id.into())
 }
 
 /// A WOL message box from `0x005E2CD0`, modal (mode 2, no slide) over the
@@ -522,13 +396,7 @@ pub enum WolBoxButtons {
 
 impl WolMessageBox {
     /// WOL__MessageBox (0x005E2CD0)'s D0/126 share the CE/120 control rectangles.
-    pub fn layout(
-        &self,
-        width: i32,
-        height: i32,
-        scale: ShellScale,
-    ) -> super::shell::modal::MessageBoxLayout {
-        use super::shell::modal::{ModalKind, message_box_layout_on};
+    pub fn layout(&self, width: i32, height: i32, scale: ShellScale) -> MessageBoxLayout {
         let kind = match self.buttons {
             WolBoxButtons::Ok(_) => ModalKind::BodyOk,
             WolBoxButtons::YesNo { .. } => ModalKind::Confirm,
@@ -541,6 +409,24 @@ impl WolMessageBox {
             WolBoxButtons::Ok(_) => 0x00D0,
             WolBoxButtons::YesNo { .. } => 0x0126,
         })
+    }
+
+    /// The body (left aligned) and OK, or Yes and No.
+    pub fn parts(&self, width: i32, height: i32, scale: ShellScale) -> WolBoxParts<'_> {
+        let layout = self.layout(width, height, scale);
+        let buttons = match &self.buttons {
+            WolBoxButtons::Ok(ok) => vec![(BOX_OK, layout.ok, ok.as_str())],
+            WolBoxButtons::YesNo { yes, no } => vec![
+                (BOX_YES, layout.ok, yes.as_str()),
+                (BOX_NO, layout.cancel.expect("Yes/No has No"), no.as_str()),
+            ],
+        };
+        let body = (self.body.as_str(), layout.body, ShellAlign::NONE);
+        WolBoxParts {
+            dialog: layout.dialog,
+            body,
+            buttons,
+        }
     }
 }
 
@@ -581,6 +467,23 @@ impl WolWaitBox {
             return true;
         }
         false
+    }
+
+    /// The text (`0x5B2` is SS_CENTER), Disconnect and WOL Check Status.
+    pub fn parts(&self, width: i32, height: i32, scale: ShellScale) -> WolBoxParts<'_> {
+        let layout = super::shell::modal::wait_box_layout_on(width, height, scale);
+        WolBoxParts {
+            dialog: layout.dialog,
+            body: (&self.text, layout.text, ShellAlign::H_CENTER),
+            buttons: vec![
+                (WAIT_DISCONNECT, layout.disconnect, self.disconnect.as_str()),
+                (
+                    WAIT_CHECK_STATUS,
+                    layout.check_status,
+                    self.check_status.as_str(),
+                ),
+            ],
+        }
     }
 }
 
@@ -806,24 +709,51 @@ mod tests {
         assert_eq!(scaled.icons.len(), base.icons.len());
     }
 
+    /// The control under `(x, y)` once the page's widgets are on the
+    /// layout, and the status help it writes.
+    fn hover(layout: &WolWelcomeLayout, x: i32, y: i32) -> (Option<u16>, Option<String>) {
+        use crate::ui::shell::page;
+        use vera20k_gui::{DialogKind, Gui, InputEvent};
+        let mut gui = Gui::new(64);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        gui.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        page::ensure_built(&mut gui, root, || spec(&[]));
+        page::sync_rects(&mut gui, root, |id| layout.rect_of(id));
+        gui.input(InputEvent::PointerMove { x, y }, 0);
+        let hovered = gui.hovered();
+        let id = hovered.and_then(|node| gui.id_of(node)).map(|id| id as u16);
+        (id, page::hovered_help(&gui, hovered))
+    }
+
     #[test]
     fn status_help_covers_buttons_and_stats_values() {
         let layout = compute_layout(800, 600);
-        assert_eq!(
-            layout.status_help_key(720, 220),
-            Some("STT:WOLWelcomeQuickMatch")
+        let help = |x, y| hover(&layout, x, y).1;
+        assert_eq!(help(720, 220).as_deref(), Some("STT:WOLWelcomeQuickMatch"));
+        assert_eq!(help(720, 556).as_deref(), Some("STT:WOLWelcomeBack"));
+        assert_eq!(help(330, 110).as_deref(), Some("STT:WOLMyInformationWins"));
+        assert_eq!(help(200, 110), None, "the label has no id");
+        assert_eq!(help(400, 300), None);
+    }
+
+    #[test]
+    fn init_fills_the_persona_texts_over_the_template_captions() {
+        let node = |filled: &[(u16, String)], id: i32| {
+            let spec = spec(filled);
+            let props = |n: &NodeSpec| n.props.contains(&(Prop::Id, Value::Int(id)));
+            spec.children.into_iter().find(|n| props(n)).unwrap().props
+        };
+        let wins = node(&[(0x06F0, "17".into())], 0x06F0);
+        assert!(wins.contains(&(Prop::Text, Value::Text("17".into()))));
+        assert!(!wins.iter().any(|(prop, _)| *prop == Prop::Label));
+        let unknown = node(&[], 0x06F0);
+        assert!(unknown.contains(&(Prop::Label, Value::Text("GUI:UnknownStats".into()))));
+        // The heading's empty template caption is no label.
+        assert!(
+            !node(&[], 0x06EF)
+                .iter()
+                .any(|(prop, _)| *prop == Prop::Label)
         );
-        assert_eq!(layout.status_help_key(720, 556), Some("STT:WOLWelcomeBack"));
-        assert_eq!(
-            layout.status_help_key(330, 110),
-            Some("STT:WOLMyInformationWins")
-        );
-        assert_eq!(
-            layout.status_help_key(200, 110),
-            None,
-            "the label has no id"
-        );
-        assert_eq!(layout.status_help_key(400, 300), None);
     }
 
     #[test]
@@ -831,12 +761,8 @@ mod tests {
         let layout = compute_layout(640, 480);
         let community = layout.page.button_rect(COMMUNITY).unwrap();
         assert_eq!(layout.page.button_rect(MAIN_MENU), Some(community));
-        let first = layout
-            .buttons_in_z_order()
-            .into_iter()
-            .find(|button| button.rect.contains(community.x + 5, community.y + 5))
-            .unwrap();
-        assert_eq!(first.id, MAIN_MENU);
+        let first = hover(&layout, community.x + 5, community.y + 5).0;
+        assert_eq!(first, Some(MAIN_MENU));
         // One face shows on the shared row: Community's, painted later, or
         // a pressed Main Menu's.
         let shown = |pressed| -> Vec<u16> {

@@ -30,10 +30,7 @@ use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::geom::{RectPx, ShellScale, centred_in_window};
 use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;
-use crate::ui::wol_shell::{
-    BOX_NO, BOX_OK, BOX_YES, StaticAlign, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WOL_LOBBY_TITLE_KEY,
-    WolBoxButtons,
-};
+use crate::ui::wol_shell::{WOL_LOBBY_TITLE_KEY, WOL_WELCOME_DIALOG, WolBoxParts};
 
 /// Icon and group-box children sit over the background, under the text.
 const CHILD_DEPTH: f32 = CHROME_DEPTH - 0.00002;
@@ -44,14 +41,6 @@ const BOX_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDepths {
     text: 0.00040,
 };
 
-fn align(value: StaticAlign) -> ShellAlign {
-    match value {
-        StaticAlign::Left => ShellAlign::NONE,
-        StaticAlign::Center => ShellAlign::H_CENTER,
-        StaticAlign::Right => ShellAlign::H_RIGHT,
-    }
-}
-
 /// A box `0xD0` or `0x126` from `0x005E2CD0`: its dialog, buttons with
 /// their pushed state, and labels (the body, then the button captions).
 pub(crate) fn message_box_parts(
@@ -60,11 +49,16 @@ pub(crate) fn message_box_parts(
     screen_w: i32,
     screen_h: i32,
     scale: ShellScale,
-) -> (
-    crate::ui::shell::geom::RectPx,
-    Vec<(crate::ui::shell::geom::RectPx, bool)>,
-    Vec<PaintLabel<'static>>,
-) {
+) -> (RectPx, Vec<(RectPx, bool)>, Vec<PaintLabel<'static>>) {
+    box_paint(message.parts(screen_w, screen_h, scale), pressed)
+}
+
+/// A box's dialog, buttons with their pushed state, and labels (the body,
+/// then the button captions).
+fn box_paint(
+    parts: WolBoxParts<'_>,
+    pressed: Option<u16>,
+) -> (RectPx, Vec<(RectPx, bool)>, Vec<PaintLabel<'static>>) {
     let label = |value: &str, rect, align| PaintLabel {
         text: value.to_owned().into(),
         rect,
@@ -72,52 +66,16 @@ pub(crate) fn message_box_parts(
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
     };
-    let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
-    let geometry = message.layout(screen_w, screen_h, scale);
-    match &message.buttons {
-        WolBoxButtons::Ok(ok) => {
-            let ok_pressed = pressed == Some(BOX_OK);
-            (
-                geometry.dialog,
-                vec![(geometry.ok, ok_pressed)],
-                vec![
-                    label(&message.body, geometry.body, ShellAlign::NONE),
-                    label(
-                        ok,
-                        owner_draw_button_label_rect(geometry.ok, ok_pressed),
-                        button_align,
-                    ),
-                ],
-            )
-        }
-        WolBoxButtons::YesNo { yes, no } => {
-            let yes_pressed = pressed == Some(BOX_YES);
-            let no_pressed = pressed == Some(BOX_NO);
-            (
-                geometry.dialog,
-                vec![
-                    (geometry.ok, yes_pressed),
-                    (geometry.cancel.expect("Yes/No has No"), no_pressed),
-                ],
-                vec![
-                    label(&message.body, geometry.body, ShellAlign::NONE),
-                    label(
-                        yes,
-                        owner_draw_button_label_rect(geometry.ok, yes_pressed),
-                        button_align,
-                    ),
-                    label(
-                        no,
-                        owner_draw_button_label_rect(
-                            geometry.cancel.expect("Yes/No has No"),
-                            no_pressed,
-                        ),
-                        button_align,
-                    ),
-                ],
-            )
-        }
-    }
+    let (body, body_rect, body_align) = parts.body;
+    let mut labels = vec![label(body, body_rect, body_align)];
+    let buttons = parts.buttons.iter().map(|(id, rect, caption)| {
+        let pushed = pressed == Some(*id);
+        let at = owner_draw_button_label_rect(*rect, pushed);
+        labels.push(label(caption, at, ShellAlign::H_CENTER | ShellAlign::V_CENTER));
+        (*rect, pushed)
+    });
+    let buttons = buttons.collect();
+    (parts.dialog, buttons, labels)
 }
 
 /// Which shell the capture driver saw for the visit's current page.
@@ -236,6 +194,7 @@ pub(crate) fn render_wol_page(
         }
         WolPage::Welcome => {
             crate::app::App::ensure_wol_welcome_art(state);
+            crate::app::App::wol_welcome_sync(state, &[]);
             Painted::Welcome(welcome.clone())
         }
         WolPage::Login(_) => {
@@ -355,7 +314,12 @@ pub(crate) fn render_wol_page(
             .paint(crate::util::time::Instant::now());
         let (status_key, status_rect) = match &painted {
             Painted::Welcome(layout) => {
-                (crate::app::App::wol_status_key(state), layout.status_help)
+                // The control the last move hovered (none arrives while a
+                // button holds the mouse).
+                (
+                    crate::app::shell_wol::leaf::status_key(state, WOL_WELCOME_DIALOG),
+                    layout.status_help,
+                )
             }
             Painted::Lobby(layout) => (None, layout.page.status_help),
             Painted::Options(layout) => (
@@ -380,13 +344,7 @@ pub(crate) fn render_wol_page(
                 layout.status_help,
             ),
             Painted::Login(layout) => (
-                state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .and_then(|visit| visit.login())
-                    .and_then(|login| login.buttons.hovered)
-                    .and_then(|control| layout.tooltip_key(control)),
+                crate::app::shell_wol::login_status_key(state),
                 layout.status_help,
             ),
             _ => (None, page.status_help),
@@ -470,41 +428,24 @@ pub(crate) fn render_wol_page(
     let children = page_statics;
     let mut icon_sprites = Vec::new();
     let mut labels = Vec::new();
-    if let (true, Painted::Welcome(layout)) = (children, &painted) {
-        for window in &layout.group_boxes {
-            push_group_box(&mut sprites, chrome, *window, scale);
-        }
-        if let Some(art) = art {
+    let welcome_texts = match (children, &painted) {
+        (true, Painted::Welcome(layout)) => {
+            for window in &layout.group_boxes {
+                push_group_box(&mut sprites, chrome, *window, scale);
+            }
+            let icons = art.iter().flat_map(|art| &art.icons);
             for (file, window) in &layout.icons {
-                let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == file) else {
+                let Some((_, entry)) = icons.clone().find(|(name, _)| name == file) else {
                     continue;
                 };
                 let (w, h) = entry.native_size();
                 let (x, y) = centred_in_window(scale.base_rect(*window), w, h);
                 push_entry_scaled(&mut icon_sprites, *entry, x, y, scale, CHILD_DEPTH);
             }
+            Some(crate::app::shell_wol::leaf::paint(state, WOL_WELCOME_DIALOG, scale).texts)
         }
-        let filled = &state.frontend.wol.as_ref().expect("checked").welcome_texts;
-        for (text, rect) in &layout.texts {
-            let caption = match filled.iter().find(|(id, _)| Some(*id) == text.id) {
-                Some((_, value)) => value.as_str().into(),
-                // An empty template caption is no label: the persona heading
-                // stays blank without a nickname.
-                None if text.key.is_empty() => continue,
-                None => resolve_csf(state, text.key),
-            };
-            if caption.is_empty() {
-                continue;
-            }
-            labels.push(PaintLabel {
-                text: caption,
-                rect: *rect,
-                align: align(text.align),
-                rgb: SHELL_TEXT_RGB_ENABLED,
-                path_a_reveal: None,
-            });
-        }
-    }
+        _ => None,
+    };
     if let (true, Painted::MyInfo(layout)) = (children, &painted) {
         push_group_box(&mut sprites, chrome, layout.group_box, scale);
     }
@@ -522,10 +463,9 @@ pub(crate) fn render_wol_page(
     };
     let add_buddy = buddy_page
         .and_then(|dialog| dialog.ui.add.as_ref())
-        .map(|add| {
+        .map(|_| {
             crate::app::frontend::skirmish_shell_render::paint_wol_add_buddy(
                 state,
-                add,
                 &crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h),
             )
         });
@@ -641,7 +581,7 @@ pub(crate) fn render_wol_page(
         _ => None,
     };
     let lobby_popup = lobby.and_then(|lobby| {
-        let popup = lobby.ui.popup.as_ref()?;
+        lobby.ui.popup.as_ref()?;
         let status = if page_statics || matches!(painted, Painted::Backdrop) {
             crate::app::shell_wol::lobby::status_help(state)
         } else {
@@ -650,13 +590,11 @@ pub(crate) fn render_wol_page(
         Some(
             crate::app::frontend::skirmish_shell_render::paint_wol_lobby_popup(
                 state,
-                popup,
-                lobby.ui.is_modern(),
+                &lobby.ui,
                 screen_w,
                 screen_h,
                 crate::app::shell_wol::lobby::popup_scale(state),
                 &status,
-                lobby.ui.caret_visible(crate::util::time::Instant::now()),
             ),
         )
     });
@@ -695,7 +633,7 @@ pub(crate) fn render_wol_page(
         (Painted::Welcome(layout), None) => {
             spec = Some(layout.page_spec());
             let active = controller.top_id() == Some(layout.page_spec().dialog);
-            let pressed = active.then(|| controller.pressed()).flatten();
+            let pressed = active.then(|| crate::app::App::wol_held(state)).flatten();
             painted_buttons = layout
                 .painted_buttons(pressed)
                 .into_iter()
@@ -705,20 +643,11 @@ pub(crate) fn render_wol_page(
         }
         (Painted::Login(layout), None) => {
             spec = Some(layout.page_spec());
-            if let Some(login) = state.frontend.wol.as_ref().and_then(|visit| visit.login()) {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            login.buttons.is_pressed(button.id),
-                            login.button_enabled(button.id),
-                        )
-                    })
-                    .collect();
-            }
+            painted_buttons = crate::app::shell_wol::leaf::buttons(
+                state,
+                crate::ui::wol_login::DIALOG,
+                &layout.page.buttons,
+            );
             None
         }
         (Painted::Options(_), None) | (Painted::SoundOptions(_), None) => {
@@ -782,7 +711,7 @@ pub(crate) fn render_wol_page(
                     .map(|button| {
                         (
                             *button,
-                            lobby.ui.buttons.is_pressed(button.id),
+                            lobby.ui.pressed(button.id),
                             lobby.ui.enabled(button.id),
                         )
                     })
@@ -839,6 +768,7 @@ pub(crate) fn render_wol_page(
     labels.extend(status_label);
     let mut text =
         shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
+    text.extend(welcome_texts.into_iter().flatten());
 
     // The boxes over the backdrop: PUDLGBGN with MNBTTN buttons.
     let mut box_sprites = Vec::new();
@@ -849,44 +779,11 @@ pub(crate) fn render_wol_page(
         .as_ref()
         .filter(|_| message.is_some() || wait.is_some());
     if let Some(atlas) = box_atlas {
-        let pressed = state.frontend.shell_controller.pressed();
-        let label = |value: &str, rect, align| PaintLabel {
-            text: value.to_owned().into(),
-            rect,
-            align,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
+        let parts = match (&message, &wait) {
+            (Some(message), _) => message.parts(screen_w, screen_h, scale),
+            (None, wait) => wait.as_ref().expect("filtered above").parts(screen_w, screen_h, scale),
         };
-        let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
-        let (dialog, buttons, box_labels) = if let Some(message) = &message {
-            message_box_parts(message, pressed, screen_w, screen_h, scale)
-        } else {
-            let wait = wait.as_ref().expect("filtered above");
-            let geometry = crate::ui::shell::modal::wait_box_layout_on(screen_w, screen_h, scale);
-            let disconnect = pressed == Some(WAIT_DISCONNECT);
-            let check = pressed == Some(WAIT_CHECK_STATUS);
-            (
-                geometry.dialog,
-                vec![
-                    (geometry.disconnect, disconnect),
-                    (geometry.check_status, check),
-                ],
-                vec![
-                    // 0x5B2 is SS_CENTER.
-                    label(&wait.text, geometry.text, ShellAlign::H_CENTER),
-                    label(
-                        &wait.disconnect,
-                        owner_draw_button_label_rect(geometry.disconnect, disconnect),
-                        button_align,
-                    ),
-                    label(
-                        &wait.check_status,
-                        owner_draw_button_label_rect(geometry.check_status, check),
-                        button_align,
-                    ),
-                ],
-            )
-        };
+        let (dialog, buttons, box_labels) = box_paint(parts, crate::app::App::wol_held(state));
         box_dialog = Some(dialog);
         let modal_buttons: Vec<shell_paint::ModalButton> = buttons
             .iter()

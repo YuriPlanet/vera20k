@@ -349,10 +349,6 @@ impl TacticalCaptureSession {
             "classification": "AcceptedExplicitFixedBattle",
         }));
 
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_preview_texture = None;

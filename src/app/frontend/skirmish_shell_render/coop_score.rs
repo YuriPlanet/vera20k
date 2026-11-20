@@ -58,12 +58,10 @@ pub(crate) fn render_coop_score(
         None => state.frontend.skirmish_preview_texture = None,
     }
     let shown = |id: u16| can_continue || !hidden_on_final_mission(id);
-    let controller_hover = state
-        .frontend
-        .coop_score_page
-        .as_ref()
-        .and_then(|page| page.ui.buttons.hovered);
-    let status = controller_hover
+    let controller = &state.frontend.shell_controller;
+    let hovered = crate::ui::shell::menu_page::hovered_id(controller, COOP_SCORE_PAGE.dialog);
+    let held = crate::ui::shell::menu_page::pressed_id(controller, COOP_SCORE_PAGE.dialog);
+    let status = hovered
         .and_then(help_key)
         .map(|key| localized_label(state, key, ""))
         .unwrap_or_default();
@@ -357,7 +355,8 @@ pub(crate) fn render_coop_score(
         if !shown(button.id) {
             continue;
         }
-        let pressed = ui.buttons.is_pressed(button.id);
+        // The pushed look: captured and still under the pointer (612B70).
+        let pressed = held == Some(button.id) && hovered == Some(button.id);
         let enabled = match button.id {
             CONTINUE => view.continue_enabled,
             _ => view.quit_enabled,

@@ -91,17 +91,12 @@ pub(super) fn enter_wol_main(state: &mut AppState) {
 
 /// `0x10E`'s init (`0x007989AA`): with a nickname, the persona (loading it
 /// creates the file) fills the heading, the five stats and the update line.
-pub(super) fn fill_welcome(state: &mut AppState) {
-    let nickname = state.frontend.wol_account.nickname.clone();
-    let texts = if nickname.is_empty() {
-        Vec::new()
-    } else {
-        let persona = load(state, &nickname);
-        profile_texts(state, &nickname, &persona)
-    };
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.welcome_texts = texts;
+pub(super) fn welcome_texts(state: &AppState) -> Vec<(u16, String)> {
+    let nickname = &state.frontend.wol_account.nickname;
+    if nickname.is_empty() {
+        return Vec::new();
     }
+    profile_texts(state, nickname, &load(state, nickname))
 }
 
 /// `0x0077A9F0`'s texts by control id: the heading (`GUI:UserProfileLabel`,

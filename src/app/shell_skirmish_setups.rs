@@ -58,8 +58,6 @@ impl App {
         );
         let shell = &mut state.frontend.skirmish_shell_state;
         shell.player_name_edit.focused = false;
-        shell.open_combo_dropdown = None;
-        shell.pressed_owner_draw_button = None;
         shell.setups_browser = Some(browser);
     }
 

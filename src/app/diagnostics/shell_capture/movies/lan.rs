@@ -1064,7 +1064,7 @@ impl LanCapture {
                 // Set the real BB checkbox through its native icon hit owner.
                 // This also makes repeated captures independent of saved preference.
                 let want_observer = self.target.host_observer();
-                let current = state.frontend.lan.as_ref().context("BB")?.lobby.observer;
+                let current = state.frontend.multiplayer_shell_runtime.lan_observer();
                 if current != want_observer
                     || (want_observer
                         && !state
@@ -3868,7 +3868,7 @@ fn create_lan_game(state: &mut AppState) -> Result<()> {
         .frontend
         .lan
         .as_ref()
-        .is_some_and(|runtime| runtime.create.is_some())
+        .is_some_and(|runtime| runtime.creating)
     {
         let ok = crate::ui::shell::modal::lan_create_game_layout(
             state.render_width() as i32,

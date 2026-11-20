@@ -8,14 +8,12 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::shell::list::ListScrollInteraction;
-use crate::ui::shell::trackbar::TrackbarHold;
 
 use super::super::SkirmishStatics;
-use super::super::layout::{SkirmishShellLayout, SkirmishTrackbarId, shown_player_rows};
+use super::super::layout::shown_player_rows;
 use super::trackbars::SkirmishTrackbarBounds;
 use super::{
-    ChooseMapModalState, DropdownScrollDragState, DropdownScrollbarPressState, OpenComboDropdown,
-    OwnerDrawButton, RandomMapSetupModalState, SkirmishModeSelection, SkirmishShellOpponent,
+    ChooseMapModalState, RandomMapSetupModalState, SkirmishModeSelection, SkirmishShellOpponent,
     SkirmishShellUiSound, SkirmishValidationModalState, default_opponents,
 };
 
@@ -233,6 +231,30 @@ impl PlayerNameEditState {
     pub fn caret_prefix(&self) -> &str {
         &self.text[..self.byte_index(self.caret)]
     }
+
+    /// Keeps the caret `caret_prefix_width` px in shown in `visible_width`
+    /// px, [`PLAYER_NAME_CARET_MARGIN_PX`] from either edge; whether the
+    /// scroll moved.
+    pub fn scroll_to_caret(&mut self, visible_width: i32, caret_prefix_width: u32) -> bool {
+        let visible_width = visible_width.max(0);
+        let caret_x = caret_prefix_width as i32;
+        let old = self.scroll_x;
+        let mut scroll = old.max(0);
+        if visible_width <= PLAYER_NAME_CARET_MARGIN_PX * 2 {
+            scroll = caret_x;
+        } else {
+            let right_limit = scroll + visible_width - PLAYER_NAME_CARET_MARGIN_PX;
+            if caret_x > right_limit {
+                scroll = caret_x - visible_width + PLAYER_NAME_CARET_MARGIN_PX;
+            }
+            let left_limit = scroll + PLAYER_NAME_CARET_MARGIN_PX;
+            if caret_x < left_limit {
+                scroll = (caret_x - PLAYER_NAME_CARET_MARGIN_PX).max(0);
+            }
+        }
+        self.scroll_x = scroll.max(0);
+        self.scroll_x != old
+    }
 }
 
 /// One visible country row's Ares presentation.
@@ -302,7 +324,7 @@ impl CountryMenuCatalog {
         Self { items, entries }
     }
 
-    pub(super) fn items(&self) -> &[super::SkirmishComboItem] {
+    pub(crate) fn items(&self) -> &[super::SkirmishComboItem] {
         &self.items
     }
 
@@ -377,12 +399,6 @@ pub struct SkirmishShellState {
     pub(crate) opponent_scroll: ListScrollInteraction,
     pub selected_mode_allies_allowed: bool,
     pub selected_mode_must_ally: bool,
-    pub pressed_owner_draw_button: Option<OwnerDrawButton>,
-    /// The trackbar holding the mouse since a press on its window.
-    pub trackbar_hold: Option<TrackbarHold<SkirmishTrackbarId>>,
-    pub dropdown_scroll_drag: Option<DropdownScrollDragState>,
-    pub dropdown_scroll_press: Option<DropdownScrollbarPressState>,
-    pub open_combo_dropdown: Option<OpenComboDropdown>,
     pub choose_map_modal: Option<ChooseMapModalState>,
     /// The Create Random Map dialog, opened over the choose-map modal.
     pub random_map_setup_modal: Option<RandomMapSetupModalState>,
@@ -419,7 +435,6 @@ impl SkirmishShellState {
     pub fn refresh_country_catalog(&mut self, rules: &crate::rules::ruleset::RuleSet) {
         self.country_catalog = CountryMenuCatalog::from_rules(rules);
         self.lobby_colors = rules.skirmish_colors();
-        self.open_combo_dropdown = None;
     }
 
     /// The colours this shell's lobbies list.
@@ -483,11 +498,6 @@ impl Default for SkirmishShellState {
             opponent_scroll: ListScrollInteraction::default(),
             selected_mode_allies_allowed: true,
             selected_mode_must_ally: false,
-            pressed_owner_draw_button: None,
-            trackbar_hold: None,
-            dropdown_scroll_drag: None,
-            dropdown_scroll_press: None,
-            open_combo_dropdown: None,
             choose_map_modal: None,
             random_map_setup_modal: None,
             saved_seed_browser: None,
@@ -519,7 +529,7 @@ impl SkirmishShellState {
         self.launch_options_base = SkirmishLaunchOptions::from_game_options(options);
     }
 
-    pub(super) fn push_ui_sound(&mut self, sound: SkirmishShellUiSound) {
+    pub(crate) fn push_ui_sound(&mut self, sound: SkirmishShellUiSound) {
         self.pending_ui_sounds.push(sound);
     }
 
@@ -638,19 +648,6 @@ fn reset_rows_hidden_by_capacity(state: &mut SkirmishShellState, capacity: i32) 
         opponent.row_type = super::SkirmishAiRowType::None;
         opponent.apply_inactive_combo_defaults(team_default);
     }
-
-    let open_row = state.open_combo_dropdown.map(|open| match open.id {
-        super::SkirmishComboId::AiType(idx) => idx + 1,
-        super::SkirmishComboId::Side(row)
-        | super::SkirmishComboId::Color(row)
-        | super::SkirmishComboId::Start(row)
-        | super::SkirmishComboId::Team(row) => row,
-    });
-    if open_row.is_some_and(|row| row != 0 && row >= capacity) {
-        state.open_combo_dropdown = None;
-        state.dropdown_scroll_drag = None;
-        state.dropdown_scroll_press = None;
-    }
 }
 
 /// Apply the accepted map's capacity to the opponent rows. SkirmishDialog
@@ -753,109 +750,4 @@ pub fn repair_teams_for_selected_mode(state: &mut SkirmishShellState, modes: &[S
         // control. This is a refresh event, not a per-frame repair.
         opponent.team = inactive_default;
     }
-}
-
-pub fn combo_dropdown_open(state: &SkirmishShellState) -> bool {
-    state.open_combo_dropdown.is_some()
-}
-
-/// VERA: Esc closes a list that a Skirmish or random map control has open.
-/// True when one was open.
-pub fn close_combo_dropdown(state: &mut SkirmishShellState) -> bool {
-    let random_map = state
-        .random_map_setup_modal
-        .as_mut()
-        .is_some_and(|modal| modal.open_combo.take().is_some());
-    let combo = state.open_combo_dropdown.take().is_some();
-    if combo {
-        state.dropdown_scroll_drag = None;
-        state.dropdown_scroll_press = None;
-    }
-    random_map || combo
-}
-
-pub fn player_name_edit_rect_hit(layout: &SkirmishShellLayout, x: i32, y: i32) -> bool {
-    layout.player_name.contains(x, y)
-}
-
-pub fn focus_player_name_edit(state: &mut SkirmishShellState) -> bool {
-    state.open_combo_dropdown = None;
-    state.dropdown_scroll_drag = None;
-    state.dropdown_scroll_press = None;
-    state.trackbar_hold = None;
-    state.pressed_owner_draw_button = None;
-    state.player_name_edit.focus_select_all()
-}
-
-pub fn blur_player_name_edit(state: &mut SkirmishShellState) -> bool {
-    state.player_name_edit.blur()
-}
-
-pub fn insert_player_name_text(state: &mut SkirmishShellState, text: &str) -> bool {
-    state.player_name_edit.insert_text(text)
-}
-
-pub fn handle_player_name_backspace(state: &mut SkirmishShellState) -> bool {
-    state.player_name_edit.backspace()
-}
-
-pub fn handle_player_name_delete(state: &mut SkirmishShellState) -> bool {
-    state.player_name_edit.delete()
-}
-
-pub fn handle_player_name_left(state: &mut SkirmishShellState) -> bool {
-    state.player_name_edit.move_left()
-}
-
-pub fn handle_player_name_right(state: &mut SkirmishShellState) -> bool {
-    state.player_name_edit.move_right()
-}
-
-pub fn handle_player_name_home(state: &mut SkirmishShellState) -> bool {
-    state.player_name_edit.move_home()
-}
-
-pub fn handle_player_name_end(state: &mut SkirmishShellState) -> bool {
-    state.player_name_edit.move_end()
-}
-
-pub fn player_name_caret_prefix(state: &SkirmishShellState) -> &str {
-    state.player_name_edit.caret_prefix()
-}
-
-pub fn update_player_name_scroll_for_caret(
-    state: &mut SkirmishShellState,
-    visible_width: i32,
-    caret_prefix_width: u32,
-) -> bool {
-    let visible_width = visible_width.max(0);
-    let caret_x = caret_prefix_width as i32;
-    let old = state.player_name_edit.scroll_x;
-    let mut scroll = old.max(0);
-
-    if visible_width <= PLAYER_NAME_CARET_MARGIN_PX * 2 {
-        scroll = caret_x;
-    } else {
-        let right_limit = scroll + visible_width - PLAYER_NAME_CARET_MARGIN_PX;
-        if caret_x > right_limit {
-            scroll = caret_x - visible_width + PLAYER_NAME_CARET_MARGIN_PX;
-        }
-        let left_limit = scroll + PLAYER_NAME_CARET_MARGIN_PX;
-        if caret_x < left_limit {
-            scroll = (caret_x - PLAYER_NAME_CARET_MARGIN_PX).max(0);
-        }
-    }
-
-    state.player_name_edit.scroll_x = scroll.max(0);
-    state.player_name_edit.scroll_x != old
-}
-
-/// Handle Tab while the player-name edit has focus. The original moves keyboard
-/// focus to the next dialog tab-stop control; the skirmish shell currently
-/// models keyboard focus only for this edit, so the observable effect we can
-/// reproduce is that focus leaves the edit (its caret/selection clear). Full
-/// focus advancement to a specific next control awaits a shell-wide keyboard
-/// focus/tab-order model. Returns true when focus state changed.
-pub fn handle_player_name_tab(state: &mut SkirmishShellState) -> bool {
-    blur_player_name_edit(state)
 }

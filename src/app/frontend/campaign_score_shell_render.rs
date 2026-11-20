@@ -12,17 +12,18 @@ use crate::util::time::Instant;
 use anyhow::Result;
 
 use crate::app::AppState;
-use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
-    software_cursor,
+use crate::app::frontend::menu_page_render::{
+    FamilyFrame, PageButton, PanelState, encode_family_page,
 };
+use crate::app::frontend::shell_pass::{TexturedDraw, resolve_csf};
 use crate::render::shell_paint::{
-    self, CURSOR_DEPTH, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
+    self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
     SHELL_TEXT_RGB_ENABLED,
 };
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::campaign_score_shell::{CampaignScoreDialog, SCORE_ART_REGION_STATIC};
+use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, hovered_id, pressed_id};
 
 const SHELL_TEXT: [u8; 3] = [255, 255, 0];
 const HIGHLIGHT: [u8; 3] = [255, 255, 255];
@@ -104,15 +105,17 @@ pub(crate) fn render_campaign_score_page(
     let continue_id = dialog.continue_button();
     let controller = &state.frontend.shell_controller;
     let active = controller.top_id() == Some(dialog.id());
-    let hovered = children
-        .then(|| active.then(|| controller.hovered()).flatten())
+    let hovered = (children && active)
+        .then(|| hovered_id(controller, dialog.id()))
         .flatten();
     let status = hovered
         .and_then(|id| dialog.control(id))
         .and_then(|control| control.tooltip_key)
         .map(|key| resolve_csf(state, key).into_owned())
         .unwrap_or_default();
-    let pressed = active.then(|| controller.pressed()).flatten();
+    let pressed = active
+        .then(|| pressed_id(controller, dialog.id()))
+        .flatten();
 
     let mut labels: Vec<PaintLabel<'static>> = Vec::new();
     let campaign_page = state
@@ -162,67 +165,43 @@ pub(crate) fn render_campaign_score_page(
         .main_menu_shell_chrome
         .as_ref()
         .expect("checked before render");
-    let mut chrome_sprites = if state.frontend.campaign_score_art.is_none() {
-        crate::app::frontend::main_menu_shell_render::shell_parent_background_instances(
-            chrome,
-            layout.screen.w,
-            layout.screen.h,
-            layout.scale,
-        )
-    } else {
-        Vec::new()
+    // The family compositor paints the right panel, the monitor, the column
+    // or Continue with its caption; the heading and status line are this
+    // dialog's own statics.
+    let page = MenuPageLayout {
+        scale: layout.scale,
+        screen: layout.screen,
+        movie_base: crate::ui::main_menu_shell::MainMenuMovieBase::Ra2tsL,
+        movie: Default::default(),
+        title: layout.title,
+        warning_monitor: layout.warning_monitor,
+        status_help: layout.status_help,
+        buttons: vec![MenuPageButtonRect {
+            id: continue_id,
+            rect: layout.continue_button,
+        }],
+        right_panel: layout.right_panel,
+        lower_strip: layout.lower_strip,
     };
-    chrome_sprites.extend(shell_paint::paint_chrome(
-        chrome,
-        layout.right_panel,
-        Some(layout.lower_strip),
-        layout.screen.w,
-    ));
-    chrome_sprites.extend(monitor_frame.and_then(|frame| {
-        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame, layout.scale)
-    }));
-
-    if let Some(wave) = wave.as_ref() {
+    let panel = PanelState {
+        leaving,
         // The slide engine paints the whole right-panel column; the steady
         // Continue cell is not drawn until the wave ends.
-        chrome_sprites.extend(shell_paint::paint_slide_column(
-            chrome,
-            layout.right_panel,
-            &wave.button_draws(),
-        ));
-    }
-    let buttons: Vec<PaintButton> = if wave.is_some() {
-        Vec::new()
-    } else {
-        vec![PaintButton {
+        column: wave.as_ref().map(|wave| wave.button_draws()),
+        monitor: monitor_frame,
+        ..PanelState::default()
+    };
+    let buttons = vec![PageButton {
+        id: continue_id,
+        paint: PaintButton {
             rect: layout.continue_button,
             pressed: pressed == Some(continue_id),
             hovered: false,
             enabled: true,
-        }]
-    };
-    let button_sprites = shell_paint::paint_buttons(
-        chrome,
-        &buttons,
-        crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        now,
-        None,
-    );
-    if wave.is_none() {
-        labels.push(PaintLabel {
-            text: resolve_csf(state, "GUI:Continue").into_owned().into(),
-            rect: owner_draw_button_label_rect(
-                layout.continue_button,
-                pressed == Some(continue_id),
-            ),
-            align: ShellAlign::BUTTON_CAPTION,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
-    let text =
-        shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, layout.scale.factor());
-    let mut draws = Vec::with_capacity(6);
+        },
+    }];
+    let mut frame = FamilyFrame::new("Campaign Score Shell", dialog.page(), &page, panel, buttons);
+    frame.labels = labels;
     if let Some(art) = state.frontend.campaign_score_art.as_ref() {
         let background = layout.background;
         let mut background_sprites = Vec::with_capacity(1);
@@ -240,18 +219,12 @@ pub(crate) fn render_campaign_score_page(
             [background.w as f32, background.h as f32],
             PARENT_BACKGROUND_DEPTH,
         );
-        draws.push(TexturedDraw {
+        frame.under.push(TexturedDraw {
             texture: &art.texture,
             instances: background_sprites,
         });
-    }
-    draws.push(TexturedDraw {
-        texture: &chrome.texture,
-        instances: chrome_sprites,
-    });
-    if let Some(art) = state.frontend.campaign_score_art.as_ref() {
-        if let (Some(strip), Some(frame)) = (art.scrt.as_ref(), scrt_frame)
-            && let Some(entry) = strip.frames.get(frame).copied()
+        if let (Some(strip), Some(frame_index)) = (art.scrt.as_ref(), scrt_frame)
+            && let Some(entry) = strip.frames.get(frame_index).copied()
         {
             // `WM_PAINT_Handler 0x00621E90` draws the right-panel chrome
             // first, then `RadarBackground 0x0072E920` submits SCRT frame 0
@@ -266,41 +239,36 @@ pub(crate) fn render_campaign_score_page(
                 [panel.w as f32, panel.h as f32],
                 DIALOG_BACKGROUND_DEPTH,
             );
-            draws.push(TexturedDraw {
+            frame.over_panel_art.push(TexturedDraw {
                 texture: &strip.texture,
                 instances: panel_sprites,
             });
         }
-        if let (Some(strip), Some(frame)) = (art.scra.as_ref(), emblem_frame)
+        if let (Some(strip), Some(frame_index)) = (art.scra.as_ref(), emblem_frame)
             && let (Some(entry), Some(window)) = (
-                strip.frames.get(frame).copied(),
+                strip.frames.get(frame_index).copied(),
                 layout.control_rect(SCORE_ART_REGION_STATIC),
             )
             && let Some(sprite) = shell_paint::paint_kind4_static(entry, window, layout.scale)
         {
-            draws.push(TexturedDraw {
+            frame.over_panel_art.push(TexturedDraw {
                 texture: &strip.texture,
                 instances: vec![sprite],
             });
         }
+    } else {
+        frame.under.push(TexturedDraw {
+            texture: &chrome.texture,
+            instances:
+                crate::app::frontend::main_menu_shell_render::shell_parent_background_instances(
+                    chrome,
+                    layout.screen.w,
+                    layout.screen.h,
+                    layout.scale,
+                ),
+        });
     }
-    draws.push(TexturedDraw {
-        texture: &chrome.texture,
-        instances: button_sprites,
-    });
-    encode_shell_pass(
-        state,
-        encoder,
-        destination,
-        "Campaign Score Shell",
-        ShellComposition {
-            draws: &draws,
-            text: &text,
-            cursor: software_cursor(state, CURSOR_DEPTH),
-            effects: None,
-            smooth_art: false,
-        },
-    );
+    encode_family_page(state, encoder, destination, frame);
     Ok(true)
 }
 

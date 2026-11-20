@@ -5,7 +5,9 @@
 //! layers; this module does not depend on assets or wgpu.
 
 mod layout;
-pub(crate) use vera20k_gui::shell::combo_scroll::ScrollModel;
+pub mod choose_map_page;
+pub mod page;
+pub mod random_map_page;
 mod state;
 mod statics;
 pub(crate) use statics::SkirmishStatics;
@@ -19,7 +21,7 @@ pub use layout::{
     SavedSeedMode, ShellControlId, SkirmishCheckboxId, SkirmishCheckboxRect,
     SkirmishColumnLabelRects, SkirmishRightPanelTextRects, SkirmishRowRects, SkirmishShellLayout,
     SkirmishTrackbarId, SkirmishTrackbarLabelRects, SkirmishTrackbarRects, checkbox_icon_rect,
-    checkbox_text_rect, choose_map_modal_button_at, combo_arrow_hit_rect, combo_arrow_rect,
+    checkbox_text_rect, combo_arrow_hit_rect, combo_arrow_rect,
     combo_dropdown_row_rect, combo_face_rect, combo_swatch_rect, combo_text_rect,
     SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT, compute_choose_map_modal_layout, compute_fixed_800_layout,
     compute_layout, compute_layout_for_rows, compute_layout_on,
@@ -28,17 +30,15 @@ pub use layout::{
     compute_responsive_random_map_setup_layout,
     compute_responsive_saved_seed_layout, compute_responsive_setups_layout, compute_saved_seed_layout,
     compute_setups_layout, player_name_edit_client_rect,
-    player_name_edit_text_rect, random_map_setup_control_at, random_map_setup_control_at_view,
-    random_map_setup_dropdown_rect,
-    random_map_setup_dropdown_row_at, saved_seed_control_at,
+    player_name_edit_text_rect, random_map_setup_dropdown_rect, saved_seed_control_at,
 };
 pub(crate) use state::CountryMenuCatalog;
 pub(crate) use state::status_help_key_for_hover_with_catalog;
 pub use state::{
-    AcceptOutcome, ChooseMapContext, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapModalState,
+    AcceptOutcome, ChooseMapContext, ChooseMapHoverTarget, ChooseMapModalState,
     ChooseMapPrompt, ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
     FAVORITES_ROW, ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection, favorite_key,
-    DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, MainRngRanged,
+    DropdownScrollbarPart, MainRngRanged,
     OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT,
     PLAYER_NAME_EDIT_LIMIT_BYTES, PLAYERS_RANGE, ADVANCED_RANGE, PlayerNameEditState,
     RandomMapPreset, RandomMapSetupModalState, CUSTOM_PRESET_SLOTS,
@@ -51,29 +51,17 @@ pub use state::{
     starts_by_team,
     SkirmishSetupSeat, SkirmishShellAction, SkirmishShellDialog, SkirmishShellOpponent,
     SkirmishShellState, SkirmishShellUiSound, SkirmishTrackbarBounds,
-    SkirmishValidationModalState, accept_selected_map, action_for_owner_draw_button,
+    SkirmishValidationModalState, accept_selected_map,
     ai_rows_beyond_limit_occupied, apply_action, available_color_choices, available_start_choices,
-    blur_player_name_edit, clear_status_help_text, close_combo_dropdown,
-    combo_dropdown_content_rect,
-    combo_dropdown_needs_scrollbar, combo_dropdown_open, combo_dropdown_rect,
-    combo_dropdown_scroll_thumb_rect, combo_dropdown_scrollbar_rect,
-    combo_dropdown_visible_row_count, combo_enabled, combo_items, combo_rect, country_choices,
-    dismiss_validation_modal, drain_pending_ui_sounds, focus_player_name_edit,
-    handle_option_mouse_down,
-    handle_option_mouse_move, handle_option_mouse_up, handle_option_mouse_wheel,
-    handle_player_name_backspace, handle_player_name_delete, handle_player_name_end,
-    handle_player_name_home, handle_player_name_left, handle_player_name_right,
-    handle_player_name_tab, hit_test, hit_test_owner_draw_button, hovered_choose_map_modal_control,
-    hovered_shell_control, initialize_rows_for_selected_map, insert_player_name_text,
-    launch_session, opponent_scroll_deadline, opponent_scroll_geometry, opponent_scroll_held,
-    pack_launch_session_without_start_validation, player_name_caret_prefix,
-    player_name_edit_rect_hit, player_row_visible, poll_opponent_scroll, selected_player_rows,
+    clear_status_help_text, combo_dropdown_max_visible_rows, combo_enabled, combo_items, combo_rect, country_choices,
+    dismiss_validation_modal, drain_pending_ui_sounds, handle_option_mouse_wheel, move_opponent_scrollbar, press_opponent_scrollbar,
+    initialize_rows_for_selected_map, launch_session, opponent_scroll_deadline, opponent_scroll_geometry, opponent_scroll_held,
+    pack_launch_session_without_start_validation, player_row_visible, poll_opponent_scroll, selected_player_rows,
     repair_teams_for_selected_mode,
     selected_combo_item, selected_combo_item_index, set_status_help_text, setup_combo_items,
     status_help_key_for_choose_map_hover, status_help_key_for_hover,
-    status_help_key_for_random_map_setup, team_choices, trackbar_visual_value,
-    update_player_name_scroll_for_caret,
-};
+    status_help_key_for_random_map_setup, team_choices,
+    };
 
 pub mod game_options;
 pub mod seed_list;

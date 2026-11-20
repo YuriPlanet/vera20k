@@ -14,14 +14,9 @@ use crate::rules::ruleset::RuleSet;
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 use crate::ui::skirmish_shell::{
-    DropdownMetrics, DropdownScrollbarPart, RectPx, SkirmishCheckboxId, SkirmishComboId,
-    SkirmishComboItem, SkirmishShellLayout, SkirmishShellState, SkirmishTrackbarId,
-    checkbox_icon_rect, combo_arrow_rect, combo_dropdown_content_rect,
-    combo_dropdown_needs_scrollbar, combo_dropdown_rect, combo_dropdown_row_rect,
-    combo_dropdown_scroll_thumb_rect, combo_dropdown_scrollbar_rect,
-    combo_dropdown_visible_row_count, combo_enabled, combo_face_rect, combo_items,
-    combo_swatch_rect, opponent_scroll_geometry, player_name_edit_text_rect, player_row_visible,
-    selected_combo_item_index, trackbar_visual_value,
+    DropdownMetrics, DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
+    checkbox_icon_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
+    opponent_scroll_geometry, player_name_edit_text_rect,
 };
 
 use super::chrome::{
@@ -270,16 +265,6 @@ pub(super) fn push_new_edit_caret(
             SHELL_LABEL_TEXT_RGB,
             depth,
         );
-    }
-}
-
-pub(super) fn checkbox_checked(shell: &SkirmishShellState, id: SkirmishCheckboxId) -> bool {
-    match id {
-        SkirmishCheckboxId::ShortGame0x54e => shell.short_game,
-        SkirmishCheckboxId::McvRepacks0x693 => shell.mcv_redeploy,
-        SkirmishCheckboxId::CratesAppear0x696 => shell.crates,
-        SkirmishCheckboxId::SuperWeapons0x69a => shell.super_weapons,
-        SkirmishCheckboxId::BuildOffAlly0x69d => shell.build_off_ally,
     }
 }
 
@@ -605,14 +590,6 @@ pub(super) fn paint_trackbar_plaque(
     }
 }
 
-pub(super) fn trackbar_rect_for_id(layout: &SkirmishShellLayout, id: SkirmishTrackbarId) -> RectPx {
-    match id {
-        SkirmishTrackbarId::GameSpeed0x529 => layout.trackbars.game_speed,
-        SkirmishTrackbarId::Credits0x511 => layout.trackbars.credits,
-        SkirmishTrackbarId::UnitCount0x50c => layout.trackbars.unit_count,
-    }
-}
-
 /// Render-side per-control paint state for the Slice 4 dispatch seam (O1: a
 /// data-enum match like `ButtonPolicy`, NOT a trait). One variant per painted
 /// control kind (mirrors `ui::shell::ControlKind`); each carries only the RESOLVED
@@ -836,203 +813,6 @@ pub(super) fn paint_control(
     }
 }
 
-pub(super) fn push_checkbox_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
-) {
-    // Slice 4A/4B: each checkbox paints through the per-control-kind seam, which
-    // resolves the checked/unchecked icon from the `ControlChrome` subset. The
-    // iteration order (layout.checkboxes), the icon rect, and SHELL_CONTROL_DEPTH
-    // are unchanged from the pre-seam loop — byte-identical emission (see the
-    // draw-list test).
-    let chrome = atlas.control_chrome();
-    for checkbox in layout.checkboxes {
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Checkbox {
-                checked: checkbox_checked(shell, checkbox.id),
-                rect: checkbox.rect,
-            },
-            layout.scale,
-        );
-    }
-}
-
-pub(super) fn push_trackbar_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
-) {
-    let chrome = atlas.control_chrome();
-    for id in [
-        SkirmishTrackbarId::GameSpeed0x529,
-        SkirmishTrackbarId::Credits0x511,
-        SkirmishTrackbarId::UnitCount0x50c,
-    ] {
-        let rect = trackbar_rect_for_id(layout, id);
-        let value = trackbar_visual_value(shell, id);
-        let thumb_left =
-            shell
-                .trackbar_bounds
-                .visual_range(id)
-                .thumb_left_in(value, rect, layout.scale);
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Trackbar {
-                rect,
-                thumb_left,
-                plaque: true,
-                disabled: false,
-            },
-            layout.scale,
-        );
-    }
-}
-
-pub(super) fn push_combo_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    rules: Option<&RuleSet>,
-    layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-) {
-    // Slice 4C: each collapsed combo face paints through the per-control-kind seam,
-    // which resolves the face glyph / swatch white-pixel / arrow variant from the
-    // `ControlChrome` subset. The skirmish layer keeps the per-face color-index
-    // resolution and pre-resolves it to a swatch RGB so the arm stays chrome-only;
-    // iteration order, rects, and SHELL_CONTROL_DEPTH are byte-identical to the
-    // pre-seam push_combo_face loop (see the draw-list test). The open dropdown
-    // popup + shared scrollbar stay on `atlas` (4D).
-    let chrome = atlas.control_chrome();
-    let open = shell.open_combo_dropdown.map(|dropdown| dropdown.id);
-    let swatch_for = |color_index: Option<usize>| color_index.map(|ci| house_color_tint(rules, ci));
-    paint_control(
-        out,
-        &chrome,
-        ControlPaint::Combo {
-            rect: layout.rows.side_combos[0],
-            swatch: None,
-            open: open == Some(SkirmishComboId::Side(0)),
-            disabled: false,
-        },
-        layout.scale,
-    );
-    paint_control(
-        out,
-        &chrome,
-        ControlPaint::Combo {
-            rect: layout.color_combos[0],
-            swatch: swatch_for(
-                shell
-                    .player_color_claimed
-                    .then_some(shell.player_color_index),
-            ),
-            open: open == Some(SkirmishComboId::Color(0)),
-            disabled: false,
-        },
-        layout.scale,
-    );
-    paint_control(
-        out,
-        &chrome,
-        ControlPaint::Combo {
-            rect: layout.rows.start_combos[0],
-            swatch: None,
-            open: open == Some(SkirmishComboId::Start(0)),
-            disabled: false,
-        },
-        layout.scale,
-    );
-    paint_control(
-        out,
-        &chrome,
-        ControlPaint::Combo {
-            rect: layout.rows.team_combos[0],
-            swatch: None,
-            open: open == Some(SkirmishComboId::Team(0)),
-            // Unlike its three siblings the local Team combo is not always
-            // live: the mode-wide AlliesAllowed gate greys it too, so the face
-            // has to derive its disabled paint from the same predicate the
-            // input path uses.
-            disabled: !combo_enabled(shell, maps, SkirmishComboId::Team(0)),
-        },
-        layout.scale,
-    );
-
-    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
-        if !player_row_visible(shell, maps, row) {
-            continue;
-        }
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Combo {
-                rect: layout.rows.ai_type_combos[slot - 1],
-                swatch: None,
-                open: open == Some(SkirmishComboId::AiType(row - 1)),
-                disabled: false,
-            },
-            layout.scale,
-        );
-        let sibling_disabled = !opponent.is_active();
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Combo {
-                rect: layout.rows.side_combos[slot],
-                swatch: None,
-                open: open == Some(SkirmishComboId::Side(row)),
-                disabled: sibling_disabled,
-            },
-            layout.scale,
-        );
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Combo {
-                rect: layout.color_combos[slot],
-                swatch: swatch_for(
-                    (!sibling_disabled && opponent.color_claimed).then_some(opponent.color_index),
-                ),
-                open: open == Some(SkirmishComboId::Color(row)),
-                disabled: sibling_disabled,
-            },
-            layout.scale,
-        );
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Combo {
-                rect: layout.rows.start_combos[slot],
-                swatch: None,
-                open: open == Some(SkirmishComboId::Start(row)),
-                disabled: sibling_disabled,
-            },
-            layout.scale,
-        );
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Combo {
-                rect: layout.rows.team_combos[slot],
-                swatch: None,
-                open: open == Some(SkirmishComboId::Team(row)),
-                // Team is the one sibling whose enable state is row-active AND
-                // the selected mode's AlliesAllowed, so it cannot reuse
-                // `sibling_disabled`.
-                disabled: !combo_enabled(shell, maps, SkirmishComboId::Team(row)),
-            },
-            layout.scale,
-        );
-    }
-}
-
 /// VERA's scrollbar beside the computer rows of a map with more than eight
 /// starts: the shared list's frame and scrollbar.
 pub(super) fn push_opponent_scrollbar_instances(
@@ -1056,95 +836,6 @@ pub(super) fn push_opponent_scrollbar_instances(
     }
 }
 
-pub(super) fn push_dropdown_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    rules: Option<&RuleSet>,
-    layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-) {
-    let Some(open) = shell.open_combo_dropdown else {
-        return;
-    };
-    if !combo_enabled(shell, maps, open.id) {
-        return;
-    }
-    let Some(dropdown) = combo_dropdown_rect(shell, layout, maps, open.id) else {
-        return;
-    };
-    let content = combo_dropdown_content_rect(shell, layout, maps, open.id).unwrap_or(dropdown);
-    let needs_scrollbar = combo_dropdown_needs_scrollbar(shell, maps, open.id);
-    let visible_rows = combo_dropdown_visible_row_count(shell, maps, open.id);
-    let selected =
-        dropdown_selected_row_rect(shell, maps, open.id, open.top_index, content, layout.scale);
-    let swatches = combo_items(shell, maps, open.id)
-        .into_iter()
-        .skip(open.top_index)
-        .take(visible_rows)
-        .enumerate()
-        .filter_map(|(index, item)| {
-            let SkirmishComboItem::Color(color) = item else {
-                return None;
-            };
-            let row = combo_dropdown_row_rect(content, layout.scale, index);
-            Some((
-                layout
-                    .scale
-                    .derive_rect(row, |row| RectPx::new(row.x + 2, row.y + 2, row.w - 4, 19)),
-                house_color_tint(rules, color),
-            ))
-        });
-    let scrollbar = needs_scrollbar
-        .then(|| {
-            combo_dropdown_scrollbar_rect(shell, layout, maps, open.id).zip(
-                combo_dropdown_scroll_thumb_rect(shell, layout, maps, open.id),
-            )
-        })
-        .flatten();
-    let pressed = shell
-        .dropdown_scroll_press
-        .filter(|pressed| pressed.id == open.id)
-        .map(|pressed| pressed.part);
-    push_popup_instances(
-        out,
-        atlas,
-        dropdown,
-        selected,
-        swatches,
-        scrollbar,
-        pressed,
-        layout.scale,
-        SHELL_DROPDOWN_DEPTH - 0.00003,
-    );
-}
-
-pub(super) fn dropdown_selected_row_rect(
-    shell: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    top_index: usize,
-    content: RectPx,
-    scale: ShellScale,
-) -> Option<RectPx> {
-    let visible_rows = combo_dropdown_visible_row_count(shell, maps, id);
-    let selected = shell
-        .open_combo_dropdown
-        .filter(|open| open.id == id)
-        .and_then(|open| open.hot_row)
-        .or_else(|| selected_combo_item_index(shell, maps, id))?;
-    if selected < top_index || selected >= top_index + visible_rows {
-        return None;
-    }
-    // The row grid the item text and both pointer hit tests use, so the
-    // highlight covers exactly the row a click selects.
-    Some(combo_dropdown_row_rect(
-        content,
-        scale,
-        selected - top_index,
-    ))
-}
-
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
@@ -1155,9 +846,12 @@ mod tests {
     fn skirmish_dropdown_highlight_follows_pointer_without_committing_selection() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::ruleset::RuleSet;
+        use crate::ui::shell::controller::DialogController;
+        use crate::ui::skirmish_shell::page::{self, Pointer};
         use crate::ui::skirmish_shell::{
-            combo_arrow_hit_rect, combo_rect, compute_layout, compute_responsive_layout,
-            handle_option_mouse_down, handle_option_mouse_move, selected_combo_item,
+            SkirmishComboId, combo_arrow_hit_rect, combo_dropdown_row_rect, combo_rect,
+            compute_layout, compute_responsive_layout, selected_combo_item,
+            selected_combo_item_index,
         };
 
         let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -1176,42 +870,41 @@ mod tests {
             ] {
                 let mut shell = SkirmishShellState::default();
                 shell.refresh_country_catalog(&rules);
-                let maps = [];
+                let mut ui = DialogController::default();
+                let labels = Default::default();
+                let mut at = |shell: &mut SkirmishShellState, ui: &mut DialogController, p, (x, y)| {
+                    page::pointer(ui, shell, &layout, &[], &labels, p, x, y);
+                };
+                // The painted highlight: the hot row on the list's grid.
+                let hot = |ui: &DialogController| {
+                    let list = ui.gui().combo_drop_down(ui.gui().popup()?)?;
+                    list.popup.row_rect(list.hot_row?)
+                };
                 let selected = selected_combo_item(&shell, id);
                 let arrow =
                     combo_arrow_hit_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
-                handle_option_mouse_down(&mut shell, &layout, &maps, arrow.x, arrow.y);
-                assert_eq!(shell.open_combo_dropdown.unwrap().id, id);
-                let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
+                at(&mut shell, &mut ui, Pointer::Down, (arrow.x, arrow.y));
+                let open = page::open_combo(ui.gui(), &shell).unwrap();
+                assert_eq!(open.id, id);
+                let content = ui.gui().combo_drop_down(ui.gui().popup().unwrap()).unwrap().popup.content();
 
                 // Move through two rows, including a row other than the saved
                 // choice. The renderer must follow each move immediately.
                 for index in [0, 1] {
                     let row = combo_dropdown_row_rect(content, layout.scale, index);
-                    handle_option_mouse_move(&mut shell, &layout, &maps, row.x + 1, row.y + 1);
-                    assert_eq!(
-                        dropdown_selected_row_rect(&shell, &maps, id, 0, content, layout.scale),
-                        Some(row),
-                        "{id:?}, row {index}, scale {:?}",
-                        layout.scale,
-                    );
+                    at(&mut shell, &mut ui, Pointer::Move, (row.x + 1, row.y + 1));
+                    assert_eq!(hot(&ui), Some(row), "{id:?}, row {index}, scale {:?}", layout.scale);
                     assert_eq!(selected_combo_item(&shell, id), selected);
                 }
 
                 // Leaving the popup retains its last hot row. Dismissing it
                 // must discard the preview when the control opens again.
-                handle_option_mouse_move(&mut shell, &layout, &maps, -1, -1);
-                assert_eq!(
-                    dropdown_selected_row_rect(&shell, &maps, id, 0, content, layout.scale),
-                    Some(combo_dropdown_row_rect(content, layout.scale, 1)),
-                );
-                handle_option_mouse_down(&mut shell, &layout, &maps, -1, -1);
-                handle_option_mouse_down(&mut shell, &layout, &maps, arrow.x, arrow.y);
-                let saved_index = selected_combo_item_index(&shell, &maps, id).unwrap();
-                assert_eq!(
-                    dropdown_selected_row_rect(&shell, &maps, id, 0, content, layout.scale),
-                    Some(combo_dropdown_row_rect(content, layout.scale, saved_index)),
-                );
+                at(&mut shell, &mut ui, Pointer::Move, (-1, -1));
+                assert_eq!(hot(&ui), Some(combo_dropdown_row_rect(content, layout.scale, 1)));
+                at(&mut shell, &mut ui, Pointer::Down, (-1, -1));
+                at(&mut shell, &mut ui, Pointer::Down, (arrow.x, arrow.y));
+                let saved_index = selected_combo_item_index(&shell, &[], id).unwrap();
+                assert_eq!(hot(&ui), Some(combo_dropdown_row_rect(content, layout.scale, saved_index)));
             }
         }
     }

@@ -23,7 +23,8 @@ use crate::ui::wol_lobby::{
     self as lobby_ui, CHANNEL_KEYED, GAME_CHANNEL, GAME_LIMIT_800, LOBBY_KEY, MEMBER_OPERATOR,
     MEMBER_VOICE, WolChannel, WolMember,
 };
-use crate::ui::wol_login::{BACK, LOGIN, WolCredential};
+use crate::ui::wol_login::{BACK, DIALOG as LOGIN_DIALOG, LOGIN, WolCredential};
+use vera20k_gui::Prop;
 use crate::ui::wol_options::WolPreferences;
 
 mod quick_match;
@@ -1141,12 +1142,7 @@ impl WolCapture {
                     && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
             {
                 if self.target == WolTarget::WelcomeProfile {
-                    let texts = &state
-                        .frontend
-                        .wol
-                        .as_ref()
-                        .context("WOL visit")?
-                        .welcome_texts;
+                    let texts = &App::wol_welcome_texts(state);
                     let text = |id: u16| {
                         texts
                             .iter()
@@ -1380,7 +1376,7 @@ impl WolCapture {
                                 games_24h: 30,
                             },
                         ));
-                        let login = login_mut(state)?;
+                        let (login, _) = login_mut(state)?;
                         ensure!(
                             login.policy == crate::ui::wol_login::LoginPolicy::Online
                                 && login.account.is_none(),
@@ -1404,11 +1400,11 @@ impl WolCapture {
                                     ),
                                 );
                             }
-                            let login = login_mut(state)?;
+                            let (login, ui) = login_mut(state)?;
                             ensure!(
-                                login.online_name() == "Player"
-                                    && login.button_enabled(crate::ui::wol_login::PLAY)
-                                    && login.form.as_ref().and_then(|form| form.remember)
+                                login.online_name(ui) == "Player"
+                                    && login.button_enabled(ui, crate::ui::wol_login::PLAY)
+                                    && login.form.as_ref().and_then(|form| form.remember(ui))
                                         == Some(target == WolTarget::ModernLogin),
                                 "the typed sign-in did not enable Play"
                             );
@@ -1434,14 +1430,10 @@ impl WolCapture {
                         return Ok(());
                     }
                     WolTarget::LoginLastValid | WolTarget::AutoLoginFailed => {
-                        let login = state
-                            .frontend
-                            .wol
-                            .as_ref()
-                            .and_then(|visit| visit.login())
-                            .context("0x10F")?;
+                        login_mut(state)?;
+                        let ui = &state.frontend.shell_controller;
                         ensure!(
-                            login.nickname.display_text() == NICKNAME
+                            ui.text(LOGIN_DIALOG, crate::ui::wol_login::NICKNAME) == NICKNAME
                                 && info_file(state)?.auto_login().is_empty(),
                             "0x10F did not take the persona nickname with AutoLogin cleared"
                         );
@@ -1463,14 +1455,10 @@ impl WolCapture {
                 App::handle_wol_key(state, None, true, Some(NICKNAME));
                 login_click(state, layout.password);
                 App::handle_wol_key(state, None, true, Some(PASSWORD));
-                let login = state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .and_then(|visit| visit.login())
-                    .context("0x10F")?;
+                login_mut(state)?;
+                let enabled = |id| state.frontend.shell_controller.flag(LOGIN_DIALOG, id, Prop::Enabled, true);
                 ensure!(
-                    login.login_enabled && login.remember_enabled && !login.forget_enabled,
+                    enabled(LOGIN) && enabled(crate::ui::wol_login::REMEMBER) && !enabled(crate::ui::wol_login::FORGET),
                     "typed account did not enable Login and Remember"
                 );
                 self.event(frame, "typed nickname and password");
@@ -2097,12 +2085,8 @@ impl WolCapture {
             {
                 let layout = crate::app::shell_wol::login_layout(state);
                 // A stored account selected by LastValid is ready as it is.
-                let ready = state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .and_then(|visit| visit.login())
-                    .is_some_and(|login| login.login_enabled);
+                let ready = login_mut(state).is_ok()
+                    && state.frontend.shell_controller.flag(LOGIN_DIALOG, LOGIN, Prop::Enabled, true);
                 if !ready {
                     login_click(state, layout.nickname_face);
                     App::handle_wol_key(state, None, true, Some(NICKNAME));
@@ -2184,11 +2168,8 @@ impl WolCapture {
                     // VERA's Create Game offers its room's limits, from 30
                     // people with spectators.
                     ensure!(
-                        Self::lobby(state)?.ui.popup.as_ref().is_some_and(|popup| matches!(
-                            &popup.kind,
-                            lobby_ui::WolPopupKind::Create(create) if create.room.as_ref().map(|room| room.limits)
-                                == Some(crate::ui::room_limits::RoomLimits::default())
-                        )),
+                        Self::lobby(state)?.ui.room_limits()
+                            == Some(crate::ui::room_limits::RoomLimits::default()),
                         "the modern 0xC3 has no Max players or Allow spectators"
                     );
                     self.event(frame, "0xC3 opened (modern)");
@@ -2196,11 +2177,7 @@ impl WolCapture {
                     set_window_pointer_to_rect_center(state, create.setting_label(create.limit));
                     App::handle_wol_mouse_move(state);
                     ensure!(
-                        Self::lobby(state)?
-                            .ui
-                            .popup
-                            .as_ref()
-                            .and_then(|popup| popup.buttons.hovered)
+                        Self::lobby(state)?.ui.hovered().map(|id| id & !lobby_ui::LABEL)
                             == Some(lobby_ui::CREATE_LIMIT),
                         "Limit Screen Resolution has no help"
                     );
@@ -3269,12 +3246,7 @@ impl WolCapture {
                 if rendered == PresentedShell::WolWelcome
                     && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
             {
-                let texts = &state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .context("WOL visit")?
-                    .welcome_texts;
+                let texts = &App::wol_welcome_texts(state);
                 ensure!(
                     texts
                         .iter()
@@ -4176,7 +4148,7 @@ impl WolCapture {
             lobby.ui.game_rows.len() == 4
                 && lobby.ui.player_rows.len() == 4
                 && lobby.ui.lobby_rows.len() == 3
-                && lobby.ui.lobby_list.selected == Some(0),
+                && lobby.ui.selected_row(crate::ui::wol_lobby::LOBBIES) == Some(0),
             "the lists were not filled"
         );
         let visit = state.frontend.wol.as_ref().context("WOL visit")?;
@@ -4447,12 +4419,12 @@ impl WolCapture {
                     lobby.ui.player_rows.get(1).map(|row| row.name.as_str()) == Some("Echo"),
                     "Echo is not the second player row"
                 );
-                let geometry = lobby.ui.player_list.geometry(
+                let geometry = lobby.ui.shown_geometry(crate::ui::wol_lobby::PLAYERS, 
                     layout.players,
                     lobby.ui.player_rows.len(),
                     layout.page.scale,
                 );
-                let rect = geometry.row(1 - lobby.ui.player_list.top_index);
+                let rect = geometry.row(1 - lobby.ui.list_top(crate::ui::wol_lobby::PLAYERS));
                 set_window_pointer_to_rect_center(state, rect);
                 App::handle_wol_mouse_move(state);
                 let expected = format!(
@@ -4577,12 +4549,12 @@ impl WolCapture {
                 let mut helps = Vec::new();
                 for (row, name) in [(0, map), (3, random)] {
                     let lobby = Self::lobby(state)?;
-                    let geometry = lobby.ui.game_list.geometry(
+                    let geometry = lobby.ui.shown_geometry(crate::ui::wol_lobby::GAMES, 
                         layout.games,
                         lobby.ui.game_rows.len(),
                         layout.page.scale,
                     );
-                    let rect = geometry.row(row - lobby.ui.game_list.top_index);
+                    let rect = geometry.row(row - lobby.ui.list_top(crate::ui::wol_lobby::GAMES));
                     set_window_pointer_to_rect_center(state, rect);
                     App::handle_wol_mouse_move(state);
                     let help = crate::app::shell_wol::lobby::status_help(state);
@@ -5296,10 +5268,9 @@ impl WolCapture {
             },
             false,
         );
-        let opened = page::page_dialog(state).is_some_and(|page| {
-            page.name.narrow_text(usize::MAX) == "Tanya"
-                && page.focus == Some(crate::ui::wol_page::TEXT)
-        });
+        let opened = page::page_dialog(state).is_some()
+            && crate::app::shell_wol::leaf::text(state, crate::ui::wol_page::PAGE_DIALOG, crate::ui::wol_page::NAME) == "Tanya"
+            && crate::app::shell_wol::leaf::focused(state) == Some(crate::ui::wol_page::TEXT);
         ensure!(
             state.match_state.match_presentation.in_game_menu == InGameMenuState::Page && opened,
             "PageUser did not open 0xCF with the pager prefilled"
@@ -5431,7 +5402,7 @@ impl WolCapture {
                 click(state, layout.text);
                 key(state, None, Some(text));
                 ensure!(
-                    page::page_dialog(state).is_some_and(|page| page.send_enabled),
+                    crate::app::shell_wol::leaf::enabled(state, crate::ui::wol_page::PAGE_DIALOG, crate::ui::wol_page::SEND),
                     "0xCF Page stayed disabled"
                 );
                 key(state, Some(winit::keyboard::KeyCode::Enter), None);
@@ -5650,15 +5621,13 @@ impl WolCapture {
         match target {
             WolTarget::ModernForgotPassword => {
                 account_type(state, &["Player"]);
-                let form = login_mut(state)?
-                    .account
-                    .as_mut()
-                    .context("Forgot Password")?;
+                let (login, ui) = login_mut(state)?;
+                let form = login.account.as_mut().context("Forgot Password")?;
                 ensure!(
                     matches!(
-                        form.activate(FORM_OK),
+                        form.activate(ui, FORM_OK),
                         Some(AccountFormAction::Send(AccountRequest::Forgot { .. }))
-                    ) && form.answered(Ok(())).is_none()
+                    ) && form.answered(ui, Ok(())).is_none()
                         && form.kind == FormKind::Reset,
                     "Forgot Password did not move on to its code"
                 );
@@ -5673,13 +5642,11 @@ impl WolCapture {
                 account_type(state, &["Player", "player@example.com", PASSWORD, PASSWORD]);
                 self.event(frame, "Create Account filled in");
                 if target == WolTarget::ModernAccountCode {
-                    let form = login_mut(state)?
-                        .account
-                        .as_mut()
-                        .context("Create Account")?;
+                    let (login, ui) = login_mut(state)?;
+                    let form = login.account.as_mut().context("Create Account")?;
                     ensure!(
-                        matches!(form.activate(FORM_OK), Some(AccountFormAction::Send(_)))
-                            && form.answered(Ok(())).is_none()
+                        matches!(form.activate(ui, FORM_OK), Some(AccountFormAction::Send(_)))
+                            && form.answered(ui, Ok(())).is_none()
                             && form.kind == FormKind::Verify,
                         "Create Account did not move on to its code"
                     );
@@ -5688,12 +5655,10 @@ impl WolCapture {
                 }
             }
         }
-        let form = login_mut(state)?
-            .account
-            .as_ref()
-            .context("account popup")?;
+        let (login, ui) = login_mut(state)?;
+        let form = login.account.as_ref().context("account popup")?;
         ensure!(
-            form.ok_enabled(),
+            form.ok_enabled(ui),
             "the filled account popup kept OK disabled"
         );
         Ok(())
@@ -5713,16 +5678,21 @@ impl WolCapture {
             "wolinfo": state.platform.game_config.as_ref().and_then(|config| {
                 std::fs::read_to_string(config.paths.settings_dir().join(WOLINFO_INI)).ok()
             }),
-            "login": visit.and_then(|visit| visit.login()).map(|login| json!({
-                "nickname": login.nickname.display_text(),
-                "password_units": login.password.units.len(),
-                "login_enabled": login.login_enabled,
-                "forget_enabled": login.forget_enabled,
-                "remember_enabled": login.remember_enabled,
-                "remember_checked": login.remember_checked,
-                "focused": login.focused_control,
-                "popup": login.account.as_ref().map(|form| format!("{:?}", form.kind)),
-            })),
+            "login": visit.and_then(|visit| visit.login()).map(|login| {
+                use crate::ui::wol_login::{FORGET, NICKNAME, PASSWORD, REMEMBER};
+                let ui = &state.frontend.shell_controller;
+                let flag = |id, prop, default| ui.flag(LOGIN_DIALOG, id, prop, default);
+                json!({
+                    "nickname": ui.text(LOGIN_DIALOG, NICKNAME),
+                    "password_units": ui.text(LOGIN_DIALOG, PASSWORD).encode_utf16().count(),
+                    "login_enabled": flag(LOGIN, Prop::Enabled, true),
+                    "forget_enabled": flag(FORGET, Prop::Enabled, true),
+                    "remember_enabled": flag(REMEMBER, Prop::Enabled, true),
+                    "remember_checked": flag(REMEMBER, Prop::Checked, false),
+                    "focused": ui.focused_control(LOGIN_DIALOG),
+                    "popup": login.account.as_ref().map(|form| format!("{:?}", form.kind)),
+                })
+            }),
         })
     }
 }
@@ -5946,9 +5916,8 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
     let geometry =
         lobby
             .ui
-            .game_list
-            .geometry(layout.games, lobby.ui.game_rows.len(), layout.page.scale);
-    let rect = geometry.row(row - lobby.ui.game_list.top_index);
+            .shown_geometry(crate::ui::wol_lobby::GAMES, layout.games, lobby.ui.game_rows.len(), layout.page.scale);
+    let rect = geometry.row(row - lobby.ui.list_top(crate::ui::wol_lobby::GAMES));
     welcome_click(state, rect);
     Ok(())
 }
@@ -5975,12 +5944,12 @@ fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
         .iter()
         .position(|row| row.name == name)
         .context("the player's row")?;
-    let geometry = lobby.ui.player_list.geometry(
+    let geometry = lobby.ui.shown_geometry(crate::ui::wol_lobby::PLAYERS, 
         layout.players,
         lobby.ui.player_rows.len(),
         layout.page.scale,
     );
-    Ok(geometry.row(row - lobby.ui.player_list.top_index))
+    Ok(geometry.row(row - lobby.ui.list_top(crate::ui::wol_lobby::PLAYERS)))
 }
 
 /// Three IRC records; the preferred-server draw left record 1 selected.
@@ -6032,9 +6001,16 @@ fn welcome_click(state: &mut AppState, rect: RectPx) {
     MoviesCapture::restore_neutral_pointer(state);
 }
 
-fn login_mut(state: &mut AppState) -> Result<&mut crate::ui::wol_login::WolLoginState> {
-    match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
-        Some(crate::app::shell_wol::WolPage::Login(login)) => Ok(login),
+/// The open `0x10F` and the shell's widgets it stands on.
+fn login_mut(
+    state: &mut AppState,
+) -> Result<(
+    &mut crate::ui::wol_login::WolLoginState,
+    &mut crate::ui::shell::controller::DialogController,
+)> {
+    let frontend = &mut state.frontend;
+    match frontend.wol.as_mut().map(|visit| &mut visit.page) {
+        Some(crate::app::shell_wol::WolPage::Login(login)) => Ok((login, &mut frontend.shell_controller)),
         _ => bail!("0x10F is not open"),
     }
 }
@@ -6504,7 +6480,7 @@ impl WolCapture {
     }
 
     fn buddy_shown(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::ui::wol_buddy::{ADD, BACK, CREATE, JOIN, PAGE_BUTTON, REMOVE, WINS};
+        use crate::ui::wol_buddy::{ADD, ADD_DIALOG, BACK, CREATE, JOIN, PAGE_BUTTON, REMOVE, WINS};
         let rows = Self::buddy_rows(state)?;
         let expected: Vec<(&str, Option<i32>)> = Self::BUDDIES
             .iter()
@@ -6542,11 +6518,11 @@ impl WolCapture {
                 Self::buddy_button(state, ADD)?;
                 App::handle_wol_key(state, None, true, Some("Natasha"));
                 let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
-                let add = dialog.ui.add.as_ref().context("Add did not open 0x115")?;
+                dialog.ui.add.as_ref().context("Add did not open 0x115")?;
+                let text = crate::app::shell_wol::leaf::text(state, ADD_DIALOG, crate::ui::wol_buddy::NAME);
                 ensure!(
-                    add.text() == "Natasha" && add.add_enabled,
-                    "0x115 did not take the name: {:?}",
-                    add.text()
+                    text == "Natasha" && crate::app::shell_wol::leaf::enabled(state, ADD_DIALOG, ADD),
+                    "0x115 did not take the name: {text:?}"
                 );
                 self.event(frame, "0x115 opened, Natasha typed");
                 if self.target == WolTarget::BuddyAdded {

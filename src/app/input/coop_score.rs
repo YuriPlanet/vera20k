@@ -5,7 +5,6 @@ use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::coop_score_shell::*;
 use crate::ui::lan_shell::LanEditKey;
-use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -43,12 +42,14 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 }
 
 /// Whether control `id` takes input now (`0x0046FB50`, `0x0046DE20`).
-fn enabled(
-    view: &crate::app::cooperative_round::CoopScoreView,
-    can_continue: bool,
-    id: u16,
-) -> bool {
-    if !can_continue && hidden_on_final_mission(id) {
+fn enabled(state: &AppState, id: u16) -> bool {
+    let (Some(view), Some(page)) = (
+        crate::app::cooperative_round::view(state),
+        state.frontend.coop_score_page.as_ref(),
+    ) else {
+        return false;
+    };
+    if !page.model.can_continue && hidden_on_final_mission(id) {
         return false;
     }
     match id {
@@ -102,16 +103,27 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     state.platform.window.request_redraw();
 }
 
+/// One pointer message (`down`: `None` moves) on the page's nodes: hover
+/// writes the status help, and a press on an enabled Continue or Quit plays
+/// GUIMainButtonSound. Returns the activated button.
+fn pointer(state: &mut AppState, layout: &CoopScoreLayout, down: Option<bool>) -> Option<u16> {
+    let enabled = [CONTINUE, QUIT].map(|id| (id, enabled(state, id)));
+    let controller = &mut state.frontend.shell_controller;
+    controller.ensure_active(COOP_SCORE_DIALOG, false);
+    let rect_of = |id| layout.control_rect(id);
+    App::page_pointer(state, COOP_SCORE_DIALOG, nodes, rect_of, &enabled, down)
+}
+
 pub(crate) fn cursor_moved(state: &mut AppState) {
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let Some(chat_log) = layout.control_rect(CHAT_LOG) else {
         return;
     };
+    pointer(state, &layout, None);
     let Some(page) = state.frontend.coop_score_page.as_mut() else {
         return;
     };
-    page.ui.buttons.hovered = layout.control_at(x, y);
     let ui = &mut page.ui;
     let geometry = ui
         .chat
@@ -128,58 +140,50 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if button != MouseButton::Left || shell_transition::blocks_shell_input(state) {
         return;
     }
-    let Some(view) = crate::app::cooperative_round::view(state) else {
+    if crate::app::cooperative_round::view(state).is_none()
+        || state.frontend.coop_score_page.is_none()
+    {
         return;
-    };
+    }
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
-    let Some(page) = state.frontend.coop_score_page.as_mut() else {
-        return;
+    let over = layout.control_at(x, y).filter(|id| enabled(state, *id));
+    let action = match pointer(state, &layout, Some(pressed)) {
+        Some(CONTINUE) => Some(CoopScoreAction::Continue),
+        Some(QUIT) => Some(CoopScoreAction::Quit),
+        _ => None,
     };
-    let can_continue = page.model.can_continue;
-    let over = layout
-        .control_at(x, y)
-        .filter(|id| enabled(&view, can_continue, *id));
-    let ui = &mut page.ui;
-    let mut action = None;
-    let mut cue = None;
-    if pressed {
-        match over {
-            Some(CHAT) => ui.chat.edit.focused = true,
-            Some(CHAT_LOG) => {
-                let rect = layout.control_rect(CHAT_LOG).expect("chat list rect");
-                let geometry = ui
-                    .chat
-                    .list
-                    .geometry(rect, ui.chat.lines.len(), layout.page.scale);
-                if let Some(part) = geometry.scroll_part_at(x, y) {
-                    ui.chat.list.scroll.press(
-                        part,
-                        geometry,
-                        &mut ui.chat.list.top_index,
-                        y,
-                        Instant::now(),
-                    );
-                }
-            }
-            Some(control @ (CONTINUE | QUIT)) => {
-                ui.buttons.press(Some(control));
-                cue = Some(LauncherCue::MainButton);
-            }
-            _ => {}
-        }
-    } else {
-        ui.chat.list.scroll.cancel();
-        if let Some(control) = ui.buttons.release(over) {
-            action = match control {
-                CONTINUE => Some(CoopScoreAction::Continue),
-                QUIT => Some(CoopScoreAction::Quit),
-                _ => None,
-            };
-        }
+    // A click over a control that takes no input leaves no status help
+    // until the pointer moves again.
+    if over.is_none() {
+        state.frontend.shell_controller.gui_mut().cancel_pointer();
     }
-    if let Some(cue) = cue {
-        App::play_launcher_options_cue(state, cue);
+    let ui = &mut state
+        .frontend
+        .coop_score_page
+        .as_mut()
+        .expect("checked above")
+        .ui;
+    match over.filter(|_| pressed) {
+        Some(CHAT) => ui.chat.edit.focused = true,
+        Some(CHAT_LOG) => {
+            let rect = layout.control_rect(CHAT_LOG).expect("chat list rect");
+            let geometry = ui
+                .chat
+                .list
+                .geometry(rect, ui.chat.lines.len(), layout.page.scale);
+            if let Some(part) = geometry.scroll_part_at(x, y) {
+                ui.chat.list.scroll.press(
+                    part,
+                    geometry,
+                    &mut ui.chat.list.top_index,
+                    y,
+                    Instant::now(),
+                );
+            }
+        }
+        _ if !pressed => ui.chat.list.scroll.cancel(),
+        _ => {}
     }
     if let Some(action) = action {
         crate::app::cooperative_round::apply_action(state, action);

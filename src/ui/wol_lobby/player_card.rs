@@ -6,11 +6,11 @@
 //! Your own card offers Change Country in Message's place, which drops the
 //! country list of `0xFE` below the Country row.
 
-use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::combobox::ComboPopupInteraction;
 use crate::ui::wol_persona::LocaleRow;
 
-/// The card's buttons, in VERA's own control range.
+/// The card's buttons, in VERA's own control range, on a modal dialog in
+/// the lobby's widget tree.
 pub(crate) const CARD_MESSAGE: u16 = 0x7FF2;
 pub(crate) const CARD_BUDDY: u16 = 0x7FF3;
 pub(crate) const CARD_PROFILE: u16 = 0x7FF4;
@@ -52,7 +52,6 @@ impl WolCardAction {
 pub(crate) struct WolPlayerCard {
     /// The player's name as the list shows it.
     pub(crate) name: String,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
     /// The open country list's rows ([`crate::ui::wol_persona::locale_rows`]).
     pub(crate) countries: Vec<LocaleRow>,
     /// The country list in the shared drop list, open while it has a control.
@@ -63,7 +62,6 @@ impl WolPlayerCard {
     pub(crate) fn new(name: String) -> Self {
         Self {
             name,
-            buttons: ShellButtonInteraction::default(),
             countries: Vec::new(),
             country_list: ComboPopupInteraction::default(),
         }
@@ -81,7 +79,6 @@ impl WolPlayerCard {
         self.countries = rows;
         self.country_list.open((), selected);
         self.country_list.top_index = selected.unwrap_or(0).min(last_top);
-        self.buttons.hovered = None;
     }
 
     pub(crate) fn close_countries(&mut self) {

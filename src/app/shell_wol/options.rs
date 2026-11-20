@@ -116,7 +116,7 @@ pub(crate) fn commit_open(state: &mut AppState) {
     };
     if let Some(lobby) = visit.lobby_mut() {
         lobby.shown = false;
-        lobby.ui.buttons = Default::default();
+        lobby.ui.release_buttons();
     }
     visit.page = WolPage::Options(Box::new(WolOptionsPage { shown, sound: None }));
     open_art(state);

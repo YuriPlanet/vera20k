@@ -119,6 +119,9 @@ pub enum Prop {
     /// Combo: a press anywhere on the face opens the list, not only on the
     /// arrow (VERA's own Options lists).
     OpenAnywhere,
+    /// Combo: the arrow opens the list even without rows, an empty list
+    /// that the next press closes (the WOL login's nickname combo).
+    OpenEmpty,
     /// Combo: the drop-down rises to end at or above this y, but not above
     /// the window top (VERA's Esc menu keeps its list above the box's footer).
     PopupBottom,
@@ -135,6 +138,32 @@ pub enum Prop {
     /// Combo: each row's colour swatch for the host to paint in place of its
     /// text (a palette index in decimal; empty for a text row).
     Swatches,
+    /// Combo: px the drop-down grows to the right while its list scrolls
+    /// (VERA's thirty-start Start list keeps the face's width for captions).
+    PopupWiden,
+    /// Combo: when the drop-down would end below this y it opens above the
+    /// face instead (VERA's longer Skirmish player list).
+    PopupFlipBelow,
+    /// Combo: the face and row captions are cut to gamemd's arrow and
+    /// scrollbar reserves (`0x00617250`, `0x0060DF38`) rather than clipped.
+    Truncate,
+    /// Combo: the open list's whole rect, when the host lays it out (the
+    /// random-map dialog's lists hang flush under the face and may run past
+    /// their rows); a press past the rows dismisses.
+    PopupRect,
+    /// Combo: the open list's scrollbar is the owner-draw combo's own (the
+    /// Skirmish page's lists): its thumb spans the bar, its arrows take the
+    /// art's height of the bar and its left column, and a held part keeps its
+    /// pushed look off the pointer.
+    ComboScrollbar,
+    /// List (`ListWindow`): any press in the rows' area, below the last row
+    /// too, counts toward a double-click, whose second press only reports it;
+    /// off, only a press on a row counts.
+    AreaDoubleClick,
+    /// List (`ListWindow`): only a press in the rows' area (inside the frame,
+    /// off the scrollbar) continues a double-click sequence; a press on the
+    /// frame or the scrollbar ends it (Choose Map's lists).
+    ContentDoubleClick,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -172,8 +201,13 @@ impl Prop {
             | Prop::ShowValue
             | Prop::DoubleClick
             | Prop::OpenAnywhere
+            | Prop::OpenEmpty
             | Prop::ListWindow
             | Prop::Password
+            | Prop::Truncate
+            | Prop::ComboScrollbar
+            | Prop::AreaDoubleClick
+            | Prop::ContentDoubleClick
             | Prop::ByteOnly => ValueType::Bool,
             Prop::Items | Prop::Swatches => ValueType::Items,
             Prop::Text
@@ -186,7 +220,7 @@ impl Prop {
             | Prop::Allowed => {
                 ValueType::Text
             }
-            Prop::Rect | Prop::HitRect => ValueType::Rect,
+            Prop::Rect | Prop::HitRect | Prop::PopupRect => ValueType::Rect,
             Prop::Color => ValueType::Rgba,
             Prop::Id
             | Prop::OffsetX
@@ -203,6 +237,8 @@ impl Prop {
             | Prop::Caret
             | Prop::Align
             | Prop::PopupBottom
+            | Prop::PopupWiden
+            | Prop::PopupFlipBelow
             | Prop::Font => ValueType::Int,
         }
     }
@@ -213,7 +249,16 @@ impl Prop {
             Prop::Command | Prop::Toggled => kind == NodeKind::Button,
             Prop::Checked | Prop::ActivateOnPress => kind == NodeKind::Checkbox,
             Prop::DoubleClick | Prop::ListWindow => kind == NodeKind::List,
-            Prop::OpenAnywhere | Prop::PopupBottom | Prop::Swatches => kind == NodeKind::Combo,
+            Prop::OpenAnywhere
+            | Prop::OpenEmpty
+            | Prop::PopupBottom
+            | Prop::Swatches
+            | Prop::PopupWiden
+            | Prop::PopupFlipBelow
+            | Prop::Truncate
+            | Prop::ComboScrollbar
+            | Prop::PopupRect => kind == NodeKind::Combo,
+            Prop::AreaDoubleClick | Prop::ContentDoubleClick => kind == NodeKind::List,
             Prop::Min | Prop::Max | Prop::Step => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
             _ => true,
         }

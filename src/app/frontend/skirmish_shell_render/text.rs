@@ -5,7 +5,6 @@
 
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
-use crate::app::loading::init::MapMenuEntry;
 use crate::i18n::{tr, tr_count, tr_fill};
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
@@ -20,15 +19,11 @@ use crate::ui::shell::trackbar::value_text_rect;
 use crate::ui::skirmish_shell::{
     COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalButton, ChooseMapModalLayout,
     DropdownMetrics, OwnerDrawButton, RandomMapSetupControl, RandomMapSetupLayout, RectPx,
-    SETUP_COMBO_ROWS, SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboId,
-    SkirmishComboItem, SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellOpponent,
-    SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
-    combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
-    combo_text_rect, player_name_edit_text_rect, player_row_visible,
-    random_map_setup_dropdown_rect,
+    SETUP_COMBO_ROWS, SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboItem,
+    SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellState, checkbox_text_rect,
+    combo_text_rect, player_name_edit_text_rect, random_map_setup_dropdown_rect,
 };
 
-use super::controls::trackbar_rect_for_id;
 use super::{
     COMBODROPWIN_TEXT_INSET_X, COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX,
     SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
@@ -108,18 +103,6 @@ pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> Str
     }
 }
 
-pub(super) fn country_choice_label(
-    state: &AppState,
-    random: bool,
-    country: LaunchCountry,
-) -> String {
-    if random {
-        localized_label(state, "GUI:RandomEx", "Random")
-    } else {
-        country_label(state, country)
-    }
-}
-
 /// Country UIName from the retained HouseType reader (511850), resolved by
 /// the fixed CSF catalog as native4E3A00 uses it. A missing raw UIName remains
 /// empty; the country catalog decides whether that row is eligible.
@@ -141,39 +124,6 @@ pub(super) fn country_label(state: &AppState, country: LaunchCountry) -> String 
             .to_owned();
     }
     String::new()
-}
-
-pub(super) fn trackbar_display_value(shell: &SkirmishShellState, id: SkirmishTrackbarId) -> String {
-    match id {
-        SkirmishTrackbarId::GameSpeed0x529 => {
-            crate::ui::shell::game_speed::SpeedContext::Offline.value_text(shell.game_speed)
-        }
-        SkirmishTrackbarId::Credits0x511 => shell.credits().to_string(),
-        SkirmishTrackbarId::UnitCount0x50c => shell.unit_count.to_string(),
-    }
-}
-
-pub(super) fn trackbar_value_text_color() -> [f32; 3] {
-    SHELL_LABEL_TEXT_RGB
-}
-
-pub(super) fn trackbar_label(state: &AppState, id: SkirmishTrackbarId) -> String {
-    match id {
-        SkirmishTrackbarId::GameSpeed0x529 => localized_label(state, "GUI:GameSpeed", "Game Speed"),
-        SkirmishTrackbarId::Credits0x511 => localized_label(state, "GUI:Credits", "Credits"),
-        SkirmishTrackbarId::UnitCount0x50c => localized_label(state, "GUI:UnitCount", "Unit Count"),
-    }
-}
-
-pub(super) fn trackbar_label_rect_for_id(
-    layout: &SkirmishShellLayout,
-    id: SkirmishTrackbarId,
-) -> RectPx {
-    match id {
-        SkirmishTrackbarId::GameSpeed0x529 => layout.trackbar_labels.game_speed,
-        SkirmishTrackbarId::Credits0x511 => layout.trackbar_labels.credits,
-        SkirmishTrackbarId::UnitCount0x50c => layout.trackbar_labels.unit_count,
-    }
 }
 
 pub(super) fn row_type_label(row_type: SkirmishAiRowType) -> (&'static str, &'static str) {
@@ -224,10 +174,6 @@ pub(super) fn combo_face_text_color(disabled: bool) -> [f32; 3] {
     } else {
         SHELL_LABEL_TEXT_RGB
     }
-}
-
-fn opponent_sibling_combo_text_color(opponent: &SkirmishShellOpponent) -> [f32; 3] {
-    combo_face_text_color(!opponent.is_active())
 }
 
 /// The owner-draw button's caption rect: the `0x612B70` type-1 offsets stay
@@ -420,17 +366,7 @@ pub(in crate::app::frontend) fn text_covered_by_overlay(rect: RectPx, overlays: 
         .any(|overlay| rects_intersect(rect, *overlay))
 }
 
-fn push_combo_face_label_draw(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    label: &str,
-    rect: RectPx,
-    scale: ShellScale,
-) {
-    push_combo_face_label_draw_with_color(out, state, label, rect, SHELL_LABEL_TEXT_RGB, scale);
-}
-
-fn push_combo_face_label_draw_with_color(
+pub(super) fn push_combo_face_label_draw_with_color(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
     label: &str,
@@ -598,20 +534,20 @@ pub(super) fn push_player_name_edit_text_draw(
 /// The dialog's text. While a slide runs (`sliding`) the right panel shows only
 /// the slide engine's art (the captions are overdrawn every tick) and the
 /// kind-1 statics (`statics`, from [`paint_skirmish_statics`]) stay hidden;
-/// the left-side controls keep what they painted.
+/// the left-side controls keep what they painted. `page` holds the widgets'
+/// captions ([`super::gui_paint`]) and the pushed right-panel button.
 pub(super) fn build_shell_text_draws(
     state: &AppState,
     layout: &SkirmishShellLayout,
     shell: &SkirmishShellState,
-    maps: &[MapMenuEntry],
     sliding: bool,
     statics: &[PaintLabel<'_>],
+    (widgets, pressed): (Vec<ShellTextDraw>, Option<OwnerDrawButton>),
 ) -> (Vec<ShellTextDraw>, Vec<SpriteInstance>) {
     let mut shell_draws: Vec<ShellTextDraw> = Vec::new();
-    let bare_instances: Vec<SpriteInstance> = Vec::new();
     let scale = layout.scale;
     if !sliding {
-        push_right_panel_text_draws(&mut shell_draws, state, layout, shell);
+        push_right_panel_text_draws(&mut shell_draws, state, layout, pressed);
     }
     shell_draws.extend(shell_paint::paint_labels_at_depth_scaled(
         &state.renderer.bit_font,
@@ -619,14 +555,25 @@ pub(super) fn build_shell_text_draws(
         SHELL_CONTROL_TEXT_DEPTH,
         scale.factor(),
     ));
-
-    for (key, fallback, rect) in [
+    let labels = [
         ("GUI:Players", "Players", layout.column_labels.players),
         ("GUI:Side", "Side", layout.column_labels.side),
         ("GUI:Color", "Color", layout.column_labels.color),
         ("GUI:StartPosition", "Start", layout.column_labels.start),
         ("GUI:Team", "Team", layout.column_labels.team),
-    ] {
+        (
+            "GUI:GameSpeed",
+            "Game Speed",
+            layout.trackbar_labels.game_speed,
+        ),
+        ("GUI:Credits", "Credits", layout.trackbar_labels.credits),
+        (
+            "GUI:UnitCount",
+            "Unit Count",
+            layout.trackbar_labels.unit_count,
+        ),
+    ];
+    for (key, fallback, rect) in labels {
         let label = localized_label(state, key, fallback);
         push_label_draw(
             &mut shell_draws,
@@ -637,185 +584,79 @@ pub(super) fn build_shell_text_draws(
             scale.factor(),
         );
     }
-
     push_player_name_edit_text_draw(&mut shell_draws, state, shell, layout);
-
-    for checkbox in layout.checkboxes {
-        let (key, fallback) = checkbox_label(checkbox.id);
-        let label = localized_label(state, key, fallback);
-        push_label_draw(
-            &mut shell_draws,
-            state,
-            &label,
-            checkbox_text_rect(checkbox.rect, scale),
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        );
-    }
-
-    for id in [
-        SkirmishTrackbarId::GameSpeed0x529,
-        SkirmishTrackbarId::Credits0x511,
-        SkirmishTrackbarId::UnitCount0x50c,
-    ] {
-        let label = trackbar_label(state, id);
-        push_label_draw(
-            &mut shell_draws,
-            state,
-            &label,
-            trackbar_label_rect_for_id(layout, id),
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        );
-
-        let value = trackbar_display_value(shell, id);
-        push_text_draw(
-            &mut shell_draws,
-            state,
-            &value,
-            rect_to_text_rect(value_text_rect(trackbar_rect_for_id(layout, id), scale)),
-            trackbar_value_text_color(),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        );
-    }
-
-    push_combo_face_label_draw(
-        &mut shell_draws,
-        state,
-        &country_choice_label(state, shell.player_country_random, shell.player_country),
-        layout.rows.side_combos[0],
-        scale,
-    );
-    if !shell.player_color_claimed {
-        let random_color = localized_label(state, "GUI:RandomAsSymbols", "Random");
-        push_combo_face_label_draw(
-            &mut shell_draws,
-            state,
-            &random_color,
-            layout.color_combos[0],
-            scale,
-        );
-    }
-    push_combo_face_label_draw(
-        &mut shell_draws,
-        state,
-        &combo_item_label(state, SkirmishComboItem::Start(shell.player_start_position)),
-        layout.rows.start_combos[0],
-        scale,
-    );
-    push_combo_face_label_draw_with_color(
-        &mut shell_draws,
-        state,
-        &team_label(state, shell.player_team),
-        layout.rows.team_combos[0],
-        // The local Team combo greys with the mode's AlliesAllowed gate; every
-        // other local-row face is unconditionally live.
-        combo_face_text_color(!combo_enabled(shell, maps, SkirmishComboId::Team(0))),
-        scale,
-    );
-
-    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
-        if !player_row_visible(shell, maps, row) {
-            continue;
-        }
-        let (key, fallback) = row_type_label(opponent.row_type);
-        let row_type = localized_label(state, key, fallback);
-        push_combo_face_label_draw(
-            &mut shell_draws,
-            state,
-            &row_type,
-            layout.rows.ai_type_combos[slot - 1],
-            scale,
-        );
-        let sibling_text_color = opponent_sibling_combo_text_color(opponent);
-        push_combo_face_label_draw_with_color(
-            &mut shell_draws,
-            state,
-            &country_choice_label(state, opponent.country_random, opponent.country),
-            layout.rows.side_combos[slot],
-            sibling_text_color,
-            scale,
-        );
-        if !opponent.color_claimed {
-            let random_color = localized_label(state, "GUI:RandomAsSymbols", "Random");
-            push_combo_face_label_draw_with_color(
-                &mut shell_draws,
-                state,
-                &random_color,
-                layout.color_combos[slot],
-                sibling_text_color,
-                scale,
-            );
-        }
-        push_combo_face_label_draw_with_color(
-            &mut shell_draws,
-            state,
-            &combo_item_label(state, SkirmishComboItem::Start(opponent.start_position)),
-            layout.rows.start_combos[slot],
-            sibling_text_color,
-            scale,
-        );
-        push_combo_face_label_draw_with_color(
-            &mut shell_draws,
-            state,
-            &team_label(state, opponent.team),
-            layout.rows.team_combos[slot],
-            // Row-active alone does not decide the Team face: the mode's
-            // AlliesAllowed gate greys it as well.
-            combo_face_text_color(!combo_enabled(shell, maps, SkirmishComboId::Team(row))),
-            scale,
-        );
-    }
-
-    (shell_draws, bare_instances)
+    shell_draws.extend(widgets);
+    (shell_draws, Vec::new())
 }
 
-/// The open ComboDropWin's row captions, painted after every dialog text and
-/// the popup's own frame.
-pub(super) fn build_dropdown_text_draws(
-    state: &AppState,
-    layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-) -> Vec<ShellTextDraw> {
-    let mut shell_draws = Vec::new();
-    if let Some(open) = shell
-        .open_combo_dropdown
-        .filter(|open| combo_enabled(shell, maps, open.id))
-        && let Some(dropdown) = combo_dropdown_rect(shell, layout, maps, open.id)
-    {
-        let content = combo_dropdown_content_rect(shell, layout, maps, open.id).unwrap_or(dropdown);
-        let visible_rows = combo_dropdown_visible_row_count(shell, maps, open.id);
-        for (idx, item) in combo_items(shell, maps, open.id)
-            .into_iter()
-            .skip(open.top_index)
-            .take(visible_rows)
-            .enumerate()
-        {
-            let label = combo_item_label(state, item);
-            if label.is_empty() {
-                continue;
-            }
-            let rect = combo_dropdown_text_rect_for_current_renderer(content, idx, layout.scale);
-            let fit_width = combo_dropdown_text_fit_width(content, layout.scale);
-            fit_owner_draw_label(&state.renderer.bit_font, &label, fit_width, |label| {
-                push_text_draw(
-                    &mut shell_draws,
-                    state,
-                    label,
-                    rect,
-                    SHELL_LABEL_TEXT_RGB,
-                    ShellAlign::V_CENTER,
-                    SHELL_DROPDOWN_TEXT_DEPTH,
-                    // The rows stretch, so their captions grow with them.
-                    layout.scale.factor(),
-                );
-            });
-        }
+/// The words `0x102`'s widgets show ([`crate::ui::skirmish_shell::page::sync`]).
+pub(crate) fn skirmish_labels(state: &AppState) -> crate::ui::skirmish_shell::page::SkirmishLabels {
+    use crate::skirmish_launch::{NATIVE_TEAMS, SKIRMISH_MAX_SLOT_COUNT};
+    let shell = &state.frontend.skirmish_shell_state;
+    let ai = [
+        SkirmishAiRowType::None,
+        SkirmishAiRowType::Easy,
+        SkirmishAiRowType::Normal,
+        SkirmishAiRowType::Hard,
+    ]
+    .map(SkirmishComboItem::AiType);
+    let starts = std::iter::once(LaunchStartPosition::Auto)
+        .chain((0..SKIRMISH_MAX_SLOT_COUNT as u8).map(LaunchStartPosition::Position))
+        .map(SkirmishComboItem::Start);
+    let teams = (-2..i32::from(NATIVE_TEAMS)).map(SkirmishComboItem::Team);
+    let items = ai
+        .into_iter()
+        .chain(shell.country_catalog.items().iter().copied())
+        .chain([SkirmishComboItem::ColorSentinel(-2)])
+        .chain(starts)
+        .chain(teams)
+        .map(|item| (item, combo_item_label(state, item)))
+        .collect();
+    crate::ui::skirmish_shell::page::SkirmishLabels {
+        items,
+        random_country: localized_label(state, "GUI:RandomEx", "Random"),
+        checkboxes: [
+            SkirmishCheckboxId::ShortGame0x54e,
+            SkirmishCheckboxId::McvRepacks0x693,
+            SkirmishCheckboxId::CratesAppear0x696,
+            SkirmishCheckboxId::SuperWeapons0x69a,
+            SkirmishCheckboxId::BuildOffAlly0x69d,
+        ]
+        .map(|id| {
+            let (key, fallback) = checkbox_label(id);
+            localized_label(state, key, fallback)
+        }),
     }
-    shell_draws
+}
+
+/// One open ComboDropWin row's caption, cut to the row less the scrollbar
+/// reserve (`0x0060DF38`), on the grid the highlight and the pointer use.
+pub(super) fn push_combo_dropdown_label(
+    out: &mut Vec<ShellTextDraw>,
+    state: &AppState,
+    label: &str,
+    content: RectPx,
+    visible_row: usize,
+    scale: ShellScale,
+) {
+    if label.is_empty() {
+        return;
+    }
+    let rect = combo_dropdown_text_rect_for_current_renderer(content, visible_row, scale);
+    let fit_width = combo_dropdown_text_fit_width(content, scale);
+    fit_owner_draw_label(&state.renderer.bit_font, label, fit_width, |label| {
+        push_text_draw(
+            out,
+            state,
+            label,
+            rect,
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH,
+            // The rows stretch, so their captions grow with them.
+            scale.factor(),
+        );
+    });
 }
 
 /// The right panel's button captions.
@@ -823,7 +664,7 @@ fn push_right_panel_text_draws(
     shell_draws: &mut Vec<ShellTextDraw>,
     state: &AppState,
     layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
+    pressed: Option<OwnerDrawButton>,
 ) {
     let start = localized_label(state, "GUI:StartGame", "Start Game");
     // VERA captions the map button "Choose Map", as its room does
@@ -837,7 +678,6 @@ fn push_right_panel_text_draws(
     );
     let setups = tr("VERA:Setups");
     let back = localized_label(state, "GUI:Back", "Back");
-
     for (label, rect, button) in [
         (
             start.as_str(),
@@ -870,7 +710,7 @@ fn push_right_panel_text_draws(
             state,
             label,
             rect,
-            shell.pressed_owner_draw_button == Some(button),
+            pressed == Some(button),
             false,
             0.00041,
             layout.scale,
@@ -904,7 +744,10 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     else {
         return;
     };
+    use RandomMapSetupControl as C;
     let scale = layout.scale;
+    let (open, pressed) =
+        crate::ui::skirmish_shell::random_map_page::view(&state.frontend.shell_controller, modal);
 
     // Row order: map type, time, theater, size, resources, players. The 0x405
     // label reads "Environment" even though the control writes the map type.
@@ -1023,13 +866,13 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             "GUI:SurpriseMe",
             "Surprise Me",
             layout.randomize,
-            RandomMapSetupControl::Randomize0x621,
+            C::Randomize0x621,
         ),
         (
             "GUI:PreviewMap",
             "Preview Map",
             layout.generate,
-            RandomMapSetupControl::Generate0x620,
+            C::Generate0x620,
         ),
     ] {
         push_text_draw(
@@ -1043,111 +886,47 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             scale.factor(),
         );
     }
-    // The column's owner-draw type-1 captions, as on `0x102` and `0x6B`.
-    for (key, fallback, rect, control) in [
+    // The column's owner-draw type-1 captions, as on `0x102` and `0x6B`. The
+    // toggle names the view its press shows next.
+    let toggle = match (modal.extras_page, modal.advanced) {
+        (Some(_), _) => ("VERA:RandomMapBasic", "Basic"),
+        (None, true) => ("VERA:RandomMapExtras", "Extras"),
+        (None, false) => ("VERA:RandomMapAdvanced", "Advanced"),
+    };
+    let export = match modal.exported {
+        true => ("VERA:RandomMapExported", "Map Exported"),
+        false => ("VERA:RandomMapExport", "Export Map"),
+    };
+    let fair = match modal.options.fair_starts {
+        true => ("VERA:RandomMapFairStartsOn", "Fair Starts: On"),
+        false => ("VERA:RandomMapFairStartsOff", "Fair Starts: Off"),
+    };
+    let preset = modal.preset.map_or(
+        ("VERA:RandomMapPresets", "Presets"),
+        crate::ui::skirmish_shell::RandomMapPreset::label,
+    );
+    for ((key, fallback), rect, control) in [
+        (("GUI:UseMap", "Use Map"), layout.use_map, C::Ok0x6c5),
+        (("GUI:LoadMap", "Load Map"), layout.load, C::Load0x6c2),
+        (("GUI:SaveMap", "Save Map"), layout.save, C::Save0x6c3),
         (
-            "GUI:UseMap",
-            "Use Map",
-            layout.use_map,
-            RandomMapSetupControl::Ok0x6c5,
-        ),
-        (
-            "GUI:LoadMap",
-            "Load Map",
-            layout.load,
-            RandomMapSetupControl::Load0x6c2,
-        ),
-        (
-            "GUI:SaveMap",
-            "Save Map",
-            layout.save,
-            RandomMapSetupControl::Save0x6c3,
-        ),
-        (
-            "GUI:DeleteMap",
-            "Delete Map",
+            ("GUI:DeleteMap", "Delete Map"),
             layout.delete,
-            RandomMapSetupControl::Delete0x6c4,
+            C::Delete0x6c4,
         ),
-        (
-            "GUI:Cancel",
-            "Cancel",
-            layout.cancel,
-            RandomMapSetupControl::Cancel0x5c0,
-        ),
-        // The toggle names the view its press shows next.
-        if modal.extras_page.is_some() {
-            (
-                "VERA:RandomMapBasic",
-                "Basic",
-                layout.advanced,
-                RandomMapSetupControl::AdvancedToggle,
-            )
-        } else if modal.advanced {
-            (
-                "VERA:RandomMapExtras",
-                "Extras",
-                layout.advanced,
-                RandomMapSetupControl::AdvancedToggle,
-            )
-        } else {
-            (
-                "VERA:RandomMapAdvanced",
-                "Advanced",
-                layout.advanced,
-                RandomMapSetupControl::AdvancedToggle,
-            )
-        },
-        if modal.exported {
-            (
-                "VERA:RandomMapExported",
-                "Map Exported",
-                layout.export,
-                RandomMapSetupControl::ExportMap,
-            )
-        } else {
-            (
-                "VERA:RandomMapExport",
-                "Export Map",
-                layout.export,
-                RandomMapSetupControl::ExportMap,
-            )
-        },
-        if modal.options.fair_starts {
-            (
-                "VERA:RandomMapFairStartsOn",
-                "Fair Starts: On",
-                layout.fair_starts,
-                RandomMapSetupControl::FairStartsToggle,
-            )
-        } else {
-            (
-                "VERA:RandomMapFairStartsOff",
-                "Fair Starts: Off",
-                layout.fair_starts,
-                RandomMapSetupControl::FairStartsToggle,
-            )
-        },
-        {
-            let (key, fallback) = modal.preset.map_or(
-                ("VERA:RandomMapPresets", "Presets"),
-                crate::ui::skirmish_shell::RandomMapPreset::label,
-            );
-            (
-                key,
-                fallback,
-                layout.preset,
-                RandomMapSetupControl::PresetCycle,
-            )
-        },
+        (("GUI:Cancel", "Cancel"), layout.cancel, C::Cancel0x5c0),
+        (toggle, layout.advanced, C::AdvancedToggle),
+        (export, layout.export, C::ExportMap),
+        (fair, layout.fair_starts, C::FairStartsToggle),
+        (preset, layout.preset, C::PresetCycle),
     ]
     .into_iter()
     .filter(|_| !sliding)
     {
         let mut caption = localized_label(state, key, fallback);
         // One of the player's own presets is named by its number.
-        if control == RandomMapSetupControl::PresetCycle
-            && let Some(crate::ui::skirmish_shell::RandomMapPreset::Mine(slot)) = modal.preset
+        if let (C::PresetCycle, Some(crate::ui::skirmish_shell::RandomMapPreset::Mine(slot))) =
+            (control, modal.preset)
         {
             caption = caption.replace("{number}", &(u32::from(slot) + 1).to_string());
         }
@@ -1155,7 +934,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             out,
             state,
             &caption,
-            button_text_rect(rect, modal.pressed_control == Some(control), scale),
+            button_text_rect(rect, pressed == Some(control), scale),
             button_label_color_for_disabled(!modal.is_enabled(control)),
             ShellAlign::BUTTON_CAPTION,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
@@ -1165,8 +944,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 
     // An open list covers the faces and the trackbar under it; each ends in
     // the gap above a row, so a covered text is covered whole.
-    let open_list: Vec<RectPx> = modal
-        .open_combo
+    let open_list: Vec<RectPx> = open
         .map(|combo| {
             random_map_setup_dropdown_rect(layout, combo.row(), modal.combo_items(combo).len())
         })
@@ -1217,45 +995,23 @@ pub(super) fn push_random_map_setup_modal_text_draws(
         );
     }
 
-    if modal.generating {
-        push_text_draw(
-            out,
+    // The progress text's place: the generate block's text, else VERA's word
+    // on where Export Map wrote the file (not the game folder), what the last
+    // Extras tool did, or how evenly the map on show treats its starts.
+    let progress = if modal.generating {
+        Some(localized_label(
             state,
-            &localized_label(state, "GUI:WorkingPleaseWait", "Working, please wait..."),
-            rect_to_text_rect(layout.progress_text),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
-            scale.factor(),
-        );
+            "GUI:WorkingPleaseWait",
+            "Working, please wait...",
+        ))
     } else if let Some(path) = modal.exported_to.as_ref().filter(|_| modal.exported) {
-        // VERA: where Export Map wrote the file, which is not the game folder.
-        let text = localized_label(state, "VERA:RandomMapExportedTo", "Saved to {path}")
-            .replace("{path}", path);
-        push_text_draw(
-            out,
-            state,
-            &text,
-            rect_to_text_rect(layout.progress_text),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
-            scale.factor(),
-        );
+        Some(
+            localized_label(state, "VERA:RandomMapExportedTo", "Saved to {path}")
+                .replace("{path}", path),
+        )
     } else if let Some((key, fallback)) = modal.extras_note {
-        // VERA: what the last Extras tool did, where the progress text goes.
-        push_text_draw(
-            out,
-            state,
-            &localized_label(state, key, fallback),
-            rect_to_text_rect(layout.progress_text),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
-            scale.factor(),
-        );
+        Some(localized_label(state, key, fallback))
     } else if let Some(report) = modal.fairness.filter(|_| modal.generated) {
-        // VERA: how evenly the map on show treats its starts.
         let readout = report.readout();
         let text = localized_label(
             state,
@@ -1267,13 +1023,17 @@ pub(super) fn push_random_map_setup_modal_text_draws(
         .replace("{room}", &readout.room.to_string())
         .replace("{spacing}", &readout.spacing.to_string());
         // The water near the starts joins the line with Sea Access on.
-        let text = match readout.sea.filter(|_| report.sea_wanted) {
+        Some(match readout.sea.filter(|_| report.sea_wanted) {
             Some(sea) => {
                 text + &localized_label(state, "VERA:RandomMapFairnessSea", ", sea {sea}%")
                     .replace("{sea}", &sea.to_string())
             }
             None => text,
-        };
+        })
+    } else {
+        None
+    };
+    if let Some(text) = progress {
         push_text_draw(
             out,
             state,
@@ -1287,7 +1047,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
 
     // Matches the sprite pass: the open list is drawn over everything else.
-    if let Some(combo) = modal.open_combo {
+    if let Some(combo) = open {
         let row = combo.row();
         let items = modal.combo_items(combo);
         let list = random_map_setup_dropdown_rect(layout, row, items.len());
@@ -2175,11 +1935,6 @@ mod tests {
     }
 
     #[test]
-    fn trackbar_value_text_uses_normal_shell_yellow_source() {
-        assert_eq!(trackbar_value_text_color(), SHELL_LABEL_TEXT_RGB);
-    }
-
-    #[test]
     fn combo_face_text_color_uses_disabled_source_for_inactive_siblings() {
         let shell = SkirmishShellState::default();
 
@@ -2188,14 +1943,14 @@ mod tests {
             combo_face_text_color(true),
             SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
         );
-        assert_eq!(
-            opponent_sibling_combo_text_color(&shell.opponents[0]),
-            SHELL_LABEL_TEXT_RGB
-        );
-        assert_eq!(
-            opponent_sibling_combo_text_color(&shell.opponents[1]),
-            SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-        );
+        // A sibling face greys with its row's combo (`gui_paint` paints a
+        // disabled combo's caption in the disabled source).
+        let sibling = |row| {
+            let side = crate::ui::skirmish_shell::SkirmishComboId::Side(row);
+            combo_face_text_color(!crate::ui::skirmish_shell::combo_enabled(&shell, &[], side))
+        };
+        assert_eq!(sibling(1), SHELL_LABEL_TEXT_RGB);
+        assert_eq!(sibling(2), SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F);
     }
 
     #[test]

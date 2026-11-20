@@ -9,7 +9,7 @@
 
 use super::chrome::*;
 use super::controls::{
-    ControlPaint, dropdown_scroll_part, list_controls, paint_control, push_new_edit,
+    ControlPaint, dropdown_scroll_part, list_view_controls, paint_control, push_new_edit,
     push_popup_instances,
 };
 use super::text::rect_to_text_rect;
@@ -24,9 +24,9 @@ use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalButton, ModalDepths, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 use crate::ui::wol_lobby::*;
-use crate::util::time::Instant;
 
 /// The popups paint over the covered dialog, before their own controls.
 pub(super) const POPUP_DEPTHS: ModalDepths = ModalDepths {
@@ -125,7 +125,6 @@ pub(crate) fn paint_wol_lobby_children(
     let font = &state.renderer.bit_font;
     let scale = layout.page.scale;
     let modern = ui.is_modern();
-    let now = Instant::now();
     let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| {
         shell_text::draw_in_rect_scaled(
             font,
@@ -169,7 +168,7 @@ pub(crate) fn paint_wol_lobby_children(
         .copied()
         .chain([(REFRESH, layout.refresh), (EMOTE, layout.emote)])
     {
-        let pressed = ui.buttons.is_pressed(id);
+        let pressed = ui.pressed(id);
         match IMAGE_BUTTONS.iter().find(|(known, ..)| *known == id) {
             Some((_, released_face, pressed_face)) => {
                 if let Some(art) = art {
@@ -213,11 +212,11 @@ pub(crate) fn paint_wol_lobby_children(
         &atlas.control_chrome(),
         ControlPaint::Checkbox {
             rect: layout.observer_toggle,
-            checked: ui.observer,
+            checked: ui.observer(),
         },
         scale,
     );
-    if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
+    if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer()) {
         push_flag_entry_clipped_centered(
             &mut paint.controls,
             entry,
@@ -226,73 +225,58 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_CONTROL_DEPTH,
         );
     }
+    // The chat NewEdit keeps the focus under the popups too.
+    let chat_edit = SavedSeedDescriptionEdit {
+        focused: true,
+        ..ui.edit(CHAT)
+    };
     push_new_edit(
         &mut paint.controls,
         &mut paint.texts,
         atlas,
         font,
-        &ui.chat.edit,
+        &chat_edit,
         state
             .platform
             .ime
             .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
         layout.chat,
-        ui.popup.is_none() && ui.caret_visible(now),
+        ui.caret_visible(),
         SHELL_LABEL_TEXT_RGB,
         SHELL_CONTROL_TEXT_DEPTH,
         scale,
     );
 
-    let lobbies = ui
-        .lobby_list
-        .geometry(layout.lobbies, ui.lobby_rows.len(), scale);
-    let games = ui
-        .game_list
-        .geometry(layout.games, ui.game_rows.len(), scale);
-    let players = ui
-        .player_list
-        .geometry(layout.players, ui.player_rows.len(), scale);
-    let chat = ui
-        .chat
-        .list
-        .geometry(layout.chat_log, ui.chat.lines.len(), scale);
-    if !modern {
-        list_controls(
-            &mut paint.controls,
-            atlas,
-            lobbies,
-            &ui.lobby_list,
-            true,
-            scale,
-        );
-    }
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        games,
-        &ui.game_list,
-        true,
-        scale,
-    );
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        players,
-        &ui.player_list,
-        false,
-        scale,
-    );
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        chat,
-        &ui.chat.list,
-        false,
-        scale,
-    );
+    // The owner-draw lists on the rows and top the tree keeps (the
+    // transcript's top is its own, which new lines move); the transcript and
+    // the multi-select user list fill no selected row.
+    let mut list = |id: u16, rect: RectPx, count: usize, selectable: bool, paint_it: bool| {
+        let view = ui.list_view(id);
+        let top = match id {
+            CHAT_LOG => ui.chat.list.top_index,
+            _ => view.map_or(0, |view| view.top),
+        };
+        let geometry = ShellListGeometry::new(rect, count, top, ListMetrics::scaled(scale));
+        let selected = view.and_then(|view| view.selected).filter(|_| selectable);
+        if paint_it {
+            let pressed = view.and_then(|view| view.pressed);
+            list_view_controls(
+                &mut paint.controls,
+                atlas,
+                geometry,
+                (selected, top, pressed),
+                scale,
+            );
+        }
+        (geometry, top)
+    };
+    let (lobbies, lobby_top) = list(LOBBIES, layout.lobbies, ui.lobby_rows.len(), true, !modern);
+    let (games, game_top) = list(GAMES, layout.games, ui.game_rows.len(), true, true);
+    let (players, player_top) = list(PLAYERS, layout.players, ui.player_rows.len(), false, true);
+    let (chat, chat_top) = list(CHAT_LOG, layout.chat_log, ui.chat.lines.len(), false, true);
     // LBS_MULTIPLESEL: every selected user row is filled.
     for row in &ui.selected_players {
-        if let Some(visible) = row.checked_sub(ui.player_list.top_index)
+        if let Some(visible) = row.checked_sub(player_top)
             && visible < players.visible_rows
         {
             push_solid_rect(
@@ -308,7 +292,7 @@ pub(crate) fn paint_wol_lobby_children(
     for (visible, row) in ui
         .lobby_rows
         .iter()
-        .skip(ui.lobby_list.top_index)
+        .skip(lobby_top)
         .take(lobbies.visible_rows)
         .enumerate()
     {
@@ -323,7 +307,7 @@ pub(crate) fn paint_wol_lobby_children(
     for (visible, row) in ui
         .game_rows
         .iter()
-        .skip(ui.game_list.top_index)
+        .skip(game_top)
         .take(games.visible_rows)
         .enumerate()
     {
@@ -428,7 +412,7 @@ pub(crate) fn paint_wol_lobby_children(
     for (visible, row) in ui
         .player_rows
         .iter()
-        .skip(ui.player_list.top_index)
+        .skip(player_top)
         .take(players.visible_rows)
         .enumerate()
     {
@@ -485,7 +469,7 @@ pub(crate) fn paint_wol_lobby_children(
         .chat
         .lines
         .iter()
-        .skip(ui.chat.list.top_index)
+        .skip(chat_top)
         .take(chat.visible_rows)
         .enumerate()
     {
@@ -536,18 +520,20 @@ pub(super) fn paint_room_players(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_wol_lobby_popup(
     state: &AppState,
-    popup: &WolLobbyPopup,
-    modern: bool,
+    ui: &WolLobbyState,
     width: i32,
     height: i32,
     scale: ShellScale,
     status: &str,
-    caret_visible: bool,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+    let (Some(atlas), Some(popup)) = (
+        state.frontend.skirmish_shell_chrome.as_ref(),
+        ui.popup.as_ref(),
+    ) else {
         return paint;
     };
+    let modern = ui.is_modern();
     let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
     let caption = |key: &str, rect: RectPx, align: ShellAlign, enabled: bool| PaintLabel {
         text: super::text::localized_label(state, key, key).into(),
@@ -562,24 +548,23 @@ pub(crate) fn paint_wol_lobby_popup(
     };
     let button = |id: u16, rect: RectPx| ModalButton {
         rect,
-        pressed: popup.buttons.is_pressed(id),
-        enabled: popup.enabled(id),
+        pressed: ui.pressed(id),
+        enabled: ui.popup_enabled(id),
     };
     let ok_label = |rect: RectPx| {
-        crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-            rect,
-            popup.buttons.is_pressed(POPUP_OK),
-        )
+        crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, ui.pressed(POPUP_OK))
     };
     let cancel_label = |rect: RectPx| {
         crate::app::frontend::shell_pass::owner_draw_button_label_rect(
             rect,
-            popup.buttons.is_pressed(POPUP_CANCEL),
+            ui.pressed(POPUP_CANCEL),
         )
     };
+    let checked = |id| ui.popup_checked(id);
+    let enabled = |id| ui.popup_enabled(id);
     let mut room_name = None;
-    let (dialog, buttons, mut labels, password) = match &popup.kind {
-        WolPopupKind::Create(create) => {
+    let (dialog, buttons, mut labels, password) = match popup.create {
+        Some(watching) => {
             let layout =
                 crate::ui::shell::modal::wol_create_game_layout_on(width, height, modern, scale);
             let field_align = if modern {
@@ -593,8 +578,8 @@ pub(crate) fn paint_wol_lobby_popup(
                 field_align,
                 true,
             )];
-            let room = create.room.as_ref().zip(layout.room.as_ref());
-            if let Some((picker, room)) = room {
+            let room = ui.room_limits().zip(layout.room.as_ref());
+            if let Some((limits, room)) = room {
                 labels.push(caption(
                     "VERA:MaxPlayers",
                     room.players_label,
@@ -605,7 +590,7 @@ pub(crate) fn paint_wol_lobby_popup(
                     atlas,
                     &mut paint.controls,
                     &mut labels,
-                    picker.limits.players,
+                    limits.players,
                     room.players,
                     scale,
                 );
@@ -642,35 +627,35 @@ pub(crate) fn paint_wol_lobby_popup(
             for (rect, checked, title, enabled) in [
                 (
                     layout.clan,
-                    create.clan,
+                    checked(CREATE_CLAN),
                     "GUI:BattleClanTournament",
-                    create.clan_enabled,
+                    enabled(CREATE_CLAN),
                 ),
                 (
                     Some(layout.limit),
-                    create.limit,
+                    checked(CREATE_LIMIT),
                     "WOL:LimitScreenResolution",
-                    create.limit_enabled,
+                    enabled(CREATE_LIMIT),
                 ),
-                (layout.observe, create.observe, "GUI:Observe", true),
+                (layout.observe, checked(CREATE_OBSERVE), "GUI:Observe", true),
             ] {
                 if let Some(rect) = rect {
                     checkbox(rect, checked, title, enabled, None);
                 }
             }
-            if let Some((picker, room)) = room {
+            if let Some((limits, room)) = room {
                 checkbox(
                     room.spectators,
-                    picker.limits.spectators,
+                    limits.spectators,
                     "VERA:AllowSpectators",
                     true,
                     None,
                 );
             }
-            if let Some((ranked, rect)) = create.ranked.zip(layout.ranked) {
-                checkbox(rect, ranked, "VERA:RankedGame", true, None);
+            if let Some(rect) = layout.ranked.filter(|_| ui.node(CREATE_RANKED).is_some()) {
+                checkbox(rect, checked(CREATE_RANKED), "VERA:RankedGame", true, None);
             }
-            if let Some((watching, rect)) = create.watching.zip(layout.watching) {
+            if let Some((watching, rect)) = watching.zip(layout.watching) {
                 checkbox(
                     rect,
                     watching != RoomWatching::Off,
@@ -679,15 +664,15 @@ pub(crate) fn paint_wol_lobby_popup(
                     Some(watching.label_key()),
                 );
             }
-            if let (Some(edit), Some((label, rect))) = (&create.name, layout.name) {
+            if let Some((label, rect)) = layout.name.filter(|_| ui.node(CREATE_NAME).is_some()) {
                 labels.push(caption("VERA:RoomName", label, field_align, true));
-                room_name = Some((edit, rect));
+                room_name = Some(rect);
             }
             labels.push(caption(
                 "GUI:OK",
                 ok_label(layout.ok),
                 button_align,
-                popup.ok_enabled(),
+                ui.ok_enabled(),
             ));
             labels.push(caption(
                 "GUI:Cancel",
@@ -712,7 +697,7 @@ pub(crate) fn paint_wol_lobby_popup(
                 layout.password,
             )
         }
-        WolPopupKind::Password(_) => {
+        None => {
             let layout =
                 crate::ui::shell::modal::wol_channel_password_layout_on(width, height, scale);
             (
@@ -729,12 +714,7 @@ pub(crate) fn paint_wol_lobby_popup(
                         ShellAlign::H_CENTER,
                         true,
                     ),
-                    caption(
-                        "GUI:OK",
-                        ok_label(layout.ok),
-                        button_align,
-                        popup.ok_enabled(),
-                    ),
+                    caption("GUI:OK", ok_label(layout.ok), button_align, ui.ok_enabled()),
                     caption(
                         "GUI:Cancel",
                         cancel_label(layout.cancel),
@@ -765,22 +745,16 @@ pub(crate) fn paint_wol_lobby_popup(
     let checkboxes = std::mem::replace(&mut paint.controls, draw.sprites);
     paint.controls.extend(checkboxes);
     paint.texts.extend(draw.text);
-    push_edit(
-        &mut paint,
-        state,
-        popup.edit(),
-        password,
-        caret_visible,
-        scale,
-        POPUP_DEPTHS.text,
-    );
-    if let Some((edit, rect)) = room_name {
+    for (id, rect) in
+        std::iter::once((POPUP_PASSWORD, password)).chain(room_name.map(|rect| (CREATE_NAME, rect)))
+    {
+        let caret = ui.popup_caret_visible(id);
         push_edit(
             &mut paint,
             state,
-            edit,
+            &ui.edit(id),
             rect,
-            caret_visible,
+            caret,
             scale,
             POPUP_DEPTHS.text,
         );

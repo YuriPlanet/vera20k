@@ -8,16 +8,22 @@ use crate::app::match_runtime::session::NetworkReturnContext;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
-use crate::ui::room_limits::{RoomLimitsPicker, RoomLimitsPress};
+use crate::ui::room_limits::RoomLimits;
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::util::time::{Duration, Instant};
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 const MODAL: DialogId = DialogId(0xCE);
 const OK: u16 = 1;
 const CANCEL: u16 = 2;
+/// VERA's Create Game box's Max players and Allow spectators (its own
+/// controls, no resource's).
+const ROOM_PLAYERS: u16 = 0x7F20;
+const ROOM_SPECTATORS: u16 = 0x7F21;
 // Native CDTimerClass uses timeGetTime()/16, including the 600-bucket join
 // timer AC0230/AC0238 armed by005DF410. It is independent of simulation ticks.
 const JOIN_TIMEOUT: Duration = Duration::from_millis(600 * 16);
@@ -122,20 +128,20 @@ pub(crate) struct LanShellRuntime {
     ///
     /// [`agreement::rules_differ_text`]: crate::app::shell_network_setup::agreement::rules_differ_text
     pub(crate) modal_body: Option<String>,
-    /// VERA's Create Game box while it is up: the room's limits.
-    pub(crate) create: Option<RoomLimitsPicker>,
+    /// VERA's Create Game box is up; its widgets hold the room's limits.
+    pub(crate) creating: bool,
     pending_join: Option<PendingJoin>,
     rejoin: Option<Rejoin>,
     requests: Vec<LanServiceRequest>,
 }
 
 impl LanShellRuntime {
-    fn new(name: &str, observer: bool) -> Self {
+    fn new(name: &str) -> Self {
         Self {
-            lobby: LanLobbyState::new(name, observer),
+            lobby: LanLobbyState::new(name),
             modal: None,
             modal_body: None,
-            create: None,
+            creating: false,
             pending_join: None,
             rejoin: None,
             requests: vec![LanServiceRequest::Refresh],
@@ -153,7 +159,7 @@ impl LanShellRuntime {
         if now >= rejoin.until {
             return self.rejoin.take().map(|rejoin| rejoin.host);
         }
-        if self.pending_join.is_some() || self.create.is_some() || self.modal.is_some() {
+        if self.pending_join.is_some() || self.creating || self.modal.is_some() {
             return None;
         }
         let Some(game_id) = self
@@ -222,7 +228,7 @@ impl App {
         // The name box shows the name as typed; the lobby row shows it as
         // every other player sees it.
         let name = owner.open_lan_name_box();
-        let mut runtime = LanShellRuntime::new(&name, owner.lan_observer());
+        let mut runtime = LanShellRuntime::new(&name);
         runtime
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
@@ -348,7 +354,7 @@ fn create_error(lobby: &LanLobbyState, name: &str) -> Option<&'static str> {
 }
 
 fn join_error(lobby: &LanLobbyState, name: &str, reserved: &[String]) -> Option<&'static str> {
-    let selected = lobby.game_list.selected.unwrap_or(0);
+    let selected = lobby.selected_game;
     if selected < 1 {
         Some("TXT_MUST_SELECT_GAME")
     } else if lobby.game_count() < 2 || selected >= lobby.game_count() {
@@ -393,8 +399,25 @@ fn show_modal(state: &mut AppState, key: &'static str) {
     let runtime = state.frontend.lan.as_mut().expect("active BB");
     runtime.modal = Some(key);
     runtime.modal_body = None;
-    runtime.lobby.cancel_pointer();
-    state.frontend.shell_controller.push(MODAL, true);
+    push_box(state, box_spec(&[OK]));
+}
+
+/// A box's root with its buttons.
+fn box_spec(buttons: &[u16]) -> NodeSpec {
+    let button = |id: &u16| NodeSpec::new(NodeKind::Button).id((*id).into());
+    NodeSpec::new(NodeKind::Dialog).children(buttons.iter().map(button))
+}
+
+/// Pushes the box `0xCE` with its widgets over BB, which lets go of the
+/// pointer.
+fn push_box(state: &mut AppState, spec: NodeSpec) {
+    let controller = &mut state.frontend.shell_controller;
+    controller.gui_mut().cancel_pointer();
+    controller.push(MODAL, true);
+    if let Some(root) = controller.root_in(MODAL) {
+        page::ensure_built(controller.gui_mut(), root, || spec);
+    }
+    sync_gui(state);
 }
 
 /// Select the active LAN dialog's transcript; the shared chat owner retains
@@ -564,11 +587,29 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
     match action {
         // VERA's lobby asks for its room's limits first.
         LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
-            let limits = state.frontend.room_limits;
-            let runtime = state.frontend.lan.as_mut().expect("active BB");
-            runtime.create = Some(RoomLimitsPicker::new(limits));
-            runtime.lobby.cancel_pointer();
-            state.frontend.shell_controller.push(MODAL, true);
+            let RoomLimits {
+                players,
+                spectators,
+            } = state.frontend.room_limits;
+            state.frontend.lan.as_mut().expect("active BB").creating = true;
+            let range = crate::ui::room_limits::PLAYERS;
+            push_box(
+                state,
+                box_spec(&[OK, CANCEL])
+                    .child(
+                        NodeSpec::new(NodeKind::Trackbar)
+                            .id(ROOM_PLAYERS.into())
+                            .with(Prop::Min, Value::Int(range.min))
+                            .with(Prop::Max, Value::Int(range.max))
+                            .with(Prop::Pos, Value::Int(players.into())),
+                    )
+                    .child(
+                        NodeSpec::new(NodeKind::Checkbox)
+                            .id(ROOM_SPECTATORS.into())
+                            .with(Prop::Checked, Value::Bool(spectators))
+                            .with(Prop::ActivateOnPress, Value::Bool(true)),
+                    ),
+            );
         }
         LanLobbyAction::Create { observe: _ } => create(state, &name),
         LanLobbyAction::Join { game_id, observe } => {
@@ -619,7 +660,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             // when looking at the Lobby sentinel, never a selected game's roster.
             // 0x541's handler rebuilds the roster (0x005DAFE0), so a selected
             // own row loses its selection with its old name.
-            if runtime.lobby.game_list.selected == Some(0) {
+            if runtime.lobby.selected_game == 0 {
                 let mut players = runtime.lobby.players.clone();
                 match players.first_mut() {
                     Some(local) => local.name = name,
@@ -829,44 +870,35 @@ fn create(state: &mut AppState, name: &str) {
 /// The Create Game box's OK keeps its limits for the room and creates it;
 /// Cancel returns to the lobby.
 fn close_create_box(state: &mut AppState, confirmed: bool) {
-    let Some(picker) = state
+    let Some(runtime) = state
         .frontend
         .lan
         .as_mut()
-        .and_then(|runtime| runtime.create.take())
+        .filter(|runtime| runtime.creating)
     else {
         return;
     };
+    runtime.creating = false;
+    let limits = room_limits(state);
     state.frontend.shell_controller.pop();
-    let lobby = &mut state.frontend.lan.as_mut().expect("active BB").lobby;
-    lobby.cancel_pointer();
     if confirmed {
-        state.frontend.room_limits = picker.limits;
+        state.frontend.room_limits = limits;
         let name = state
             .frontend
             .multiplayer_shell_runtime
             .local_participant()
             .name;
         create(state, &name);
-    } else {
-        lobby.set_enabled(true);
+    } else if let Some(runtime) = state.frontend.lan.as_mut() {
+        runtime.lobby.set_enabled(true);
     }
     state.platform.window.request_redraw();
-}
-
-/// VERA's Create Game box, centred as the online one.
-fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGameLayout {
-    crate::ui::shell::modal::lan_create_game_layout(
-        state.render_width() as i32,
-        state.render_height() as i32,
-    )
 }
 
 fn acknowledge(state: &mut AppState) {
     if let Some(runtime) = state.frontend.lan.as_mut() {
         runtime.modal = None;
         runtime.modal_body = None;
-        runtime.lobby.cancel_pointer();
     }
     state.frontend.shell_controller.pop();
     state.platform.window.request_redraw();
@@ -878,7 +910,7 @@ pub(crate) fn leaves_escape(state: &AppState) -> bool {
         .frontend
         .lan
         .as_ref()
-        .is_some_and(|runtime| runtime.create.is_none() && runtime.modal.is_none())
+        .is_some_and(|runtime| !runtime.creating && runtime.modal.is_none())
 }
 
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
@@ -905,7 +937,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .filter(|runtime| {
             routed
                 && runtime.modal.is_none()
-                && runtime.create.is_none()
+                && !runtime.creating
                 && runtime.lobby.enabled
                 && runtime.lobby.focused_control == CHAT
         })
@@ -916,7 +948,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let Some(runtime) = state.frontend.lan.as_mut() else {
         return;
     };
-    if runtime.create.is_some() {
+    if runtime.creating {
         match code {
             Some(KeyCode::Enter | KeyCode::NumpadEnter) => close_create_box(state, true),
             Some(KeyCode::Escape) => close_create_box(state, false),
@@ -957,81 +989,125 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     state.platform.window.request_redraw();
 }
 
-fn pointer_control(state: &AppState) -> Option<u16> {
-    let (x, y) = state.match_state.input.cursor_px();
-    if state.frontend.lan.as_ref()?.create.is_some() {
-        let layout = create_box_layout(state);
-        return [(OK, layout.ok), (CANCEL, layout.cancel)]
-            .into_iter()
-            .find(|(_, rect)| rect.contains(x, y))
-            .map(|(id, _)| id);
+/// Builds BB's widgets once and puts them on the layout and on the lobby:
+/// the lists' rows, selections and tops (the chat log's top is its
+/// transcript's, which follows new lines), the observer box and whether the
+/// page takes input; and the box over it, if any, on its layout.
+pub(crate) fn sync_gui(state: &mut AppState) {
+    let layout = layout(state);
+    let (width, height) = (state.render_width() as i32, state.render_height() as i32);
+    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+    let font = &state.renderer.bit_font;
+    let Some(runtime) = state.frontend.lan.as_mut() else {
+        return;
+    };
+    let controller = &mut state.frontend.shell_controller;
+    let (Some(root), boxed) = (controller.root_in(PAGE.dialog), controller.root_in(MODAL)) else {
+        return;
+    };
+    if controller.top_id() == Some(PAGE.dialog) {
+        controller.set_scale(layout.page.scale);
     }
-    if state.frontend.lan.as_ref()?.modal.is_some() {
-        return crate::ui::shell::modal::body_ok_layout(
-            state.render_width() as i32,
-            state.render_height() as i32,
-        )
-        .ok
-        .contains(x, y)
-        .then_some(OK);
+    let gui = controller.gui_mut();
+    page::ensure_built(gui, root, spec);
+    page::sync_rects(gui, root, |id| layout.rect(id));
+    let lobby = &mut runtime.lobby;
+    let _ = gui.set(root, Prop::Enabled, Value::Bool(lobby.enabled));
+    page::set(
+        gui,
+        root,
+        OBSERVER_TOGGLE,
+        Prop::Checked,
+        Value::Bool(observer),
+    );
+    let metrics = ListMetrics::scaled(layout.page.scale);
+    for (id, rect, count, selected) in [
+        (
+            GAMES,
+            layout.games,
+            lobby.game_count(),
+            Some(lobby.selected_game),
+        ),
+        (
+            PLAYERS,
+            layout.players,
+            lobby.players.len(),
+            lobby.selected_player,
+        ),
+        (CHAT_LOG, layout.chat_log, lobby.chat.lines.len(), None),
+    ] {
+        let top = match id {
+            CHAT_LOG => lobby.chat.list.top_index,
+            _ => page::int(gui, root, id, Prop::Top).unwrap_or(0).max(0) as usize,
+        };
+        // Discovery or a resized window may leave the top past the range.
+        let top = top.min(ShellListGeometry::new(rect, count, 0, metrics).max_top);
+        if id == CHAT_LOG {
+            lobby.chat.list.top_index = top;
+        }
+        let selected = selected.map_or(-1, |row| row as i32);
+        for (prop, value) in [
+            (Prop::RowCount, count as i32),
+            (Prop::Top, top as i32),
+            (Prop::Selected, selected),
+        ] {
+            page::set(gui, root, id, prop, Value::Int(value));
+        }
     }
-    layout(state).control_at(x, y)
+    for (edit, rect) in [
+        (&mut lobby.name, layout.name),
+        (&mut lobby.chat.edit, layout.chat),
+    ] {
+        edit.scroll_to_caret(
+            (layout.page.scale.base_rect(rect).w - 3).max(0) as u32,
+            |text| font.text_width(text),
+        );
+    }
+    if let Some(boxed) = boxed {
+        let create = crate::ui::shell::modal::lan_create_game_layout(width, height);
+        let ok = match runtime.creating {
+            true => create.ok,
+            false => crate::ui::shell::modal::body_ok_layout(width, height).ok,
+        };
+        page::sync_rects(gui, boxed, |id| match id {
+            OK => Some(ok),
+            CANCEL => Some(create.cancel),
+            ROOM_PLAYERS => Some(create.room.players),
+            ROOM_SPECTATORS => Some(create.room.spectators),
+            _ => None,
+        });
+    }
 }
 
-pub(crate) fn update_geometry(state: &mut AppState) {
-    let layout = layout(state);
-    if let Some(runtime) = state.frontend.lan.as_mut() {
-        let lobby = &mut runtime.lobby;
-        for (list, rect, count) in [
-            (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
-            (&mut lobby.player_list, layout.players, lobby.players.len()),
-            (
-                &mut lobby.chat.list,
-                layout.chat_log,
-                lobby.chat.lines.len(),
-            ),
-        ] {
-            list.reconcile_geometry(rect, count, layout.page.scale);
-        }
-        for (edit, rect) in [
-            (&mut lobby.name, layout.name),
-            (&mut lobby.chat.edit, layout.chat),
-        ] {
-            edit.scroll_to_caret(
-                (layout.page.scale.base_rect(rect).w - 3).max(0) as u32,
-                |text| state.renderer.bit_font.text_width(text),
-            );
-        }
-    }
+/// The limits VERA's Create Game box shows.
+pub(crate) fn room_limits(state: &AppState) -> RoomLimits {
+    let controller = &state.frontend.shell_controller;
+    let (gui, root) = (controller.gui(), controller.root_in(MODAL));
+    root.map_or(state.frontend.room_limits, |root| RoomLimits {
+        players: page::int(gui, root, ROOM_PLAYERS, Prop::Pos).unwrap_or_default() as u8,
+        spectators: page::checked(gui, root, ROOM_SPECTATORS),
+    })
+}
+
+/// List `id`'s top row as its widget holds it.
+pub(crate) fn list_top(state: &AppState, id: u16) -> usize {
+    let controller = &state.frontend.shell_controller;
+    let top = controller
+        .root_in(PAGE.dialog)
+        .and_then(|root| page::int(controller.gui(), root, id, Prop::Top));
+    top.unwrap_or(0).max(0) as usize
+}
+
+/// Whether BB itself takes the pointer: no box covers it.
+fn on_top(state: &AppState) -> bool {
+    state.frontend.shell_controller.top_id() == Some(PAGE.dialog)
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    let control = pointer_control(state);
-    let layout = layout(state);
-    let create_layout = create_box_layout(state);
+    sync_gui(state);
     let (x, y) = state.match_state.input.cursor_px();
-    if let Some(runtime) = state.frontend.lan.as_mut() {
-        let lobby = &mut runtime.lobby;
-        lobby.buttons.hovered = control;
-        if let Some(picker) = runtime.create.as_mut() {
-            picker.drag(&create_layout.room, ShellScale::RETAIL, x);
-        } else if runtime.modal.is_none() && lobby.enabled {
-            for (list, rect, count) in [
-                (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
-                (&mut lobby.player_list, layout.players, lobby.players.len()),
-                (
-                    &mut lobby.chat.list,
-                    layout.chat_log,
-                    lobby.chat.lines.len(),
-                ),
-            ] {
-                let geometry = list.geometry(rect, count, layout.page.scale);
-                list.hot_row = geometry.row_at(count, list.top_index, x, y);
-                list.scroll
-                    .pointer_moved(geometry, &mut list.top_index, x, y);
-            }
-        }
-    }
+    state.frontend.shell_controller.on_pointer_move(x, y, &[]);
+    handle_events(state);
     state.platform.window.request_redraw();
 }
 
@@ -1039,166 +1115,121 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if button != MouseButton::Left || shell_transition::blocks_shell_input(state) {
         return;
     }
-    update_geometry(state);
-    let control = pointer_control(state);
-    let layout = layout(state);
-    let create_layout = create_box_layout(state);
+    sync_gui(state);
+    state.platform.window.request_redraw();
     let (x, y) = state.match_state.input.cursor_px();
-    let Some(runtime) = state.frontend.lan.as_mut() else {
-        return;
-    };
-    if let Some(picker) = runtime.create.as_mut() {
-        let buttons = &mut runtime.lobby.buttons;
-        if pressed {
-            let cue = match picker.press(&create_layout.room, ShellScale::RETAIL, x, y) {
-                RoomLimitsPress::Players => None,
-                RoomLimitsPress::Spectators => Some(LauncherCue::Checkbox),
-                RoomLimitsPress::Missed => {
-                    buttons.press(control);
-                    control.map(|_| LauncherCue::MainButton)
-                }
-            };
-            if let Some(cue) = cue {
-                App::play_launcher_options_cue(state, cue);
-            }
-        } else {
-            picker.release();
-            match buttons.release(control) {
-                Some(OK) => close_create_box(state, true),
-                Some(CANCEL) => close_create_box(state, false),
-                _ => {}
-            }
+    let observer_image = layout(state).observer_image.contains(x, y);
+    let controller = &mut state.frontend.shell_controller;
+    if !pressed {
+        controller.on_pointer_up(x, y, &[]);
+        return handle_events(state);
+    }
+    controller.on_pointer_down(x, y, &[]);
+    let pressed = controller
+        .gui()
+        .hovered()
+        .and_then(|node| controller.gui().id_of(node))
+        .and_then(|id| u16::try_from(id).ok());
+    if on_top(state)
+        && let Some(runtime) = state.frontend.lan.as_mut()
+        && runtime.lobby.enabled
+    {
+        if let Some(id) = pressed {
+            runtime.lobby.focus(id);
         }
-        state.platform.window.request_redraw();
+        // The observer image `0x75F` toggles like its box.
+        if observer_image {
+            lobby_command(state, OBSERVER_IMAGE);
+            App::play_page_cue(state, PageCue::Checkbox);
+        }
+    }
+    handle_events(state);
+}
+
+/// What the lobby makes of control `id`'s activation.
+fn lobby_command(state: &mut AppState, id: u16) {
+    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+    if let Some(action) = state
+        .frontend
+        .lan
+        .as_mut()
+        .and_then(|runtime| runtime.lobby.activate(id, observer))
+    {
+        dispatch(state, action);
+    }
+}
+
+/// The widgets' events of the last input, in order: each control's cue,
+/// then what it does.
+fn handle_events(state: &mut AppState) {
+    let controller = &mut state.frontend.shell_controller;
+    let raw = controller.drain_events();
+    let events = page::page_events(controller.gui(), raw);
+    if events.is_empty() {
         return;
     }
-    if runtime.modal.is_some() {
-        if pressed {
-            runtime.lobby.buttons.press(control);
-            if control == Some(OK) {
-                App::play_main_menu_button_sound(state);
+    let creating = state
+        .frontend
+        .lan
+        .as_ref()
+        .is_some_and(|runtime| runtime.creating);
+    for event in events {
+        match event {
+            // The games and players lists play their own GenericClick.
+            PageEvent::Cue(PageCue::ListClick) => {}
+            PageEvent::Cue(cue) => App::play_page_cue(state, cue),
+            PageEvent::Activated(OK | CANCEL) if creating => {
+                close_create_box(state, event == PageEvent::Activated(OK))
             }
-        } else if runtime.lobby.buttons.release(control) == Some(OK) {
-            acknowledge(state);
-        }
-        state.platform.window.request_redraw();
-        return;
-    }
-    let lobby = &mut runtime.lobby;
-    if !lobby.enabled {
-        return;
-    }
-    if pressed {
-        for (list, rect, count) in [
-            (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
-            (&mut lobby.player_list, layout.players, lobby.players.len()),
-            (
-                &mut lobby.chat.list,
-                layout.chat_log,
-                lobby.chat.lines.len(),
-            ),
-        ] {
-            let geometry = list.geometry(rect, count, layout.page.scale);
-            if let Some(part) = geometry.scroll_part_at(x, y) {
-                list.scroll
-                    .press(part, geometry, &mut list.top_index, y, Instant::now());
-                state.platform.window.request_redraw();
-                return;
+            PageEvent::Activated(OK) => acknowledge(state),
+            PageEvent::Activated(id) | PageEvent::Toggled(id @ OBSERVER_TOGGLE, _) => {
+                lobby_command(state, id)
             }
-        }
-        if control == Some(GAMES) {
-            let geometry =
-                lobby
-                    .game_list
-                    .geometry(layout.games, lobby.game_count(), layout.page.scale);
-            if let Some(row) = geometry.row_at(lobby.game_count(), lobby.game_list.top_index, x, y)
-            {
-                let double = crate::ui::shell::list::is_double_click(
-                    &mut lobby.game_list.last_press,
-                    Instant::now(),
-                    x,
-                    y,
-                    crate::ui::shell::saved_file_input::host_double_click_limits(),
-                );
-                let selection = lobby.select_game(row);
-                let join = double.then(|| lobby.activate(JOIN)).flatten();
-                if let Some(action) = selection {
-                    dispatch(state, action);
-                }
-                if let Some(action) = join {
+            // A second press in time joins the selected game.
+            PageEvent::Selected(GAMES, row) | PageEvent::DoubleClicked(GAMES, row) => {
+                let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+                let Some(runtime) = state.frontend.lan.as_mut() else {
+                    continue;
+                };
+                let selection = runtime.lobby.select_game(row as usize);
+                let join = matches!(event, PageEvent::DoubleClicked(..))
+                    .then(|| runtime.lobby.activate(JOIN, observer))
+                    .flatten();
+                for action in selection.into_iter().chain(join) {
                     dispatch(state, action);
                 }
                 App::play_launcher_options_cue(state, LauncherCue::GenericClick);
             }
-        } else if control == Some(PLAYERS) {
-            let geometry =
-                lobby
-                    .player_list
-                    .geometry(layout.players, lobby.players.len(), layout.page.scale);
             // A double-click's second press only notifies LBN_DBLCLK
             // (0x0061A904..0x0061A945), which this dialog ignores.
             // RESIDUAL: native also focuses the list (SetFocus, 0x0061A9CB),
             // which would stop chat typing; VERA keeps chat focus, as for the
             // games list.
-            let double = crate::ui::shell::list::is_double_click(
-                &mut lobby.player_list.last_press,
-                Instant::now(),
-                x,
-                y,
-                crate::ui::shell::saved_file_input::host_double_click_limits(),
-            );
-            if !double
-                && let Some(row) =
-                    geometry.row_at(lobby.players.len(), lobby.player_list.top_index, x, y)
-                && lobby.select_player(row)
-            {
-                App::play_launcher_options_cue(state, LauncherCue::GenericClick);
-            }
-        } else if matches!(control, Some(OBSERVER_IMAGE | OBSERVER_TOGGLE)) {
-            let icon_hit = control == Some(OBSERVER_IMAGE)
-                || crate::ui::skirmish_shell::checkbox_icon_rect(
-                    layout.observer_toggle,
-                    layout.page.scale,
-                )
-                .contains(x, y);
-            if icon_hit {
-                let action = lobby.activate(control.unwrap());
-                if let Some(action) = action {
-                    dispatch(state, action);
+            PageEvent::Selected(PLAYERS, row) => {
+                if state
+                    .frontend
+                    .lan
+                    .as_mut()
+                    .is_some_and(|runtime| runtime.lobby.select_player(row as usize))
+                {
+                    App::play_launcher_options_cue(state, LauncherCue::GenericClick);
                 }
-                App::play_launcher_options_cue(state, LauncherCue::Checkbox);
             }
-        } else {
-            if let Some(control) = control {
-                lobby.focus(control);
+            PageEvent::Scrolled(CHAT_LOG) => {
+                let top = list_top(state, CHAT_LOG);
+                if let Some(runtime) = state.frontend.lan.as_mut() {
+                    runtime.lobby.chat.list.top_index = top;
+                }
             }
-            lobby
-                .buttons
-                .press(control.filter(|control| matches!(*control, CREATE | JOIN | BACK)));
-            if lobby.buttons.pressed.is_some() {
-                App::play_main_menu_button_sound(state);
-            }
-        }
-    } else {
-        lobby.game_list.scroll.cancel();
-        lobby.player_list.scroll.cancel();
-        lobby.chat.list.scroll.cancel();
-        let action = lobby
-            .buttons
-            .release(control)
-            .and_then(|control| lobby.activate(control));
-        if let Some(action) = action {
-            dispatch(state, action);
+            _ => {}
         }
     }
     state.platform.window.request_redraw();
 }
 
-/// Service timeout and shared scrollbar repeats; the caller schedules the
-/// earliest returned deadline alongside the existing shell timers.
+/// Service timeout and the lists' scrollbar repeats; the caller schedules
+/// the earliest returned deadline alongside the existing shell timers.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
     let now = Instant::now();
     let runtime = state.frontend.lan.as_mut()?;
     if runtime
@@ -1228,33 +1259,20 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             },
         );
     }
-    let runtime = state.frontend.lan.as_mut()?;
-    let mut deadline = runtime
+    let deadline = state
+        .frontend
+        .lan
+        .as_ref()?
         .pending_join
         .as_ref()
         .filter(|request| !request.canceling)
         .map(|request| request.expires);
-    let lobby = &mut runtime.lobby;
-    if runtime.modal.is_none() && lobby.enabled {
-        for (list, rect, count) in [
-            (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
-            (&mut lobby.player_list, layout.players, lobby.players.len()),
-            (
-                &mut lobby.chat.list,
-                layout.chat_log,
-                lobby.chat.lines.len(),
-            ),
-        ] {
-            let geometry = list.geometry(rect, count, layout.page.scale);
-            if list.scroll.poll(geometry, &mut list.top_index, x, y, now) {
-                state.platform.window.request_redraw();
-            }
-            if let Some(next) = list.scroll.repeat_at() {
-                deadline = Some(deadline.map_or(next, |old| old.min(next)));
-            }
-        }
+    if !on_top(state) {
+        return deadline;
     }
-    deadline
+    let repeat = state.frontend.shell_controller.poll();
+    handle_events(state);
+    deadline.into_iter().chain(repeat).min()
 }
 
 #[cfg(all(test, tests_app))]
@@ -1263,7 +1281,7 @@ mod tests {
 
     #[test]
     fn discovery_notifies_formation_and_open_flag_changes_without_repeating_advertisements() {
-        let mut lobby = LanLobbyState::new("Tester", false);
+        let mut lobby = LanLobbyState::new("Tester");
         let open = LanGameRow {
             id: 7,
             name: "Host".into(),
@@ -1298,7 +1316,7 @@ mod tests {
 
     #[test]
     fn native_create_and_join_have_different_name_rules_and_error_surfaces() {
-        let mut lobby = LanLobbyState::new("<Open>", false);
+        let mut lobby = LanLobbyState::new("<Open>");
         assert_eq!(create_error(&lobby, ""), Some("TXT_NAME_BLANK"));
         assert_eq!(create_error(&lobby, "<Open>"), None);
         assert_eq!(join_error(&lobby, "", &[]), Some("TXT_MUST_SELECT_GAME"));
@@ -1327,7 +1345,7 @@ mod tests {
     #[test]
     fn a_returning_guest_joins_its_host_room_once_it_is_open() {
         let now = Instant::now();
-        let mut runtime = LanShellRuntime::new("Guest", false);
+        let mut runtime = LanShellRuntime::new("Guest");
         runtime.take_service_requests();
         runtime.rejoin = Some(Rejoin {
             host: "Host".into(),
@@ -1358,7 +1376,7 @@ mod tests {
         ));
         assert!(runtime.rejoin.is_none());
 
-        let mut late = LanShellRuntime::new("Guest", false);
+        let mut late = LanShellRuntime::new("Guest");
         late.rejoin = Some(Rejoin {
             host: "Host".into(),
             game_id: 7,
@@ -1372,7 +1390,7 @@ mod tests {
 
     #[test]
     fn pending_join_disables_admission_until_a_service_result_releases_it() {
-        let mut runtime = LanShellRuntime::new("Tester", false);
+        let mut runtime = LanShellRuntime::new("Tester");
         runtime.lobby.replace_games(vec![LanGameRow {
             id: 7,
             name: "Host".into(),
@@ -1380,7 +1398,7 @@ mod tests {
         }]);
         runtime.lobby.select_game(1);
         assert_eq!(
-            runtime.lobby.activate(JOIN),
+            runtime.lobby.activate(JOIN, false),
             Some(LanLobbyAction::Join {
                 game_id: Some(7),
                 observe: false
@@ -1393,14 +1411,14 @@ mod tests {
             canceling: false,
         });
         assert!(!runtime.lobby.enabled);
-        assert_eq!(runtime.lobby.activate(CREATE), None);
+        assert_eq!(runtime.lobby.activate(CREATE, false), None);
         assert_eq!(runtime.lobby.select_game(0), None);
         assert_eq!(runtime.pending_game(), Some(7));
         runtime.release_request();
         assert_eq!(runtime.pending_game(), None);
         assert!(runtime.lobby.enabled);
         assert_eq!(
-            runtime.lobby.activate(CREATE),
+            runtime.lobby.activate(CREATE, false),
             Some(LanLobbyAction::Create { observe: false })
         );
     }

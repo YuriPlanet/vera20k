@@ -72,7 +72,7 @@ fn close(state: &mut AppState) {
         .as_mut()
         .and_then(|visit| visit.lobby_mut())
     {
-        lobby.ui.card = None;
+        lobby.ui.close_card();
     }
     state.frontend.shell_status_line.repaint();
     state.platform.window.request_redraw();
@@ -108,12 +108,29 @@ fn buttons(layout: &WolPlayerCardLayout, own: bool) -> [(u16, RectPx); 4] {
     ]
 }
 
-fn control_at(state: &AppState, own: bool) -> Option<u16> {
-    let (x, y) = state.match_state.input.cursor_px();
-    buttons(&layout(state), own)
+/// Puts the open card's buttons on its box, the first one by whose card it
+/// is, each taking a press while it can act.
+pub(super) fn sync(state: &mut AppState) {
+    let Some(name) = card(state).map(|card| card.name.clone()) else {
+        return;
+    };
+    let placed: Vec<_> = buttons(&layout(state), own(state, &name))
         .into_iter()
-        .find(|(_, rect)| rect.contains(x, y))
-        .map(|(id, _)| id)
+        .map(|(id, rect)| (id, rect, enabled(state, &name, id)))
+        .collect();
+    if let Some(lobby) = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.lobby_mut())
+    {
+        lobby.ui.sync_card(|id| {
+            placed
+                .iter()
+                .find(|(known, ..)| *known == id)
+                .map(|&(_, rect, on)| (rect, on))
+        });
+    }
 }
 
 /// The buddy mirror's spelling of the player, when they are a buddy.
@@ -184,8 +201,17 @@ fn open_countries(state: &mut AppState) {
         (0..LOCALE_COUNT).map(|locale| (locale, label(state, &format!("WOL:Locale{locale:02}")))),
     );
     let locale = own_locale(state);
-    if let Some(card) = card_mut(state) {
-        card.open_countries(rows, locale);
+    if let Some(lobby) = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.lobby_mut())
+    {
+        // The list takes the pointer: no card button stays lit.
+        lobby.ui.cancel_pointer();
+        if let Some(card) = lobby.ui.card.as_mut() {
+            card.open_countries(rows, locale);
+        }
     }
     state.frontend.shell_status_line.repaint();
 }
@@ -270,60 +296,48 @@ pub(super) fn opened(state: &mut AppState, name: &str) {
     state.platform.window.request_redraw();
 }
 
-/// The pointer over the open card: its buttons light, the lobby's do not.
-/// The open country list lights its rows and drags its thumb instead.
+/// The open country list lights its rows and drags its thumb; otherwise the
+/// card's modal buttons take the pointer through the lobby's widgets.
 pub(super) fn cursor_moved(state: &mut AppState) -> bool {
-    let Some(own) = card(state).map(|card| own(state, &card.name)) else {
+    let Some(list) = country_list(state) else {
         return false;
     };
-    let list = country_list(state);
-    let over = control_at(state, own).filter(|_| list.is_none());
     let (x, y) = state.match_state.input.cursor_px();
-    let Some(card) = card_mut(state) else {
-        return false;
-    };
-    if let Some(list) = list {
+    if let Some(card) = card_mut(state) {
         card.country_list.pointer_moved(list, x, y);
     }
-    card.buttons.hovered = over;
     state.frontend.shell_status_line.repaint();
     state.platform.window.request_redraw();
     true
 }
 
-/// The open card takes every press: a button acts when released over
-/// itself, and a press outside the box closes the card.
+/// The open country list takes every press, and a press outside the box
+/// closes the card; a button acts when released over itself (the modal's).
 pub(super) fn mouse(state: &mut AppState, pressed: bool) -> bool {
-    let Some(name) = card(state).map(|card| card.name.clone()) else {
+    if card(state).is_none() {
         return false;
-    };
+    }
     if let Some(list) = country_list(state) {
         countries_mouse(state, list, pressed);
         state.platform.window.request_redraw();
         return true;
     }
-    let over = control_at(state, own(state, &name));
-    if pressed {
-        let (x, y) = state.match_state.input.cursor_px();
-        if !layout(state).dialog.contains(x, y) {
-            close(state);
-            return true;
-        }
-        let control = over.filter(|&control| enabled(state, &name, control));
-        if let Some(card) = card_mut(state) {
-            card.buttons.press(control);
-        }
-        if control.is_some() {
-            App::play_main_menu_button_sound(state);
-        }
-    } else if let Some(action) = card_mut(state)
-        .and_then(|card| card.buttons.release(over))
-        .and_then(WolCardAction::of)
-    {
+    let (x, y) = state.match_state.input.cursor_px();
+    if pressed && !layout(state).dialog.contains(x, y) {
+        close(state);
+        return true;
+    }
+    false
+}
+
+/// Card button `id` released.
+pub(super) fn button(state: &mut AppState, id: u16) {
+    if let (Some(name), Some(action)) = (
+        card(state).map(|card| card.name.clone()),
+        WolCardAction::of(id),
+    ) {
         act(state, name, action);
     }
-    state.platform.window.request_redraw();
-    true
 }
 
 fn act(state: &mut AppState, name: String, action: WolCardAction) {
@@ -369,7 +383,8 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>) -> bool {
 /// row under the pointer.
 pub(super) fn status_help(state: &AppState) -> Option<String> {
     let card = card(state)?;
-    let key = match card.buttons.hovered {
+    let hovered = state.frontend.wol.as_ref()?.lobby()?.ui.hovered();
+    let key = match hovered.filter(|_| !card.countries_open()) {
         Some(CARD_MESSAGE) => "VERA:MessageHelp",
         Some(CARD_COUNTRY) => "VERA:ChangeCountryHelp",
         Some(CARD_BUDDY) if buddy(state, &card.name).is_some() => "VERA:RemoveBuddyHelp",
@@ -480,7 +495,12 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
                 _ => "GUI:Close",
             }),
             enabled: enabled(state, name, id),
-            pressed: card.buttons.is_pressed(id),
+            pressed: state
+                .frontend
+                .wol
+                .as_ref()
+                .and_then(|visit| visit.lobby())
+                .is_some_and(|lobby| lobby.ui.pressed(id)),
         })
         .collect();
     let countries = country_list(state).map(|popup| CountryListView {

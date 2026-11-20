@@ -103,6 +103,9 @@ struct Pointer {
     popup: Option<NodeId>,
     /// The keyboard focus (an `Edit`).
     focus: Option<NodeId>,
+    /// The node the last press landed on: Windows pairs a double-click only
+    /// within one window, so a press elsewhere starts a list's sequence anew.
+    last_down: Option<NodeId>,
 }
 
 struct Dialog {
@@ -159,11 +162,19 @@ impl Gui {
     /// activates nothing.
     pub fn set(&mut self, id: NodeId, prop: Prop, value: Value) -> Result<(), Refused> {
         let disables = prop == Prop::Enabled && value == Value::Bool(false);
+        let hides = prop == Prop::Visible && value == Value::Bool(false);
         self.tree.set(id, prop, value)?;
         if disables {
             for d in self.dialogs.iter_mut().filter(|d| d.pointer.pressed == Some(id)) {
                 d.pointer.pressed = None;
                 d.pointer.dragging = false;
+            }
+        }
+        // A hidden combo's open list closes with it, without a cue.
+        if hides {
+            for d in self.dialogs.iter_mut().filter(|d| d.pointer.popup == Some(id)) {
+                d.pointer.popup = None;
+                widget::combo::dismiss(&mut self.tree, id);
             }
         }
         Ok(())
@@ -216,6 +227,14 @@ impl Gui {
         self.remove(d.root)
     }
 
+    /// Moves the dialog to the top of the stack with its state.
+    pub fn raise_dialog(&mut self, id: DialogId) -> Result<(), Refused> {
+        let pos = self.dialogs.iter().position(|d| d.id == id).ok_or(Refused::NotFound)?;
+        let d = self.dialogs.remove(pos);
+        self.dialogs.push(d);
+        Ok(())
+    }
+
     pub fn top_dialog(&self) -> Option<DialogId> {
         self.dialogs.last().map(|d| d.id)
     }
@@ -247,13 +266,31 @@ impl Gui {
 
     /// Drops the top dialog's capture and hover when the host loses the
     /// pointer (`0x0061E3AF..0x0061E44E` for a held trackbar); an open
-    /// drop-down stays open.
+    /// drop-down stays open. A held list scrollbar lets go (`0x0061D2D3`).
     pub fn cancel_pointer(&mut self) {
+        if let Some(held) = self.pressed().filter(|n| self.tree.kind(*n) == Ok(NodeKind::List)) {
+            self.with_ctx(0, |ctx| widget::list::release(ctx, held, 0, 0));
+        }
         if let Some(d) = self.dialogs.last_mut() {
             d.pointer.pressed = None;
             d.pointer.dragging = false;
             d.pointer.hovered = None;
             d.pointer.hover_started = None;
+        }
+    }
+
+    /// Drops dialog `id`'s capture and hover only, on top or not: a page
+    /// under a modal box loses the pointer while the box keeps its press.
+    /// Its open drop-down stays open but lets go of a held scroll part.
+    pub fn drop_pointer_in(&mut self, id: DialogId) {
+        if let Some(d) = self.dialogs.iter_mut().find(|d| d.id == id) {
+            d.pointer.pressed = None;
+            d.pointer.dragging = false;
+            d.pointer.hovered = None;
+            d.pointer.hover_started = None;
+            if let Some(popup) = d.pointer.popup {
+                widget::combo::release_scroll(&mut self.tree, popup);
+            }
         }
     }
 
@@ -358,6 +395,10 @@ impl Gui {
                 let over = self.hit(root, x, y);
                 let enabled = over.filter(|n| self.tree.effective(*n, Prop::Enabled));
                 self.top_mut().pointer.pressed = None;
+                let before = std::mem::replace(&mut self.top_mut().pointer.last_down, over);
+                if let Some(before) = before.filter(|n| Some(*n) != over) {
+                    widget::list::forget_press(&mut self.tree, before);
+                }
                 if let Some(n) = enabled {
                     self.press(n, x, y, now);
                 }
@@ -420,7 +461,13 @@ impl Gui {
     /// Whether the host paints `node`'s caret now: it has the top dialog's
     /// focus and is in the shown half of NewEdit's two-second blink.
     pub fn caret_visible(&self, node: NodeId, now: UiMs) -> bool {
-        self.focus() == Some(node)
+        self.dialogs.last().is_some_and(|d| self.caret_visible_in(d.id, node, now))
+    }
+
+    /// [`Gui::caret_visible`] for `dialog`'s own focus, which a dialog under
+    /// a modal keeps.
+    pub fn caret_visible_in(&self, dialog: DialogId, node: NodeId, now: UiMs) -> bool {
+        self.dialog(dialog).is_some_and(|d| d.pointer.focus == Some(node))
             && self.tree.node(node).is_ok_and(|n| match &n.state {
                 widget::WidgetState::Edit(s) => s.caret_visible(now),
                 _ => widget::edit::EditState::default().caret_visible(now),
@@ -443,9 +490,50 @@ impl Gui {
         }
     }
 
+    /// [`Gui::set_focus`] as the screen's own `SetFocus`: an edit that takes
+    /// the focus from elsewhere restarts NewEdit's caret blink, as a press
+    /// does.
+    pub fn focus_edit(&mut self, node: Option<NodeId>, now: UiMs) -> Result<(), Refused> {
+        let before = self.focus();
+        self.set_focus(node)?;
+        if let Some(n) = node.filter(|n| before != Some(*n)) {
+            self.tree.node_mut(n)?.state = widget::WidgetState::Edit(widget::edit::EditState { focused_at: now });
+        }
+        Ok(())
+    }
+
+    /// The edit holding dialog `id`'s keyboard focus, on top or not.
+    pub fn focus_in(&self, id: DialogId) -> Option<NodeId> {
+        self.dialog(id).and_then(|d| d.pointer.focus)
+    }
+
+    /// [`Gui::focus_edit`] in dialog `id`, which need not be on top: a page
+    /// under a modal keeps the focus it is given for when the modal closes.
+    pub fn focus_edit_in(&mut self, id: DialogId, node: Option<NodeId>, now: UiMs) -> Result<(), Refused> {
+        if let Some(n) = node.filter(|n| self.tree.kind(*n) != Ok(NodeKind::Edit)) {
+            self.tree.kind(n)?;
+            return Err(Refused::WrongKind);
+        }
+        let d = self.dialogs.iter_mut().find(|d| d.id == id).ok_or(Refused::NotFound)?;
+        let before = std::mem::replace(&mut d.pointer.focus, node);
+        if let Some(n) = node.filter(|n| before != Some(*n)) {
+            self.tree.node_mut(n)?.state = widget::WidgetState::Edit(widget::edit::EditState { focused_at: now });
+        }
+        Ok(())
+    }
+
     /// The open combo drop-down of the top dialog.
     pub fn popup(&self) -> Option<NodeId> {
         self.top_pointer().popup
+    }
+
+    /// Drops list `node`'s scrollbar hold for the host (its rows were
+    /// rebuilt): the capture ends without a release.
+    pub fn cancel_list_scroll(&mut self, node: NodeId) {
+        widget::list::cancel_scroll(&mut self.tree, node);
+        for d in self.dialogs.iter_mut().filter(|d| d.pointer.pressed == Some(node)) {
+            d.pointer.pressed = None;
+        }
     }
 
     /// Closes the top dialog's open drop-down for the host (no event, as a
@@ -468,6 +556,15 @@ impl Gui {
     /// What the host paints of List `node`.
     pub fn list_view(&self, node: NodeId) -> Option<widget::list::ListView> {
         widget::list::view(&self.tree, node)
+    }
+
+    /// Forgets what `node`'s widget kept between inputs (a list's scroll
+    /// hold and double-click memory, an edit's caret phase), as a fresh
+    /// window would have.
+    pub fn reset_widget(&mut self, node: NodeId) {
+        if let Ok(n) = self.tree.node_mut(node) {
+            n.state = Default::default();
+        }
     }
 
     fn with_ctx<R>(&mut self, now: UiMs, f: impl FnOnce(&mut Ctx<'_>) -> R) -> R {
@@ -896,6 +993,15 @@ mod tests {
             _ => -1,
         };
         (text, caret)
+    }
+
+    #[test]
+    fn a_programmatic_focus_restarts_the_caret_blink_only_when_it_moves() {
+        let (mut g, edit, _, _) = page_with_edit();
+        g.focus_edit(Some(edit), 1500).unwrap();
+        assert!(g.caret_visible(edit, 1500) && !g.caret_visible(edit, 2600));
+        g.focus_edit(Some(edit), 2600).unwrap();
+        assert!(!g.caret_visible(edit, 2600), "focus that stays keeps the blink's phase");
     }
 
     #[test]
