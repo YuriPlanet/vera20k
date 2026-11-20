@@ -3250,6 +3250,7 @@ dependencies = [
  "tungstenite",
  "ureq",
  "vera20k-core",
+ "vera20k-gui",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",
@@ -3304,6 +3305,10 @@ dependencies = [
  "wasm_sync",
  "web-time",
 ]
+
+[[package]]
+name = "vera20k-gui"
+version = "0.3.8"
 
 [[package]]
 name = "vera20k-relay"

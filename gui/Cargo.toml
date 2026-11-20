@@ -1,0 +1,12 @@
+[package]
+name = "vera20k-gui"
+version = "0.3.8"
+edition = "2024"
+description = "Retained-mode GUI for VERA20k's front-end screens (docs/gui-library-api.md)"
+publish = false
+
+# No dependency on the engine crates: the host hands in images, text and input.
+[dependencies]
+
+[lints]
+workspace = true
