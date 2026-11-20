@@ -333,6 +333,7 @@ fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage()
     // The charge is a supplied initial AI posture, not a player click from
     // this computer House. Use the existing class receiver to order it.
     assert!(sim.apply_command_with_overlays(
+        None,
         "Russians",
         &Command::UnloadPassengers { transport_id: gap },
         rules,

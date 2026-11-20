@@ -932,6 +932,7 @@ fn synchronized_tail_admits_human_or_player_controlled_houses_only() {
         // The direct EventClass payload owner is independent of the queue
         // admission gate; do not hide that policy inside individual actions.
         assert!(sim.apply_command_with_overlays(
+            None,
             "Computer",
             &Command::LiveGameSpeed { speed: 5 },
             RuleSet::empty_for_test(),

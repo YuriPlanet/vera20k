@@ -199,6 +199,7 @@ mod layered_enum_history {
         );
         assert!(!sim.fog.is_cell_revealed(owner, 20, 20));
         assert!(sim.apply_command_with_overlays(
+            None,
             OWNER,
             &Command::LaunchSuperWeapon {
                 sw_type_id,
@@ -292,6 +293,7 @@ fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
     }
     fn fire(sim: &mut Simulation, rules: &RuleSet, id: InternedId) {
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,

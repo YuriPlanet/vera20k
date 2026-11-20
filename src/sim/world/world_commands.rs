@@ -22,6 +22,7 @@ use crate::sim::command::{
     PaidSuperAction, PaidSuperRecord, PlaceRecord, ProductionEvent, ProductionRecord, RepairRecord,
     ScatterRecord, SellWallAtCellRecord, SpecialPlaceRecord, StopRecord,
 };
+use crate::sim::control_authority::{CommandCapability, ControlScope};
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
@@ -36,6 +37,18 @@ use crate::sim::production;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::vision::FogState;
 use crate::sim::world::ObjectSubstrate;
+use std::borrow::Cow;
+
+/// A command's acting subject. Markers and destinations do not confer control.
+enum CommandSubject<'a> {
+    Local,
+    Primary(CommandCapability),
+    House(InternedId, CommandCapability),
+    TargetHouse(Option<InternedId>),
+    Actor(u64, CommandCapability),
+    Actors(&'a [u64], CommandCapability),
+    Bunker(u64),
+}
 
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -247,11 +260,11 @@ impl Simulation {
     /// `FootClass::ClickedAction_Object`'s Detonate (0x37) arm
     /// (`0x004D75F4..0x004D766F`): the DETONATE event on `carrier`, whose
     /// house byte is its bomb's house (`bomb+0x28`, its ArrayIndex). `None`
-    /// without a bomb.
+    /// without a bomb. Delegated control carries the issuing source.
     pub fn encode_detonate_record(&self, carrier: u64) -> Option<CommandRecord> {
         let house = self.substrate.entities.get(carrier)?.bomb.as_ref()?.house();
         let typed = crate::sim::command::DetonateRecord {
-            house_id: self.command_sender(house)?,
+            house_id: self.subject_command_sender(house, CommandCapability::Tactical)?,
             frame: self.session.binary_frame() as i32,
             entity_id: i32::try_from(carrier).ok()?,
         };
@@ -445,7 +458,8 @@ impl Simulation {
         record: &CommandRecord,
         rules: &RuleSet,
     ) -> Option<(InternedId, Command)> {
-        let owner = self.command_sender_owner(record.house_id())?;
+        let (owner, record) = self.house_command_record(record)?;
+        let record = record.as_ref();
         let type_id = |index| {
             self.interner
                 .get(rules.super_weapon_order.get(usize::try_from(index).ok()?)?)
@@ -498,14 +512,17 @@ impl Simulation {
     /// SetRallyPoint4439C5 and object-click44367B ask the actor's vt+38
     /// (Techno6F9DB0), not PlayerPtr. Preserve that House and both tokens
     /// at issue; send-time retiming remains the packet codec's responsibility.
+    /// Delegated control carries the issuing source with the same tokens.
     /// Source: original gamemd.exe constructor4C6780.
     pub(super) fn encode_archive_record(
         &self,
         entity_id: u64,
         target: MegaMissionTarget,
     ) -> Option<CommandRecord> {
-        let owner = self.substrate.entities.get(entity_id)?.owner();
-        let mut record = self.encode_header_event(owner, crate::sim::command::ARCHIVE_OPCODE)?;
+        let actor = self.substrate.entities.get(entity_id)?;
+        let sender = self.subject_command_sender(actor.owner(), CommandCapability::Tactical)?;
+        let mut record =
+            self.encode_source_header_event(sender, crate::sim::command::ARCHIVE_OPCODE)?;
         ArchiveRecord {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
@@ -862,7 +879,7 @@ impl Simulation {
         (x, y): (u16, u16),
     ) -> Option<CommandRecord> {
         let owner = self.substrate.entities.get(source_id)?.owner();
-        let house_id = self.command_sender(owner)?;
+        let house_id = self.subject_command_sender(owner, CommandCapability::Tactical)?;
         crate::sim::command::AresTrenchRedirectRecord::encode_cell(
             house_id,
             self.session.binary_frame() as i32,
@@ -952,14 +969,33 @@ impl Simulation {
         if !self.houses.contains_key(&command_owner) {
             return None;
         }
-        let house_id = self.command_sender(command_owner)?;
+        self.encode_source_header_event(self.command_sender(command_owner)?, opcode)
+    }
+
+    fn encode_source_header_event(&self, source: i8, opcode: u8) -> Option<CommandRecord> {
         CommandRecord::encode(
             opcode,
-            i32::from(house_id),
+            i32::from(source),
             self.session.binary_frame() as i32,
             &[],
         )
         .ok()
+    }
+
+    /// For stock ARCHIVE and DETONATE the subject contributes the header.
+    /// A match with explicit grants binds that header to the local seat.
+    fn subject_command_sender(
+        &self,
+        subject: InternedId,
+        capability: CommandCapability,
+    ) -> Option<i8> {
+        if !self.session.has_custom_control_grants() {
+            return self.command_sender(subject);
+        }
+        let (source, _) = self.local_grant_source()?;
+        self.control_scope_for_source(source, subject)
+            .permits(capability)
+            .then_some(source)
     }
 
     /// The sender byte this process writes for `command_owner`'s commands:
@@ -985,6 +1021,56 @@ impl Simulation {
         self.houses.order().get(index).copied()
     }
 
+    /// Address an economic event to a specific House while retaining the
+    /// authentic local source. Ordinary sidebar encoders retain their native
+    /// records and continue to issue against the source's primary House.
+    pub fn encode_target_house_command(
+        &self,
+        target: InternedId,
+        native: &CommandRecord,
+    ) -> Option<CommandRecord> {
+        let (sender, primary) = self.local_grant_source()?;
+        if !self
+            .control_scope_for_source(sender, target)
+            .permits(CommandCapability::FullControl)
+        {
+            return None;
+        }
+        let target_slot = u8::try_from(self.houses.index_of(target)?).ok()?;
+        let mut inner = native.clone();
+        inner.set_house_id(sender);
+        let targeted = crate::sim::command::TargetHouseRecord::encode(target_slot, &inner)?;
+        if primary == target {
+            Some(inner)
+        } else {
+            Some(targeted)
+        }
+    }
+
+    /// Resolve the House that owns a native production, placement or power
+    /// operation. An explicit target is authorized with the original source
+    /// before its nested native payload is used. Dispatch separately checks
+    /// that this record carries its admitted queue source.
+    pub(super) fn house_command_record<'a>(
+        &self,
+        record: &'a CommandRecord,
+    ) -> Option<(InternedId, Cow<'a, CommandRecord>)> {
+        if record.opcode() != crate::sim::command::TARGET_HOUSE_OPCODE {
+            let owner = self.command_sender_owner(record.house_id())?;
+            return Some((owner, Cow::Borrowed(record)));
+        }
+        let requested = crate::sim::command::TargetHouseRecord::decode(record)?;
+        let owner = *self
+            .houses
+            .order()
+            .get(usize::from(requested.target_house))?;
+        let source = record.house_id();
+        self.admitted_grant_source_owner(source)?;
+        self.control_scope_for_source(source, owner)
+            .permits(CommandCapability::FullControl)
+            .then_some((owner, Cow::Owned(requested.command)))
+    }
+
     /// VERA shared control: whether House `owner` still has an admitted
     /// sender other than `sender`. A House nobody shares has one sender, so
     /// its EXIT, DESTRUCT or loss always ends it, as in gamemd.
@@ -1004,12 +1090,15 @@ impl Simulation {
 
     /// The sender of the executing command: its record's header byte, or a
     /// semantic envelope's House index (offline, where nobody shares).
-    fn executing_sender(&self, owner: InternedId) -> Option<i8> {
-        self.executing_record_sender.or_else(|| {
-            self.houses
+    fn executing_sender(&self, sender: Option<i8>, owner: InternedId) -> Option<i8> {
+        match (self.session.execution_topology().is_lockstep(), sender) {
+            (true, Some(source)) => Some(source),
+            (true, None) if self.session.shares_houses() => None,
+            (false, Some(_) | None) | (true, None) => self
+                .houses
                 .index_of(owner)
-                .and_then(|index| i8::try_from(index).ok())
-        })
+                .and_then(|index| i8::try_from(index).ok()),
+        }
     }
 
     /// VERA shared control: whether another player still controls the local
@@ -1091,6 +1180,7 @@ impl Simulation {
             || PlaceRecord::decode(record).is_some()
             || SpecialPlaceRecord::decode(record).is_some()
             || PaidSuperRecord::decode(record).is_some()
+            || record.opcode() == crate::sim::command::TARGET_HOUSE_OPCODE
         {
             // Keep selectors raw: a category-only semantic view loses Naval,
             // RTTI aliases and the -1 wildcard before the House receiver runs.
@@ -1355,6 +1445,7 @@ impl Simulation {
     pub(crate) fn sell_wall_at_cell(
         &mut self,
         command_owner: &str,
+        granted_source: Option<(i8, InternedId)>,
         x: i16,
         y: i16,
         suppress_local_cue: bool,
@@ -1371,11 +1462,18 @@ impl Simulation {
         let Some(owner_house) = self.houses.get(&wall_owner) else {
             return false;
         };
-        let owner_admitted = if self.session.game_mode_nonzero() {
+        let native_owner_admitted = if self.session.game_mode_nonzero() {
             owner_house.is_human()
         } else {
             owner_house.is_human() || owner_house.player_control()
         };
+        let owner_admitted = native_owner_admitted
+            || granted_source.is_some_and(|(source, primary)| {
+                primary != wall_owner
+                    && self
+                        .control_scope_for_source(source, wall_owner)
+                        .permits(CommandCapability::FullControl)
+            });
         if !owner_admitted || !overlays.flags(overlay_id).is_some_and(|flags| flags.wall) {
             return false;
         }
@@ -1543,10 +1641,19 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let Some(owner) = self.command_sender_owner(record.house_id()) else {
+        let Some((owner, record)) = self.house_command_record(record) else {
             return false;
         };
+        let record = record.as_ref();
         let owner = self.interner.resolve(owner).to_owned();
+        if let Some(event) = CycleProducerRecord::decode(record) {
+            return production::cycle_active_producer_for_owner_category(
+                self,
+                rules,
+                &owner,
+                event.category,
+            );
+        }
         if let Some(event) = ProductionRecord::decode(record) {
             let selection = production::ProductionSelection {
                 rtti: event.rtti,
@@ -1610,6 +1717,7 @@ impl Simulation {
         rules: Option<&RuleSet>,
     ) -> bool {
         self.apply_command_with_overlays(
+            None,
             command_owner,
             cmd,
             rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
@@ -1620,12 +1728,22 @@ impl Simulation {
 
     pub(crate) fn apply_command_with_overlays(
         &mut self,
+        sender: Option<i8>,
         command_owner: &str,
         cmd: &Command,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
+        // A semantic envelope cannot promote an embedded record into an
+        // authenticated source. DoList supplies this byte from its raw entry.
+        let has_grants = self.session.has_custom_control_grants();
+        if has_grants
+            && let Command::SynchronizedRecord { record } | Command::PlanningRecord { record } = cmd
+            && sender != Some(record.house_id())
+        {
+            return false;
+        }
         // Event command receivers clear Plan tokens before applying ordinary
         // orders. Flag2 acknowledges its path without detaching it; use the
         // same payload dispatcher while keeping state installed for callbacks.
@@ -1657,15 +1775,32 @@ impl Simulation {
             else {
                 return false;
             };
-            if planned && let Ok(actor) = u64::try_from(typed.source_id) {
-                self.planning_acknowledge(actor);
+            if planned {
+                if has_grants {
+                    // The generated record retires its own in-flight latch
+                    // even when its source exited before this execution.
+                    // The live-source gate below still refuses its effects.
+                    let issuing_house = self.command_sender_owner(record.house_id());
+                    if issuing_house != self.interner.get(command_owner)
+                        || !u64::try_from(typed.source_id)
+                            .is_ok_and(|actor| self.planning_acknowledge_generated(actor, record))
+                    {
+                        return false;
+                    }
+                } else if let Ok(actor) = u64::try_from(typed.source_id) {
+                    self.planning_acknowledge(actor);
+                }
             }
             decoded_native = envelope.payload;
             &decoded_native
         } else {
             cmd
         };
-        if self.network_command_actor_foreign(command_owner, cmd, rules.ares()) {
+        let granted_source =
+            sender.and_then(|source| self.resolve_command_grant_source(command_owner, source));
+        if (has_grants && sender.is_some() && granted_source.is_none())
+            || self.network_command_actor_foreign(command_owner, granted_source, cmd, rules)
+        {
             return false;
         }
         let ordinary_actor = match cmd {
@@ -1733,14 +1868,13 @@ impl Simulation {
                 )
                 .accepted(),
             Command::PlanningRecord { record } => {
-                self.apply_planning_record(command_owner, record, rules)
+                self.apply_planning_record(sender, command_owner, record, rules)
             }
             Command::SynchronizedRecord { record } => {
                 if let Some((owner, command)) = self.superweapon_command_from_record(record, rules)
                 {
-                    let owner = self.interner.resolve(owner).to_owned();
-                    return self.apply_command_with_overlays(
-                        &owner,
+                    return self.apply_superweapon_command_for_house(
+                        owner,
                         &command,
                         rules,
                         overlay_registry,
@@ -1778,6 +1912,7 @@ impl Simulation {
                         crate::sim::command::AresTrenchRedirectRecord::decode(record)
                 {
                     return self.ares_respond_to_trench_redirect(
+                        granted_source.map(|(source, _)| source),
                         &event,
                         rules,
                         overlay_registry,
@@ -2058,7 +2193,12 @@ impl Simulation {
             // keep it. The cell-click path sends SetRally followed by
             // SellBuilding, preserving native event1E/16.
             Command::UndeployBuilding { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *entity_id,
+                    CommandCapability::FullControl,
+                ) {
                     return false;
                 }
                 self.undeploy_building(*entity_id, rules, overlay_registry, frame_effects)
@@ -2076,7 +2216,12 @@ impl Simulation {
             // ground projection. Effect: it can deploy where native ignores D.
             // Frequency: rare; downstream risk: low.
             Command::ToggleInfantryDeploy { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *entity_id,
+                    CommandCapability::Tactical,
+                ) {
                     return false;
                 }
                 let Some(actor) = self.substrate.entities.get(*entity_id) else {
@@ -2210,7 +2355,12 @@ impl Simulation {
                     return false;
                 };
                 if !entity.lifecycle.object_alive()
-                    || !self.entity_owned_by_id(command_owner, *entity_id)
+                    || !self.command_house_allowed(
+                        command_owner,
+                        granted_source,
+                        entity.owner(),
+                        CommandCapability::FullControl,
+                    )
                 {
                     return false;
                 }
@@ -2263,7 +2413,16 @@ impl Simulation {
                     return false;
                 };
                 // Event 0x4C6FC4 passes 0; ordinary SELL remains audible.
-                self.sell_wall_at_cell(command_owner, *x, *y, false, rules, overlays, frame_effects)
+                self.sell_wall_at_cell(
+                    command_owner,
+                    granted_source,
+                    *x,
+                    *y,
+                    false,
+                    rules,
+                    overlays,
+                    frame_effects,
+                )
             }
             // Event1/Event2 (0x004C6CB0 branches 0x004C6CF0/0x004C6D4D) drive the
             // BuildingClass+0x660 power latch through GoOnline 0x00452260 /
@@ -2336,7 +2495,7 @@ impl Simulation {
                 // Observe, Surrender's OK) leaves a House other players still
                 // control in the game; the EXIT that follows retires only them.
                 if self
-                    .executing_sender(owner)
+                    .executing_sender(sender, owner)
                     .is_some_and(|sender| self.house_keeps_other_sender(owner, sender))
                 {
                     return true;
@@ -2354,7 +2513,7 @@ impl Simulation {
                 if !self.houses.contains_key(&owner) {
                     return false;
                 }
-                let sender = self.executing_sender(owner);
+                let sender = self.executing_sender(sender, owner);
                 // VERA shared control: a House another player still controls
                 // stays in the game; only this sender leaves.
                 let house_left =
@@ -2486,7 +2645,12 @@ impl Simulation {
                 )
             }
             Command::UnloadPassengers { transport_id } => {
-                if !self.entity_owned_by_id(command_owner, *transport_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *transport_id,
+                    CommandCapability::Tactical,
+                ) {
                     return false;
                 }
                 let has_passengers = self.substrate.entities.get(*transport_id).is_some_and(|t| {
@@ -2621,7 +2785,12 @@ impl Simulation {
                 attacker_id,
                 target_building_id,
             } => {
-                if !self.entity_owned_by_id(command_owner, *attacker_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *attacker_id,
+                    CommandCapability::Tactical,
+                ) {
                     return false;
                 }
                 if self
@@ -2702,7 +2871,12 @@ impl Simulation {
                 engineer_id,
                 target_building_id,
             } => {
-                if !self.entity_owned_by_id(command_owner, *engineer_id) {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *engineer_id,
+                    CommandCapability::Tactical,
+                ) {
                     return false;
                 }
                 // A Building destination with a coordinate; the event arm
@@ -2746,13 +2920,64 @@ impl Simulation {
                 )
                 .accepted()
             }
+            Command::LaunchSuperWeapon { .. }
+            | Command::CompletePaidSuperWeapon { .. }
+            | Command::CancelPaidSuperWeapon { .. }
+            | Command::BeginPaidSuperWeapon { .. } => {
+                let owner = self.interner.intern(command_owner);
+                self.apply_superweapon_command_for_house(
+                    owner,
+                    cmd,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                )
+            }
+            // VERA-only opcode 0x31: keep the record decodable for old
+            // recordings, but never release the tank here. Native
+            // `BuildingClass::EmptyBunker @ 0x004595C0` has one caller, the
+            // linked Unit's `Mission_Unload @ 0x0073D66D`, whose DEPLOY
+            // receiver (`Event9` `0x004C76BC..0x004C7812`) owns the radio
+            // Break, null destination/target, Unload queue and the actor's
+            // alive/limbo admission. The release then happens in that Unit's
+            // Logic update, not during command execution (#3675).
+            Command::EjectBunker { bunker_id } => {
+                if !self.command_entity_allowed(
+                    command_owner,
+                    granted_source,
+                    *bunker_id,
+                    CommandCapability::Tactical,
+                ) {
+                    return false;
+                }
+                let Some(unit_id) = self
+                    .substrate
+                    .entities
+                    .get(*bunker_id)
+                    .and_then(|b| b.bunker.occupant())
+                else {
+                    return false;
+                };
+                crate::sim::deploy::issue_order(self, unit_id, rules, frame_effects)
+            }
+        }
+    }
+
+    fn apply_superweapon_command_for_house(
+        &mut self,
+        owner: InternedId,
+        command: &Command,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        match command {
             Command::LaunchSuperWeapon {
                 sw_type_id,
                 target_rx,
                 target_ry,
             } => {
                 // The SPECIAL_PLACE event (`EventClass::Execute 0x004C78D6`).
-                let owner = self.interner.intern(command_owner);
                 self.place_super_weapon(
                     rules,
                     owner,
@@ -2766,21 +2991,17 @@ impl Simulation {
                 selection,
                 target_rx,
                 target_ry,
-            } => {
-                let owner = self.interner.intern(command_owner);
-                self.fire_super_weapon_selected(
-                    rules,
-                    owner,
-                    selection.destination,
-                    (*target_rx, *target_ry),
-                    overlay_registry,
-                    frame_effects,
-                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
-                    Some(*selection),
-                )
-            }
+            } => self.fire_super_weapon_selected(
+                rules,
+                owner,
+                selection.destination,
+                (*target_rx, *target_ry),
+                overlay_registry,
+                frame_effects,
+                crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+                Some(*selection),
+            ),
             Command::CancelPaidSuperWeapon { selection } => {
-                let owner = self.interner.intern(command_owner);
                 Self::cancel_paid_super_weapon_selection(
                     &mut self.substrate,
                     &mut self.sound_events,
@@ -2794,41 +3015,17 @@ impl Simulation {
                 selection,
                 target_rx,
                 target_ry,
-            } => {
-                let owner = self.interner.intern(command_owner);
-                self.fire_super_weapon_selected(
-                    rules,
-                    owner,
-                    selection.source,
-                    (*target_rx, *target_ry),
-                    overlay_registry,
-                    frame_effects,
-                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
-                    Some(*selection),
-                )
-            }
-            // VERA-only opcode 0x31: keep the record decodable for old
-            // recordings, but never release the tank here. Native
-            // `BuildingClass::EmptyBunker @ 0x004595C0` has one caller, the
-            // linked Unit's `Mission_Unload @ 0x0073D66D`, whose DEPLOY
-            // receiver (`Event9` `0x004C76BC..0x004C7812`) owns the radio
-            // Break, null destination/target, Unload queue and the actor's
-            // alive/limbo admission. The release then happens in that Unit's
-            // Logic update, not during command execution (#3675).
-            Command::EjectBunker { bunker_id } => {
-                if !self.entity_owned_by_id(command_owner, *bunker_id) {
-                    return false;
-                }
-                let Some(unit_id) = self
-                    .substrate
-                    .entities
-                    .get(*bunker_id)
-                    .and_then(|b| b.bunker.occupant())
-                else {
-                    return false;
-                };
-                crate::sim::deploy::issue_order(self, unit_id, rules, frame_effects)
-            }
+            } => self.fire_super_weapon_selected(
+                rules,
+                owner,
+                selection.source,
+                (*target_rx, *target_ry),
+                overlay_registry,
+                frame_effects,
+                crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+                Some(*selection),
+            ),
+            _ => false,
         }
     }
 
@@ -3199,21 +3396,105 @@ impl Simulation {
         true
     }
 
-    /// Check ownership using stable_id via EntityStore.
-    ///
-    /// Used by receivers whose contract includes an owner gate and by the
-    /// VERA network actor gate. The native MEGAMISSION receiver4C71CA..4C74CA
-    /// resolves its actor independently of the event house; its admission
-    /// checks lifetime and tokens instead.
+    /// Direct owner comparison for component fixtures.
+    #[cfg(test)]
     pub(crate) fn entity_owned_by_id(&self, command_owner: &str, stable_id: u64) -> bool {
+        self.command_entity_allowed(
+            command_owner,
+            None,
+            stable_id,
+            CommandCapability::PrimaryHouse,
+        )
+    }
+
+    /// Resolve the source of an admitted native record. Owner-only semantic
+    /// envelopes and local-view identity cannot select a grant row.
+    pub(super) fn resolve_command_grant_source(
+        &self,
+        command_owner: &str,
+        source: i8,
+    ) -> Option<(i8, InternedId)> {
+        let primary = self.admitted_grant_source_owner(source)?;
+        command_owner
+            .eq_ignore_ascii_case(self.interner.resolve(primary))
+            .then_some((source, primary))
+    }
+
+    fn admitted_grant_source_owner(&self, source: i8) -> Option<InternedId> {
+        if !self.session.execution_topology().is_lockstep()
+            || !self.session.has_custom_control_grants()
+            || self
+                .session
+                .network_command_timing()
+                .is_some_and(|timing| !timing.admits_source(source))
+        {
+            return None;
+        }
+        let primary = self.command_sender_owner(source)?;
+        (self.control_scope_for_source(source, primary) == ControlScope::OwnFull).then_some(primary)
+    }
+
+    fn local_grant_source(&self) -> Option<(i8, InternedId)> {
+        if self.session.watcher() {
+            return None;
+        }
+        // A shared House's native index or a pending record's sender is not
+        // proof of this process's admitted seat.
+        let source = self.local_admitted_command_source()?;
+        Some((source, self.admitted_grant_source_owner(source)?))
+    }
+
+    pub(super) fn planning_command_actor_allowed(
+        &self,
+        source: (i8, InternedId),
+        actor: u64,
+    ) -> bool {
+        self.command_entity_allowed(
+            self.interner.resolve(source.1),
+            Some(source),
+            actor,
+            CommandCapability::Tactical,
+        )
+    }
+    fn command_house_allowed(
+        &self,
+        command_owner: &str,
+        granted_source: Option<(i8, InternedId)>,
+        subject_house: InternedId,
+        capability: CommandCapability,
+    ) -> bool {
+        let scope = match granted_source {
+            Some((source, _)) => self.control_scope_for_source(source, subject_house),
+            None if command_owner.eq_ignore_ascii_case(self.interner.resolve(subject_house)) => {
+                ControlScope::OwnFull
+            }
+            None => ControlScope::None,
+        };
+        scope.permits(capability)
+    }
+
+    fn command_entity_allowed(
+        &self,
+        command_owner: &str,
+        granted_source: Option<(i8, InternedId)>,
+        stable_id: u64,
+        capability: CommandCapability,
+    ) -> bool {
         self.substrate
             .entities
             .get(stable_id)
-            .is_some_and(|e| command_owner.eq_ignore_ascii_case(self.interner.resolve(e.owner())))
+            .is_some_and(|entity| {
+                self.command_house_allowed(
+                    command_owner,
+                    granted_source,
+                    entity.owner(),
+                    capability,
+                )
+            })
     }
 
-    /// VERA-only network admission, not a native receiver test: refuse an
-    /// event whose acting object exists and belongs to another House.
+    /// VERA-only network admission: an existing actor's current House must
+    /// authorize the source for this command's capability.
     ///
     /// `EventClass::Execute @ 0x004C6CB0` trusts the sender for most object
     /// orders (MEGAMISSION, IDLE, Deploy, Repair, Primary, On/Off-line,
@@ -3230,8 +3511,9 @@ impl Simulation {
     ///   key's miner arm (`0x00730D60`) and Stop on an enemy building with a
     ///   rally line — do nothing online;
     /// * an order whose actor is captured or mind-controlled between issue
-    ///   and execution is dropped, including its planning detach, where
-    ///   retail runs it on the new owner's object. The flag-2 planning
+    ///   and execution is dropped if outside the source's control, including
+    ///   its planning detach, where retail runs it on the new owner's object.
+    ///   The flag-2 planning
     ///   acknowledge stays ahead of this gate, so that actor's latch clears.
     ///   The group spread (`0x0064CDA0`) leaves that actor out as well, so
     ///   the sender's other units spread as if it had not been ordered, where
@@ -3240,77 +3522,194 @@ impl Simulation {
     ///   no bomb and belongs to another House, is dropped, where retail clears
     ///   the carrier's planning tokens and sets off whatever bomb it holds.
     ///
-    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     fn network_command_actor_foreign(
         &self,
         command_owner: &str,
+        granted_source: Option<(i8, InternedId)>,
         cmd: &Command,
-        ares: bool,
+        rules: &RuleSet,
     ) -> bool {
         if !self.session.execution_topology().is_lockstep() {
             return false;
         }
-        let foreign = |id: u64| self.network_actor_foreign(command_owner, id);
-        match cmd {
-            Command::Stop { entity_id }
-            | Command::Scatter { entity_id }
-            | Command::DeployMcv { entity_id }
-            | Command::UndeployBuilding { entity_id }
-            | Command::ToggleRepair { entity_id }
-            | Command::SellBuilding { entity_id }
-            | Command::TogglePrimaryFactory { entity_id }
-            | Command::SetBuildingOnLine { entity_id, .. }
-            | Command::ArchiveObject { entity_id, .. } => foreign(*entity_id),
-            Command::SetRally { producer_ids, .. } => producer_ids.iter().any(|&id| foreign(id)),
-            Command::SynchronizedRecord { record } => {
-                // The carrier is usually another House's object, so the
-                // bomb's House answers; once the bomb is gone, the carrier's.
-                if let Some(event) = crate::sim::command::DetonateRecord::decode(record) {
-                    let carrier = u64::try_from(event.entity_id)
-                        .ok()
-                        .and_then(|id| self.substrate.entities.get(id));
-                    return carrier.is_some_and(|entity| {
-                        let owner = entity.bomb.as_ref().map_or(entity.owner(), |b| b.house());
-                        !command_owner.eq_ignore_ascii_case(self.interner.resolve(owner))
-                    });
-                }
-                let actor = ArchiveRecord::decode(record)
-                    .and_then(|event| u64::try_from(event.entity_id).ok());
-                // The Ares trench event's source building
-                // (`1006A540` trusts it as the other receivers do).
-                let actor = if ares {
-                    actor.or_else(|| {
-                        let event = crate::sim::command::AresTrenchRedirectRecord::decode(record)?;
-                        match event.source {
-                            MegaMissionTarget::Object { id } => u64::try_from(id).ok(),
-                            _ => None,
-                        }
-                    })
-                } else {
-                    actor
-                };
-                actor.is_some_and(foreign)
+        let house_refused = |house, capability| {
+            !self.command_house_allowed(command_owner, granted_source, house, capability)
+        };
+        let actor_refused = |actor, capability| {
+            self.command_actor_outside_scope(command_owner, granted_source, actor, capability)
+        };
+        match self.resolve_command_subject(cmd, rules) {
+            CommandSubject::Local => false,
+            CommandSubject::Primary(capability) => {
+                self.session.has_custom_control_grants()
+                    && granted_source.is_none_or(|(_, house)| house_refused(house, capability))
             }
-            Command::PlanningRecord { record } => {
-                super::planning::planning_record_actor(record).is_some_and(foreign)
+            CommandSubject::House(house, capability) => house_refused(house, capability),
+            CommandSubject::TargetHouse(target) => {
+                granted_source.is_none()
+                    || target
+                        .is_none_or(|house| house_refused(house, CommandCapability::FullControl))
+            }
+            CommandSubject::Actor(actor, capability) => actor_refused(actor, capability),
+            CommandSubject::Actors(actors, capability) => {
+                actors.iter().any(|&actor| actor_refused(actor, capability))
+            }
+            CommandSubject::Bunker(bunker) => {
+                actor_refused(bunker, CommandCapability::Tactical)
+                    || granted_source.is_some()
+                        && self
+                            .substrate
+                            .entities
+                            .get(bunker)
+                            .and_then(|building| building.bunker.occupant())
+                            .is_some_and(|occupant| {
+                                actor_refused(occupant, CommandCapability::Tactical)
+                            })
+            }
+        }
+    }
+
+    fn resolve_command_subject<'a>(&self, cmd: &'a Command, rules: &RuleSet) -> CommandSubject<'a> {
+        use CommandCapability::{FullControl, PrimaryHouse, Tactical};
+
+        match cmd {
+            Command::ExitMatch
+            | Command::Destruct
+            | Command::Ally { .. }
+            | Command::RemovePlayer { .. }
+            | Command::LiveGameSpeed { .. }
+            | Command::SetGameSpeed { .. }
+            | Command::OpenOptions
+            | Command::SetLatencyFudge { .. }
+            | Command::Cheer => CommandSubject::Primary(PrimaryHouse),
+            Command::SellBuilding { entity_id }
+            | Command::ToggleRepair { entity_id }
+            | Command::SetBuildingOnLine { entity_id, .. }
+            | Command::TogglePrimaryFactory { entity_id }
+            | Command::UndeployBuilding { entity_id } => {
+                CommandSubject::Actor(*entity_id, FullControl)
             }
             Command::SellWallAtCell { x, y } => self
                 .wall_sale_cell(*x, *y)
                 .and_then(|(_, _, cell)| cell.wall_owner)
-                .is_some_and(|owner| {
-                    !command_owner.eq_ignore_ascii_case(self.interner.resolve(owner))
+                .map_or(CommandSubject::Local, |owner| {
+                    CommandSubject::House(owner, FullControl)
                 }),
-            _ => cmd.megamission_actor().is_some_and(foreign),
+            Command::QueueProduction { .. }
+            | Command::SuspendProduction { .. }
+            | Command::CycleProducerFocus { .. }
+            | Command::PlaceReadyBuilding { .. }
+            | Command::CancelProductionByType { .. }
+            | Command::PlaceProducedMobile { .. }
+            | Command::LaunchSuperWeapon { .. }
+            | Command::BeginPaidSuperWeapon { .. }
+            | Command::CompletePaidSuperWeapon { .. }
+            | Command::CancelPaidSuperWeapon { .. } => CommandSubject::Primary(FullControl),
+            Command::Move { entity_id, .. }
+            | Command::MoveToObject { entity_id, .. }
+            | Command::Stop { entity_id }
+            | Command::AttackMove { entity_id, .. }
+            | Command::Guard { entity_id, .. }
+            | Command::Scatter { entity_id }
+            | Command::DeployMcv { entity_id }
+            | Command::ToggleInfantryDeploy { entity_id }
+            | Command::ArchiveObject { entity_id, .. }
+            | Command::MegaMission { entity_id, .. } => CommandSubject::Actor(*entity_id, Tactical),
+            Command::Attack { attacker_id, .. }
+            | Command::ForceAttackCell { attacker_id, .. }
+            | Command::PlantC4 { attacker_id, .. } => CommandSubject::Actor(*attacker_id, Tactical),
+            Command::CaptureBuilding { engineer_id, .. } => {
+                CommandSubject::Actor(*engineer_id, Tactical)
+            }
+            Command::UnloadPassengers { transport_id } => {
+                CommandSubject::Actor(*transport_id, Tactical)
+            }
+            Command::EjectBunker { bunker_id } => CommandSubject::Bunker(*bunker_id),
+            Command::SetRally { producer_ids, .. } => {
+                CommandSubject::Actors(producer_ids, Tactical)
+            }
+            Command::PlanningRecord { record } => super::planning::planning_record_actor(record)
+                .map_or(CommandSubject::Primary(Tactical), |actor| {
+                    CommandSubject::Actor(actor, Tactical)
+                }),
+            Command::SynchronizedRecord { record } => {
+                self.resolve_native_command_subject(record, rules)
+            }
+            Command::Select { .. }
+            | Command::MoveFlash { .. }
+            | Command::AssignControlGroup { .. } => CommandSubject::Local,
         }
     }
 
-    /// The actor test of [`Self::network_command_actor_foreign`]: in a LAN or
-    /// WOL game, `id` names an object that a House other than `command_owner`
-    /// owns, so that sender's order for it is refused.
-    pub(super) fn network_actor_foreign(&self, command_owner: &str, id: u64) -> bool {
-        self.session.execution_topology().is_lockstep()
-            && self.substrate.entities.get(id).is_some()
-            && !self.entity_owned_by_id(command_owner, id)
+    fn resolve_native_command_subject(
+        &self,
+        record: &CommandRecord,
+        rules: &RuleSet,
+    ) -> CommandSubject<'static> {
+        use CommandCapability::{FullControl, PrimaryHouse, Tactical};
+
+        match record.opcode() {
+            // A bomb belongs to its planting House regardless of its carrier.
+            // An empty carrier's plan can only be cleared by the carrier owner.
+            crate::sim::command::DETONATE_OPCODE => {
+                crate::sim::command::DetonateRecord::decode(record)
+                    .and_then(|event| u64::try_from(event.entity_id).ok())
+                    .and_then(|id| self.substrate.entities.get(id))
+                    .map_or(CommandSubject::Local, |entity| match &entity.bomb {
+                        Some(bomb) => CommandSubject::House(bomb.house(), Tactical),
+                        None => CommandSubject::House(entity.owner(), PrimaryHouse),
+                    })
+            }
+            crate::sim::command::ARCHIVE_OPCODE => ArchiveRecord::decode(record)
+                .and_then(|event| u64::try_from(event.entity_id).ok())
+                .map_or(CommandSubject::Local, |actor| {
+                    CommandSubject::Actor(actor, Tactical)
+                }),
+            // The source trench is the ordered object. The destination Cell
+            // is still checked by the native traverse receiver.
+            crate::sim::command::ARES_TRENCH_REDIRECT_OPCODE if rules.ares() => {
+                crate::sim::command::AresTrenchRedirectRecord::decode(record)
+                    .and_then(|event| match event.source {
+                        MegaMissionTarget::Object { id } => u64::try_from(id).ok(),
+                        MegaMissionTarget::Null | MegaMissionTarget::Cell { .. } => None,
+                    })
+                    .map_or(CommandSubject::Local, |actor| {
+                        CommandSubject::Actor(actor, Tactical)
+                    })
+            }
+            crate::sim::command::TARGET_HOUSE_OPCODE => CommandSubject::TargetHouse(
+                crate::sim::command::TargetHouseRecord::decode(record).and_then(|event| {
+                    self.houses
+                        .order()
+                        .get(usize::from(event.target_house))
+                        .copied()
+                }),
+            ),
+            crate::sim::command::PRODUCE_OPCODE
+            | crate::sim::command::SUSPEND_OPCODE
+            | crate::sim::command::ABANDON_OPCODE
+            | crate::sim::command::ABANDON_ALL_OPCODE
+            | crate::sim::command::PLACE_OPCODE
+            | crate::sim::command::VERA_PAID_SUPER_OPCODE
+            | crate::sim::command::VERA_CYCLE_PRODUCER_OPCODE
+            | SpecialPlaceRecord::OPCODE => CommandSubject::Primary(FullControl),
+            // Other byte values have no receiver in SynchronizedRecord.
+            _ => CommandSubject::Local,
+        }
+    }
+
+    /// The lockstep scope test shared by dispatch and formation. Let native
+    /// receiver checks handle missing actors and their existing side effects.
+    pub(super) fn command_actor_outside_scope(
+        &self,
+        command_owner: &str,
+        granted_source: Option<(i8, InternedId)>,
+        id: u64,
+        capability: CommandCapability,
+    ) -> bool {
+        self.substrate.entities.get(id).is_some_and(|entity| {
+            !self.command_house_allowed(command_owner, granted_source, entity.owner(), capability)
+        })
     }
 
     /// The acting object's half of the native order-admission gate.
@@ -3985,6 +4384,7 @@ mod tests {
         let sale = Command::SellWallAtCell { x: 1, y: 1 };
         let sell = |sim: &mut Simulation, house: &str| {
             sim.apply_command_with_overlays(
+                None,
                 house,
                 &sale,
                 &rules,

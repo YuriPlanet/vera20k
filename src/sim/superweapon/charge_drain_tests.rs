@@ -498,6 +498,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
         let original_timer = (instance.charge_start_tick(), instance.charge_duration());
         sim.sound_events.clear_for_test();
         assert!(sim.apply_command_with_overlays(
+            None,
             "Russians",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,
@@ -521,6 +522,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
             );
             sim.session.set_binary_frame_for_test(4200);
             assert!(!sim.apply_command_with_overlays(
+                None,
                 "Russians",
                 &Command::LaunchSuperWeapon {
                     sw_type_id: id,
@@ -562,6 +564,7 @@ fn remote_house_human_selector_and_reset_keep_drain_one_time_and_leaf_ready_guar
         let anims = invoke_count(&sim);
         sim.sound_events.clear_for_test();
         sim.apply_command_with_overlays(
+            None,
             "Russians",
             &Command::LaunchSuperWeapon {
                 sw_type_id: id,

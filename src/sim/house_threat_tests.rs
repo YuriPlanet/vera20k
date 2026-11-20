@@ -281,6 +281,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         Some(7)
     );
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &crate::sim::command::Command::CaptureBuilding {
             engineer_id: passenger,

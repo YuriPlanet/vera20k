@@ -1264,6 +1264,7 @@ fn walk_move(
     to: (u16, u16),
 ) {
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &crate::sim::command::Command::Move {
             entity_id: id,

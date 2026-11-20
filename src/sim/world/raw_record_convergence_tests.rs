@@ -126,6 +126,7 @@ fn gsi_04_07_wall_sell_raw_signed_linear_coordinates_use_canonical_cell() {
             .expect("registered receiver decodes");
         let receiver = sim.interner.resolve(envelope.owner).to_string();
         sim.apply_command_with_overlays(
+            None,
             &receiver,
             &envelope.payload,
             rules,

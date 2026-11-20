@@ -88,6 +88,7 @@ fn ares_refusal_view_obeys_native_readiness_money_and_constraint_priority() {
         target_ry: 0,
     };
     assert!(!sim.apply_command_with_overlays(
+        None,
         "Americans",
         &command,
         &rules,
@@ -120,6 +121,7 @@ fn ares_refusal_view_obeys_native_readiness_money_and_constraint_priority() {
     sim.sound_events.clear_for_test();
     let health = sim.entities().get(target).unwrap().health.current();
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &command,
         &rules,
@@ -200,6 +202,7 @@ fn use_ai_place_ignores_click_and_keeps_first_eligible_maximum_after_invalid_lat
     );
     let rng = sim.scenario_rng.logical_state();
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -262,6 +265,7 @@ fn no_target_selector_bypasses_designators_and_uses_empty_cell() {
         Err(TargetReject::NoEligibleDesignator)
     );
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,

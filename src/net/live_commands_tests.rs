@@ -1785,17 +1785,21 @@ impl NetworkCommandBoundary for Boundary {
     }
 }
 
-fn stop_scene() -> (Simulation, RuleSet, u64) {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n[VehicleTypes]\n0=AMCV\n[AircraftTypes]\n[BuildingTypes]\n\
+const STOP_SCENE_RULES: &str = "[InfantryTypes]\n[VehicleTypes]\n0=AMCV\n[AircraftTypes]\n[BuildingTypes]\n\
          [AMCV]\nStrength=1000\nSpeed=4\nSight=0\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n\
-         [Clear]\nFoot=100%\nTrack=100%\nWheel=100%\nFloat=0%\n",
-    ))
-    .unwrap();
+         [Clear]\nFoot=100%\nTrack=100%\nWheel=100%\nFloat=0%\n";
+
+fn stop_scene() -> (Simulation, RuleSet, u64) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(STOP_SCENE_RULES)).unwrap();
+    let (sim, [alpha, _]) = stop_scene_with_rules(&rules);
+    (sim, rules, alpha)
+}
+
+fn stop_scene_with_rules(rules: &RuleSet) -> (Simulation, [u64; 2]) {
     let mut sim = Simulation::with_seed(73);
-    sim.intern_rule_type_ids(&rules);
-    sim.resolve_type_handles(&rules);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
     for (index, name) in ["Alpha", "Beta"].iter().enumerate() {
         let owner = sim.interner.intern(name);
         sim.houses
@@ -1822,13 +1826,11 @@ fn stop_scene() -> (Simulation, RuleSet, u64) {
     sim.install_resolved_terrain_for_new_map(
         crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(64, 64, cells),
     );
-    assert!(sim.rebuild_dynamic_navigation(&rules));
+    assert!(sim.rebuild_dynamic_navigation(rules));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
-    let actor = sim
-        .spawn_object("AMCV", "Alpha", 20, 20, 0, &rules)
-        .unwrap();
-    sim.spawn_object("AMCV", "Beta", 25, 25, 0, &rules).unwrap();
-    (sim, rules, actor)
+    let actor = sim.spawn_object("AMCV", "Alpha", 20, 20, 0, rules).unwrap();
+    let other = sim.spawn_object("AMCV", "Beta", 25, 25, 0, rules).unwrap();
+    (sim, [actor, other])
 }
 
 fn production_frame(sim: &mut Simulation, rules: &RuleSet, boundary: &Boundary) -> SimFrameOutput {
@@ -2862,28 +2864,7 @@ fn two_udp_clients_sharing_a_house_both_command_it() {
         assert_eq!(stop.house_id(), source);
         assert!(sim.issue_local_command(CommandEnvelope::synchronized(stop, 0)));
     }
-    for frame in 0..=10 {
-        let start = Instant::now();
-        let mut completed = [false; 2];
-        let mut checksums = [None; 2];
-        while !completed.iter().all(|done| *done) {
-            for index in 0..2 {
-                if completed[index] {
-                    continue;
-                }
-                boundaries[index]
-                    .advance_clock(1000 + frame * 100 + (start.elapsed().as_millis() / 16) as u32);
-                let output = production_frame(&mut worlds[index], &rules, &boundaries[index]);
-                if let Some(sync) = output.multiplayer_checksum {
-                    checksums[index] = Some(sync.checksum.unwrap().value);
-                }
-                completed[index] = output.tick.frame_committed;
-            }
-            assert!(start.elapsed() < STALL_LIMIT, "frame{frame} stalled");
-            std::thread::yield_now();
-        }
-        assert_eq!(checksums[0], checksums[1], "frame{frame} CRC");
-    }
+    advance_shared_house_pair(&mut worlds, &rules, &boundaries, 0..=10);
     // Each client ran both players' orders for Alpha on the same frame.
     for boundary in &boundaries {
         let mut stops: Vec<_> = boundary
@@ -2896,6 +2877,395 @@ fn two_udp_clients_sharing_a_house_both_command_it() {
             .collect();
         stops.sort();
         assert_eq!(stops, [(10, 0, true), (10, 1, true)]);
+    }
+}
+
+fn advance_shared_house_pair(
+    worlds: &mut [Simulation; 2],
+    rules: &RuleSet,
+    boundaries: &[Boundary; 2],
+    frames: std::ops::RangeInclusive<u32>,
+) {
+    for frame in frames {
+        let start = Instant::now();
+        let mut completed = [false; 2];
+        let mut checksums = [None; 2];
+        while !completed.iter().all(|done| *done) {
+            for index in 0..2 {
+                if completed[index] {
+                    continue;
+                }
+                boundaries[index]
+                    .advance_clock(1000 + frame * 100 + (start.elapsed().as_millis() / 16) as u32);
+                let output = production_frame(&mut worlds[index], rules, &boundaries[index]);
+                if let Some(sync) = output.multiplayer_checksum {
+                    checksums[index] = Some(sync.checksum.unwrap().value);
+                }
+                completed[index] = output.tick.frame_committed;
+            }
+            assert!(start.elapsed() < STALL_LIMIT, "frame{frame} stalled");
+            std::thread::yield_now();
+        }
+        assert_eq!(checksums[0], checksums[1], "frame{frame} CRC");
+    }
+}
+
+#[test]
+fn shared_house_udp_keeps_each_sources_third_party_scope() {
+    use crate::sim::command::{
+        ARCHIVE_OPCODE, ArchiveRecord, Command, IDLE_OPCODE, MEGAMISSION_OPCODE, MegaMissionOrder,
+        MegaMissionRecord, MegaMissionTarget, ObjectAction, ObjectActionRecord, ProductionEvent,
+        ProductionRecord, REPAIR_OPCODE, RepairRecord, StopRecord, TARGET_HOUSE_OPCODE,
+        TargetHouseRecord,
+    };
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel, ControlScope};
+    use crate::sim::mission::MissionType;
+    use crate::sim::production::ProductionCategory;
+
+    let (left, right) = pair(73);
+    let boundaries = [Boundary::new(left), Boundary::new(right)];
+    let mut ini = crate::sim::arena_fixture::clear_ground_ini(STOP_SCENE_RULES);
+    ini.merge(&IniFile::from_str(
+        "[Countries]\n0=Americans\n[Sides]\nGDI=Americans\n\
+         [VehicleTypes]\n1=MTNK\n\
+         [MTNK]\nStrength=300\nSpeed=4\nCost=500\nTechLevel=1\nOwner=Americans\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n\
+         [BuildingTypes]\n0=GAWEAP\n1=GAPOWR\n\
+         [GAWEAP]\nStrength=400\nOwner=Americans\nFactory=UnitType\nWeaponsFactory=yes\n\
+         [GAPOWR]\nStrength=400\n",
+    ));
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    rules.set_buildup_control_for_test("GAPOWR", [0, 17, 3]);
+    let (a, [_, beta_unit]) = stop_scene_with_rules(&rules);
+    let (b, [_, other_beta_unit]) = stop_scene_with_rules(&rules);
+    assert_eq!(other_beta_unit, beta_unit);
+    let mut worlds = [a, b];
+    let grants = vec![
+        ControlGrant {
+            source: 0,
+            house: 1,
+            level: ControlGrantLevel::FullControl,
+        },
+        ControlGrant {
+            source: 1,
+            house: 1,
+            level: ControlGrantLevel::UnitsOnly,
+        },
+        ControlGrant {
+            source: 0,
+            house: 2,
+            level: ControlGrantLevel::UnitsOnly,
+        },
+    ];
+    let add_targets = |sim: &mut Simulation| {
+        let americans = sim.interner.intern("Americans");
+        for name in ["Alpha", "Beta"] {
+            let house = sim.interner.get(name).unwrap();
+            sim.houses
+                .get_mut(&house)
+                .unwrap()
+                .set_country_for_test(Some(americans));
+        }
+        let gamma = sim.interner.intern("Gamma");
+        sim.houses
+            .register(HouseState::new(gamma, 2, None, false, 0, 10));
+        let unit = sim
+            .spawn_object("AMCV", "Gamma", 40, 40, 0, &rules)
+            .unwrap();
+        let factory = sim
+            .spawn_object("GAWEAP", "Beta", 30, 30, 0, &rules)
+            .expect("buildable ground admits the Beta factory");
+        let power_plant = sim
+            .spawn_object("GAPOWR", "Beta", 30, 40, 0, &rules)
+            .expect("buildable ground admits the Beta power plant");
+        // DoList runs staged MEGAMISSIONs after ARCHIVE for the same
+        // source. A Foot move clears the ArchiveTarget it just set.
+        let beta_archiver = sim.spawn_object("AMCV", "Beta", 26, 25, 0, &rules).unwrap();
+        let gamma_archiver = sim
+            .spawn_object("AMCV", "Gamma", 41, 40, 0, &rules)
+            .unwrap();
+        (unit, factory, power_plant, beta_archiver, gamma_archiver)
+    };
+    let targets = add_targets(&mut worlds[0]);
+    assert_eq!(add_targets(&mut worlds[1]), targets);
+    let (gamma_unit, factory, power_plant, beta_archiver, gamma_archiver) = targets;
+    for (source, sim) in (0..).zip(&mut worlds) {
+        let alpha = sim.interner.get("Alpha").unwrap();
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(source));
+        sim.session.set_current_house_for_test(Some(alpha));
+        sim.install_control_grants(grants.clone()).unwrap();
+        assert!(!sim.apply_command(
+            "Alpha",
+            &Command::ToggleRepair { entity_id: factory },
+            Some(&rules),
+        ));
+        let beta_house = sim.interner.get("Beta").unwrap();
+        assert_eq!(
+            sim.control_scope_for_source(source, beta_house),
+            if source == 0 {
+                ControlScope::FullControl
+            } else {
+                ControlScope::UnitsOnly
+            },
+        );
+        assert_eq!(
+            crate::sim::production::find_factory(
+                sim,
+                &rules,
+                beta_house,
+                rules.object("MTNK").unwrap(),
+                false,
+                true,
+                true,
+            ),
+            Some(factory),
+            "Beta's factory can build the targeted vehicle"
+        );
+        // The UDP path also carries commands that a remote source must refuse.
+        for record in [
+            sim.encode_stop_record(alpha, beta_unit).unwrap(),
+            sim.encode_repair_record(alpha, factory).unwrap(),
+            sim.encode_stop_record(alpha, gamma_unit).unwrap(),
+            sim.encode_object_action_record(
+                alpha,
+                &Command::SellBuilding {
+                    entity_id: power_plant,
+                },
+            )
+            .unwrap(),
+        ] {
+            assert_eq!(record.house_id(), source);
+            assert!(sim.issue_local_command(CommandEnvelope::synchronized(record, 0)));
+        }
+        for entity_id in [beta_unit, gamma_unit] {
+            let record = sim
+                .encode_megamission_record(
+                    alpha,
+                    &Command::Move {
+                        entity_id,
+                        target_rx: 45,
+                        target_ry: 44,
+                    },
+                )
+                .unwrap();
+            assert_eq!(record.house_id(), source);
+            assert!(sim.issue_local_command(CommandEnvelope::synchronized(record, 0)));
+        }
+        let production = sim
+            .encode_production_record(
+                alpha,
+                ProductionEvent::Produce,
+                sim.interner.get("MTNK").unwrap(),
+                &rules,
+            )
+            .unwrap();
+        let targeted = TargetHouseRecord::encode(1, &production).unwrap();
+        assert_eq!(targeted.house_id(), source);
+        assert!(sim.issue_local_command(CommandEnvelope::synchronized(targeted, 0)));
+        if source == 1 {
+            assert!(sim.issue_local_command(CommandEnvelope::new(
+                alpha,
+                0,
+                Command::SetRally {
+                    rx: 35,
+                    ry: 35,
+                    producer_ids: vec![factory],
+                },
+            )));
+            for entity in [beta_archiver, gamma_archiver] {
+                let mut record =
+                    CommandRecord::encode(ARCHIVE_OPCODE, i32::from(source), 0, &[]).unwrap();
+                ArchiveRecord {
+                    house_id: source,
+                    frame: 0,
+                    entity_id: i32::try_from(entity).unwrap(),
+                    target: MegaMissionTarget::Object {
+                        id: i32::try_from(factory).unwrap(),
+                    },
+                }
+                .write_into(&mut record)
+                .unwrap();
+                assert!(sim.issue_local_command(CommandEnvelope::synchronized(record, 0)));
+            }
+        }
+        sim.publish_scenario_started();
+    }
+    assert_eq!(worlds[0].state_hash(), worlds[1].state_hash());
+    advance_shared_house_pair(&mut worlds, &rules, &boundaries, 0..=4);
+    let add_delta = |sim: &mut Simulation| {
+        assert!(sim.session.started());
+        let house = sim.interner.intern("Delta");
+        sim.houses
+            .register(HouseState::new(house, 3, None, false, 0, 10));
+        sim.spawn_object("AMCV", "Delta", 48, 48, 0, &rules)
+            .expect("the new House's unit must be a live command target")
+    };
+    let late_unit = add_delta(&mut worlds[0]);
+    assert_eq!(add_delta(&mut worlds[1]), late_unit);
+    for (source, sim) in (0..).zip(&mut worlds) {
+        let alpha = sim.interner.get("Alpha").unwrap();
+        let stop = sim.encode_stop_record(alpha, late_unit).unwrap();
+        assert_eq!(stop.house_id(), source);
+        assert!(sim.issue_local_command(CommandEnvelope::synchronized(stop, sim.session.tick())));
+        if source == 1 {
+            for entity_id in [beta_unit, gamma_unit] {
+                let plan = sim
+                    .encode_planning_order_record(
+                        alpha,
+                        &Command::Move {
+                            entity_id,
+                            target_rx: 47,
+                            target_ry: 46,
+                        },
+                        None,
+                    )
+                    .unwrap();
+                assert_eq!(plan.house_id(), source);
+                assert!(
+                    sim.issue_local_command(CommandEnvelope::synchronized(
+                        plan,
+                        sim.session.tick()
+                    ))
+                );
+            }
+        }
+    }
+    advance_shared_house_pair(&mut worlds, &rules, &boundaries, 5..=10);
+    for sim in &worlds {
+        use crate::sim::combat::TargetKind;
+
+        assert_eq!(
+            sim.entities().get(factory).unwrap().archive_target(),
+            Some(TargetKind::Cell(35, 35))
+        );
+        assert_eq!(
+            sim.entities().get(beta_archiver).unwrap().archive_target(),
+            Some(TargetKind::Entity(factory))
+        );
+        assert_eq!(
+            sim.entities().get(gamma_archiver).unwrap().archive_target(),
+            None
+        );
+        assert_eq!(
+            sim.entities()
+                .get(power_plant)
+                .unwrap()
+                .mission
+                .effective()
+                .known(),
+            Some(MissionType::Selling)
+        );
+    }
+    advance_shared_house_pair(&mut worlds, &rules, &boundaries, 11..=15);
+    for boundary in &boundaries {
+        let applied = boundary.applied.borrow();
+        let outcome = |source, opcode, subject| {
+            applied.iter().find_map(|(frame, record, ok)| {
+                if record.house_id() != source || record.opcode() != opcode {
+                    return None;
+                }
+                let actor = StopRecord::decode(record)
+                    .map(|event| event.entity_id)
+                    .or_else(|| RepairRecord::decode(record).map(|event| event.entity_id))
+                    .or_else(|| ObjectActionRecord::decode(record).map(|event| event.entity_id))
+                    .or_else(|| MegaMissionRecord::decode(record).map(|event| event.source_id))
+                    .or_else(|| ArchiveRecord::decode(record).map(|event| event.entity_id))?;
+                (u64::try_from(actor).ok() == Some(subject)).then_some((*frame, *ok))
+            })
+        };
+        assert_eq!(outcome(0, IDLE_OPCODE, beta_unit), Some((10, true)));
+        assert_eq!(outcome(1, IDLE_OPCODE, beta_unit), Some((10, true)));
+        assert_eq!(outcome(0, REPAIR_OPCODE, factory), Some((10, true)));
+        assert_eq!(outcome(1, REPAIR_OPCODE, factory), Some((10, false)));
+        assert_eq!(outcome(0, IDLE_OPCODE, gamma_unit), Some((10, true)));
+        assert_eq!(outcome(1, IDLE_OPCODE, gamma_unit), Some((10, false)));
+        assert_eq!(outcome(0, MEGAMISSION_OPCODE, beta_unit), Some((10, true)));
+        assert_eq!(outcome(1, MEGAMISSION_OPCODE, beta_unit), Some((10, true)));
+        assert_eq!(outcome(0, MEGAMISSION_OPCODE, gamma_unit), Some((10, true)));
+        assert_eq!(
+            outcome(1, MEGAMISSION_OPCODE, gamma_unit),
+            Some((10, false))
+        );
+        let movement = |source, actor| {
+            applied
+                .iter()
+                .filter(|(frame, record, _)| *frame == 10 && record.house_id() == source)
+                .filter_map(|(_, record, _)| MegaMissionRecord::decode(record))
+                .find(|event| u64::try_from(event.source_id).ok() == Some(actor))
+                .unwrap()
+                .order
+        };
+        assert_ne!(
+            movement(0, beta_unit),
+            movement(0, gamma_unit),
+            "both of the permitted units participate in formation spread"
+        );
+        assert_eq!(
+            movement(1, beta_unit),
+            MegaMissionOrder::Move {
+                target_x: 45,
+                target_y: 44
+            },
+            "the denied formation member cannot shift the permitted move"
+        );
+        // Sell also reaches one of the inner actor-ownership checks.
+        let sell = ObjectAction::Sell.opcode();
+        assert_eq!(outcome(0, sell, power_plant), Some((10, true)));
+        assert_eq!(outcome(1, sell, power_plant), Some((10, false)));
+        assert_eq!(outcome(1, ARCHIVE_OPCODE, factory), Some((10, true)));
+        assert_eq!(outcome(1, ARCHIVE_OPCODE, beta_archiver), Some((10, true)));
+        assert_eq!(
+            outcome(1, ARCHIVE_OPCODE, gamma_archiver),
+            Some((10, false))
+        );
+        assert_eq!(outcome(0, IDLE_OPCODE, late_unit), Some((15, false)));
+        assert_eq!(outcome(1, IDLE_OPCODE, late_unit), Some((15, false)));
+
+        let plans: Vec<_> = applied
+            .iter()
+            .filter(|(frame, record, _)| *frame == 15 && record.house_id() == 1)
+            .filter_map(|(_, record, accepted)| {
+                let (event, flag) = MegaMissionRecord::decode_planned(record)?;
+                (flag == 1).then_some((u64::try_from(event.source_id).ok()?, *accepted))
+            })
+            .collect();
+        assert_eq!(plans, [(beta_unit, true), (gamma_unit, false)]);
+
+        let mut targeted: Vec<_> = applied
+            .iter()
+            .filter(|(_, record, _)| record.opcode() == TARGET_HOUSE_OPCODE)
+            .map(|(frame, record, accepted)| {
+                let event = TargetHouseRecord::decode(record).unwrap();
+                assert_eq!(event.target_house, 1);
+                assert_eq!(
+                    ProductionRecord::decode(&event.command).unwrap().event,
+                    ProductionEvent::Produce
+                );
+                (*frame, record.house_id(), *accepted)
+            })
+            .collect();
+        targeted.sort_unstable();
+        assert_eq!(targeted, [(10, 0, true), (10, 1, false)]);
+    }
+    assert_eq!(worlds[0].state_hash(), worlds[1].state_hash());
+    for sim in &worlds {
+        let alpha = sim.interner.get("Alpha").unwrap();
+        let beta = sim.interner.get("Beta").unwrap();
+        let gamma = sim.interner.get("Gamma").unwrap();
+        let factories = sim.production().factories();
+        assert!(factories.view(alpha, ProductionCategory::Vehicle).is_none());
+        let production = factories.view(beta, ProductionCategory::Vehicle).unwrap();
+        assert_eq!(
+            production.object.map(|product| product.type_id),
+            sim.interner.get("MTNK")
+        );
+        assert!(production.queue.is_empty());
+        let paths = sim.planning_paths(beta);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].actor_id, beta_unit);
+        assert_eq!(paths[0].cells, [(47, 46)]);
+        assert!(sim.planning_paths(gamma).is_empty());
     }
 }
 

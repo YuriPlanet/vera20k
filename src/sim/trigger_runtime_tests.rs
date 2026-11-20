@@ -2272,6 +2272,7 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
     // (0x0064C4FB..0x0064C50D). Order the Yuri through the class receiver, as
     // the computer's own AI does.
     assert!(sim.apply_command_with_overlays(
+        None,
         "House0",
         &Command::Attack {
             attacker_id: source,
