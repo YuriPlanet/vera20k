@@ -721,7 +721,7 @@ fn eaten_idles_when_its_grinder_expires_without_falling_back_to_hunt() {
 }
 
 #[test]
-fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
+fn arrival_callbacks_precede_refund_and_each_flush_precedes_the_next_list_draw() {
     use crate::map::map_file::MapFile;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::world::{SimSoundEvent, SoundBoundary};
