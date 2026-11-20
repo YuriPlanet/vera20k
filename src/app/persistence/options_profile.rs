@@ -305,7 +305,7 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) skipped_update: String,
     /// `[VERA] OnlineName=`: the name of the last successful online sign-in,
     /// as a guest or an account; empty, the default, until one succeeds.
-    /// Only that sign-in changes it ([`Self::commit_online_name`]).
+    /// A successful sign-in sets it and deleting that account clears it.
     pub(crate) online_name: String,
     /// `[VERA] OnlineLocale=`: the country (`WOL:Locale%02d`) the player chose
     /// on their player card, which every online sign-in sends; 0, the
