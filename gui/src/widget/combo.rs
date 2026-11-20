@@ -1,22 +1,344 @@
-//! `Combo` behaviour (to be ported; see the module plan in widget/mod.rs).
+//! `Combo`: gamemd's owner-draw combo box (`OwnerDraw_ComboBox @ 0x00617250`)
+//! and its drop-down window (`ComboDropWin @ 0x0060D540`), on the shell
+//! substrate in [`crate::shell::combobox`].
+//!
+//! Any press on an enabled face plays the open cue; only the arrow zone opens
+//! the list ([`ComboPress::on_face`]). The open list is the dialog's popup and
+//! takes every pointer input: its scrollbar takes a press silently, a row or
+//! anywhere else closes it with the close cue.
+//!
+//! Node data: `Rect` (the control rect; the face is its top
+//! [`COMBO_FACE_H`](crate::shell::combobox::COMBO_FACE_H) px), `Items` or
+//! `RowCount`, `Selected`, `VisibleRows` (0 = every row). The widget writes
+//! `Open`, `Top` and, on a pick, `Selected`.
 
-use super::{Capture, Ctx};
-use crate::node::NodeId;
+use super::{Capture, Ctx, WidgetState};
+use crate::gui::UiEvent;
+use crate::node::{Node, NodeId, Prop, Tree, Value};
+use crate::shell::combobox::{ComboPopup, ComboPopupInteraction, ComboPress, combo_face_rect};
+use crate::shell::geom::ShellScale;
+use crate::shell::list::ListScrollPart;
+use crate::time::{Duration, Instant};
 
-#[derive(Debug, Default)]
-pub struct ComboState {}
+#[derive(Debug)]
+pub struct ComboState {
+    list: ComboPopupInteraction<NodeId>,
+    /// `UiMs` 0 on the substrate's clock (its arrow-repeat deadline).
+    epoch: Instant,
+}
 
-pub(crate) fn press(_ctx: &mut Ctx<'_>, _node: NodeId, _x: i32, _y: i32) -> Capture {
+impl Default for ComboState {
+    fn default() -> Self {
+        Self {
+            list: ComboPopupInteraction::default(),
+            epoch: Instant::now(),
+        }
+    }
+}
+
+/// An open drop-down as the host paints it: the same geometry the pointer
+/// hits, the hot row and the scrollbar part shown pushed.
+#[derive(Debug, Clone, Copy)]
+pub struct ComboDropDown {
+    pub popup: ComboPopup,
+    /// 60E262: the row under the pointer, kept after it leaves the rows; the
+    /// selection when the list opened.
+    pub hot_row: Option<usize>,
+    pub pressed_part: Option<ListScrollPart>,
+}
+
+/// The open drop-down of combo `node` on a dialog scaled by `scale`.
+pub(crate) fn drop_down(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<ComboDropDown> {
+    let WidgetState::Combo(st) = &tree.node(node).ok()?.state else {
+        return None;
+    };
+    st.list.control?;
+    Some(ComboDropDown {
+        popup: popup_at(tree, node, scale, st.list.top_index)?,
+        hot_row: st.list.hot_row,
+        pressed_part: st.list.scroll.pressed_part(),
+    })
+}
+
+fn row_count(n: &Node) -> usize {
+    match n.props.get(&Prop::Items) {
+        Some(Value::Items(items)) => items.len(),
+        _ => n.int_prop(Prop::RowCount, 0).max(0) as usize,
+    }
+}
+
+fn selected(n: &Node) -> Option<usize> {
+    usize::try_from(n.int_prop(Prop::Selected, -1)).ok()
+}
+
+/// The list hung under the face (`face.y + face.h + 1`); none without rows.
+fn popup_at(tree: &Tree, node: NodeId, scale: ShellScale, top: usize) -> Option<ComboPopup> {
+    let n = tree.node(node).ok()?;
+    let total = row_count(n);
+    if total == 0 {
+        return None;
+    }
+    let cap = n.int_prop(Prop::VisibleRows, 0).max(0) as usize;
+    let face = combo_face_rect(tree.screen_rect(node).ok()?, scale);
+    Some(ComboPopup::new(face, scale, total, cap, top))
+}
+
+fn state_mut(tree: &mut Tree, node: NodeId) -> Option<&mut ComboState> {
+    let n = tree.node_mut(node).ok()?;
+    if !matches!(n.state, WidgetState::Combo(_)) {
+        n.state = WidgetState::Combo(ComboState::default());
+    }
+    match &mut n.state {
+        WidgetState::Combo(st) => Some(st),
+        _ => None,
+    }
+}
+
+/// Mirrors the substrate's first row into `Top`, reporting a scroll.
+fn sync_top(ctx: &mut Ctx<'_>, node: NodeId, before: usize) {
+    let Some(top) = state_mut(ctx.tree, node).map(|st| st.list.top_index) else {
+        return;
+    };
+    let _ = ctx.tree.set(node, Prop::Top, Value::Int(top as i32));
+    if top != before {
+        ctx.events.push(UiEvent::Scrolled {
+            node,
+            top: top as i32,
+        });
+    }
+}
+
+/// Closes the list with the close cue (0x0060E4E9..0x0060E500).
+fn close(ctx: &mut Ctx<'_>, node: NodeId) {
+    if let Some(st) = state_mut(ctx.tree, node) {
+        st.list.close();
+    }
+    *ctx.popup = None;
+    let _ = ctx.tree.set(node, Prop::Open, Value::Bool(false));
+    ctx.events.push(UiEvent::ComboClosed { node });
+}
+
+pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture {
+    let (Ok(rect), Ok(n)) = (ctx.tree.screen_rect(node), ctx.tree.node(node)) else {
+        return Capture::No;
+    };
+    let selected = selected(n);
+    let can_open = popup_at(ctx.tree, node, ctx.scale, 0).is_some();
+    let scale = ctx.scale;
+    let Some(st) = state_mut(ctx.tree, node) else {
+        return Capture::No;
+    };
+    let press = if can_open {
+        st.list.press_face(node, rect, scale, selected, x, y)
+    } else {
+        ComboPress::Face
+    };
+    if press == ComboPress::Open {
+        *ctx.popup = Some(node);
+        let _ = ctx.tree.set(node, Prop::Open, Value::Bool(true));
+        let _ = ctx.tree.set(node, Prop::Top, Value::Int(0));
+        ctx.events.push(UiEvent::ComboOpened { node });
+    } else {
+        // 0x006184A2..0x006184BA: the open cue plays on any face press.
+        ctx.events.push(UiEvent::Pressed { node });
+    }
     Capture::No
 }
 
-pub(crate) fn drag(_ctx: &mut Ctx<'_>, _node: NodeId, _x: i32, _y: i32) {}
-
+/// The face never holds the pointer (the open list does), so nothing to do.
 pub(crate) fn release(_ctx: &mut Ctx<'_>, _node: NodeId, _x: i32, _y: i32) {}
 
-/// Pointer input while this combo's drop-down is the dialog's popup.
-pub(crate) fn popup_press(_ctx: &mut Ctx<'_>, _node: NodeId, _x: i32, _y: i32) {}
+/// The open list for popup input, or none when the node or its rows went
+/// away (the list then closes).
+fn open_popup(ctx: &mut Ctx<'_>, node: NodeId) -> Option<ComboPopup> {
+    let top = match &ctx.tree.node(node).ok()?.state {
+        WidgetState::Combo(st) if st.list.control.is_some() => Some(st.list.top_index),
+        _ => None,
+    };
+    let popup = top.and_then(|top| popup_at(ctx.tree, node, ctx.scale, top));
+    if popup.is_none() {
+        close(ctx, node);
+    }
+    popup
+}
 
-pub(crate) fn popup_move(_ctx: &mut Ctx<'_>, _node: NodeId, _x: i32, _y: i32) {}
+/// A press while this combo's list is the dialog's popup (ComboDropWin
+/// 0x0060E0C0): the scrollbar takes it silently; a row or anywhere else
+/// closes the list, a row then selecting.
+pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
+    let Some(popup) = open_popup(ctx, node) else {
+        *ctx.popup = None;
+        return;
+    };
+    let now = ctx.now;
+    let Some(st) = state_mut(ctx.tree, node) else {
+        return;
+    };
+    let before = st.list.top_index;
+    let now = st.epoch + Duration::from_millis(now);
+    match st.list.press_list(popup, x, y, now) {
+        ComboPress::Scroll(_) => sync_top(ctx, node, before),
+        ComboPress::Pick(row) => {
+            close(ctx, node);
+            let changed = ctx.tree.node(node).is_ok_and(|n| selected(n) != Some(row));
+            if changed {
+                let value = Value::Int(row as i32);
+                let _ = ctx.tree.set(node, Prop::Selected, value.clone());
+                ctx.events.push(UiEvent::Changed {
+                    node,
+                    value,
+                    final_: true,
+                });
+            }
+        }
+        ComboPress::Dismiss | ComboPress::Face | ComboPress::Open => close(ctx, node),
+    }
+}
 
-pub(crate) fn popup_release(_ctx: &mut Ctx<'_>, _node: NodeId, _x: i32, _y: i32) {}
+pub(crate) fn popup_move(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
+    let Some(popup) = open_popup(ctx, node) else {
+        *ctx.popup = None;
+        return;
+    };
+    let Some(st) = state_mut(ctx.tree, node) else {
+        return;
+    };
+    let before = st.list.top_index;
+    st.list.pointer_moved(popup, x, y);
+    sync_top(ctx, node, before);
+}
+
+pub(crate) fn popup_release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
+    if let Some(st) = state_mut(ctx.tree, node) {
+        st.list.cancel_pointer();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::node::{NodeId, NodeKind, Prop, Value};
+    use crate::{DialogKind, Gui, InputEvent, MouseButton, Rect, UiEvent};
+
+    /// A 120x24 combo at (10, 20) with `rows` items, `cap` shown at once.
+    fn page_with_combo(rows: usize, cap: i32) -> (Gui, NodeId) {
+        let mut g = Gui::new(8);
+        let root = g.create(NodeKind::Dialog, None).unwrap();
+        let c = g.create(NodeKind::Combo, Some(root)).unwrap();
+        g.set(c, Prop::Rect, Value::Rect(Rect::new(10, 20, 120, 24)))
+            .unwrap();
+        let items = (0..rows).map(|i| format!("row {i}")).collect();
+        g.set(c, Prop::Items, Value::Items(items)).unwrap();
+        g.set(c, Prop::Selected, Value::Int(0)).unwrap();
+        g.set(c, Prop::VisibleRows, Value::Int(cap)).unwrap();
+        g.push_dialog(root, DialogKind::Page, None, None).unwrap();
+        (g, c)
+    }
+
+    fn click(g: &mut Gui, x: i32, y: i32) -> Vec<UiEvent> {
+        g.input(InputEvent::PointerMove { x, y }, 0);
+        g.input(
+            InputEvent::PointerDown {
+                x,
+                y,
+                button: MouseButton::Left,
+            },
+            0,
+        );
+        g.input(
+            InputEvent::PointerUp {
+                x,
+                y,
+                button: MouseButton::Left,
+            },
+            0,
+        );
+        g.drain_events()
+            .into_iter()
+            .filter(|e| !matches!(e, UiEvent::Hovered { .. }))
+            .collect()
+    }
+
+    #[test]
+    fn only_the_arrow_zone_opens_and_a_row_pick_closes_and_selects() {
+        let (mut g, c) = page_with_combo(3, 0);
+        // 0x006184CD: `x > right - 0x14` with `right` = 130 exclusive.
+        assert_eq!(
+            click(&mut g, 130 - 0x14, 25),
+            vec![UiEvent::Pressed { node: c }]
+        );
+        assert_eq!(g.popup(), None);
+        assert_eq!(
+            click(&mut g, 130 - 0x13, 25),
+            vec![UiEvent::ComboOpened { node: c }]
+        );
+        assert_eq!(g.popup(), Some(c));
+        let row = g.combo_drop_down(c).unwrap().popup.row_rect(2).unwrap();
+        assert_eq!(
+            row.y,
+            20 + 24 + 1 + 2 * 23,
+            "rows hang one pixel under the face"
+        );
+        assert_eq!(
+            click(&mut g, row.x + 1, row.y + 1),
+            vec![
+                UiEvent::ComboClosed { node: c },
+                UiEvent::Changed {
+                    node: c,
+                    value: Value::Int(2),
+                    final_: true
+                },
+            ]
+        );
+        assert_eq!(g.popup(), None);
+        assert_eq!(g.get(c, Prop::Open).unwrap(), Some(&Value::Bool(false)));
+        assert!(g.combo_drop_down(c).is_none());
+    }
+
+    #[test]
+    fn open_list_takes_every_press_scrollbar_silently() {
+        let (mut g, c) = page_with_combo(9, 4);
+        click(&mut g, 125, 25);
+        let dd = g.combo_drop_down(c).unwrap();
+        let bar = dd
+            .popup
+            .scrollbar()
+            .expect("nine rows over a cap of four scroll");
+        // The down arrow steps one row and keeps the list open, no cue.
+        let events = click(&mut g, bar.x + 2, bar.y + bar.h - 2);
+        assert_eq!(events, vec![UiEvent::Scrolled { node: c, top: 1 }]);
+        assert_eq!(g.get(c, Prop::Top).unwrap(), Some(&Value::Int(1)));
+        // The pick of the already-selected row only closes.
+        g.set(c, Prop::Selected, Value::Int(1)).unwrap();
+        let row = g.combo_drop_down(c).unwrap().popup.row_rect(1).unwrap();
+        assert_eq!(
+            click(&mut g, row.x + 1, row.y + 1),
+            vec![UiEvent::ComboClosed { node: c }]
+        );
+        // A press on the face while open dismisses and goes no further.
+        click(&mut g, 125, 25);
+        assert_eq!(
+            click(&mut g, 125, 25),
+            vec![UiEvent::ComboClosed { node: c }]
+        );
+        assert_eq!(g.popup(), None);
+    }
+
+    #[test]
+    fn hot_row_starts_at_the_selection_and_survives_leaving_the_rows() {
+        let (mut g, c) = page_with_combo(3, 0);
+        g.set(c, Prop::Selected, Value::Int(1)).unwrap();
+        click(&mut g, 125, 25);
+        assert_eq!(g.combo_drop_down(c).unwrap().hot_row, Some(1));
+        let row = g.combo_drop_down(c).unwrap().popup.row_rect(2).unwrap();
+        g.input(
+            InputEvent::PointerMove {
+                x: row.x + 1,
+                y: row.y + 1,
+            },
+            0,
+        );
+        assert_eq!(g.combo_drop_down(c).unwrap().hot_row, Some(2));
+        g.input(InputEvent::PointerMove { x: 500, y: 500 }, 0);
+        assert_eq!(g.combo_drop_down(c).unwrap().hot_row, Some(2));
+    }
+}

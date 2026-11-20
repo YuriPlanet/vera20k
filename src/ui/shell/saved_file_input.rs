@@ -5,6 +5,7 @@ use crate::ui::shell::list::ListMetrics;
 use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
+    SeedDescriptionEdit,
 };
 use crate::util::time::{Duration, Instant};
 use winit::keyboard::KeyCode;

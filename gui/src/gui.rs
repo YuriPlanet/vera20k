@@ -367,6 +367,16 @@ impl Gui {
         self.top_pointer().focus
     }
 
+    /// Whether the host paints `node`'s caret now: it has the top dialog's
+    /// focus and is in the shown half of NewEdit's two-second blink.
+    pub fn caret_visible(&self, node: NodeId, now: UiMs) -> bool {
+        self.focus() == Some(node)
+            && self.tree.node(node).is_ok_and(|n| match &n.state {
+                widget::WidgetState::Edit(s) => s.caret_visible(now),
+                _ => widget::edit::EditState::default().caret_visible(now),
+            })
+    }
+
     /// Gives the top dialog's keyboard focus to `node` (an `Edit`), or none.
     pub fn set_focus(&mut self, node: Option<NodeId>) -> Result<(), Refused> {
         if let Some(n) = node {
@@ -386,6 +396,13 @@ impl Gui {
     /// The open combo drop-down of the top dialog.
     pub fn popup(&self) -> Option<NodeId> {
         self.top_pointer().popup
+    }
+
+    /// The open drop-down of combo `node` (in any dialog), on the geometry its
+    /// pointer input hits, for the host to paint.
+    pub fn combo_drop_down(&self, node: NodeId) -> Option<widget::combo::ComboDropDown> {
+        let d = self.dialogs.iter().find(|d| d.pointer.popup == Some(node))?;
+        widget::combo::drop_down(&self.tree, node, d.scale)
     }
 
     fn with_ctx<R>(&mut self, now: UiMs, f: impl FnOnce(&mut Ctx<'_>) -> R) -> R {
@@ -706,5 +723,86 @@ mod tests {
         assert!(!hover_flash_on(100, 1099));
         assert!(hover_flash_on(100, 1100));
         assert!(!hover_flash_on(100, 2100));
+    }
+
+    /// A page with an `Edit` at 0..100 x 0..10 and an OK/Cancel pair.
+    fn page_with_edit() -> (Gui, NodeId, NodeId, NodeId) {
+        let mut g = Gui::new(8);
+        let root = g.create(NodeKind::Dialog, None).unwrap();
+        let edit = g.create(NodeKind::Edit, Some(root)).unwrap();
+        let ok = g.create(NodeKind::Button, Some(root)).unwrap();
+        let cancel = g.create(NodeKind::Button, Some(root)).unwrap();
+        g.set(edit, Prop::Rect, Value::Rect(Rect::new(0, 0, 100, 10))).unwrap();
+        g.push_dialog(root, DialogKind::Page, Some(ok), Some(cancel)).unwrap();
+        (g, edit, ok, cancel)
+    }
+
+    fn text_of(g: &Gui, n: NodeId) -> (String, i32) {
+        let text = match g.get(n, Prop::Text).unwrap() {
+            Some(Value::Text(t)) => t.clone(),
+            _ => String::new(),
+        };
+        let caret = match g.get(n, Prop::Caret).unwrap() {
+            Some(Value::Int(c)) => *c,
+            _ => -1,
+        };
+        (text, caret)
+    }
+
+    #[test]
+    fn edit_press_focuses_and_keys_edit_at_the_caret() {
+        let (mut g, edit, _, _) = page_with_edit();
+        g.set(edit, Prop::Text, Value::Text("abd".into())).unwrap();
+        g.input(InputEvent::PointerDown { x: 5, y: 5, button: MouseButton::Left }, 100);
+        assert_eq!(g.focus(), Some(edit));
+        assert_eq!(g.pressed(), None, "NewEdit takes no capture");
+        assert!(g.caret_visible(edit, 1099) && !g.caret_visible(edit, 1100));
+        for key in [Key::Left, Key::Backspace, Key::Home, Key::Delete] {
+            assert!(g.input(InputEvent::Key(key), 0).consumed);
+        }
+        g.input(InputEvent::Text("xc".into()), 0);
+        assert_eq!(text_of(&g, edit), ("xcd".into(), 2));
+        let changed: Vec<String> = g
+            .drain_events()
+            .into_iter()
+            .filter_map(|e| match e {
+                UiEvent::TextChanged { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(changed, ["ad", "d", "xcd"], "moves change nothing");
+    }
+
+    #[test]
+    fn edit_filters_typing_by_its_props() {
+        let (mut g, edit, _, _) = page_with_edit();
+        g.set_focus(Some(edit)).unwrap();
+        g.set(edit, Prop::MaxLen, Value::Int(4)).unwrap();
+        g.set(edit, Prop::ByteOnly, Value::Bool(true)).unwrap();
+        g.set(edit, Prop::Rejected, Value::Text(",".into())).unwrap();
+        g.input(InputEvent::Text("a,\u{100}b\tcdef".into()), 0);
+        assert_eq!(text_of(&g, edit), ("abcd".into(), 4));
+        g.set(edit, Prop::Text, Value::Text(String::new())).unwrap();
+        g.set(edit, Prop::Allowed, Value::Text("0123456789".into())).unwrap();
+        g.input(InputEvent::Text("1a2".into()), 0);
+        assert_eq!(text_of(&g, edit).0, "12");
+    }
+
+    #[test]
+    fn edit_enter_and_escape_report_and_still_reach_the_dialog_buttons() {
+        let (mut g, edit, ok, cancel) = page_with_edit();
+        g.set(edit, Prop::Text, Value::Text("hi".into())).unwrap();
+        g.set_focus(Some(edit)).unwrap();
+        assert!(g.input(InputEvent::Key(Key::Enter), 0).consumed);
+        assert!(g.input(InputEvent::Key(Key::Escape), 0).consumed);
+        assert_eq!(
+            g.drain_events(),
+            [
+                UiEvent::Submitted { node: edit, text: "hi".into() },
+                UiEvent::Activated { node: ok, command: None },
+                UiEvent::Cancelled { node: edit },
+                UiEvent::Activated { node: cancel, command: None },
+            ]
+        );
     }
 }

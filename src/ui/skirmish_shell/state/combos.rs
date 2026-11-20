@@ -10,7 +10,7 @@ use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 use super::super::layout::{
     DropdownMetrics, RectPx, SKIRMISH_ROW_COUNT, SkirmishShellLayout, combo_face_rect,
 };
-use super::super::scroll::ScrollModel;
+use crate::ui::skirmish_shell::ScrollModel;
 use super::{
     DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, OpenComboDropdown,
     SkirmishAiRowType, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,

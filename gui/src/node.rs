@@ -92,11 +92,25 @@ pub enum Prop {
     Top,
     /// Combo: the drop-down list is open.
     Open,
-    /// Edit.
+    /// Combo: rows the drop-down shows at once before it scrolls; 0 (the
+    /// default) shows every row.
+    VisibleRows,
+    /// Edit: the most UTF-16 units typing admits (EM_LIMITTEXT); 0 or unset
+    /// is unlimited.
     MaxLen,
     Password,
+    /// Edit: typing admits only units below 0x100 (NewEdit's byte-only flag).
+    ByteOnly,
+    /// Edit: characters typing refuses (NewEdit's reject table).
+    Rejected,
+    /// Edit: when set, the only characters typing admits.
+    Allowed,
     /// Edit: caret position in chars.
     Caret,
+    /// Text, Checkbox caption: the host's text alignment flags.
+    Align,
+    /// Trackbar: the value plaque at the right end (default on).
+    ShowValue,
     Color,
     Font,
 }
@@ -133,9 +147,18 @@ impl Prop {
             | Prop::Checked
             | Prop::ActivateOnPress
             | Prop::Open
-            | Prop::Password => ValueType::Bool,
+            | Prop::ShowValue
+            | Prop::Password
+            | Prop::ByteOnly => ValueType::Bool,
             Prop::Items => ValueType::Items,
-            Prop::Text | Prop::Label | Prop::Picture | Prop::Command | Prop::Tooltip | Prop::Name => {
+            Prop::Text
+            | Prop::Label
+            | Prop::Picture
+            | Prop::Command
+            | Prop::Tooltip
+            | Prop::Name
+            | Prop::Rejected
+            | Prop::Allowed => {
                 ValueType::Text
             }
             Prop::Rect => ValueType::Rect,
@@ -149,8 +172,10 @@ impl Prop {
             | Prop::Step
             | Prop::RowCount
             | Prop::Top
+            | Prop::VisibleRows
             | Prop::MaxLen
             | Prop::Caret
+            | Prop::Align
             | Prop::Font => ValueType::Int,
         }
     }

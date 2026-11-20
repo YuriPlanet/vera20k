@@ -7,6 +7,7 @@ mod chrome;
 mod controls;
 mod draw_order;
 mod game_options;
+pub(crate) mod gui_paint;
 #[cfg(test)]
 use draw_order::{
     SkirmishShellDrawRole, choose_map_modal_semantic_draw_order,

@@ -1,7 +1,7 @@
 //! Front-end shell dialogs (Framework B: Win32-native dialog shells).
 //!
 //! The render-agnostic substrate (geometry, descriptors, layout pass, button
-//! capture, trackbar, paging, static reveal, warning monitor) lives in the
+//! capture, combo drop-down, trackbar, paging, static reveal, warning monitor) lives in the
 //! `vera20k-gui` crate and is re-exported here; this module keeps the
 //! dialog-specific state.
 
@@ -21,7 +21,6 @@ pub mod saved_games;
 pub mod slide;
 pub mod sound;
 pub mod keyboard;
-pub(crate) mod combobox;
 
 /// The GUI crate's copy of `Math::ftol` for binary64 agrees with the engine's
 /// x87 model on the edges a list thumb can reach.
@@ -43,5 +42,5 @@ mod ftol_tests {
 
 // The render-agnostic substrate lives in the GUI crate.
 pub use vera20k_gui::shell::{
-    button, descriptor, geom, layout, list, paging, static_reveal, trackbar, warning_monitor,
+    button, combobox, descriptor, geom, layout, list, paging, static_reveal, trackbar, warning_monitor,
 };

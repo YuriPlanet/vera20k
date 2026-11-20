@@ -1,10 +1,65 @@
 //! Shared ComboDropWin (0060E0C0) popup presentation and pointer capture.
 //! The item's identity and selected value remain with each control's owner.
 
+use super::combo_scroll::ScrollModel;
 use super::geom::{RectPx, ShellScale};
 use super::list::{ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry};
-use crate::ui::skirmish_shell::{DropdownMetrics, ScrollModel, combo_arrow_hit_rect};
-use crate::util::time::Instant;
+use crate::time::Instant;
+
+pub const COMBO_FACE_H: i32 = 24;
+pub const COMBO_DROPDOWN_ROW_H: i32 = 23;
+pub const COMBO_DROPDOWN_SCROLLBAR_W: i32 = 20;
+pub const COMBO_DROPDOWN_SCROLLBAR_BUTTON_H: i32 = 22;
+pub const COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H: i32 = 14;
+pub const COMBO_ARROW_RESERVE_W: i32 = 20;
+
+/// The `ComboDropWin` dropdown's device metrics: the authored row, scrollbar and
+/// thumb sizes grown by the page's stretch, so a dropdown under a stretched
+/// combo has rows as tall as its face and stays the same number of rows deep.
+/// Identity at [`ShellScale::RETAIL`], where every field is the constant above.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DropdownMetrics {
+    pub row_h: i32,
+    pub scrollbar_w: i32,
+    pub button_h: i32,
+    pub min_thumb_h: i32,
+}
+
+impl DropdownMetrics {
+    pub fn scaled(scale: ShellScale) -> Self {
+        let grow = |px: i32, factor: f32| ((px as f32 * factor).round() as i32).max(1);
+        Self {
+            row_h: grow(COMBO_DROPDOWN_ROW_H, scale.factor()),
+            scrollbar_w: grow(COMBO_DROPDOWN_SCROLLBAR_W, scale.factor()),
+            button_h: grow(COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, scale.factor()),
+            min_thumb_h: grow(COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, scale.factor()),
+        }
+    }
+}
+
+/// The painted face of a combo whose control rect is `rect`: the control's
+/// width, [`COMBO_FACE_H`] tall.
+pub fn combo_face_rect(rect: RectPx, scale: ShellScale) -> RectPx {
+    scale.derive_rect(rect, |rect| {
+        RectPx::new(rect.x, rect.y, rect.w, COMBO_FACE_H)
+    })
+}
+
+/// Clickable arrow area of OwnerDraw_ComboBox 00617250: `x > right - 0x14`
+/// against its GetClientRect `right` (`0x006172E7`, `0x006184BF..0x006184D7`),
+/// which is exclusive, so the zone is the face's last 19 columns.
+/// The engine's `combo_arrow_rect` is only a zero-size sprite anchor.
+pub fn combo_arrow_hit_rect(rect: RectPx, scale: ShellScale) -> RectPx {
+    let face = combo_face_rect(rect, scale);
+    scale.derive_rect(face, |face| {
+        RectPx::new(
+            face.x + face.w - COMBO_ARROW_RESERVE_W + 1,
+            face.y,
+            COMBO_ARROW_RESERVE_W - 1,
+            face.h,
+        )
+    })
+}
 
 /// What one mouse press does to an owner-draw combo or its open list.
 ///
@@ -15,7 +70,7 @@ use crate::util::time::Instant;
 /// scrollbar takes a press silently, and a pick or a press anywhere else
 /// closes it with the close cue (`0x0060E4E9..0x0060E500`) and goes no further.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ComboPress {
+pub enum ComboPress {
     /// The open list's scrollbar part under the press.
     Scroll(ListScrollPart),
     /// A row of the open list; the list closes.
@@ -30,7 +85,7 @@ pub(crate) enum ComboPress {
 
 /// The two combo cues, `GUIComboOpenSound` and `GUIComboCloseSound`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ComboCue {
+pub enum ComboCue {
     Open,
     Close,
 }
@@ -38,7 +93,7 @@ pub(crate) enum ComboCue {
 impl ComboPress {
     /// A press on the collapsed face of an enabled combo whose control rect is
     /// `rect`.
-    pub(crate) fn on_face(rect: RectPx, scale: ShellScale, x: i32, y: i32) -> Self {
+    pub fn on_face(rect: RectPx, scale: ShellScale, x: i32, y: i32) -> Self {
         if combo_arrow_hit_rect(rect, scale).contains(x, y) {
             Self::Open
         } else {
@@ -46,7 +101,7 @@ impl ComboPress {
         }
     }
 
-    pub(crate) fn cue(self) -> Option<ComboCue> {
+    pub fn cue(self) -> Option<ComboCue> {
         match self {
             Self::Scroll(_) => None,
             Self::Pick(_) | Self::Dismiss => Some(ComboCue::Close),
@@ -56,22 +111,16 @@ impl ComboPress {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ComboPopup {
-    pub(crate) rect: RectPx,
-    pub(crate) first: usize,
-    pub(crate) visible_rows: usize,
-    pub(crate) total: usize,
-    pub(crate) row_height: i32,
+pub struct ComboPopup {
+    pub rect: RectPx,
+    pub first: usize,
+    pub visible_rows: usize,
+    pub total: usize,
+    pub row_height: i32,
     scale: ShellScale,
 }
 impl ComboPopup {
-    pub(crate) fn new(
-        face: RectPx,
-        scale: ShellScale,
-        total: usize,
-        cap: usize,
-        first: usize,
-    ) -> Self {
+    pub fn new(face: RectPx, scale: ShellScale, total: usize, cap: usize, first: usize) -> Self {
         let visible_rows = if cap == 0 { total } else { total.min(cap) };
         let row_height = DropdownMetrics::scaled(scale).row_h;
         Self {
@@ -90,12 +139,12 @@ impl ComboPopup {
     }
     /// The same list on rows `row_height` tall, for a control drawn smaller
     /// than the shell's own (VERA's roster).
-    pub(crate) fn with_row_height(mut self, row_height: i32) -> Self {
+    pub fn with_row_height(mut self, row_height: i32) -> Self {
         self.row_height = row_height.max(1);
         self.rect.h = self.visible_rows as i32 * self.row_height;
         self
     }
-    pub(crate) fn scrollbar(&self) -> Option<RectPx> {
+    pub fn scrollbar(&self) -> Option<RectPx> {
         (self.total > self.visible_rows).then(|| {
             let width = DropdownMetrics::scaled(self.scale).scrollbar_w;
             RectPx::new(
@@ -106,7 +155,7 @@ impl ComboPopup {
             )
         })
     }
-    pub(crate) fn thumb(&self) -> Option<RectPx> {
+    pub fn thumb(&self) -> Option<RectPx> {
         let bar = self.scrollbar()?;
         let model = ScrollModel::combo_at(
             self.visible_rows as i32,
@@ -116,7 +165,7 @@ impl ComboPopup {
         let y = model.thumb_y(bar, height, self.first, self.total - self.visible_rows);
         Some(RectPx::new(bar.x + 1, y, bar.w - 2, height))
     }
-    pub(crate) fn scroll_geometry(&self) -> ShellListGeometry {
+    pub fn scroll_geometry(&self) -> ShellListGeometry {
         let metrics = DropdownMetrics::scaled(self.scale);
         ShellListGeometry {
             outer: self.rect,
@@ -133,10 +182,10 @@ impl ComboPopup {
             },
         }
     }
-    pub(crate) fn scroll_part_at(&self, x: i32, y: i32) -> Option<ListScrollPart> {
+    pub fn scroll_part_at(&self, x: i32, y: i32) -> Option<ListScrollPart> {
         self.scroll_geometry().scroll_part_at(x, y)
     }
-    pub(crate) fn content(&self) -> RectPx {
+    pub fn content(&self) -> RectPx {
         RectPx::new(
             self.rect.x,
             self.rect.y,
@@ -144,7 +193,7 @@ impl ComboPopup {
             self.rect.h,
         )
     }
-    pub(crate) fn row_rect(&self, index: usize) -> Option<RectPx> {
+    pub fn row_rect(&self, index: usize) -> Option<RectPx> {
         if index < self.first || index >= self.first + self.visible_rows {
             return None;
         }
@@ -156,21 +205,21 @@ impl ComboPopup {
             self.row_height,
         ))
     }
-    pub(crate) fn row_at(&self, x: i32, y: i32) -> Option<usize> {
+    pub fn row_at(&self, x: i32, y: i32) -> Option<usize> {
         self.content()
             .contains(x, y)
             .then(|| self.first + ((y - self.rect.y) / self.row_height) as usize)
     }
     /// A press while this list is open: [`ComboPress::Scroll`],
     /// [`ComboPress::Pick`] or [`ComboPress::Dismiss`].
-    pub(crate) fn press(&self, x: i32, y: i32) -> ComboPress {
+    pub fn press(&self, x: i32, y: i32) -> ComboPress {
         if let Some(part) = self.scroll_part_at(x, y) {
             return ComboPress::Scroll(part);
         }
         self.row_at(x, y)
             .map_or(ComboPress::Dismiss, ComboPress::Pick)
     }
-    pub(crate) fn track_hot_row(&self, hot_row: &mut Option<usize>, x: i32, y: i32) {
+    pub fn track_hot_row(&self, hot_row: &mut Option<usize>, x: i32, y: i32) {
         // 60E262 retains the previous hot row after leaving the row content.
         if let Some(row) = self.row_at(x, y) {
             *hot_row = Some(row);
@@ -179,11 +228,11 @@ impl ComboPopup {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ComboPopupInteraction<Id> {
-    pub(crate) control: Option<Id>,
-    pub(crate) top_index: usize,
-    pub(crate) hot_row: Option<usize>,
-    pub(crate) scroll: ListScrollInteraction,
+pub struct ComboPopupInteraction<Id> {
+    pub control: Option<Id>,
+    pub top_index: usize,
+    pub hot_row: Option<usize>,
+    pub scroll: ListScrollInteraction,
 }
 impl<Id> Default for ComboPopupInteraction<Id> {
     fn default() -> Self {
@@ -198,28 +247,22 @@ impl<Id> Default for ComboPopupInteraction<Id> {
 impl<Id: Copy> ComboPopupInteraction<Id> {
     /// 6181DA initializes top0; the current selection supplies the initial hot
     /// row, even when that row lies below the first visible page.
-    pub(crate) fn open(&mut self, id: Id, selected: Option<usize>) {
+    pub fn open(&mut self, id: Id, selected: Option<usize>) {
         self.control = Some(id);
         self.top_index = 0;
         self.hot_row = selected;
         self.scroll.cancel();
     }
-    pub(crate) fn close(&mut self) {
+    pub fn close(&mut self) {
         self.control = None;
         self.scroll.cancel();
     }
-    pub(crate) fn cancel_pointer(&mut self) {
+    pub fn cancel_pointer(&mut self) {
         self.scroll.cancel();
     }
     /// A press while this interaction's list `popup` is open. The scrollbar
     /// takes it; a pick or a dismiss closes the list.
-    pub(crate) fn press_list(
-        &mut self,
-        popup: ComboPopup,
-        x: i32,
-        y: i32,
-        now: Instant,
-    ) -> ComboPress {
+    pub fn press_list(&mut self, popup: ComboPopup, x: i32, y: i32, now: Instant) -> ComboPress {
         let press = popup.press(x, y);
         match press {
             ComboPress::Scroll(part) => {
@@ -232,7 +275,7 @@ impl<Id: Copy> ComboPopupInteraction<Id> {
     }
     /// A press on the face of enabled combo `id`, whose control rect is
     /// `rect`; the arrow zone opens its list at `selected`.
-    pub(crate) fn press_face(
+    pub fn press_face(
         &mut self,
         id: Id,
         rect: RectPx,
@@ -247,14 +290,14 @@ impl<Id: Copy> ComboPopupInteraction<Id> {
         }
         press
     }
-    pub(crate) fn pointer_moved(&mut self, popup: ComboPopup, x: i32, y: i32) {
+    pub fn pointer_moved(&mut self, popup: ComboPopup, x: i32, y: i32) {
         popup.track_hot_row(&mut self.hot_row, x, y);
         self.scroll
             .pointer_moved(popup.scroll_geometry(), &mut self.top_index, x, y);
     }
 }
 
-#[cfg(all(test, tests_ui))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

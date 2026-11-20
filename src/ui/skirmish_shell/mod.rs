@@ -5,8 +5,7 @@
 //! layers; this module does not depend on assets or wgpu.
 
 mod layout;
-mod scroll;
-pub(crate) use scroll::ScrollModel;
+pub(crate) use vera20k_gui::shell::combo_scroll::ScrollModel;
 mod state;
 mod statics;
 pub(crate) use statics::SkirmishStatics;
@@ -46,6 +45,7 @@ pub use state::{
     EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SETUP_COMBO_ROWS, SavedSeedBrowserRow, SavedSeedBrowserState,
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
+    SeedDescriptionEdit,
     SetupCombo, SetupComboItem, SkirmishAiRowType, SkirmishComboId, SkirmishComboItem,
     SkirmishCountryChoice, SkirmishHoverTarget, SkirmishSavedSetup, SkirmishSetupComputer,
     starts_by_team,

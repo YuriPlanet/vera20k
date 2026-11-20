@@ -1,6 +1,6 @@
 //! Dialog 0x102 shell layout recovered from gamemd.exe.
 
-use super::scroll::ScrollModel;
+use vera20k_gui::shell::combo_scroll::ScrollModel;
 use super::state::DropdownScrollbarPart;
 use crate::ui::shell::descriptor::{AnchorRule, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
@@ -49,40 +49,16 @@ fn row_column<const N: usize>(first: usize, x: i32, w: i32, h: i32) -> [RectPx; 
         )
     })
 }
-pub const COMBO_FACE_H: i32 = 24;
-pub const COMBO_DROPDOWN_ROW_H: i32 = 23;
-pub const COMBO_DROPDOWN_SCROLLBAR_W: i32 = 20;
-pub const COMBO_DROPDOWN_SCROLLBAR_BUTTON_H: i32 = 22;
-pub const COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H: i32 = 14;
-pub const COMBO_ARROW_RESERVE_W: i32 = 20;
+pub use vera20k_gui::shell::combobox::{
+    COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H,
+    COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, COMBO_DROPDOWN_SCROLLBAR_W, COMBO_FACE_H, DropdownMetrics,
+    combo_arrow_hit_rect, combo_face_rect,
+};
 pub const COMBO_ARROW_X_FROM_RIGHT: i32 = 19;
 pub const COMBO_ARROW_Y: i32 = 1;
 pub const COMBO_TEXT_LEFT_INSET: i32 = 2;
 pub const COMBO_SWATCH_INSET: i32 = 2;
 
-/// The `ComboDropWin` dropdown's device metrics: the authored row, scrollbar and
-/// thumb sizes grown by the page's stretch, so a dropdown under a stretched
-/// combo has rows as tall as its face and stays the same number of rows deep.
-/// Identity at [`ShellScale::RETAIL`], where every field is the constant above.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DropdownMetrics {
-    pub row_h: i32,
-    pub scrollbar_w: i32,
-    pub button_h: i32,
-    pub min_thumb_h: i32,
-}
-
-impl DropdownMetrics {
-    pub fn scaled(scale: ShellScale) -> Self {
-        let grow = |px: i32, factor: f32| ((px as f32 * factor).round() as i32).max(1);
-        Self {
-            row_h: grow(COMBO_DROPDOWN_ROW_H, scale.factor()),
-            scrollbar_w: grow(COMBO_DROPDOWN_SCROLLBAR_W, scale.factor()),
-            button_h: grow(COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, scale.factor()),
-            min_thumb_h: grow(COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, scale.factor()),
-        }
-    }
-}
 /// Visible row `visible_row` of an open combo dropdown, on the one row grid the
 /// item text, the highlight, the colour swatches and both pointer hit tests
 /// share: [`DropdownMetrics::row_h`] steps from the content top.
@@ -733,12 +709,6 @@ pub fn player_name_edit_text_rect(rect: RectPx, scale: ShellScale) -> RectPx {
     })
 }
 
-pub fn combo_face_rect(rect: RectPx, scale: ShellScale) -> RectPx {
-    scale.derive_rect(rect, |rect| {
-        RectPx::new(rect.x, rect.y, rect.w, COMBO_FACE_H)
-    })
-}
-
 /// The combo arrow's top-left anchor: a zero-size rect, because the arrow glyph
 /// is placed from it rather than fitted into it.
 pub fn combo_arrow_rect(rect: RectPx, scale: ShellScale) -> RectPx {
@@ -748,22 +718,6 @@ pub fn combo_arrow_rect(rect: RectPx, scale: ShellScale) -> RectPx {
             rect.y + COMBO_ARROW_Y,
             0,
             0,
-        )
-    })
-}
-
-/// Clickable arrow area of OwnerDraw_ComboBox 00617250: `x > right - 0x14`
-/// against its GetClientRect `right` (`0x006172E7`, `0x006184BF..0x006184D7`),
-/// which is exclusive, so the zone is the face's last 19 columns.
-/// The adjacent `combo_arrow_rect` is only a zero-size sprite anchor.
-pub fn combo_arrow_hit_rect(rect: RectPx, scale: ShellScale) -> RectPx {
-    let face = combo_face_rect(rect, scale);
-    scale.derive_rect(face, |face| {
-        RectPx::new(
-            face.x + face.w - COMBO_ARROW_RESERVE_W + 1,
-            face.y,
-            COMBO_ARROW_RESERVE_W - 1,
-            face.h,
         )
     })
 }

@@ -17,3 +17,4 @@ pub use gui::{
     DialogId, DialogKind, Gui, InputEvent, InputResult, Key, MouseButton, UiEvent, UiMs, hover_flash_on,
 };
 pub use node::{NodeId, NodeKind, Prop, Refused, Rgba, Tree, Value};
+pub use widget::combo::ComboDropDown;

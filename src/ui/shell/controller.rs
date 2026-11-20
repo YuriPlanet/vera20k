@@ -12,7 +12,7 @@
 
 use std::collections::BTreeSet;
 
-use vera20k_gui::{Gui, InputEvent, MouseButton, NodeId, NodeKind, Prop, Rect, Value};
+use vera20k_gui::{Gui, InputEvent, MouseButton, NodeId, NodeKind, Prop, Rect, UiEvent, Value};
 
 use super::descriptor::DialogId;
 use super::layout::LaidOutControl;
@@ -41,11 +41,14 @@ pub struct DialogController {
     gui: Gui,
     stack: Vec<Instance>,
     epoch: Instant,
+    /// Events of the nodes a screen built itself (not the fed buttons),
+    /// waiting for that screen to drain them.
+    pending: Vec<UiEvent>,
 }
 
 impl Default for DialogController {
     fn default() -> Self {
-        Self { gui: Gui::new(4096), stack: Vec::new(), epoch: Instant::now() }
+        Self { gui: Gui::new(4096), stack: Vec::new(), epoch: Instant::now(), pending: Vec::new() }
     }
 }
 
@@ -68,12 +71,81 @@ impl DialogController {
     pub fn pop(&mut self) -> Option<DialogId> {
         let inst = self.stack.pop()?;
         let _ = self.gui.pop_dialog(inst.dialog);
+        self.pending.clear();
         Some(inst.id)
+    }
+
+    /// The GUI tree the dialogs live in. A screen builds its own widgets
+    /// under [`Self::root_in`] and reads them back for painting.
+    pub fn gui(&self) -> &Gui {
+        &self.gui
+    }
+
+    pub fn gui_mut(&mut self) -> &mut Gui {
+        &mut self.gui
+    }
+
+    /// The root node of the topmost live instance of `id`.
+    pub fn root_in(&self, id: DialogId) -> Option<NodeId> {
+        self.gui.dialog_root(self.instance(id)?.dialog)
+    }
+
+    /// Sets the device-to-authored mapping the top dialog's widgets use.
+    pub fn set_scale(&mut self, scale: crate::ui::shell::geom::ShellScale) {
+        if let Some(inst) = self.stack.last() {
+            self.gui.set_dialog_scale(inst.dialog, scale);
+        }
+    }
+
+    /// Events of the screen's own widgets since the last drain, in order.
+    pub fn drain_events(&mut self) -> Vec<UiEvent> {
+        std::mem::take(&mut self.pending)
+    }
+
+    /// Wheel, keys and text for the top dialog's widgets; true when consumed.
+    pub fn on_input(&mut self, event: InputEvent) -> bool {
+        if self.stack.is_empty() {
+            return false;
+        }
+        let consumed = self.gui.input(event, self.now()).consumed;
+        self.collect();
+        consumed
+    }
+
+    /// Widget timers (list scroll repeat); the next deadline.
+    pub fn poll(&mut self) -> Option<Instant> {
+        let next = self.gui.poll(self.now());
+        self.collect();
+        next.map(|ms| self.epoch + Duration::from_millis(ms))
+    }
+
+    /// Moves the GUI's new events to `pending`, except those of fed buttons
+    /// (their callers read press and release through this controller).
+    /// Returns the fed control an activation named.
+    fn collect(&mut self) -> Option<u16> {
+        let mut activated = None;
+        let inst = self.stack.last();
+        for event in self.gui.drain_events() {
+            let node = match &event {
+                UiEvent::Activated { node, .. }
+                | UiEvent::Hovered { node, .. }
+                | UiEvent::Pressed { node } => Some(*node),
+                _ => None,
+            };
+            let fed = inst.and_then(|i| Self::control_of(i, node));
+            match (fed, &event) {
+                (Some(id), UiEvent::Activated { .. }) => activated = Some(id),
+                (Some(_), _) => {}
+                (None, _) => self.pending.push(event),
+            }
+        }
+        activated
     }
 
     /// Clear the stack and make `id` the sole active dialog (a shell transition).
     pub fn reset_to(&mut self, id: DialogId, accepts_keys: bool) {
         while self.pop().is_some() {}
+        self.pending.clear();
         self.push(id, accepts_keys);
     }
 
@@ -154,6 +226,7 @@ impl DialogController {
     pub fn on_pointer_down(&mut self, x: i32, y: i32, buttons: &[LaidOutControl]) {
         if self.sync(buttons) {
             self.gui.input(InputEvent::PointerDown { x, y, button: MouseButton::Left }, self.now());
+            self.collect();
         }
     }
 
@@ -163,17 +236,13 @@ impl DialogController {
             return None;
         }
         self.gui.input(InputEvent::PointerUp { x, y, button: MouseButton::Left }, self.now());
-        let inst = self.stack.last()?;
-        self.gui.drain_events().into_iter().find_map(|e| match e {
-            vera20k_gui::UiEvent::Activated { node, .. } => Self::control_of(inst, Some(node)),
-            _ => None,
-        })
+        self.collect()
     }
 
     pub fn on_pointer_move(&mut self, x: i32, y: i32, buttons: &[LaidOutControl]) {
         if self.sync(buttons) {
             self.gui.input(InputEvent::PointerMove { x, y }, self.now());
-            self.gui.drain_events();
+            self.collect();
         }
     }
 

@@ -1,15 +1,15 @@
 //! Scrollbar geometry of the skirmish shell's combo dropdowns (and the
 //! Options resolution list, which shares their drop-down list): the thumb
 //! height, its position and the pointer→top-row mapping for a track click or
-//! a thumb drag. The shell list boxes use `ui::shell::list` instead.
+//! a thumb drag. The shell list boxes use `shell::list` instead.
 //!
-//! Depends only on `RectPx` and the scrollbar constants from `layout`; holds no
+//! Depends only on `RectPx` and the scrollbar constants from `combobox`; holds no
 //! state, render, or UI dependency (pure integer pixel geometry).
 
-use super::layout::{
+use super::combobox::{
     COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, DropdownMetrics,
-    RectPx,
 };
+use super::geom::RectPx;
 
 /// A combo dropdown's scroll model: rows visible at once are capped per
 /// control (Side 7, Color/Start 9, AiType/Team unbounded). The thumb can be
@@ -61,16 +61,16 @@ impl ScrollModel {
     /// ComboDropWin 0060E72F creates Scrollbar and 0060E745 subclasses it
     /// to the shared 0061C690 owner. SBM_SETSCROLLINFO at 0060E7BA sets
     /// nMax=count-visible and no page size; use the same native numeric port.
-    fn metrics(&self) -> crate::ui::shell::list::ListMetrics {
-        crate::ui::shell::list::ListMetrics {
+    fn metrics(&self) -> crate::shell::list::ListMetrics {
+        crate::shell::list::ListMetrics {
             arrow_h: self.button_h,
             min_thumb_h: self.min_thumb_h,
-            ..crate::ui::shell::list::ListMetrics::RETAIL
+            ..crate::shell::list::ListMetrics::RETAIL
         }
     }
 
     pub fn thumb_height(&self, visible_rows: usize, item_count: usize, scrollbar_h: i32) -> i32 {
-        crate::ui::shell::list::thumb_height(
+        crate::shell::list::thumb_height(
             scrollbar_h,
             item_count.saturating_sub(visible_rows),
             self.metrics(),
@@ -84,7 +84,7 @@ impl ScrollModel {
         top_index: usize,
         max_top: usize,
     ) -> i32 {
-        crate::ui::shell::list::scrollbar_thumb_y(
+        crate::shell::list::scrollbar_thumb_y(
             scrollbar,
             thumb_h,
             top_index,
@@ -102,7 +102,7 @@ impl ScrollModel {
         max_top: usize,
         pointer_y: i32,
     ) -> usize {
-        crate::ui::shell::list::scrollbar_top_at_pointer(
+        crate::shell::list::scrollbar_top_at_pointer(
             scrollbar,
             thumb_h,
             max_top,
@@ -112,13 +112,13 @@ impl ScrollModel {
     }
 }
 
-#[cfg(all(test, tests_ui))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn combo_thumb_uses_the_original_scrollbar_kernel() {
-        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        let vectors: serde_json::Value = serde_json::from_str(crate::fixtures::text(
             "tools/storage_oracle/saved_scrollbar.json",
         ))
         .unwrap();
