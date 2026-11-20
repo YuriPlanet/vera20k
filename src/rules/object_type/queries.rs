@@ -79,8 +79,13 @@ impl ObjectType {
     /// negative-turn arm's sign-before-store result.
     pub fn fly_roll_angle_f32(&self) -> f32 {
         use crate::util::native_x87::X87Chop53 as X;
-        let angle = X::load_f64(self.roll_angle).expect("finite Fly RollAngle");
-        f32::from_bits(X::store_f32(angle).expect("finite Fly angle store").bits())
+        // `RollAngle=1e999` reads as infinity and `1e41` overflows the
+        // binary32 store; native FSTP stores an indefinite value there. A
+        // rules file is outside data: the angle is zero instead of a panic.
+        X::load_f64(self.roll_angle)
+            .ok()
+            .and_then(|angle| X::store_f32(angle).ok())
+            .map_or(0.0, |stored| f32::from_bits(stored.bits()))
     }
 
     /// Existing typed PitchAngle value shared with Fly approach and normal

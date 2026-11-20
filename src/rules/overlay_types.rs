@@ -299,7 +299,7 @@ impl OverlayTypeRegistry {
     /// loads project their already processed owner with from_processed_rules.
     pub fn from_ini(ini: &IniFile, art_ini: Option<&IniFile>) -> Self {
         let empty_art = IniFile::empty();
-        let processed = crate::rules::native_processing::RulesLayerStack::new(ini.clone())
+        let processed = match crate::rules::native_processing::RulesLayerStack::new(ini.clone())
             .process_with_fixed_art_and_registry_state_recovering(
                 art_ini.unwrap_or(&empty_art),
                 crate::rules::native_processing::NativeRulesRegistryState::default(),
@@ -309,13 +309,20 @@ impl OverlayTypeRegistry {
                 },
                 &crate::rules::sound_ini::EvaRegistry::default(),
                 &crate::rules::sound_ini::SoundRegistry::default(),
-            )
-            .unwrap_or_else(|failure| {
-                panic!(
-                    "Overlay fixture must satisfy native Rules processing: {}",
+            ) {
+            Ok(processed) => processed,
+            Err(failure) => {
+                // The game's own loads project their processed rules through
+                // `from_processed_rules` and have refused this input already;
+                // this fresh read serves the shell's drive distances and the
+                // tests, and a refused rules file gets an empty registry.
+                log::error!(
+                    "Overlay types: the rules did not process: {}",
                     failure.into_parts().0
-                )
-            });
+                );
+                return Self::from_ini(&IniFile::empty(), None);
+            }
+        };
         Self::from_processed_rules(&processed)
     }
 
