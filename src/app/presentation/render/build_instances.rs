@@ -179,6 +179,20 @@ fn lookup_exact_terrain_variant<T>(
     })
 }
 
+/// Whether the TechnoExtras path draws an entity's frozen convenience rows.
+/// Buildings are excluded: their rows are drawn by
+/// `build_building_status_instances` at the building status anchor. Drawing
+/// them here too showed two repair countdowns over a captured-and-repairing
+/// neutral building. Foot and air units keep their rows here.
+fn convenience_info_lines_admitted(
+    convenience_help: bool,
+    viewer_allied: bool,
+    category: crate::map::entities::EntityCategory,
+) -> bool {
+    use crate::map::entities::EntityCategory;
+    convenience_help && viewer_allied && category != EntityCategory::Structure
+}
+
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
 /// VXL units, SHP buildings/infantry, AnimClass objects, damage fires.
 /// Ground parents retain Display order; residual effect buckets still sort depth.
@@ -523,7 +537,16 @@ pub(super) fn build_world_instances(
                         sim.interner().resolve(entity.owner()),
                     )
                 });
-                if state.match_state.match_presentation.convenience_help && viewer_allied {
+                // Buildings' convenience rows (repair/reload) are drawn once
+                // by build_building_status_instances, which owns the building
+                // status anchor. Drawing them here as well produced two repair
+                // countdowns over a captured-and-repairing neutral building.
+                // This TechnoExtras path is for foot/air units only.
+                if convenience_info_lines_admitted(
+                    state.match_state.match_presentation.convenience_help,
+                    viewer_allied,
+                    entity.category(),
+                ) {
                     let font = &state.renderer.bit_font;
                     let camera = [
                         state.match_state.input.camera_x,
@@ -1732,5 +1755,45 @@ mod tests {
 
         assert_eq!(result, None);
         assert_eq!(looked_up, vec![selected]);
+    }
+
+    #[test]
+    fn techno_extras_drops_building_rows_so_repair_countdown_draws_once() {
+        use crate::map::entities::EntityCategory;
+        // A captured-and-repairing neutral building is now friendly and has
+        // info lines; the building-status path owns its row, so this path must
+        // not draw a second one.
+        assert!(!convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Structure,
+        ));
+        // Units and aircraft still get their reload row here.
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Unit,
+        ));
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Infantry,
+        ));
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Aircraft,
+        ));
+        // Existing gates still hold for the other cases.
+        assert!(!convenience_info_lines_admitted(
+            false,
+            true,
+            EntityCategory::Unit,
+        ));
+        assert!(!convenience_info_lines_admitted(
+            true,
+            false,
+            EntityCategory::Unit,
+        ));
     }
 }
