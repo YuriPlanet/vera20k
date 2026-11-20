@@ -119,6 +119,7 @@ fn read_mod_files(dir: &std::path::Path) -> Result<ModFiles, String> {
 
 /// One INI source the rules agreement digests
 /// ([`ProcessAssets::agreed_inis`]).
+#[derive(Clone)]
 struct AgreedIni {
     /// Its `rules_parts` id (`app::rules_parts::RulesFile::id`).
     id: String,
@@ -145,7 +146,7 @@ fn source_label(assets: &AssetManager, source: &str) -> String {
     }
     let file = game_folder_file(source);
     if !source.starts_with("loose:") && !assets.from_mod_folder(&file) {
-        return format!("mix:{file}");
+        return mix_label(&file);
     }
     file_label(assets, &file)
 }
@@ -155,10 +156,16 @@ fn file_label(assets: &AssetManager, file: &str) -> String {
     if assets.from_mod_folder(file) {
         "mod".to_owned()
     } else if file.to_ascii_lowercase().ends_with(".mix") {
-        format!("mix:{file}")
+        mix_label(file)
     } else {
         "loose".to_owned()
     }
+}
+
+/// `mix:<archive>`, lowercased: file systems differ in the case they give a
+/// name, and two platforms reading the same archive must agree.
+fn mix_label(file: &str) -> String {
+    format!("mix:{}", file.to_ascii_lowercase())
 }
 
 impl ProcessAudioCatalog {
@@ -581,8 +588,9 @@ impl ProcessAssets {
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
         let (rules, assets) = self.rules_and_sources()?;
         let mut digests: Vec<Option<String>> = self
-            .agreed_inis(rules, assets, mode, true)?
+            .agreed_inis(rules, assets, &[mode], true)?
             .into_iter()
+            .flatten()
             .map(|ini| ini.digest)
             .collect();
         // VERA: and the tiles the game folder changes; none add an absent
@@ -661,18 +669,18 @@ impl ProcessAssets {
     /// process Rules root (as scenarios read it, with the Options switches,
     /// when `switches`; else as selected), LANGRULE, ART, AIMD, the mode's
     /// INI, then each theater's INI as `map::theater::load_theater` reads it.
+    /// One list per mode in `modes`; what no mode changes is read once.
     fn agreed_inis(
         &self,
         rules: &crate::rules::process_owner::NativeRulesProcessOwner,
         assets: &AssetManager,
-        mode: &str,
+        modes: &[&str],
         switches: bool,
-    ) -> Result<Vec<AgreedIni>, String> {
+    ) -> Result<Vec<Vec<AgreedIni>>, String> {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::retail_sources::{select_ini, select_mode_ini};
         let roots = assets.ini_roots();
         let ai = select_ini(assets, roots.ai())?;
-        let selected_mode = select_mode_ini(assets, Some(mode))?;
         let [root, langrule, art] = rules.multiplayer_source_digests();
         let root = if switches {
             root
@@ -685,38 +693,45 @@ impl ProcessAssets {
             digest,
             optional,
         };
-        let mut inis = vec![
+        let before_mode = [
             ini("rules", roots.rules(), root, false),
             ini("langrule", "langrule.ini", langrule, true),
             ini("art", roots.art(), art, false),
             ini("ai", roots.ai(), Some(ai.ini.multiplayer_digest()), false),
-            ini(
-                "mode",
-                mode,
-                selected_mode.as_ref().map(IniFile::multiplayer_digest),
-                true,
-            ),
         ];
         // VERA: a theater INI's tilesets decide every cell's land and height.
         // One that is absent or does not parse fails that theater's load.
-        inis.extend(
-            crate::map::theater::theater_ini_names(assets)
-                .into_iter()
-                .map(|name| {
-                    let digest = assets.get_with_source_ref(&name).and_then(|(bytes, _)| {
-                        IniFile::from_bytes(bytes)
-                            .ok()
-                            .map(|ini| ini.multiplayer_digest())
-                    });
-                    AgreedIni {
-                        id: format!("theater:{}", name.to_ascii_lowercase()),
-                        name,
-                        digest,
-                        optional: false,
-                    }
-                }),
-        );
-        Ok(inis)
+        let theaters: Vec<AgreedIni> = crate::map::theater::theater_ini_names(assets)
+            .into_iter()
+            .map(|name| {
+                let digest = assets.get_with_source_ref(&name).and_then(|(bytes, _)| {
+                    IniFile::from_bytes(bytes)
+                        .ok()
+                        .map(|ini| ini.multiplayer_digest())
+                });
+                AgreedIni {
+                    id: format!("theater:{}", name.to_ascii_lowercase()),
+                    name,
+                    digest,
+                    optional: false,
+                }
+            })
+            .collect();
+        modes
+            .iter()
+            .map(|mode| {
+                let selected_mode = select_mode_ini(assets, Some(*mode))?;
+                let mut inis = before_mode.to_vec();
+                inis.push(ini(
+                    "mode",
+                    *mode,
+                    selected_mode.as_ref().map(IniFile::multiplayer_digest),
+                    true,
+                ));
+                inis.extend(theaters.iter().cloned());
+                Ok(inis)
+            })
+            .collect()
     }
 
     /// VERA: [`Self::multiplayer_rules_digest`] of each mode in `modes`, in
@@ -746,6 +761,9 @@ impl ProcessAssets {
                 crate::util::ares_launch::AresSetting::On => "on",
                 crate::util::ares_launch::AresSetting::Off => "off",
             },
+            // Mounted only where the digest counts it: with the setting On
+            // (its byte) or on Auto with a mod that ships it (`ships_ares`);
+            // Auto without a mod and Off never mount it.
             ares_mix: assets.ares_mix_mounted(),
             ini_roots_stock: self.stock_ini_roots(),
             mod_in_use: self.mod_dir.as_deref().map(|dir| {
@@ -805,11 +823,10 @@ impl ProcessAssets {
         };
         let tiles = self.changed_tiles(assets);
         let additions = self.map_additions(assets)?;
-        modes
-            .iter()
-            .map(|mode| {
-                let mut files: Vec<RulesFile> = self
-                    .agreed_inis(rules, assets, mode, false)?
+        self.agreed_inis(rules, assets, modes, false)?
+            .into_iter()
+            .map(|inis| {
+                let mut files: Vec<RulesFile> = inis
                     .into_iter()
                     .filter(|ini| !ini.optional || ini.digest.is_some())
                     .map(&mut ini_part)

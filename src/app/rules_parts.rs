@@ -17,6 +17,9 @@ pub(crate) const VERSION: u8 = 1;
 pub(crate) const MAX_BYTES: usize = 8192;
 /// The most names one list holds before the cap needs fewer.
 const LISTED: usize = 20;
+/// The most characters a free-text string keeps when the lists alone do not
+/// bring the object under the cap.
+const TEXT: usize = 64;
 
 /// This game's rules agreement in parts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -116,15 +119,42 @@ impl RulesParts {
             settings,
             mod_check,
         };
-        // The cap cuts lists first, shorter each time, till the object fits.
+        // The cap cuts lists first, shorter each time, till the object fits;
+        // then the free text (names, the mod's title and version), and last
+        // the files from the end. The digest is always the emitted object's.
         for limit in [LISTED, 10, 5, 2, 0] {
             parts.limit_lists(limit);
-            parts.digest = parts.canonical_digest();
-            if parts.json().len() <= MAX_BYTES {
-                break;
+            if parts.fits() {
+                return parts;
             }
         }
+        parts.shorten_text();
+        while !parts.fits() && parts.files.pop().is_some() {}
         parts
+    }
+
+    /// Digest the object as it stands and say whether it is under the cap.
+    fn fits(&mut self) -> bool {
+        self.digest = self.canonical_digest();
+        self.json().len() <= MAX_BYTES
+    }
+
+    /// Cut each free-text string to [`TEXT`] characters.
+    fn shorten_text(&mut self) {
+        let shorten = |text: &mut String| {
+            if let Some((cut, _)) = text.char_indices().nth(TEXT) {
+                text.truncate(cut);
+                text.push('…');
+            }
+        };
+        for file in &mut self.files {
+            shorten(&mut file.name);
+            shorten(&mut file.source);
+        }
+        if let Some(identity) = &mut self.settings.mod_in_use {
+            shorten(&mut identity.title);
+            shorten(&mut identity.version);
+        }
     }
 
     /// The object as one line of JSON.
@@ -253,6 +283,50 @@ mod tests {
         assert_eq!(
             value["mod_check"]["changed"].as_array().unwrap().len(),
             sections
+        );
+    }
+
+    /// With every list empty and still too big, the free text is cut and then
+    /// the last files dropped: the cap holds, and the digest is the emitted
+    /// object's.
+    #[test]
+    fn the_cap_holds_past_the_lists_with_the_digest_of_what_is_emitted() {
+        let long = |name: &str| format!("{name}{}", "x".repeat(3000));
+        let mut settings = settings();
+        settings.mod_in_use = Some(ModIdentity {
+            title: long("Title"),
+            version: long("1."),
+        });
+        let mut additions = file("map_additions", true);
+        additions.name = long("Additions");
+        let parts = RulesParts::new(vec![additions], settings.clone(), None);
+        let value: serde_json::Value = serde_json::from_str(&parts.json()).unwrap();
+        assert_eq!(value["files"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            value["files"][0]["name"].as_str().unwrap().chars().count(),
+            TEXT + 1
+        );
+        assert_eq!(
+            value["settings"]["mod"]["title"]
+                .as_str()
+                .unwrap()
+                .chars()
+                .count(),
+            TEXT + 1
+        );
+
+        let files: Vec<RulesFile> = (0..200)
+            .map(|index| file(&format!("theater:{index}"), false))
+            .collect();
+        let parts = RulesParts::new(files, settings, None);
+        let json = parts.json();
+        assert!(json.len() <= MAX_BYTES, "{}", json.len());
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["files"].as_array().unwrap().len() < 200);
+        let canonical = json.replacen(&format!(r#""digest":"{}","#, parts.digest), "", 1);
+        assert_eq!(
+            parts.digest,
+            &crate::util::sha256::sha256_hex(canonical.as_bytes())[..16]
         );
     }
 }

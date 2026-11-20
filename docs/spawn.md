@@ -54,7 +54,7 @@ agree.
   `tiles` (the theater tiles the game folder changes), and with a mod `mod_files` (its folder) and
   `map_additions` (when it has any). `name` is the file name, never a path; `digest` the first 16
   hex digits of the part's digest, or `absent`; `source` `retail` (the original archives), `loose`
-  (a file in the game folder), `mix:<archive>` (another archive, such as `expandmd99.mix`), `mod`
+  (a file in the game folder), `mix:<archive>` (another archive by its lowercased name, such as `expandmd99.mix`), `mod`
   or `unknown`; `changed` whether it differs from the retail copy. A changed INI names in
   `sections` the sections that differ from the retail copy (added, removed or changed), sorted, at
   most 20, and counts the rest in `sections_more`.
@@ -64,7 +64,9 @@ agree.
 - `mod_check`: with a mod that carries a `mod-files.txt`, where its files part from that list
   (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null.
 
-The object is at most 8192 bytes: longer lists are cut first.
+The object is at most 8192 bytes: longer lists are cut first, then free text (file names,
+sources, the mod's title and version) to 64 characters, and last the files from the end; `digest`
+is always that of the object as sent.
 
 A `-SPAWN` launch whose `ExpectedRulesDigest` differs fails as before, with the reason, and its
 `spawn_result.json` (in the browser, the `spawn:finished:` report) adds
