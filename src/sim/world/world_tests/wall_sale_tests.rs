@@ -163,7 +163,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     assert!(!path.is_walkable(4, 4));
     assert!(!path.is_walkable(4, 3));
     assert!(!path.is_walkable(5, 4));
-    sim.rebuild_zone_grid_full(&path);
+    sim.rebuild_zone_grid_full(std::sync::Arc::new(path.clone()));
     let ground_zone_before = sim
         .zone_grid
         .as_ref()

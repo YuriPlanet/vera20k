@@ -1415,7 +1415,8 @@ impl<'a> EntryMut<'a> {
 ///   store held ([`crate::sim::world::StableIdCursor::allocate`] counts
 ///   up and a load refuses a counter behind the highest id), so the walk,
 ///   which only goes down, never visits it: again as a snapshot taken at
-///   the start would not.
+///   the start would not. This holds for allocated ids only; a test that
+///   stores hand-picked ids with gaps can be handed an id in a gap.
 /// - Compaction moves slots, not ids, and the cursor is an id.
 ///
 /// The walk therefore visits exactly the ids a copy of the stored ids taken

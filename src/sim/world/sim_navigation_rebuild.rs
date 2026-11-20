@@ -333,16 +333,8 @@ impl Simulation {
     /// type can change while boolean walkability stays identical (notably a
     /// live OccupationBits=0 terrain object changing Building to Ground).
     ///
-    /// Copies `path_grid` to publish it: for the wall sale's tail grid, which
-    /// it still publishes itself after. A grid already shared goes through
-    /// [`Self::rebuild_shared_zone_grid_full`] uncopied.
-    pub(super) fn rebuild_zone_grid_full(&mut self, path_grid: &PathGrid) {
-        self.rebuild_shared_zone_grid_full(Arc::new(path_grid.clone()));
-    }
-
-    /// [`Self::rebuild_zone_grid_full`] for a grid already behind an `Arc`,
-    /// which it publishes as it is.
-    pub(super) fn rebuild_shared_zone_grid_full(&mut self, path_grid: Arc<PathGrid>) {
+    /// Publishes `path_grid` as it is.
+    pub(super) fn rebuild_zone_grid_full(&mut self, path_grid: Arc<PathGrid>) {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return;
         };
