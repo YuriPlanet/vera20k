@@ -318,16 +318,6 @@ pub(crate) fn curtain_object(
                     }
                 }
             }
-            receive_strength_as_c4(
-                sim,
-                rules,
-                overlay_registry,
-                id,
-                None,
-                house,
-                true,
-                frame_effects,
-            )
         }
         EntityCategory::Unit | EntityCategory::Aircraft => {
             foot_iron_curtain(sim, rules, overlay_registry, id, duration, frame_effects)
