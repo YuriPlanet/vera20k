@@ -50,10 +50,12 @@ replaces the target and writes `config.toml`; a source that turns out to be
 incomplete leaves the working folder and the configuration untouched.
 
 The copy keeps the archives and the data files the engine reads (`.mix`,
-`.csf`, `.pal`, `.shp`, `.wav`, `.fnt`) and drops the executables, the movies
-and the installers. It also drops loose `.ini` files: a loose INI in the game
-folder overrides the one inside the archives, and the archives carry the
-retail ones.
+`.csf`, `.pal`, `.shp`, `.wav`, `.fnt`) plus the loose INIs, movies and
+scenario files a folder may keep (`.ini`, `.bik`, `.yro`, `.yrm`, `.pkt`,
+`.mmx`, `.mpr`, `.map`), and drops the executables and the installers. The
+loose files stay because the engine resolves a name from the folder before the
+archives, the way gamemd reads its disk files first: a loose `RULESMD.INI` or
+a loose scenario pack is content, not clutter.
 
 A Steam installation puts the game in a subfolder of the install directory;
 `prepare` and `verify` find the folder that holds `ra2md.mix` themselves.

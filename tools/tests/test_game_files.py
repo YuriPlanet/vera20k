@@ -22,12 +22,16 @@ class KeepFileTest(unittest.TestCase):
         for name in ('ra2md.mix', 'ra2.mix', 'main.csf', 'sidebar.pal', 'e1.shp', 'theme.wav'):
             self.assertTrue(game_files.keep_file(Path(name)), name)
 
-    def test_loose_inis_are_dropped_because_they_override_the_archives(self) -> None:
-        self.assertFalse(game_files.keep_file(Path('rulesmd.ini')))
-        self.assertFalse(game_files.keep_file(Path('RULESMD.INI')))
+    def test_loose_inis_are_kept_because_the_folder_wins_over_the_archives(self) -> None:
+        self.assertTrue(game_files.keep_file(Path('rulesmd.ini')))
+        self.assertTrue(game_files.keep_file(Path('RULESMD.INI')))
 
-    def test_executables_and_movies_are_dropped(self) -> None:
-        for name in ('gamemd.exe', 'game.dll', 'ea_wwlogo.bik', 'setup.exe'):
+    def test_loose_scenarios_and_maps_are_kept(self) -> None:
+        for name in ('arena.yro', 'Pack.PKT', 'hills.mmx', 'river.mpr'):
+            self.assertTrue(game_files.keep_file(Path(name)), name)
+
+    def test_executables_and_installers_are_dropped(self) -> None:
+        for name in ('gamemd.exe', 'game.dll', 'setup.exe', 'readme.txt'):
             self.assertFalse(game_files.keep_file(Path(name)), name)
 
 
@@ -49,9 +53,9 @@ class SlimTest(unittest.TestCase):
     def test_only_the_files_the_engine_reads_are_copied(self) -> None:
         lines = game_files.slim(self.source, self.target)
         copied = {path.name for path in self.target.iterdir()}
-        self.assertEqual(copied, {'ra2md.mix', 'main.csf'})
-        self.assertIn('copied 2 files', lines[0])
-        self.assertIn('skipped 2 files', lines[1])
+        self.assertEqual(copied, {'ra2md.mix', 'main.csf', 'rulesmd.ini'})
+        self.assertIn('copied 3 files', lines[0])
+        self.assertIn('skipped 1 files', lines[1])
 
     def test_a_missing_source_is_refused(self) -> None:
         with self.assertRaises(SystemExit):

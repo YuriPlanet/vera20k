@@ -61,13 +61,31 @@ STEAM_APPID = '2229850'
 STEAM_APP_NAME = "Command & Conquer Red Alert 2 and Yuri's Revenge"
 EA_PLAY_APPID = '1289670'
 
-# What a slim folder keeps. Everything else in a retail folder is an
-# executable, a movie or an installer, none of which the engine reads.
-KEEP_SUFFIXES = ('.mix', '.csf', '.pal', '.shp', '.wav', '.fnt')
-
-# A loose INI in the game folder overrides the one inside the archives, so a
-# slim copy drops them: the archives carry the retail ones.
-DROP_SUFFIXES = ('.ini',)
+# What a slim folder keeps: every file the engine reads by name out of the
+# game folder. Anything else in a retail folder is an executable, an
+# installer or a document, none of which the engine reads.
+#
+# The loose INIs and scenario files are kept on purpose. The asset manager
+# resolves a name from the folder before the archives (`AssetManager::get_ref`),
+# which is what gamemd does with its disk-first reads, so a loose
+# `RULESMD.INI` or a loose `.yro` scenario pack is part of the content, not
+# something to tidy away.
+KEEP_SUFFIXES = (
+    '.mix',   # the archives themselves
+    '.csf',   # string tables
+    '.pal',   # palettes
+    '.shp',   # shapes
+    '.wav',   # sounds
+    '.fnt',   # fonts
+    '.ini',   # rules, when a folder keeps them loose
+    '.bik',   # movies, when a folder keeps them loose
+    '.yro',   # scenario packs
+    '.yrm',   # scenario packs
+    '.pkt',   # multiplayer map packs
+    '.mmx',   # maps
+    '.mpr',   # maps
+    '.map',   # maps
+)
 
 
 def human_size(size: int) -> str:
@@ -147,8 +165,6 @@ def verify(folder: Path, profile: str = 'fast',
 
 def keep_file(path: Path) -> bool:
     """Whether a slim copy keeps PATH."""
-    if path.suffix.lower() in DROP_SUFFIXES:
-        return False
     return path.suffix.lower() in KEEP_SUFFIXES
 
 
@@ -197,7 +213,7 @@ def slim(source: Path, target: Path) -> list[str]:
             skipped_bytes += path.stat().st_size
     return [
         f'copied {kept} files ({human_size(kept_bytes)}) into {target}',
-        f'skipped {skipped} files ({human_size(skipped_bytes)}): executables, movies, installers',
+        f'skipped {skipped} files ({human_size(skipped_bytes)}): executables and installers',
     ]
 
 
