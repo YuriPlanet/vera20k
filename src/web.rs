@@ -40,6 +40,18 @@ pub(crate) fn canvas() -> web_sys::HtmlCanvasElement {
     })
 }
 
+#[wasm_bindgen(module = "/src/web/screenshot.js")]
+extern "C" {
+    #[wasm_bindgen(js_name = downloadCanvasScreenshot)]
+    fn download_canvas_screenshot(canvas: &web_sys::HtmlCanvasElement);
+}
+
+/// The Web equivalent of the retail screenshot hotkey: download the actual
+/// composed canvas as PNG; the desktop's synchronous PCX readback is separate.
+pub(crate) fn download_screenshot() {
+    download_canvas_screenshot(&canvas());
+}
+
 pub(crate) fn status(message: &str) {
     let callback = STATUS.with(|slot| slot.borrow().clone());
     if let Some(callback) = callback {
