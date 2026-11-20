@@ -4612,7 +4612,7 @@ fn physical_readers_take_each_record_by_the_type_id() {
         trigger
             .events
             .iter()
-            .map(|event| event.value)
+            .map(|event| event.condition.value)
             .collect::<Vec<_>>(),
         [7, 7]
     );

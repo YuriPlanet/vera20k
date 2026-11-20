@@ -193,7 +193,9 @@ fn build_type_event_latches_before_elapsed_time_as_in_native_register_history() 
     let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
     let typ = sim.trigger_runtime.trigger(live).unwrap().type_index;
     assert_eq!(
-        sim.trigger_runtime.definitions.trigger_types[typ].events[0].kind,
+        sim.trigger_runtime.definitions.trigger_types[typ].events[0]
+            .condition
+            .kind,
         19
     );
     sim.trigger_runtime.definitions.trigger_types[typ].events[0].retained_house = Some(houses[0]);

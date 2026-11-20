@@ -41,7 +41,7 @@ fn team_lookup_events_preserve_names_order_and_do_not_allocate() {
     let event_names: Vec<_> = definitions.trigger_types[0]
         .events
         .iter()
-        .map(|event| event.team_name.as_deref())
+        .map(|event| event.condition.team_name.as_deref())
         .collect();
     assert_eq!(
         event_names,
@@ -3623,7 +3623,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
                 json!(
                     typ.events
                         .iter()
-                        .map(|event| json!({"kind": event.kind, "value":event.value}))
+                        .map(|event| json!({"kind": event.condition.kind, "value":event.condition.value}))
                         .collect::<Vec<_>>()
                 ),
                 selected["events"]
@@ -4500,10 +4500,10 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
         let events = &sim.trigger_runtime.definitions.trigger_types[trigger.type_index].events;
         assert_eq!(events.len(), 1);
         assert_eq!(
-            json!(events[0].kind),
+            json!(events[0].condition.kind),
             lead["native_trigger"]["events"][0]["kind"]
         );
-        assert_eq!(events[0].kind, 48);
+        assert_eq!(events[0].condition.kind, 48);
         let before = sim.trigger_runtime.clone();
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {

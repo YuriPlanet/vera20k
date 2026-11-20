@@ -277,7 +277,11 @@ fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
         for index in entry_triggers {
             let trigger = sim.trigger_runtime.trigger(index).unwrap();
             let typ = &sim.trigger_runtime.definitions.trigger_types[trigger.type_index];
-            let entered_index = typ.events.iter().position(|event| event.kind == 1).unwrap();
+            let entered_index = typ
+                .events
+                .iter()
+                .position(|event| event.condition.kind == 1)
+                .unwrap();
             assert_eq!(trigger.completed & (1 << entered_index), 0);
             let source = if typ.id == "T1" && first_change { 1 } else { 0 };
             assert_eq!(trigger.retained_house, Some(houses[source]));

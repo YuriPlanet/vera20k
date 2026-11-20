@@ -291,7 +291,7 @@ impl RuntimeDefinitions {
             }
             let typ = &self.trigger_types[index];
             for event in &typ.events {
-                flags |= event_flags(event.kind, ares);
+                flags |= event_flags(event.condition.kind, ares);
             }
             for action in &typ.actions {
                 flags |= action_flags(action.entry.kind, ares);
@@ -329,7 +329,7 @@ impl RuntimeDefinitions {
                 break;
             }
             let typ = &self.trigger_types[index];
-            if typ.events.iter().any(|event| event.kind == kind) {
+            if typ.events.iter().any(|event| event.condition.kind == kind) {
                 return true;
             }
             next = typ.linked;
