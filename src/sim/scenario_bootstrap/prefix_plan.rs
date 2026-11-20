@@ -404,6 +404,27 @@ pub enum PreFillScenarioPrefixPlanError {
     },
     #[error("map Size does not produce a valid resized pre-Fill cell rectangle")]
     InvalidMapCellExtent,
+    #[error(
+        "the map has room for only {found} of the {required} start positions this match needs: \
+         it lists too few start waypoints, and its playable area has no free 8x8 space for the rest"
+    )]
+    NoRoomForStarts { found: usize, required: usize },
+    #[error(
+        "the map's [Header] NumCoopHumanStartSpots={human_start_spots} leaves no free start \
+         for all {human_count} human players"
+    )]
+    CoopHumanStartSpotsFull {
+        human_start_spots: usize,
+        human_count: usize,
+    },
+    #[error(
+        "Quick Co-op needs a free start for each of the {participant_count} players, but the \
+         map's {start_count} start positions are used up once the chosen starts are reserved"
+    )]
+    QuickCoopStartsExhausted {
+        start_count: usize,
+        participant_count: usize,
+    },
     #[error("accepted launch Country index {index} is absent after scenario Rules reset")]
     MissingLaunchCountry { index: u16 },
 }
@@ -570,8 +591,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
         roster_start_count,
         map_data,
         &mut scenario_rng,
-    )
-    .ok_or(PreFillScenarioPrefixPlanError::InvalidMapCellExtent)?;
+    )?;
     #[cfg(any(test, feature = "test-support"))]
     let after_first_gather = scenario_rng.logical_state();
     let preassignment = native_preassign_launch_start_table(session, first_gathered_starts.len());
@@ -581,8 +601,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
         roster_start_count,
         map_data,
         &mut scenario_rng,
-    )
-    .ok_or(PreFillScenarioPrefixPlanError::InvalidMapCellExtent)?;
+    )?;
     // 0x0068754B..0x00687581: inside GameMode != 0, WOL Quick Co-op
     // ([0xA8B244] == 2) runs AssignStartingPoints 0x005EE9D0 in place of the
     // mode's +0x84, whatever the mode.
@@ -592,7 +611,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
             &final_gathered_starts,
             &preassignment,
             &mut scenario_rng,
-        )
+        )?
     } else {
         match family {
             StockOfflineStartCallbackFamily::Battle => {
@@ -612,7 +631,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
                     human_start_spots,
                     roster.nonobserver_human_count(),
                     &mut scenario_rng,
-                )
+                )?
             }
         }
     };
