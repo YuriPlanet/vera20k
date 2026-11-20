@@ -45,6 +45,8 @@ pub(crate) const ROOM_SIZE: u16 = 0x7F10;
 /// VERA-only, in an online room: Lobby, to the public lobby while the room
 /// goes on hidden (docs/lobby-protocol.md "Visiting the lobby").
 pub(crate) const LOBBY: u16 = 0x7F16;
+pub(crate) const CAMPAIGN_SERIES: u16 = 0x7F17;
+pub(crate) const CAMPAIGN_STAGE: u16 = 0x7F18;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x40 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7000;
@@ -785,6 +787,7 @@ pub(crate) enum RoomBox {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SetupView {
+    pub(crate) campaign: bool,
     pub(crate) first_row: usize,
     pub(crate) row_count: usize,
     /// The first row of each page.
@@ -880,7 +883,8 @@ impl SetupView {
         match id {
             BACK | CHAT | CHAT_LOG | GAME_OPTIONS => true,
             LOBBY => self.lobby_enabled,
-            START | CHOOSE_MAP => self.host,
+            START => self.host,
+            CHOOSE_MAP => self.host && !self.campaign,
             TEAM_STARTS => self.team_starts_enabled,
             TEAM_COLORS => self.team_colors_enabled,
             BALANCE => self.balance_enabled,
@@ -889,7 +893,9 @@ impl SetupView {
             NEXT_ROWS => self.first_row + self.page_len < self.row_count,
             ACCEPT => !self.host && self.accept_enabled,
             0x54E if self.short_game_locked => false,
-            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.host,
+            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => {
+                self.host && !self.campaign
+            }
             id if team_join_row(id).is_some() => self
                 .header_button(id)
                 .is_some_and(|header| header.join_enabled),
@@ -1239,6 +1245,9 @@ impl MultiplayerSetupState {
         let cap = match SetupColumn::decode(id) {
             Some((SetupColumn::Player, _)) if view.dialog.modern => 0,
             Some((column, _)) => column.visible_rows(),
+            None if matches!(id, CAMPAIGN_SERIES | CAMPAIGN_STAGE) => {
+                SetupColumn::Country.visible_rows()
+            }
             None => {
                 team_add_ai_row(id)?;
                 0
@@ -1827,6 +1836,8 @@ impl MultiplayerSetupLayout {
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
+            CAMPAIGN_SERIES => Some(self.mode_label),
+            CAMPAIGN_STAGE => Some(self.map_label),
             TEAM_STARTS => self.team_starts,
             TEAM_COLORS => self.team_colors,
             BALANCE => self.balance,
@@ -2069,6 +2080,7 @@ mod tests {
     /// VERA's online room for its host, with nothing in it.
     fn vera_room_view() -> SetupView {
         SetupView {
+            campaign: false,
             first_row: 0,
             row_count: 8,
             pages: vec![0],

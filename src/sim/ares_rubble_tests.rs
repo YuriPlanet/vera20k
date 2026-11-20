@@ -291,6 +291,23 @@ fn engineer_damage_decides_a_hostile_building_above_the_capture_level() {
             .get(engineer)
             .is_some_and(|engineer| engineer.is_object_alive())
     );
+
+    // A lockstep MapHouses scenario retains the campaign branch of the Ares
+    // hook even though the transport mode is LAN and MultiEngineer is set.
+    sim.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Lan,
+        None,
+        crate::rules::rule_policy::RulePolicy::stock_campaign()
+            .with_counts_player_control_as_human(false),
+    );
+    assert_eq!(
+        sim.engineer_building_action(probe, building, &rules),
+        Some(EngineerBuildingAction::Capture)
+    );
+    arrive(&mut sim, &rules, building, false);
+    let captured = sim.substrate.entities.get(building).unwrap();
+    assert_eq!(captured.owner(), americans);
+    assert_eq!(captured.health.current(), 750);
 }
 
 /// Ares `InfantryClass_IsCellOccupied @ 10014D70` (hook `0x51C4C8`): an

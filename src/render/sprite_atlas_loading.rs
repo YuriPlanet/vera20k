@@ -53,13 +53,14 @@ impl PreparedSpriteAtlas {
     ) -> anyhow::Result<SpriteAtlasLoadingJob> {
         let (work, completion) = match self {
             Self::Unchanged => return Ok(SpriteAtlasLoadingJob::ready(None)),
+            Self::Abandoned(failure) => return Err(sprite_atlas_load_error(failure)),
             Self::Raster(work, upload) => (work, upload),
         };
         anyhow::ensure!(completion.initial, "loading must not replace a live atlas");
         // A map-load build that cannot draw a required frame fails here.
-        let Some((rendered, unrenderable, palettes)) = completion.drawn(work.render()) else {
-            return Ok(SpriteAtlasLoadingJob::ready(None));
-        };
+        let (rendered, unrenderable, palettes) = completion
+            .drawn(work.render())
+            .map_err(sprite_atlas_load_error)?;
         let added = rendered.len();
         if rendered.is_empty() {
             log::warn!("No SHP sprites rendered");

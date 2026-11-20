@@ -49,10 +49,13 @@ impl TheaterTileBlocks {
 
     /// Build the block table for every tile the theater's `lookup` defines.
     ///
-    /// `load` fetches a TMP file's bytes by filename; the app layer wraps the
+    /// `load` borrows a TMP file's bytes by filename; the app layer wraps the
     /// asset manager. Tiles whose filename is blank, whose bytes are missing, or
     /// whose TMP fails to parse are skipped.
-    pub fn build(lookup: &TilesetLookup, mut load: impl FnMut(&str) -> Option<Vec<u8>>) -> Self {
+    pub fn build<'a>(
+        lookup: &TilesetLookup,
+        mut load: impl FnMut(&str) -> Option<&'a [u8]>,
+    ) -> Self {
         let mut blocks = HashMap::new();
         for tile_id in 0..lookup.len() {
             let Some(filename) = lookup.filename(tile_id as i32) else {
@@ -61,7 +64,7 @@ impl TheaterTileBlocks {
             let Some(bytes) = load(filename) else {
                 continue;
             };
-            let Ok(tmp) = TmpFile::from_bytes(&bytes) else {
+            let Ok(tmp) = TmpFile::from_bytes(bytes) else {
                 continue;
             };
             blocks.insert(tile_id as i32, tile_block_from_tmp(&tmp));
@@ -165,20 +168,20 @@ mod tests {
         )
         .unwrap();
         let bytes = tmp_row(&[(1, 2, 3)]);
-        let first = TheaterTileBlocks::build(&lookup, |_| Some(bytes.clone())).multiplayer_digest();
+        let first = TheaterTileBlocks::build(&lookup, |_| Some(&bytes)).multiplayer_digest();
         let mut pixels_changed = bytes.clone();
         *pixels_changed.last_mut().unwrap() ^= 1;
-        let same = TheaterTileBlocks::build(&lookup, |_| Some(pixels_changed.clone()))
-            .multiplayer_digest();
+        let same =
+            TheaterTileBlocks::build(&lookup, |_| Some(&pixels_changed)).multiplayer_digest();
         assert_eq!(first, same, "presentation pixels do not change generation");
         assert_eq!(
             first,
-            TheaterTileBlocks::build(&lookup, |_| Some(bytes.clone())).multiplayer_digest()
+            TheaterTileBlocks::build(&lookup, |_| Some(&bytes)).multiplayer_digest()
         );
         let other = tmp_row(&[(1, 2, 4)]);
         assert_ne!(
             first,
-            TheaterTileBlocks::build(&lookup, |_| Some(other.clone())).multiplayer_digest()
+            TheaterTileBlocks::build(&lookup, |_| Some(&other)).multiplayer_digest()
         );
     }
 
@@ -213,7 +216,7 @@ TilesInSet=2
 ";
         let lookup = parse_tileset_ini(ini.as_bytes(), "tem").expect("lookup");
         let fixture = tmp_row(&[(0, 0, 0), (1, 8, 2)]);
-        let blocks = TheaterTileBlocks::build(&lookup, |_name| Some(fixture.clone()));
+        let blocks = TheaterTileBlocks::build(&lookup, |_name| Some(&fixture));
         assert_eq!(blocks.len(), 2, "both tile ids resolved to a block");
         let block = blocks.block(0).expect("tile 0 has a block");
         assert_eq!((block.width, block.height), (2, 1));
@@ -236,7 +239,7 @@ TilesInSet=2
         assert!(blocks.block(0).is_none());
 
         // Loader yields garbage → parse fails → still absent, no panic.
-        let blocks = TheaterTileBlocks::build(&lookup, |_name| Some(vec![0u8; 4]));
+        let blocks = TheaterTileBlocks::build(&lookup, |_name| Some(&[0u8; 4]));
         assert!(blocks.block(0).is_none());
     }
 }

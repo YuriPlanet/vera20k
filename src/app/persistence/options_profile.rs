@@ -34,6 +34,47 @@ const WONLINE_SECTION: &str = "WOnline";
 const NETWORK_SECTION: &str = "Network";
 /// VERA's own display preferences. gamemd never reads this section.
 const VERA_SECTION: &str = "VERA";
+
+/// `[VERA] GraphicsAPI=`: the graphics API the game asks wgpu for, on Windows,
+/// which has two. `auto`, the default, lets wgpu choose and the start record
+/// switch to the other API after a start that lost its device or never
+/// finished (`persistence::startup_backend`); `vulkan` and `dx12` ask for that
+/// one alone. The key has no Options control: it is for a player a maintainer
+/// walks through a driver problem. wgpu's own `WGPU_BACKEND` still wins.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum GraphicsApi {
+    #[default]
+    Auto,
+    Vulkan,
+    DirectX12,
+}
+
+impl GraphicsApi {
+    pub(crate) fn from_ini_value(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "vulkan" | "vk" => Self::Vulkan,
+            "dx12" | "directx12" | "directx 12" | "d3d12" => Self::DirectX12,
+            _ => Self::Auto,
+        }
+    }
+
+    pub(crate) fn ini_value(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Vulkan => "vulkan",
+            Self::DirectX12 => "dx12",
+        }
+    }
+
+    /// The API asked for alone, when the key names one.
+    pub(crate) fn backend(self) -> Option<wgpu::Backend> {
+        match self {
+            Self::Auto => None,
+            Self::Vulkan => Some(wgpu::Backend::Vulkan),
+            Self::DirectX12 => Some(wgpu::Backend::Dx12),
+        }
+    }
+}
 /// Destination units `OptionsClass__ReadFromINI` passes for NetID (`push 0xC8`).
 const NET_ID_UNITS: usize = 0xC8;
 /// Destination units `[VERA] Display=`'s ReadString copies into. A VERA key, so
@@ -175,6 +216,8 @@ pub(crate) struct RetailOptionsProfile {
     /// instead of Red Alert 2's red star. Off by default; the installed
     /// program's own icon stays the red star either way.
     pub(crate) vera_icon: bool,
+    /// `[VERA] GraphicsAPI=`: see [`GraphicsApi`]. `auto` by default.
+    pub(crate) graphics_api: GraphicsApi,
     /// `[VERA] HdRadar=`: when the sidebar draws at a whole multiple of its
     /// pixels, the radar draws at that multiple too (`render::radar::hd`).
     /// Off by default; presentation only.
@@ -418,6 +461,7 @@ impl Default for RetailOptionsProfile {
             right_click_orders: false,
             lock_cursor: false,
             vera_icon: false,
+            graphics_api: GraphicsApi::Auto,
             hd_radar: false,
             smooth_sidebar: false,
             smooth_online_menus: false,
@@ -467,7 +511,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 41],
+    pub(crate) vera: [(&'static str, String); 42],
 }
 
 impl RetailOptionsLoad {
@@ -676,6 +720,9 @@ impl RetailOptionsProfile {
             self.right_click_orders = vera.read_bool("RightClickOrders", self.right_click_orders);
             self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
             self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
+            if let Some(value) = vera.read_name("GraphicsAPI", 32) {
+                self.graphics_api = GraphicsApi::from_ini_value(value);
+            }
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
             self.smooth_online_menus =
@@ -887,6 +934,7 @@ impl RetailOptionsProfile {
                 ("Display", self.display.ini_value().to_owned()),
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
                 ("VeraIcon", format_bool(self.vera_icon).to_string()),
+                ("GraphicsAPI", self.graphics_api.ini_value().to_owned()),
                 ("HealthBars", self.health_bars.ini_value().to_string()),
                 ("Ares", self.ares.ini_value().to_string()),
                 ("HdRadar", format_bool(self.hd_radar).to_string()),
@@ -1879,9 +1927,11 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(!unset.lock_cursor && !unset.vera_icon);
         assert!(!unset.hd_radar && !unset.smooth_sidebar && unset.hd_map_previews);
         assert!(!unset.smooth_online_menus);
+        assert_eq!(unset.graphics_api, GraphicsApi::Auto);
         let changed = RetailOptionsProfile {
             lock_cursor: true,
             vera_icon: true,
+            graphics_api: GraphicsApi::DirectX12,
             hd_radar: true,
             smooth_sidebar: true,
             smooth_online_menus: true,
@@ -1893,6 +1943,16 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(changed.lock_cursor && changed.vera_icon);
         assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
         assert!(changed.smooth_online_menus);
+        assert_eq!(changed.graphics_api, GraphicsApi::DirectX12);
+        // A hand-typed key reads in any case and spelling the player may use;
+        // nonsense means auto.
+        let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI=DirectX12\n").retained_profile;
+        assert_eq!(typed.graphics_api, GraphicsApi::DirectX12);
+        assert_eq!(typed.graphics_api.backend(), Some(wgpu::Backend::Dx12));
+        let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI= Vulkan \n").retained_profile;
+        assert_eq!(typed.graphics_api.backend(), Some(wgpu::Backend::Vulkan));
+        let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI=opengl\n").retained_profile;
+        assert_eq!(typed.graphics_api, GraphicsApi::Auto);
     }
 
     #[test]

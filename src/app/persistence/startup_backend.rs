@@ -10,6 +10,13 @@
 //! override, which wins over this choice, tries a repaired driver once and,
 //! when it works, for good. A loss after startup, in play, changes nothing
 //! here (`app::graphics_lost`).
+//!
+//! A driver can also hang instead of failing: an Intel HD 620's 2017 Vulkan
+//! driver never returned from creating the device or the swapchain, so the
+//! window stayed black until the player killed it, twenty-five starts in a
+//! row, and no loss was ever reported. So a start also leaves a marker from
+//! the moment it has chosen its adapter (`starting`) until startup finishes;
+//! the next start reads a leftover marker as that API's failure.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -21,9 +28,14 @@ use crate::util::file_system;
 /// start, `<api> <vendor:device> <adapter name>`, after a comment that says
 /// what it is.
 const RECORD: &str = "GraphicsLostAtStart.txt";
-const RECORD_HEADER: &str = "# VERA20k lost its graphics device before it finished starting on these\n\
+const RECORD_HEADER: &str = "# VERA20k lost its graphics device, or never finished starting, on these\n\
                              # graphics APIs, so it starts on the other one. Delete this file to try them\n\
                              # again; WGPU_BACKEND=vulkan or dx12 overrides it for one start.\n";
+/// The marker a start leaves beside VERA.INI from its adapter choice until
+/// startup finishes: one line as the record holds it. Left behind, it says
+/// the start hung or was killed before "GPU initialized" or the first menu.
+const STARTING: &str = "GraphicsStarting.txt";
+const UNFINISHED: &str = "(never finished starting)";
 
 /// Windows' two APIs, in wgpu's own order of preference.
 const WINDOWS_APIS: [wgpu::Backend; 2] = [wgpu::Backend::Vulkan, wgpu::Backend::Dx12];
@@ -34,21 +46,38 @@ static SETTINGS_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// Startup has finished ([`start_finished`]): a loss from now on is play's.
 static STARTED: AtomicBool = AtomicBool::new(false);
 
-/// The APIs this start asks wgpu for: the Windows API the record leaves,
-/// when the other lost the device at a start, else wgpu's primary set.
-pub(crate) fn backends(settings_dir: Option<&Path>) -> wgpu::Backends {
+/// The APIs this start asks wgpu for: the one `[VERA] GraphicsAPI=` names
+/// (`forced`), else the Windows API the record leaves when the other failed
+/// at a start, else wgpu's primary set.
+pub(crate) fn backends(
+    settings_dir: Option<&Path>,
+    forced: Option<wgpu::Backend>,
+) -> wgpu::Backends {
     let Some(dir) = settings_dir else {
-        return wgpu::Backends::PRIMARY;
+        return forced.map_or(wgpu::Backends::PRIMARY, wgpu::Backends::from);
     };
     let _ = SETTINGS_DIR.set(dir.to_owned());
+    if let Some(api) = forced {
+        // The record still learns of a start that never finished, for the
+        // day the key is removed again.
+        let _ = note_unfinished_in(dir);
+        log::info!("VERA.INI asks for {} ([VERA] GraphicsAPI=)", api_name(api));
+        return wgpu::Backends::from(api);
+    }
     if !cfg!(target_os = "windows") {
         return wgpu::Backends::PRIMARY;
+    }
+    if let Some(api) = note_unfinished_in(dir) {
+        log::warn!(
+            "The last start never finished on {}: the driver hung or the game was closed before its first menu",
+            api_name(api)
+        );
     }
     let failed = read_failed(dir);
     match other_api(&failed) {
         Some(api) => {
             log::warn!(
-                "An earlier start lost the graphics device on {}; this one draws through {} ({} says so; delete it to try again)",
+                "An earlier start failed on {}; this one draws through {} ({} says so; delete it to try again)",
                 failed
                     .iter()
                     .map(|api| api_name(*api))
@@ -63,13 +92,35 @@ pub(crate) fn backends(settings_dir: Option<&Path>) -> wgpu::Backends {
     }
 }
 
+/// The start has chosen its adapter and is about to ask the driver for a
+/// device (`GpuContext::new`): leave the marker that [`backends`] reads as
+/// this API's failure if startup never finishes.
+pub(crate) fn starting(info: &wgpu::AdapterInfo) {
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    if let Some(dir) = SETTINGS_DIR.get() {
+        starting_in(dir, info.backend, &adapter_line(info));
+    }
+}
+
+/// Startup failed or died for a reason that is not the graphics API's (a
+/// missing file, a panic on a working device): the marker goes, so the next
+/// start keeps its API.
+pub(crate) fn forget_start() {
+    if let Some(dir) = SETTINGS_DIR.get() {
+        forget_start_in(dir);
+    }
+}
+
 /// Startup has finished on the process's device
 /// (`render::gpu::device_identity`): its API works here, so it leaves the
-/// record. A loss from now on is play's.
+/// record and the start marker. A loss from now on is play's.
 pub(crate) fn start_finished() {
     STARTED.store(true, Ordering::Release);
     if let (Some(dir), Some(identity)) = (SETTINGS_DIR.get(), crate::render::gpu::device_identity())
     {
+        forget_start_in(dir);
         finish_in(dir, identity.backend);
     }
 }
@@ -85,6 +136,8 @@ pub(crate) fn record_loss() -> Option<wgpu::Backend> {
     }
     let dir = SETTINGS_DIR.get()?;
     let identity = crate::render::gpu::device_identity()?;
+    // The loss is the record's now; the marker would only repeat it.
+    forget_start_in(dir);
     record_loss_in(
         dir,
         identity.backend,
@@ -93,6 +146,42 @@ pub(crate) fn record_loss() -> Option<wgpu::Backend> {
             identity.vendor, identity.device, identity.name
         ),
     )
+}
+
+fn adapter_line(info: &wgpu::AdapterInfo) -> String {
+    format!("{:04x}:{:04x} {}", info.vendor, info.device, info.name)
+}
+
+fn starting_in(dir: &Path, api: wgpu::Backend, adapter: &str) {
+    let path = dir.join(STARTING);
+    if let Err(error) = file_system::write(&path, format!("{} {adapter}\n", api.to_str())) {
+        // Without the marker a hung start is not told apart from a working one.
+        log::warn!("Could not write {}: {error}", path.display());
+    }
+}
+
+fn forget_start_in(dir: &Path) {
+    let path = dir.join(STARTING);
+    match file_system::remove_file(&path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => log::warn!("Could not remove {}: {error}", path.display()),
+    }
+}
+
+/// A marker the last start left behind goes into the record as its API's
+/// failure; the API, when there was one.
+fn note_unfinished_in(dir: &Path) -> Option<wgpu::Backend> {
+    let line = file_system::read_to_string(dir.join(STARTING)).ok()?;
+    forget_start_in(dir);
+    let line = line.trim();
+    let api = api_of(line)?;
+    let mut lines = read_lines(dir);
+    if !lines.iter().any(|known| api_of(known) == Some(api)) {
+        lines.push(format!("{line} {UNFINISHED}"));
+        write_lines(dir, &lines);
+    }
+    Some(api)
 }
 
 /// The API's name as the player knows it.
@@ -223,6 +312,32 @@ mod tests {
             None
         );
         assert_eq!(read_failed(&dir), [Vulkan, Dx12]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_start_that_never_finished_fails_its_api() {
+        let dir = record_dir("startup-backend-unfinished");
+        // A finished start leaves no marker and blames nothing.
+        starting_in(&dir, Vulkan, "8086:5916 Intel(R) HD Graphics 620");
+        forget_start_in(&dir);
+        assert_eq!(note_unfinished_in(&dir), None);
+        assert_eq!(read_failed(&dir), []);
+        // One that hung in the driver leaves it, and the next start reads it.
+        starting_in(&dir, Vulkan, "8086:5916 Intel(R) HD Graphics 620");
+        assert_eq!(note_unfinished_in(&dir), Some(Vulkan));
+        assert!(!dir.join(STARTING).exists());
+        assert_eq!(read_failed(&dir), [Vulkan]);
+        assert_eq!(other_api(&read_failed(&dir)), Some(Dx12));
+        let text = std::fs::read_to_string(dir.join(RECORD)).unwrap();
+        assert!(
+            text.contains(
+                "\nvulkan 8086:5916 Intel(R) HD Graphics 620 (never finished starting)\n"
+            ),
+            "{text}"
+        );
+        // Read once: a second start finds no marker.
+        assert_eq!(note_unfinished_in(&dir), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

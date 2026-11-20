@@ -134,6 +134,10 @@ impl Member {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Options {
+    /// Authored recipe negotiated by a campaign-capable lobby. The older
+    /// fields carry only the lobby's participant/control and map proofs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub campaign: Option<crate::app::shell_network_setup::campaign_room::CampaignRoom>,
     pub launch: crate::skirmish_launch::SkirmishLaunchSession,
     pub map_metadata: NetworkMapMetadata,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -180,7 +184,18 @@ impl Options {
     /// host's rows; then the options themselves.
     pub fn into_setup_events(mut self, local: &str) -> anyhow::Result<Vec<NetworkSetupEvent>> {
         let campaign = self.cooperative_campaign.take();
+        let authored = self.campaign.take();
         let options = self.into_options(local)?;
+        if let Some(authored) = authored {
+            anyhow::ensure!(
+                campaign.is_none(),
+                "campaign room contains stock Co-op data"
+            );
+            return Ok(vec![NetworkSetupEvent::CampaignHostSetup {
+                options,
+                room: authored,
+            }]);
+        }
         Ok(campaign
             .map(NetworkSetupEvent::CooperativeCampaign)
             .into_iter()
@@ -553,6 +568,7 @@ mod tests {
             observer_row: None,
             cooperative_difficulty: 1,
             cooperative_campaign: None,
+            campaign: None,
             seed: Some(0),
             watching: None,
         }

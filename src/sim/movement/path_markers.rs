@@ -18,7 +18,6 @@
 //! finishing passes. Queue consumers remain shared across locomotors.
 //! Executed native inputs/costs: `tools/spatial_oracle/astar_hills_markers.json`.
 
-use std::borrow::Cow;
 #[cfg(any(test, feature = "test-support"))]
 use std::collections::BTreeMap;
 
@@ -38,16 +37,29 @@ use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 
 const PEER_MARKER_REPLAY_LIMIT: usize = 24;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct BridgeMarkerPeer {
     category: EntityCategory,
     foot_derived: bool,
     type_ref: InternedId,
     speed: i32,
     path_start: (i16, i16),
-    path_directions: Vec<u8>,
+    /// The head of the peer's remaining directions: the replay reads no
+    /// more than [`PEER_MARKER_REPLAY_LIMIT`] of them.
+    path_head: [u8; PEER_MARKER_REPLAY_LIMIT],
+    /// How many of `path_head` the path fills.
+    path_head_len: usize,
     /// Retained value projection from the canonical locomotor query owner.
     at_coord: Option<super::at_coord::AtCoordQuery>,
+}
+
+impl BridgeMarkerPeer {
+    /// The directions the replay reads: the remaining path, cut at
+    /// [`PEER_MARKER_REPLAY_LIMIT`]. The shortest-path gates (two or three
+    /// directions) answer the same on the cut path as on the whole one.
+    fn path_directions(&self) -> &[u8] {
+        &self.path_head[..self.path_head_len]
+    }
 }
 
 /// Synthetic peer facts for focused marker tests. Production reads only the
@@ -60,13 +72,13 @@ pub(super) struct BridgeMarkerPeerSnapshot {
 
 /// ID-to-facts lookup behind `UpdateBridgePassability`'s object-list walks.
 pub(super) trait BridgeMarkerPeerLookup {
-    fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>>;
+    fn peer(&self, entity_id: u64) -> Option<BridgeMarkerPeer>;
 }
 
 #[cfg(any(test, feature = "test-support"))]
 impl BridgeMarkerPeerLookup for BridgeMarkerPeerSnapshot {
-    fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>> {
-        self.peers.get(&entity_id).map(Cow::Borrowed)
+    fn peer(&self, entity_id: u64) -> Option<BridgeMarkerPeer> {
+        self.peers.get(&entity_id).copied()
     }
 }
 
@@ -92,13 +104,13 @@ impl std::fmt::Debug for LiveBridgeMarkerPeers<'_> {
 }
 
 impl BridgeMarkerPeerLookup for LiveBridgeMarkerPeers<'_> {
-    fn peer(&self, entity_id: u64) -> Option<Cow<'_, BridgeMarkerPeer>> {
+    fn peer(&self, entity_id: u64) -> Option<BridgeMarkerPeer> {
         if entity_id == self.mover_id {
-            self.mover.map(Cow::Borrowed)
+            self.mover.copied()
         } else {
             self.entities
                 .get(entity_id)
-                .map(|entity| Cow::Owned(peer_from_entity(entity, self.rules, self.interner)))
+                .map(|entity| peer_from_entity(entity, self.rules, self.interner))
         }
     }
 }
@@ -302,25 +314,22 @@ pub(super) fn consume_walk_path_replay(queue: &mut FootPathQueue) {
     }
 }
 
-/// The peer path `PathfinderClass::UpdateBridgePassability` (`0x0042ACF0`) replays:
-/// Foot `+0x558` (`0x0042AE33`) and the directions at `+0x5E0` (`0x0042AE88`).
-fn remaining_path_from_entity(
-    entity: &crate::sim::game_entity::GameEntity,
-) -> ((i16, i16), Vec<u8>) {
-    let queue = entity.navigation.path_replay();
-    // Foot+558 and its retained direction queue are the native source.
-    let reference = queue
-        .reference_cell()
-        .unwrap_or((entity.position.rx() as i16, entity.position.ry() as i16));
-    (reference, queue.remaining_directions().to_vec())
-}
-
 fn peer_from_entity(
     entity: &crate::sim::game_entity::GameEntity,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &StringInterner,
 ) -> BridgeMarkerPeer {
-    let (path_start, path_directions) = remaining_path_from_entity(entity);
+    // The peer path `PathfinderClass::UpdateBridgePassability` (`0x0042ACF0`)
+    // replays: Foot `+0x558` (`0x0042AE33`) and the directions at `+0x5E0`
+    // (`0x0042AE88`), its retained direction queue.
+    let queue = entity.navigation.path_replay();
+    let path_start = queue
+        .reference_cell()
+        .unwrap_or((entity.position.rx() as i16, entity.position.ry() as i16));
+    let remaining = queue.remaining_directions();
+    let path_head_len = remaining.len().min(PEER_MARKER_REPLAY_LIMIT);
+    let mut path_head = [0; PEER_MARKER_REPLAY_LIMIT];
+    path_head[..path_head_len].copy_from_slice(&remaining[..path_head_len]);
     let speed = interner
         .object_type(entity.type_ref(), rules)
         .map_or(0, |object| object.speed);
@@ -334,7 +343,8 @@ fn peer_from_entity(
         type_ref: entity.type_ref(),
         speed,
         path_start,
-        path_directions,
+        path_head,
+        path_head_len,
         at_coord: super::at_coord::AtCoordQuery::from_entity(entity),
     }
 }
@@ -381,18 +391,33 @@ fn list_ids(
     cell: (i16, i16),
     layer: MovementLayer,
     unlisted: Option<u64>,
-) -> Vec<u64> {
+) -> impl Iterator<Item = u64> + '_ {
     let cell = unsigned_cell(cell);
     occupancy
         .get(cell.0, cell.1)
-        .map(|occupancy| {
-            occupancy
-                .iter_layer(layer)
-                .map(|occupant| occupant.entity_id)
-                .filter(|&id| Some(id) != unlisted)
-                .collect()
-        })
-        .unwrap_or_default()
+        .into_iter()
+        .flat_map(move |occupancy| occupancy.iter_layer(layer))
+        .map(|occupant| occupant.entity_id)
+        .filter(move |&id| Some(id) != unlisted)
+}
+
+/// One cell list followed from its node at `start` ([`list_ids`]): the
+/// list the marker build walks for its peers.
+#[derive(Debug, Clone, Copy)]
+struct ListSuffix {
+    cell: (i16, i16),
+    layer: MovementLayer,
+    start: usize,
+}
+
+impl ListSuffix {
+    fn ids(
+        self,
+        occupancy: &OccupancyGrid,
+        unlisted: Option<u64>,
+    ) -> impl Iterator<Item = u64> + '_ {
+        list_ids(occupancy, self.cell, self.layer, unlisted).skip(self.start)
+    }
 }
 
 fn find_nearby_bridge_peer_suffix(
@@ -402,7 +427,7 @@ fn find_nearby_bridge_peer_suffix(
     probe: (i16, i16),
     requested_height: i16,
     unlisted: Option<u64>,
-) -> Vec<u64> {
+) -> Option<ListSuffix> {
     //42B08A..0AB: sign-extend cell words, shift8, add128, multiply
     //requested height by the native level step. For negative cells the
     //receiver still performs its own signed-truncated coordinate division.
@@ -430,8 +455,7 @@ fn find_nearby_bridge_peer_suffix(
             } else {
                 MovementLayer::Ground
             };
-            let list = list_ids(occupancy, candidate, layer, unlisted);
-            for (index, entity_id) in list.iter().copied().enumerate() {
+            for (index, entity_id) in list_ids(occupancy, candidate, layer, unlisted).enumerate() {
                 let Some(peer) = peers.peer(entity_id) else {
                     continue;
                 };
@@ -446,11 +470,15 @@ fn find_nearby_bridge_peer_suffix(
                     continue;
                 }
                 // Caller receives this node and follows its +0x30 suffix only.
-                return list[index..].to_vec();
+                return Some(ListSuffix {
+                    cell: candidate,
+                    layer,
+                    start: index,
+                });
             }
         }
     }
-    Vec::new()
+    None
 }
 
 fn replay_peer_path(
@@ -459,7 +487,7 @@ fn replay_peer_path(
     terrain: Option<&ResolvedTerrainGrid>,
 ) {
     let mut replay = peer.path_start;
-    for &direction in peer.path_directions.iter().take(PEER_MARKER_REPLAY_LIMIT) {
+    for &direction in peer.path_directions() {
         replay = match direction {
             0..=7 => signed_cell_add(replay, DIRECTION_DELTAS[direction as usize]),
             TUBE_STEP_DIRECTION => {
@@ -505,21 +533,32 @@ pub(super) fn build_bridge_passability_search(
         MovementLayer::Ground
     };
     let requested_height = probe_level + if direct_deck { 4 } else { 0 };
-    let mut selected_list = list_ids(occupancy, probe, direct_layer, mover.unlisted);
-    if selected_list.is_empty() {
-        selected_list = find_nearby_bridge_peer_suffix(
+    let selected_list = if list_ids(occupancy, probe, direct_layer, mover.unlisted)
+        .next()
+        .is_some()
+    {
+        Some(ListSuffix {
+            cell: probe,
+            layer: direct_layer,
+            start: 0,
+        })
+    } else {
+        find_nearby_bridge_peer_suffix(
             peers,
             occupancy,
             grid,
             probe,
             requested_height,
             mover.unlisted,
-        );
-    }
+        )
+    };
 
     let mut overlay = SearchMarkerOverlay::new();
     let mut processed_peer_path = false;
-    for entity_id in selected_list {
+    let selected_ids = selected_list
+        .into_iter()
+        .flat_map(|list| list.ids(occupancy, mover.unlisted));
+    for entity_id in selected_ids {
         let Some(peer) = peers.peer(entity_id) else {
             continue;
         };
@@ -548,7 +587,7 @@ pub(super) fn build_bridge_passability_search(
         } else {
             2
         };
-        if peer.path_directions.len() < minimum_directions {
+        if peer.path_directions().len() < minimum_directions {
             continue;
         }
         processed_peer_path = true;
@@ -692,7 +731,9 @@ mod tests {
                 probe,
                 0,
                 None
-            ),
+            )
+            .map(|list| list.ids(&occupancy, None).collect::<Vec<_>>())
+            .unwrap_or_default(),
             expected,
             "{name}: marker must use the original complete Is_At_Coord decision"
         );
