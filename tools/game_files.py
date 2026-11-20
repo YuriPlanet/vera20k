@@ -69,8 +69,12 @@ def human_size(size: int) -> str:
     return f'{value:.1f} GB'
 
 
-def game_binary(profile: str = 'fast') -> Path:
-    """The game executable this checkout built, as the build runner records it."""
+def game_binary(profile: str = 'fast', binary: Path | None = None) -> Path:
+    """The game executable to check with: an explicit path, or this checkout's build."""
+    if binary is not None:
+        if not binary.is_file():
+            raise SystemExit(f'{binary} is not a file')
+        return binary
     result = subprocess.run(
         [sys.executable, '-m', 'tools.cargo_run', '--resolve', 'vera20k', '--profile', profile],
         cwd=REPO, capture_output=True, text=True)
@@ -79,15 +83,17 @@ def game_binary(profile: str = 'fast') -> Path:
     if path is None or not path.is_file():
         raise SystemExit(
             f'no vera20k executable for the {profile} profile; build it first:\n'
-            f'  python -m tools.cargo_run -- build --profile {profile} -p vera20k --bin vera20k')
+            f'  python -m tools.cargo_run -- build --profile {profile} -p vera20k --bin vera20k\n'
+            'or name one with --binary.')
     return path
 
 
-def run_game_data_check(folder: Path, profile: str = 'fast') -> tuple[list[str], list[str], int]:
+def run_game_data_check(folder: Path, profile: str = 'fast',
+                        binary: Path | None = None) -> tuple[list[str], list[str], int]:
     """The engine's install check for FOLDER: required issues, optional issues, exit code."""
     with tempfile.TemporaryDirectory(prefix='vera20k-game-files-') as report_dir:
         result = subprocess.run(
-            [str(game_binary(profile)), '--check-game-data', str(folder), report_dir],
+            [str(game_binary(profile, binary)), '--check-game-data', str(folder), report_dir],
             capture_output=True, text=True)
         required = read_lines(Path(report_dir) / 'required.txt')
         optional = read_lines(Path(report_dir) / 'optional.txt')
@@ -101,13 +107,14 @@ def read_lines(path: Path) -> list[str]:
     return [line for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
 
 
-def verify(folder: Path, profile: str = 'fast') -> tuple[list[str], bool]:
+def verify(folder: Path, profile: str = 'fast',
+           binary: Path | None = None) -> tuple[list[str], bool]:
     """Report lines for FOLDER, and whether the game can start from it."""
     lines: list[str] = []
     if not folder.is_dir():
         return [f'problem  {folder} is not a folder'], False
     folder = find_game_folder(folder)
-    required, optional, code = run_game_data_check(folder, profile)
+    required, optional, code = run_game_data_check(folder, profile, binary)
     lines.append(f'folder   {folder}')
     if required:
         lines.append('required:')
@@ -239,11 +246,13 @@ def main(argv=None) -> int:
     verify_parser = sub.add_parser('verify', help='report what a folder still lacks')
     verify_parser.add_argument('--dir', type=Path, required=True, help='the game folder')
     verify_parser.add_argument('--profile', default='fast', help='the built profile to check with')
+    verify_parser.add_argument('--binary', type=Path, help='the vera20k executable to check with')
 
     slim_parser = sub.add_parser('slim', help='copy only the files the engine reads')
     slim_parser.add_argument('--source', type=Path, required=True, help='the licensed source folder')
     slim_parser.add_argument('--target', type=Path, required=True, help='the folder to fill')
     slim_parser.add_argument('--profile', default='fast', help='the built profile to check with')
+    slim_parser.add_argument('--binary', type=Path, help='the vera20k executable to check with')
 
     steam_parser = sub.add_parser('steam', help='install the owned game with steamcmd')
     steam_parser.add_argument('--target', type=Path, required=True, help='the folder to install into')
@@ -256,16 +265,18 @@ def main(argv=None) -> int:
 
     config_parser = sub.add_parser('config', help='point the checkout at a game folder')
     config_parser.add_argument('--dir', type=Path, required=True, help='the game folder')
+    config_parser.add_argument('--root', type=Path, default=REPO,
+                               help='the checkout that holds config.toml')
 
     args = parser.parse_args(argv)
 
     if args.command == 'verify':
-        lines, ready = verify(args.dir, args.profile)
+        lines, ready = verify(args.dir, args.profile, args.binary)
         print('\n'.join(lines))
         return 0 if ready else 1
     if args.command == 'slim':
         print('\n'.join(slim(args.source, args.target)))
-        lines, ready = verify(args.target, args.profile)
+        lines, ready = verify(args.target, args.profile, args.binary)
         print('\n'.join(lines))
         return 0 if ready else 1
     if args.command == 'steam':
@@ -279,7 +290,7 @@ def main(argv=None) -> int:
             print(text, end='')
         return 0
     if args.command == 'config':
-        print(write_config(args.dir))
+        print(write_config(args.dir, args.root))
         return 0
     return 2
 
