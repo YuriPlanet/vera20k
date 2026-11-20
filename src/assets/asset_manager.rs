@@ -531,6 +531,12 @@ impl AssetManager {
         self.mod_dir.is_some()
     }
 
+    /// The selected overlay for this provider, including asset tools that do
+    /// not install the desktop process's global mod choice.
+    pub fn mod_dir(&self) -> Option<&Path> {
+        self.mod_dir.as_deref()
+    }
+
     /// Whether this game is an Ares game (`rules::ares_switch`): the player's
     /// Ares setting is On, or, set to Auto, the selected mod mounted Ares's
     /// `ares.mix`, its own copy or the installation's. With no mod selected,

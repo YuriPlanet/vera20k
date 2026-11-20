@@ -392,6 +392,19 @@ pub fn stock_skirmish_modes() -> Vec<SkirmishGameMode> {
     })
 }
 
+/// Default for generic process consumers that have no selected mode: prefer
+/// the loaded row at the usual id, then the first row the Skirmish menu admits.
+/// This never manufactures a stock mode for a custom catalog.
+pub fn default_skirmish_mode(modes: &[SkirmishGameMode]) -> Option<&SkirmishGameMode> {
+    mode_by_id(modes, crate::skirmish_launch::BATTLE_MODE_ID)
+        .filter(|mode| mode.class.policy().lists_in_skirmish)
+        .or_else(|| {
+            modes
+                .iter()
+                .find(|mode| mode.class.policy().lists_in_skirmish)
+        })
+}
+
 pub fn mode_by_id(modes: &[SkirmishGameMode], id: i32) -> Option<&SkirmishGameMode> {
     modes.iter().find(|mode| mode.id == id)
 }

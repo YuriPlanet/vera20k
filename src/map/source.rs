@@ -327,15 +327,40 @@ pub fn mod_dir() -> Option<&'static Path> {
 /// The folders a listing of the game folder reads, for
 /// `case_insensitive_path::native_listing_over`: `ra2_dir`, then the mod's.
 pub fn game_folders(ra2_dir: &Path) -> Vec<&Path> {
-    std::iter::once(ra2_dir).chain(mod_dir()).collect()
+    game_folders_in(ra2_dir, mod_dir())
+}
+
+pub(crate) fn game_folders_in<'a>(
+    ra2_dir: &'a Path,
+    selected_mod: Option<&'a Path>,
+) -> Vec<&'a Path> {
+    std::iter::once(ra2_dir).chain(selected_mod).collect()
 }
 
 /// The file `name` of the game folder: the mod's when it has one.
 pub fn game_folder_file(ra2_dir: &Path, name: &str) -> PathBuf {
-    mod_dir()
-        .map(|dir| dir.join(name))
-        .filter(|path| crate::util::file_system::exists(path))
+    game_folder_file_in(ra2_dir, mod_dir(), name)
+}
+
+pub(crate) fn game_folder_file_in(
+    ra2_dir: &Path,
+    selected_mod: Option<&Path>,
+    name: &str,
+) -> PathBuf {
+    selected_mod
+        .into_iter()
+        .chain(std::iter::once(ra2_dir))
+        .find_map(|root| existing_map_file(root.join(name)))
         .unwrap_or_else(|| ra2_dir.join(name))
+}
+
+/// Preserve an explicit spelling, then use the same case-insensitive basename
+/// lookup as the asset provider before trying a lower-priority root.
+fn existing_map_file(path: PathBuf) -> Option<PathBuf> {
+    if crate::util::file_system::exists(&path) {
+        return Some(path);
+    }
+    crate::util::case_insensitive_path::find(path.parent()?, path.file_name()?.to_str()?)
 }
 
 /// Where the random-map dialog's files live: `RandMap.Sed`, its `RandMap.img`
@@ -376,13 +401,11 @@ fn local_map_path_in(
         .chain(std::iter::once(first))
         .chain(downloaded.filter(|_| !seed));
     for root in roots {
-        let exact = root.join(map_name);
-        if crate::util::file_system::exists(&exact) {
+        if let Some(exact) = existing_map_file(root.join(map_name)) {
             return Ok(exact);
         }
         for ext in MAP_EXTENSIONS {
-            let candidate = root.join(format!("{map_name}.{ext}"));
-            if crate::util::file_system::exists(&candidate) {
+            if let Some(candidate) = existing_map_file(root.join(format!("{map_name}.{ext}"))) {
                 return Ok(candidate);
             }
         }
@@ -571,7 +594,8 @@ fn decode_metadata_with_assets(input: MapInput<'_>, assets: &AssetManager) -> Re
 }
 
 /// Both gameplay and shell metadata use this one loose-before-MIX resolution
-/// policy. Preserve the existing fallback on a failed loose parse.
+/// policy and the supplied provider's mod choice, not another process-global
+/// selection. Preserve the existing fallback on a failed loose parse.
 fn load_map_input_with_assets<T>(
     ra2_dir: &Path,
     map_name: &str,
@@ -579,7 +603,7 @@ fn load_map_input_with_assets<T>(
     limit: Option<usize>,
     decode: impl Fn(MapInput<'_>) -> Result<T>,
 ) -> Result<T> {
-    let local = local_map_path(ra2_dir, map_name)
+    let local = local_map_path_in(assets.mod_dir(), ra2_dir, downloaded_maps_dir(), map_name)
         .and_then(|path| read_loose_map_input_bounded(&path, limit))
         .and_then(&decode);
     match local {
@@ -1922,6 +1946,64 @@ mod tests {
                 .count(),
             1,
             "no staged files escape"
+        );
+    }
+
+    #[test]
+    fn asset_aware_map_readers_use_the_selected_mod_without_global_setup() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+
+        let base = crate::assets::asset_manager::test_support::audio_test_install("map-base");
+        let selected_mod = TestDirectory::new("map-selected-mod");
+        let base_map = [SOURCE_TEST_MAP, b"[Basic]\nName=Base arena\n"].concat();
+        let mod_map = [SOURCE_TEST_MAP, b"[Basic]\nName=Mod arena\n"].concat();
+        std::fs::write(base.path().join("Arena.map"), &base_map).unwrap();
+        selected_mod.write("ARENA.MAP", &mod_map);
+        let assets = AssetManager::with_mod(
+            base.path(),
+            Some(selected_mod.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let gameplay =
+            load_map_by_name_or_path_with_assets(base.path(), "Arena.map", &assets).unwrap();
+        let metadata =
+            load_map_ini_by_name_or_path_with_assets(base.path(), "Arena.map", &assets).unwrap();
+        let network = load_network_map_ini(base.path(), "Arena.map", &assets).unwrap();
+        let identity = map_source_identity(base.path(), "Arena.map", &assets).unwrap();
+        for ini in [&gameplay.map.ini, &metadata.ini, &network.ini] {
+            assert_eq!(
+                ini.section_or_empty("Basic").read_name("Name", 128),
+                Some("Mod arena")
+            );
+        }
+        let digest = sha256_hex(&mod_map);
+        for source in [
+            &gameplay.source,
+            &metadata.source,
+            &network.source,
+            &identity,
+        ] {
+            let LoadedMapSource::Loose { path, .. } = source else {
+                panic!("the selected mod's loose map must win");
+            };
+            assert_eq!(path.parent(), Some(selected_mod.path()));
+            assert_eq!(
+                source.physical_identity(),
+                Some((mod_map.len(), digest.as_str()))
+            );
+        }
+
+        let original = AssetManager::new(base.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        let metadata =
+            load_map_ini_by_name_or_path_with_assets(base.path(), "Arena.map", &original).unwrap();
+        assert_eq!(
+            metadata
+                .ini
+                .section_or_empty("Basic")
+                .read_name("Name", 128),
+            Some("Base arena")
         );
     }
 

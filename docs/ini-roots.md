@@ -96,6 +96,8 @@ INI. With the player's Ares setting on Auto, it uses Ares reading for this
 launch. Off refuses the mod and explains how to enable it. The saved player
 setting is unchanged. See [Ares](ares.md#the-ares-setting). A declaration does
 not load a DLL or supply missing files.
+Ares is currently the supported declaration. Any other extension marked as
+required is refused instead of being silently ignored.
 
 The process asset owner freezes the chosen files and archive names. Recovery
 uses that same choice rather than rereading a changed manifest or guessing

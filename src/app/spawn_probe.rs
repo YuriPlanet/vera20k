@@ -7,7 +7,7 @@
 //! and colour indices spawn.ini fields address, and the campaigns a
 //! single-player launch may start. Every value comes from the
 //! owner the match itself uses: [`agreement::version`], the process
-//! [`ProcessAssets`] rules digest for the Battle mode, and
+//! [`ProcessAssets`] rules digest for the loaded default Skirmish mode, and
 //! [`crate::map::source::load_network_map_ini`] for the map, so two
 //! installations whose probes agree pass each other's agreement.
 //!
@@ -18,9 +18,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::app::frontend::cncnet_spawn::{
-    max_spawn_color_index, max_spawn_country_index, spawn_battle_mode, spawn_modes,
-};
+use crate::app::frontend::cncnet_spawn::{max_spawn_color_index, max_spawn_country_index};
 use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_network_setup::agreement;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
@@ -38,8 +36,8 @@ pub(crate) struct ProbeReport {
     /// build hash. `ExpectedVersion`.
     pub version: String,
     pub build_identity: BuildIdentity,
-    /// The multiplayer rules agreement for spawn Battle launches
-    /// (`MPBattleMD.ini`). `ExpectedRulesDigest`.
+    /// The multiplayer rules agreement for the loaded default Skirmish mode:
+    /// eligible id 1, else the first eligible row. `ExpectedRulesDigest`.
     pub rules_digest: String,
     /// `GameMode=` values and each one's agreement: the digest covers the mode's
     /// INI, so `ExpectedRulesDigest` must come from the row the launch selects.
@@ -267,11 +265,17 @@ pub(crate) fn probe(
         ares_setting,
         true,
     )?;
+    let modes = crate::skirmish_modes::skirmish_modes_from_assets(
+        process.manager().context("retail sources missing")?,
+    )?;
+    let default_mode = crate::skirmish_modes::default_skirmish_mode(&modes)
+        .context("the selected mode catalog has no Skirmish game mode")?;
     let rules_digest = process
-        .multiplayer_rules_digest(&spawn_battle_mode().override_file)
+        .multiplayer_rules_digest(&default_mode.override_file)
         .map_err(anyhow::Error::msg)
-        .context("could not digest the multiplayer rules")?;
-    let game_modes = spawn_modes()
+        .context("could not digest the default multiplayer rules")?;
+    let game_modes = modes
+        .iter()
         .map(|mode| {
             process
                 .multiplayer_rules_digest(&mode.override_file)
@@ -871,5 +875,70 @@ mod tests {
         );
         assert_eq!(identity.map.effective_digest.len(), 64);
         assert_eq!(identity.start_waypoints, 3);
+    }
+
+    #[test]
+    fn selected_catalog_probe_reports_custom_mode_and_its_actual_rules() {
+        let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let root = crate::map::source::test_support::TestDirectory::new("probe-selected-mode");
+        let mod_dir = root.path().join("Mods").join("Catalog");
+        std::fs::create_dir_all(&mod_dir).unwrap();
+        std::fs::write(mod_dir.join("mod.ini"), "[Files]\nModes=custom-modes.ini\n").unwrap();
+        std::fs::write(
+            mod_dir.join("custom-modes.ini"),
+            "[Battle]\n12=GUI:Custom,STT:Custom,selected-mode.ini,standard,true\n",
+        )
+        .unwrap();
+        std::fs::write(mod_dir.join("selected-mode.ini"), "[General]\nGravity=17\n").unwrap();
+        root.write(
+            "config.toml",
+            format!(
+                "[paths]\nra2_dir='{}'\nsettings_dir='{}'\nmod='Catalog'\n",
+                retail.display(),
+                root.path().display()
+            )
+            .as_bytes(),
+        );
+        let config =
+            crate::util::config::GameConfig::load_from(root.path(), &root.path().join("vera20k"))
+                .unwrap();
+        let selected = || crate::app::mods::launch_mod(&config.paths, None).unwrap();
+        let report = probe(
+            &config,
+            Default::default(),
+            MediaArchiveMode::STOCK_DIGITAL,
+            None,
+            selected(),
+            crate::util::ares_launch::AresSetting::Auto,
+        )
+        .unwrap();
+        let (process, _, _) = load_process_sources(
+            &config,
+            Default::default(),
+            MediaArchiveMode::STOCK_DIGITAL,
+            selected(),
+            crate::util::ares_launch::AresSetting::Auto,
+            false,
+        )
+        .unwrap();
+        let expected = process
+            .multiplayer_rules_digest("selected-mode.ini")
+            .unwrap();
+        assert_eq!(
+            report
+                .game_modes
+                .iter()
+                .map(|mode| mode.id)
+                .collect::<Vec<_>>(),
+            [12]
+        );
+        assert_eq!(report.game_modes[0].rules_digest, expected);
+        assert_eq!(report.rules_digest, expected);
+        assert_ne!(
+            report.rules_digest,
+            process.multiplayer_rules_digest("MPBattleMD.ini").unwrap()
+        );
     }
 }

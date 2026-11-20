@@ -344,6 +344,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--mod-dir"
                     | "--ares"
                     | "--all-mixes"
                     | "--ini-profile"
@@ -360,6 +361,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--mod-dir"
                     | "--ares"
                     | "--all-mixes"
                     | "--strict"
@@ -375,6 +377,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--mod-dir"
                     | "--ares"
                     | "--ini-profile"
                     | "--rules-ini"
@@ -600,6 +603,9 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     if let Some(config) = &cli.ini_roots {
         config.validate()?;
     }
+    if cli.ini_source_only && cli.mod_dir.is_some() {
+        return Err("--source-only cannot be combined with --mod-dir; use the source directory with --ra2-dir or inspect the mod's normal archive stack".into());
+    }
     Ok(cli)
 }
 
@@ -658,6 +664,48 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
 #[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mod_directory_is_accepted_by_each_ini_command() {
+        for mut words in [
+            vec!["ini-roots"],
+            vec![
+                "ini-get", "TEST", "Voxel", "--domain", "art", "--reader", "raw",
+            ],
+            vec![
+                "ini-type",
+                "TEST",
+                "--domain",
+                "rules",
+                "--map",
+                "example.map",
+                "--mode-id",
+                "1",
+            ],
+            vec!["ini-expand", "example.ini"],
+        ] {
+            words.extend(["--mod-dir", "mods/example"]);
+            let cli = parse(args(&words)).unwrap();
+            assert_eq!(
+                cli.mod_dir.as_deref(),
+                Some(std::path::Path::new("mods/example"))
+            );
+        }
+    }
+
+    #[test]
+    fn mod_directory_cannot_silently_override_source_only() {
+        let error = parse(args(&[
+            "ini-expand",
+            "example.ini",
+            "--mod-dir",
+            "mods/example",
+            "--source-only",
+        ]))
+        .err()
+        .expect("source-only and a mod must be refused");
+        assert!(error.contains("--source-only cannot be combined with --mod-dir"));
+    }
 
     #[test]
     fn ini_roots_cli_keeps_profile_choice_whole_and_rejects_other_verbs() {

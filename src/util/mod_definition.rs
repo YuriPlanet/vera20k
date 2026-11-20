@@ -140,12 +140,19 @@ impl ModDefinition {
                     };
                     *slot = value.to_owned();
                 }
-                "extensions" if key == "ares" => {
-                    definition.requires_ares = match value.to_ascii_lowercase().as_str() {
+                "extensions" => {
+                    let required = match value.to_ascii_lowercase().as_str() {
                         "yes" | "true" | "1" => true,
                         "no" | "false" | "0" => false,
-                        _ => return Err("[Extensions] Ares must be yes or no".into()),
+                        _ => return Err(format!("[Extensions] {key} must be yes or no")),
                     };
+                    if key == "ares" {
+                        definition.requires_ares = required;
+                    } else if required {
+                        return Err(format!(
+                            "This build does not support required extension '{key}'. Use a compatible build or mod."
+                        ));
+                    }
                 }
                 _ => {}
             }
@@ -203,5 +210,22 @@ fn stock_files() -> IniRootConfig {
         art: Some(stock.art().into()),
         ai: Some(stock.ai().into()),
         ..IniRootConfig::default()
+    }
+}
+
+#[cfg(all(test, tests_util))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_required_extensions_are_refused() {
+        assert!(ModDefinition::parse("[Extensions]\nOtherEngine=yes\n").is_err());
+        assert!(ModDefinition::parse("[Extensions]\nOtherEngine=no\n").is_ok());
+        let definition = ModDefinition::parse("[Extensions]\nAres=yes\n").unwrap();
+        assert!(
+            definition
+                .resources(&IniRootConfig::default())
+                .requires_ares
+        );
     }
 }
