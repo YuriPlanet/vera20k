@@ -109,8 +109,10 @@ impl StringInterner {
         self.types = TypeHandleTable::build(rules, self).into();
     }
 
-    /// Bind the strings interned since [`Self::bind_types`] as well, when
-    /// `rules` is the set it bound; nothing when none are new.
+    /// Bind the strings interned since [`Self::bind_types`] as well: the
+    /// object columns when `rules` is the set it bound, the AnimType columns
+    /// for whatever set and ART layout `rules` holds. Nothing when none are
+    /// new and the AnimType columns are current.
     pub fn cover_types(&mut self, rules: &RuleSet) {
         if !self.types.lags(self, rules) {
             return;

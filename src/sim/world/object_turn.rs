@@ -909,8 +909,9 @@ impl Simulation {
         // Civilian-side one once between them (`CivilianSideHouse`).
         self.civilian_house_memo.begin();
         // A projectile's or warhead's name is first interned when something
-        // fires it; bind the names interned since last frame, so a bullet's
-        // visits and hits find its types through handles (VERA-only, answers
+        // fires it, and an anim's when it spawns; bind the names interned
+        // since last frame, so a bullet's visits and hits and an anim's
+        // visits find their types through handles (VERA-only, answers
         // unchanged).
         self.interner.cover_types(rules);
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {

@@ -144,7 +144,9 @@ impl TypeHandleTable {
     }
 
     /// Add the ids `interner` made since this table was built or last
-    /// covered, when `rules` is the set it was built from; else nothing.
+    /// covered. The object columns follow only the set they were built from;
+    /// the AnimType columns restart for whatever set and ART layout they are
+    /// covered for.
     pub(super) fn cover(&mut self, rules: &RuleSet, interner: &StringInterner) {
         self.anims.cover(rules, interner);
         if self.rules_serial != rules.serial() {

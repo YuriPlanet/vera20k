@@ -1219,8 +1219,9 @@ impl AnimConfigs {
         Some(&mut self.configs[handle.0 as usize])
     }
 
-    /// # Panics
-    /// On a handle from a registry of another layout ([`Self::serial`]).
+    /// A handle is valid only for the layout it came from ([`Self::serial`]):
+    /// against another layout it reads another type's config, or panics past
+    /// the end.
     fn by_handle(&self, handle: AnimConfigHandle) -> &AnimTypeRuntimeConfig {
         &self.configs[handle.0 as usize]
     }
@@ -1729,8 +1730,10 @@ impl ArtRegistry {
 
     /// The config `handle` names.
     ///
-    /// # Panics
-    /// On a handle from a registry of another [`Self::anim_configs_serial`].
+    /// A handle is valid only under the `&RuleSet` borrow it was read from:
+    /// against a registry of another [`Self::anim_configs_serial`] it reads
+    /// another type's config, or panics past the end. Callers that keep
+    /// handles check that serial (`TypeHandleTable`).
     #[inline]
     pub fn anim_config(&self, handle: AnimConfigHandle) -> &AnimTypeRuntimeConfig {
         self.anim_runtime_configs.by_handle(handle)
