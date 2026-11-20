@@ -37,12 +37,14 @@ impl XccDatabase {
     ///
     /// Format: `[u32 count] [filename\0 description\0]*count`
     pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
-        if data.len() < 4 {
+        let Some((count, _)) = data.split_first_chunk::<4>() else {
             return Err("XCC database too small (< 4 bytes)".to_string());
-        }
+        };
 
-        let count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
-        let mut entries = Vec::with_capacity(count);
+        let count = u32::from_le_bytes(*count) as usize;
+        // Each entry is at least its two terminators, which bounds what the
+        // count may reserve.
+        let mut entries = Vec::with_capacity(count.min(data.len() / 2));
         let mut pos: usize = 4;
 
         for i in 0..count {
