@@ -1078,7 +1078,10 @@ fn merge_building_records(
             continue;
         }
         // `if (group->Distance > cellSpread) continue;` (`:430-431`).
-        if event.distance_leptons > spread_leptons {
+        // Phobos' `Distance` is whole cells; VERA's lepton field truncates to
+        // the same cells before the comparison.
+        let distance_cells = (event.distance_leptons / 256) as f64;
+        if distance_cells > spread_leptons as f64 / 256.0 {
             continue;
         }
         // `(cellSpread && percentDifference) ? 1.0 - (percentDifference *

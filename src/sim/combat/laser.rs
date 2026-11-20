@@ -221,31 +221,6 @@ pub(crate) fn fired(
         };
         (width, supported)
     };
-    // Ares TechnoClass_Fire_IsLaser (100563D0, hook 0x6FF4DE) skips the stock
-    // widths (to 0x6FF656). The fired weapon's `LaserThickness=` (unset -1)
-    // sets them: a building's beam is it or 3, and a `PrismForwarding=` tower
-    // that can fire, with SupportingPrisms (Ares: the longest chain behind
-    // it), thickens by `-Intensity` (a negative one) or `Intensity` per link
-    // (a positive one) and is always supported. Any other firer's beam is it
-    // (supported above 3) or 2.
-    let (width, supported) = if source.category() == EntityCategory::Structure {
-        let forwarding = obj.building_type_ext().prism_forwarding();
-        let base = if thickness < 0 { 3 } else { thickness };
-        if forwarding.can_attack() && prism_support_count > 0 {
-            let width = match forwarding.intensity() {
-                intensity @ i32::MIN..0 => base.wrapping_sub(intensity),
-                0 => base,
-                intensity => base.wrapping_add(intensity.wrapping_mul(prism_support_count)),
-            };
-            (width, true)
-        } else {
-            (base, false)
-        }
-    } else if thickness < 0 {
-        (2, false)
-    } else {
-        (thickness, thickness > 3)
-    };
     // Phobos `TechnoClass_DrawSth_DrawToInvisoFlakScatterLocation`
     // (`0x6FD38D`, `Ext/Techno/Hooks.WeaponEffects.cpp:220-248`): a
     // `VisualScatter=` weapon's draw replaces the endpoint inside SpawnLaser,

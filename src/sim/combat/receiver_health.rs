@@ -273,7 +273,6 @@ pub(super) fn commit_receiver_health(
         let time = psychedelic_berserk_time(world, rules, event, value);
         let target = world.substrate.entities.get_mut(target_id)?;
         target.berserk.psychedelic_stack(time);
-        target.berserk.start(time);
         return Some(ReceiverHealthCommit {
             building_entry_frame,
             state: damage::DamageState::Damaged,
