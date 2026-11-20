@@ -12236,22 +12236,25 @@ fn parse_particle_system_types(
 mod tests {
     /// Ares TechnoTypeClass::Find (10007EA0): the first TechnoType whose ID
     /// matches ignoring ASCII case, none for `none`/`<none>` or an unknown
-    /// name; indexed once, the answers of the scan.
+    /// name; indexed once, the answers of the scan. `Dup` and `DUP` sit in two
+    /// arrays: the vehicle comes first in the native order and wins.
     #[test]
     fn ares_find_techno_type_matches_ignoring_case() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[InfantryTypes]
 0=E1
+1=DUP
 [VehicleTypes]
 0=MTNK
+1=Dup
 [AircraftTypes]
-             [BuildingTypes]
+[BuildingTypes]
 0=GAPOWR
 [E1]
 Strength=125
 [MTNK]
 Strength=300
-             [GAPOWR]
+[GAPOWR]
 Strength=750
 ",
         ))
@@ -12267,6 +12270,7 @@ Strength=750
         assert_eq!(find("none"), None);
         assert_eq!(find("<none>"), None);
         assert_eq!(find("HTNK"), None);
+        assert_eq!(find("dup"), Some("Dup"));
     }
 
     #[test]
