@@ -234,6 +234,7 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         teams.push((team, expected_target, expected_focus, id));
     }
     assert!(sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,

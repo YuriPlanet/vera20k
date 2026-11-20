@@ -536,6 +536,71 @@ pub const VERA_EJECT_BUNKER_OPCODE: u8 = 0x31;
 pub const VERA_PAID_SUPER_OPCODE: u8 = 0x30;
 pub const VERA_CYCLE_PRODUCER_OPCODE: u8 = 0x32;
 pub const VERA_PAID_SUPER_PAYLOAD_LEN: u8 = 21;
+pub const TARGET_HOUSE_OPCODE: u8 = 0x33;
+pub const TARGET_HOUSE_PAYLOAD_LEN: u8 = 2 + VERA_PAID_SUPER_PAYLOAD_LEN;
+
+/// An explicit third-party House for a VERA economic event. The enclosing
+/// record retains the issuing source in its native header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetHouseRecord {
+    pub target_house: u8,
+    pub command: CommandRecord,
+}
+
+impl TargetHouseRecord {
+    fn inner_payload_len(opcode: u8) -> Option<usize> {
+        match opcode {
+            PRODUCE_OPCODE | SUSPEND_OPCODE | ABANDON_OPCODE | ABANDON_ALL_OPCODE => Some(12),
+            PLACE_OPCODE => Some(16),
+            SpecialPlaceRecord::OPCODE => Some(8),
+            VERA_PAID_SUPER_OPCODE => Some(usize::from(VERA_PAID_SUPER_PAYLOAD_LEN)),
+            VERA_CYCLE_PRODUCER_OPCODE => Some(1),
+            _ => None,
+        }
+    }
+
+    pub fn encode(target_house: u8, command: &CommandRecord) -> Option<CommandRecord> {
+        if command.house_id() < 0 {
+            return None;
+        }
+        let length = Self::inner_payload_len(command.opcode())?;
+        let mut payload = [0; TARGET_HOUSE_PAYLOAD_LEN as usize];
+        payload[0] = target_house;
+        payload[1] = command.opcode();
+        payload[2..2 + length].copy_from_slice(&command.payload()[..length]);
+        CommandRecord::encode(
+            TARGET_HOUSE_OPCODE,
+            i32::from(command.house_id()),
+            command.frame_stamp(),
+            &payload,
+        )
+        .ok()
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != TARGET_HOUSE_OPCODE || record.house_id() < 0 {
+            return None;
+        }
+        // Local mirrors retain the fixed record tail beyond the transmitted body.
+        let payload = &record.payload()[..usize::from(TARGET_HOUSE_PAYLOAD_LEN)];
+        let opcode = payload[1];
+        let length = Self::inner_payload_len(opcode)?;
+        if payload[2 + length..].iter().any(|&byte| byte != 0) {
+            return None;
+        }
+        let command = CommandRecord::encode(
+            opcode,
+            i32::from(record.house_id()),
+            record.frame_stamp(),
+            &payload[2..2 + length],
+        )
+        .ok()?;
+        Some(Self {
+            target_house: payload[0],
+            command,
+        })
+    }
+}
 
 impl ObjectAction {
     pub const fn opcode(self) -> u8 {
@@ -1911,6 +1976,32 @@ mod tests {
         NULL_TARGET_KIND, REPAIR_OPCODE, RepairRecord, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE,
         ScatterRecord, SellWallAtCellRecord, StopRecord,
     };
+
+    #[test]
+    fn explicit_economic_target_retains_the_native_source_and_only_wraps_economy() {
+        use super::{SpecialPlaceRecord, TargetHouseRecord};
+
+        let native = SpecialPlaceRecord {
+            house_id: 1,
+            frame: 42,
+            type_index: 5,
+            cell: (11, 20),
+        }
+        .encode()
+        .unwrap();
+        let mut targeted = TargetHouseRecord::encode(3, &native).unwrap();
+        assert_eq!(targeted.house_id(), 1);
+        assert_eq!(targeted.frame_stamp(), 42);
+        let decoded = TargetHouseRecord::decode(&targeted).unwrap();
+        assert_eq!(decoded.target_house, 3);
+        assert_eq!(decoded.command, native);
+
+        let exit = CommandRecord::encode(EXIT_OPCODE, 1, 42, &[]).unwrap();
+        assert!(TargetHouseRecord::encode(3, &exit).is_none());
+        assert!(TargetHouseRecord::encode(2, &targeted).is_none());
+        targeted.payload_mut()[10] = 1;
+        assert!(TargetHouseRecord::decode(&targeted).is_none());
+    }
 
     fn native_record(value: &serde_json::Value) -> CommandRecord {
         let hex = value.as_str().unwrap();

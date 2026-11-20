@@ -252,6 +252,7 @@ impl Fixture {
                 Some(EngineerBuildingAction::Repair(true))
             );
             assert!(sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &Command::CaptureBuilding {
                     engineer_id: id,

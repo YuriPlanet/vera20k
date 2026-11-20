@@ -617,6 +617,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let command = |sim: &mut Simulation, command: Command| {
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &command,
             &rules,

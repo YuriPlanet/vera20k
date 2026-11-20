@@ -1633,6 +1633,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
             .complete_shot(2);
     }
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
@@ -1766,6 +1767,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     super::world_commands::clear_wall_sell_zone_repair_test_trace();
 
     assert!(sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
@@ -1991,6 +1993,7 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
     sim.resolved_terrain = Some(terrain);
 
     assert!(sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 1 },
         &rules,
@@ -2097,6 +2100,7 @@ fn gsi_04_07_wall_sell_eligibility_gate_matrix_rejects_without_mutation() {
 
     let sell = |sim: &mut Simulation, rules: &RuleSet| {
         sim.apply_command_with_overlays(
+            None,
             "Receiver",
             &Command::SellWallAtCell { x: 1, y: 1 },
             rules,
@@ -2151,6 +2155,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     grid.place_owned_wall(0, 2, 2, 0, wall_owner);
     sim.overlay_grid = Some(grid);
     assert!(!sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
         &unsellable_rules,
@@ -2164,6 +2169,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
 
     let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
     assert!(sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
@@ -2179,6 +2185,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     assert!(!sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
@@ -2190,6 +2197,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
         .unwrap()
         .set_is_human_for_test(true);
     assert!(sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
@@ -2197,6 +2205,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
         crate::sim::world::FrameEffects::default(),
     ));
     assert!(!sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 0, y: 0 },
         &rules,

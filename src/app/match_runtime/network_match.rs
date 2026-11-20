@@ -179,7 +179,7 @@ pub(crate) fn destroy_connection(
             // (0x005DA898..0x005DA8F0); it kills the House on every peer.
             // VERA shared control: the lost participant's sender, which is
             // that index unless players share Houses.
-            let local = sim.session().current_house();
+            let local = sim.control_projection().local_command_house();
             let sender = source_house(session, sim, source_index);
             if let (Some(local), Some(sender)) = (local, sender) {
                 let local = sim.interner().resolve(local).to_string();
@@ -596,13 +596,17 @@ pub(crate) enum WaitPass {
 }
 
 pub(crate) fn local_source(session: &MatchSession) -> Option<usize> {
+    if session.local_connection_watches() {
+        return None;
+    }
     session
         .network_setup()
         .map(|launch| launch.local_player_index)
 }
 
 /// The connection nodes `[0x00A8DA78]` (count `[0x00A8DA84]`): the local
-/// player first, then the connected peers in participant order.
+/// player first, then the connected peers in participant order. A relay
+/// viewer has no local lockstep node.
 pub(crate) fn nodes(session: &MatchSession) -> Vec<usize> {
     let Some(local) = local_source(session) else {
         return Vec::new();

@@ -73,6 +73,7 @@ fn charge(sim: &mut Simulation, rules: &RuleSet, owner: &str) -> InternedId {
 fn fire(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) {
     let sw = charge(sim, rules, "Americans");
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,

@@ -58,6 +58,39 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
     assert!(sim.create_team(team_type, None, &rules).is_none());
 }
 
+#[test]
+fn team_limit_scope_can_be_overridden_in_the_same_skirmish() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let mode = ScenarioGameMode::Skirmish;
+    let stock = mode.stock_rule_policy(None);
+    let rules = RuleSet::from_ini(&IniFile::from_str("[Countries]\n0=Americans\n")).unwrap();
+    let map = IniFile::from_str(
+        "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nMax=1\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,0\n[TaskForces]\n0=F\n",
+    );
+    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, stock);
+    let mut sim = Simulation::new();
+    let first = sim.interner.intern("First");
+    let second = sim.interner.intern("Second");
+    for (index, house) in [first, second].into_iter().enumerate() {
+        sim.register_house(HouseState::new(house, index as u8, None, true, 0, 1));
+    }
+    sim.install_team_ai_registry(&registry, &rules);
+    let team_type = sim.interner.get("TT").unwrap();
+
+    sim.install_session_admission(
+        mode,
+        None,
+        stock.with_team_creation_limit_scope(TeamLimitScope::AllHouses),
+    );
+    assert!(sim.create_team(team_type, Some(first), &rules).is_some());
+    assert!(sim.create_team(team_type, Some(second), &rules).is_none());
+
+    sim.install_session_admission(mode, None, stock);
+    assert!(sim.create_team(team_type, Some(second), &rules).is_some());
+}
+
 fn rows(kind: &str, count: usize) -> Vec<Value> {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/team_creation.json",

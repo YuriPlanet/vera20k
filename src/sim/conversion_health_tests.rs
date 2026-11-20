@@ -120,6 +120,7 @@ fn building_conversion_reads_health_when_animation_finishes() {
     damage(&mut sim, source, 750);
     assert!(sim.undeploy_building(
         source,
+        false,
         &rules,
         None,
         crate::sim::world::FrameEffects::default()
@@ -172,6 +173,7 @@ fn undeploy(sim: &mut Simulation, rules: &RuleSet, building: u64, into: &str) ->
         .finish_building_construction_for_test();
     assert!(sim.undeploy_building(
         building,
+        false,
         rules,
         None,
         crate::sim::world::FrameEffects::default()

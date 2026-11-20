@@ -1,8 +1,14 @@
 # Skirmish cheat codes
 
-In **Skirmish → Game Options**, tick **Allow cheat codes**. During the match,
-press **/** to open the command line. The slash is already there. Type the rest
-of the command and press **Enter** to run it, or **Esc** to cancel.
+During an offline skirmish, press **Enter** or **Backspace** to open chat.
+Type a message and press **Enter** to display it in your match. Long messages
+appear a chunk at a time as you type. **Esc** cancels the text still on the line.
+Local chat works even with cheats off.
+
+To use commands, tick **Allow cheat codes** in **Skirmish → Game Options**
+before the match. Open chat, type the full command (for example, `/help`),
+and press **Enter**. With cheats on, **/** also opens chat with the slash
+already entered.
 
 | Command | Effect |
 | --- | --- |

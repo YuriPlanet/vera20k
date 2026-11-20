@@ -1107,6 +1107,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
             let expected = ground_command_nav_target(&dispatch["after"]).unwrap();
             assert_eq!(NavTargetRef::cell(target_rx, target_ry), expected);
             assert!(sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &decoded.payload,
                 &rules,
@@ -1148,6 +1149,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
         };
         if let Some(stop) = stop {
             assert!(sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &Command::Stop { entity_id: id },
                 &rules,
@@ -1168,6 +1170,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
         );
         assert!(matches!(decoded.payload, Command::Move { .. }));
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &decoded.payload,
             &rules,
@@ -1215,6 +1218,7 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
     };
     assert!(
         sim.apply_command_with_overlays(
+            None,
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1267,6 +1271,7 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
         .unwrap()
         .unwrap();
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::Move {
             entity_id: id,
@@ -1346,6 +1351,7 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
             .unwrap()
             .unwrap();
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1634,6 +1640,7 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
         .unwrap()
         .unwrap();
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::Move {
             entity_id: id,

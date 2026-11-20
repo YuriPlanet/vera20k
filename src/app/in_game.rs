@@ -84,6 +84,9 @@ impl App {
     /// stops the elapsed clock, theme, sounds and speech before
     /// Start_Scenario).
     fn retire_running_scenario(state: &mut AppState) {
+        // Close out the last frame before retiring its movie hold or
+        // returning its transport to the shell.
+        crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
         // Shell return and campaign restart both end the installed match.
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         Self::browser_match_ended(state, super::cncnet::ExternalMatchResult::Quit);
@@ -118,11 +121,11 @@ impl App {
         state.match_state.match_presentation.saved_game_browser = None;
         state.match_state.network_wait = Default::default();
         state.match_state.network_failure = None;
-        state.match_state.frame_stopped = false;
         crate::app::lan_service::return_transport(state);
         // Persist the deterministic diagnostic log before leaving the scenario.
         // Runtime and presentation resources remain retained in the shell.
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
+        state.match_state.frame_stopped = false;
         Self::capture_returned_multiplayer_scenario(state);
         Self::persist_returned_session_toggles(state);
         state.match_state.startup.clear();

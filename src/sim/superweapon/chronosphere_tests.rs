@@ -616,6 +616,7 @@ fn retail_chrono_warped_harrier_takes_off_at_its_next_order() {
         target_ry: TARGET.1,
     };
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &command,
         &rules,
@@ -670,6 +671,7 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
             target_ry: ry,
         };
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &command,
             &rules,
@@ -755,6 +757,7 @@ fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
         target_ry: 20,
     };
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &command,
         &rules,

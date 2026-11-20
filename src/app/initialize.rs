@@ -555,14 +555,36 @@ impl App {
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
-        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
-        let gpu = GpuContext::new(
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let backends = crate::app::persistence::startup_backend::backends(
+            game_config
+                .as_ref()
+                .map(|config| config.paths.settings_dir()),
+        );
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let gpu = match GpuContext::new(
             window.clone(),
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
-        )?;
+            backends,
+        ) {
+            // The API the start record asks for has no adapter here (DirectX
+            // 12 on a Windows without it): the default set; the record stays.
+            Err(error) if backends != wgpu::Backends::PRIMARY => {
+                log::warn!(
+                    "No graphics adapter through {backends:?} ({error:#}); starting on the default graphics APIs"
+                );
+                GpuContext::new(
+                    window.clone(),
+                    event_loop.owned_display_handle(),
+                    capture || hidden_spawn_window,
+                    wgpu::Backends::PRIMARY,
+                )?
+            }
+            result => result?,
+        };
         // On the processor, building the renderers and reaching the first
         // picture can take minutes, and the window stays blank until then: a
         // player is told why while the start goes on.
@@ -1309,7 +1331,6 @@ impl App {
                 wol_room_name: None,
                 wol_room_unranked: false,
                 wol_room_watching: Default::default(),
-                lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
                 wol_login_art: None,

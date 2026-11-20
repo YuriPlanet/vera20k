@@ -127,11 +127,29 @@ impl Eq for HouseAlliances {}
 
 impl HouseAlliances {
     /// A copy that shares no storage with this one, for the presentation
-    /// copy of the world (docs/sim-thread.md); its matrix builds on demand.
-    pub(crate) fn detached(&self) -> Self {
+    /// copy of the world (docs/sim-thread.md), whose interner `to` holds
+    /// `from`'s ids for the same names. A matrix already built for `from` is
+    /// copied in, read through `to`: ids are only ever added, so an id it
+    /// covers names the same house in both, and one it does not cover asks
+    /// the graph by name, as here. Otherwise the copy's matrix builds on
+    /// demand.
+    pub(crate) fn detached(&self, from: &StringInterner, to: &StringInterner) -> Self {
+        let matrix = OnceLock::new();
+        if let Some(built) = self
+            .matrix
+            .get()
+            .and_then(Option::as_deref)
+            .filter(|built| built.interner == from.serial())
+        {
+            let copied = AllyMatrix {
+                interner: to.serial(),
+                ..built.clone()
+            };
+            let _ = matrix.set(Some(Arc::new(copied)));
+        }
         Self {
             graph: Arc::new((*self.graph).clone()),
-            matrix: OnceLock::new(),
+            matrix,
         }
     }
 

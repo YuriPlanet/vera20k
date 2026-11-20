@@ -28,6 +28,7 @@ use crate::skirmish_launch::{
     LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchOptions,
     SkirmishLaunchSession, SkirmishLocalSlot,
 };
+use std::net::SocketAddrV4;
 use std::sync::Arc;
 
 pub(crate) use crate::sim::scenario_session::ScenarioGameMode as SessionMode;
@@ -42,6 +43,35 @@ pub(crate) enum NetworkReturnContext {
     LanLobby,
     /// The WOL custom lobby `0x113` (Custom Match, mode 4).
     Wol,
+}
+
+/// The post-match disposition admitted with the match. The shell and lobby
+/// protocol consume or project it as the finished match returns.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) enum NetworkRoomReturn {
+    #[default]
+    Lobby,
+    LanHost,
+    LanGuest {
+        host: String,
+        game_id: u64,
+        until: Option<crate::util::time::Instant>,
+    },
+    Wol {
+        cooperative: Option<CooperativeResume>,
+    },
+}
+
+/// The Cooperative stage selected by BC6's Continue for a kept WOL room.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CooperativeResume {
+    pub(crate) mode_id: i32,
+    pub(crate) scenario: usize,
+}
+
+pub(crate) enum LanRoomRejoin {
+    Join(u64),
+    Expired(String),
 }
 
 impl NetworkReturnContext {
@@ -214,11 +244,30 @@ struct ParticipantAdmission {
     map_status: u8,
 }
 
+/// A viewer's transport identity. It cannot be translated into a command
+/// sender, setup seat, or House index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ConnectionWatcher {
+    endpoint: SocketAddrV4,
+    local: bool,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+struct ConnectionRoster {
+    /// Indices into the immutable launch's native nodes. This also keeps the
+    /// classic Observer House nodes that take part in native lockstep.
+    playing_sources: Vec<usize>,
+    watching_sources: Vec<ConnectionWatcher>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum NetworkPhase {
-    Lobby,
+    Lobby {
+        room_return: NetworkRoomReturn,
+    },
     Setup {
         launch: SkirmishLaunchSession,
+        watching_sources: Vec<ConnectionWatcher>,
         admission: Vec<ParticipantAdmission>,
         vacancies: [NetworkVacancy; NETWORK_PLAYER_SLOT_COUNT],
         /// Authoritative only while the corresponding row is vacant. Entering
@@ -248,23 +297,42 @@ enum NetworkPhase {
         /// is free (`launch.options.queue`), unless the online lobby
         /// refused the queue.
         join_queue: bool,
+        /// A kept WOL co-op room is seating the same partner again.
+        cooperative_rematch_seat: bool,
     },
     Frozen {
         startup: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
-        /// Live source membership indexes the immutable historical launch.
-        connected: Vec<usize>,
+        connections: ConnectionRoster,
+        room_return: NetworkRoomReturn,
     },
     /// The co-op result dialog BC6 between missions: the finished start,
     /// the round's own roster (the next mission's, which the master's
     /// `+0x68`/`0x0069B8C0` or a received `0x32` changes) and its readiness.
     CooperativeRound {
         previous: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
-        connected: Vec<usize>,
+        connections: ConnectionRoster,
         launch: SkirmishLaunchSession,
         round: CooperativeRoundState,
+        room_return: NetworkRoomReturn,
     },
 }
 
+impl NetworkPhase {
+    fn lobby() -> Self {
+        Self::Lobby {
+            room_return: NetworkRoomReturn::Lobby,
+        }
+    }
+
+    fn room_return_mut(&mut self) -> Option<&mut NetworkRoomReturn> {
+        match self {
+            Self::Lobby { room_return }
+            | Self::Frozen { room_return, .. }
+            | Self::CooperativeRound { room_return, .. } => Some(room_return),
+            Self::Setup { .. } => None,
+        }
+    }
+}
 /// A packet the battle or the co-op round asks the LAN service to send.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NetworkSendRequest {
@@ -288,6 +356,9 @@ pub(crate) enum NetworkSendRequest {
     CooperativeReady,
     /// BC6's `0x24` (Quit) to every node.
     CooperativeLeave,
+    /// A bounded co-op handoff failed. Use the existing scoped LAN departure
+    /// so a peer which already started loading retires that same admission.
+    CooperativeAbort,
     /// The master's `0x34`.
     CooperativeBegin,
     /// The master's `0x32` to every bound human slot.
@@ -558,7 +629,7 @@ impl MatchSession {
             proposed_seed: None,
             max_ahead_frames: None,
             return_context,
-            phase: NetworkPhase::Lobby,
+            phase: NetworkPhase::lobby(),
         });
     }
 
@@ -606,12 +677,14 @@ impl MatchSession {
         let display_ai = display_ai_rows(&launch);
         network.phase = NetworkPhase::Setup {
             display_ai,
+            watching_sources: Vec::new(),
             capacity: 8,
             observer_row,
             several_observers,
             open_spectators: false,
             people_limit: NETWORK_PLAYER_SLOT_COUNT as u8,
             join_queue: several_observers,
+            cooperative_rematch_seat: false,
             launch,
             admission,
             vacancies: [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT],
@@ -688,7 +761,7 @@ impl MatchSession {
 
     pub(crate) fn network_setup(&self) -> Option<&SkirmishLaunchSession> {
         match &self.network.as_ref()?.phase {
-            NetworkPhase::Lobby => None,
+            NetworkPhase::Lobby { .. } => None,
             NetworkPhase::Setup { launch, .. } => Some(launch),
             NetworkPhase::Frozen { startup, .. } => Some(startup.launch_session()),
             NetworkPhase::CooperativeRound { launch, .. } => Some(launch),
@@ -2849,6 +2922,10 @@ impl MatchSession {
         index: usize,
         ready: bool,
     ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.local_connection_watches(),
+            "watching has no readiness vote"
+        );
         self.network_admission_mut(index)?.ready = ready;
         Ok(())
     }
@@ -3192,6 +3269,15 @@ impl MatchSession {
         self.network.as_ref()?.max_ahead_frames
     }
 
+    pub(crate) fn network_campaign_carry_over(
+        &self,
+    ) -> Option<crate::sim::campaign_carry_over::CampaignCarryOver> {
+        let NetworkPhase::Frozen { startup, .. } = &self.network.as_ref()?.phase else {
+            return None;
+        };
+        startup.carry_over().copied()
+    }
+
     pub(crate) fn set_network_start_seed(&mut self, seed: u32) -> anyhow::Result<()> {
         let network = self
             .network
@@ -3231,8 +3317,11 @@ impl MatchSession {
         let max_ahead_frames = network
             .max_ahead_frames
             .ok_or_else(|| anyhow::anyhow!("network start requires accepted timing"))?;
-        let NetworkPhase::Setup { launch, .. } =
-            std::mem::replace(&mut network.phase, NetworkPhase::Lobby)
+        let NetworkPhase::Setup {
+            launch,
+            watching_sources,
+            ..
+        } = std::mem::replace(&mut network.phase, NetworkPhase::lobby())
         else {
             unreachable!()
         };
@@ -3252,8 +3341,12 @@ impl MatchSession {
             .with_random_map_preview(network.local_random_map_preview.clone()),
         );
         network.phase = NetworkPhase::Frozen {
-            connected: (0..startup.launch_session().humans.len()).collect(),
+            connections: ConnectionRoster {
+                playing_sources: (0..startup.launch_session().humans.len()).collect(),
+                watching_sources,
+            },
             startup: Arc::clone(&startup),
+            room_return: NetworkRoomReturn::Lobby,
         };
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(
             startup,
@@ -3270,6 +3363,30 @@ impl MatchSession {
         matches!(&self.network,
             Some(NetworkSession { phase: NetworkPhase::Frozen { startup: admitted, .. }, .. })
                 if Arc::ptr_eq(admitted, startup))
+    }
+
+    /// A scoped departure from a required player retires the frozen attempt
+    /// before presentation can publish a finished local loader result. A
+    /// viewer reads departures from the historical journal after restoration.
+    pub(crate) fn retire_network_start_on_departure(&mut self, source: usize) -> bool {
+        if self.local_connection_watches() {
+            return false;
+        }
+        let Some(NetworkPhase::Frozen {
+            startup,
+            connections,
+            ..
+        }) = self.network.as_ref().map(|network| &network.phase)
+        else {
+            return false;
+        };
+        if source == startup.launch_session().local_player_index
+            || !connections.playing_sources.contains(&source)
+        {
+            return false;
+        }
+        self.return_to_network_lobby();
+        true
     }
 
     /// The loader borrows the same frozen owner as the shell. It cannot adopt
@@ -3301,6 +3418,9 @@ impl MatchSession {
     }
 
     pub(crate) fn report_network_loading_progress(&mut self, percent: i32) {
+        if self.local_connection_watches() {
+            return;
+        }
         if let Some(network) = self.network.as_mut()
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
@@ -3427,26 +3547,99 @@ impl MatchSession {
         let Some(network) = self.network.as_mut() else {
             return false;
         };
-        let NetworkPhase::Frozen { startup, connected } = &mut network.phase else {
+        let NetworkPhase::Frozen {
+            startup,
+            connections,
+            ..
+        } = &mut network.phase
+        else {
             return false;
         };
-        if source_index == startup.launch_session().local_player_index {
+        if source_index == startup.launch_session().local_player_index
+            && !connections
+                .watching_sources
+                .iter()
+                .any(|watcher| watcher.local)
+        {
             return false;
         }
-        let Some(position) = connected.iter().position(|index| *index == source_index) else {
+        let playing = &mut connections.playing_sources;
+        let Some(position) = playing.iter().position(|index| *index == source_index) else {
             return false;
         };
-        connected.remove(position);
+        playing.remove(position);
         true
     }
 
     pub(crate) fn network_connected_source_indices(&self) -> &[usize] {
         match self.network.as_ref().map(|network| &network.phase) {
             Some(
-                NetworkPhase::Frozen { connected, .. }
-                | NetworkPhase::CooperativeRound { connected, .. },
-            ) => connected,
+                NetworkPhase::Frozen { connections, .. }
+                | NetworkPhase::CooperativeRound { connections, .. },
+            ) => &connections.playing_sources,
             _ => &[],
+        }
+    }
+
+    /// The authenticated relay route's local connection is a viewer. The
+    /// launch still identifies the House it initially follows.
+    pub(crate) fn admit_local_network_watcher(
+        &mut self,
+        endpoint: SocketAddrV4,
+    ) -> anyhow::Result<()> {
+        let Some(watching) = self.network_watching_sources_mut() else {
+            anyhow::bail!("watch admission requires an active setup or match");
+        };
+        anyhow::ensure!(
+            !watching.iter().any(|source| source.local),
+            "local watch already admitted"
+        );
+        watching.push(ConnectionWatcher {
+            endpoint,
+            local: true,
+        });
+        Ok(())
+    }
+
+    pub(crate) fn local_connection_watches(&self) -> bool {
+        match self.network.as_ref().map(|network| &network.phase) {
+            Some(NetworkPhase::Setup {
+                watching_sources, ..
+            }) => watching_sources,
+            Some(
+                NetworkPhase::Frozen { connections, .. }
+                | NetworkPhase::CooperativeRound { connections, .. },
+            ) => &connections.watching_sources,
+            _ => return false,
+        }
+        .iter()
+        .any(|source| source.local)
+    }
+
+    pub(crate) fn disconnect_network_watcher(&mut self, endpoint: SocketAddrV4) -> bool {
+        let Some(watching) = self.network_watching_sources_mut() else {
+            return false;
+        };
+        let Some(index) = watching
+            .iter()
+            .position(|source| source.endpoint == endpoint)
+        else {
+            return false;
+        };
+        watching.remove(index);
+        true
+    }
+
+    fn network_watching_sources_mut(&mut self) -> Option<&mut Vec<ConnectionWatcher>> {
+        match &mut self.network.as_mut()?.phase {
+            NetworkPhase::Setup {
+                watching_sources, ..
+            } => Some(watching_sources),
+            NetworkPhase::Frozen { connections, .. }
+            | NetworkPhase::CooperativeRound { connections, .. } => {
+                Some(&mut connections.watching_sources)
+            }
+            NetworkPhase::Lobby { .. } => None,
         }
     }
 
@@ -3454,7 +3647,10 @@ impl MatchSession {
     /// retaining its connection/return context. A later setup is a new admission.
     pub(crate) fn return_to_network_lobby(&mut self) -> Option<NetworkReturnContext> {
         let network = self.network.as_mut()?;
-        network.phase = NetworkPhase::Lobby;
+        let room_return = network.phase.room_return_mut().map(std::mem::take);
+        network.phase = NetworkPhase::Lobby {
+            room_return: room_return.unwrap_or_default(),
+        };
         network.endpoints.clear();
         network.send_requests.clear();
         network.loading_reports.clear();
@@ -3465,6 +3661,98 @@ impl MatchSession {
         network.proposed_seed = None;
         network.max_ahead_frames = None;
         Some(network.return_context)
+    }
+
+    /// Attach the choice to the admitted start only after freeze succeeds.
+    pub(crate) fn set_network_room_return(&mut self, choice: NetworkRoomReturn) {
+        if let Some(NetworkPhase::Frozen { room_return, .. }) =
+            self.network.as_mut().map(|network| &mut network.phase)
+        {
+            *room_return = choice;
+        }
+    }
+
+    pub(crate) fn awaiting_wol_room_return(&self) -> bool {
+        matches!(
+            self.network.as_ref().map(|network| &network.phase),
+            Some(NetworkPhase::Lobby {
+                room_return: NetworkRoomReturn::Wol { .. }
+            })
+        )
+    }
+
+    pub(crate) fn take_network_room_return(&mut self) -> NetworkRoomReturn {
+        self.network
+            .as_mut()
+            .and_then(|network| network.phase.room_return_mut())
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+
+    /// The shell has returned to discovery. Retain the single rejoin intent
+    /// here until the old room is listed, the guest leaves, or it expires.
+    pub(crate) fn wait_for_lan_room(
+        &mut self,
+        host: String,
+        game_id: u64,
+        now: crate::util::time::Instant,
+    ) {
+        if let Some(NetworkPhase::Lobby { room_return }) =
+            self.network.as_mut().map(|network| &mut network.phase)
+        {
+            *room_return = NetworkRoomReturn::LanGuest {
+                host,
+                game_id,
+                until: Some(now + crate::util::time::Duration::from_secs(120)),
+            };
+        }
+    }
+
+    pub(crate) fn poll_lan_room_rejoin(
+        &mut self,
+        now: crate::util::time::Instant,
+        room_open: impl FnOnce(u64) -> bool,
+    ) -> Option<LanRoomRejoin> {
+        let NetworkPhase::Lobby { room_return } = &mut self.network.as_mut()?.phase else {
+            return None;
+        };
+        let NetworkRoomReturn::LanGuest {
+            host,
+            game_id,
+            until: Some(until),
+        } = room_return
+        else {
+            return None;
+        };
+        let outcome = if now >= *until {
+            LanRoomRejoin::Expired(std::mem::take(host))
+        } else if room_open(*game_id) {
+            LanRoomRejoin::Join(*game_id)
+        } else {
+            return None;
+        };
+        *room_return = NetworkRoomReturn::Lobby;
+        Some(outcome)
+    }
+
+    pub(crate) fn await_cooperative_rematch_seat(&mut self) {
+        if let Some(NetworkPhase::Setup {
+            cooperative_rematch_seat,
+            ..
+        }) = self.network.as_mut().map(|network| &mut network.phase)
+        {
+            *cooperative_rematch_seat = true;
+        }
+    }
+
+    pub(crate) fn take_cooperative_rematch_seat(&mut self) -> bool {
+        match self.network.as_mut().map(|network| &mut network.phase) {
+            Some(NetworkPhase::Setup {
+                cooperative_rematch_seat,
+                ..
+            }) => std::mem::take(cooperative_rematch_seat),
+            _ => false,
+        }
     }
 
     pub(crate) fn network_return_context(&self) -> Option<NetworkReturnContext> {
@@ -3892,6 +4180,40 @@ mod tests {
         launch.humans.push(guest);
         launch.local_player_index = 1;
         launch
+    }
+
+    #[test]
+    fn a_connection_watcher_has_no_playing_source_or_load_vote() {
+        use crate::app::match_runtime::network_match;
+
+        let launch = network_fixture();
+        let followed = launch.local_player_index;
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        session
+            .accept_network_setup(launch.clone(), false, None, false)
+            .unwrap();
+        let endpoint = std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 30_001);
+        session.admit_local_network_watcher(endpoint).unwrap();
+        assert!(session.set_network_player_ready(followed, true).is_err());
+        session.prepare_wol_timing([0; 2], false).unwrap();
+        session.freeze_network_start(13).unwrap();
+        assert!(session.local_connection_watches());
+        assert_eq!(network_match::local_source(&session), None);
+        assert!(network_match::nodes(&session).is_empty());
+        assert_eq!(session.network_setup().unwrap().humans, launch.humans);
+        assert_eq!(session.network_connected_source_indices(), &[0, 1]);
+        assert_eq!(session.network_source_sender(2), None);
+        session.report_network_loading_progress(100);
+        assert!(session.take_network_loading_progress_reports().is_empty());
+
+        assert!(session.disconnect_network_participant(followed));
+        assert!(session.local_connection_watches());
+        assert_eq!(network_match::local_source(&session), None);
+        assert_eq!(session.network_connected_source_indices(), &[0]);
+        assert!(session.disconnect_network_watcher(endpoint));
+        assert!(!session.local_connection_watches());
+        assert_eq!(session.network_connected_source_indices(), &[0]);
     }
 
     #[test]

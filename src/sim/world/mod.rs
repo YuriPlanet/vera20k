@@ -135,7 +135,7 @@ mod playfield_membership;
 mod rally_cell_input;
 mod rocket_flight;
 pub use frame_error::FrameAdvanceError;
-pub use world_orders::AresHeal;
+pub use world_orders::{AresHeal, ControlProjection};
 pub(crate) use world_orders::CapturedInfantryType;
 pub use world_orders::EngineerBuildingAction;
 pub use world_orders::HealArmKeys;
@@ -1394,28 +1394,12 @@ pub struct SimulationRngState {
     pub mapgen: SimRngLogicalState,
 }
 
-fn deserialized_process_rng_placeholder() -> SimRng {
-    SimRng::new(0)
-}
-
 fn deserialized_main_rng_placeholder() -> MainRng {
     MainRng::new(0)
 }
 
 fn every_frame() -> Option<std::num::NonZeroU64> {
     Some(std::num::NonZeroU64::MIN)
-}
-
-fn deserialize_scenario_rng_reset<'de, D>(deserializer: D) -> Result<SimRng, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    // gamemd saves ScenarioClass as a raw block that includes Random at +0x218,
-    // then immediately reseeds that embedded object with zero after reading it.
-    // Consume the saved bytes to preserve our snapshot layout, but reproduce the
-    // active load result instead of restoring the saved cursor.
-    let _saved = <SimRng as serde::Deserialize>::deserialize(deserializer)?;
-    Ok(SimRng::new(0))
 }
 
 /// The game simulation - owns all authoritative game state.
@@ -1492,10 +1476,8 @@ pub struct Simulation {
     /// sim draws: scatter, sub-cell placement, smudge/destruction, particles,
     /// wall/overlay damage, bridge collapse/destruction presentation, ore growth/spread, TIBTRE,
     /// anim scorch/50-50, miner-dock jitter, and the terminal score projection.
-    /// Saved in the Scenario-shaped snapshot and hashed while live. Native load
-    /// reads those bytes but immediately calls `Random__Seed(0)`, so deserialization
-    /// deliberately discards the saved cursor.
-    #[serde(deserialize_with = "deserialize_scenario_rng_reset")]
+    /// The snapshot load policy decides whether to resume this cursor or apply
+    /// the native player-load reset. It is always hashed while live.
     pub(crate) scenario_rng: SimRng,
     /// Main/global RNG — gamemd `g_MainRng` (0x00886B88). This is a
     /// process-global cursor: it is neither part of ScenarioClass saves nor
@@ -1506,13 +1488,12 @@ pub struct Simulation {
     /// fixed-map construction uses `Random__Seed(0)`, matching the verified
     /// native fresh-process state; launch `.SED` generation installs its exact
     /// post-RMG continuation. Bridge repair consumes this stream; destruction
-    /// remains Scenario-owned. Offline this cursor is not saved or checksummed;
-    /// Rust retains it across in-scenario restore and fresh Scenario handoff.
+    /// remains Scenario-owned. Stock player loads retain the process cursor
+    /// across in-scenario restore and fresh Scenario handoff.
     /// Network starts seed it from the agreed match seed and hash it, since
     /// bridge repair writes its chosen variant into authoritative overlays.
     /// Original Init_Random_Number_System52FC20 leaves this entire object
     /// unchanged; only random-map generation reseeds it at598996.
-    #[serde(skip, default = "deserialized_process_rng_placeholder")]
     pub(crate) mapgen_rng: SimRng,
     /// Independent wrapping `AbstractClass+0x10` identity cursor, Scenario+214.
     /// Native numeric IDs may duplicate and are neither stable handles nor RNG.
@@ -1856,12 +1837,6 @@ pub struct Simulation {
     /// (`0x0064C9B1`) and drains them. A sender is the record's header byte.
     #[serde(skip)]
     departed_senders: Vec<i8>,
-    /// The header byte of the native record whose command is executing;
-    /// `None` while a semantic envelope executes. The DoList host sets it
-    /// around each record. VERA shared control: EXIT reads it to tell apart
-    /// players sharing a House.
-    #[serde(skip)]
-    executing_record_sender: Option<i8>,
     #[serde(skip)]
     connection_lost: bool,
     /// Checksum computed by this frame's multiplayer tail, handed to the
@@ -3503,27 +3478,32 @@ impl Simulation {
     }
 
     /// LoadContent67E730 does not restore process Main/MapGen. ScenarioLoad
-    /// 689470 -> post-read683560 has already reset Scenario to Seed(0).
+    /// For stock saves, 689470 -> post-read683560 has already reset Scenario to Seed(0).
     /// The candidate stages the one process Main cursor: draws made while the
     /// load is prepared advance it, and the commit moves it into that cell
-    /// (`install_fresh_process_main`). In-scenario loading keeps the live
-    /// seed and MapGen; the cold shell starts MapGen from the CRT Seed(0)
-    /// object (native fixture in world/rng_routing_tests.rs).
+    /// (`install_fresh_process_main`). Stock loading keeps the live seed and
+    /// MapGen or initializes them to zero in a cold shell. Custom sessions
+    /// resume the saved seed and MapGen.
     pub(crate) fn retain_process_state_for_load(&mut self, process: SnapshotProcessState<'_>) {
+        let retain_continuation = self.retains_snapshot_continuation();
         match process {
             SnapshotProcessState::Live(live) => {
-                self.session.record_random_seed(live.session.seed());
+                if !retain_continuation {
+                    self.session.record_random_seed(live.session.seed());
+                    self.mapgen_rng = live.mapgen_rng.clone();
+                    self.substrate
+                        .raw_cell_occupation
+                        .retain_process_dummy_from(&live.substrate.raw_cell_occupation);
+                }
                 self.main_rng = live.main_rng.staged_copy();
-                self.mapgen_rng = live.mapgen_rng.clone();
                 self.bind_shared_cell_dummy(live.effective_shared_cell_dummy());
-                self.substrate
-                    .raw_cell_occupation
-                    .retain_process_dummy_from(&live.substrate.raw_cell_occupation);
             }
             SnapshotProcessState::Cold(main) => {
-                self.session.record_random_seed(0);
+                if !retain_continuation {
+                    self.session.record_random_seed(0);
+                    self.mapgen_rng = SimRng::new(0);
+                }
                 self.main_rng = main.staged_copy();
-                self.mapgen_rng = SimRng::new(0);
             }
         }
     }
@@ -3575,11 +3555,10 @@ impl Simulation {
         Ok(())
     }
 
-    /// Init_Random_Number_System52FC20, ordinary offline menu-load tail
-    /// 52E619. The caller supplies the resolved clock/override seed. Both
-    /// Scenario and process Main are reseeded, Main in its shared process
-    /// cell; MapGen is untouched. In-game options resume does not reach this
-    /// caller. Executed full-state controls:
+    /// Init_Random_Number_System52FC20. The caller supplies the resolved
+    /// clock/override seed. Both Scenario and process Main are reseeded,
+    /// Main in its shared process cell; MapGen is untouched.
+    /// Executed full-state controls:
     /// tools/rmg_oracle/vectors/rng.json::menu_rng_cases.
     pub fn initialize_random_number_system(&mut self, seed: u32) {
         self.session.record_random_seed(u64::from(seed));
@@ -3934,6 +3913,24 @@ impl Simulation {
     /// The accepted network setup's MaxAhead ([`ScenarioSession::install_network_timing`]).
     pub fn install_network_timing(&mut self, max_ahead_frames: i32) {
         self.session.install_network_timing(max_ahead_frames);
+    }
+
+    /// Admit explicit grants after House construction and before publication.
+    pub fn install_control_grants(
+        &mut self,
+        grants: Vec<crate::sim::control_authority::ControlGrant>,
+    ) -> Result<(), crate::sim::control_authority::ControlGrantError> {
+        self.session.install_control_grants(&self.houses, grants)
+    }
+
+    /// Lookup for a source in the launch roster and a registered House.
+    /// Execution and input validate live sender eligibility before querying.
+    pub fn control_scope_for_source(
+        &self,
+        source: i8,
+        house: InternedId,
+    ) -> crate::sim::control_authority::ControlScope {
+        self.session.control_scope_for_source(&self.houses, source, house)
     }
 
     /// The WOL start's tournament value and clan lists
@@ -4811,7 +4808,6 @@ impl Simulation {
             quit_requested: false,
             executed_exit_owner: None,
             departed_senders: Vec::new(),
-            executing_record_sender: None,
             connection_lost: false,
             frame_sync_checksum: None,
             state_hash_interval: every_frame(),
@@ -4976,7 +4972,9 @@ impl Simulation {
         synced.put(self);
         theirs.put(&mut copy);
         copy.fog = fog_copy;
-        copy.house_alliances = self.house_alliances.detached();
+        copy.house_alliances = self
+            .house_alliances
+            .detached(&self.interner, &copy.interner);
         copy.main_rng = self.main_rng.detached_copy();
         copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
         self.fog = fog;

@@ -212,6 +212,124 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
     }
 }
 
+#[test]
+fn delegated_ai_yard_uses_the_redeploy_cursor_fallback_and_native_sale_queue() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::{CellActionQuery, MoveAction};
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = retail.rules;
+    rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
+    let size = 64;
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x443A7B, size);
+    crate::sim::arena_fixture::flood(
+        &mut sim,
+        &rules,
+        size,
+        (0..size)
+            .flat_map(|y| (0..size).map(move |x| (x, y)))
+            .filter(|&(x, y)| x >= 16 || y >= 16),
+    );
+    sim.resolve_type_handles(&rules);
+    let player = sim.interner().get("Americans").unwrap();
+    let delegated = sim.interner().get("Russians").unwrap();
+    let session = sim.session_mut_for_test();
+    session.set_current_house_for_test(Some(player));
+    session.set_game_mode(ScenarioGameMode::Lan);
+    session.game_options_mut_for_test().mcv_redeploy = true;
+    session.game_options_mut_for_test().short_game = false;
+    sim.install_network_timing(10);
+    sim.network_command_queues()
+        .install_timing(1, std::num::NonZeroU8::new(5).unwrap(), [1]);
+    sim.spawn_object("GAPOWR", "Americans", 3, 3, 0, &rules)
+        .unwrap();
+    let yard = sim
+        .spawn_object("GACNST", "Russians", 6, 6, 0, &rules)
+        .unwrap();
+    let origin = sim.object_coords_cell(yard).unwrap();
+    assert!(!sim.owner_is_human(delegated));
+
+    let grant = |level| {
+        vec![ControlGrant {
+            source: 1,
+            house: 0,
+            level,
+        }]
+    };
+    let mut tactical = sim.clone();
+    tactical
+        .install_control_grants(grant(ControlGrantLevel::UnitsOnly))
+        .unwrap();
+    assert!(!tactical.local_takes_rally_point(yard, player, &rules));
+    sim.install_control_grants(grant(ControlGrantLevel::FullControl))
+        .unwrap();
+    assert_eq!(
+        sim.cell_move_action(
+            player,
+            yard,
+            (10, 10),
+            CellActionQuery {
+                mouse_over: true,
+                shift: false
+            },
+            &rules
+        )
+        .unwrap(),
+        MoveAction::Move
+    );
+    assert_eq!(
+        sim.factory_rally_cell_input(yard, (56, 56), &rules)
+            .unwrap(),
+        Some(origin)
+    );
+    let (orders, _) = building_cell_orders(&sim, &rules, &[yard], player, (10, 10), false, false);
+    assert!(
+        matches!(orders.as_slice(), [Command::SetRally { .. }, Command::SellBuilding { entity_id }] if *entity_id == yard)
+    );
+    for command in orders {
+        assert!(
+            crate::app::input::commands::schedule_command_in_sim(&mut sim, "Americans", command)
+                .is_some()
+        );
+    }
+    let mut queue = sim.network_command_queues();
+    let records: Vec<_> = queue
+        .local_records()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect();
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| (record.house_id(), record.opcode()))
+            .collect::<Vec<_>>(),
+        [(1, 0x1e), (1, 0x16)]
+    );
+    queue.commit_local_mirrors(&records).unwrap();
+
+    for _ in 0..120 {
+        step(&mut sim, &rules);
+        if sim.entities().get(yard).is_none() {
+            break;
+        }
+    }
+    assert!(
+        sim.entities().get(yard).is_none(),
+        "the queued sale must finish"
+    );
+    assert!(
+        sim.entities().values().any(|entity| {
+            entity.owner() == delegated && sim.interner().resolve(entity.type_ref()) == "AMCV"
+        }),
+        "the AI house gets an MCV instead of a sale refund"
+    );
+    assert!(!sim.owner_is_human(delegated));
+}
+
 /// A retail rival arena where the Americans are the player, in a skirmish
 /// with MCV redeploy on, with its lower right corner flooded.
 fn yard_arena(rules: &RuleSet) -> (Simulation, InternedId) {

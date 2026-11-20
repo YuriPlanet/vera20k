@@ -161,6 +161,7 @@ fn capture_by_walking(scene: &mut HeadlessScenario, owner: InternedId, plant: u6
         // Execute_DoList skips an AI House without PlayerControl; drive the
         // existing class/mission receiver at this setup boundary instead.
         assert!(runtime.simulation.apply_command_with_overlays(
+            None,
             &name,
             &command,
             &runtime.resources.rules,

@@ -10,6 +10,7 @@ fn complete(
 ) -> bool {
     let name = sim.interner.resolve(owner).to_owned();
     sim.apply_command_with_overlays(
+        None,
         &name,
         &Command::CompletePaidSuperWeapon {
             selection,
@@ -30,6 +31,7 @@ fn cancel(
 ) -> bool {
     let name = sim.interner.resolve(owner).to_owned();
     sim.apply_command_with_overlays(
+        None,
         &name,
         &Command::CancelPaidSuperWeapon { selection },
         rules,
@@ -380,6 +382,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     for (index, command) in commands.iter().enumerate() {
         assert_eq!(
             loaded.apply_command_with_overlays(
+                None,
                 "Americans",
                 &command.payload,
                 &rules,
@@ -394,6 +397,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     assert!(!complete(&mut loaded, &rules, owner, second, (15, 15)));
     let hash = loaded.state_hash();
     assert!(!loaded.apply_command_with_overlays(
+        None,
         "Americans",
         &commands[0].payload,
         &rules,
@@ -475,6 +479,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
         target_ry: 10,
     };
     assert!(!sim.apply_command_with_overlays(
+        None,
         "Americans",
         &request,
         &rules,
@@ -496,6 +501,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
         target_ry: 10,
     };
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &request,
         &rules,

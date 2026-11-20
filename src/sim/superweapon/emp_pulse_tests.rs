@@ -109,6 +109,7 @@ fn building(sim: &mut Simulation, rules: &RuleSet, kind: &str, cell: (u16, u16))
 fn launch(sim: &mut Simulation, rules: &RuleSet, sw: &str, cell: (u16, u16)) -> bool {
     let sw_type_id = sim.interner.intern(sw);
     sim.apply_command_with_overlays(
+        None,
         "Russians",
         &Command::LaunchSuperWeapon {
             sw_type_id,
