@@ -882,7 +882,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             }
             installed.map_err(|error| error.to_string())
         }
-        crate::app::match_bootstrap::LoadingStartup::Replay { .. } => {
+        crate::app::match_bootstrap::LoadingStartup::Replay { .. }
+        | crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. } => {
             state.match_state.startup.clear();
             let playback = match (
                 state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle),
@@ -900,8 +901,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             match playback {
                 Ok(effects) => initial_replay_effects = effects,
                 Err(error) => {
-                    let message = format!("Replay startup failed: {error:#}");
-                    log::error!("{message}");
+                    log::error!("Replay startup failed: {error:#}");
+                    let message = if matches!(startup, crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }) {
+                        crate::i18n::tr("VERA:CampaignReplayUnavailable")
+                    } else {
+                        format!("Replay startup failed: {error:#}")
+                    };
                     state.frontend.external_launch_error = Some(message);
                 }
             }
@@ -958,12 +963,18 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 /// is then a watcher's before its first frame: it sends nothing, also in the
 /// seat of the player it follows, whose sight it starts with, and Tab may
 /// change its view (`match_runtime::watching`).
+/// A launcher's watcher (docs/spawn.md "Watching") stands in source 0's seat
+/// only because a world needs a current House: it starts on the observer's
+/// sidebar (`watching::begin_on_observers_view`).
 fn install_watcher(state: &mut AppState) {
     if !crate::app::match_runtime::watching::active(state) {
         return;
     }
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime.simulation.install_watcher();
+    }
+    if state.frontend.external_launch {
+        crate::app::match_runtime::watching::begin_on_observers_view(state);
     }
 }
 

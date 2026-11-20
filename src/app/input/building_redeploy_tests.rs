@@ -213,6 +213,45 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
 }
 
 #[test]
+fn a_rally_yard_issues_no_ground_orders_when_redeploy_is_disabled() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::world::{CellActionQuery, MoveAction};
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &IniFile::from_str("[GACNST]\nFactory=UnitType\n"),
+    ) else {
+        return;
+    };
+    let rules = retail.rules;
+    let (mut sim, owner) = yard_arena(&rules);
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .mcv_redeploy = false;
+    let yard = sim
+        .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let cell = (23, 20);
+    assert_eq!(
+        sim.cell_move_action(
+            owner,
+            yard,
+            cell,
+            CellActionQuery {
+                mouse_over: true,
+                shift: false,
+            },
+            &rules,
+        ),
+        Ok(MoveAction::Move)
+    );
+    assert_eq!(
+        click(&sim, &rules, &[yard], None, cell, OrderModifier::Normal),
+        BuildingClick::Orders(Vec::new(), false)
+    );
+}
+
+#[test]
 fn delegated_ai_yard_uses_the_redeploy_cursor_fallback_and_native_sale_queue() {
     use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
     use crate::sim::scenario_session::ScenarioGameMode;

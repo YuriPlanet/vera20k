@@ -37,6 +37,7 @@ pub(crate) use packed::{
     PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_joins_waves,
 };
 use submission::PassSubmission;
+pub(crate) use submission::SHARED_MEMORY_PASSES_PER_SUBMISSION;
 pub(crate) use surface_lines::SurfaceLineBatch;
 
 // WebGL2's reduction: high16 bits select the final admitted body; low16 retain
@@ -341,12 +342,17 @@ impl TerrainDrawRenderer {
                 cache: None,
             })
         };
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Terrain signed Z and packed destination edit"),
-            source: wgpu::ShaderSource::Wgsl(
-                super::webgl::camera_source(device, edit_source(webgl)).into(),
-            ),
-        });
+        // `replay_earlier` walks at most one window of commands and as many
+        // shadow halves (`batching::WINDOW`).
+        let shader = super::gpu::bounded_loop_module(
+            device,
+            wgpu::ShaderModuleDescriptor {
+                label: Some("Terrain signed Z and packed destination edit"),
+                source: wgpu::ShaderSource::Wgsl(
+                    super::webgl::camera_source(device, edit_source(webgl)).into(),
+                ),
+            },
+        );
         let edit_records = super::uniform_windows::UniformWindows::new(
             device,
             queue,
@@ -757,13 +763,18 @@ impl TerrainDrawRenderer {
         self.submission.timer = timer;
     }
 
-    #[cfg(test)]
+    /// Closed passes per command buffer (`terrain_submission`): fewer on a GPU
+    /// that draws from the system's memory, so Windows' timeout judges short
+    /// buffers.
+    pub(crate) fn set_passes_per_submission(&mut self, passes: usize) {
+        self.submission.set_passes_per_submission(passes);
+    }
+
     pub(crate) fn submissions(&self) -> usize {
         self.submission.submissions()
     }
 
     /// Every pass closed since the last `prepare`, ordinary passes included.
-    #[cfg(test)]
     pub(crate) fn closed_passes(&self) -> usize {
         self.submission.closed_passes()
     }

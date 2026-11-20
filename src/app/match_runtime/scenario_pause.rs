@@ -27,7 +27,7 @@ impl ScenarioPauseClock {
         }
     }
 
-    fn elapsed(&self, wall_ms: u64) -> bool {
+    pub(super) fn elapsed(&self, wall_ms: u64) -> bool {
         self.timer.remaining(bucket(wall_ms)) <= 0
     }
 }
@@ -178,6 +178,7 @@ pub(crate) fn load_clock(state: &mut AppState, wall_ms: u64) {
 
 pub(crate) fn reset_clock(state: &mut AppState) {
     state.match_state.match_presentation.scenario_pause = ScenarioPauseClock::default();
+    state.match_state.match_presentation.narrative_sync = Default::default();
 }
 
 #[cfg(all(test, tests_app_match))]

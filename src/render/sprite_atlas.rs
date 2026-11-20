@@ -664,7 +664,8 @@ pub struct SpriteAtlas {
     /// Updated after placement/upload and dropped with the atlas on map load.
     physical_frames: HashMap<ShpPhysicalFrame, ShpFramePlacement>,
     /// Building type → number of make (build-up) animation frames.
-    /// Key is the base type_id (e.g., "GACNST"), not the "_MAKE" suffixed key.
+    /// Keyed by the make image's atlas name, the type id with `_MAKE`
+    /// appended (e.g. "GACNST_MAKE").
     pub make_frame_counts: HashMap<String, u16>,
     /// Building/world-animation type → available non-shadow frame count.
     /// Building consumers use this only to ensure their live animation frame is
@@ -1113,15 +1114,17 @@ impl RenderedShpSprite {
 /// End a refresh without changing the atlas the renderer is already using.
 ///
 /// A refresh mutates the prior atlas only after every fallible step has
-/// passed, so dropping it here leaves that atlas exactly as it was. Initial
-/// construction deliberately has no fallback and keeps the existing fail-fast
-/// contract for required cell-drawer assets.
+/// passed, so dropping it here leaves that atlas exactly as it was.
 #[cold]
-fn abandon_sprite_atlas_refresh(initial: bool, failure: &str) {
-    if initial {
-        panic!("{failure}");
-    }
+fn keep_previous_sprite_atlas(failure: &str) {
     log::warn!("{failure}; keeping the previous valid sprite atlas");
+}
+
+/// A map-load build that cannot draw what the map needs fails the load,
+/// which returns the player to the shell with this message.
+#[cold]
+fn sprite_atlas_load_error(failure: String) -> anyhow::Error {
+    anyhow::Error::msg(failure).context("could not prepare the map's sprites")
 }
 
 /// Whether `atlas` — None while no sprite atlas exists — already holds
@@ -2257,8 +2260,12 @@ pub fn build_sprite_atlas(
         interner,
     );
     let mut atlas = existing;
-    if let PreparedSpriteAtlas::Raster(work, upload) = prepared {
-        upload.finish(device, queue, batch, work.render(), &mut atlas);
+    match prepared {
+        PreparedSpriteAtlas::Unchanged => {}
+        PreparedSpriteAtlas::Abandoned(failure) => keep_previous_sprite_atlas(&failure),
+        PreparedSpriteAtlas::Raster(work, upload) => {
+            upload.finish(device, queue, batch, work.render(), &mut atlas);
+        }
     }
     atlas
 }
@@ -2696,18 +2703,16 @@ pub(crate) fn prepare_sprite_atlas(
                     log::debug!("Effect anim SHP {}: {} frames from {}", name, count, file);
                 }
                 Err(error) if required_cell_drawer => {
-                    return PreparedSpriteAtlas::abandoned(
-                        previous_atlas.is_none(),
-                        format!("bound cell-drawer animation [{name}] failed SHP decode: {error}"),
-                    );
+                    return PreparedSpriteAtlas::Abandoned(format!(
+                        "bound cell-drawer animation [{name}] failed SHP decode: {error}"
+                    ));
                 }
                 Err(_) => {}
             },
             None if required_cell_drawer => {
-                return PreparedSpriteAtlas::abandoned(
-                    previous_atlas.is_none(),
-                    format!("bound cell-drawer animation [{name}] has no SHP asset"),
-                );
+                return PreparedSpriteAtlas::Abandoned(format!(
+                    "bound cell-drawer animation [{name}] has no SHP asset"
+                ));
             }
             None => {}
         }
@@ -2945,14 +2950,12 @@ pub(crate) fn prepare_sprite_atlas(
         })
         .collect();
     if cell_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::CellIso) {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "terrain-attached animations require the active theater ISO palette".to_string(),
         );
     }
     if bullet_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::Bullet) {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "visible projectiles require PALETTE.PAL".to_string(),
         );
     }
@@ -2967,8 +2970,7 @@ pub(crate) fn prepare_sprite_atlas(
                 )
         })
     {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "literal animation palettes require ANIM.PAL".to_string(),
         );
     }
@@ -3123,32 +3125,35 @@ pub(crate) fn prepare_sprite_atlas(
 /// across frames while those existing owners stay in their original phase,
 /// and live growth draws its frames on a worker.
 pub(crate) enum PreparedSpriteAtlas {
-    /// Nothing to draw: no sprite at map load, or a refresh abandoned before
-    /// any frame was drawn.
+    /// Nothing to draw: no sprite at map load.
     Unchanged,
+    /// A required asset or palette is missing, before any frame was drawn:
+    /// a map load fails, a refresh keeps its atlas.
+    Abandoned(String),
     /// The frames to draw and the bookkeeping published with them.
     Raster(ShpRasterWork, ShpAtlasUpload),
 }
 
 impl PreparedSpriteAtlas {
-    #[cold]
-    fn abandoned(initial: bool, failure: String) -> Self {
-        abandon_sprite_atlas_refresh(initial, &failure);
-        Self::Unchanged
-    }
-
-    /// Draw the frames on this thread and complete a map-load build.
+    /// Draw the frames on this thread and complete a map-load build. An
+    /// abandoned build is the load's error.
     pub(crate) fn finish(
         self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
-    ) -> Option<SpriteAtlas> {
+    ) -> anyhow::Result<Option<SpriteAtlas>> {
+        let (work, upload) = match self {
+            Self::Unchanged => return Ok(None),
+            Self::Abandoned(failure) => return Err(sprite_atlas_load_error(failure)),
+            Self::Raster(work, upload) => (work, upload),
+        };
+        let drawn = upload
+            .drawn(work.render())
+            .map_err(sprite_atlas_load_error)?;
         let mut atlas = None;
-        if let Self::Raster(work, upload) = self {
-            upload.finish(device, queue, batch, work.render(), &mut atlas);
-        }
-        atlas
+        upload.finish_drawn(device, queue, batch, drawn, &mut atlas);
+        Ok(atlas)
     }
 }
 
@@ -3209,6 +3214,9 @@ pub(crate) struct ShpRasterWork {
 
 /// What [`ShpRasterWork`] drew, or why its refresh must be abandoned.
 pub(crate) struct ShpRasterOutput(ShpRaster);
+
+/// A raster's drawn frames, its unrenderable keys and its palette rows.
+type DrawnShpSprites = (Vec<RenderedShpSprite>, Vec<ShpSpriteKey>, ShpPalettes);
 
 enum ShpRaster {
     Drawn {
@@ -3310,7 +3318,8 @@ impl ShpRasterWork {
 /// The bookkeeping a build or refresh publishes with its frames.
 pub(crate) struct ShpAtlasUpload {
     started: Instant,
-    /// Prepared without an atlas: a map-load build, which has no fallback.
+    /// Prepared without an atlas: a map-load build, which publishes the
+    /// effect registry.
     initial: bool,
     registered_effects: EffectRegistry,
     make_frame_counts: HashMap<String, u16>,
@@ -3338,9 +3347,24 @@ impl ShpAtlasUpload {
         output: ShpRasterOutput,
         atlas: &mut Option<SpriteAtlas>,
     ) -> bool {
-        let Some((rendered, unrenderable, rows)) = self.drawn(output) else {
-            return false;
-        };
+        match self.drawn(output) {
+            Ok(drawn) => self.finish_drawn(device, queue, batch, drawn, atlas),
+            Err(failure) => {
+                keep_previous_sprite_atlas(&failure);
+                false
+            }
+        }
+    }
+
+    /// [`Self::finish`] once the frames are drawn.
+    fn finish_drawn(
+        self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        (rendered, unrenderable, rows): DrawnShpSprites,
+        atlas: &mut Option<SpriteAtlas>,
+    ) -> bool {
         let added = rendered.len();
         let atlas = match atlas {
             Some(atlas) => {
@@ -3357,22 +3381,16 @@ impl ShpAtlasUpload {
         true
     }
 
-    /// The drawn frames, unrenderable keys and palette rows, or None once an
-    /// abandoned refresh is reported.
-    fn drawn(
-        &self,
-        output: ShpRasterOutput,
-    ) -> Option<(Vec<RenderedShpSprite>, Vec<ShpSpriteKey>, ShpPalettes)> {
+    /// The drawn frames, unrenderable keys and palette rows, or why the
+    /// raster abandoned them.
+    fn drawn(&self, output: ShpRasterOutput) -> Result<DrawnShpSprites, String> {
         match output.0 {
             ShpRaster::Drawn {
                 rendered,
                 unrenderable,
                 rows,
-            } => Some((rendered, unrenderable, rows)),
-            ShpRaster::Abandoned(failure) => {
-                abandon_sprite_atlas_refresh(self.initial, &failure);
-                None
-            }
+            } => Ok((rendered, unrenderable, rows)),
+            ShpRaster::Abandoned(failure) => Err(failure),
         }
     }
 

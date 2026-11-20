@@ -78,6 +78,13 @@ pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
             (session.execution_topology(), session.rule_policy())
         },
     );
+    if request == DiplomacyRequest::SidebarButton
+        && topology.is_lockstep()
+        && rule_policy.restates_mission_for_network_diplomacy()
+        && crate::app::input::briefing_diplomacy::open(state)
+    {
+        return;
+    }
     match requested_state(request, topology, rule_policy) {
         RequestedState::Nothing => {}
         RequestedState::Diplomacy => {

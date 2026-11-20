@@ -110,6 +110,8 @@ Launch
 | **Controls** | Scroll Rate【[Options] ScrollRate】, Right-Click Orders【[VERA] RightClickOrders】, Minimap Beacons【[VERA] MinimapBeacons】, Mouse Wheel Zoom【[VERA] MouseWheelZoom】, Lock Cursor to Window【[VERA] LockCursor】 |
 | **General** | Language【[VERA] Language】, Original YR Style【[VERA] YROriginalStyle】, Smooth Online Menus【[VERA] SmoothOnlineMenus】, HD Map Previews【[VERA] HdMapPreviews】*(not in the web build)*, VERA Icon【[VERA] VeraIcon】, Skip Intro【[VERA] SkipIntro】*(next launch)*, Show String Keys【[VERA] ShowStringKeys】; button: Check for Updates *(locked in a match, not in the web build)* |
 
+Two `[VERA]` keys have no control in the window. `GraphicsAPI=` (`auto`, `vulkan` or `dx12`) names the graphics API the game asks for on Windows; with `auto`, the default, wgpu chooses, and after a start that lost its device or never finished, the next start switches to the other API by itself, recording why in `GraphicsLostAtStart.txt` beside VERA.INI. The `WGPU_BACKEND` environment variable wins over both. `Language=` is written by the Language list above and may be typed as well.
+
 ## 2. In a match
 
 ```

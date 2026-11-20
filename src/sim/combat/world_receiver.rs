@@ -2484,8 +2484,7 @@ pub(crate) fn handle_death(
             if callbacks_enabled(world) {
                 world.free_all_captures(dead_id, rules, overlay_registry, run.effects());
             }
-            let type_id_str = world.interner.resolve(type_id);
-            if let Some(obj) = rules.object(type_id_str) {
+            if let Some(obj) = world.interner.object_type(type_id, rules) {
                 // TechnoClass::ReceiveDamage70218B/7021FB: each selection is
                 // followed by direct7509E0 admission before the next choice,
                 // Stun and nested DeathWeapon receivers. House50B6F0 gates

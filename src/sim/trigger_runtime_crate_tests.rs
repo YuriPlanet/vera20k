@@ -716,7 +716,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         .unwrap();
     let observer = &sim.trigger_runtime.definitions.trigger_types[observer_type];
     assert_eq!(observer.events.len(), 1);
-    assert_eq!(observer.events[0].kind, 50);
+    assert_eq!(observer.events[0].condition.kind, 50);
     assert_eq!(observer.actions.len(), 1);
     assert_eq!(observer.actions[0].entry.kind, 28);
     assert_eq!(observer.actions[0].value, Some(7));
@@ -733,11 +733,11 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     let typ = sim.trigger_runtime.definitions.trigger_type(id).unwrap();
     let definition = &sim.trigger_runtime.definitions.trigger_types[typ];
     assert_eq!(
-        definition.events[0].kind,
+        definition.events[0].condition.kind,
         integer(&retail["native_events"]["kind"])
     );
     assert_eq!(
-        definition.events[0].value,
+        definition.events[0].condition.value,
         integer(&retail["native_events"]["value"])
     );
     assert_eq!(definition.actions.len(), 2);

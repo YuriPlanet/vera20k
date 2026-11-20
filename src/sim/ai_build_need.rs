@@ -262,7 +262,6 @@ fn balance_owed(
     sim.production
         .factories()
         .holders_insertion_ordered()
-        .into_iter()
         .map(|(_, factory)| factory)
         .filter(|factory| factory.owner() == owner)
         .find(|factory| {

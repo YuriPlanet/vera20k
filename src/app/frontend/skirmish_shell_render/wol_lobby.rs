@@ -337,12 +337,28 @@ pub(crate) fn paint_wol_lobby_children(
         // the first icon column; that row's name starts at the next one. A
         // tag ends the name cell against the Ping column, and the name stops
         // a gap before it.
+        let ping = if row.ping == -1 {
+            "???".to_owned()
+        } else {
+            row.ping.to_string()
+        };
         let name_x = if row.keyed {
             GAME_PASSWORD_X
         } else {
             GAME_TYPE_X
         };
-        let name_end = GAME_PING_X - 2;
+        // Watch rows can use the entire list. Other modern rooms stop a
+        // gap before the ping centred under its column heading.
+        let row_base = scale.base_rect(rect);
+        let name_end = if row.watch {
+            row_base.w - 2
+        } else if let Some(header) = ping_header.filter(|_| modern) {
+            let header = scale.base_rect(header);
+            let ping_width = font.text_width(&ping) as i32;
+            (header.x + (header.w - ping_width) / 2 - row_base.x - GAME_TAG_GAP).min(row_base.w - 2)
+        } else {
+            GAME_PING_X - 2
+        };
         let tag = row.tag.as_deref().filter(|_| modern);
         let tag_w = tag.map_or(0, |tag| {
             (font.text_width(tag) as i32).min(name_end - name_x)
@@ -351,8 +367,22 @@ pub(crate) fn paint_wol_lobby_children(
             Some(_) => name_end - name_x - tag_w - GAME_TAG_GAP,
             None => name_end - name_x,
         };
+        // A header that still exceeds one row at the tightest font fit
+        // ends in an ellipsis; its complete text remains in the row help.
+        let mut caption = std::borrow::Cow::Borrowed(row.text.as_str());
+        if modern {
+            let width = name_w.max(1) as u32;
+            caption = font.fitted(crate::render::bit_font::Fit::TIGHTEST, |font| {
+                if font.text_width(&row.text) <= width {
+                    return std::borrow::Cow::Borrowed(row.text.as_str());
+                }
+                let end =
+                    font.truncate_to_width(&row.text, width.saturating_sub(font.text_width("…")));
+                std::borrow::Cow::Owned(format!("{end}…"))
+            });
+        }
         paint.texts.push(text(
-            &row.text,
+            &caption,
             if modern {
                 cell(rect, name_x, name_w.max(1))
             } else {
@@ -373,11 +403,6 @@ pub(crate) fn paint_wol_lobby_children(
         // modern list centres it under its Ping header instead of starting
         // it at the retail column, left of the header's caption. A match to
         // watch has no ping.
-        let ping = if row.ping == -1 {
-            "???".to_owned()
-        } else {
-            row.ping.to_string()
-        };
         let (ping_rect, ping_align) = match ping_header.filter(|_| modern) {
             Some(header) => (
                 RectPx::new(header.x, rect.y, header.w, rect.h),
@@ -495,6 +520,71 @@ pub(crate) fn paint_wol_lobby_children(
             ShellAlign::V_CENTER,
             row_rgb(line.color),
         ));
+    }
+    if let Some(panel) = layout.game_details {
+        push_solid_rect(
+            &mut paint.controls,
+            atlas,
+            panel,
+            [0.025, 0.035, 0.045],
+            SHELL_CONTROL_DEPTH,
+        );
+        push_rect_outline(
+            &mut paint.controls,
+            atlas,
+            panel,
+            [0.35, 0.40, 0.42],
+            SHELL_CONTROL_DEPTH - 0.00001,
+        );
+        if let Some(details) = crate::app::shell_wol::lobby::room_details(state) {
+            let pane = scale.base_rect(panel);
+            let width = (pane.w - 10).max(1) as u32;
+            let height = (pane.h - 8).max(1) as u32;
+            let line = font.cell_height().ceil() as u32;
+            // Reserve the counts first, leaving at least one line for the
+            // heading. A maximal map/room name cannot displace spectators.
+            let count_limit = height.saturating_sub(line + 2).max(1);
+            let count_fit = font.fit_box(&details.counts, width, count_limit);
+            let count_h = font
+                .fitted(count_fit, |font| {
+                    font.wrap_layout(&details.counts, width).height
+                })
+                .min(count_limit);
+            let title_limit = height.saturating_sub(count_h + 2).max(1);
+            let full_fits = font.fitted(crate::render::bit_font::Fit::TIGHTEST, |font| {
+                font.wrap_layout(details.title, width).height <= title_limit
+            });
+            // The selected row already names the room. If the full heading
+            // cannot fit, keep the format and map ahead of a long room name.
+            let title = if full_fits {
+                details.title
+            } else {
+                details
+                    .title
+                    .strip_prefix(details.room_name)
+                    .and_then(|tail| tail.strip_prefix(" - "))
+                    .unwrap_or(details.title)
+            };
+            let fit = font.fit_box(title, width, title_limit);
+            let title_h = font
+                .fitted(fit, |font| font.wrap_layout(title, width).height)
+                .min(title_limit);
+            let title_rect = RectPx::new(pane.x + 5, pane.y + 4, width as i32, title_h as i32);
+            let counts_rect = RectPx::new(
+                title_rect.x,
+                title_rect.y + title_rect.h + 2,
+                width as i32,
+                count_h as i32,
+            );
+            for (caption, rect) in [(title, title_rect), (details.counts.as_str(), counts_rect)] {
+                paint.texts.push(text(
+                    caption,
+                    scale.scale_rect(rect),
+                    ShellAlign::NONE,
+                    SHELL_LABEL_TEXT_RGB,
+                ));
+            }
+        }
     }
     paint
 }

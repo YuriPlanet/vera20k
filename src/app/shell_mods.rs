@@ -198,6 +198,8 @@ impl App {
             .on_pointer_up(x, y, &buttons)
         {
             Some(mods_shell::USE) => Self::use_picked_mod(state),
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            Some(mods_shell::ADD) => Self::open_add_mod(state),
             Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(state),
             Some(mods_shell::CHECK) => Self::check_picked_mod(state),
             Some(mods_shell::NEW) => Self::make_new_mod(state),
@@ -208,7 +210,7 @@ impl App {
 
     /// Open Mods Folder. Where no file manager starts, say where the folder
     /// is.
-    fn open_mods_folder(state: &mut AppState) {
+    pub(super) fn open_mods_folder(state: &mut AppState) {
         let opened = state
             .platform
             .game_config
@@ -460,15 +462,7 @@ impl App {
             made.dir.display(),
             made.copied.join(", ")
         );
-        Self::refresh_mods_page(state);
-        let layout = Self::mods_layout(state);
-        if let Some(page) = state.frontend.mods.page.as_mut() {
-            page.selected = page
-                .rows
-                .iter()
-                .position(|row| row.folder.as_deref() == Some(made.folder.as_str()));
-            Self::show_selected_mod(page, &layout);
-        }
+        Self::select_installed_mod(state, &made.folder);
         Self::open_shell_message_box(
             state,
             ShellMessageBox {
@@ -484,6 +478,19 @@ impl App {
                 purpose: ShellMessageBoxPurpose::ModMade(made.dir),
             },
         );
+    }
+
+    /// Refresh the list and bring a mod we just added into view.
+    pub(super) fn select_installed_mod(state: &mut AppState, folder: &str) {
+        Self::refresh_mods_page(state);
+        let layout = Self::mods_layout(state);
+        if let Some(page) = state.frontend.mods.page.as_mut() {
+            page.selected = page
+                .rows
+                .iter()
+                .position(|row| row.folder.as_deref() == Some(folder));
+            Self::show_selected_mod(page, &layout);
+        }
     }
 
     /// New Mod's box: Open Folder shows the new mod's folder, or says where it

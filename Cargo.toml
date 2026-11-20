@@ -269,6 +269,18 @@ arboard = { version = "3.7", default-features = false }
 [target.'cfg(windows)'.dependencies]
 mimalloc = { version = "0.1.52", default-features = false }
 
+# Use wgpu-hal's Windows bindings for the device removal reason and the
+# Shell COM file chooser.
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_System_Com",
+    "Win32_UI_Shell_Common",
+]
+
 # --- Windows program icon and version details ---
 # build.rs compiles them into vera20k.exe with the Windows SDK's resource
 # compiler. A target table for build dependencies matches the host, so other

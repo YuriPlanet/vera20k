@@ -305,7 +305,14 @@ impl ShellMessageBox {
                 | ShellMessageBoxPurpose::ModRestart(_)
                 | ShellMessageBoxPurpose::ModFiles(_)
                 | ShellMessageBoxPurpose::ModMade(_)
-        )
+        ) || self.is_mod_import()
+    }
+
+    pub(crate) fn is_mod_import(&self) -> bool {
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        return matches!(self.purpose, ShellMessageBoxPurpose::ModImport(_));
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+        false
     }
 
     /// The settings VERA's Esc menu shows.
@@ -340,6 +347,8 @@ pub(crate) enum ShellMessageBoxPurpose {
     CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),
     /// MapSelect's failed Init message returns to the victory continuation.
     CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),
+    /// The displayed choice is a projection of MatchSession's stage ballot.
+    AuthoredCampaignResult(Option<usize>),
     /// The updater's offer (`0x121`): Update, Skip Version or Later, over
     /// the release's change list.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -357,6 +366,9 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// The Mods page's Use This Mod: Restart keeps this folder, or the
     /// original game, for the next start and starts the game again.
     ModRestart(Option<String>),
+    /// ZIPs or extracted parts selected for Add Mod, or their import in progress.
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    ModImport(Box<crate::app::shell_mod_import::Dialog>),
     /// The Mods page's Check Files (`App::check_picked_mod`).
     ModFiles(ModFilesBox),
     /// The Mods page's New Mod made this folder: Open Folder shows it, Close

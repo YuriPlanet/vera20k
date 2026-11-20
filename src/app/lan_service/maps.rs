@@ -878,7 +878,17 @@ pub(super) fn received_options(
     result
 }
 
+pub(super) fn clear_campaign_transfer(state: &mut AppState) {
+    if let Some(service) = &mut state.match_state.lan_service {
+        service.maps.cancel();
+    }
+    setup::set_network_map_progress(state, None);
+}
+
 pub(super) fn poll(state: &mut AppState) {
+    if state.match_state.session.campaign_room().is_some() {
+        return;
+    }
     // A direct spawn's map is the launcher's file; nothing is transferred.
     if state
         .match_state

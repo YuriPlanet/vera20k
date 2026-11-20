@@ -245,6 +245,7 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
         events.owned_display_handle(),
         true,
         wgpu::Backends::PRIMARY,
+        |_| {},
     )
     .unwrap();
     let batch = BatchRenderer::new(&gpu);

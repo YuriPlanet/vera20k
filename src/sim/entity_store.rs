@@ -16,6 +16,8 @@
 //! - Batch iteration with mutation: collect `keys_sorted()`, loop with
 //!   `get_mut_if()` so an entity the walk leaves unchanged is not handed out
 //!   (every hand-out enters the touch logs; see `touched`)
+//! - A walk that writes only each visited entity's own fields:
+//!   `for_each_entry_mut`, which needs no id list or lookup by id
 //!
 //! ## Dependency rules
 //! - Part of sim/ — stores sim/game_entity; the shared AirTracker query reads
@@ -378,9 +380,8 @@ impl EntityStore {
         if cell.owed == 0 {
             return;
         }
-        // Through a shared reference, as the per-visit step does: waking is
-        // not a hand-out.
-        if let Some(entity) = self.entities[slot].as_deref() {
+        // Waking is not a hand-out: no note in the touch logs.
+        if let Some(entity) = self.entities[slot].as_deref_mut() {
             entity.settle_sleep(cell.owed);
         }
     }
@@ -763,14 +764,35 @@ impl EntityStore {
         self.entities[slot].as_deref_mut()
     }
 
+    /// Visit the stored entities whose category `keep` selects, in ascending
+    /// stable_id order, without an id list or a lookup by id. `visit` reads
+    /// each through [`EntryMut::get`] and borrows it for writing through
+    /// [`EntryMut::into_mut`], which is a hand-out as [`Self::get_mut`] makes
+    /// one; an entity only read stays out of the touch logs. For walks that
+    /// write only the visited entity's own fields.
+    pub(super) fn for_each_entry_mut(
+        &mut self,
+        keep: impl Fn(EntityCategory) -> bool,
+        mut visit: impl FnMut(EntryMut<'_>),
+    ) {
+        self.check_attached();
+        for slot in 0..self.entities.len() {
+            if self.entities[slot].is_some() && keep(self.categories[slot]) {
+                visit(EntryMut { store: self, slot });
+            }
+        }
+    }
+
     /// Step `stable_id`'s mission AI counter (`+0xC4`) for one AI visit
     /// (`0x006FA646..0x006FA64F`) without a note in the touch logs: every
     /// techno steps it every frame, and no product derived from the logs
     /// reads it. No-op if the entity is absent.
     pub(crate) fn count_mission_ai_visit(&mut self, stable_id: u64) {
-        // Through a shared reference: the counter steps without a mutable
-        // hand-out, which would wake the object and note it in the logs.
-        if let Some(entity) = self.get(stable_id) {
+        // Not a hand-out: stepping the counter neither wakes the object nor
+        // notes it in the logs.
+        if let Some(slot) = self.slot(stable_id)
+            && let Some(entity) = self.entities[slot as usize].as_deref_mut()
+        {
             entity.mission.count_ai_visit();
         }
     }
@@ -997,7 +1019,7 @@ impl EntityStore {
     /// check).
     pub(crate) fn values_of_owners(
         &self,
-        keep: impl Fn(u64, InternedId) -> bool,
+        mut keep: impl FnMut(u64, InternedId) -> bool,
     ) -> impl Iterator<Item = &GameEntity> {
         self.ids
             .iter()
@@ -1341,6 +1363,38 @@ impl DoubleEndedIterator for Stored<'_> {
 
 impl ExactSizeIterator for Stored<'_> {}
 
+/// One stored entity of an [`EntityStore::for_each_entry_mut`] walk. It holds
+/// the store, so the visit can neither add nor remove an entity: the slot
+/// stays filled for as long as the entry lives.
+pub(super) struct EntryMut<'a> {
+    store: &'a mut EntityStore,
+    slot: usize,
+}
+
+impl<'a> EntryMut<'a> {
+    pub(super) fn id(&self) -> u64 {
+        self.store.ids[self.slot]
+    }
+
+    /// Read the entity without handing it out.
+    pub(super) fn get(&self) -> &GameEntity {
+        self.store.entities[self.slot]
+            .as_deref()
+            .expect("the walk visits filled slots only")
+    }
+
+    /// Hand the entity out for writing, as [`EntityStore::get_mut`] does:
+    /// noted in the touch logs and woken first.
+    pub(super) fn into_mut(self) -> &'a mut GameEntity {
+        let id = self.id();
+        self.store.touched.note(id, self.store.slot_of.len());
+        self.store.wake_slot(self.slot);
+        self.store.entities[self.slot]
+            .as_deref_mut()
+            .expect("the walk visits filled slots only")
+    }
+}
+
 impl serde::Serialize for EntityStore {
     /// The stored entities as a map from stable_id, in ascending order: the
     /// form the former `BTreeMap` storage wrote.
@@ -1354,7 +1408,7 @@ impl serde::Serialize for EntityStore {
             match self.owed_visits(id) {
                 0 => map.serialize_entry(&id, entity)?,
                 owed => {
-                    let settled = entity.clone();
+                    let mut settled = entity.clone();
                     settled.settle_sleep(owed);
                     map.serialize_entry(&id, &settled)?;
                 }
@@ -1416,6 +1470,46 @@ mod tests {
         assert!(store.get_mut_if(7, |_| false).is_none());
         assert_eq!(store.hand_outs(), handed_out);
         assert_eq!(store.get(7).unwrap().mission.ai_counter(), 2);
+    }
+
+    /// The entry walk skips removed slots and unkept categories, and only an
+    /// entry taken for writing is handed out and woken, as `get_mut` would.
+    #[test]
+    fn the_entry_walk_hands_out_only_entries_taken_for_writing() {
+        let mut store = EntityStore::new();
+        for id in [3, 5, 8, 9] {
+            store.insert(GameEntity::test_default(id, "MTNK", "Americans", 5, 5));
+        }
+        store.insert(GameEntity::test_default_of_category(
+            11,
+            "GI",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        ));
+        store.remove(5);
+        store.sleep_until(3, 100, 0);
+        store.sleep_until(8, 100, 0);
+        let handed_out = store.hand_outs();
+        let mut visited = Vec::new();
+        store.for_each_entry_mut(
+            |category| category == EntityCategory::Unit,
+            |entry| {
+                visited.push(entry.id());
+                if entry.id() == 8 {
+                    entry.into_mut();
+                }
+            },
+        );
+        assert_eq!(visited, [3, 8, 9]);
+        assert_eq!(store.hand_outs() - handed_out, 1);
+        assert_eq!(
+            store.sleeps_until(3),
+            Some((100, 0)),
+            "only read: still asleep"
+        );
+        assert_eq!(store.sleeps_until(8), None, "taken for writing: woken");
     }
 
     /// Populated original412B40 ->4137A0 controls. Buckets hold opaque

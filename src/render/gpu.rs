@@ -46,6 +46,58 @@ pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 /// GPU's own, so Metal keeps [`MAX_USEFUL_TEXTURE_DIM`].
 pub(crate) const SHARED_MEMORY_TEXTURE_DIM: u32 = 8_192;
 
+/// A shader module built without naga's loop counter. naga wraps every loop
+/// in a countdown from `u32::MAX` so a driver never meets an endless loop,
+/// at a cost in every iteration; the shaders built here loop only over
+/// counts the CPU already caps. A combat light replays at most `PASS_LIGHTS`
+/// earlier lights (`combat_light`), a terrain edit at most one window of
+/// commands and as many shadow halves (`terrain_batch::WINDOW`), and a scaled
+/// copy covers at most the frame pixels one window pixel spans, bounded by
+/// the zoom range (`scaled_copy`). The bounds and integer-division checks
+/// stay on. Unmeasured on the integrated GPUs it is for; this Mac draws no
+/// scene with lights and edits in the background.
+///
+/// # Safety
+///
+/// Every loop in `desc` terminates for every input the CPU sends.
+pub(crate) fn bounded_loop_module(
+    device: &wgpu::Device,
+    desc: wgpu::ShaderModuleDescriptor<'_>,
+) -> wgpu::ShaderModule {
+    let checks = wgpu::ShaderRuntimeChecks {
+        force_loop_bounding: false,
+        ..wgpu::ShaderRuntimeChecks::checked()
+    };
+    // SAFETY: the callers' loops are bounded by counts the CPU clamps, as the
+    // documentation above lists.
+    unsafe { device.create_shader_module_trusted(desc, checks) }
+}
+
+/// Whether a 2D texture of `size` fits the device's limit, which is what
+/// [`requested_texture_dim`] asked for: 16384 on most desktop cards, 8192 on
+/// shared-memory chips, 4096 or less on old and WebGL devices. wgpu fails
+/// validation on a larger one, and this game treats that as fatal, so an
+/// atlas sized from a map's, mod's or theater's data asks here first and
+/// refuses, clamps or leaves pieces out with a word in the log.
+pub(crate) fn texture_fits(device: &wgpu::Device, size: [u32; 2]) -> bool {
+    let limit = device.limits().max_texture_dimension_2d;
+    size[0] <= limit && size[1] <= limit
+}
+
+/// A GPU that draws from the system's memory outside Metal: a Windows or
+/// Linux integrated chip, or the processor itself. Its texture pages are
+/// smaller ([`requested_texture_dim`]), its command buffers shorter
+/// (`terrain_submission`), and its first match frames are timed for the log.
+pub(crate) fn shared_memory_graphics(
+    backend: wgpu::Backend,
+    device_type: wgpu::DeviceType,
+) -> bool {
+    matches!(
+        device_type,
+        wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::Cpu
+    ) && backend != wgpu::Backend::Metal
+}
+
 /// The 2D texture edge this device is asked for: what the adapter offers, up
 /// to [`MAX_USEFUL_TEXTURE_DIM`], or [`SHARED_MEMORY_TEXTURE_DIM`] on a GPU
 /// that draws from the system's memory outside Metal.
@@ -54,11 +106,7 @@ pub(crate) fn requested_texture_dim(
     device_type: wgpu::DeviceType,
     adapter_max: u32,
 ) -> u32 {
-    let shared_memory = matches!(
-        device_type,
-        wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::Cpu
-    ) && backend != wgpu::Backend::Metal;
-    let useful = if shared_memory {
+    let useful = if shared_memory_graphics(backend, device_type) {
         SHARED_MEMORY_TEXTURE_DIM
     } else {
         MAX_USEFUL_TEXTURE_DIM
@@ -260,18 +308,28 @@ impl GpuContext {
         display: OwnedDisplayHandle,
         hidden_capture: bool,
         backends: wgpu::Backends,
+        on_adapter: impl FnOnce(&wgpu::AdapterInfo),
     ) -> Result<Self> {
-        block_on(Self::new_async(window, display, hidden_capture, backends))
-            .context(GraphicsUnavailable)
+        block_on(Self::new_async(
+            window,
+            display,
+            hidden_capture,
+            backends,
+            on_adapter,
+        ))
+        .context(GraphicsUnavailable)
     }
 
     /// Async initialization — called by new() via block_on(). `backends` is
-    /// what this start asks wgpu for (`persistence::startup_backend`).
+    /// what this start asks wgpu for, and `on_adapter` hears which adapter
+    /// was chosen before the driver is asked for a device, the call a driver
+    /// can hang in (`persistence::startup_backend::starting`).
     async fn new_async(
         window: Arc<Window>,
         display: OwnedDisplayHandle,
         hidden_capture: bool,
         backends: wgpu::Backends,
+        on_adapter: impl FnOnce(&wgpu::AdapterInfo),
     ) -> Result<Self> {
         // Where a driver offers Vulkan and DirectX 12, wgpu takes Vulkan, the
         // first API it lists; a start record asks for one alone
@@ -376,6 +434,7 @@ impl GpuContext {
             device: adapter_info.device,
             name: adapter_info.name.clone(),
         });
+        on_adapter(&adapter_info);
 
         // Atlas sizing is bounded by whatever limits we *request*, not by the hardware.
         let adapter_limits = adapter.limits();
@@ -422,6 +481,11 @@ impl GpuContext {
         } else {
             required_limits
         };
+        // The two calls below are the driver's, and an old one can hang in
+        // either: an Intel HD 620's 2017 Vulkan driver never returned from
+        // them, and its log ended at the limits line above. Each is named, so
+        // a log that stops here says which.
+        log::info!("Requesting the graphics device");
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("RA2 Device"),
@@ -517,6 +581,13 @@ impl GpuContext {
             // the pre-30 sRGB behaviour for every desktop and WebGL2 backend.
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
+        log::info!(
+            "Configuring the surface: {}x{} {:?}, {:?}",
+            config.width,
+            config.height,
+            config.format,
+            config.present_mode
+        );
         surface.configure(&device, &config);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let web_present = Arc::new(web_present::WebPresent::new(&device, &queue, &config));
@@ -623,6 +694,55 @@ impl GpuContext {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) fn device_lost(&self) -> Option<&str> {
         lost_device()
+    }
+
+    /// Whether this device draws from the system's memory
+    /// ([`shared_memory_graphics`]).
+    pub(crate) fn shared_memory_graphics(&self) -> bool {
+        shared_memory_graphics(self.adapter_info.backend, self.adapter_info.device_type)
+    }
+
+    /// Why DirectX 12 lost the device, in the driver's own terms: a GPU that
+    /// stopped responding (Windows ends that after two seconds), a reset, a
+    /// driver internal error or a rejected call. wgpu reports every one as
+    /// "Device is lost", so the reason comes from `GetDeviceRemovedReason` on
+    /// the raw device, which DirectX defines for exactly this state. `None` on
+    /// other APIs and platforms.
+    #[cfg(windows)]
+    pub(crate) fn device_removed_reason(&self) -> Option<String> {
+        use windows::Win32::Graphics::Dxgi;
+        if self.adapter_info.backend != wgpu::Backend::Dx12 {
+            return None;
+        }
+        // SAFETY: the hal device is only read, through a method DirectX 12
+        // defines for a lost device, and the guard is dropped before the
+        // device could be.
+        let hal = unsafe { self.device.as_hal::<wgpu::hal::api::Dx12>() }?;
+        let result = unsafe { hal.raw_device().GetDeviceRemovedReason() };
+        let error = match result {
+            Ok(()) => return Some("DirectX reports no removal".to_owned()),
+            Err(error) => error,
+        };
+        let code = error.code();
+        let meaning = if code == Dxgi::DXGI_ERROR_DEVICE_HUNG {
+            "DXGI_ERROR_DEVICE_HUNG: the GPU stopped responding to its commands, which Windows ends after two seconds"
+        } else if code == Dxgi::DXGI_ERROR_DEVICE_RESET {
+            "DXGI_ERROR_DEVICE_RESET: the driver reset the GPU"
+        } else if code == Dxgi::DXGI_ERROR_DEVICE_REMOVED {
+            "DXGI_ERROR_DEVICE_REMOVED: the adapter was removed or its driver updated"
+        } else if code == Dxgi::DXGI_ERROR_DRIVER_INTERNAL_ERROR {
+            "DXGI_ERROR_DRIVER_INTERNAL_ERROR: the driver failed inside itself"
+        } else if code == Dxgi::DXGI_ERROR_INVALID_CALL {
+            "DXGI_ERROR_INVALID_CALL: the driver was given a call it rejects"
+        } else {
+            "an unlisted reason"
+        };
+        Some(format!("DirectX removal reason {code}: {meaning}"))
+    }
+
+    #[cfg(not(windows))]
+    pub(crate) fn device_removed_reason(&self) -> Option<String> {
+        None
     }
 
     /// Whether the window currently owns a render surface.

@@ -236,8 +236,10 @@ pub fn load_campaign_stage(
     retail_dir: &Path,
     map_file_name: &str,
     seed: u32,
-    start: &AuthoredCampaignStart,
+    launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'_>,
     accepted_native_id_prefix: Option<u32>,
+    game_speed: Option<i32>,
+    logical_map: Option<&str>,
 ) -> Result<HeadlessScenario, String> {
     let mut assets =
         AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
@@ -251,11 +253,13 @@ pub fn load_campaign_stage(
         map_file_name,
         seed,
         HeadlessLaunch::Campaign {
-            start,
+            launch,
             manifest: None,
+            game_speed,
+            logical_map,
         },
         &mut assets,
-        ScenarioGameMode::Lan,
+        launch.mode,
         accepted_native_id_prefix,
         None,
     )
@@ -315,15 +319,21 @@ pub fn check_campaign_stage(
             "Use a UTF-8 path inside the series directory",
         )
     })?;
-    let start = AuthoredCampaignStart::from_stage(stage, index, Default::default())?;
+    let start = AuthoredCampaignStart::from_stage(stage, index, 1, Default::default())?;
     let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)?;
     let mut scene = load_with_assets(
         retail_dir,
         map_path,
         1,
         HeadlessLaunch::Campaign {
-            start: &start,
+            launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                start: &start,
+                mode: ScenarioGameMode::Lan,
+                local_source: Some(0),
+            },
             manifest: Some(stage),
+            game_speed: None,
+            logical_map: None,
         },
         &mut assets,
         ScenarioGameMode::Lan,
@@ -360,8 +370,10 @@ pub fn check_campaign_stage(
 enum HeadlessLaunch<'a> {
     Slots(&'a MatchLaunchDescriptor),
     Campaign {
-        start: &'a AuthoredCampaignStart,
+        launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'a>,
         manifest: Option<&'a CampaignStage>,
+        game_speed: Option<i32>,
+        logical_map: Option<&'a str>,
     },
 }
 
@@ -412,9 +424,14 @@ fn load_with_assets(
     accepted_native_id_prefix: Option<u32>,
     process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
 ) -> Result<HeadlessScenario, HeadlessLoadError> {
-    let (slot_launch, campaign, manifest) = match launch {
-        HeadlessLaunch::Slots(launch) => (Some(launch), None, None),
-        HeadlessLaunch::Campaign { start, manifest } => (None, Some(start), manifest),
+    let (slot_launch, campaign, manifest, campaign_speed, logical_map) = match launch {
+        HeadlessLaunch::Slots(launch) => (Some(launch), None, None, None, None),
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest,
+            game_speed,
+            logical_map,
+        } => (None, Some(launch.start), manifest, game_speed, logical_map),
     };
     let loaded_map =
         crate::map::source::load_map_by_name_or_path_with_assets(retail_dir, map_file_name, assets)
@@ -505,7 +522,7 @@ fn load_with_assets(
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     let mode_class = slot_launch.map(|launch| launch.session().mode.class);
     let rule_policy = if let Some(start) = campaign {
-        start.rule_policy.with_counts_player_control_as_human(false)
+        start.rule_policy()
     } else {
         // Slot launches keep their native constructor even with scripted rules.
         let construction = BootstrapRuleProfile::Multiplayer;
@@ -527,22 +544,26 @@ fn load_with_assets(
     if let Some(stage) = manifest {
         stage.validate_house_names(house_roster.houses.iter().map(|house| house.name.as_str()))?;
     }
+    let campaign_options = campaign_speed.map(|game_speed| crate::sim::game_options::GameOptions {
+        game_speed,
+        ..Default::default()
+    });
     let prefix = match (launch, scenario_prefix_plan) {
         (HeadlessLaunch::Slots(launch), Some(plan)) => FreshScenarioPrefix::StockOffline(
             plan.bind_native_rules_receipt(native_rules_receipt, launch, &rules)
                 .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?,
         ),
-        (HeadlessLaunch::Campaign { start, .. }, None) => FreshScenarioPrefix::Campaign {
+        (HeadlessLaunch::Campaign { launch, .. }, None) => FreshScenarioPrefix::Campaign {
             native_rules_receipt,
             rules: &rules,
             map_data: &map,
             house_roster: &house_roster,
-            difficulty: 1,
-            mission_counter: start.mission_counter,
-            game_options: None,
+            difficulty: launch.start.difficulty(),
+            mission_counter: launch.start.mission_counter(),
+            game_options: campaign_options.as_ref(),
             campaign_index: 0,
             restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
-            network: Some(start),
+            network: Some(launch),
         },
         _ => unreachable!("each launch uses its own prepared construction"),
     };
@@ -556,7 +577,7 @@ fn load_with_assets(
         .ok_or_else(|| "fresh cell-array extent overflow".to_string())?;
     let descriptor = ScenarioDescriptor {
         seed,
-        map_name: map_file_name.to_string(),
+        map_name: logical_map.unwrap_or(map_file_name).to_string(),
         theater: map.header.theater.clone(),
         rule_policy,
         free_radar: map.basic.free_radar.unwrap_or(false),
@@ -770,7 +791,7 @@ fn load_with_assets(
         &house_roster,
         descriptor.rule_policy,
         slot_launch,
-        campaign.map(|start| &start.carry_over),
+        campaign.map(AuthoredCampaignStart::carry_over),
     )
     .map_err(|error| error.to_string())?;
     if !post_map.navigation_published {

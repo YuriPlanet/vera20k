@@ -95,7 +95,13 @@ pub(super) enum Request {
         /// A returning player's match and the end of its event history; the
         /// `timing_confirmed` before it belongs to the process that left.
         resume: Option<(String, u64)>,
+        /// A watcher's bearer (docs/spawn.md "Watching"): it polls only on
+        /// `Request::PollEvents` and sends no command.
+        watch: bool,
     },
+    /// One `/v1/events` poll under a watcher's adopted bearer, which the
+    /// game service answers with `watch_renewed`.
+    PollEvents,
     Channels(u32),
     /// `GET /v1/matches`, answered by [`Response::Matches`].
     Matches {
@@ -329,6 +335,7 @@ pub(super) enum Response {
         sign_in_token: Option<String>,
         /// The lobby offers `visit_lobby`.
         lobby_visits: bool,
+        campaign_rooms: bool,
     },
     LoginFailed {
         attempt: u64,
@@ -732,9 +739,23 @@ struct Client {
     active_match: Option<String>,
     /// The bearer came from an external launcher, not `/v1/sessions`.
     spawned: bool,
+    /// The adopted bearer is a watcher's: no polling of its own and no
+    /// commands, only `Request::PollEvents`.
+    watching: bool,
+    /// The match service refused a watcher's renewal for good (its match
+    /// ended, or the bearer is no longer valid): no more polls.
+    watch_refused: bool,
     /// The lobby stopped answering and the player was told the connection
     /// was lost: no more polls; the next sign-in logs this bearer out first.
     abandoned: bool,
+}
+
+/// A watcher's renewal poll the match service refused for good: its match
+/// ended (409 `unknown_match`), or its bearer acts no more (401, 403). A
+/// network failure (status 0), 408, 429 and 5xx are worth another try.
+fn watch_renewal_refused(error: &RequestFailure) -> bool {
+    let status = error.status();
+    (400..500).contains(&status) && !matches!(status, 408 | 429)
 }
 
 fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, RequestFailure> {
@@ -783,6 +804,8 @@ impl Client {
             changes: String::new(),
             active_match: None,
             spawned: false,
+            watching: false,
+            watch_refused: false,
             abandoned: false,
         }
     }
@@ -801,12 +824,13 @@ impl Client {
         )
     }
 
-    fn adopt_session(&mut self, token: String, resume: Option<(String, u64)>) {
+    fn adopt_session(&mut self, token: String, resume: Option<(String, u64)>, watch: bool) {
         self.token = Some(token);
         let (active_match, cursor) = resume.map_or((None, 0), |(id, cursor)| (Some(id), cursor));
         self.cursor = cursor;
         self.active_match = active_match;
         self.spawned = true;
+        self.watching = watch;
     }
 
     fn accept_match_resume(
@@ -1364,6 +1388,7 @@ macro_rules! serial_driver {
                                 nickname: session.nickname,
                                 motd: session.motd,
                                 lobby_visits: session.features.iter().any(|feature| feature == "visit_lobby"),
+                                campaign_rooms: session.features.iter().any(|feature| feature == "campaign_rooms"),
                                 sign_in_token: session
                                     .sign_in_token
                                     .filter(|_| matches!(credential, Credential::Password { remember: true, .. })),
@@ -1394,10 +1419,30 @@ macro_rules! serial_driver {
             }
             Some(Request::Abandon) => client.abandoned = client.token.is_some(),
             Some(Request::HoldMatch(match_id)) => client.active_match = match_id,
-            Some(Request::AdoptSession { token, resume }) => {
+            Some(Request::AdoptSession { token, resume, watch }) => {
                 if client.token.is_none() {
-                    client.adopt_session(token, resume);
+                    client.adopt_session(token, resume, watch);
                     failed_polls = 0;
+                }
+            }
+            Some(Request::PollEvents) => {
+                if client.watching && !client.abandoned && !client.watch_refused {
+                    let result = platform_await!(client
+                        .request(&format!("/v1/events?after={}", client.cursor), None))
+                        .and_then(|value| client.batch(value, &output));
+                    // The live service asks again at its renewal retry,
+                    // unless the service said no for good.
+                    if let Err(error) = result {
+                        client.watch_refused = watch_renewal_refused(&error);
+                        if client.watch_refused {
+                            log::info!(
+                                "Watch renewal refused: status={}; renewal stops",
+                                error.status()
+                            );
+                        } else {
+                            log::warn!("Watch renewal poll failed: status={}", error.status());
+                        }
+                    }
                 }
             }
             Some(Request::Channels(kind)) => {
@@ -1432,6 +1477,12 @@ macro_rules! serial_driver {
                 operation,
                 payload,
             }) => {
+                if client.watching {
+                    // A watcher's bearer acts as no player (docs/spawn.md
+                    // "Watching"): the live service sends it no command.
+                    let _ = output.send(Response::CommandCompleted { id, operation });
+                    continue;
+                }
                 if operation == "logout" && client.token.is_none() {
                     // This serial worker has either already acknowledged
                     // logout or never obtained a bearer. No old authority is
@@ -1528,7 +1579,12 @@ macro_rules! serial_driver {
         };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let streaming = false;
-        if client.token.is_some() && !client.abandoned && !streaming && Instant::now() >= next_poll {
+        if client.token.is_some()
+            && !client.watching
+            && !client.abandoned
+            && !streaming
+            && Instant::now() >= next_poll
+        {
             let result = platform_await!(client
                 .request(&format!("/v1/events?after={}", client.cursor), None))
                 .and_then(|value| client.batch(value, &output));
@@ -1575,6 +1631,25 @@ pub(super) use browser::{RequestOwner, start as start_browser};
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    /// docs/spawn.md "Watching": an ended match or a dead bearer stops a
+    /// watcher's renewal; an outage or a busy service does not.
+    #[test]
+    fn a_watchers_renewal_stops_only_on_a_final_refusal() {
+        for status in [401, 403, 409] {
+            assert!(
+                watch_renewal_refused(&RequestFailure::Status(status)),
+                "{status}"
+            );
+        }
+        assert!(watch_renewal_refused(&RequestFailure::LostCursor));
+        for status in [0, 408, 429, 500, 503] {
+            assert!(
+                !watch_renewal_refused(&RequestFailure::Status(status)),
+                "{status}"
+            );
+        }
+    }
 
     fn test_client() -> Client {
         Client::new(
@@ -1770,6 +1845,84 @@ mod tests {
             String::from_utf8_lossy(&request).into_owned()
         });
         (address, lobby)
+    }
+
+    /// docs/spawn.md "Watching": a watcher's bearer polls only when asked,
+    /// sends no command over HTTP, and stops for good once its match ended.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    #[test]
+    fn a_watchers_worker_polls_on_request_and_stops_at_its_matchs_end() {
+        use std::io::{BufRead, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let lobby_seen = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut reader = std::io::BufReader::new(stream.unwrap());
+                let (mut path, mut line) = (String::new(), String::new());
+                while reader.read_line(&mut line).unwrap_or(0) > 2 {
+                    if path.is_empty() {
+                        path = line.split(' ').nth(1).unwrap_or_default().to_owned();
+                    }
+                    line.clear();
+                }
+                let (status, reply) = if path == "/v1/events?after=0" {
+                    (
+                        200,
+                        json!({"cursor":1,"events":[{"sequence":1,"kind":"watch_renewed",
+                            "payload":{"match_id":"m"}}]}),
+                    )
+                } else {
+                    (409, json!({"error":{"code":"unknown_match"}}))
+                };
+                let reply = reply.to_string();
+                lobby_seen.lock().unwrap().push(path.clone());
+                let _ = write!(
+                    reader.into_inner(),
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+            }
+        });
+        let (requests, input) = std::sync::mpsc::channel();
+        let (output, responses) = std::sync::mpsc::channel();
+        let stopping = Arc::new(AtomicBool::new(false));
+        let worker = {
+            let stopping = Arc::clone(&stopping);
+            std::thread::spawn(move || run(base, input, output, stopping))
+        };
+        let next = || responses.recv_timeout(Duration::from_secs(10)).unwrap();
+        let command = |id| Request::Command {
+            id,
+            operation: "leave",
+            payload: json!({}),
+        };
+        requests
+            .send(Request::AdoptSession {
+                token: "watch-token".into(),
+                resume: None,
+                watch: true,
+            })
+            .unwrap();
+        requests.send(Request::PollEvents).unwrap();
+        assert!(matches!(next(), Response::Event(event) if event.kind == "watch_renewed"));
+        // The match ended: refused, and never asked again.
+        for id in [1, 2] {
+            requests.send(Request::PollEvents).unwrap();
+            requests.send(command(id)).unwrap();
+            assert!(matches!(
+                next(),
+                Response::CommandCompleted { id: done, operation: "leave" } if done == id
+            ));
+        }
+        stopping.store(true, Ordering::Release);
+        drop(requests);
+        worker.join().unwrap();
+        assert_eq!(
+            *seen.lock().unwrap(),
+            ["/v1/events?after=0", "/v1/events?after=1"]
+        );
     }
 
     /// A bearer the shell stopped logging out (Back in an outage, or a
@@ -2491,6 +2644,7 @@ mod tests {
         returning.adopt_session(
             "synthetic-test-session".to_owned(),
             Some(("11111111-1111-1111-1111-111111111111".to_owned(), 2)),
+            false,
         );
         assert_eq!(returning.cursor, 2);
         assert_eq!(
@@ -2498,7 +2652,7 @@ mod tests {
             Duration::from_secs(60)
         );
 
-        spawned.adopt_session("synthetic-test-session".to_owned(), None);
+        spawned.adopt_session("synthetic-test-session".to_owned(), None, false);
         assert_eq!(spawned.stream_bearer(), None);
         // The start barrier waits on the other players' events.
         assert_eq!(

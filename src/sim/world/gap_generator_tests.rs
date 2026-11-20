@@ -4,6 +4,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
+use crate::sim::vision;
 use crate::sim::{combat::Health, game_entity::GameEntity, house_state::HouseState};
 
 fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {

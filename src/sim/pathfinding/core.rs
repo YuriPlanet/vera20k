@@ -394,8 +394,8 @@ impl BlockerNeighborCounts {
     }
 }
 
-/// A* expansion gate produced by `Zone_precheck`, and the search's progress
-/// along the precheck's level-0 route.
+/// A* expansion gate produced by `Zone_precheck`, with the precheck's
+/// level-0 route the search's [`RouteProgress`] follows.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HierarchyGate<'a> {
     pub level0_zones: &'a ZoneLevelGraph,
@@ -403,8 +403,6 @@ pub(crate) struct HierarchyGate<'a> {
     pub blocker_neighbor_counts: &'a BlockerNeighborCounts,
     /// The precheck's level-0 route, start zone first (`PathfinderClass+0xBC`).
     pub level0_route: &'a [ZoneId],
-    /// Written by the search, read by the retry after it fails.
-    pub progress: &'a Cell<RouteProgress>,
 }
 
 /// How far a corridor search got along its level-0 route:
@@ -437,14 +435,13 @@ impl HierarchyGate<'_> {
     /// goal's zone. Also native sign-extends the cell's zone word, so a zone
     /// id from `0x8000` never matches; the corridor test above reads it
     /// unsigned too, and retail maps stay far below that many zones.
-    fn advance(&self, cell: (u16, u16)) {
-        let progress = self.progress.get();
+    fn advance(&self, progress: &mut RouteProgress, cell: (u16, u16)) {
         let next = self.level0_route.get(progress.index + 1);
         if next == Some(&self.level0_zones.zone_at(cell.0, cell.1)) {
-            self.progress.set(RouteProgress {
+            *progress = RouteProgress {
                 index: progress.index + 1,
                 cell,
-            });
+            };
         }
     }
 }
@@ -801,12 +798,10 @@ pub trait SearchFootEntry {
     }
     ///429C1A runs after wrapper admission. One transaction is retained through
     ///A* and both finishing passes; fixtures may supply their static overlay.
-    fn prepare_search_markers(
-        &self,
-    ) -> Result<Option<(u8, std::cell::Ref<'_, SearchMarkerOverlay>)>, String> {
+    fn prepare_search_markers(&self) -> Result<Option<(u8, &SearchMarkerOverlay)>, String> {
         Ok(None)
     }
-    fn prepared_search_markers(&self) -> Option<std::cell::Ref<'_, SearchMarkerOverlay>> {
+    fn prepared_search_markers(&self) -> Option<&SearchMarkerOverlay> {
         None
     }
     /// Whether the Foot is a Unit (`WhatAmI` 1) whose type is `Passive=`
@@ -917,6 +912,27 @@ pub fn astar_search(
     requested_goal: (u16, u16),
     options: &AStarOptions<'_>,
 ) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
+    astar_search_along_route(
+        grid,
+        requested_start,
+        start_layer,
+        requested_goal,
+        options,
+        None,
+    )
+}
+
+/// [`astar_search`], also writing to `progress` how far the search got along
+/// the hierarchy gate's level-0 route, which the retry after a failed
+/// search reads.
+fn astar_search_along_route(
+    grid: &PathGrid,
+    requested_start: (u16, u16),
+    start_layer: MovementLayer,
+    requested_goal: (u16, u16),
+    options: &AStarOptions<'_>,
+    mut progress: Option<&mut RouteProgress>,
+) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
     // AStar_main_loop (0x00429AA1..0x00429AEB) refuses a null endpoint
     // before asking the Foot about a neighbour. A packed coordinate can
     // alias a real cell; the closed list uses that cell's +0x24 coordinates
@@ -946,11 +962,13 @@ pub fn astar_search(
     // keep the plain level at both ends, are not ported; no Aircraft reaches
     // FootClass::Find_Path, this search's one production caller.
     let (start_height, goal_height) = initial_search_heights(start_cell, start_layer, goal_cell);
-    if let Some(gate) = options.hierarchy_gate {
-        gate.progress.set(RouteProgress {
+    if options.hierarchy_gate.is_some()
+        && let Some(progress) = progress.as_deref_mut()
+    {
+        *progress = RouteProgress {
             index: 0,
             cell: requested_start,
-        });
+        };
     }
 
     // 0x00429BF3..0x00429C0A: a start cell and height that are the goal's
@@ -965,8 +983,8 @@ pub fn astar_search(
         .foot_entry
         .prepare_search_markers()
         .map_err(PathSearchFailure::CellEntryUnavailable)?;
-    let (urgency, marker_overlay) = match &prepared {
-        Some((urgency, overlay)) => (*urgency, Some(&**overlay)),
+    let (urgency, marker_overlay) = match prepared {
+        Some((urgency, overlay)) => (urgency, Some(overlay)),
         None => (options.urgency, options.marker_overlay),
     };
     // --- Arrays ---
@@ -1266,8 +1284,10 @@ pub fn astar_search(
                         on_bridge: neighbor_use_bridge,
                     },
                 );
-                if let Some(gate) = options.hierarchy_gate {
-                    gate.advance((nx, ny));
+                if let (Some(gate), Some(progress)) =
+                    (options.hierarchy_gate, progress.as_deref_mut())
+                {
+                    gate.advance(progress, (nx, ny));
                 }
             }
 
@@ -1325,8 +1345,10 @@ pub fn astar_search(
                             on_bridge: false,
                         },
                     );
-                    if let Some(gate) = options.hierarchy_gate {
-                        gate.advance((nx, ny));
+                    if let (Some(gate), Some(progress)) =
+                        (options.hierarchy_gate, progress.as_deref_mut())
+                    {
+                        gate.advance(progress, (nx, ny));
                     }
                 }
             }
@@ -2170,7 +2192,7 @@ pub(crate) fn find_layered_path_marker(
     start: (u16, u16),
     start_layer: MovementLayer,
     goal: (u16, u16),
-    hierarchy_gate: Option<HierarchyGate<'_>>,
+    hierarchy: Option<(HierarchyGate<'_>, &mut RouteProgress)>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     facts: MoverSearchFacts<'_>,
@@ -2178,7 +2200,8 @@ pub(crate) fn find_layered_path_marker(
     if !matches!(start_layer, MovementLayer::Ground | MovementLayer::Bridge) {
         return Err(PathSearchFailure::CellSearchExhausted);
     }
-    astar_search(
+    let (hierarchy_gate, progress) = hierarchy.unzip();
+    astar_search_along_route(
         grid,
         start,
         start_layer,
@@ -2190,6 +2213,7 @@ pub(crate) fn find_layered_path_marker(
             urgency: facts.urgency,
             ..AStarOptions::new(facts.foot_entry)
         },
+        progress,
     )
 }
 

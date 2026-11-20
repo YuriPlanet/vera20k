@@ -122,8 +122,7 @@ pub(super) fn finish(
     if path.is_empty() {
         return Ok(Vec::new());
     }
-    let prepared_markers = foot.prepared_search_markers();
-    let markers = prepared_markers.as_deref().or(markers);
+    let markers = foot.prepared_search_markers().or(markers);
     let start = (path[0].rx as i16, path[0].ry as i16);
     let ctx = Finishing {
         cells: context.resolved_terrain.map(NativeCellQuery::canonical),

@@ -29,7 +29,7 @@ R07 守卫禁止 `rules/`、`map/` 和已迁移的玩法链读取原始模式，
 
 ## Phase 2 发令来源与阵营权限
 
-权限按 `Source × House` 查找。`ControlGrantTable` 持有规范排序和去重后的权威授权，相同授权合并，同一键的冲突授权拒绝接纳。`ControlScopeTable` 是 O(1) 紧凑平面派生表。每次使用缓存都校验实时 `house_count`，阵营数变化时按新维度重建。空授权保留 `has_any_grants` 快路径，沿用原版判定且无需分配或读取派生表。
+权限按 `Source × House` 查找。`ControlGrantTable` 持有规范排序和去重后的权威授权，相同授权合并，同一键的冲突授权拒绝接纳。查找时先在实时阵营表中找到目标阵营的槽位，再对规范排序的授权做二分查找，不保留派生缓存表。空授权保留 `has_any_grants` 快路径，沿用原版判定且无需分配。
 
 权限结果为 `OwnFull`、`FullControl`、`UnitsOnly`、`None`。主体解析与能力映射均使用穷尽 `match`，禁止用 `_ =>` 兜底吞并新增命令。
 
@@ -55,7 +55,7 @@ R07 守卫禁止 `rules/`、`map/` 和已迁移的玩法链读取原始模式，
 
 ## Phase 3 剧本蓝图与回放
 
-R11–R12 携带权限表的剧本蓝图沿用 Phase 2 已接纳的规则、来源映射与权限表。`MatchStartBlueprint` 用 `kind` 标识遭遇战、原版合作与剧本锁步启动，保留生成地图标签，启动配方只携带仿真所需的事实。原版合作续关沿用现有的单份 `CampaignCarryOver`。图形与无头回放按原位重放 `ScenarioServiceInput`，校验逐检查点以及最后一条服务之后的终局共享哈希与原始计分快照。多阵营 `StageCarryOver` 和 `CampaignGraph` 在 Phase 5 随消费者一起落地。
+R11–R12 携带权限表的剧本蓝图沿用 Phase 2 已接纳的规则、来源映射与权限表。`MatchStartBlueprint` 用 `kind` 标识遭遇战、原版合作与剧本锁步启动，保留生成地图标签，启动配方只携带仿真所需的事实。原版合作续关沿用现有的单份 `CampaignCarryOver`。图形与无头回放按原位重放 `ScenarioServiceInput`，校验逐检查点以及最后一条服务之后的终局共享哈希与原始计分快照。联机战役在续关时按清单路线应用多阵营 `StageCarryOver`，重试使用入关时的继承记录。作者格式与检查命令见[战役清单](campaign-manifest.md)。
 
 ## Phase 4 房间信封
 

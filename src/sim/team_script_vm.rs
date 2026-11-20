@@ -35,7 +35,7 @@ use crate::rules::ruleset::{CountryIdx, GeneralRules};
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
-use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
+use crate::util::native_x87::{MaskedX87Chop53, MaskedX87Ordering, NativeF64Bits};
 
 mod actions;
 mod follow_friendlies;
@@ -350,37 +350,39 @@ impl AiTriggerTrackRecord {
     ///   TrackRecordCoefficient))`, then `n` grows by one;
     ///
     /// where `n` is the attempts and `s` the successes (the adjustment is 0
-    /// while `n <= 0`), and `w'` is stored as a double and clamped: below
-    /// `min` it becomes `min`, above `max` it becomes `max`
-    /// (`TEST AH,0x41`, so an unordered compare keeps it).
+    /// while `n <= 0`), and `w'` is stored as a double (`FST`) and clamped:
+    /// `w'` below `min` or unordered with it (`FCOMP`, `TEST AH,0x1`) becomes
+    /// `min`; the stored weight above `max` (`TEST AH,0x41`, so an unordered
+    /// compare keeps it) becomes `max`.
+    ///
+    /// Exceptions are masked: an infinite Rules double (the three keys are
+    /// ReadDouble into binary64, so about `1.8e308` and up, e.g. `1e309`, in
+    /// the INI), the infinite weight it gives and the NaN an infinity times
+    /// zero gives flow through the same instructions instead of trapping.
     fn record(
         &mut self,
         succeeded: bool,
         bounds: [NativeF64Bits; 2],
         rules: &AiTriggerFeedbackRules,
     ) {
-        type X = X87Chop53;
-        let load = |bits: NativeF64Bits| {
-            X::load_f64(bits).expect("AI trigger weights and Rules deltas are finite")
-        };
+        type X = MaskedX87Chop53;
         let zero = X::load_i32(0);
         let mut adjustment = zero;
         if self.attempts > 0 {
             let attempts = X::load_i32(self.attempts);
-            let ratio =
-                X::div(X::load_i32(self.successes), attempts).expect("attempts is positive");
-            let mut record = X::sub(ratio, load(NativeF64Bits::HALF));
+            let ratio = X::div(X::load_i32(self.successes), attempts);
+            let mut record = X::sub(ratio, X::load_f64(NativeF64Bits::HALF));
             if !succeeded {
-                record = X::mul(record, load(rules.track_record_coefficient));
+                record = X::mul(record, X::load_f64(rules.track_record_coefficient));
             }
             let product = X::mul(attempts, record);
-            // `FCOM 0.0`: success keeps a product that is not below zero
-            // (`TEST AH,0x1`), failure one that is below or equal
-            // (`TEST AH,0x41`).
+            // `FCOM 0.0`: success keeps a product that is above or equal to
+            // zero (`TEST AH,0x1`), failure one that is below, equal or
+            // unordered (`TEST AH,0x41`).
             let keep = match X::compare(product, zero) {
-                X87Ordering::Less => !succeeded,
-                X87Ordering::Equal => true,
-                X87Ordering::Greater => succeeded,
+                MaskedX87Ordering::Equal => true,
+                MaskedX87Ordering::Greater => succeeded,
+                MaskedX87Ordering::Less | MaskedX87Ordering::Unordered => !succeeded,
             };
             if keep {
                 adjustment = product;
@@ -391,13 +393,20 @@ impl AiTriggerTrackRecord {
         } else {
             rules.failure_weight_delta
         };
-        let weight = X::add(X::add(load(delta), load(self.weight)), adjustment);
-        self.weight = X::store_f64(weight).expect("an AI trigger weight stays finite");
+        let weight = X::add(
+            X::add(X::load_f64(delta), X::load_f64(self.weight)),
+            adjustment,
+        );
+        self.weight = X::store_f64_masked_chop(weight);
         let [minimum, maximum] = bounds;
-        if X::compare(load(self.weight), load(minimum)) == X87Ordering::Less {
+        if matches!(
+            X::compare(weight, X::load_f64(minimum)),
+            MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+        ) {
             self.weight = minimum;
         }
-        if X::compare(load(self.weight), load(maximum)) == X87Ordering::Greater {
+        if X::compare(X::load_f64(self.weight), X::load_f64(maximum)) == MaskedX87Ordering::Greater
+        {
             self.weight = maximum;
         }
         if succeeded {
@@ -865,6 +874,12 @@ pub struct TeamScriptVm {
     /// destructor, not its Limbo or UnInit.
     #[serde(default)]
     rejoin_team: BTreeMap<u64, u64>,
+    /// Scratch for `Regroup`'s copy of a team's member list
+    /// ([`Simulation::team_regroup`]), kept so the walk allocates once per
+    /// match instead of once per regrouping team per tick. Empty between
+    /// walks; saves and the state hash leave it out.
+    #[serde(skip)]
+    regroup_members: Vec<TeamMember>,
 }
 
 impl TeamScriptVm {

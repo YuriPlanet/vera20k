@@ -164,26 +164,23 @@ pub(crate) fn build_overlay_presentation(
     // Use theater-provided palettes if available, otherwise fall back to search.
     let theater_palette: Option<Palette> = theater_iso_palette.cloned().or_else(|| {
         let pal_names: &[&str] = &["isotem.pal", "isosno.pal", "isourb.pal", "temperat.pal"];
-        pal_names.iter().find_map(|name| {
-            let data: Vec<u8> = asset_manager.get(name)?;
-            Palette::from_bytes(&data).ok()
-        })
+        pal_names
+            .iter()
+            .find_map(|name| Palette::from_bytes(asset_manager.get_ref(name)?).ok())
     });
     let unit_palette: Option<Palette> = theater_unit_palette.cloned().or_else(|| {
         let pal_names: &[&str] = &["unittem.pal", "unitsno.pal", "uniturb.pal", "unit.pal"];
-        pal_names.iter().find_map(|name| {
-            let data: Vec<u8> = asset_manager.get(name)?;
-            Palette::from_bytes(&data).ok()
-        })
+        pal_names
+            .iter()
+            .find_map(|name| Palette::from_bytes(asset_manager.get_ref(name)?).ok())
     });
     // Tiberium palette: the original engine uses a dedicated palette (e.g., temperat.pal) for
     // ore/gem overlays, distinct from both the iso palette and the unit palette.
     let tiberium_palette: Option<Palette> = theater_tiberium_palette.cloned().or_else(|| {
         let pal_names: &[&str] = &["temperat.pal", "snow.pal", "urban.pal"];
-        pal_names.iter().find_map(|name| {
-            let data: Vec<u8> = asset_manager.get(name)?;
-            Palette::from_bytes(&data).ok()
-        })
+        pal_names
+            .iter()
+            .find_map(|name| Palette::from_bytes(asset_manager.get_ref(name)?).ok())
     });
 
     let overlay_radar_colors: HashMap<(u8, u8), [u8; 3]> =

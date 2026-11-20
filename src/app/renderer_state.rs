@@ -15,6 +15,9 @@ pub(crate) struct RendererState {
     pub(crate) performance_overlay:
         crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     pub(crate) terrain_draw_renderer: crate::render::terrain_draw::TerrainDrawRenderer,
+    /// Logs each frame's render pass and submission counts while they are
+    /// new or growing, for a player's log of a GPU that cannot keep up.
+    pub(crate) pass_log: crate::app::presentation::render::FramePassLog,
     pub(crate) combat_light_renderer: crate::render::combat_light::CombatLightRenderer,
     /// Process GPU resources for the native final client-pixel shake copy.
     pub(crate) screen_presentation: crate::render::screen_presentation::ScreenPresentationPass,

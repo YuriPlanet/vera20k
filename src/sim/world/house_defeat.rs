@@ -851,8 +851,11 @@ impl Simulation {
                 },
             ]);
         }
-        if kind == crate::sim::house_state::HouseOutcomeKind::Defeat
-            && self.session.is_observer_house(owner)
+        // VERA watching: on the observer's sidebar a watcher takes no side,
+        // so the House it stands in has no verdict to say to it.
+        if (kind == crate::sim::house_state::HouseOutcomeKind::Defeat
+            && self.session.is_observer_house(owner))
+            || self.session.watcher_observes()
         {
             return;
         }

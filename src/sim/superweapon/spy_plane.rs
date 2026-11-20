@@ -115,7 +115,7 @@ pub(super) fn ares_launch(
     }
     let Some(spy_plane) = rules
         .super_weapon_metadata(&sw.id)
-        .map(|metadata| metadata.launch().spy_plane().clone())
+        .map(|metadata| metadata.launch().spy_plane())
     else {
         return;
     };

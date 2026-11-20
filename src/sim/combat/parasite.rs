@@ -547,7 +547,7 @@ impl Simulation {
             return;
         }
         let (rof, damage, paralyzes) = (weapon.rof, weapon.damage, warhead.paralyzes);
-        let anims = weapon.anim.clone();
+        let anims = &weapon.anim;
         let warhead_id = self.interner.intern(warhead_name);
         self.substrate
             .entities

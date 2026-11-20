@@ -1339,10 +1339,7 @@ pub(in crate::sim) fn recalculate_strips(
         return Vec::new();
     }
     let mut abandons = Vec::new();
-    for (factory_owner, category, types) in sim.production.factories().house_build_types() {
-        if factory_owner != owner {
-            continue;
-        }
+    for (category, types) in sim.production.factories().house_build_types(owner) {
         let active = sim
             .production
             .factories()
@@ -1398,7 +1395,6 @@ pub(in crate::sim) fn refresh_factory_rates_for_house(
         .production
         .factories()
         .holders_insertion_ordered()
-        .into_iter()
         .filter(|(_, factory)| factory.owner() == owner)
         .map(|(holder, factory)| {
             let time = factory
