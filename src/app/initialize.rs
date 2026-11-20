@@ -671,6 +671,11 @@ impl App {
         );
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         terrain_draw_renderer.set_gpu_timer(gpu.timer.clone());
+        if gpu.shared_memory_graphics() {
+            terrain_draw_renderer.set_passes_per_submission(
+                crate::render::terrain_draw::SHARED_MEMORY_PASSES_PER_SUBMISSION,
+            );
+        }
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
         let performance_overlay =
             crate::app::diagnostics::performance_overlay::PerformanceOverlay::new(

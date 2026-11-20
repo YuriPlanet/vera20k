@@ -205,21 +205,45 @@ pub(crate) struct GameRenderTimes {
 pub(crate) struct FramePassLog {
     frames: u64,
     max_passes: usize,
+    /// The slowest GPU frame the startup probe has seen, in milliseconds.
+    slowest_gpu_ms: f32,
     last_logged: Option<Instant>,
 }
 
 impl FramePassLog {
     const FIRST_FRAMES: u64 = 3;
+    /// On a GPU that draws from the system's memory, the GPU timer runs for
+    /// this many frames of the process (half a minute at the native rate) and
+    /// the log carries each frame's GPU time, so a slow start says whether
+    /// the GPU or the processor is the slow one.
+    const PROBE_FRAMES: u64 = 450;
     const SUMMARY_EVERY: Duration = Duration::from_secs(60);
 
-    pub(crate) fn note(&mut self, passes: usize, submissions: usize, recording: Option<Duration>) {
+    pub(crate) fn note(
+        &mut self,
+        gpu: &crate::render::gpu::GpuContext,
+        overlay: &mut crate::app::diagnostics::performance_overlay::PerformanceOverlay,
+        passes: usize,
+        submissions: usize,
+        recording: Option<Duration>,
+    ) {
         self.frames += 1;
+        let probing = gpu.shared_memory_graphics() && self.frames <= Self::PROBE_FRAMES;
+        overlay.set_startup_probe(probing);
+        // The panel takes its own sample while it shows.
+        let gpu_ms = (probing && !overlay.is_visible())
+            .then(|| gpu.timer.take_frame_ms())
+            .flatten();
+        let slower = gpu_ms.is_some_and(|ms| ms > self.slowest_gpu_ms);
         let now = Instant::now();
         let since = self.last_logged.map(|last| now.duration_since(last));
+        let rested = since.is_none_or(|since| since >= Duration::from_secs(1));
         let first = self.frames <= Self::FIRST_FRAMES;
-        let grew =
-            passes > self.max_passes && since.is_none_or(|since| since >= Duration::from_secs(1));
+        let grew = (passes > self.max_passes || slower) && rested;
         let due = since.is_some_and(|since| since >= Self::SUMMARY_EVERY);
+        if let Some(ms) = gpu_ms {
+            self.slowest_gpu_ms = self.slowest_gpu_ms.max(ms);
+        }
         if !(first || grew || due) {
             return;
         }
@@ -228,8 +252,11 @@ impl FramePassLog {
         let recorded = recording.map_or(String::new(), |recording| {
             format!(", recorded in {:.1} ms", recording.as_secs_f64() * 1e3)
         });
+        let timed = gpu_ms.map_or(String::new(), |ms| {
+            format!(", GPU {ms:.0} ms (slowest {:.0})", self.slowest_gpu_ms)
+        });
         log::info!(
-            "Frame {}: {passes} render passes in {} submissions (most so far {}){recorded}",
+            "Frame {}: {passes} render passes in {} submissions (most so far {}){recorded}{timed}",
             self.frames,
             submissions + 1,
             self.max_passes
@@ -901,13 +928,18 @@ pub(crate) fn render_game(
     // The bounded submissions made while recording belong to the hand-off;
     // the frame owner adds its final submission and present.
     let submitted = state.renderer.terrain_draw_renderer.frame_submit_time();
-    state.renderer.pass_log.note(
-        state.renderer.terrain_draw_renderer.closed_passes(),
-        state.renderer.terrain_draw_renderer.submissions(),
-        render_started
-            .zip(finished)
-            .map(|(started, finished)| finished.duration_since(started)),
-    );
+    {
+        let renderer = &mut state.renderer;
+        renderer.pass_log.note(
+            &renderer.gpu,
+            &mut renderer.performance_overlay,
+            renderer.terrain_draw_renderer.closed_passes(),
+            renderer.terrain_draw_renderer.submissions(),
+            render_started
+                .zip(finished)
+                .map(|(started, finished)| finished.duration_since(started)),
+        );
+    }
     let phases = render_started.map(|render_started| RenderPhases {
         snapshot: after_snapshot.unwrap().duration_since(render_started),
         terrain: world.spans.terrain,

@@ -37,6 +37,7 @@ pub(crate) use packed::{
     PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_joins_waves,
 };
 use submission::PassSubmission;
+pub(crate) use submission::SHARED_MEMORY_PASSES_PER_SUBMISSION;
 pub(crate) use surface_lines::SurfaceLineBatch;
 
 // WebGL2's reduction: high16 bits select the final admitted body; low16 retain
@@ -755,6 +756,13 @@ impl TerrainDrawRenderer {
     /// split off, so a split frame's GPU time adds up all of them.
     pub(crate) fn set_gpu_timer(&mut self, timer: crate::render::gpu_timer::GpuTimer) {
         self.submission.timer = timer;
+    }
+
+    /// Closed passes per command buffer (`terrain_submission`): fewer on a GPU
+    /// that draws from the system's memory, so Windows' timeout judges short
+    /// buffers.
+    pub(crate) fn set_passes_per_submission(&mut self, passes: usize) {
+        self.submission.set_passes_per_submission(passes);
     }
 
     pub(crate) fn submissions(&self) -> usize {
