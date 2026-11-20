@@ -3997,6 +3997,53 @@ fn cooperative_refuses_more_humans_than_the_maps_human_start_spots() {
 }
 
 #[test]
+fn cooperative_refuses_a_launch_whose_observer_takes_the_last_start() {
+    let refusal = prefix_refusal_before_hang_guard(|| {
+        use LaunchStartPosition::Auto;
+        // One human, one observer, two AI: Gather keeps the three authored
+        // starts for the three Houses that play, and the observer takes one.
+        let mut session = quick_coop_session([Auto, Auto], [Auto, Auto]);
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        session.humans[1].set_observer(true);
+        use crate::skirmish_launch::{PreFillAiHouseSlot, PreFillHouseRoster, PreFillHumanHouse};
+        session.set_recorded_house_roster_for_test(PreFillHouseRoster::new(
+            (0..2)
+                .map(|order| PreFillHumanHouse {
+                    priority: i32::from(order),
+                    source_order: order,
+                    observer: order == 1,
+                })
+                .collect(),
+            (0..8)
+                .map(|slot_index| PreFillAiHouseSlot {
+                    slot_index,
+                    valid: matches!(slot_index, 2 | 3),
+                })
+                .collect(),
+        ));
+        let starts: Vec<Waypoint> = [6, 20, 30]
+            .into_iter()
+            .enumerate()
+            .map(|(index, rx)| Waypoint {
+                index: index as u32,
+                rx,
+                ry: 20,
+            })
+            .collect();
+        let mut map = prefix_map_with_starts(&starts);
+        map.ini = IniFile::from_str("[Header]\nNumCoopHumanStartSpots=1\n");
+        (MatchLaunchDescriptor::from_resolved(session).unwrap(), map)
+    });
+    assert_eq!(
+        refusal,
+        PreFillScenarioPrefixPlanError::CoopStartsExhausted {
+            start_count: 3,
+            house_count: 4,
+        }
+    );
+}
+
+#[test]
 fn gather_refuses_a_map_with_no_room_for_a_missing_start() {
     let refusal = prefix_refusal_before_hang_guard(|| {
         // No authored start, and a zero-width LocalSize leaves no playfield

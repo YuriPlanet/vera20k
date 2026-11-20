@@ -554,10 +554,21 @@ pub(super) fn native_assign_cooperative_starts_from_preassignment(
                         human_count: human_house_count,
                     })?
             } else {
+                // FUN_005C2D00 `0x005C2D90..0x005C2DB4`: step forward from
+                // NumCoopHumanStartSpots while the start is used, stopping at
+                // the start count; with every start used it returns one past
+                // the last start and writes there. Gather sizes the starts to
+                // the Houses that play, but this loop seats observers too, so
+                // an observer can leave the last House no start. VERA refuses
+                // that launch. Taking the first free start before the suffix
+                // is VERA's own fallback.
                 (human_start_spots..starts.len())
                     .find(|candidate| !occupied[*candidate])
                     .or_else(|| occupied.iter().position(|used| !*used))
-                    .expect("participant count cannot exceed gathered starts")
+                    .ok_or(PreFillScenarioPrefixPlanError::CoopStartsExhausted {
+                        start_count: starts.len(),
+                        house_count: requested.len(),
+                    })?
             }
         };
         occupied[start_index] = true;

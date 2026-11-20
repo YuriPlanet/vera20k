@@ -423,6 +423,15 @@ pub enum PreFillScenarioPrefixPlanError {
          positions are used up once the chosen starts are reserved"
     )]
     QuickCoopStartsExhausted { start_count: usize },
+    #[error(
+        "Cooperative gives each of the {house_count} players a start, observers included, \
+         but the map has only {start_count} start positions; add start waypoints to the map \
+         or start without observers"
+    )]
+    CoopStartsExhausted {
+        start_count: usize,
+        house_count: usize,
+    },
     #[error("accepted launch Country index {index} is absent after scenario Rules reset")]
     MissingLaunchCountry { index: u16 },
 }
