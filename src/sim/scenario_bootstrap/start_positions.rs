@@ -176,11 +176,11 @@ pub(crate) fn native_gather_pre_fill_start_positions(
 /// so a map whose playable area has no free 8x8 rect hangs gamemd's load.
 /// VERA refuses the launch instead (`NoRoomForStarts`). Pre-Fill cells are
 /// all alike, so a seed finds a rect whenever one lies within the search
-/// radius (`RADIUS_HARD_CAP`, 32 cells). A lone free rect at the edge of the
-/// largest cell array (side 1024) is still reached from roughly 2,000 of its
-/// ~1,000,000 seeds, and 8192 straight misses at that rate (about e^-16)
-/// happen less than once in a million launches; a map that finished Gather
-/// before finishes it with the same draws.
+/// radius (`RADIUS_HARD_CAP`, 32 cells). Even a lone free rect at the edge
+/// of the largest cell array is reached from more than one seed in a
+/// thousand, so 8192 straight misses happen well below once in ten thousand
+/// launches of such a map; a map that finished Gather before finishes it
+/// with the same draws.
 const MAX_FAILED_START_SEARCHES: u32 = 8192;
 
 fn gather_start_positions_with_search(
@@ -622,7 +622,6 @@ pub(super) fn native_assign_quick_coop_starts_from_preassignment(
                     let picked = choose_quick_coop_start(starts, &used, human, rng).ok_or(
                         PreFillScenarioPrefixPlanError::QuickCoopStartsExhausted {
                             start_count: starts.len(),
-                            participant_count: slots.len(),
                         },
                     )?;
                     used[picked] = true;

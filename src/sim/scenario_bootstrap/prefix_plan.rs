@@ -406,7 +406,8 @@ pub enum PreFillScenarioPrefixPlanError {
     InvalidMapCellExtent,
     #[error(
         "the map has room for only {found} of the {required} start positions this match needs: \
-         it lists too few start waypoints, and its playable area has no free 8x8 space for the rest"
+         it lists too few start waypoints, and its playable area (LocalSize) leaves no room to \
+         place the rest"
     )]
     NoRoomForStarts { found: usize, required: usize },
     #[error(
@@ -418,13 +419,10 @@ pub enum PreFillScenarioPrefixPlanError {
         human_count: usize,
     },
     #[error(
-        "Quick Co-op needs a free start for each of the {participant_count} players, but the \
-         map's {start_count} start positions are used up once the chosen starts are reserved"
+        "Quick Co-op needs a free start for each player, but the map's {start_count} start \
+         positions are used up once the chosen starts are reserved"
     )]
-    QuickCoopStartsExhausted {
-        start_count: usize,
-        participant_count: usize,
-    },
+    QuickCoopStartsExhausted { start_count: usize },
     #[error("accepted launch Country index {index} is absent after scenario Rules reset")]
     MissingLaunchCountry { index: u16 },
 }

@@ -3970,10 +3970,7 @@ fn quick_coop_refuses_a_launch_whose_preset_ai_start_leaves_an_ai_no_start() {
     assert_eq!(
         prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, 0x5EE9)
             .unwrap_err(),
-        PreFillScenarioPrefixPlanError::QuickCoopStartsExhausted {
-            start_count: 4,
-            participant_count: 4,
-        }
+        PreFillScenarioPrefixPlanError::QuickCoopStartsExhausted { start_count: 4 }
     );
 }
 
