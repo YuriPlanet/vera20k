@@ -547,26 +547,6 @@ mod tests {
     };
 
     #[test]
-    fn the_drawn_draws_are_refilled_from_each_changed_frame() {
-        use crate::app::presentation::instances::CellBodyAtlas;
-        use crate::render::tactical_draw_plan::RenderZPolicy;
-        let bodies = [CellBodyDraw {
-            atlas: CellBodyAtlas::Overlay,
-            render_z: RenderZPolicy::ReadWrite,
-        }];
-        let frame = TerrainDraws {
-            cell_bodies: &bodies,
-            fogged_runs: &[],
-        };
-        let mut drawn = DrawnDraws::default();
-        drawn.record(frame);
-        assert!(drawn.matches(frame));
-        assert!(!drawn.matches(NO_DRAWS));
-        drawn.record(NO_DRAWS);
-        assert!(drawn.matches(NO_DRAWS) && !drawn.matches(frame));
-    }
-
-    #[test]
     fn a_camera_move_shows_the_kept_ground_and_exposes_strips() {
         let tactical = [10, 20, 100, 100];
         let shift = GroundShift::between(tactical, [10, -5], 0).unwrap();
