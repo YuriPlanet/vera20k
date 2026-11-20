@@ -341,9 +341,20 @@ fn parse_scenario_base_plan(
         return ScenarioBasePlanDefinition::default();
     };
     let percent_built = section.read_int("PercentBuilt", 0);
+    // BaseClass::Read_INI loops to NodeCount as written; a map is outside
+    // data, and `NodeCount=2000000000` would read two billion keys and grow
+    // the node list past memory with no log line. Real base plans hold a few
+    // dozen nodes.
+    const MAX_NODES: i32 = 1024;
     let node_count = section.read_int("NodeCount", 0);
+    if node_count > MAX_NODES {
+        log::warn!(
+            "[{}] NodeCount={node_count} asks for more base nodes than the {MAX_NODES} read",
+            section.name
+        );
+    }
     let mut nodes = Vec::new();
-    for index in 0..node_count.max(0) {
+    for index in 0..node_count.clamp(0, MAX_NODES) {
         let value = section
             .read_name(&format!("{index:03}"), 0x80)
             .unwrap_or("");
@@ -375,6 +386,20 @@ fn parse_scenario_base_plan(
 
 #[cfg(all(test, tests_map))]
 mod tests {
+    /// `NodeCount=2000000000` must not read two billion keys.
+    #[test]
+    fn a_base_plan_reads_at_most_the_node_cap() {
+        let ini = IniFile::from_str(
+            "[Americans]\nNodeCount=2000000000\n000=GAPOWR,10,12\n001=GAREFN,14,12\n",
+        );
+        let plan = parse_scenario_base_plan(ini.section("Americans"), None);
+        assert_eq!(plan.nodes.len(), 1024);
+        assert_eq!(
+            plan.nodes[0].packed_cell,
+            pack_scenario_base_plan_cell(10, 12)
+        );
+    }
+
     use super::*;
 
     fn base_plan_rules() -> RuleSet {

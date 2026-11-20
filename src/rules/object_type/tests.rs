@@ -40,6 +40,26 @@ fn fly_bank_rules_read_stock_values_and_keep_each_pass_sentinels() {
     );
 }
 
+/// `RollAngle=1e999` reads as infinity: the stored binary32 angle is zero,
+/// not a panic in the fire or draw code that asks for it.
+#[test]
+fn an_infinite_roll_angle_stores_as_zero() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::native_processing::RulesLayerStack;
+    use crate::rules::ruleset::RuleSet;
+    let layers = RulesLayerStack::new(IniFile::from_str(
+        "[VehicleTypes]
+0=BPLN
+[BPLN]
+RollAngle=1e999
+",
+    ));
+    let rules = RuleSet::from_rules_layers(&layers).expect("production layered rules");
+    let object = rules.object("BPLN").expect("registered aircraft type");
+    assert!(object.fly_roll_angle_radians().is_infinite());
+    assert_eq!(object.fly_roll_angle_f32(), 0.0);
+}
+
 #[test]
 fn half_damage_smoke_location_retains_stock_battle_building_values() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
