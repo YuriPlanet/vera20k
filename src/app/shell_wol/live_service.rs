@@ -25,8 +25,8 @@ use super::{
     WolServiceRequest, service_event,
 };
 use crate::app::AppState;
-use crate::app::shell_network_setup::campaign_room;
 use crate::app::persistence::account;
+use crate::app::shell_network_setup::campaign_room;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
@@ -1551,9 +1551,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 fail_start(state, &tr(line));
             }
         }
-        if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
-            maps::poll(state, &mut service);
-        }
+        poll_maps(state, &mut service);
         if let Err(error) = poll_watch(state, &mut service) {
             log::warn!("Could not watch the match: {error:#}");
             fail_watch(state, &mut service, "VERA:WatchCouldNotStart");
@@ -1579,6 +1577,13 @@ fn notice(state: &mut AppState, text: &str) {
         },
     );
     state.platform.window.request_redraw();
+}
+
+/// The room's map transfer runs only between matches.
+fn poll_maps(state: &mut AppState, service: &mut LiveService) {
+    if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
+        maps::poll(state, service);
+    }
 }
 
 /// The chat a returning player lands in: the kept room once the lobby gives
@@ -2214,14 +2219,17 @@ fn send_chat(
 fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
     let session = &state.match_state.session;
     if let Some(room) = session.campaign_room() {
-        let (map_digest, effective_map_digest) = if campaign_room::local_map_verified(session) == Some(true) {
-            let (map, effective) = campaign_room::online_agreement(room);
-            (map.to_owned(), effective.to_owned())
-        } else {
-            (String::new(), "0".repeat(64))
-        };
+        let (map_digest, effective_map_digest) =
+            if campaign_room::local_map_verified(session) == Some(true) {
+                let (map, effective) = campaign_room::online_agreement(room);
+                (map.to_owned(), effective.to_owned())
+            } else {
+                (String::new(), "0".repeat(64))
+            };
         let agreement = crate::app::shell_network_setup::agreement::local(state)?;
-        return Ok(json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":""}));
+        return Ok(
+            json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":""}),
+        );
     }
     let map_digest = session
         .network_local_map_source()
@@ -2310,8 +2318,10 @@ fn options(state: &AppState) -> Result<wire::Options> {
     let map_metadata = if let Some(room) = &campaign {
         let (file, metadata) = campaign_room::online_map_metadata(state, room)?;
         launch.selected_map_file = Some(file);
-        launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(crate::skirmish_launch::BATTLE_MODE_ID)
-            .expect("stock lobby mode");
+        launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(
+            crate::skirmish_launch::BATTLE_MODE_ID,
+        )
+        .expect("stock lobby mode");
         let speed = launch.options.game_speed;
         launch.options = crate::skirmish_launch::SkirmishLaunchOptions::default();
         launch.options.game_speed = speed;
@@ -2320,7 +2330,10 @@ fn options(state: &AppState) -> Result<wire::Options> {
         launch.use_live_house_rows();
         metadata
     } else {
-        session.network_map_metadata().cloned().ok_or_else(|| anyhow!("no admitted map metadata"))?
+        session
+            .network_map_metadata()
+            .cloned()
+            .ok_or_else(|| anyhow!("no admitted map metadata"))?
     };
     let options = wire::Options {
         campaign: campaign.clone(),
@@ -2341,7 +2354,10 @@ fn options(state: &AppState) -> Result<wire::Options> {
             .frontend
             .multiplayer_shell_runtime
             .cooperative_difficulty(),
-        cooperative_campaign: campaign.is_none().then(|| cooperative_campaign(state)).flatten(),
+        cooperative_campaign: campaign
+            .is_none()
+            .then(|| cooperative_campaign(state))
+            .flatten(),
         seed: Some(crate::app::shell_network_setup::resident_seed(state)),
         // Only a host's VERA room has one; a guest publishes no options.
         watching: state
@@ -2860,9 +2876,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 service.start_preparation = None;
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
-            "options" if failure == http::CommandFailure::InvalidOptions
-                && service.is_room_publication(id)
-                && state.match_state.session.campaign_room().is_some() =>
+            "options"
+                if failure == http::CommandFailure::InvalidOptions
+                    && service.is_room_publication(id)
+                    && state.match_state.session.campaign_room().is_some() =>
             {
                 service.campaign_rooms = false;
                 notice(state, &tr("VERA:CampaignRoomOnlineUnsupported"));
@@ -3570,6 +3587,13 @@ fn apply_event(
                 maps::cancel(state, service);
             } else {
                 maps::received_options(state, service, generated)?;
+                // VERA: a guest checks the map these options name before
+                // reporting on it, or one that has it reports 0 first and the
+                // host's room says it lacks the map. The host's own upload
+                // still waits for the poll, after the lobby's `map_available`.
+                if !state.match_state.session.host() {
+                    poll_maps(state, service);
+                }
             }
             // The owner is ready without a guest Accept button, but still proves its
             // own local map and rules to the same server admission gate.
@@ -4053,7 +4077,10 @@ fn prepare_watch(state: &mut AppState, started: wire::WatchStarted) -> Result<Wa
         .session
         .canonicalize_online_roster(&names)?;
     if let Some(room) = room {
-        state.match_state.session.accept_campaign_room(Some(room), speed)?;
+        state
+            .match_state
+            .session
+            .accept_campaign_room(Some(room), speed)?;
         campaign_room::report_local_files(state, true)?;
     }
     Ok(WatchStart {

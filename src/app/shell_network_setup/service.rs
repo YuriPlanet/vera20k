@@ -335,7 +335,8 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::MapStatus { index, status } => {
             // 0x5E39C0 (the K arm, 0x5E4C39): only the host screens C2/BC
             // take it (0x5E4C3D..0x5E4C57); the local node always holds its
-            // map; K0 and K2 print the sender and map name.
+            // map; K0 and K2 print the sender and map name. VERA: only when
+            // the K is news, since online guests repeat it every revision.
             anyhow::ensure!(status <= 2, "unknown native K status");
             if !state.match_state.session.host() {
                 return Ok(());
@@ -356,16 +357,16 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .ok_or_else(|| anyhow::anyhow!("no participant {index}"))?
                 .name
                 .clone();
-            state
+            let news = state
                 .match_state
                 .session
-                .set_network_map_status(index, status)?;
+                .report_network_map_status(index, status)?;
             let key = match status {
                 0 => Some("GUI:HostNoMap"),
                 2 => Some("GUI:HostMapTransfer"),
                 _ => None,
             };
-            if let Some(key) = key {
+            if let Some(key) = key.filter(|_| news) {
                 let map = super::map_display_name(state)
                     .unwrap_or_default()
                     .to_owned();
