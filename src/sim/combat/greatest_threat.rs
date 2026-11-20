@@ -642,6 +642,46 @@ fn scan_radius_cells(
     }
 }
 
+/// VERA-only: one scan's answers to a yes/no question about a candidate's
+/// owner, held inline so a scan allocates nothing for them. The first
+/// [`Self::OWNERS`] owners asked are remembered; any owner past them is
+/// asked again each time, with the same answer.
+#[derive(Clone)]
+struct OwnerMemo {
+    answers: [std::cell::Cell<Option<(InternedId, bool)>>; Self::OWNERS],
+}
+
+impl Default for OwnerMemo {
+    fn default() -> Self {
+        Self {
+            answers: [const { std::cell::Cell::new(None) }; Self::OWNERS],
+        }
+    }
+}
+
+impl OwnerMemo {
+    /// VERA's own bound: room for 30 players and the map's own houses
+    /// (Neutral, Special, civilians) together.
+    const OWNERS: usize = 48;
+
+    /// The remembered answer for `owner`, or `ask`'s, remembered when there
+    /// is room. Owners fill the slots in the order they are first asked.
+    fn answer(&self, owner: InternedId, ask: impl FnOnce() -> bool) -> bool {
+        for slot in &self.answers {
+            match slot.get() {
+                Some((asked, answer)) if asked == owner => return answer,
+                Some(_) => {}
+                None => {
+                    let answer = ask();
+                    slot.set(Some((owner, answer)));
+                    return answer;
+                }
+            }
+        }
+        ask()
+    }
+}
+
 /// Everything one scan needs that does not change between candidates.
 /// Candidates scored side by side ([`flat_scores`]) each take a clone, so the
 /// answer memos below are each worker's own.
@@ -704,9 +744,9 @@ struct ScanContext<'a> {
     /// VERA-only: [`Self::is_ally`]'s answers so far, by candidate owner.
     /// A scan changes no alliance, and its cell walk asks about the same few
     /// houses for each object it passes.
-    allies: std::cell::RefCell<Vec<(InternedId, bool)>>,
+    allies: OwnerMemo,
     /// VERA-only: [`Self::allies_scanner`]'s answers so far, by candidate owner.
-    allies_of_scanner: std::cell::RefCell<Vec<(InternedId, bool)>>,
+    allies_of_scanner: OwnerMemo,
     /// VERA-only: the scanner's half of the G2b probe's facts, read at the
     /// first probe. A scan changes nothing of the scanner.
     probe_firer: std::cell::OnceCell<super::fire_error_world::FirerPart>,
@@ -776,33 +816,17 @@ impl ScanContext<'_> {
 
     /// [`Self::is_ally`] for any object `owner` owns.
     fn is_ally_owner(&self, owner: InternedId) -> bool {
-        if let Some(&(_, ally)) = self
-            .allies
-            .borrow()
-            .iter()
-            .find(|(asked, _)| *asked == owner)
-        {
-            return ally;
-        }
-        let ally = is_ally_by_object(self.alliances(), self.interner, self.attacker.owner, owner);
-        self.allies.borrow_mut().push((owner, ally));
-        ally
+        self.allies.answer(owner, || {
+            is_ally_by_object(self.alliances(), self.interner, self.attacker.owner, owner)
+        })
     }
 
     /// Whether `owner`'s house counts the scanner's as an ally, the question
     /// the threat score's B term asks.
     fn allies_scanner(&self, owner: InternedId) -> bool {
-        if let Some(&(_, ally)) = self
-            .allies_of_scanner
-            .borrow()
-            .iter()
-            .find(|(asked, _)| *asked == owner)
-        {
-            return ally;
-        }
-        let ally = is_ally_by_object(self.alliances(), self.interner, owner, self.attacker.owner);
-        self.allies_of_scanner.borrow_mut().push((owner, ally));
-        ally
+        self.allies_of_scanner.answer(owner, || {
+            is_ally_by_object(self.alliances(), self.interner, owner, self.attacker.owner)
+        })
     }
 
     /// Whether the cell walk stops at the first non-ally and offers it: a
@@ -1525,19 +1549,12 @@ pub(crate) fn greatest_threat(
         .or_else(|| {
             fire_world.map(|world| (world.session.map_width(), world.session.map_height()))
         });
-    let airborne = if scan_air {
-        air_extent
-            .map(|extent| {
-                entities.airborne_in_query_order(
-                    air_center.as_ref().expect("AA source Cell"),
-                    radius,
-                    extent,
-                )
-            })
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let airborne = air_center
+        .as_ref()
+        .zip(air_extent)
+        .map(|(center, extent)| entities.airborne_in_query_order(center, radius, extent))
+        .into_iter()
+        .flatten();
     for candidate_id in airborne {
         if candidate_id == attacker.stable_id {
             continue;
@@ -1930,11 +1947,29 @@ fn global_list_scan(ctx: &ScanContext<'_>, flags: u32, zone: Option<u32>) -> Opt
     // VERA-only: the gates before Evaluate_Candidate ask only an object's id
     // and owner, so they run on the store's columns and the walk loads the
     // records of only the objects they pass: the same objects, in the same
-    // order, as the walk over every record.
-    let candidates: Vec<&GameEntity> = ctx
+    // order, as the walk over every record. Every gate runs before the first
+    // score, as when the walk collected the whole list first. A list shorter
+    // than [`SIDE_BY_SIDE_CANDIDATES`] is gathered inline and scored one by
+    // one; only a longer one, which [`flat_scores`] may score side by side,
+    // is collected.
+    let mut admitted = ctx
         .entities
-        .values_of_owners(|id, owner| flat_walk_admits(ctx, id, owner))
-        .collect();
+        .values_of_owners(|id, owner| flat_walk_admits(ctx, id, owner));
+    let mut short: [Option<&GameEntity>; SIDE_BY_SIDE_CANDIDATES] = [None; SIDE_BY_SIDE_CANDIDATES];
+    let mut gathered = 0;
+    for (slot, candidate) in short.iter_mut().zip(admitted.by_ref()) {
+        *slot = Some(candidate);
+        gathered += 1;
+    }
+    if gathered < SIDE_BY_SIDE_CANDIDATES {
+        for candidate in short.into_iter().flatten() {
+            if let Some(score) = evaluate_candidate(ctx, walk, candidate) {
+                keep(candidate, score);
+            }
+        }
+        return best;
+    }
+    let candidates: Vec<&GameEntity> = short.into_iter().flatten().chain(admitted).collect();
     for (candidate, score) in candidates.iter().zip(flat_scores(ctx, walk, &candidates)) {
         if let Some(score) = score {
             keep(candidate, score);
@@ -3187,6 +3222,28 @@ mod tests {
 
     use crate::sim::combat::threat_posed::live_threat_posed;
     use crate::sim::intern::test_interner;
+
+    /// The scan's ally memo remembers as many owners as it has room for and
+    /// answers any further owner by asking again, with the same answer.
+    #[test]
+    fn ally_memo_asks_again_for_owners_past_its_room() {
+        let mut interner = test_interner();
+        let owners: Vec<_> = (0..=OwnerMemo::OWNERS)
+            .map(|index| interner.intern(&format!("House{index}")))
+            .collect();
+        let memo = OwnerMemo::default();
+        let asks = std::cell::Cell::new(0);
+        for _ in 0..2 {
+            for (index, &owner) in owners.iter().enumerate() {
+                let ally = memo.answer(owner, || {
+                    asks.set(asks.get() + 1);
+                    index % 3 == 0
+                });
+                assert_eq!(ally, index % 3 == 0);
+            }
+        }
+        assert_eq!(asks.get(), OwnerMemo::OWNERS + 2);
+    }
 
     /// A map-authored gun and guard radius reach a tank beyond ring 256.
     #[test]

@@ -48,10 +48,9 @@ pub fn run(
     blocks: &dyn TileBlocks,
     rng: &mut RmgRng,
 ) {
-    let coords: Vec<(i32, i32)> = grid.native_cells().collect();
-    for &(x, y) in &coords {
+    for (x, y) in grid.native_cells() {
         let anchor_ok = {
-            let cell = grid.get(x, y).expect("native cell");
+            let cell = grid.cell_native(x, y);
             cell.tile == ids.water_base && cell.sub_tile == 0
         };
         if !anchor_ok {
@@ -91,7 +90,7 @@ pub fn run(
 
         // Single-cell path: six bands, band 5 only at draw 200.
         let draw = scaled_draw(rng, K201_BITS, 0.0, 200);
-        grid.get_mut(x, y).expect("native cell").tile = ids.water_base + 8 + draw / 40;
+        grid.cell_native_mut(x, y).tile = ids.water_base + 8 + draw / 40;
     }
 }
 
