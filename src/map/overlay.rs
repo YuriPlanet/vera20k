@@ -69,7 +69,7 @@ fn read_pack_byte(bytes: &[u8], grid: CellGrid, rx: u16, ry: u16) -> Option<u8> 
 ///
 /// Overlays include ore, gems, walls, fences, bridges, rocks, and other
 /// decorative or gameplay objects that sit on top of terrain tiles.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct OverlayEntry {
     /// Isometric X coordinate.
     pub rx: u16,
