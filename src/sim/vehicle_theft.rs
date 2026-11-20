@@ -115,7 +115,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> bool {
         self.substrate.entities.get(actor_id).is_some_and(|actor| {
-            self.house_is_human_player(actor.owner())
+            self.control_projection().can_order(actor.owner())
                 && self
                     .ares_vehicle_capture_mode(actor_id, target_id, rules)
                     .is_some()

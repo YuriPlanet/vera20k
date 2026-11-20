@@ -147,7 +147,8 @@ fn combatant_selection(
         clear: replace,
         ..Default::default()
     };
-    let player_owned = |owner| sim.house_controls_selection(owner);
+    let control = sim.control_projection();
+    let player_owned = |owner| control.can_select(owner);
     // Tactical6DA770 drops a lone non-player-controlled selection before
     // testing the shared mode. Deselect clears Follow but retains that mode.
     let dropped = selected.first().copied().filter(|id| {
@@ -427,6 +428,7 @@ fn category_selection(
         .into_iter()
         .filter(|id| sim.entities().contains(*id))
         .collect();
+    let control = sim.control_projection();
     let visible = if !continuing && selected.is_empty() {
         screen_order
             .iter()
@@ -435,7 +437,7 @@ fn category_selection(
                 sim.entities().get(*id).is_some_and(|entity| {
                     entity.lifecycle.object_alive()
                         && entity.category() != EntityCategory::Structure
-                        && sim.house_controls_selection(entity.owner())
+                        && control.can_select(entity.owner())
                 })
             })
             .collect()

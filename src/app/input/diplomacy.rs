@@ -462,7 +462,7 @@ fn press_allies_box(state: &mut AppState, row: usize) {
 /// Sim-scale deviation: a full OutList (128 records, `[0xA802C8]`) drops the
 /// event natively; VERA's far larger queue refuses the click instead.
 pub(crate) fn ally(state: &mut AppState, house: InternedId) {
-    let Some(local) = crate::app::input::commands::preferred_local_owner_name(state) else {
+    let Some(local) = crate::app::input::commands::preferred_command_owner(state) else {
         return;
     };
     let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {

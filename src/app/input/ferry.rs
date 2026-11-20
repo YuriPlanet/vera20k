@@ -592,7 +592,7 @@ impl FerryState {
                     });
                 }
                 FerryAction::Unload => {
-                    orders.extend(unload_command(entity, Some(object), Some(owner)));
+                    orders.extend(unload_command(sim, entity, Some(object), Some(owner)));
                 }
                 FerryAction::End => return false,
             }

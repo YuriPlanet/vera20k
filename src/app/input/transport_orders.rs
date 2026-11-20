@@ -15,14 +15,20 @@ use crate::sim::intern::InternedId;
 /// Unit transport D is handled by dispatch's separate Event9 route.
 /// Structures unload their actual occupants or an InfantryAbsorb Cargo;
 /// mobile transports retain their passenger-count gate.
-/// Production callers provide the local owner so an enemy building cannot
-/// advertise an unload.
+/// The same projection authorizes the transport for the cursor and the key.
 pub(crate) fn unload_command(
+    sim: &crate::sim::world::Simulation,
     entity: &GameEntity,
     obj: Option<&ObjectType>,
     local_owner: Option<InternedId>,
 ) -> Option<Command> {
-    if local_owner.is_some_and(|owner| owner != entity.owner()) {
+    let control = sim.control_projection();
+    let can_order = match local_owner {
+        Some(owner) => control.can_order_from(entity.owner(), owner),
+        None if sim.session().has_custom_control_grants() => control.can_order(entity.owner()),
+        None => true,
+    };
+    if !can_order {
         return None;
     }
     let obj = obj?;

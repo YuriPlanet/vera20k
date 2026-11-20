@@ -361,6 +361,14 @@ fn hover(state: &AppState) -> Option<Hover> {
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
+    let selected = crate::app::input::context_order::projected_order_selection(
+        sim,
+        state.rules(),
+        &selected,
+        object
+            .and_then(crate::app::input::entity_pick::HoverObject::techno)
+            .map(|target| target.stable_id),
+    );
     // The Cell's What_Action without mouse-over (`0x00653C9A`).
     let query = ActionQuery::new(state, sim, &selected, false);
     let armed = state

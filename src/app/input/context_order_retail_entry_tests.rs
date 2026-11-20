@@ -1188,7 +1188,7 @@ fn a_loaded_carryall_offers_unload() {
     let unload = |sim: &Simulation| {
         let entity = sim.entities().get(carryall).unwrap();
         let object = sim.interner().object_type(entity.type_ref(), &rules);
-        crate::app::input::transport_orders::unload_command(entity, object, owner)
+        crate::app::input::transport_orders::unload_command(sim, entity, object, owner)
     };
     assert_eq!(unload(&sim), None, "empty");
     let mut cargo = crate::sim::passenger::PassengerCargo::new(0, 0.0);
