@@ -46,6 +46,33 @@ pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 /// GPU's own, so Metal keeps [`MAX_USEFUL_TEXTURE_DIM`].
 pub(crate) const SHARED_MEMORY_TEXTURE_DIM: u32 = 8_192;
 
+/// A shader module built without naga's loop counter. naga wraps every loop
+/// in a countdown from `u32::MAX` so a driver never meets an endless loop,
+/// at a cost in every iteration; the shaders built here loop only over
+/// counts the CPU already caps. A combat light replays at most `PASS_LIGHTS`
+/// earlier lights (`combat_light`), a terrain edit at most one window of
+/// commands and as many shadow halves (`terrain_batch::WINDOW`), and a scaled
+/// copy covers at most the frame pixels one window pixel spans, bounded by
+/// the zoom range (`scaled_copy`). The bounds and integer-division checks
+/// stay on. Unmeasured on the integrated GPUs it is for; this Mac draws no
+/// scene with lights and edits in the background.
+///
+/// # Safety
+///
+/// Every loop in `desc` terminates for every input the CPU sends.
+pub(crate) fn bounded_loop_module(
+    device: &wgpu::Device,
+    desc: wgpu::ShaderModuleDescriptor<'_>,
+) -> wgpu::ShaderModule {
+    let checks = wgpu::ShaderRuntimeChecks {
+        force_loop_bounding: false,
+        ..wgpu::ShaderRuntimeChecks::checked()
+    };
+    // SAFETY: the callers' loops are bounded by counts the CPU clamps, as the
+    // documentation above lists.
+    unsafe { device.create_shader_module_trusted(desc, checks) }
+}
+
 /// A GPU that draws from the system's memory outside Metal: a Windows or
 /// Linux integrated chip, or the processor itself. Its texture pages are
 /// smaller ([`requested_texture_dim`]), its command buffers shorter
