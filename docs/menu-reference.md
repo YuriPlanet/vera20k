@@ -80,7 +80,8 @@ Launch
     │   │     each group has a Join/Watch/Join Queue button, and the host also gets Add AI
     │   ├─ Co-op difficulty, chat; with a missing map: Download / Leave
     │   └─ Room Game Options popup: speed, credits, unit count, Superweapon Limit, the five retail checkboxes,
-    │       Destroyable Bridges, In-game Allying, No Yuri, No France, No Spy, No Stolen Tech, Terrain Deformation
+    │       Destroyable Bridges, In-game Allying, No Yuri, No France, No Spy, No Stolen Tech, Terrain Deformation,
+    │       Building Production Queue
     │       【retail items in [LAN] or [WonlinePref]; VERA's additions this run only】
     │
     ├─ Movies & Credits: Sneak Peeks, Play Movies → movie list (Play Movie/Back), View Credits, Main Menu
@@ -103,8 +104,8 @@ Launch
 | Page | Settings【storage】 |
 |---|---|
 | **Display** | Zoom【[VERA] Zoom】, Display (monitor)【[VERA] Display】, Team Color Strength 1–10【[VERA] HouseColorStrength】*(locked in a match)*, Color Vision【[VERA] ColorVisionMode】, Visual Details (Low/High)【[Options] DetailLevel】, Full Screen【[VERA] FullScreen】, VSync【[VERA] VSync】*(not in the web build)*, Original 4:3 Shape【[VERA] OriginalShape】, Performance Stats *(not saved)* |
-| **Game Options** | Difficulty【[Options] Difficulty】*(locked in a match)*, Shift-Click Batch Queue【[VERA] ShiftQueue】, Auto Repair【[VERA] AutoRepair】, Ares (Auto/On/Off)【[VERA] Ares】*(next launch)*, Custom End Game Banner / Score / Movie【[VERA] CustomEndGameBanner / Score / Movie】, Commander Clips【[VERA] CommanderFeedback】 |
-| **UI Options** | Sidebar size (Normal/Large/XL)【[VERA] Sidebar】, Sidebar Columns 2–5【[VERA] SidebarColumns】, HD Radar【[VERA] HdRadar】, Smooth Sidebar【[VERA] SmoothSidebar】, Health Bars (Original/All Units/All Units Not Full)【[VERA] HealthBars】, Tooltips【[Options] ToolTips】, Target Lines【[Options] UnitActionLines】, See Hidden Objects【[Options] ShowHidden】, Compact Super Timers【[VERA] CompactSuperTimers】, Detailed EVA Text【[VERA] DetailedEvaText】; button: Edit Layout *(match only)* |
+| **Game Options** | Difficulty【[Options] Difficulty】*(locked in a match)*, Shift-Click Batch Queue【[VERA] ShiftQueue】, Building Production Queue【[VERA] BuildingProductionQueue】*(next game)*, Auto Repair【[VERA] AutoRepair】, Ares (Auto/On/Off)【[VERA] Ares】*(next launch)*, Custom End Game Banner / Score / Movie【[VERA] CustomEndGameBanner / Score / Movie】, Commander Clips【[VERA] CommanderFeedback】 |
+| **UI Options** | Sidebar size (Normal/Large/XL)【[VERA] Sidebar】, Sidebar Columns 2–5【[VERA] SidebarColumns】, HD Radar【[VERA] HdRadar】, Smooth Sidebar【[VERA] SmoothSidebar】, Health Bars (Original/All Units/All Units Not Full)【[VERA] HealthBars】, Tooltips【[Options] ToolTips】, Target Lines【[Options] UnitActionLines】, See Hidden Objects【[Options] ShowHidden】, Compact Super Timers【[VERA] CompactSuperTimers】, Detailed EVA Text【[VERA] DetailedEvaText】, Convenience Help【[VERA] ConvenienceHelp】; button: Edit Layout *(match only)* |
 | **Audio Options** | Music Volume【[Audio] ScoreVolume】, Sound Volume【[Audio] SoundVolume】, Voice Volume【[Audio] VoiceVolume】 |
 | **Controls** | Scroll Rate【[Options] ScrollRate】, Right-Click Orders【[VERA] RightClickOrders】, Minimap Beacons【[VERA] MinimapBeacons】, Mouse Wheel Zoom【[VERA] MouseWheelZoom】, Lock Cursor to Window【[VERA] LockCursor】 |
 | **General** | Language【[VERA] Language】, Original YR Style【[VERA] YROriginalStyle】, Smooth Online Menus【[VERA] SmoothOnlineMenus】, HD Map Previews【[VERA] HdMapPreviews】*(not in the web build)*, VERA Icon【[VERA] VeraIcon】, Skip Intro【[VERA] SkipIntro】*(next launch)*, Show String Keys【[VERA] ShowStringKeys】; button: Check for Updates *(locked in a match, not in the web build)* |
@@ -135,6 +136,7 @@ In a match
 ├─ Command bar: Beacon, Planning Mode, hide/show
 ├─ Hotkeys that change a setting:
 │   Ctrl+Alt+F Performance Stats, Alt+Enter Full Screen, Ctrl+Alt+L Lock Cursor, Ctrl+Alt+K Show String Keys,
+│   Ctrl+Alt+H Convenience Help,
 │   Ctrl+Alt+T superweapon building timers【[VERA] SuperweaponBuildingTimers; no Options control】,
 │   Alt+A relation colours; /pause and /resume in chat drive the shared pause
 └─ Result screens
@@ -167,7 +169,7 @@ Remove an item here once it is fixed.
 **One rule set, saved three times**
 
 - Skirmish, LAN rooms and online rooms each keep their own Short Game, Crates, Credits and so on: in `[Skirmish]`, `[LAN]` and `[WonlinePref]`.
-- The room's own additions (country bans, bridges, allying) and its Superweapon Limit and Terrain Deformation are never saved when changed in the room.
+- The room's own additions (country bans, bridges, allying) and its Superweapon Limit, Terrain Deformation and Building Production Queue are never saved when changed in the room.
 - Room name, ranked game, lobby watching and max players reset when the game restarts.
 
 **Changes not saved, or shown state out of date**

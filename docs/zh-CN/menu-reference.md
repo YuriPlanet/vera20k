@@ -80,7 +80,8 @@ lang: zh-CN
     │   │     每组有 加入/观战/排队 按钮，房主另有 添加 AI
     │   ├─ 合作模式难度、聊天；缺地图时显示 下载 / 离开
     │   └─ 房间游戏选项弹窗：速度、资金、单位数、超级武器上限、五个原版勾选项、
-    │       桥梁可摧毁、游戏中结盟、禁用尤里、禁用法国、禁用间谍、禁用窃取科技、地形变形
+    │       桥梁可摧毁、游戏中结盟、禁用尤里、禁用法国、禁用间谍、禁用窃取科技、地形变形、
+    │       Building Production Queue（建筑生产队列，暂无中文界面文字）
     │       【原版项存在 [LAN] 或 [WonlinePref]；VERA 新增项仅本次】
     │
     ├─ 影片与制作人员：预告片、播放影片 → 影片列表（播放/返回）、制作人员名单、主菜单
@@ -103,8 +104,8 @@ lang: zh-CN
 | 分页 | 设置项【存储】 |
 |---|---|
 | **显示** | 缩放【[VERA] Zoom】、显示器【[VERA] Display】、队伍颜色强度 1–10【[VERA] HouseColorStrength】*(对局中锁定)*、色觉辅助【[VERA] ColorVisionMode】、视觉细节（低/高）【[Options] DetailLevel】、全屏【[VERA] FullScreen】、垂直同步【[VERA] VSync】*(网页版没有)*、原版 4:3 比例【[VERA] OriginalShape】、性能统计 *(不保存)* |
-| **游戏** | 难度【[Options] Difficulty】*(对局中锁定)*、Shift 点击批量排队【[VERA] ShiftQueue】、自动维修【[VERA] AutoRepair】、Ares（自动/开/关）【[VERA] Ares】*(下次启动生效)*、自定义结局横幅 / 结算画面 / 结局动画【[VERA] CustomEndGameBanner / Score / Movie】、指挥官片段【[VERA] CommanderFeedback】 |
-| **界面** | 侧边栏大小（标准/大/特大）【[VERA] Sidebar】、建造列表列数 2–5【[VERA] SidebarColumns】、高清雷达【[VERA] HdRadar】、平滑侧边栏【[VERA] SmoothSidebar】、生命条（原版/所有单位/所有未满血单位）【[VERA] HealthBars】、工具提示【[Options] ToolTips】、目标线【[Options] UnitActionLines】、显示隐藏物体【[Options] ShowHidden】、精简超级武器计时器【[VERA] CompactSuperTimers】、详细 EVA 文字【[VERA] DetailedEvaText】；按钮：编辑布局 *(只在对局中可用)* |
+| **游戏** | 难度【[Options] Difficulty】*(对局中锁定)*、Shift 点击批量排队【[VERA] ShiftQueue】、Building Production Queue（建筑生产队列）【[VERA] BuildingProductionQueue】*(下一局生效)*、自动维修【[VERA] AutoRepair】、Ares（自动/开/关）【[VERA] Ares】*(下次启动生效)*、自定义结局横幅 / 结算画面 / 结局动画【[VERA] CustomEndGameBanner / Score / Movie】、指挥官片段【[VERA] CommanderFeedback】 |
+| **界面** | 侧边栏大小（标准/大/特大）【[VERA] Sidebar】、建造列表列数 2–5【[VERA] SidebarColumns】、高清雷达【[VERA] HdRadar】、平滑侧边栏【[VERA] SmoothSidebar】、生命条（原版/所有单位/所有未满血单位）【[VERA] HealthBars】、工具提示【[Options] ToolTips】、目标线【[Options] UnitActionLines】、显示隐藏物体【[Options] ShowHidden】、精简超级武器计时器【[VERA] CompactSuperTimers】、详细 EVA 文字【[VERA] DetailedEvaText】、Convenience Help（便利提示）【[VERA] ConvenienceHelp】；按钮：编辑布局 *(只在对局中可用)* |
 | **音频** | 音乐音量【[Audio] ScoreVolume】、音效音量【[Audio] SoundVolume】、语音音量【[Audio] VoiceVolume】 |
 | **操作** | 滚动速度【[Options] ScrollRate】、右键下令【[VERA] RightClickOrders】、小地图信标【[VERA] MinimapBeacons】、鼠标滚轮缩放【[VERA] MouseWheelZoom】、鼠标锁定在窗口内【[VERA] LockCursor】 |
 | **常规** | 语言【[VERA] Language】、原版 YR 风格【[VERA] YROriginalStyle】、平滑在线菜单【[VERA] SmoothOnlineMenus】、高清地图预览【[VERA] HdMapPreviews】*(网页版没有)*、VERA 图标【[VERA] VeraIcon】、跳过片头【[VERA] SkipIntro】*(下次启动生效)*、显示字符串键【[VERA] ShowStringKeys】；按钮：检查更新 *(对局中锁定，网页版没有)* |
@@ -135,6 +136,7 @@ lang: zh-CN
 ├─ 命令栏：信标、规划模式、收起/展开
 ├─ 改设置的快捷键：
 │   Ctrl+Alt+F 性能统计、Alt+Enter 全屏、Ctrl+Alt+L 锁定鼠标、Ctrl+Alt+K 显示字符串键、
+│   Ctrl+Alt+H 便利提示、
 │   Ctrl+Alt+T 超级武器建筑计时器【[VERA] SuperweaponBuildingTimers，选项菜单里没有对应项】、
 │   Alt+A 关系配色；聊天里输入 /pause、/resume 控制共享暂停
 └─ 结算画面
@@ -167,7 +169,7 @@ lang: zh-CN
 **同一套规则存了三份**
 
 - 遭遇战、局域网房间、在线房间各存一份短局、箱子、资金等规则：分别在 `[Skirmish]`、`[LAN]`、`[WonlinePref]`。
-- 房间里新增的禁用国家、桥梁、结盟，以及超级武器上限、地形变形，在房间里改了都不保存。
+- 房间里新增的禁用国家、桥梁、结盟，以及超级武器上限、地形变形、建筑生产队列，在房间里改了都不保存。
 - 房间名、排位赛、大厅观战、玩家上限，重启游戏后全部恢复默认。
 
 **改了不保存，或显示和实际状态不一致**
