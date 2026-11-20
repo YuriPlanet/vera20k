@@ -232,14 +232,17 @@ pub fn parse_house_roster(
         let Some(house_name) = houses_section.read_name(key, 0x14) else {
             continue;
         };
-        // `HouseClass::Read_INI @ 0x005009B0` constructs a House for every
-        // entry, a repeated name included, and `FindIndexByName @ 0x0050C170`
-        // returns the first House of a name in array order, so a later copy
-        // is a House no name lookup reaches. VERA keys Houses by their
-        // case-folded name id, so it keeps the first entry and drops the
-        // copy. Residual: native's unreachable second House (and a name that
-        // differs from an earlier one only in ASCII case, which native keeps
-        // as its own House) is not constructed.
+        // gamemd's campaign reader, `HouseClass::Read_INI @ 0x005009B0`,
+        // constructs a House for every entry, a repeated name included: the
+        // copy is a whole House read from the same section, at the next
+        // array index, so it shifts the index and ally bit of every later
+        // House and takes part in every walk of the House array, though
+        // `FindIndexByName @ 0x0050C170` returns the first of a name. VERA
+        // keys Houses by their case-folded name id, so it keeps the first
+        // entry and drops the copy. Residual: that second House (and one
+        // whose name differs from an earlier one only in ASCII case, which
+        // native keeps as its own House) is not constructed, so such a map
+        // has one House fewer here than in gamemd.
         if houses
             .iter()
             .any(|house: &HouseDefinition| house.name.eq_ignore_ascii_case(house_name))
