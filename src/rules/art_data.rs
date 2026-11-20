@@ -1987,6 +1987,7 @@ impl ArtRegistry {
             .filter(|name| !name.is_empty())
             .collect();
         let mut resolved = BTreeSet::new();
+        let mut gained_config = false;
 
         while let Some(name) = pending.pop_front() {
             if !resolved.insert(name.clone()) {
@@ -1995,7 +1996,10 @@ impl ArtRegistry {
             let config = self
                 .anim_runtime_configs
                 .entry(name.clone())
-                .or_insert_with(|| unread_anim_type_config(&name))
+                .or_insert_with(|| {
+                    gained_config = true;
+                    unread_anim_type_config(&name)
+                })
                 .clone();
             self.bind_one_anim_asset(&name, &config, asset_manager, theater_ext, theater_name);
 
@@ -2021,8 +2025,11 @@ impl ArtRegistry {
         }
 
         self.scheduler_anim_types = resolved;
-        // A root with no AnimType gained an unread one above.
-        self.refresh_anim_types_affecting_play();
+        // Only a new config can change the set, and map load binds one
+        // authored anim at a time.
+        if gained_config {
+            self.refresh_anim_types_affecting_play();
+        }
     }
 
     /// Hidden-occupancy gate from the art.ini object-type-ID section.
