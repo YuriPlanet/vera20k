@@ -367,21 +367,24 @@ struct HeadlessOutput {
     // Native compact slots are diagnostic identities, never selection state.
     compact_slots: BTreeMap<usize, usize>,
     names: Vec<String>,
-    /// The stand-in process cell a simulation ring's start drew, with its
-    /// cursor when the start handed it back to the simulation.
-    start_cell: Option<(MainRng, String)>,
+    start_cell: Option<StartCell>,
 }
 
-impl Drop for HeadlessOutput {
+/// The stand-in process cell a simulation ring's start drew, with its cursor
+/// when the start handed it back to the simulation.
+struct StartCell {
+    cell: MainRng,
+    after_start: String,
+}
+
+impl Drop for StartCell {
     /// A retained ring that draws Main after its start would move gamemd's
     /// one Main under the simulation.
     fn drop(&mut self) {
-        if let Some((cell, after_start)) = &self.start_cell
-            && !std::thread::panicking()
-        {
+        if !std::thread::panicking() {
             assert_eq!(
-                &cell.checkpoint().native_state_hex(),
-                after_start,
+                self.cell.checkpoint().native_state_hex(),
+                self.after_start,
                 "the retained ring drew Main after its start"
             );
         }
@@ -914,7 +917,10 @@ fn start_sim_ring(
     output.assert_fill(&lent, row, fill);
     assert!(output.pull_quarter() > 0, "retained actual attack PCM");
     *sim.main_rng_mut_for_test() = lent.checkpoint();
-    output.start_cell = Some((lent, sim.main_rng().native_state_hex()));
+    output.start_cell = Some(StartCell {
+        cell: lent,
+        after_start: sim.main_rng().native_state_hex(),
+    });
     assert_main(
         sim.main_rng().native_state_hex(),
         row,
