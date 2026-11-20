@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 use crate::app::loading::init::MapMenuEntry;
 use crate::app::scenario_catalog::ScenarioCatalog;
 use crate::assets::asset_manager::AssetManager;
+use crate::map::skirmish_scenarios::{
+    SkirmishScenarioRecord, SkirmishScenarioSource, record_matches_mode,
+};
 use crate::rules::ini_parser::IniFile;
 use crate::sim::rng::SimRng;
 use crate::skirmish_launch::{
@@ -22,8 +25,8 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::skirmish_shell::{
-    PlayerNameEditState, SkirmishAiRowType, SkirmishSavedSetup, SkirmishShellState,
-    SkirmishTrackbarId,
+    PlayerNameEditState, SkirmishAiRowType, SkirmishModeSelection, SkirmishSavedSetup,
+    SkirmishShellState, SkirmishTrackbarId,
 };
 use cooperative::{
     CooperativeCountryRole, CooperativeCountryRosterEntry, CooperativeError,
@@ -1057,12 +1060,13 @@ impl MultiplayerShellRuntime {
         {
             state.selected_map_idx = catalog.first_local_index().unwrap_or(records.len());
         }
+        align_client_map_mode(state, records, modes);
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(state, modes);
         crate::ui::skirmish_shell::initialize_rows_for_selected_map(state, maps);
         // VERA: the page left on this map comes back, with the rows past
         // `[Skirmish]`'s seven and every start and team. The player's side
-        // and colour stay as `[MultiPlayer]` gave them, which the network
-        // rooms share.
+        // and colour come from `[MultiPlayer]`, which the network rooms
+        // share. A country absent from this game's choices is repaired below.
         if let Some((_, setup)) = last {
             let shown = SkirmishSavedSetup::capture(state, maps).player;
             let mut setup = setup.clone();
@@ -1070,6 +1074,7 @@ impl MultiplayerShellRuntime {
             setup.player.color = shown.color;
             setup.apply(state, maps);
         }
+        state.repair_country_selections();
     }
 
     /// VERA's Setups page: each named setup's name and when it was saved.
@@ -1141,8 +1146,9 @@ impl MultiplayerShellRuntime {
         if let Some(mode) = named.mode.and_then(|id| mode_by_id(modes, id)) {
             state.selected_mode = mode.id.into();
         }
-        crate::ui::skirmish_shell::repair_teams_for_selected_mode(state, modes);
         state.selected_map_idx = index;
+        align_client_map_mode(state, catalog.records(), modes);
+        crate::ui::skirmish_shell::repair_teams_for_selected_mode(state, modes);
         crate::ui::skirmish_shell::initialize_rows_for_selected_map(state, maps);
         named.setup.apply(state, maps);
         Some(index)
@@ -2087,13 +2093,32 @@ fn persisted_row_type(value: SkirmishAiRowType) -> i32 {
 
 /// VERA: the local map a saved setup names by [`saved_setups::map_key`]. An
 /// Online row names no file here.
-fn local_map_index(
-    records: &[crate::map::skirmish_scenarios::SkirmishScenarioRecord],
-    map: &str,
-) -> Option<usize> {
+fn local_map_index(records: &[SkirmishScenarioRecord], map: &str) -> Option<usize> {
     records
         .iter()
         .position(|record| !record.is_online() && saved_setups::map_key(&record.file_name) == map)
+}
+
+/// A catalog can change the modes of a saved map, and a stock setup can be
+/// restored with the mod's first map. Keep the map and choose a playable mode.
+fn align_client_map_mode(
+    state: &mut SkirmishShellState,
+    records: &[SkirmishScenarioRecord],
+    modes: &[SkirmishGameMode],
+) {
+    let Some(record) = records
+        .get(state.selected_map_idx)
+        .filter(|record| record.source == SkirmishScenarioSource::ClientCatalog)
+    else {
+        return;
+    };
+    let supports = |mode: &SkirmishGameMode| record_matches_mode(record, mode);
+    if !state.selected_mode.resolve(modes).is_some_and(supports)
+        && let Some(index) = modes.iter().position(supports)
+        && let Some(selection) = SkirmishModeSelection::for_skirmish_row(index, modes)
+    {
+        state.selected_mode = selection;
+    }
 }
 
 /// `SkirmishSetups.ini` beside the profile, like coopsave.ini.
@@ -3004,6 +3029,30 @@ mod tests {
             page
         );
         std::fs::remove_dir_all(directory).expect("remove owned fixture");
+    }
+
+    #[test]
+    fn opening_skirmish_pairs_a_client_map_with_its_native_mode() {
+        let mut record = SkirmishScenarioRecord::from_map_menu_entry(0, &map_named("delta.map"));
+        record.source = SkirmishScenarioSource::ClientCatalog;
+        record.game_modes = vec!["FreeForAll".to_string()];
+        let catalog = ScenarioCatalog::from_records(vec![record]);
+        let modes = [
+            mode(),
+            SkirmishGameMode {
+                class: crate::skirmish_modes::MpModeClass::FreeForAll,
+                map_filter: "freeforall".to_string(),
+                ..mode()
+            },
+        ];
+        let runtime = runtime(
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
+            42,
+        );
+        let mut shell = SkirmishShellState::default();
+        runtime.open_skirmish_page(&mut shell, &catalog, &modes);
+        assert_eq!(shell.selected_mode.resolve(&modes), Some(&modes[1]));
+        assert_eq!(shell.selected_map_idx, 0);
     }
 
     /// VERA's Setups page: a setup saved by name in one run loads in the
@@ -4018,6 +4067,49 @@ WOLTaunts=junk
 
         assert_eq!(shell.selected_mode.id, 1);
         assert_eq!(shell.selected_map_idx, 0);
+    }
+
+    #[test]
+    fn opening_skirmish_replaces_unavailable_saved_countries_with_random() {
+        use crate::map::skirmish_scenarios::SkirmishScenarioRecord;
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]\n0=Base\n1=Hidden\n2=Custom\n\
+             [Base]\nMultiplay=yes\nUIName=NAME:Base\n\
+             [Hidden]\nMultiplay=no\nUIName=NAME:Hidden\n\
+             [Custom]\nMultiplay=yes\nUIName=NAME:Custom\n",
+        ))
+        .unwrap();
+        let mut snapshot =
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish);
+        snapshot.slots[0].country = 1;
+        snapshot.slots[1].country = 2;
+        let mut runtime = runtime(snapshot, 3);
+        runtime.local_preferences.side = 3;
+        runtime.local_preferences.side_ex = CONCRETE_ITEM_DATA;
+        let catalog =
+            ScenarioCatalog::from_records(vec![SkirmishScenarioRecord::from_map_menu_entry(
+                0,
+                &map(),
+            )]);
+        let mut shell = SkirmishShellState::default();
+        shell.refresh_country_catalog(&rules);
+
+        runtime.open_skirmish_page(&mut shell, &catalog, &[mode()]);
+
+        assert!(
+            shell.player_country_random,
+            "a removed mod country is Random"
+        );
+        assert!(
+            shell.opponents[0].country_random,
+            "a hidden country is Random"
+        );
+        assert!(!shell.opponents[1].country_random);
+        assert_eq!(shell.opponents[1].country.raw_index(), 2);
+        assert_eq!(
+            runtime.local_preferences.side, 3,
+            "projection keeps the raw cache"
+        );
     }
 
     /// A terminal exit has no Start/Back transaction, so the page's own values

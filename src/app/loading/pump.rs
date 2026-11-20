@@ -465,6 +465,21 @@ impl LoadingRequest {
                 );
             }
         }
+        // The client applies the code for its mode to the map it launches.
+        // The native mode object and the normal Rules layers still own their
+        // separate setup. Only the imported catalog's own maps take this code.
+        if self.startup().session_mode()
+            == crate::app::match_runtime::session::SessionMode::Skirmish
+            && let Some(session) = self.skirmish_launch_session()
+            && let Some(additions) = crate::app::mod_additions::MapAdditions::client_mode(
+                asset_manager,
+                self.selected_map_file(),
+                &session.mode,
+            )
+            .map_err(anyhow::Error::msg)?
+        {
+            loaded = loaded.with_mod_additions(&additions)?;
+        }
         match map_additions {
             Some(additions) => loaded.with_mod_additions(additions),
             None => Ok(loaded),

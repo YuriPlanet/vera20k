@@ -1167,6 +1167,16 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
+        if state.process_assets.uses_client_catalog()
+            && (state.frontend.skirmish_modes.is_empty()
+                || state.frontend.scenario_catalog.shell_maps().is_empty())
+        {
+            Self::open_shell_notice(
+                state,
+                "No playable skirmish maps were found in this mod's client catalog. Check that the full mod folder was extracted.".into(),
+            );
+            return;
+        }
         if !Self::prepare_multiplayer_settings(
             state,
             crate::app::match_runtime::session::SessionMode::Skirmish,
@@ -2303,6 +2313,14 @@ impl App {
             }
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
+            }
+            MainMenuShellAction::Network | MainMenuShellAction::WwOnline
+                if state.process_assets.uses_client_catalog() =>
+            {
+                Self::open_shell_notice(
+                    state,
+                    "This mod's client catalog is available in Skirmish. Choose No mod under Options, Mods to play online or on a network.".into(),
+                );
             }
             // Both lead to a pre-match check, which compares a mod's files.
             MainMenuShellAction::Network => {

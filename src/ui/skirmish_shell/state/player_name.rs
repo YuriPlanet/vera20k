@@ -422,6 +422,22 @@ impl SkirmishShellState {
         self.open_combo_dropdown = None;
     }
 
+    /// VERA's shared profile can remember a country from another mod. Keep
+    /// each restored row on a choice the current rules actually offer.
+    pub(crate) fn repair_country_selections(&mut self) {
+        let available = |country| {
+            self.country_catalog
+                .items()
+                .contains(&super::SkirmishComboItem::Country(
+                    super::SkirmishCountryChoice::Country(country),
+                ))
+        };
+        self.player_country_random |= !available(self.player_country);
+        for opponent in &mut self.opponents {
+            opponent.country_random |= !available(opponent.country);
+        }
+    }
+
     /// The colours this shell's lobbies list.
     pub fn lobby_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
         self.lobby_colors

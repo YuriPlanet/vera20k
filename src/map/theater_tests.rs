@@ -1421,9 +1421,9 @@ fn atlas_growth_reads_the_published_theater_palettes() {
 #[test]
 fn load_theater_prefers_the_profile_theater_ini_then_the_stock_name() {
     use crate::map::source::test_support::TestDirectory;
-    use crate::util::ini_roots::{IniProfile, IniRootConfig};
-    let mo = IniRootConfig {
-        profile: IniProfile::Mo,
+    use crate::util::ini_roots::IniRootConfig;
+    let roots = IniRootConfig {
+        theater_suffix: Some("alt".into()),
         ..Default::default()
     }
     .resolve(|_| true)
@@ -1434,13 +1434,14 @@ fn load_theater_prefers_the_profile_theater_ini_then_the_stock_name() {
     let stock_ini = b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n";
     dir.write("temperatmd.ini", stock_ini);
     let mut assets =
-        AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(mo.clone());
+        AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(roots.clone());
     let theater = load_theater(&mut assets, "TEMPERATE").expect("stock fallback");
     assert_eq!(theater.ini_data, stock_ini);
 
     let profile_ini = b"[TileSet0000]\nFileName=clear\nTilesInSet=2\n";
-    dir.write("temperatmo.ini", profile_ini);
-    let mut assets = AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(mo);
+    dir.write("temperatalt.ini", profile_ini);
+    let mut assets =
+        AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(roots);
     let theater = load_theater(&mut assets, "TEMPERATE").expect("profile theater INI");
     assert_eq!(theater.ini_data, profile_ini);
 }

@@ -68,6 +68,11 @@ pub struct BinkHeader {
 }
 
 impl BinkHeader {
+    /// Inspect the dimensions and timing without parsing the frame index.
+    pub fn probe(data: &[u8]) -> Result<Self, AssetError> {
+        parse_fixed_header(data).map(|(header, _)| header)
+    }
+
     #[inline]
     pub fn has_alpha(&self) -> bool {
         self.video_flags & BINK_FLAG_ALPHA != 0

@@ -98,7 +98,12 @@ reads, variants included, since map loading picks each cell's variant by how man
 has. A theater MIX that takes a retail one's place counts even if it does not open. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
-refused as on any rules difference. A mod that adds INI files to every map
+refused as on any rules difference. The effective file, catalog, archive and extension
+declarations from `mod.ini` also take part in this agreement; its display metadata does
+not. These choices are frozen at startup and reused when the asset manager is rebuilt.
+No packet fields change: released builds still meet the existing build check, a mixed
+room cannot start, and a rollback uses that build's loading rules and agreement.
+A mod that adds INI files to every map
 ([modding guide](modding.md#add-to-every-map), `app::mod_additions`) also adds those files
 as the game read them for its matches, once per start, so a player whose file changed
 after that is refused rather than playing different maps; older builds are refused by

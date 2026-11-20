@@ -447,10 +447,28 @@ pub(super) fn offline_setup_background_entry(
     atlas: &SkirmishShellChromeAtlas,
     layout: &SkirmishShellLayout,
 ) -> Option<SkirmishShellChromeEntry> {
-    match generic_background_role(layout) {
-        GenericBackgroundRole::Mnscrns640 => atlas.setup_backgrounds[0],
-        GenericBackgroundRole::MnscrnlLarge => atlas.setup_backgrounds[1],
-    }
+    let (index, pane) = match generic_background_role(layout) {
+        GenericBackgroundRole::Mnscrns640 => (0, [472.0, 448.0]),
+        GenericBackgroundRole::MnscrnlLarge => (1, [632.0, 568.0]),
+    };
+    atlas
+        .client_skirmish_background
+        .map(|mut background| {
+            // Fill the dialog's existing picture area. Center-crop the wide
+            // client artwork so the backdrop keeps its proportions.
+            let [width, height] = background.pixel_size;
+            let ratio = (pane[0] / width).max(pane[1] / height);
+            for (axis, shown) in [pane[0] / (width * ratio), pane[1] / (height * ratio)]
+                .into_iter()
+                .enumerate()
+            {
+                background.uv_origin[axis] += background.uv_size[axis] * (1.0 - shown) / 2.0;
+                background.uv_size[axis] *= shown;
+            }
+            background.pixel_size = pane;
+            background
+        })
+        .or(atlas.setup_backgrounds[index])
 }
 
 pub(super) fn push_generic_shell_background_instances(

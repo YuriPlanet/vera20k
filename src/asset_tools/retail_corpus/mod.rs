@@ -203,7 +203,7 @@ fn required_corpus() -> AssetManager {
         &root,
         true,
         Default::default(),
-        crate::assets::asset_manager::ArchiveFamily::Yr,
+        &crate::util::archive_names::ArchiveNames::default(),
     )
     .expect("mount the complete retail archive corpus")
 }

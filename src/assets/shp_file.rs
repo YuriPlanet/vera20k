@@ -171,11 +171,29 @@ impl ShpFile {
     /// Reads the file header, all frame headers, then decodes each frame's
     /// pixel data (handling both raw and RLE-compressed formats).
     pub fn from_bytes(data: &[u8]) -> Result<Self, AssetError> {
+        Self::from_bytes_with_budget(data, None)
+    }
+
+    /// Bound the total decompressed indices of a presentation asset.
+    pub fn from_bytes_bounded(data: &[u8], max_pixels: usize) -> Result<Self, AssetError> {
+        Self::from_bytes_with_budget(data, Some(max_pixels))
+    }
+
+    fn from_bytes_with_budget(data: &[u8], mut budget: Option<usize>) -> Result<Self, AssetError> {
         let frame_count = Self::frame_count_from_bytes(data)?;
         let width: u16 = read_u16_le(data, 2);
         let height: u16 = read_u16_le(data, 4);
         let mut frames: Vec<ShpFrame> = Vec::with_capacity(usize::from(frame_count));
         for i in 0..usize::from(frame_count) {
+            if let Some(remaining) = &mut budget {
+                let [_, _, wide, high] = Self::frame_rectangle_at(data, i);
+                *remaining = remaining
+                    .checked_sub(usize::from(wide) * usize::from(high))
+                    .ok_or_else(|| AssetError::ParseError {
+                        format: "SHP".into(),
+                        detail: "Decoded frames exceed the presentation pixel budget".into(),
+                    })?;
+            }
             frames.push(Self::frame_at(data, i)?);
         }
         Ok(ShpFile {

@@ -94,6 +94,8 @@ pub struct MixArchive {
     /// The raw archive bytes. Top-level archives can stay memory-mapped;
     /// nested archives can share a sub-view into parent archive storage.
     data: MixData,
+    /// The disk file holding these bytes, also for an archive nested in it.
+    container_path: Option<Arc<Path>>,
 }
 
 #[derive(Clone)]
@@ -298,36 +300,42 @@ impl MixArchive {
             body_size,
             flags,
             data,
+            container_path: None,
         })
     }
 
     /// Load a MIX archive from a file path.
     pub fn load(path: &Path) -> Result<Self, AssetError> {
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-        {
+        let data = {
             let bytes = crate::util::file_system::read_shared(path)?;
             let len = bytes.len();
-            return Self::from_data(MixData {
+            MixData {
                 bytes: MixBytes::Owned(bytes),
                 start: 0,
                 len,
-            });
-        }
+            }
+        };
         // WASI has no memory maps (memmap2's stub refuses every map), so the
         // headless wasm determinism run reads each archive whole.
         #[cfg(target_os = "wasi")]
-        {
-            Self::from_data(MixData::from_owned(std::fs::read(path)?))
-        }
+        let data = MixData::from_owned(std::fs::read(path)?);
         #[cfg(not(any(
             all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
             target_os = "wasi"
         )))]
-        {
+        let data = {
             let file = File::open(path)?;
             let data = unsafe { memmap2::MmapOptions::new().map(&file)? };
-            Self::from_data(MixData::from_mapped(data))
-        }
+            MixData::from_mapped(data)
+        };
+        let mut archive = Self::from_data(data)?;
+        archive.container_path = Some(Arc::from(path));
+        Ok(archive)
+    }
+
+    pub(super) fn container_path(&self) -> Option<&Path> {
+        self.container_path.as_deref()
     }
 
     /// Look up a file by name. Returns the raw bytes if found.
@@ -377,7 +385,9 @@ impl MixArchive {
         let Some(data) = self.entry_view(&self.entries[index]) else {
             return Ok(None);
         };
-        Self::from_data(data).map(Some)
+        let mut archive = Self::from_data(data)?;
+        archive.container_path.clone_from(&self.container_path);
+        Ok(Some(archive))
     }
 
     /// Number of files in this archive.

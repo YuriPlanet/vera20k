@@ -601,7 +601,8 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
         // The mod `set_mod` chose, as config.toml names it on the desktop.
-        crate::app::mods::launch_dir(&config.paths, None),
+        crate::app::mods::launch_mod(&config.paths, None)
+            .map_err(|message| JsValue::from_str(&message))?,
         // The Ares setting the browser's VERA.INI holds, as its start reads it.
         crate::app::spawn_probe::existing_ares_setting(config.paths.settings_dir()),
     )
