@@ -138,6 +138,9 @@ struct NativeRulesSourceSnapshot {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// in a game this process loads.
     ares_keys_off: bool,
+    /// The selected mod declares `[Extensions] Phobos=yes`, so every game this
+    /// process loads plays Phobos (`rules::phobos_switch`).
+    phobos_required: bool,
 }
 
 impl NativeRulesSourceSnapshot {
@@ -373,6 +376,7 @@ impl NativeRulesProcessOwner {
             PersonalRules::default(),
             crate::rules::ares_switch::game_ships_ares(false),
             crate::rules::ares_switch::launch_keys_off(),
+            false,
         )
     }
 
@@ -381,7 +385,8 @@ impl NativeRulesProcessOwner {
     /// `ships_ares`: the game is an Ares game (`AssetManager::ships_ares`),
     /// so Ares plays and the registry reads every Rules pass the Ares way
     /// (`rules::ares_switch`); `ares_keys_off`: the player's Ares setting is
-    /// Off, so no Ares key turns Ares on.
+    /// Off, so no Ares key turns Ares on; `phobos_required`: the selected mod
+    /// declares `[Extensions] Phobos=yes`, so its games play Phobos.
     pub(crate) fn from_named_cold_start_sources(
         selected_rules_root: IniFile,
         langrule: Option<NativeLangRuleSource>,
@@ -392,6 +397,7 @@ impl NativeRulesProcessOwner {
         personal_rules: PersonalRules,
         ships_ares: bool,
         ares_keys_off: bool,
+        phobos_required: bool,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
@@ -408,6 +414,7 @@ impl NativeRulesProcessOwner {
             personal_rules,
             ships_ares,
             ares_keys_off,
+            phobos_required,
         };
         let cold_trace = sources.cold_registry()?;
         Ok(Self {
@@ -448,6 +455,7 @@ impl NativeRulesProcessOwner {
             sources.personal_rules,
             ships_ares,
             sources.ares_keys_off,
+            sources.phobos_required,
         )
         .expect("the same sources cold-started once already")
     }
@@ -457,6 +465,14 @@ impl NativeRulesProcessOwner {
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.sources.ares_keys_off = off;
+        self
+    }
+
+    /// VERA: the owner of a launch whose selected mod declares
+    /// `[Extensions] Phobos=yes`: every game it loads plays Phobos.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_phobos_required(mut self, required: bool) -> Self {
+        self.sources.phobos_required = required;
         self
     }
 
@@ -1373,7 +1389,8 @@ impl NativeRulesProcessOwner {
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
             .with_ares_mix(self.sources.ships_ares)
-            .with_ares_keys_off(self.sources.ares_keys_off);
+            .with_ares_keys_off(self.sources.ares_keys_off)
+            .with_phobos_required(self.sources.phobos_required);
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }

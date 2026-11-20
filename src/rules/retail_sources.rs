@@ -219,6 +219,9 @@ pub struct RetailRulesSources {
     ships_ares: bool,
     /// The player's Ares setting is Off: no Ares key turns Ares on.
     ares_keys_off: bool,
+    /// The selected mod declares `[Extensions] Phobos=yes`, so its games play
+    /// Phobos whatever keys their rules hold.
+    requires_phobos: bool,
 }
 
 impl RetailRulesSources {
@@ -246,6 +249,7 @@ impl RetailRulesSources {
             personal_rules: PersonalRules::default(),
             ships_ares: crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
             ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
+            requires_phobos: assets.requires_phobos(),
         })
     }
 
@@ -282,6 +286,7 @@ impl RetailRulesSources {
             self.personal_rules,
             self.ships_ares,
             self.ares_keys_off,
+            self.requires_phobos,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
         Ok(owner)

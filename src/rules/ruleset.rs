@@ -5528,7 +5528,7 @@ impl RuleSet {
         let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
         let mut rules = rules?;
         rules.ares = processed.ares_inputs().decide(&reads);
-        rules.phobos = crate::rules::phobos_switch::decide(&reads);
+        rules.phobos = crate::rules::phobos_switch::decide(&reads, processed.phobos_required());
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
         Ok(rules)
     }
@@ -8732,10 +8732,10 @@ impl RuleSet {
         self.ares
     }
 
-    /// Whether Phobos plays in this game: its Rules layers or map hold a key
-    /// of a Phobos piece that runs in every build, or the build has the
-    /// `phobos` feature (`rules::phobos_switch`). Sim and presentation read
-    /// this one answer.
+    /// Whether Phobos plays in this game: the selected mod declares
+    /// `[Extensions] Phobos=yes`, or its Rules layers or map hold a key of a
+    /// Phobos piece that runs in every build (`rules::phobos_switch`). Sim and
+    /// presentation read this one answer.
     #[inline]
     pub fn phobos(&self) -> bool {
         self.phobos

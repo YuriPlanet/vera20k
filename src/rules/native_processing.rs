@@ -238,6 +238,9 @@ pub struct RulesLayerStack {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// (`ares_switch::launch_keys_off`).
     ares_keys_off: bool,
+    /// The selected mod declares `[Extensions] Phobos=yes`, so the games this
+    /// stack processes play Phobos (`rules::phobos_switch`).
+    phobos_required: bool,
 }
 
 impl RulesLayerStack {
@@ -252,6 +255,7 @@ impl RulesLayerStack {
             // stands for the game `ares_switch::game_ships_ares` says.
             ships_ares: crate::rules::ares_switch::game_ships_ares(false),
             ares_keys_off: crate::rules::ares_switch::launch_keys_off(),
+            phobos_required: false,
         }
     }
 
@@ -271,6 +275,15 @@ impl RulesLayerStack {
     /// launch's (`ares_switch::launch_keys_off`).
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.ares_keys_off = off;
+        self
+    }
+
+    /// VERA: the stack of a game whose selected mod declares
+    /// `[Extensions] Phobos=yes`, so its rules play Phobos whatever keys they
+    /// hold. The game's owner sets it from the launch
+    /// (`NativeRulesProcessOwner::startup_layers`).
+    pub fn with_phobos_required(mut self, required: bool) -> Self {
+        self.phobos_required = required;
         self
     }
 
@@ -503,6 +516,7 @@ impl RulesLayerStack {
                     content_hash: self.content_hash_for_layers(index + 1),
                     native_type_construction_trace,
                     ares_inputs,
+                    phobos_required: self.phobos_required,
                 };
                 let rules = match RuleSet::from_processed_rules(&prefix) {
                     Ok(rules) => rules,
@@ -539,6 +553,7 @@ impl RulesLayerStack {
                 content_hash: self.content_hash(),
                 native_type_construction_trace,
                 ares_inputs,
+                phobos_required: self.phobos_required,
             },
             after_map_result,
         ))
@@ -840,11 +855,22 @@ pub struct ProcessedRulesLayers {
     /// What the passes give the per-game Ares switch; saved with the rules,
     /// so a loaded game projects the same answer.
     ares_inputs: crate::rules::ares_switch::AresInputs,
+    /// The selected mod declared `[Extensions] Phobos=yes`: the projection
+    /// turns Phobos on even without a Phobos key. Saved with the rules, so a
+    /// loaded game projects the same answer.
+    #[serde(default)]
+    phobos_required: bool,
 }
 
 impl ProcessedRulesLayers {
     pub(crate) fn ares_inputs(&self) -> &crate::rules::ares_switch::AresInputs {
         &self.ares_inputs
+    }
+
+    /// Whether the selected mod declares `[Extensions] Phobos=yes`
+    /// (`rules::phobos_switch`).
+    pub(crate) fn phobos_required(&self) -> bool {
+        self.phobos_required
     }
 
     pub(crate) fn ares_global_controls(&self) -> &AresGlobalControls {

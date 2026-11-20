@@ -361,6 +361,9 @@ pub struct AssetManager {
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// VERA: the selected mod declares `[Extensions] Phobos=yes`, so its games
+    /// play Phobos (`rules::phobos_switch`).
+    requires_phobos: bool,
 }
 
 /// Test fixtures open the retail install once per test process and hand each
@@ -392,6 +395,7 @@ impl Clone for AssetManager {
             mod_dir: self.mod_dir.clone(),
             client_install: self.client_install.clone(),
             ares_setting: self.ares_setting,
+            requires_phobos: self.requires_phobos,
         }
     }
 }
@@ -542,6 +546,7 @@ impl AssetManager {
             self.mod_dir = Some(folder.clone());
         }
         self.client_install = config.client_install.clone();
+        self.requires_phobos = config.requires_phobos;
         self
     }
 
@@ -621,6 +626,13 @@ impl AssetManager {
         self.ares_setting
     }
 
+    /// Whether the selected mod declares `[Extensions] Phobos=yes`
+    /// (`rules::phobos_switch`): its games play Phobos even when their rules
+    /// carry no Phobos key of their own.
+    pub fn requires_phobos(&self) -> bool {
+        self.requires_phobos
+    }
+
     /// Read-only INI tooling without a complete retail installation. No game
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.
@@ -656,6 +668,7 @@ impl AssetManager {
                 .map(|dir| crate::util::mod_package::ModFolder::loose(dir.to_path_buf())),
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         })
     }
 
@@ -2934,6 +2947,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3021,6 +3035,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
         manager
@@ -3098,6 +3113,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3143,6 +3159,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
         manager.catalog_named_nested_archives();
@@ -3186,6 +3203,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3230,6 +3248,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3270,6 +3289,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 
@@ -3330,6 +3350,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            requires_phobos: false,
         };
         manager.rebuild_indexes();
 

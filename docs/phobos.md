@@ -12,7 +12,20 @@ would, and the game's log names it, e.g.
 `AllowParallelAIQueues`, which Ares reads too, turns neither extension on. Retail data holds no
 such key, so a retail game plays as the original. A save, a replay and every player in an online
 match reach the same answer from the same rules, mode and map
-([Networking](Networking.md)). The four are:
+([Networking](Networking.md)).
+
+A mod can also declare Phobos in its [`mod.ini`](modding.md#modini), as it declares Ares:
+
+```ini
+[Extensions]
+Phobos=yes
+```
+
+This turns Phobos on for every game the mod loads, even when its rules carry no Phobos key
+of their own. `Phobos=no`, the default, declares no requirement and leaves the game's data
+to decide; neither form forces Phobos off.
+
+The four are:
 
 - [Parallel AI queue limits](phobos-parallel-ai-queues.md)
 - [Skirmish AI dehardcoding](phobos-ai-dehardcode.md)

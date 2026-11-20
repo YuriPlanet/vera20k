@@ -17,6 +17,13 @@
 //! turns neither switch on. Retail data holds none of these keys, so a retail
 //! game plays as gamemd.
 //!
+//! A mod can also declare Phobos in its `mod.ini`, as it declares Ares:
+//! `[Extensions] Phobos=yes` turns Phobos on for every game it loads, even
+//! when its rules carry no Phobos key of their own. The declaration is saved
+//! with the processed rules, so a save, a replay and every peer agree. No
+//! player setting forces Phobos off; the game's data still decides when the
+//! key is `no` or absent.
+//!
 //! Only the projection's reads count. The processing passes' reads reach
 //! Ares through `AresInputs`, which keeps no Phobos or stock reads, so a
 //! Phobos reader in a pass, or a Phobos key a pass reader also reads, needs
@@ -61,9 +68,13 @@ pub(super) fn reading() -> bool {
 }
 
 /// Whether Phobos plays in the game whose Rules projection made these reads:
-/// a key only Phobos readers found. The deciding key goes to the log, so a
-/// modder can see why.
-pub(super) fn decide(projection: &KeyReads) -> bool {
+/// the selected mod declared `[Extensions] Phobos=yes`, or a key only Phobos
+/// readers found. What decided goes to the log, so a modder can see why.
+pub(super) fn decide(projection: &KeyReads, required: bool) -> bool {
+    if required {
+        log::info!("Phobos plays in this game: the selected mod declares [Extensions] Phobos=yes");
+        return true;
+    }
     let key = projection.phobos_only().min();
     if let Some((section, key)) = key {
         log::info!("Phobos plays in this game: [{section}] {key} is a Phobos key");

@@ -184,6 +184,28 @@ fn ares_mix_turns_ares_on() {
     );
 }
 
+/// A mod declaring `[Extensions] Phobos=yes` plays Phobos even when its rules
+/// hold no Phobos key, and the answer is part of the game's configuration: a
+/// save, a replay and every peer keep it.
+#[test]
+fn a_mod_declaring_phobos_turns_phobos_on_without_a_phobos_key() {
+    use crate::rules::native_processing::RulesLayerStack;
+
+    let rules = |required: bool| {
+        let layers = RulesLayerStack::new(IniFile::from_str("[General]\nBuildSpeed=.7\n"))
+            .with_phobos_required(required);
+        RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+    };
+    let stock = rules(false);
+    assert!(!stock.phobos());
+    let phobos = rules(true);
+    assert!(phobos.phobos());
+    assert_ne!(
+        phobos.simulation_config_hash(),
+        stock.simulation_config_hash()
+    );
+}
+
 #[test]
 fn water_image_key_enables_ares_and_admits_the_unspawned_model() {
     let Some((_, assets)) = retail_assets() else {
