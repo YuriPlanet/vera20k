@@ -846,6 +846,7 @@ fn matchbot_says(
             from: member(MATCHBOT, MEMBER_OPERATOR, ""),
             text: text.encode_utf16().collect(),
             localized: false,
+            warning: false,
             private,
             action: false,
             ansi: true,

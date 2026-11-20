@@ -3039,17 +3039,40 @@ impl Chat {
         (said.encode_utf16().collect(), true)
     }
 
-    /// The lobby's line that a newer release is out (`NewRelease`), which a
-    /// game older than the newest release hears once per release. Only the
+    /// Whether the line is the lobby's own and says one of `keys`. Only the
     /// lobby's own lines carry `phrases`. Only their keys are read, so values
     /// a newer lobby adds that this game cannot show still count.
-    fn announces_release(&self) -> bool {
+    fn says_any(&self, keys: &[&str]) -> bool {
         #[derive(Deserialize)]
         struct Said {
             key: String,
         }
-        Vec::<Said>::deserialize(&self.phrases)
-            .is_ok_and(|phrases| phrases.iter().any(|phrase| phrase.key == "NewRelease"))
+        Vec::<Said>::deserialize(&self.phrases).is_ok_and(|phrases| {
+            phrases
+                .iter()
+                .any(|phrase| keys.contains(&phrase.key.as_str()))
+        })
+    }
+
+    /// The lobby's line that a newer release is out (`NewRelease`), which a
+    /// game older than the newest release hears once per release.
+    fn announces_release(&self) -> bool {
+        self.says_any(&["NewRelease"])
+    }
+
+    /// VERA: the lobby's line that a player's game differs from the host's,
+    /// which no match between them can start with: another version, build or
+    /// rules (docs/lobby-protocol.md). The room shows it red
+    /// (`wol_chat::WARNING_COLOR`).
+    fn warns_of_other_game(&self) -> bool {
+        self.says_any(&[
+            "VersionMismatch",
+            "ReleaseMismatch",
+            "HostReleaseMismatch",
+            "BuildMismatch",
+            "RulesMismatch",
+            "HostRulesMismatch",
+        ])
     }
 
     /// The pairing of the matchbot's `Start` that `local` hosts; only its
@@ -3607,12 +3630,14 @@ fn apply_event(
             if p.announces_release() {
                 lobby_says_outdated(state);
             }
+            let warning = p.warns_of_other_game();
             service_event(
                 state,
                 WolServiceEvent::Message {
                     from: p.from.into_member(&local),
                     text,
                     localized,
+                    warning,
                     private: p.private,
                     action: p.action,
                     ansi: p.ansi,
@@ -4832,6 +4857,28 @@ mod completion_tests {
         assert!(line("VERA20k", release).announces_release());
         assert!(!line("Tanya", Value::Null).announces_release());
         assert!(!line("VERA20k", json!([{"key": "OnlyPlayerOnline"}])).announces_release());
+    }
+
+    /// The lobby's lines that a player's game differs from the host's are
+    /// warnings the room shows red, a newer lobby's values included; its
+    /// other lines and a player's are not.
+    #[test]
+    fn the_lobbys_other_game_lines_are_warnings() {
+        let line = |phrases: Value| -> Chat {
+            decode(json!({
+                "from": {"player_id": "p", "name": "VERA20k", "flags": 1},
+                "text": "the lobby's text",
+                "phrases": phrases,
+            }))
+            .unwrap()
+        };
+        let rules = json!([{"key": "RulesMismatch", "values": {"name": "Boris", "later": 1}}]);
+        assert!(line(rules).warns_of_other_game());
+        let build =
+            json!([{"key": "BuildMismatch", "values": {"name": "Boris", "version": "0.3.8"}}]);
+        assert!(line(build).warns_of_other_game());
+        assert!(!line(json!([{"key": "OnlyPlayerOnline"}])).warns_of_other_game());
+        assert!(!line(Value::Null).warns_of_other_game());
     }
 
     /// Only a line shown from the lobby's phrases counts as localized, which
