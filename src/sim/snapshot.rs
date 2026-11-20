@@ -23,8 +23,11 @@ pub mod scenario_resources;
 use saved_local_view::SavedLocalView;
 use scenario_resources::{SavedScenarioResources, SavedScenarioResourcesRef};
 
+use crate::map::resolved_terrain::SavedSharedCellDummy;
 use crate::rules::compatibility::RulesCompatibility;
 use crate::sim::intern::InternedId;
+use crate::sim::occupancy::RawCellOccupation;
+use crate::sim::pathfinding::zone_hierarchy::{ZONE_PRECHECK_LEVELS, ZoneLevelGraph};
 use crate::sim::world::Simulation;
 use crate::util::save_codec;
 
@@ -63,7 +66,7 @@ pub fn traced_snapshot_layout() -> u32 {
 }
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
-const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
+const SNAPSHOT_ENVELOPE_VERSION: u32 = 2;
 
 /// Neutral type identity shared by the retained sidebar and its save envelope.
 /// The kind matters: a SuperWeapon and an object never share a cameo entry.
@@ -242,7 +245,7 @@ pub struct SavedTacticalView {
 pub struct GameSnapshot {
     /// Stable VERA snapshot identity, independent of the file name.
     pub product_magic: [u8; 8],
-    /// Public envelope contract. This changes only when the outer prefix does.
+    /// Public snapshot format version, checked before the layout or body.
     pub envelope_version: u32,
     /// [`snapshot_layout`] of the writing build; load rejects any other.
     pub layout: u32,
@@ -262,9 +265,11 @@ pub struct GameSnapshot {
     compatibility: RulesCompatibility,
     /// Decoded world. Its skipped caches and live process state need restoration.
     #[cfg(not(any(test, feature = "test-support")))]
+    #[serde(deserialize_with = "deserialize_simulation")]
     sim: Simulation,
     // Core fixtures inspect individual stages of this same wire field.
     #[cfg(any(test, feature = "test-support"))]
+    #[serde(deserialize_with = "deserialize_simulation")]
     pub(crate) sim: Simulation,
     /// Presentation-owned Techno+3CA waterline shorts by stable entity ID.
     /// Original AbstractLoad410380 reads the raw object, then FootLoad4DB60D
@@ -280,6 +285,33 @@ pub struct GameSnapshot {
     tactical_view: Option<SavedTacticalView>,
     local_view: Option<SavedLocalView>,
     scenario_resources: Option<SavedScenarioResources>,
+    continuation: Option<SnapshotContinuation<[ZoneLevelGraph; ZONE_PRECHECK_LEVELS]>>,
+}
+
+/// Custom matches resume state outside the native save body. Stock player
+/// loads still run LoadContent67E8CD's hierarchy rebuild and native resets.
+#[derive(Serialize, Deserialize)]
+struct SnapshotContinuation<Hierarchy> {
+    zone_levels: Option<Hierarchy>,
+    fallback_cell: SavedSharedCellDummy,
+    raw_occupation: RawCellOccupation,
+    reservation_mask: u128,
+    kamikaze_timer: crate::sim::timer::CdTimer,
+}
+
+fn deserialize_simulation<'de, D>(deserializer: D) -> Result<Simulation, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut simulation = Simulation::deserialize(deserializer)?;
+    if !simulation.retains_snapshot_continuation() {
+        // gamemd reads the saved ScenarioClass Random at +0x218, then
+        // immediately reseeds it. MapGen starts at Seed(0) until the live
+        // process cursor, if present, is bound during player-load admission.
+        simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
+        simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
+    }
+    Ok(simulation)
 }
 
 /// Lightweight header extracted from a save file without deserializing the
@@ -328,9 +360,13 @@ pub enum SnapshotError {
     MissingScenarioResources,
     #[error("save has no retained local view")]
     MissingLocalView,
+    #[error("snapshot contains an invalid simulation random number cursor")]
+    InvalidRandomCursor,
+    #[error("snapshot map continuation does not match the saved scenario rules and authority")]
+    InvalidContinuation,
     #[error("snapshot product identity {found:?} is not a VERA20k save")]
     ProductMismatch { found: [u8; 8] },
-    #[error("snapshot envelope version {found} does not match expected {expected}")]
+    #[error("snapshot format version {found} is incompatible with this build's version {expected}")]
     EnvelopeVersionMismatch { expected: u32, found: u32 },
     #[error("save layout {found:#010x} does not match this build's {expected:#010x}")]
     LayoutMismatch { expected: u32, found: u32 },
@@ -451,6 +487,8 @@ pub enum SnapshotRestoreError {
     InvalidFrameContinuation { reason: &'static str },
     #[error("invalid saved multiplayer session: {reason}")]
     InvalidMultiplayerSession { reason: &'static str },
+    #[error("invalid saved control authority: {0}")]
+    InvalidControlAuthority(#[from] crate::sim::control_authority::ControlGrantError),
     #[error("invalid saved factory-source Country reference: {reason}")]
     InvalidFactoryCountry { reason: &'static str },
     #[error("entity {object_id} is a live infantryman with the dying mark")]
@@ -572,6 +610,8 @@ pub enum SnapshotRestoreError {
     RetainedWallNeighborStorageMismatch { expected: usize, found: usize },
     #[error("snapshot navigation could not be published from retained map authority")]
     NavigationAuthorityPublicationFailed,
+    #[error("snapshot custom map continuation is invalid: {0}")]
+    InvalidCustomMapContinuation(&'static str),
     #[error("snapshot terrain assets could not be prepared: {reason}")]
     TerrainAssetPreparationFailed { reason: String },
     #[error("snapshot real-cell bridge flags do not match restored CellClass allocation")]
@@ -639,6 +679,7 @@ struct GameSnapshotRef<'a> {
     tactical_view: Option<&'a SavedTacticalView>,
     local_view: Option<&'a SavedLocalView>,
     scenario_resources: Option<&'a SavedScenarioResourcesRef<'a>>,
+    continuation: Option<SnapshotContinuation<&'a [ZoneLevelGraph; ZONE_PRECHECK_LEVELS]>>,
 }
 
 impl GameSnapshot {
@@ -686,6 +727,15 @@ impl GameSnapshot {
             tactical_view,
             local_view,
             scenario_resources,
+            continuation: sim
+                .retains_snapshot_continuation()
+                .then(|| SnapshotContinuation {
+                    zone_levels: sim.zone_grid.as_ref().map(|zones| zones.saved_hierarchy()),
+                    fallback_cell: sim.effective_shared_cell_dummy().saved_continuation(),
+                    raw_occupation: sim.substrate.raw_cell_occupation.saved_fallback_cell(),
+                    reservation_mask: sim.substrate.base_reservations.dummy_mask(),
+                    kamikaze_timer: sim.kamikaze.saved_continuation_timer(),
+                }),
         };
         save_codec::serialize(&snapshot)
     }
@@ -717,12 +767,11 @@ impl GameSnapshot {
             None,
             None,
         )
-        .expect("serialize stock snapshot fixture")
+        .expect("serialize snapshot fixture")
     }
 
     /// Save the app's retained presentation alongside the simulation. A headless
     /// caller uses `save_validated`, whose presentation supplement is empty.
-    /// Fails if the session's rules cannot be represented in this save layout.
     pub fn save_validated_with_presentation(
         sim: &Simulation,
         map_hash: u64,
@@ -812,15 +861,22 @@ impl GameSnapshot {
         let overlay_registry = rules.overlay_registry();
         let mut simulation = self.sim;
         simulation.retain_process_state_for_load(process);
+        let retain_continuation = simulation.retains_snapshot_continuation();
+        if retain_continuation != self.continuation.is_some() {
+            return Err(SnapshotRestoreError::InvalidCustomMapContinuation(
+                "presence differs from the saved scenario rules and authority",
+            ));
+        }
         // Native MouseLoad->Resize reconstructs the dummy before subsequent
         // LoadContent67E8CD hierarchy reads. The fallible candidate must see
         // that state without touching the running match's retained identity.
         simulation.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
-        simulation.reconstruct_cellclass_dummy_for_map_resize();
-        // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition
-        // clock. This user-file seam is separate from internal continuations.
-        simulation.restart_cloak_progress_after_player_load();
-        simulation.reconstruct_building_repair_progress_after_player_load();
+        if !retain_continuation {
+            simulation.reconstruct_cellclass_dummy_for_map_resize();
+            // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition clock.
+            simulation.restart_cloak_progress_after_player_load();
+            simulation.reconstruct_building_repair_progress_after_player_load();
+        }
         simulation.validate_ares_state_for_load(rules.ares())?;
         simulation.restore_after_snapshot_load()?;
         crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
@@ -848,8 +904,13 @@ impl GameSnapshot {
         simulation.rebuild_lighting_sources_after_load(rules);
         // Post_Load_Game6851AC/6851B1 reselects lighting, then refreshes the
         // flagged Anim conversions from the incoming stored Locations.
-        simulation.reinitialize_lighting_after_user_load();
-        simulation.refresh_animated_tiberium_after_load(rules, overlay_registry)?;
+        if !retain_continuation {
+            simulation.reinitialize_lighting_after_user_load();
+            simulation.refresh_animated_tiberium_after_load(rules, overlay_registry)?;
+        }
+        if let Some(continuation) = self.continuation {
+            continuation.restore(&mut simulation)?;
+        }
 
         Ok((simulation, map_restore))
     }
@@ -888,17 +949,15 @@ impl GameSnapshot {
             save_timestamp,
             (&[], &[], None, None, None, None),
         )
-        .expect("serialize stock snapshot fixture")
+        .expect("serialize snapshot fixture")
     }
 
     /// Deserialize an internal current-layout checkpoint without content validation.
     ///
     /// This exists for internal tests and diagnostics. Production restoration
     /// uses [`Self::load_with_resources`] and validates the incoming resources.
-    /// Keep planning state here; the admitted player-load path alone discards it.
-    /// Like retail's post-read Scenario
-    /// reinitializer, full deserialization resets the embedded Scenario RNG to
-    /// `Random__Seed(0)` even though its saved bytes remain in the wire layout.
+    /// Keep planning state here. Only admitted stock player loads clear it.
+    /// The stock Scenario RNG follows retail's post-read `Random__Seed(0)`.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn load_unchecked(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         let _ = Self::read_header(bytes)?;
@@ -917,9 +976,9 @@ impl GameSnapshot {
     /// Layout and compatibility metadata are rejected before the simulation
     /// body is admitted. The duplicated preview metadata must also agree with
     /// `ScenarioSession`; no warning/continue or zero-hash sentinel exists.
-    /// The returned Scenario RNG is the canonical seed-zero state. Main/MapGen
-    /// fields are deserialize placeholders. [`Self::restore_player_world`]
-    /// supplies the process cursors and seed for a player load.
+    /// A stock snapshot returns seed-zero RNG placeholders and
+    /// [`Self::restore_player_world`] supplies its process cursors. A custom
+    /// session retains its Scenario and MapGen continuations.
     #[cfg(any(test, feature = "test-support"))]
     pub fn load_validated(
         bytes: &[u8],
@@ -987,9 +1046,21 @@ impl GameSnapshot {
             });
         }
         // Native content Load clears PlanMgr, then TechnoLoad zeros +514.
-        // Retain the wire layout for internal checkpoints, but player loads
-        // cannot restore future paths. Current missions and events survive.
-        snapshot.sim.reset_planning_after_player_load();
+        // Stock player loads clear future paths. Internal checkpoints and
+        // custom-authority player snapshots retain them.
+        let retain_continuation = snapshot.sim.retains_snapshot_continuation();
+        if retain_continuation != snapshot.continuation.is_some() {
+            return Err(SnapshotError::InvalidContinuation);
+        }
+        if retain_continuation {
+            if !snapshot.sim.scenario_rng.valid_checkpoint()
+                || !snapshot.sim.mapgen_rng.valid_checkpoint()
+            {
+                return Err(SnapshotError::InvalidRandomCursor);
+            }
+        } else {
+            snapshot.sim.reset_planning_after_player_load();
+        }
         Ok(snapshot)
     }
 
@@ -998,6 +1069,7 @@ impl GameSnapshot {
     /// fields; browser metadata has a separate compatibility policy.
     pub fn read_header(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
         let preamble = Self::read_preamble(bytes)?;
+        Self::validate_version(preamble.envelope_version)?;
         if preamble.layout != snapshot_layout() {
             return Err(SnapshotError::LayoutMismatch {
                 expected: snapshot_layout(),
@@ -1019,9 +1091,14 @@ impl GameSnapshot {
     /// full load still requires the strict current-layout header above.
     pub fn read_metadata(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
         let preamble = Self::read_preamble(bytes)?;
+        // Version 1's metadata prefix stays readable for listing and deleting
+        // incompatible saves. Its world body is never admitted.
+        if preamble.envelope_version != 1 {
+            Self::validate_version(preamble.envelope_version)?;
+        }
         // Counter saves before 459 carry no capability marker. A layout id
         // always has its top bit set, so it is never below 459.
-        if preamble.layout < 459 {
+        if preamble.envelope_version == 1 && preamble.layout < 459 {
             let header: LegacyGameSnapshotHeader = save_codec::deserialize(bytes)?;
             return Ok(GameSnapshotHeader {
                 product_magic: header.product_magic,
@@ -1041,8 +1118,7 @@ impl GameSnapshot {
         Ok(save_codec::deserialize(bytes)?)
     }
 
-    /// Product and public-envelope admission shared by strict loading and the
-    /// browser's readable-but-incompatible rows.
+    /// Read the product and fixed version/layout words before variable data.
     fn read_preamble(bytes: &[u8]) -> Result<GameSnapshotPreamble, SnapshotError> {
         let preamble: GameSnapshotPreamble = save_codec::deserialize(bytes)?;
         if preamble.product_magic != SNAPSHOT_PRODUCT_MAGIC {
@@ -1050,13 +1126,53 @@ impl GameSnapshot {
                 found: preamble.product_magic,
             });
         }
-        if preamble.envelope_version != SNAPSHOT_ENVELOPE_VERSION {
+        Ok(preamble)
+    }
+
+    fn validate_version(found: u32) -> Result<(), SnapshotError> {
+        if found != SNAPSHOT_ENVELOPE_VERSION {
             return Err(SnapshotError::EnvelopeVersionMismatch {
                 expected: SNAPSHOT_ENVELOPE_VERSION,
-                found: preamble.envelope_version,
+                found,
             });
         }
-        Ok(preamble)
+        Ok(())
+    }
+}
+
+impl SnapshotContinuation<[ZoneLevelGraph; ZONE_PRECHECK_LEVELS]> {
+    fn restore(self, sim: &mut Simulation) -> Result<(), SnapshotRestoreError> {
+        use SnapshotRestoreError::InvalidCustomMapContinuation;
+
+        match (sim.zone_grid.as_mut(), self.zone_levels) {
+            (Some(zones), Some(levels)) => zones
+                .restore_saved_hierarchy(levels)
+                .map_err(InvalidCustomMapContinuation)?,
+            (None, None) => {}
+            _ => {
+                return Err(InvalidCustomMapContinuation(
+                    "zone history is missing or unexpected",
+                ));
+            }
+        }
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .ok_or(InvalidCustomMapContinuation("bound map terrain is missing"))?;
+        // Map rebinding runs native lookups. Publish the saved fallback
+        // values last so a read cannot overwrite its retained coordinate.
+        sim.effective_shared_cell_dummy()
+            .restore_saved_continuation(self.fallback_cell, terrain)
+            .map_err(InvalidCustomMapContinuation)?;
+        sim.substrate
+            .raw_cell_occupation
+            .restore_saved_fallback_cell(self.raw_occupation, &sim.houses)
+            .map_err(InvalidCustomMapContinuation)?;
+        sim.substrate
+            .base_reservations
+            .restore_saved_dummy_mask(self.reservation_mask);
+        sim.kamikaze.restore_continuation_timer(self.kamikaze_timer);
+        Ok(())
     }
 }
 
@@ -1066,7 +1182,9 @@ impl GameSnapshotHeader {
     }
 
     pub fn is_compatible(&self) -> bool {
-        self.layout == snapshot_layout() && self.compatibility.matches_build()
+        self.envelope_version == SNAPSHOT_ENVELOPE_VERSION
+            && self.layout == snapshot_layout()
+            && self.compatibility.matches_build()
     }
 }
 
@@ -1960,6 +2078,12 @@ impl Simulation {
         Ok(())
     }
 
+    /// Custom sessions resume authoritative state instead of running the
+    /// resets that mimic a stock player load.
+    pub fn retains_snapshot_continuation(&self) -> bool {
+        !self.session.has_stock_rule_policy() || self.session.has_custom_control_grants()
+    }
+
     /// Validate and re-register a deserialized simulation before it can resume.
     ///
     /// Native load registers old identities and pointer slots, resolves them,
@@ -1969,6 +2093,7 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        let retain_continuation = self.retains_snapshot_continuation();
         for (_, entity) in self.substrate.entities.iter_sorted() {
             if !entity.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {
@@ -2028,6 +2153,15 @@ impl Simulation {
                 reason: "network timing is absent",
             });
         }
+        if self.session.execution_topology().is_lockstep()
+            && self.session.rule_policy().counts_player_control_as_human()
+        {
+            return Err(SnapshotRestoreError::InvalidMultiplayerSession {
+                reason: "lockstep rules cannot read a local PlayerControl flag",
+            });
+        }
+        self.session
+            .validate_restored_control_grants(&self.houses)?;
         let scenario_names_admitted = self
             .houses
             .values()
@@ -2213,12 +2347,14 @@ impl Simulation {
         // Load reconstructs Techno's three empty vectors through NoInit
         //6F43AB..6F4410. Their raw headers have no element swizzles; discard
         // them before validating strong references, retaining real TarCom.
-        for id in self.substrate.entities.keys_sorted() {
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .clear_distributed_fire_after_load();
+        if !retain_continuation {
+            for id in self.substrate.entities.keys_sorted() {
+                self.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .clear_distributed_fire_after_load();
+            }
         }
         restore_object_references(self, &identities)?;
 
@@ -2227,27 +2363,29 @@ impl Simulation {
         // Continue with Logic slots (including ParticleSystem). Actual CellClass
         // list heads/order were serialized, like483C10/4839F0: validate references
         // without requerying geometry before map authority is reattached.
-        self.projectiles
-            .restart_arm_timers_after_load(self.session.binary_frame() as i32);
-        self.projectiles.restore_scalable_after_load();
-        // ParasiteClass Load 6295DB..6295F3 does the same for its suppression
-        // and bite timers: a bite is due at once and suppression is dropped.
         let frame = self.session.binary_frame();
-        // RadSiteClass::Load65B3D0 also restarts its level/light clocks;
-        // the saved field and source stay intact until ordinary RadSite AI.
-        self.radiation.restart_timers_after_load(frame);
+        if !retain_continuation {
+            self.projectiles.restart_arm_timers_after_load(frame as i32);
+            self.projectiles.restore_scalable_after_load();
+            // RadSiteClass::Load65B3D0 restarts its level/light clocks;
+            // the saved field and source stay intact until ordinary RadSite AI.
+            self.radiation.restart_timers_after_load(frame);
+        }
         for id in self.substrate.entities.keys_sorted() {
             self.substrate.restore_move_sound_state_after_load(id);
-            if let Some(entity) = self.substrate.entities.get_mut(id) {
+            // ParasiteClass Load6295DB..6295F3 leaves a bite due and drops
+            // suppression on a stock player load.
+            if !retain_continuation && let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.parasite.restart_timers_after_load(frame);
             }
         }
         self.rebuild_logic_membership();
         self.substrate.rebuild_building_anim_slot_indices();
         Self::rebuild_bomb_carriers(&self.substrate, &mut self.bombs);
-        // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
-        self.kamikaze
-            .restart_after_load(self.session.binary_frame());
+        if !retain_continuation {
+            // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
+            self.kamikaze.restart_after_load(frame);
+        }
         self.substrate
             .occupancy
             .restore_memberships(&self.substrate.entities)
@@ -2434,7 +2572,9 @@ impl Simulation {
             if !zones.is_native_load_pending() {
                 return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
             }
-            self.reset_crates_after_user_load(saved_land)?;
+            if !self.retains_snapshot_continuation() {
+                self.reset_crates_after_user_load(saved_land)?;
+            }
         }
 
         // Reproject runtime isometric replacements onto the pristine
@@ -2533,8 +2673,11 @@ impl Simulation {
             .as_ref()
             .expect("validated overlay cache")
             .occupied_entries();
-        let native_tiberium_stats =
-            self.rebuild_native_tiberium_queues_after_snapshot_load(rules, overlay_registry)?;
+        let native_tiberium_stats = if self.retains_snapshot_continuation() {
+            crate::sim::ore_growth::NativeTiberiumRebuildStats::default()
+        } else {
+            self.rebuild_native_tiberium_queues_after_snapshot_load(rules, overlay_registry)?
+        };
         // CellTag identities are meaningful only after the canonical Cell
         // allocation is restored. Keep their final owner validation in this
         // shared admission seam, before an app can publish the candidate.
@@ -3645,6 +3788,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn custom_snapshot_refuses_a_malformed_retained_rng_cursor() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let mut sim = Simulation::new();
+        let mode = ScenarioGameMode::Skirmish;
+        let policy = mode
+            .stock_rule_policy(None)
+            .with_allows_manual_alliances(false);
+        sim.install_session_admission(mode, None, policy);
+        let map = sim.session.map_name().to_owned();
+        sim.scenario_rng = serde_json::from_value(serde_json::json!({
+            "disabled": 0, "index_a": 0, "index_b": 0, "state": []
+        }))
+        .unwrap();
+        let bytes = GameSnapshot::save(&sim, 1, 2, &map, 0);
+        assert!(matches!(
+            GameSnapshot::load_validated(&bytes, 1, 2, &map),
+            Err(SnapshotError::InvalidRandomCursor)
+        ));
+    }
+
     /// Prove snapshot round-trip preserves all authoritative state.
     ///
     /// 1. Create a Simulation, advance N ticks
@@ -3782,7 +3947,7 @@ mod tests {
     fn snapshot_capability_keeps_legacy_metadata_readable_without_admitting_it() {
         let bytes = save_codec::serialize(&(
             SNAPSHOT_PRODUCT_MAGIC,
-            SNAPSHOT_ENVELOPE_VERSION,
+            1_u32,
             457_u32,
             "older layout",
             1_u64,
@@ -3799,8 +3964,28 @@ mod tests {
         assert!(!header.is_compatible());
         assert!(matches!(
             GameSnapshot::read_header(&bytes),
-            Err(SnapshotError::LayoutMismatch { found: 457, .. })
+            Err(SnapshotError::EnvelopeVersionMismatch { found: 1, .. })
         ));
+    }
+
+    #[test]
+    fn previous_snapshot_version_stays_listed_and_refuses_body_load() {
+        let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "previous", 0);
+        let mut header = GameSnapshot::read_header(&bytes).unwrap();
+        header.envelope_version = 1;
+        // Keep the current layout id to prove the outer version itself gates
+        // admission before the loader can ask the decoder for a body.
+        let bytes = save_codec::serialize(&header).unwrap();
+        assert!(matches!(
+            GameSnapshot::load_with_resources(&bytes),
+            Err(SnapshotError::EnvelopeVersionMismatch {
+                expected: 2,
+                found: 1,
+            })
+        ));
+        let metadata = GameSnapshot::read_metadata(&bytes).unwrap();
+        assert_eq!(metadata.description, "previous");
+        assert!(!metadata.is_compatible());
     }
 
     #[test]
@@ -3830,7 +4015,7 @@ mod tests {
             GameSnapshot::load(&preamble_only),
             Err(SnapshotError::EnvelopeVersionMismatch {
                 expected: SNAPSHOT_ENVELOPE_VERSION,
-                found: 2,
+                found: 3,
             })
         ));
 
@@ -4011,7 +4196,7 @@ mod tests {
     }
 
     #[test]
-    fn stock_offline_modes_restore_their_distinct_rules_and_reject_unsaved_overrides() {
+    fn stock_offline_modes_and_custom_rules_survive_snapshot() {
         use crate::rules::rule_policy::{AllowWinTagsPolicy, RulePolicy};
         use crate::sim::scenario_session::{
             ExecutionTopology, ScenarioDescriptor, ScenarioGameMode,
@@ -4080,15 +4265,20 @@ mod tests {
             .install_multiplayer_house_identity(class, vec![]);
         assert_eq!(sim.session.rule_policy(), custom);
         assert_ne!(sim.state_hash(), stock.state_hash());
-        assert!(save(&sim).unwrap_err().to_string().contains("rule policy"));
+        let bytes = save(&sim).unwrap();
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.session.rule_policy(), custom);
+        assert_eq!(restored.state_hash(), sim.state_hash());
     }
 
     #[test]
-    fn explicit_control_grants_change_shared_identity_and_refuse_legacy_persistence() {
+    fn custom_rules_and_canonical_control_grants_survive_snapshot() {
+        use crate::rules::rule_policy::AllowWinTagsPolicy;
         use crate::sim::control_authority::{ControlGrant, ControlGrantLevel, ControlScope};
         use crate::sim::scenario_session::ScenarioGameMode;
 
-        let mut sim = Simulation::with_seed(0);
+        let mut sim = Simulation::with_seed(29);
         for (name, human) in [("Shared", true), ("Third", false)] {
             let owner = sim.intern(name);
             sim.houses
@@ -4097,9 +4287,19 @@ mod tests {
                 ));
         }
         sim.install_session_mode(ScenarioGameMode::Lan);
+        let class = crate::skirmish_modes::MpModeClass::Battle;
+        let policy = sim
+            .session
+            .rule_policy()
+            .with_allow_win_tags(AllowWinTagsPolicy::RequireClear);
+        sim.install_session_admission(ScenarioGameMode::Lan, Some(class), policy);
+        let policy = sim.session.rule_policy();
         sim.session.install_network_timing(73);
         sim.session
             .install_shared_house_sources(vec![0, 0], Some(0));
+        sim.scenario_rng.next_u32();
+        sim.scenario_rng.next_u32();
+        sim.mapgen_rng.next_u32();
         let stock = sim.state_hash();
         let units = ControlGrant {
             source: 1,
@@ -4132,11 +4332,11 @@ mod tests {
             .install_shared_house_sources(vec![0, 0], Some(1));
         assert_eq!(sim.state_hash(), granted);
 
-        let failed = GameSnapshot::save_validated_with_presentation(
+        let bytes = GameSnapshot::save_validated_with_presentation(
             &sim,
-            0,
-            0,
-            "custom grants",
+            1,
+            2,
+            "custom policy and grants",
             0,
             &[],
             &[],
@@ -4145,27 +4345,184 @@ mod tests {
             None,
             None,
         )
-        .unwrap_err();
+        .unwrap();
+        let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, sim.session.map_name())
+            .unwrap()
+            .sim;
+        restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Cold(
+            &crate::sim::rng::MainRng::new(79),
+        ));
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(restored.session.seed(), 29);
+        assert_eq!(restored.session.rule_policy(), policy);
+        assert_eq!(restored.session.local_shared_house_source(), Some(1));
+        assert_eq!(restored.state_hash(), granted);
+        assert_eq!(
+            sim.session.rule_policy().allow_win_tags(),
+            AllowWinTagsPolicy::RequireClear
+        );
+        assert_eq!(
+            restored.control_scope_for_source(0, target),
+            ControlScope::FullControl
+        );
+        assert_eq!(
+            restored.control_scope_for_source(1, target),
+            ControlScope::UnitsOnly
+        );
+    }
+
+    #[test]
+    fn custom_player_file_resumes_live_navigation_and_fallback_cell() {
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::rules::rule_policy::AllowWinTagsPolicy;
+        use crate::sim::cell_rect::PlayfieldBounds;
+        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+        use crate::sim::occupancy::RawCellKey;
+        use crate::sim::overlay_grid::OverlayGrid;
+        use crate::sim::radiation::RadDetonation;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::sim::world::SnapshotProcessState;
+
+        let resources = crate::sim::runtime::SimResources::empty();
+        let rules = &resources.rules;
+        let mut live = Simulation::with_seed(29);
+        let local = live.intern("Shared");
+        let delegated = live.intern("Delegate");
+        for (owner, human) in [(local, true), (delegated, false)] {
+            live.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    owner, 0, None, human, 0, 1,
+                ));
+        }
+        let mode = ScenarioGameMode::Lan;
+        let policy = mode
+            .stock_rule_policy(None)
+            .with_allow_win_tags(AllowWinTagsPolicy::RequireClear);
+        live.install_session_admission(mode, None, policy);
+        live.session.install_network_timing(20);
+        live.session
+            .install_shared_house_sources(vec![0, 0], Some(0));
+        live.install_control_grants(vec![ControlGrant {
+            source: 0,
+            house: 1,
+            level: ControlGrantLevel::FullControl,
+        }])
+        .unwrap();
+        live.intern_rule_type_ids(rules);
+        live.resolve_type_handles(rules);
+        let template = flat_terrain(16, 16);
+        live.install_resolved_terrain_for_new_map(flat_terrain(16, 16));
+        live.overlay_grid = Some(OverlayGrid::new(16, 16));
+        let bounds = PlayfieldBounds {
+            base: 8,
+            off_fc: -1_000,
+            off_100: -1_000,
+            off_104: 2_000,
+            off_108: 2_000,
+        };
+        live.set_playfield_bounds_for_test(Some(bounds));
+        live.set_playfield_size_height_for_test(Some(8));
+        live.restore_map_authority_after_snapshot_load(rules, rules.overlay_registry(), None)
+            .unwrap();
+        let terrain = live.resolved_terrain.as_ref().unwrap();
+        let zones = live.zone_grid.as_mut().unwrap();
+        let before_slots = zones
+            .hierarchy_for(MovementZone::Normal)
+            .unwrap()
+            .level(1)
+            .unwrap()
+            .record_slot_count();
+        crate::sim::pathfinding::zone_incremental::repair_zone_hierarchy_around_cell(
+            zones,
+            (5, 5),
+            Some(bounds),
+            terrain,
+            &[],
+        );
+        let after_slots = zones
+            .hierarchy_for(MovementZone::Normal)
+            .unwrap()
+            .level(1)
+            .unwrap()
+            .record_slot_count();
         assert!(
-            failed
-                .to_string()
-                .contains("source-specific control grants")
+            after_slots > before_slots,
+            "live topology repair retains ordered history"
+        );
+        let land = template
+            .capture_user_saved_template(terrain)
+            .unwrap()
+            .user_load_land_values()
+            .unwrap();
+
+        live.substrate
+            .base_reservations
+            .reserve(Some(terrain), -1, -1, 0);
+        let dummy = live.effective_shared_cell_dummy();
+        dummy.stamp_coord(-2, 7);
+        dummy.set_level_slope(-7, 11);
+        dummy.write_native_anchor(Some(NativeCellIdentity::Dummy));
+        dummy.adjust_neighbor_count(true);
+        live.substrate.raw_cell_occupation.write_occupant(
+            RawCellKey::Dummy,
+            MovementLayer::Ground,
+            1 << 3,
+            Some(delegated),
+            true,
+        );
+        live.radiation.apply_detonation(
+            RadDetonation {
+                rx: 6,
+                ry: 6,
+                rad_level: 20,
+                spread: 1,
+                rad_type: None,
+                firing_house: None,
+                invoker: None,
+            },
+            live.session.binary_frame(),
+            "TEMPERATE",
+            rules,
+            Some(terrain),
+            &mut live.lighting_sources,
+        );
+        assert_ne!(live.substrate.base_reservations.dummy_mask(), 0);
+        let mut outgoing = Simulation::new();
+        outgoing.substrate.raw_cell_occupation.write_occupant(
+            RawCellKey::Dummy,
+            MovementLayer::Bridge,
+            1 << 4,
+            None,
+            true,
         );
 
-        sim.session.publish_started();
-        let runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
-        let launch = crate::headless_scenario::battle_session("record.map", &[]);
-        let source = crate::map::source::LoadedMapSource::LegacyFallback {
-            label: "record.map".to_owned(),
-        };
-        let failed =
-            crate::sim::replay::ReplayStartup::capture(&runtime, &launch, &source, 0, 22, false)
-                .unwrap_err();
-        assert!(
-            failed
-                .to_string()
-                .contains("source-specific control grants")
+        let bytes = GameSnapshot::save_validated(&live, 1, 2, "custom map history", 0);
+        let snapshot = GameSnapshot::load_validated(&bytes, 1, 2, live.session.map_name()).unwrap();
+        let (restored, _) = snapshot
+            .restore_player_world(
+                SnapshotProcessState::Live(&outgoing),
+                rules,
+                template,
+                Default::default(),
+                PlayerSaveCells::Saved {
+                    land,
+                    prepare_assets: &mut |_, _, _| Ok(()),
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            restored.effective_shared_cell_dummy().state_words(),
+            dummy.state_words()
         );
+        assert_eq!(
+            restored.substrate.raw_cell_occupation.dummy_for_hash(),
+            live.substrate.raw_cell_occupation.dummy_for_hash()
+        );
+        assert_zone_grids_equivalent(
+            restored.zone_grid.as_ref().unwrap(),
+            live.zone_grid.as_ref().unwrap(),
+        );
+        assert_eq!(restored.state_hash(), live.state_hash());
     }
 
     #[test]

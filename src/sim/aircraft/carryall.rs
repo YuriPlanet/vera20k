@@ -276,7 +276,7 @@ impl Simulation {
         let carrier = self.substrate.entities.get(aircraft)?;
         let unit = self.substrate.entities.get(target)?;
         if !self.is_carryall(aircraft, rules)
-            || !self.house_is_human_player(carrier.owner())
+            || !self.control_projection().can_order(carrier.owner())
             || !self.mutually_allied(carrier.owner(), unit.owner())
             || carrier.passenger_role().passenger_count() != 0
             || unit.category() != crate::map::entities::EntityCategory::Unit

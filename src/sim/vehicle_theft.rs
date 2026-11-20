@@ -110,12 +110,13 @@ impl Simulation {
     /// Command producers and cursor feedback share this read-only action.
     pub fn ares_vehicle_capture_action(
         &self,
+        control: &crate::sim::world::ControlProjection<'_>,
         actor_id: u64,
         target_id: u64,
         rules: &RuleSet,
     ) -> bool {
         self.substrate.entities.get(actor_id).is_some_and(|actor| {
-            self.house_is_human_player(actor.owner())
+            control.can_order(actor.owner())
                 && self
                     .ares_vehicle_capture_mode(actor_id, target_id, rules)
                     .is_some()

@@ -82,6 +82,7 @@ pub(crate) use cell_recalc::{
     LoadCellRecalcOutcome, LoadCellRecalcState, is_behind_cliff,
 };
 use cliffs::DestroyableCliffCatalog;
+pub(crate) use native_cell::SavedSharedCellDummy;
 pub(crate) use native_cell::{
     CellClassProjectionView, NativeAllocatedCellCursor, NativeLocalCellCursor,
 };

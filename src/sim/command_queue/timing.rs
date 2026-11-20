@@ -79,6 +79,10 @@ impl NetworkCommandTiming {
         self.processing_millis.contains_key(&house)
     }
 
+    pub(crate) fn admitted_sources(&self) -> impl Iterator<Item = i8> + '_ {
+        self.processing_millis.keys().copied()
+    }
+
     /// NodeNameTag removal5DAA8A..5DAB38 retires its timing sample too.
     /// EXIT/REMOVEPLAYER call this only at their synchronized command tail.
     pub(crate) fn retire_source(&mut self, house: i8) {

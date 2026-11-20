@@ -62,6 +62,19 @@ struct SharedCellDummyState {
     neighbor_count: AtomicU8,
 }
 
+/// Exact continuation of the fallback Cell, independent of its process identity.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SavedSharedCellDummy {
+    cell: u64,
+    land_type: i32,
+    raw_flags: u32,
+    native_anchor: Option<NativeCellIdentity>,
+    overlay: u64,
+    smudge: u64,
+    tube_index: i16,
+    neighbor_count: u8,
+}
+
 thread_local! {
     /// The Dummy word this thread has detached; see
     /// [`SharedCellDummy::detached`].
@@ -418,6 +431,46 @@ impl SharedCellDummy {
         }
     }
 
+    pub(crate) fn saved_continuation(&self) -> SavedSharedCellDummy {
+        SavedSharedCellDummy {
+            cell: self.cell_word(),
+            land_type: self.land_type(),
+            raw_flags: self.raw_flags(),
+            native_anchor: self.native_anchor(),
+            overlay: self.state.overlay.load(Ordering::Relaxed),
+            smudge: self.state.smudge.load(Ordering::Relaxed),
+            tube_index: self.raw_tube_index(),
+            neighbor_count: self.neighbor_count(),
+        }
+    }
+
+    pub(crate) fn restore_saved_continuation(
+        &self,
+        saved: SavedSharedCellDummy,
+        terrain: &ResolvedTerrainGrid,
+    ) -> Result<(), &'static str> {
+        if let Some(NativeCellIdentity::Real(index)) = saved.native_anchor
+            && !terrain
+                .cells()
+                .get(index)
+                .is_some_and(|cell| terrain.cell(cell.rx, cell.ry).is_some())
+        {
+            return Err("fallback Cell anchor is not allocated");
+        }
+        if u8::try_from(saved.land_type)
+            .ok()
+            .and_then(LandType::from_index)
+            .is_none()
+        {
+            return Err("fallback Cell LandType is invalid");
+        }
+        if ((saved.cell >> 40) as u8) > super::build::MAX_TMP_RAMP_TYPE {
+            return Err("fallback Cell slope is outside the native table");
+        }
+        self.apply_saved_continuation(saved);
+        Ok(())
+    }
+
     /// Every modeled byte, as [`Self::fork_query_identity`] copies them: a test
     /// fixture keys a cache on the Dummy state its cached work starts from.
     #[cfg(any(test, feature = "test-support"))]
@@ -507,29 +560,22 @@ impl SharedCellDummy {
     /// Publish an already validated post-Resize candidate onto the retained
     /// process identity. Preserve its later lookup effects; do not reset twice.
     pub fn adopt_prepared_load_state(&self, prepared: &Self) {
+        self.apply_saved_continuation(prepared.saved_continuation());
+    }
+
+    fn apply_saved_continuation(&self, saved: SavedSharedCellDummy) {
         self.state
             .land_type
-            .store(prepared.land_type(), Ordering::Relaxed);
-        let word = prepared.cell_word();
-        self.update_cell_word(|_| word);
-        self.state.overlay.store(
-            prepared.state.overlay.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        self.state.smudge.store(
-            prepared.state.smudge.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        self.state
-            .raw_flags
-            .store(prepared.raw_flags(), Ordering::Relaxed);
-        self.write_native_anchor(prepared.native_anchor());
+            .store(saved.land_type, Ordering::Relaxed);
+        self.update_cell_word(|_| saved.cell);
+        self.state.overlay.store(saved.overlay, Ordering::Relaxed);
+        self.state.smudge.store(saved.smudge, Ordering::Relaxed);
+        self.write_raw_flags(saved.raw_flags);
+        self.write_native_anchor(saved.native_anchor);
         self.state
             .neighbor_count
-            .store(prepared.neighbor_count(), Ordering::Relaxed);
-        self.state
-            .tube_index
-            .store(prepared.raw_tube_index(), Ordering::Relaxed);
+            .store(saved.neighbor_count, Ordering::Relaxed);
+        self.write_raw_tube_index(saved.tube_index);
     }
 
     /// Stamp only CellClass+0x24, preserving the live level and slope bytes.

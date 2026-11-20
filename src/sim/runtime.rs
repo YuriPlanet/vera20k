@@ -125,6 +125,10 @@ impl<'a> SimView<'a> {
         self.simulation.entities()
     }
 
+    pub fn control_projection(&self) -> crate::sim::world::ControlProjection<'a> {
+        self.simulation.control_projection()
+    }
+
     pub fn session(&self) -> &'a crate::sim::scenario_session::ScenarioSession {
         &self.simulation.session
     }

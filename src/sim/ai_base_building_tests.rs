@@ -707,6 +707,27 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
         assert_eq!(node_state(&sim, owner), [((16, 16), count)]);
     }
     assert!(sim.substrate.entities.get(tank).is_some());
+    let mut retained = sim.clone();
+    retained.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        sim.session
+            .rule_policy()
+            .with_ai_base(crate::rules::rule_policy::AiBasePolicy::RetainAuthoredNodes),
+    );
+    assert_eq!(
+        exit_building(
+            &mut retained,
+            &rules,
+            yard,
+            product,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        ),
+        BuildingExit::TryLater
+    );
+    assert_eq!(node_state(&retained, owner), [((16, 16), 3)]);
+
     // The third failure passes MaximumBuildingPlacementFailures=2: the node
     // goes.
     let exit = exit_building(

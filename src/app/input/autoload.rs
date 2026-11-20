@@ -233,6 +233,7 @@ fn collect_facts(
     rules: &RuleSet,
     selected: &[u64],
 ) -> (Vec<PassengerFact>, Vec<TransportFact>) {
+    let control = sim.control_projection();
     let mut passengers = Vec::new();
     let mut transports = Vec::new();
     for &id in selected {
@@ -259,7 +260,7 @@ fn collect_facts(
         let pos = object_center_xy(entity);
         // ClickedAction's Enter arm (0x004D76C6) requires vt+A0. A loaded
         // carrier also keeps its transport role for this AutoLoad plan.
-        if sim.techno_player_controllable(id, rules)
+        if sim.local_techno_controllable_with(&control, id, rules)
             && entity
                 .passenger_role()
                 .cargo()
