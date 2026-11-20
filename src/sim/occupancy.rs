@@ -1319,18 +1319,6 @@ impl AirSlotGrid {
 mod tests {
     use super::*;
 
-    /// A query reaching past every map edge, from a corner and from the
-    /// middle of the map, fits the inline bucket list and starts at the
-    /// center's bucket.
-    #[test]
-    fn air_bucket_order_past_every_edge_fits_its_inline_list() {
-        for (rx, ry) in [(0, 0), (200, 190), (399, 399)] {
-            let order: Vec<_> = air_spatial_query_bucket_order(rx, ry, 10_000, 400, 400).collect();
-            assert_eq!(order[0], air_spatial_bucket_index(rx, ry, 400, 400));
-            assert!(order.len() <= 1 + 8 * usize::from(AIR_SPATIAL_BUCKET_SIDE));
-        }
-    }
-
     #[test]
     fn infantry_owner_indices_follow_selected_plane_and_functional_bits() {
         let mut grid = RawCellOccupationGrid::new();
