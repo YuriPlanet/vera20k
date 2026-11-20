@@ -3867,6 +3867,9 @@ pub(super) struct ReceivedMessage {
     /// VERA: the lobby's own line, `text` from its phrases in the interface
     /// language.
     pub(super) localized: bool,
+    /// VERA: the lobby's warning that a player's game differs from the
+    /// host's, shown red (`wol_chat::WARNING_COLOR`).
+    pub(super) warning: bool,
     pub(super) private: bool,
     pub(super) action: bool,
     pub(super) ansi: bool,
@@ -3889,6 +3892,7 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         from,
         text,
         localized,
+        warning,
         private,
         action,
         ansi,
@@ -3923,6 +3927,11 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         return;
     }
     let (line, color) = wol_chat::received_line(&sender(&from), &text, private, action);
+    let color = if warning {
+        wol_chat::WARNING_COLOR
+    } else {
+        color
+    };
     let line = LanChatLine { text: line, color };
     if visit {
         crate::app::shell_lan::append_wol_lobby_chat(state, line, sent_at);
