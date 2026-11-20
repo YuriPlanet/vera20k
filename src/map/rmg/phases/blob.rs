@@ -290,11 +290,8 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
     };
 
     // Shore pieces are transient at this stage: reset them either way.
-    let coords: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
-    for &(x, y) in &coords {
-        let tile = ctx.grid.get(x, y).expect("native cell").tile;
-        if ctx.ids.is_shore_piece(tile) {
-            let cell = ctx.grid.get_mut(x, y).expect("native cell");
+    for (_, cell) in ctx.grid.cells_in_native_order_mut() {
+        if ctx.ids.is_shore_piece(cell.tile) {
             cell.tile = 0;
             cell.sub_tile = 0;
         }
@@ -305,12 +302,11 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
         return pops;
     }
     // Rollback: re-water everything this blob claimed.
-    for &(x, y) in &coords {
+    for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
         if ctx.scratch.get(x, y).region == blob_id {
             let record = ctx.scratch.get_mut(x, y);
             record.region = 0;
             record.water_region = false;
-            let cell = ctx.grid.get_mut(x, y).expect("native cell");
             cell.tile = ctx.ids.water_base;
             cell.sub_tile = 0;
             cell.level = ctx.rollback_level;

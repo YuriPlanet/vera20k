@@ -93,7 +93,7 @@ pub fn infantry_facing_slot(facing: u8) -> u16 {
 /// `frame_index` to select the correct SHP frame via `resolve_shp_frame()`.
 /// Only this module writes it. Its native counterpart has not been traced
 /// (#1593).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Animation {
     /// Currently playing sequence.
     sequence: SequenceKind,

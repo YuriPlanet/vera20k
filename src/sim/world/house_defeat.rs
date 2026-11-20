@@ -687,8 +687,20 @@ impl Simulation {
                     .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
             })
             .collect();
-        let living_humans = alive
+        // 0x004FC62C's final human scan checks only Defeated (+0x1F5) before
+        // IsHumanPlayer (+0x1EC) or PlayerControl (+0x1ED), so a living passive
+        // human House counts: VERA's observer keeps a match going while the
+        // person behind it watches. Counted from `alive`, which drops passive
+        // Houses, a watched match ended at the first defeated computer.
+        let living_humans = self
+            .houses
+            .order()
             .iter()
+            .filter(|owner| {
+                self.houses
+                    .get(owner)
+                    .is_some_and(|house| !house.is_defeated())
+            })
             .filter(|owner| self.houses[owner].is_controlled_by_human(self.session.rule_policy()))
             .count();
         let all_allied = alive.iter().all(|left| {
@@ -839,8 +851,11 @@ impl Simulation {
                 },
             ]);
         }
-        if kind == crate::sim::house_state::HouseOutcomeKind::Defeat
-            && self.session.is_observer_house(owner)
+        // VERA watching: on the observer's sidebar a watcher takes no side,
+        // so the House it stands in has no verdict to say to it.
+        if (kind == crate::sim::house_state::HouseOutcomeKind::Defeat
+            && self.session.is_observer_house(owner))
+            || self.session.watcher_observes()
         {
             return;
         }

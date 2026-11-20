@@ -1184,9 +1184,9 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         log::debug!("WOL room reopened after the wait ended");
         return;
     }
-    let resume = match state.match_state.session.take_network_room_return() {
-        crate::app::match_runtime::session::NetworkRoomReturn::Wol { cooperative } => cooperative,
-        _ => None,
+    let (resume, campaign) = match state.match_state.session.take_network_room_return() {
+        crate::app::match_runtime::session::NetworkRoomReturn::Wol { cooperative, campaign } => (cooperative, campaign),
+        _ => (None, None),
     };
     let listed = joined.members.clone();
     let channel = joined.channel.clone();
@@ -1202,7 +1202,17 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         .frontend
         .multiplayer_shell_runtime
         .lan_create_observer();
-    open_game_room(state, &listed, observe, resume);
+    if open_game_room(state, &listed, observe, resume)
+        && let Some(campaign) = campaign
+        && let Err(error) = setup::campaign_room::resume_after_wol_result(
+            state,
+            *campaign,
+            listed.iter().map(|member| member.name.as_str()),
+        )
+    {
+        log::warn!("WOL campaign continuation refused: {error:#}");
+        message_line(state, crate::i18n::tr("VERA:CampaignRoomUnavailable"));
+    }
 }
 
 /// The others in a room this game hosts again take rows as joiners would,
@@ -3867,6 +3877,9 @@ pub(super) struct ReceivedMessage {
     /// VERA: the lobby's own line, `text` from its phrases in the interface
     /// language.
     pub(super) localized: bool,
+    /// VERA: the lobby's warning that a player's game differs from the
+    /// host's, shown red (`wol_chat::WARNING_COLOR`).
+    pub(super) warning: bool,
     pub(super) private: bool,
     pub(super) action: bool,
     pub(super) ansi: bool,
@@ -3889,6 +3902,7 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         from,
         text,
         localized,
+        warning,
         private,
         action,
         ansi,
@@ -3923,6 +3937,11 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         return;
     }
     let (line, color) = wol_chat::received_line(&sender(&from), &text, private, action);
+    let color = if warning {
+        wol_chat::WARNING_COLOR
+    } else {
+        color
+    };
     let line = LanChatLine { text: line, color };
     if visit {
         crate::app::shell_lan::append_wol_lobby_chat(state, line, sent_at);

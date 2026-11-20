@@ -42,7 +42,8 @@ pub(crate) use live_service::keep_network_report;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) use live_service::retire_visit_for_exit;
 pub(crate) use live_service::{
-    DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant, end_spawned_match,
+    DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant,
+    decode_external_watch_grant, end_spawned_match, relay_ticket_is_watch,
 };
 pub(crate) use live_service::{local_choices_agreed, online_cleanup_pending, online_match_id};
 pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
@@ -453,6 +454,11 @@ pub(crate) fn lobby_watches(state: &AppState) -> Option<bool> {
 
 /// VERA: whether the online lobby lets a room's players visit the public
 /// lobby, as its sign-in answered; a lobby from before it does not.
+pub(crate) fn lobby_campaign_rooms(state: &AppState) -> bool {
+    state.frontend.wol.as_ref().and_then(|visit| visit.live_service.as_ref())
+        .is_some_and(|service| service.campaign_rooms)
+}
+
 pub(crate) fn lobby_visits(state: &AppState) -> bool {
     state
         .frontend

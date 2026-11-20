@@ -118,19 +118,16 @@ impl NativeReplayHeader {
             });
         }
 
-        let mut scenario_name = [0; NATIVE_REPLAY_SCENARIO_NAME_LEN];
-        scenario_name.copy_from_slice(&bytes[0x0c..0x110]);
-        let mut options = [0; NATIVE_REPLAY_OPTIONS_LEN];
-        options.copy_from_slice(&bytes[0x118..0x1d0]);
-
+        // The fields in file order, as `encode` writes them.
+        let cursor = &mut 0;
         Ok(Self {
-            version: u32::from_le_bytes(bytes[0x00..0x04].try_into().unwrap()),
-            seed: u32::from_le_bytes(bytes[0x04..0x08].try_into().unwrap()),
-            scenario_value: u32::from_le_bytes(bytes[0x08..0x0c].try_into().unwrap()),
-            scenario_name,
-            session_value: u32::from_le_bytes(bytes[0x110..0x114].try_into().unwrap()),
-            special_flags: u32::from_le_bytes(bytes[0x114..0x118].try_into().unwrap()),
-            options,
+            version: u32::from_le_bytes(take(bytes, cursor, "version")?),
+            seed: u32::from_le_bytes(take(bytes, cursor, "seed")?),
+            scenario_value: u32::from_le_bytes(take(bytes, cursor, "scenario value")?),
+            scenario_name: take(bytes, cursor, "scenario name")?,
+            session_value: u32::from_le_bytes(take(bytes, cursor, "session value")?),
+            special_flags: u32::from_le_bytes(take(bytes, cursor, "special flags")?),
+            options: take(bytes, cursor, "options")?,
         })
     }
 
@@ -640,21 +637,20 @@ fn decode_command_batch(
     Ok(commands)
 }
 
-#[cfg(any(test, feature = "test-support"))]
+/// The `N` bytes of `field` at `cursor`, which moves past them.
 fn take<const N: usize>(
     bytes: &[u8],
     cursor: &mut usize,
     field: &'static str,
 ) -> std::result::Result<[u8; N], NativeReplayError> {
-    let end = cursor
-        .checked_add(N)
-        .filter(|end| *end <= bytes.len())
+    let value = *bytes
+        .get(*cursor..)
+        .and_then(<[u8]>::first_chunk::<N>)
         .ok_or(NativeReplayError::Truncated {
             offset: *cursor,
             field,
         })?;
-    let value = bytes[*cursor..end].try_into().unwrap();
-    *cursor = end;
+    *cursor += N;
     Ok(value)
 }
 
@@ -788,7 +784,7 @@ struct ReplayEnding {
 }
 
 pub const REPLAY_VERSION: u32 = 6;
-const REPLAY_STARTUP_VERSION: u32 = 5;
+const REPLAY_STARTUP_VERSION: u32 = 6;
 
 mod blueprint;
 pub use blueprint::{MatchStartBlueprint, ReplayLaunch, ReplayLaunchInput};
@@ -849,6 +845,14 @@ impl ReplayStartup {
 
     pub fn control_grants(&self) -> &[crate::sim::control_authority::ControlGrant] {
         self.session().control_grants()
+    }
+
+    pub fn authored_campaign(&self) -> Option<&crate::sim::scenario_bootstrap::AuthoredCampaignStart> {
+        self.blueprint.map_houses()
+    }
+
+    pub fn game_speed(&self) -> i32 {
+        self.session().game_options().game_speed
     }
 
     pub fn launch_descriptor(
@@ -1238,8 +1242,14 @@ impl ReplayPlayback {
         if let Some(record) = startup.blueprint().campaign_carry_over() {
             sim.restore_campaign_carry_over(record, &runtime.resources.rules);
         }
+        let admitted = startup.session().clone();
+        let admitted = if startup.authored_campaign().is_some() {
+            admitted.with_replay_view(Some(sim.session()))
+        } else {
+            admitted
+        };
         sim.restore_replay_startup(
-            startup.session().clone(),
+            admitted,
             startup.scenario_rng.clone(),
             startup.main_rng.clone(),
             startup.mapgen_rng.clone(),
@@ -1488,13 +1498,20 @@ impl ReplayRunner {
         let startup = replay.standalone_startup()?;
         let map_file = map_beside.unwrap_or(&replay.header.map_name);
         let accepted_prefix = Some(startup.native_id_prefix()?);
-        let mut loaded = match startup.blueprint().map_houses() {
+        let mode = startup.game_mode();
+        let mut loaded = match startup.authored_campaign() {
             Some(start) => crate::headless_scenario::load_campaign_stage(
                 retail_dir,
                 map_file,
                 startup.seed(),
-                start,
+                crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                    start,
+                    mode,
+                    local_source: Some(0),
+                },
                 accepted_prefix,
+                Some(startup.game_speed()),
+                Some(startup.map_name()),
             ),
             None => crate::headless_scenario::load_with_launch_and_ini(
                 retail_dir,
@@ -1502,7 +1519,7 @@ impl ReplayRunner {
                 startup.seed(),
                 startup.launch_descriptor(map_file)?,
                 &Default::default(),
-                startup.game_mode(),
+                mode,
                 accepted_prefix,
                 None,
             ),
@@ -2118,9 +2135,9 @@ mod tests {
         let error = ReplayLog::decode_json(old_log).unwrap_err().to_string();
         assert!(error.contains("incompatible diagnostic replay version 5; expected 6"));
 
-        let old_startup = br#"{"header":{"version":6},"startup":{"version":4},"ticks":[]}"#;
+        let old_startup = br#"{"header":{"version":6},"startup":{"version":5},"ticks":[]}"#;
         let error = ReplayLog::decode_json(old_startup).unwrap_err().to_string();
-        assert!(error.contains("incompatible replay startup version 4; expected 5"));
+        assert!(error.contains("incompatible replay startup version 5; expected 6"));
     }
 
     #[test]

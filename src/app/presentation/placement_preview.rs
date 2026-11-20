@@ -268,7 +268,7 @@ fn with_extension(name: &str, extension: &str) -> String {
 }
 
 fn load_named_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
-    Palette::from_bytes(&assets.get(name)?).ok()
+    Palette::from_bytes(assets.get_ref(name)?).ok()
 }
 
 fn load_strip(
@@ -280,10 +280,10 @@ fn load_strip(
     palette: &Palette,
 ) -> Option<CenteredShapeStrip> {
     for name in candidates {
-        let Some(bytes) = assets.get(name) else {
+        let Some(bytes) = assets.get_ref(name) else {
             continue;
         };
-        let Ok(shp) = ShpFile::from_bytes(&bytes) else {
+        let Ok(shp) = ShpFile::from_bytes(bytes) else {
             continue;
         };
         if let Some(strip) =

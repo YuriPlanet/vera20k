@@ -208,6 +208,9 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     if button == MouseButton::Right {
         crate::app::input::chat::right_button(state);
     }
+    if super::chat::skirmish_spawn_mouse(state, button, pressed) {
+        return;
+    }
     #[cfg(feature = "phobos")]
     if crate::app::input::sw_sidebar::mouse(state, button, pressed) {
         return;

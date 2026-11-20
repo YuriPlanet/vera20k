@@ -852,7 +852,8 @@ fn sale_survivors(
                 entity.position.rx(),
                 entity.position.ry(),
                 &object.foundation,
-            ),
+            )
+            .collect::<Vec<_>>(),
         ))
     }) else {
         return false;

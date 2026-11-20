@@ -166,9 +166,10 @@ fn original_foundation_startup_rows_feed_the_factory_track_head() {
             );
         }
         assert_eq!(
-            json!(crate::sim::docking::building_dock::foundation_exit_list(
-                &object.foundation
-            )),
+            json!(
+                crate::sim::docking::building_dock::foundation_exit_list(&object.foundation)
+                    .collect::<Vec<_>>()
+            ),
             row["list_before_terminator"],
             "{} original sentinel list",
             def.name

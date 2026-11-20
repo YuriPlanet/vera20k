@@ -16,6 +16,10 @@
 #   BOUND=S          every other source presses Leave ACT_SECONDS+S into the
 #                    match (default 60); on a score screen Leave is Continue
 #   PACING=on|off    relay: sign a VO2C certificate with that pacing flag
+#   AI=N             N computer houses after the humans (relay: PLAYERS=1 allowed)
+#   ALONE=on         relay, PLAYERS=1: a certificate the relay orders alone
+#   WATCHERS=N       relay: N watchers (OUT/w0..), started WATCH_AFTER seconds
+#                    (default 0) after p0's match appears (docs/spawn.md "Watching")
 #   RELAY_PORT=P     relay: loopback UDP port (default 5000)
 #   SERVICE_PORT=P   relay: the mock match API's port (default 8787)
 #   GATEWAY_PORT=P   browser: the WebSocket gateway's port (default 8788)
@@ -46,6 +50,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 extra="--players $players"
 [ -n "${SPECTATORS:-}" ] && extra="$extra --spectators $SPECTATORS"
+[ -n "${AI:-}" ] && extra="$extra --ai $AI"
+[ "${ALONE:-}" = on ] && extra="$extra --alone on"
+watchers=${WATCHERS:-0}
+[ "$watchers" -gt 0 ] && extra="$extra --watchers $watchers"
 
 relay_pid=""
 relay_port=${RELAY_PORT:-5000}
@@ -106,6 +114,25 @@ while [ "$source" -lt "$players" ]; do
 done
 pids="$pids $clients"
 
+# Watchers join the match once it plays; each exits when it has watched it
+# to its end.
+watcher_clients=""
+if [ "$watchers" -gt 0 ]; then
+  until grep -q "External launch: match on screen" "$out/p0/logs/ra2.log" 2>/dev/null; do sleep 0.5; done
+  sleep "${WATCH_AFTER:-0}"
+  index=0
+  while [ "$index" -lt "$watchers" ]; do
+    rm -f "$out/w$index/spawn_result.json"
+    # The match's score screen waits for Continue, which the hook presses
+    # once the players are surely gone.
+    (cd "$out/w$index" && exec env VERA20K_SPAWN_HIDDEN_WINDOW=1 \
+      VERA20K_SPAWN_LEAVE_AFTER_SECONDS=$((act + bound + 60)) "$bin" -SPAWN -WIN > stdout.log 2>&1) &
+    watcher_clients="$watcher_clients $!"
+    index=$((index + 1))
+  done
+  pids="$pids $watcher_clients"
+fi
+
 if [ "$kill_target" != none ]; then
   if [ "$kill_target" = relay ]; then victim=$relay_pid; watch=0; else eval "victim=\$client_$kill_target"; watch=$kill_target; fi
   (
@@ -134,6 +161,19 @@ for pid in $clients; do
   wait "$pid" || status=$?
   echo "exit status $status" >> "$out/p$source/stdout.log"
   source=$((source + 1))
+done
+index=0
+for pid in $watcher_clients; do
+  while kill -0 "$pid" 2>/dev/null; do
+    [ "$(date +%s)" -lt "$deadline" ] || { echo "timeout after ${limit}s" >&2; exit 1; }
+    sleep 1
+  done
+  status=0
+  wait "$pid" || status=$?
+  echo "exit status $status" >> "$out/w$index/stdout.log"
+  echo "== w$index"; tail -n 1 "$out/w$index/stdout.log"
+  [ -f "$out/w$index/spawn_result.json" ] && cat "$out/w$index/spawn_result.json" && echo
+  index=$((index + 1))
 done
 source=0
 while [ "$source" -lt "$players" ]; do

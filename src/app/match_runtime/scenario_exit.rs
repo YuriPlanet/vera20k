@@ -155,6 +155,7 @@ pub(crate) enum ScenarioExitDestination {
     CooperativeResult {
         victory: bool,
     },
+    AuthoredCampaignResult(crate::sim::house_state::HouseOutcomeKind),
     MainMenu,
 }
 
