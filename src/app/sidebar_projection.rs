@@ -319,6 +319,12 @@ impl SidebarProjectionState {
         self.view_revision
     }
 
+    /// The retained view while it is still the one at `revision`, so a reader
+    /// that noted the revision can find that view again without a copy.
+    pub(crate) fn view_at(&self, revision: u64) -> Option<&SidebarView> {
+        self.view().filter(|_| self.view_revision == revision)
+    }
+
     /// Whether the retained view was built from `inputs` and the strips and
     /// Factory links as they stand now, so that building it again would give
     /// an equal view. The per-pass gadget refresh then keeps it.

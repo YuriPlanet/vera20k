@@ -191,6 +191,29 @@ fn only_a_changed_view_moves_the_view_revision() {
     assert_ne!(projection.view_revision(), second);
 }
 
+/// A render notes the revision of the view it drew and reads that view
+/// back from the projection: found while it stands, gone once replaced.
+#[test]
+fn a_noted_view_revision_finds_its_view_until_it_changes() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini("[Countries]\n0=Americans\n"),
+        &crate::rules::ini_parser::IniFile::empty(),
+    )
+    .unwrap();
+    let (sim, owner) = world(&rules, &[]);
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &[], 4, false);
+    let mut drawn = view(&sim, &options, &projection, SidebarTab::Building, 600.0);
+    projection.replace_view(Some(drawn.clone()));
+    let noted = projection.view_revision();
+    assert_eq!(projection.view_at(noted), Some(&drawn));
+    drawn.credits += 25;
+    projection.replace_view(Some(drawn));
+    assert_eq!(projection.view_at(noted), None);
+    assert!(projection.view_at(projection.view_revision()).is_some());
+}
+
 /// The per-pass gadget refresh keeps a view built from the same inputs,
 /// strips and Factory links; a change to any of them builds it again.
 #[test]
