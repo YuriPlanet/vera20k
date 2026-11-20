@@ -94,14 +94,13 @@ fn readers_keep_signed_fields_and_raw_unknown_bytes() {
     let data = corpus();
     for case in data["packets"].as_array().unwrap() {
         let message = LanMessage::decode(&unhex(case["payload"].as_str().unwrap())).unwrap();
-        match message.kind() {
-            LanMessageKind::JoinRequest => {
-                let fields = message.join_fields().unwrap();
+        match message.payload() {
+            LanPayload::JoinRequest(fields) => {
                 assert_eq!((fields.country, fields.color), (-3, 6));
                 assert_eq!(fields.observer_request, 0x23);
             }
-            LanMessageKind::JoinAccepted => assert_eq!(
-                message.acceptance_fields().unwrap(),
+            LanPayload::JoinAccepted(fields) => assert_eq!(
+                fields,
                 LanAcceptance {
                     country: -3,
                     color: 6,
@@ -109,11 +108,10 @@ fn readers_keep_signed_fields_and_raw_unknown_bytes() {
                     observer_row: 7
                 }
             ),
-            LanMessageKind::Advertisement => assert_eq!(message.advertisement_flags(), Some(1)),
-            LanMessageKind::JoinDenied => assert_eq!(
-                message.denial_reason(),
-                Some(if case["name"] == "kick" { 4 } else { 5 })
-            ),
+            LanPayload::Advertisement { flags } => assert_eq!(flags, 1),
+            LanPayload::JoinDenied { reason } => {
+                assert_eq!(reason, if case["name"] == "kick" { 4 } else { 5 })
+            }
             _ => {}
         }
     }

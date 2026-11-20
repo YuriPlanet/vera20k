@@ -535,6 +535,15 @@ pub enum SnapshotRestoreError {
     MissingDisplayIdentity { object_id: u64 },
     #[error("saved Terrain {object_id} references unresolved type {type_name}")]
     MissingTerrainType { object_id: u64, type_name: String },
+    #[error(
+        "saved {registry} {object_id} field {field} names interned id {id}, which the saved interner does not hold"
+    )]
+    UnknownInternedId {
+        registry: &'static str,
+        object_id: u64,
+        field: &'static str,
+        id: u32,
+    },
     #[error("live {registry} object id {object_id} is absent from LogicVector")]
     MissingRequiredLogicIdentity {
         registry: &'static str,
@@ -861,6 +870,7 @@ impl GameSnapshot {
     ) -> Result<(Simulation, SnapshotMapRestoreOutput), SnapshotRestoreError> {
         let overlay_registry = rules.overlay_registry();
         let mut simulation = self.sim;
+        simulation.validate_saved_interned_ids()?;
         simulation.retain_process_state_for_load(process);
         let retain_continuation = simulation.retains_snapshot_continuation();
         if retain_continuation != self.continuation.is_some() {

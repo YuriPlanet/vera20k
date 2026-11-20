@@ -283,8 +283,13 @@ pub(super) fn restore_object_references(
                 "EntityStore",
                 follower_id,
             )?;
-            if sim.substrate.entities.get(follower_id).unwrap().category()
-                != crate::map::entities::EntityCategory::Unit
+            if sim
+                .substrate
+                .entities
+                .get(follower_id)
+                .is_none_or(|follower| {
+                    follower.category() != crate::map::entities::EntityCategory::Unit
+                })
             {
                 return Err(SnapshotRestoreError::InvalidUnitFollowerState {
                     object_id: entity_id,
@@ -338,8 +343,9 @@ pub(super) fn restore_object_references(
                 charger,
             )?;
             if !seen_chargers.insert(charger)
-                || sim.substrate.entities.get(charger).unwrap().category()
-                    != crate::map::entities::EntityCategory::Infantry
+                || sim.substrate.entities.get(charger).is_none_or(|charger| {
+                    charger.category() != crate::map::entities::EntityCategory::Infantry
+                })
             {
                 return Err(SnapshotRestoreError::InvalidTeslaChargingState {
                     object_id: entity_id,

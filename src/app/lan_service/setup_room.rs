@@ -3,8 +3,8 @@
 
 use crate::net::global::GlobalDestination;
 use crate::net::lan_messages::LanMessage;
-use crate::net::lan_messages::LanMessageKind;
 use crate::net::lan_messages::LanNamedMessage;
+use crate::net::lan_messages::LanPayload;
 use std::net::SocketAddrV4;
 
 use super::{
@@ -569,15 +569,14 @@ pub(super) fn project_players(state: &mut AppState) {
         players.push(super::shell_lan::local_lobby_row(&local_name(state)));
     }
     for peer in &service.observed_participants {
-        let color = match (game, peer.message.kind()) {
-            (Some(game), LanMessageKind::ParticipantDetails) => {
-                let fields = peer.message.participant_fields().expect("participant");
+        let color = match (game, peer.message.payload()) {
+            (Some(game), LanPayload::ParticipantDetails(fields)) => {
                 if fields.game_name_hash != crate::net::lan_messages::game_name_hash(&game.name) {
                     continue;
                 }
                 fields.color
             }
-            (None, LanMessageKind::Presence) => peer.message.presence_fields().expect("presence").1,
+            (None, LanPayload::Presence { color, .. }) => color,
             _ => continue,
         };
         players.push(crate::ui::lan_shell::LanPlayerRow {

@@ -182,22 +182,22 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     let ordering_clock =
         crate::net::live_commands::relay_clock(mode, startup_transport, full_houses.len())?;
     let frame_send_rate = ordering_clock.map_or_else(
-        || online_timing.map_or(5, |timing| timing.frame_send_rate as u32),
-        |_| 1,
+        || {
+            online_timing.map_or(const { std::num::NonZeroU8::new(5).unwrap() }, |timing| {
+                timing.frame_send_rate
+            })
+        },
+        |_| std::num::NonZeroU8::MIN,
     );
-    let rate =
-        std::num::NonZeroU32::new(frame_send_rate).expect("native multiplayer FrameSendRate");
+    let rate = std::num::NonZeroU32::from(frame_send_rate);
     let sim = &mut state
         .match_state
         .sim_runtime
         .write_sim(SimWrite::Network)
         .expect("constructed world")
         .simulation;
-    sim.network_command_queues().install_timing(
-        host_house,
-        std::num::NonZeroU8::new(frame_send_rate as u8).expect("native multiplayer send rate"),
-        source_houses,
-    );
+    sim.network_command_queues()
+        .install_timing(host_house, frame_send_rate, source_houses);
     if let Some(clock) = ordering_clock {
         sim.network_command_queues()
             .configure_sequenced_clock(clock.tick_hz);

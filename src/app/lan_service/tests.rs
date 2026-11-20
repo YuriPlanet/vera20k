@@ -732,6 +732,18 @@ fn newer_join_challenge_survives_old_request_confirm_and_cancel() {
     use crate::net::lan_messages::{LanJoinRequest, LanVersionInterval};
     let mut host = service();
     let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30123);
+    let fields = LanJoinRequest {
+        country: -2,
+        color: -2,
+        version: LanVersionInterval::RETAIL,
+        compatibility: LanCompatibility {
+            field_0x43: 1,
+            field_0x47: 2,
+            field_0x4b: 3,
+            field_0x4f: 4,
+        },
+        observer_request: 0,
+    };
     let request = |nonce| {
         let mut proof = host.control_proof().unwrap();
         proof.scope = SessionScope {
@@ -739,25 +751,10 @@ fn newer_join_challenge_survives_old_request_confirm_and_cancel() {
             revision: 0,
         };
         proof.join_nonce = [nonce; 16];
-        LanMessage::join_request(
-            "Guest",
-            &[],
-            LanJoinRequest {
-                country: -2,
-                color: -2,
-                version: LanVersionInterval::RETAIL,
-                compatibility: LanCompatibility {
-                    field_0x43: 1,
-                    field_0x47: 2,
-                    field_0x4b: 3,
-                    field_0x4f: 4,
-                },
-                observer_request: 0,
-            },
-        )
-        .unwrap()
-        .with_session_proof(&proof)
-        .unwrap()
+        LanMessage::join_request("Guest", &[], fields)
+            .unwrap()
+            .with_session_proof(&proof)
+            .unwrap()
     };
     let old = request(1);
     let current = request(2);
@@ -774,7 +771,10 @@ fn newer_join_challenge_survives_old_request_confirm_and_cancel() {
     proof.admission_nonce = identity.admission_nonce;
     // Concurrent peers can advance options while this challenge is in flight.
     host.setup_scope.as_mut().unwrap().revision += 1;
-    assert_eq!(host.confirmed_request(endpoint, &proof, 34), Some(current));
+    assert_eq!(
+        host.confirmed_request(endpoint, &proof, 34),
+        Some((current.name(), fields))
+    );
     host.commit_peer_admission(endpoint, "Host", &proof);
     assert!(
         !host.accepts_participant(true, endpoint, "Host", &proof),
@@ -1061,7 +1061,7 @@ fn go_waits_for_the_last_final_fragment_ack_and_its_own_drain() {
     )
     .unwrap();
     assert_eq!(received_go.kind(), LanMessageKind::Go);
-    assert_eq!(received_go.go_max_ahead(), go.go_max_ahead());
+    assert_eq!(received_go.payload(), go.payload());
     assert_eq!(
         received_go.session_proof().unwrap().unwrap().scope,
         host.setup_scope().unwrap()
@@ -1232,8 +1232,8 @@ fn row_replacement_sends_kick_and_departure_cleans_membership_after_ack() {
     host.transport.as_mut().unwrap().service(31);
     let denied = next_message(&mut guest, &guest_session);
     assert_eq!(
-        LanMessage::decode(&denied.payload).unwrap().denial_reason(),
-        Some(4)
+        LanMessage::decode(&denied.payload).unwrap().payload(),
+        crate::net::lan_messages::LanPayload::JoinDenied { reason: 4 }
     );
     assert!(
         guest

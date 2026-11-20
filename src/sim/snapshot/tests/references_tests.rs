@@ -1219,3 +1219,68 @@ fn cell_attack_target_round_trips_through_snapshot() {
         .expect("attack_target should be restored");
     assert!(matches!(restored, TargetKind::Cell(50, 50)));
 }
+
+/// An object's saved type and owner ids and the interner that names them all
+/// come from the file. An id past that interner refuses the player load
+/// before any restore step resolves it and panics.
+#[test]
+fn object_type_id_past_the_saved_interner_refuses_the_load() {
+    let mut sim = Simulation::new();
+    let entity = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "AMERICANS", 5, 6);
+    let type_id = entity.type_ref().index();
+    sim.substrate.entities.insert(entity);
+    sim.interner = crate::sim::intern::StringInterner::new();
+    let bytes = GameSnapshot::save(&sim, 0, 0, "unknown-type", 0);
+    let Err(error) = GameSnapshot::load(&bytes).unwrap().restore_player_world(
+        crate::sim::world::SnapshotProcessState::Live(&Simulation::new()),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        flat_terrain(8, 8),
+        Default::default(),
+        PlayerSaveCells::FixtureBaseline,
+    ) else {
+        panic!("a type id past the saved interner must refuse the load");
+    };
+    assert_eq!(
+        error,
+        SnapshotRestoreError::UnknownInternedId {
+            registry: "object",
+            object_id: 1,
+            field: "type",
+            id: type_id,
+        },
+    );
+}
+
+/// A bullet's saved warhead id is resolved when it detonates, so one past the
+/// saved interner refuses the load too.
+#[test]
+fn bullet_warhead_id_past_the_saved_interner_refuses_the_load() {
+    use crate::sim::combat::RAD_NO_ATTACKER;
+    use crate::sim::projectile::{ProjectilePayload, ProjectileTarget};
+
+    let mut sim = Simulation::new();
+    let unknown = crate::sim::intern::InternedId::from_index(9_999);
+    let mut spawn = gsi_17_03_projectile(RAD_NO_ATTACKER, ProjectileTarget::None);
+    spawn.payload = ProjectilePayload::new(1, unknown, None, false);
+    let bullet = sim.substrate.allocate_stable_id();
+    sim.admit_projectile(bullet, spawn);
+    let bytes = GameSnapshot::save(&sim, 0, 0, "unknown-warhead", 0);
+    let Err(error) = GameSnapshot::load(&bytes).unwrap().restore_player_world(
+        crate::sim::world::SnapshotProcessState::Live(&Simulation::new()),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        flat_terrain(8, 8),
+        Default::default(),
+        PlayerSaveCells::FixtureBaseline,
+    ) else {
+        panic!("a warhead id past the saved interner must refuse the load");
+    };
+    assert_eq!(
+        error,
+        SnapshotRestoreError::UnknownInternedId {
+            registry: "bullet",
+            object_id: bullet,
+            field: "warhead",
+            id: unknown.index(),
+        },
+    );
+}

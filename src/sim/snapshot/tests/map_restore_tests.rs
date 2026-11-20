@@ -780,3 +780,25 @@ fn saveload_rebuild_is_deterministic() {
     );
     assert_eq!(a.state_hash(), b.state_hash());
 }
+
+/// A saved Terrain's type id and the interner that names it both come from the
+/// file. An id past the interner is refused as a missing type, like an unknown
+/// name, instead of panicking in the name lookup.
+#[test]
+fn terrain_type_id_past_the_saved_interner_is_a_missing_type() {
+    let mut sim = Simulation::new();
+    let unknown = crate::sim::intern::InternedId::from_index(sim.interner.len() as u32);
+    sim.terrain_objects.insert_constructed(
+        crate::sim::terrain_object::TerrainObjectState::for_test(1, unknown, 0, 0),
+        false,
+    );
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    assert_eq!(
+        sim.restore_map_authority_after_snapshot_load(rules, rules.overlay_registry(), None)
+            .unwrap_err(),
+        SnapshotRestoreError::MissingTerrainType {
+            object_id: 1,
+            type_name: format!("#{}", unknown.index()),
+        },
+    );
+}
