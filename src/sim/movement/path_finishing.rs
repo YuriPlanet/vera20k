@@ -143,12 +143,9 @@ pub(super) fn finish(
             ))
         })
         .collect::<Vec<_>>();
-    let heights: Vec<i32> = path
-        .iter()
-        .take(directions.len())
-        .map(|step| i32::from(step.path_height()))
-        .collect();
-    path_smooth::finish_path(start, &mut directions, &heights, &ctx)?;
+    // The outgoing-node heights are the steps' own, one per direction.
+    let heights = &path[..directions.len()];
+    path_smooth::finish_path(start, &mut directions, heights, &ctx)?;
     // AStar_main_loop (0x0042A432) returns these words directly. Smoothing
     // can admit the native Dummy beyond the edge of VERA's PathGrid.
     Ok(directions)
