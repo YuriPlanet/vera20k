@@ -9,7 +9,7 @@ use super::{SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat;
-use crate::sim::control_authority::{CommandCapability, ControlScope, ControlScopeTable};
+use crate::sim::control_authority::{CommandCapability, ControlScope};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
@@ -20,13 +20,12 @@ use crate::sim::scenario_session::{NativePlayerIdentity, ScenarioSession};
 /// Read-only control queries over the current session and House slots.
 /// The admitted seat authorizes orders. Native represented-viewer queries
 /// continue to use the original House flags and PlayerPtr. The borrowed
-/// world holds its House roster fixed while this projection uses the table.
+/// world holds its House roster fixed while this projection reads it.
 #[derive(Clone)]
 pub struct ControlProjection<'a> {
     session: &'a ScenarioSession,
     houses: &'a Houses,
     source: Option<(i8, InternedId)>,
-    scopes: Option<std::sync::Arc<ControlScopeTable>>,
 }
 
 impl<'a> ControlProjection<'a> {
@@ -36,7 +35,6 @@ impl<'a> ControlProjection<'a> {
             session,
             houses,
             source: None,
-            scopes: None,
         }
     }
 
@@ -80,9 +78,10 @@ impl<'a> ControlProjection<'a> {
             .has_custom_control_grants()
             .then(|| match self.source {
                 Some((_, primary)) if primary == owner => ControlScope::OwnFull,
-                Some((source, _)) => self.scopes.as_ref().map_or(ControlScope::None, |table| {
-                    table.get(source as usize, owner)
-                }),
+                Some((source, _)) => {
+                    self.session
+                        .delegated_control_scope(self.houses, source, owner)
+                }
                 None => ControlScope::None,
             })
     }
@@ -1247,7 +1246,6 @@ impl Simulation {
             session: &self.session,
             houses: &self.houses,
             source,
-            scopes: source.and_then(|_| self.session.control_scope_table(&self.houses)),
         }
     }
 
