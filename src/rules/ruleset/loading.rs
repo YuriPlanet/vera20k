@@ -625,20 +625,15 @@ impl RuleSet {
             .anim_type_art_read_states()
             .map(|(name, read)| (name.to_owned(), read))
             .collect();
-        rules
-            .anim_type_names
-            .extend(
-                (0..rules.anim_type_art_read_states.len()).filter_map(|index| {
-                    crate::rules::native_processing::anim_type_runtime_key(
-                        rules
-                            .anim_type_art_read_states
-                            .iter()
-                            .map(|(name, _)| name.as_str()),
-                        index,
-                    )
-                    .map(|key| key.to_ascii_uppercase())
-                }),
-            );
+        rules.anim_type_names.extend(
+            crate::rules::native_processing::anim_type_runtime_keys(
+                rules
+                    .anim_type_art_read_states
+                    .iter()
+                    .map(|(name, _)| name.as_str()),
+            )
+            .map(|key| key.to_ascii_uppercase()),
+        );
         rules.anim_type_images = processed
             .anim_type_image_states()
             .map(|(name, image)| (name.to_owned(), image.clone()))

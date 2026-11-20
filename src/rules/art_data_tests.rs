@@ -1754,6 +1754,43 @@ fn ares_art_palettes_keep_the_named_file() {
 }
 
 #[test]
+fn presentation_only_follows_a_long_next_chain_through_the_rules_processor() {
+    // Twenty thousand anims, each `Next=` the one after; the last marks the
+    // map, and a second chain ends back at its own start.
+    const LINKS: usize = 20_000;
+    let mut art_text = String::new();
+    let mut animations = String::from("[Animations]\n");
+    for index in 0..LINKS {
+        let next = if index + 1 == LINKS {
+            "Scorch=yes".to_owned()
+        } else {
+            format!("Next=A{}", index + 1)
+        };
+        art_text.push_str(&format!("[A{index}]\nRate=1\n{next}\n"));
+        animations.push_str(&format!("{index}=A{index}\n"));
+    }
+    for (index, next) in [(0, 1), (1, 0)] {
+        art_text.push_str(&format!("[LOOP{index}]\nRate=1\nNext=LOOP{next}\n"));
+        animations.push_str(&format!("{}=LOOP{index}\n", LINKS + index));
+    }
+    let art = IniFile::from_str(&art_text);
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&animations),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    assert!(
+        !rules.art().anim_presentation_only("a0"),
+        "its chain ends in Scorch="
+    );
+    assert!(
+        rules.art().anim_presentation_only("LOOP0"),
+        "a plain cycle of Next="
+    );
+}
+
+#[test]
 fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
         "[GUNFIRE]\nRate=900\n[EXPLOSML]\nScorch=yes\nCrater=yes\n\
@@ -1768,6 +1805,7 @@ fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
     refer("PUFF", "PUFF2", "");
     refer("PUFF2", "PUFF", "");
     refer("SMOKE", "", "EXPLOSML");
+    art.refresh_anim_types_affecting_play();
     assert!(art.anim_presentation_only("gunfire"), "a plain flash");
     assert!(art.anim_presentation_only("PUFF"), "a plain cycle of Next=");
     assert!(

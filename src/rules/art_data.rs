@@ -13,9 +13,9 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use crate::rules::flh::Flh;
 use crate::rules::ini_parser::{IniFile, IniSection};
-use crate::rules::native_processing::anim_type_runtime_key;
+use crate::rules::native_processing::anim_type_runtime_keys;
 use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SLOT_COUNT};
-use crate::util::lookup_hash::LookupMap;
+use crate::util::lookup_hash::{LookupMap, LookupSet};
 use crate::util::native_string::with_ascii_uppercase;
 use crate::util::native_x87::NativeF64Bits;
 use crate::util::pixel_conversion::PixelConversionBounds;
@@ -1158,6 +1158,13 @@ pub struct ArtRegistry {
     anim_theater_flags: HashMap<String, (bool, bool)>,
     /// Full deterministic Next/Trailer closure reachable from scheduler-owned roots.
     scheduler_anim_types: BTreeSet<String>,
+    /// Derived from `anim_runtime_configs`: the keys whose anim, or an anim
+    /// it can become or make, affects play
+    /// ([`ArtRegistry::anim_presentation_only`]). Every writer of a config's
+    /// play keys or `Next=`/`TrailerAnim=`/`ExpireAnim=`/`BounceAnim=`, and
+    /// every insert, rebuilds it with
+    /// [`ArtRegistry::refresh_anim_types_affecting_play`].
+    anim_types_affecting_play: LookupSet<String>,
 }
 
 /// An AnimType whose ART body was never read: the constructor's values, with
@@ -1217,6 +1224,43 @@ impl AnimTypeRuntimeConfig {
     /// loads the file itself, so this is the unresolved name.
     pub fn custom_palette(&self) -> Option<&str> {
         self.ares_custom_palette.as_deref()
+    }
+
+    /// Whether this type itself reads a key whose AnimClass effect reaches
+    /// the simulation, or keeps unread constructor state; the keys are
+    /// listed at [`ArtRegistry::anim_presentation_only`], which also follows
+    /// its chain.
+    fn affects_play(&self) -> bool {
+        let damage = self.damage.bits() & !(1 << 63) != 0;
+        #[cfg(feature = "phobos")]
+        let creates_unit = self.phobos_create_unit.is_some();
+        #[cfg(not(feature = "phobos"))]
+        let creates_unit = false;
+        !self.art_body_read
+            || damage
+            || self.ares_damage_delay != 0
+            || self.ares_weapon.is_some()
+            || self.warhead.is_some()
+            || self.spawns.is_some()
+            || self.spawns_particle.is_some()
+            || self.make_infantry != -1
+            || creates_unit
+            || self.scorch
+            || self.crater
+            || self.bouncer
+            || self.is_meteor
+            || self.is_tiberium
+            || self.is_animated_tiberium
+            || self.tiberium_chain_reaction
+            || self.tiberium_spawn_type.is_some()
+            || self.is_veins
+            || self.hide_if_no_ore
+            || self.flamer
+            || self.sticky
+            || self.psi_warning
+            || self.is_flaming_guy
+            || self.random_rate_logic_frames.is_some()
+            || self.random_loop_delay.is_some()
     }
 }
 
@@ -1519,7 +1563,7 @@ impl ArtRegistry {
         }
 
         log::info!("ArtRegistry: {} entries loaded from art.ini", entries.len());
-        ArtRegistry {
+        let mut registry = ArtRegistry {
             entries,
             entry_names,
             can_hide_things,
@@ -1528,7 +1572,10 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags,
             scheduler_anim_types: BTreeSet::new(),
-        }
+            anim_types_affecting_play: LookupSet::default(),
+        };
+        registry.refresh_anim_types_affecting_play();
+        registry
     }
 
     /// Create an empty registry (used when art.ini is unavailable).
@@ -1542,6 +1589,7 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
+            anim_types_affecting_play: LookupSet::default(),
         }
     }
 
@@ -1583,64 +1631,53 @@ impl ArtRegistry {
     /// Scenario stream. Every anim it can become or make (`Next=`,
     /// `TrailerAnim=`, `ExpireAnim=`, `BounceAnim=`) must be one too. A type
     /// whose ART body was never read keeps constructor state and is refused.
+    /// A name with no AnimType constructs nothing, in the simulation or out of
+    /// it, so it counts as presentation only; so does a type that reaches
+    /// itself again down its chain without meeting one that affects play.
     pub fn anim_presentation_only(&self, image_id: &str) -> bool {
-        let mut seen = Vec::new();
-        self.anim_presentation_only_from(image_id, &mut seen)
+        with_ascii_uppercase(image_id, |key| {
+            !self.anim_types_affecting_play.contains(key)
+        })
     }
 
-    fn anim_presentation_only_from(&self, image_id: &str, seen: &mut Vec<String>) -> bool {
-        let key = image_id.to_ascii_uppercase();
-        if seen.contains(&key) {
-            return true;
-        }
-        // A missing type constructs nothing, in the simulation or out of it.
-        let Some(config) = self.anim_runtime_configs.get(&key) else {
-            return true;
-        };
-        seen.push(key);
-        let damage = config.damage.bits() & !(1 << 63) != 0;
-        #[cfg(feature = "phobos")]
-        let creates_unit = config.phobos_create_unit.is_some();
-        #[cfg(not(feature = "phobos"))]
-        let creates_unit = false;
-        let affects_play = !config.art_body_read
-            || damage
-            || config.ares_damage_delay != 0
-            || config.ares_weapon.is_some()
-            || config.warhead.is_some()
-            || config.spawns.is_some()
-            || config.spawns_particle.is_some()
-            || config.make_infantry != -1
-            || creates_unit
-            || config.scorch
-            || config.crater
-            || config.bouncer
-            || config.is_meteor
-            || config.is_tiberium
-            || config.is_animated_tiberium
-            || config.tiberium_chain_reaction
-            || config.tiberium_spawn_type.is_some()
-            || config.is_veins
-            || config.hide_if_no_ore
-            || config.flamer
-            || config.sticky
-            || config.psi_warning
-            || config.is_flaming_guy
-            || config.random_rate_logic_frames.is_some()
-            || config.random_loop_delay.is_some();
-        if affects_play {
-            return false;
-        }
-        let children = [
-            config.next.clone(),
-            config.trailer_anim.clone(),
-            config.expire_anim.clone(),
-            config.bounce_anim.clone(),
-        ];
-        children
+    /// Rebuild [`Self::anim_types_affecting_play`]: the types that affect
+    /// play themselves, then, walking `Next=`/`TrailerAnim=`/`ExpireAnim=`/
+    /// `BounceAnim=` backwards, every type that can become or make one. A
+    /// link to a name with no AnimType leads nowhere. One pass over the
+    /// configs and their links, whatever their chains or cycles.
+    fn refresh_anim_types_affecting_play(&mut self) {
+        // Child key (looked up as its ASCII uppercase, as the configs are
+        // keyed) -> the types that name it.
+        let mut parents: LookupMap<String, Vec<&str>> = LookupMap::default();
+        let mut pending = Vec::new();
+        for (key, config) in &self.anim_runtime_configs {
+            if config.affects_play() {
+                pending.push(key.as_str());
+            }
+            for child in [
+                &config.next,
+                &config.trailer_anim,
+                &config.expire_anim,
+                &config.bounce_anim,
+            ]
             .into_iter()
             .flatten()
-            .all(|child| self.anim_presentation_only_from(&child, seen))
+            {
+                parents
+                    .entry(child.to_ascii_uppercase())
+                    .or_default()
+                    .push(key.as_str());
+            }
+        }
+        let mut affecting: LookupSet<String> = pending.iter().map(|&key| key.to_owned()).collect();
+        while let Some(key) = pending.pop() {
+            for &parent in parents.get(key).into_iter().flatten() {
+                if affecting.insert(parent.to_owned()) {
+                    pending.push(parent);
+                }
+            }
+        }
+        self.anim_types_affecting_play = affecting;
     }
 
     /// Apply the canonical RulesClass processing receipt before asset binding.
@@ -1659,15 +1696,14 @@ impl ArtRegistry {
                 }
             })
             .collect();
-        for (index, config) in configs.into_iter().enumerate() {
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, config) in keys.zip(configs) {
             if let Some(config) = config {
-                let key =
-                    anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                        .expect("index is within states")
-                        .to_ascii_uppercase();
-                self.anim_runtime_configs.insert(key, config);
+                self.anim_runtime_configs
+                    .insert(key.to_ascii_uppercase(), config);
             }
         }
+        self.refresh_anim_types_affecting_play();
     }
 
     /// Install the process owner's image projection after the separate ART
@@ -1678,10 +1714,9 @@ impl ArtRegistry {
         states: &[(String, crate::rules::object_image::ObjectImageState)],
     ) {
         self.anim_type_images.clear();
-        for (index, (_, image)) in states.iter().enumerate() {
-            let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                .expect("index is within states")
-                .to_ascii_uppercase();
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, (_, image)) in keys.zip(states) {
+            let key = key.to_ascii_uppercase();
             if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
                 config.image = image.image().to_owned();
             }
@@ -1710,14 +1745,13 @@ impl ArtRegistry {
         &mut self,
         states: &[(String, crate::rules::native_processing::AnimTypeReferences)],
     ) {
-        for (index, (_, references)) in states.iter().enumerate() {
-            let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                .expect("index is within states")
-                .to_ascii_uppercase();
-            if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, (_, references)) in keys.zip(states) {
+            if let Some(config) = self.anim_runtime_configs.get_mut(&key.to_ascii_uppercase()) {
                 references.apply_to(config);
             }
         }
+        self.refresh_anim_types_affecting_play();
     }
 
     /// Animation types whose complete raw SHP ranges must be available to the
@@ -1953,6 +1987,7 @@ impl ArtRegistry {
             .filter(|name| !name.is_empty())
             .collect();
         let mut resolved = BTreeSet::new();
+        let mut gained_config = false;
 
         while let Some(name) = pending.pop_front() {
             if !resolved.insert(name.clone()) {
@@ -1961,7 +1996,10 @@ impl ArtRegistry {
             let config = self
                 .anim_runtime_configs
                 .entry(name.clone())
-                .or_insert_with(|| unread_anim_type_config(&name))
+                .or_insert_with(|| {
+                    gained_config = true;
+                    unread_anim_type_config(&name)
+                })
                 .clone();
             self.bind_one_anim_asset(&name, &config, asset_manager, theater_ext, theater_name);
 
@@ -1987,6 +2025,11 @@ impl ArtRegistry {
         }
 
         self.scheduler_anim_types = resolved;
+        // Only a new config can change the set, and map load binds one
+        // authored anim at a time.
+        if gained_config {
+            self.refresh_anim_types_affecting_play();
+        }
     }
 
     /// Hidden-occupancy gate from the art.ini object-type-ID section.

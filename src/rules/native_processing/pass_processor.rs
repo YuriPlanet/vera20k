@@ -41,6 +41,20 @@ use crate::util::native_x87::NativeF64Bits;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+/// VERA indexes Sides in one byte (`SideIdx`); gamemd's array has no bound.
+/// A VERA20k bound.
+const SIDE_LIMIT: usize = 1 << u8::BITS;
+
+/// VERA indexes Countries in two bytes (`CountryIdx`); gamemd's array has no
+/// bound. A VERA20k bound.
+const COUNTRY_LIMIT: usize = 1 << u16::BITS;
+
+/// The longest `[Sides]` membership list VERA builds: one entry per Country
+/// VERA can hold. gamemd keeps duplicates and has no bound, so a Side that
+/// names an earlier Side many times multiplies that Side's list; past this,
+/// the list is refused. A VERA20k bound; retail lists hold a handful.
+const SIDE_MEMBER_LIMIT: usize = COUNTRY_LIMIT;
+
 #[derive(Debug, Clone)]
 pub(super) struct RulesPassProcessor {
     pub(super) rules_threat_coefficient_defaults: super::threat_coefficients::ThreatCoefficients,
@@ -536,27 +550,44 @@ impl RulesPassProcessor {
     /// constructed. Self-reference therefore reads the prior vector until
     /// the caller replaces it. Executed list controls: campaign_start.py
     /// --houses / campaign_start_houses.json side_controls (+meta).
+    ///
+    /// gamemd appends every member, duplicates included, with no bound
+    /// (`CCINIClass::ReadHouseTypeList @ 0x004767C0`), so a chain of Sides
+    /// that each name the one before many times grows the list
+    /// exponentially. VERA refuses a list past [`SIDE_MEMBER_LIMIT`] instead.
     pub(super) fn read_side_members(
         &self,
         section: &IniSection,
         key: &str,
         current: &[i32],
-    ) -> Vec<i32> {
+    ) -> Result<Vec<i32>, RulesError> {
         let Some(tokens) = section.read_list(key, 0x80) else {
-            return current.to_vec();
+            return Ok(current.to_vec());
         };
         let mut members = Vec::new();
         for token in tokens {
             let country = self.country_index_of_name(token);
-            if country != -1 {
-                members.push(country);
+            let expansion = if country != -1 {
+                std::slice::from_ref(&country)
             } else if let Some(index) = self.find_existing(RulesTypeFamily::Side, token) {
-                members.extend_from_slice(
-                    &self.families[&RulesTypeFamily::Side][index].side_country_members,
-                );
+                &self.families[&RulesTypeFamily::Side][index].side_country_members[..]
+            } else {
+                &[]
+            };
+            if members.len() + expansion.len() > SIDE_MEMBER_LIMIT {
+                return Err(RulesError::InvalidValue {
+                    section: "Sides".to_string(),
+                    key: key.to_string(),
+                    expected: format!(
+                        "at most {SIDE_MEMBER_LIMIT} Countries, counting each Side named \
+                         by its own list (a VERA20k bound)"
+                    ),
+                    value: section.raw_value(key).unwrap_or_default().to_string(),
+                });
             }
+            members.extend_from_slice(expansion);
         }
-        members
+        Ok(members)
     }
 
     /// Rules ReadSides672440 creates/reuses each key and immediately reads
@@ -571,30 +602,36 @@ impl RulesPassProcessor {
                 continue;
             };
             let prior = &self.families[&RulesTypeFamily::Side][index].side_country_members;
-            let members = self.read_side_members(section, key, prior);
+            let members = self.read_side_members(section, key, prior)?;
+            let side_index = i32::try_from(index).expect("native Side index exceeds i32");
+            let mut countries = self.families.get_mut(&RulesTypeFamily::Country);
+            let mut unresolved = None;
+            for &member in &members {
+                let country = usize::try_from(member)
+                    .ok()
+                    .and_then(|member| countries.as_mut()?.get_mut(member));
+                match country {
+                    Some(country) => country.country_side_index = side_index,
+                    None => {
+                        unresolved = Some(member);
+                        break;
+                    }
+                }
+            }
             self.families
                 .get_mut(&RulesTypeFamily::Side)
                 .expect("registered Side exists")[index]
-                .side_country_members = members.clone();
-            for member in members {
-                let country = usize::try_from(member).ok().and_then(|index| {
-                    self.families
-                        .get_mut(&RulesTypeFamily::Country)?
-                        .get_mut(index)
+                .side_country_members = members;
+            if let Some(member) = unresolved {
+                // `<random>` remains-2 in the reader.672597 would index
+                // Country[-2]; reject this undefined pointer route after
+                // retaining the actual Side mutation for failure recovery.
+                return Err(RulesError::InvalidValue {
+                    section: "Sides".to_string(),
+                    key: key.to_string(),
+                    expected: "a nonnegative resolved native Country index".to_string(),
+                    value: member.to_string(),
                 });
-                let Some(country) = country else {
-                    // `<random>` remains-2 in the reader.672597 would index
-                    // Country[-2]; reject this undefined pointer route after
-                    // retaining the actual Side mutation for failure recovery.
-                    return Err(RulesError::InvalidValue {
-                        section: "Sides".to_string(),
-                        key: key.to_string(),
-                        expected: "a nonnegative resolved native Country index".to_string(),
-                        value: member.to_string(),
-                    });
-                };
-                country.country_side_index =
-                    i32::try_from(index).expect("native Side index exceeds i32");
             }
         }
         Ok(())
@@ -630,13 +667,21 @@ impl RulesPassProcessor {
         {
             return None;
         }
-        // VERA indexes Sides in one byte and Countries in two (`SideIdx`,
-        // `CountryIdx`); gamemd's arrays have no bound. A new name past that
-        // bound allocates nothing, so outside data never grows the retained
-        // registry past what every later scenario can project.
+        self.find_or_construct_within_bound(family, incoming)
+    }
+
+    /// [`Self::find_or_construct`], except that a new Side or Country past
+    /// [`SIDE_LIMIT`] or [`COUNTRY_LIMIT`] constructs nothing and answers
+    /// `None`, so outside data never grows the retained registry past what
+    /// every later scenario can project.
+    pub(super) fn find_or_construct_within_bound(
+        &mut self,
+        family: RulesTypeFamily,
+        incoming: &str,
+    ) -> Option<usize> {
         let limit = match family {
-            RulesTypeFamily::Side => Some(usize::from(u8::MAX) + 1),
-            RulesTypeFamily::Country => Some(usize::from(u16::MAX) + 1),
+            RulesTypeFamily::Side => Some(SIDE_LIMIT),
+            RulesTypeFamily::Country => Some(COUNTRY_LIMIT),
             _ => None,
         };
         if let Some(limit) = limit
