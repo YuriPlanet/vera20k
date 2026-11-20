@@ -197,6 +197,7 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
+    /// A `Cell`: the draw notes it while reading the app state through `&`.
     shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
     /// The drawn software cursor's phase (`MouseClass` `CurrentCursor` /
     /// `CursorFrame`). A `Cell` like `shown_cursor`: the shell and match draws
@@ -204,7 +205,8 @@ pub(crate) struct MatchInputState {
     software_cursor_animation: std::cell::Cell<crate::app::input::cursor::CursorAnimation>,
     /// The cursor's targets and feedback as last read with the world home
     /// (`sim_host::home_answer`): both walk the live objects, which a draw
-    /// beside a lent tick may not read.
+    /// beside a lent tick may not read. Cells, like `tactical_tip_seen` and
+    /// `cursor_feedback_seen`: the asking draws hold the app state through `&`.
     pub(crate) cursor_targets_seen: std::cell::RefCell<crate::app::input::cursor::CursorTargets>,
     pub(crate) tactical_tip_seen: super::tooltips::TacticalTipAnswer,
     pub(crate) cursor_feedback_seen:

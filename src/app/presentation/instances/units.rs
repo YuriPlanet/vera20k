@@ -141,6 +141,7 @@ impl VoxelDrawer {
 
 /// What a part draw needs to render outside the selected model's atlas style.
 pub(crate) struct DepthTestedImages<'a> {
+    /// The owner's cell (`RendererState::vxl_pose_frame_cache`).
     pub pose_cache: &'a std::cell::RefCell<crate::render::unit_pose_cache::VxlPoseFrameCache>,
     pub assets: &'a crate::assets::asset_manager::AssetManager,
     pub rules: Option<&'a crate::rules::ruleset::RuleSet>,

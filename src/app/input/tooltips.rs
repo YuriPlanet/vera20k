@@ -498,6 +498,8 @@ fn tactical_tip_text(state: &AppState) -> String {
     )
 }
 
+/// The last tactical tip answered with the world home (`sim_host::home_answer`),
+/// in a cell because the tooltip draw asks through `&AppState`.
 pub(crate) type TacticalTipAnswer = std::cell::RefCell<((i32, i32), String)>;
 
 /// Display::GetTooltipText (0x004AE4F0) picks live entities. The answer

@@ -199,6 +199,8 @@ pub struct UnitAtlas {
     /// A draw takes its HVA frame as `Foot+0x538` modulo the model's count.
     pub frame_counts: BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
     /// The pictures drawn so far, where they sit, and the keys still to draw.
+    /// A `RefCell`, like `shadow_masks`: the Display-order visitors place
+    /// pictures while they share the atlas through `&AppState`.
     resident: RefCell<Resident>,
     /// First eligible composed-body mask for each supported shadow key, with
     /// the image cache's flush count when it was composed: a flush frees it
