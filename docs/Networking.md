@@ -531,6 +531,13 @@ The guest also reads the agreement before decoding the options body, so it can s
 the earlier build exchange its earlier layout. The lobby, relay, and VS31
 fragment framing keep their existing formats.
 
+When a room member visits the public lobby and joins another game, the client
+asks the lobby to admit them directly. A wrong password, a full room or a
+closed destination leaves their original seat, host and settings intact.
+A successful join moves them once. A lost reply retries the same command ID.
+Earlier clients leave first; a lobby without visits never offers this switch.
+The game, lobby and relay exchange the same messages.
+
 In VERA Online game rooms, the lobby sends rank badges as part of the join. The
 newcomer sees the room's badges, and everyone already there sees the newcomer's badge
 as their name appears. Released clients use the same ladder messages. After a lobby
