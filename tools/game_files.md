@@ -22,6 +22,17 @@ below is one the player already has:
 | A retail YR folder | Copy it, or point the checkout at it where it already is. |
 | An unpacked disc | Extract it with the tool of your choice, then use the folder. |
 
+### What the subscription costs
+
+EA Play on Steam (appid `1289670`) is $0.99 for the first month and $5.99 a
+month after that in the US store; other regions differ. The subscription is
+what carries the game: an anonymous `steamcmd` session is refused with
+`No subscription`, and the depot is about 1.2 GB.
+
+The Steam release of the game is Windows-only, but `steamcmd` downloads
+Windows depots from any host, so the Mac needs nothing else. A copy that
+came from another machine works just as well: point the tool at the folder.
+
 ## Prepare the folder
 
 ```sh
