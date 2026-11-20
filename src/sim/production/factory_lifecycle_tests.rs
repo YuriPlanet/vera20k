@@ -57,6 +57,87 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
     assert!(sim.lifecycle_outputs.is_empty());
 }
 
+/// `FactoryClass::StartProduction @ 0x004C9C70` reads
+/// `HouseClass::CheckBuildLimit @ 0x0050B370` at `0x004C9CEA` before it arms
+/// either branch, so an idle line refuses a type its house is at the limit for
+/// just as a busy one refuses the append. An `AirportBound=` aircraft is the
+/// case that shows it: retail `[ORCA]` carries no `BuildLimit=`, so
+/// `CanBuild` answers yes and only the airfield's docks hold it back. Before
+/// the fix an idle aircraft line started one more every time it was asked,
+/// which is how a house with four planes on four pads drew a fifth.
+#[test]
+fn an_idle_factory_refuses_a_type_its_house_is_at_the_limit_for() {
+    use crate::rules::ruleset::GeneralRules;
+    use crate::sim::world::FrameEffects;
+
+    // Retail `[ORCA]` carries `AirportBound=yes` and `[General] PadAircraft=`
+    // names it; the shared manager fixture has neither, so this test states the
+    // retail pair rather than changing a fixture every other case shares.
+    let mut ini = manager_ini();
+    ini.merge(&IniFile::from_str(
+        "[General]\nPadAircraft=ORCA\n[ORCA]\nAirportBound=yes\n",
+    ));
+    let rules = RuleSet::from_ini(&ini).expect("airfield fixture");
+    let mut sim = Simulation::with_seed(0x50B3_7000);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 50_000, 10,
+        ));
+    // A completed Helipad (`NumberOfDocks=` 1, the reader's default) joins its
+    // house's AirportDocks at the first Grand_Opening, `0x004463C0`.
+    sim.spawn_object_at_height("GAAIRC", "Americans", 10, 10, 0, 0, &rules)
+        .expect("airfield");
+    assert_eq!(
+        sim.houses[&owner].tracking().airport_docks(),
+        1,
+        "the opened airfield contributes its pad"
+    );
+    // One plane already on the pads: the house is at its docks, so
+    // CheckBuildLimit refuses a second.
+    let orca = rules.object("ORCA").unwrap();
+    assert!(orca.airport_bound);
+    let parked = sim.interner.get("ORCA").unwrap();
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .tracking_mut_for_test()
+        .set_active_for_test(crate::map::entities::EntityCategory::Aircraft, parked, 1);
+    assert!(
+        super::can_build::check_build_limit(&sim, &rules, owner, orca),
+        "one plane on one pad is at the limit"
+    );
+
+    // `CanBuild` does not see the docks: ORCA has no `BuildLimit=`, so the
+    // ordinary admission answers yes and the request reaches the factory.
+    assert_ne!(
+        super::can_build::can_build(&sim, &rules, owner, orca, true, true),
+        super::can_build::CanBuild::No,
+        "the admission this request passes is the build limit alone"
+    );
+
+    assert!(
+        !enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "ORCA",
+            FrameEffects::default(),
+            false,
+        ),
+        "an idle line at the limit refuses the start"
+    );
+    assert!(
+        sim.production
+            .factories()
+            .view(owner, ProductionCategory::Aircraft)
+            .is_none_or(|factory| factory.object.is_none()),
+        "nothing was armed"
+    );
+}
+
 /// Ordinary paid DEST from an already admitted Allied base. The water patch,
 /// completed buildings, running Idle animation and wallet are scene priors; payment, held identity,
 /// PLACE, producer missions and animation retirement all use the frame API.
