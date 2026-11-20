@@ -63,7 +63,8 @@ fn scene(root: &Path) -> (HeadlessScenario, u64) {
             .object("GAPOWR")
             .unwrap()
             .foundation
-            .cell_offsets();
+            .cell_offsets()
+            .collect::<Vec<_>>();
         terrain
             .cells()
             .iter()

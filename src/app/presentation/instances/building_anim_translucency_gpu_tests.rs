@@ -57,7 +57,8 @@ impl SlotScene {
                 .object("GAPOWR")
                 .unwrap()
                 .foundation
-                .cell_offsets();
+                .cell_offsets()
+                .collect::<Vec<_>>();
             let mut levels = std::collections::BTreeMap::new();
             for tile in terrain.cells().iter().filter(|tile| {
                 crate::sim::cell_rect::cell_is_in_playfield_height_aware(
