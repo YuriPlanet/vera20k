@@ -1904,12 +1904,12 @@ pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> 
     if viewport_contains(state.sidebar_frame().column(), (x, y)) {
         return None;
     }
-    let (vx, vy) = crate::app::presentation::super_timers::cursor_in_view(state);
+    let (px, py) = state.match_state.input.cursor_px();
     if state
         .match_state
         .match_presentation
-        .super_timer_dock
-        .over_toggle(vx, vy)
+        .in_game_gadgets
+        .control_at(px, py)
     {
         return None;
     }
