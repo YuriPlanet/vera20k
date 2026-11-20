@@ -214,6 +214,11 @@ that; gamemd's lobby asked every 30 (`SetTimer(0, 30000)`). Refresh still asks a
 once, and the lobbies list keeps its 53 seconds. A lobby that stops answering the list
 says so once until a list arrives again. No request or reply changes: an older
 game keeps asking every 30 seconds, and a rollback restores that.
+The watch list keeps its last rows when a refresh fails. The lobby chat says once
+that the watch list could not refresh, and again when a watch-list refresh
+succeeds. A room-list reply cannot clear that warning. A lobby from before
+watching still answers 404 and leaves an empty watch list. Older games
+keep their previous refresh messages.
 
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
 languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on

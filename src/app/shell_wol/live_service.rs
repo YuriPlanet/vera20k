@@ -2926,7 +2926,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 service_event(state, WolServiceEvent::Account(answer));
             }
         }
-        http::Response::Failure(label) => notice(state, &tr(label)),
+        http::Response::Notice(label) => notice(state, &tr(label)),
         http::Response::LobbyUnreachable => notice(state, &tr("VERA:OnlineNotResponding")),
         http::Response::LobbyReachable => notice(state, &tr("VERA:OnlineRespondingAgain")),
         http::Response::LobbyLost => {
