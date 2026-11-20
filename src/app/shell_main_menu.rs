@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::persistence::options::audio::AudioVolumeOperations;
 use crate::util::time::{Duration, Instant};
@@ -1536,23 +1537,7 @@ impl App {
         );
     }
 
-    /// Adapt the laid-out main-menu buttons into the shared controller's
-    /// button-only input feed. Statics (title/monitor) are deliberately excluded,
-    /// so the controller never hit-tests or hover-tracks them.
-    fn main_menu_shell_button_feed(
-        layout: &crate::ui::main_menu_shell::MainMenuShellLayout,
-    ) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        layout
-            .buttons
-            .iter()
-            .map(|b| crate::ui::shell::layout::LaidOutControl {
-                id: b.id.resource_id(),
-                rect: b.rect,
-            })
-            .collect()
-    }
-
-    /// Owner-draw button feed for a right-panel menu page (0x100 / 0x101).
+    /// Owner-draw button feed for a right-panel page still on fed buttons.
     pub(super) fn menu_page_button_feed(
         layout: &crate::ui::shell::menu_page::MenuPageLayout,
     ) -> Vec<crate::ui::shell::layout::LaidOutControl> {
@@ -1566,66 +1551,144 @@ impl App {
             .collect()
     }
 
-    pub(super) fn handle_main_menu_shell_mouse_down(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::main_menu_layout(state);
-        let feed = Self::main_menu_shell_button_feed(&layout);
+    /// One pointer message (`down`: `None` moves) on a family page: binds the
+    /// controller to the page (`ensure_active` resets only on a dialog change,
+    /// so a gesture's press survives to its release), keeps the page's nodes
+    /// on their layout rects with its runtime-disabled controls, and routes
+    /// the pointer. A press on an enabled button plays its cue on mouse DOWN
+    /// (`0x0061374B`); every hover message repaints status line `0x695`
+    /// (`0x00615EF7`). Returns the activated control.
+    pub(super) fn family_page_pointer(
+        state: &mut AppState,
+        page: FamilyPage,
+        down: Option<bool>,
+    ) -> Option<u16> {
+        use crate::ui::shell::page::{PageEvent, page_events};
+        use vera20k_gui::{InputEvent, MouseButton};
+        let layout = page.layout(state);
+        let campaign = (page == FamilyPage::Campaign)
+            .then(|| crate::app::frontend::shell_layout::campaign_layout(state));
+        let rect_of = |id| match &campaign {
+            Some(campaign) => campaign.control_rect(id),
+            None => layout.button_rect(id),
+        };
+        let enabled = page.enabled(state);
         let (x, y) = state.match_state.input.cursor_px();
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(crate::ui::shell::descriptor::DialogId(0x00E2), false);
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        let pressed = state.frontend.shell_controller.pressed().is_some();
-        // The original plays the button sound on mouse-DOWN over a button (not on
-        // release); `pressed` is button-only by construction, so a static never
-        // triggers it.
-        if pressed {
-            Self::play_main_menu_button_sound(state);
+        let button = MouseButton::Left;
+        let event = match down {
+            None => InputEvent::PointerMove { x, y },
+            Some(true) => InputEvent::PointerDown { x, y, button },
+            Some(false) => InputEvent::PointerUp { x, y, button },
+        };
+        let controller = &mut state.frontend.shell_controller;
+        controller.ensure_active(page.dialog(), false);
+        crate::ui::shell::menu_page::sync_nodes(
+            controller,
+            page.dialog(),
+            || page.nodes(),
+            rect_of,
+            enabled.as_slice(),
+        );
+        controller.on_input(event);
+        let events = controller.drain_events();
+        let events = page_events(controller.gui(), events);
+        if down.is_none() {
+            state.frontend.shell_status_line.repaint();
         }
+        let mut activated = None;
+        for event in events {
+            match event {
+                PageEvent::Cue(cue) => Self::play_page_cue(state, cue),
+                PageEvent::Activated(id) => activated = Some(id),
+                _ => {}
+            }
+        }
+        activated
+    }
+
+    /// A pointer message on the main menu or a menu page, and the dialog
+    /// result its activated button writes.
+    pub(super) fn handle_family_page_mouse(
+        state: &mut AppState,
+        page: FamilyPage,
+        down: Option<bool>,
+    ) {
+        use crate::app::frontend::shell_transition::ShellExitThen;
+        let Some(id) = Self::family_page_pointer(state, page, down) else {
+            return;
+        };
+        match page {
+            FamilyPage::MainMenu => {
+                use crate::ui::main_menu_shell::{MainMenuControlId, MainMenuShellAction};
+                let Some(action) = MainMenuControlId::from_resource_id(id)
+                    .map(crate::ui::main_menu_shell::action_for_control)
+                else {
+                    return;
+                };
+                match action {
+                    // These results destroy 0xE2 (Exit's confirmation is state 6,
+                    // shown over the empty shell backdrop).
+                    MainMenuShellAction::SinglePlayer
+                    | MainMenuShellAction::MoviesAndCredits
+                    | MainMenuShellAction::Options
+                    | MainMenuShellAction::Network
+                    | MainMenuShellAction::WwOnline
+                    | MainMenuShellAction::ExitGame => {
+                        Self::leave_shell_dialog(state, ShellExitThen::MainMenu(action))
+                    }
+                    MainMenuShellAction::None => {}
+                }
+            }
+            // States 0x12, 8, 9 and 0xB destroy 0x100.
+            FamilyPage::SinglePlayer => {
+                if let Some(action) =
+                    crate::ui::single_player_shell::SinglePlayerControlId::from_resource_id(id)
+                        .map(crate::ui::single_player_shell::action_for_control)
+                {
+                    Self::leave_shell_dialog(state, ShellExitThen::SinglePlayer(action));
+                }
+            }
+            FamilyPage::MoviesAndCredits => {
+                if let Some(action) = crate::ui::movies_credits_shell::action_for_control(id) {
+                    Self::leave_shell_dialog(state, ShellExitThen::MoviesCredits(action));
+                }
+            }
+            FamilyPage::Campaign => {
+                if id == crate::ui::campaign_shell::BACK_BUTTON {
+                    Self::leave_shell_dialog(state, ShellExitThen::CampaignBack);
+                }
+            }
+        }
+    }
+
+    pub(super) fn handle_main_menu_shell_mouse_down(state: &mut AppState) {
+        Self::handle_family_page_mouse(state, FamilyPage::MainMenu, Some(true));
     }
 
     pub(super) fn handle_main_menu_shell_mouse_move(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::main_menu_layout(state);
-        let feed = Self::main_menu_shell_button_feed(&layout);
-        let (x, y) = state.match_state.input.cursor_px();
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(crate::ui::shell::descriptor::DialogId(0x00E2), false);
-        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.repaint();
+        Self::handle_family_page_mouse(state, FamilyPage::MainMenu, None);
     }
 
     pub(super) fn handle_main_menu_shell_mouse_up(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::main_menu_layout(state);
-        let feed = Self::main_menu_shell_button_feed(&layout);
-        let (x, y) = state.match_state.input.cursor_px();
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(crate::ui::shell::descriptor::DialogId(0x00E2), false);
-        let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        if let Some(action) = activated
-            .and_then(crate::ui::main_menu_shell::MainMenuControlId::from_resource_id)
-            .map(crate::ui::main_menu_shell::action_for_control)
-        {
-            use crate::app::frontend::shell_transition::ShellExitThen;
-            use crate::ui::main_menu_shell::MainMenuShellAction;
-            match action {
-                // These results destroy 0xE2 (Exit's confirmation is state 6,
-                // shown over the empty shell backdrop).
-                MainMenuShellAction::SinglePlayer
-                | MainMenuShellAction::MoviesAndCredits
-                | MainMenuShellAction::Options
-                | MainMenuShellAction::Network
-                | MainMenuShellAction::WwOnline
-                | MainMenuShellAction::ExitGame => {
-                    Self::leave_shell_dialog(state, ShellExitThen::MainMenu(action))
-                }
-                _ => Self::handle_main_menu_shell_action(state, action),
-            }
+        Self::handle_family_page_mouse(state, FamilyPage::MainMenu, Some(false));
+    }
+
+    fn handle_menu_page_mouse(state: &mut AppState, down: Option<bool>) {
+        if let Some(page) = FamilyPage::menu_page(state) {
+            Self::handle_family_page_mouse(state, page, down);
         }
+    }
+
+    pub(super) fn handle_menu_page_mouse_down(state: &mut AppState) {
+        Self::handle_menu_page_mouse(state, Some(true));
+    }
+
+    pub(super) fn handle_menu_page_mouse_move(state: &mut AppState) {
+        Self::handle_menu_page_mouse(state, None);
+    }
+
+    pub(super) fn handle_menu_page_mouse_up(state: &mut AppState) {
+        Self::handle_menu_page_mouse(state, Some(false));
     }
 
     /// Count-rule message-box controls share the rendered template and geometry.
@@ -1821,102 +1884,6 @@ impl App {
         }
     }
 
-    /// Bind the shared controller to the active menu page for one pointer
-    /// event and refresh its runtime-disabled controls. `ensure_active` only
-    /// resets on a dialog change, so a gesture's press survives to its release.
-    fn prepare_menu_page_input(
-        state: &mut AppState,
-        page: crate::app::frontend::menu_page_render::ActiveMenuPage,
-    ) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        use crate::app::frontend::menu_page_render::ActiveMenuPage;
-        let spec = page.spec();
-        let layout = crate::app::frontend::shell_layout::menu_page_layout(state, spec);
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(spec.dialog, false);
-        if page == ActiveMenuPage::SinglePlayer {
-            let load_enabled = state
-                .frontend
-                .single_player_shell_state
-                .load_saved_game_enabled;
-            state.frontend.shell_controller.set_disabled(
-                crate::ui::single_player_shell::SinglePlayerControlId::LoadSavedGame0x689
-                    .resource_id(),
-                !load_enabled,
-            );
-        }
-        Self::menu_page_button_feed(&layout)
-    }
-
-    pub(super) fn handle_menu_page_mouse_down(state: &mut AppState) {
-        let Some(page) = crate::app::frontend::menu_page_render::ActiveMenuPage::from_state(state)
-        else {
-            return;
-        };
-        let feed = Self::prepare_menu_page_input(state, page);
-        let (x, y) = state.match_state.input.cursor_px();
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        // The owner-draw press cue plays on mouse-down over an enabled button.
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
-    }
-
-    pub(super) fn handle_menu_page_mouse_move(state: &mut AppState) {
-        let Some(page) = crate::app::frontend::menu_page_render::ActiveMenuPage::from_state(state)
-        else {
-            return;
-        };
-        let feed = Self::prepare_menu_page_input(state, page);
-        let (x, y) = state.match_state.input.cursor_px();
-        // Hover is enable-unfiltered: a disabled button still drives 0x695.
-        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.repaint();
-    }
-
-    pub(super) fn handle_menu_page_mouse_up(state: &mut AppState) {
-        use crate::app::frontend::menu_page_render::ActiveMenuPage;
-        let Some(page) = ActiveMenuPage::from_state(state) else {
-            return;
-        };
-        let feed = Self::prepare_menu_page_input(state, page);
-        let (x, y) = state.match_state.input.cursor_px();
-        let Some(activated) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) else {
-            return;
-        };
-        use crate::app::frontend::shell_transition::ShellExitThen;
-        match page {
-            ActiveMenuPage::SinglePlayer => {
-                use crate::ui::single_player_shell::SinglePlayerShellAction;
-                if let Some(action) =
-                    crate::ui::single_player_shell::SinglePlayerControlId::from_resource_id(
-                        activated,
-                    )
-                    .map(crate::ui::single_player_shell::action_for_control)
-                {
-                    match action {
-                        // States 0x12, 8, 9 and 0xB destroy 0x100.
-                        SinglePlayerShellAction::MainMenu
-                        | SinglePlayerShellAction::NewCampaign
-                        | SinglePlayerShellAction::LoadSavedGame
-                        | SinglePlayerShellAction::Skirmish => {
-                            Self::leave_shell_dialog(state, ShellExitThen::SinglePlayer(action));
-                        }
-                        _ => Self::handle_single_player_shell_action(state, action),
-                    }
-                }
-            }
-            ActiveMenuPage::MoviesAndCredits => {
-                if let Some(action) = crate::ui::movies_credits_shell::action_for_control(activated)
-                {
-                    Self::leave_shell_dialog(state, ShellExitThen::MoviesCredits(action));
-                }
-            }
-        }
-    }
-
     /// GUIMainButtonSound (`Rules+0x188`): the owner-draw button procedure
     /// `0x00612B70` plays it on every admitted press (`0x0061374B..0x00613771`),
     /// in shell and in-game dialogs alike.
@@ -1931,6 +1898,22 @@ impl App {
             .and_then(|rules| rules.general.gui_main_button_sound.as_deref())
             .map(str::to_string);
         Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
+    }
+
+    /// The sound of a shell page control's cue (`ui::shell::page`): an
+    /// owner-draw button's GUIMainButtonSound, the checkbox and combo sounds,
+    /// and a list row's GenericClick.
+    pub(crate) fn play_page_cue(state: &mut AppState, cue: crate::ui::shell::page::PageCue) {
+        use crate::ui::main_menu_dialogs::options::LauncherCue;
+        use crate::ui::shell::page::PageCue;
+        let cue = match cue {
+            PageCue::Button => return Self::play_main_menu_button_sound(state),
+            PageCue::Checkbox => LauncherCue::Checkbox,
+            PageCue::ComboOpen => LauncherCue::ComboOpen,
+            PageCue::ComboClose => LauncherCue::ComboClose,
+            PageCue::ListClick => LauncherCue::GenericClick,
+        };
+        Self::play_launcher_options_cue(state, cue);
     }
 
     /// Play the shell first-paint slide-in cue ([AudioVisual] GUIMoveInSound,

@@ -14,8 +14,10 @@ use crate::app::frontend::credits_roll::{
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn, movie_stem};
 use crate::app::shell_route::ShellRoute;
 use crate::ui::movies_credits_shell::{
-    MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, family_list_node,
+    MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, active_movie_entries,
+    family_list_node, family_list_selected, retained_movie_row,
 };
+use crate::ui::shell::page::{self, PageCue, PageEvent};
 
 /// The Sneak Peeks movie (`0x0052DE55`).
 const SNEAK_PEEK_MOVIE: &str = "RENEGADE.BIK";
@@ -67,17 +69,14 @@ impl App {
     /// and the retained selection `DAT_00825C80`.
     pub(super) fn open_movie_list(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
-        let list = crate::ui::movies_credits_shell::open_movie_list(
-            state.persistence.options_profile.movie_progress,
-            state.frontend.movie_list_selection,
-        );
+        let rows = active_movie_entries(state.persistence.options_profile.movie_progress);
         state.frontend.shell_route = ShellRoute::MovieList;
-        let layout = Self::movie_list_layout(state);
-        let controller = &mut state.frontend.shell_controller;
-        controller.reset_to(MOVIE_LIST_DIALOG, false);
-        controller.set_scale(layout.page.scale);
-        family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, &list, 0, true);
-        state.frontend.movie_list = Some(list);
+        state.frontend.movie_list = Some(rows);
+        state
+            .frontend
+            .shell_controller
+            .reset_to(MOVIE_LIST_DIALOG, false);
+        Self::movie_list_feed(state);
     }
 
     pub(super) fn movie_list_active(state: &AppState) -> bool {
@@ -86,20 +85,18 @@ impl App {
             && state.frontend.movie_list.is_some()
     }
 
-    fn movie_list_layout(state: &AppState) -> crate::ui::movies_credits_shell::MovieListLayout {
-        crate::app::frontend::shell_layout::movie_list_layout(state)
-    }
-
     /// The page's buttons. The list `0x744` is the dialog's `List` node: a
     /// hover target for status help and its own press handler, never a
     /// button press.
     fn movie_list_feed(state: &mut AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        let layout = Self::movie_list_layout(state);
+        let layout = crate::app::frontend::shell_layout::movie_list_layout(state);
+        let retained = state.frontend.movie_list_selection;
         let controller = &mut state.frontend.shell_controller;
         controller.ensure_active(MOVIE_LIST_DIALOG, false);
         controller.set_scale(layout.page.scale);
-        if let Some(list) = state.frontend.movie_list.as_ref() {
-            family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list, 0, true);
+        if let Some(rows) = state.frontend.movie_list.as_ref() {
+            let list = (rows.len(), retained_movie_row(rows, retained), 0);
+            family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list, true);
         }
         Self::menu_page_button_feed(&layout.page)
     }
@@ -127,52 +124,45 @@ impl App {
         next
     }
 
-    /// The row a family list press selected (0x0061A948), if any. The
-    /// scrollbar child (0x0061C690) captures its own presses and reports
-    /// none; the second press of a double-click selects nothing.
-    pub(super) fn family_list_selected_row(state: &mut AppState) -> Option<usize> {
-        state
-            .frontend
-            .shell_controller
-            .drain_events()
-            .into_iter()
-            .find_map(|event| match event {
-                vera20k_gui::UiEvent::ListSelected { row, .. } => Some(row as usize),
-                _ => None,
-            })
+    /// A family page's press: a fed button's GUIMainButtonSound, then the
+    /// list's (0x0061A948). A single press selects the row under it (presses
+    /// below the last row are ignored) and plays GenericClick; the scrollbar
+    /// child (0x0061C690) captures its own presses without a sound, and the
+    /// second press of a double-click selects nothing.
+    pub(super) fn family_page_mouse_down(
+        state: &mut AppState,
+        feed: &[crate::ui::shell::layout::LaidOutControl],
+    ) {
+        let (x, y) = state.match_state.input.cursor_px();
+        let controller = &mut state.frontend.shell_controller;
+        controller.on_pointer_down(x, y, feed);
+        if controller.pressed().is_some() {
+            Self::play_page_cue(state, PageCue::Button);
+        }
+        let controller = &mut state.frontend.shell_controller;
+        let events = controller.drain_events();
+        for event in page::page_events(controller.gui(), events) {
+            if let PageEvent::Cue(cue) = event {
+                Self::play_page_cue(state, cue);
+            }
+        }
     }
 
     pub(super) fn handle_movie_list_mouse_down(state: &mut AppState) {
         let feed = Self::movie_list_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
-        // A single press selects the row under it (presses below the last
-        // row are ignored) and plays GenericClick.
-        if let Some(row) = Self::family_list_selected_row(state)
-            && let Some(list) = state.frontend.movie_list.as_mut()
-        {
-            list.selected = Some(row);
-            Self::play_generic_click_sound(state);
-        }
+        Self::family_page_mouse_down(state, &feed);
     }
 
     pub(super) fn handle_movie_list_mouse_up(state: &mut AppState) {
         let feed = Self::movie_list_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
         use crate::app::frontend::shell_transition::ShellExitThen;
-        let released = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        state.frontend.shell_controller.drain_events();
+        let controller = &mut state.frontend.shell_controller;
+        let released = controller.on_pointer_up(x, y, &feed);
+        controller.drain_events();
         match released {
             Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL) => {
-                let selected = state
-                    .frontend
-                    .movie_list
-                    .as_ref()
-                    .is_some_and(|list| list.selected.is_some());
-                if selected {
+                if family_list_selected(controller, MOVIE_LIST_DIALOG).is_some() {
                     Self::leave_shell_dialog(state, ShellExitThen::PlayMovie);
                 } else {
                     // No selection: the proc stores it and keeps the dialog.
@@ -186,21 +176,18 @@ impl App {
     }
 
     pub(super) fn play_generic_click_sound(state: &mut AppState) {
-        let sound_id = state
-            .rules()
-            .and_then(|rules| rules.general.generic_click_sound.as_deref())
-            .map(str::to_owned);
-        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
+        Self::play_page_cue(state, PageCue::ListClick);
     }
 
     /// Play Movie (`0x0052D960..0x0052D98D`): the current selection is saved
     /// to `DAT_00825C80`; no selection plays nothing and keeps the dialog.
     pub(super) fn play_selected_movie(state: &mut AppState) {
-        let Some(list) = state.frontend.movie_list.as_ref() else {
+        let Some(rows) = state.frontend.movie_list.as_ref() else {
             return;
         };
-        state.frontend.movie_list_selection = list.selected.map_or(-1, |row| row as i32);
-        let Some(entry) = list.selected.and_then(|row| list.rows.get(row).copied()) else {
+        let selected = family_list_selected(&state.frontend.shell_controller, MOVIE_LIST_DIALOG);
+        state.frontend.movie_list_selection = selected.map_or(-1, |row| row as i32);
+        let Some(entry) = selected.and_then(|row| rows.get(row).copied()) else {
             return;
         };
         // State 0xE's CD check (0x004790E0 with entry.cd) passes for a

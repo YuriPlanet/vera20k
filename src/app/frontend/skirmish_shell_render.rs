@@ -2139,10 +2139,8 @@ mod lan_lobby;
 mod wol_buddy;
 mod wol_lobby;
 mod wol_login;
-mod wol_my_info;
 mod wol_options;
 mod wol_page;
-mod wol_persona;
 mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
@@ -2153,13 +2151,11 @@ pub(crate) use wol_lobby::{
 pub(crate) use wol_login::{
     paint_wol_account_form, paint_wol_login_children, wol_button_label_rgb,
 };
-pub(crate) use wol_my_info::paint_wol_my_info_children;
 pub(crate) use wol_options::paint_wol_options_children;
 pub(crate) use wol_page::{
     in_match_page_draw, paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received,
     paint_wol_verify,
 };
-pub(crate) use wol_persona::{paint_wol_auto_login_children, paint_wol_locale_children};
 pub(crate) use wol_quick_match::paint_wol_quick_match_children;
 mod coop_score;
 mod multiplayer_setup;

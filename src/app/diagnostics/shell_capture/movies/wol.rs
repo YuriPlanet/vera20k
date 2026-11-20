@@ -3069,9 +3069,10 @@ impl WolCapture {
                 if rendered == PresentedShell::WolOptions
                     && Self::page_settled(state, ShellSlideKind::WolOptions) =>
             {
-                let checked = Self::options_page(state)?.ui.checked;
+                let checked = crate::app::shell_wol::options::shown(state)
+                    .map(|(preferences, _)| preferences.checks());
                 ensure!(
-                    checked == [false, true, true, true, true, true, true, true, false],
+                    checked == Some([false, true, true, true, true, true, true, true, false]),
                     "the reopened 0x2BC does not show the saved values: {checked:?}"
                 );
                 self.event(frame, json!({"0x2BC reopened": checked}));
@@ -4839,20 +4840,23 @@ impl WolCapture {
 
     /// `0x2BC` shown and settled over the hidden lobby.
     fn options_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::options::shown;
         use crate::ui::wol_options::{
-            BUDDIES, CANCEL, CHECKBOXES, MUSIC, OK, PAGES, SOUND_OPTIONS, WolOptionsState,
+            BUDDIES, CANCEL, CHECKBOXES, MUSIC, OK, PAGES, SOUND_OPTIONS,
         };
         let live = state.frontend.wol_preferences;
-        let page = Self::options_page(state)?;
+        let checks = shown(state).map(|(preferences, _)| preferences.checks());
         ensure!(
-            page.ui.checked == WolOptionsState::open(&live, Default::default()).checked
-                && page.sound.is_none(),
+            checks == Some(live.checks()) && Self::options_page(state)?.sound.is_none(),
             "0x2BC init does not show the live values"
         );
         ensure!(!Self::lobby(state)?.shown, "0x113 must hide under 0x2BC");
-        self.event(frame, json!({"0x2BC settled": page.ui.checked}));
+        self.event(frame, json!({"0x2BC settled": checks}));
         let checked = |state: &AppState, id| {
-            Self::options_page(state).is_ok_and(|page| page.ui.is_checked(id))
+            let index = CHECKBOXES.iter().position(|checkbox| checkbox.id == id);
+            shown(state)
+                .zip(index)
+                .is_some_and(|((preferences, _), index)| preferences.checks()[index])
         };
         match self.target {
             WolTarget::OptionsSteady => {
@@ -4963,12 +4967,11 @@ impl WolCapture {
             state,
             crate::ui::skirmish_shell::checkbox_icon_rect(row, layout.page.scale),
         );
-        let ui = &Self::options_page(state)?.ui;
+        let translate = crate::app::shell_wol::options::shown(state).map(|(_, chat)| chat);
         ensure!(
-            ui.translate == translated_lobby_only()
+            translate == Some(translated_lobby_only())
                 && crate::app::shell_wol::options::translate_popup(state).is_none(),
-            "the clicks did not pick the settings: {:?}",
-            ui.translate
+            "the clicks did not pick the settings: {translate:?}"
         );
         options_button(state, OK)?;
         ensure!(
@@ -5003,7 +5006,8 @@ impl WolCapture {
     fn translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let layout = crate::app::shell_wol::options::layout(state);
         ensure!(
-            Self::options_page(state)?.ui.translate == translated_lobby_only(),
+            crate::app::shell_wol::options::shown(state).map(|(_, chat)| chat)
+                == Some(translated_lobby_only()),
             "the reopened page does not show the saved settings"
         );
         self.event(frame, "reopened with the saved settings");
@@ -5125,19 +5129,13 @@ impl WolCapture {
     /// `0xD6` shown and settled over the hidden `0x2BC`.
     fn sound_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let positions = crate::app::input::sound::volume_positions(state);
-        let dialog = Self::options_page(state)?
-            .sound
-            .as_ref()
-            .context("0xD6 state")?;
-        ensure!(dialog.positions == positions, "0xD6 init positions differ");
+        let shown = crate::app::shell_wol::options::sound_positions(state);
+        ensure!(shown == Some(positions), "0xD6 init positions differ");
         // A press on the music rail near its left end jumps once.
         let rail = crate::app::shell_wol::options::sound_layout(state).sliders[0];
         welcome_click(state, RectPx::new(rail.x + 8, rail.y, 4, rail.h));
-        let moved = Self::options_page(state)?
-            .sound
-            .as_ref()
-            .context("0xD6 state")?
-            .positions;
+        let moved =
+            crate::app::shell_wol::options::sound_positions(state).context("0xD6 state")?;
         ensure!(
             moved[0] < positions[0] && moved[1..] == positions[1..],
             "the music rail press did not move it: {positions:?} -> {moved:?}"
@@ -5229,7 +5227,8 @@ impl WolCapture {
                 else {
                     bail!("0xFE is not open");
                 };
-                let geometry = crate::app::shell_wol::persona::list_geometry(&layout, page);
+                let (geometry, _) =
+                    crate::app::shell_wol::persona::list_view(state).context("0xFE list")?;
                 let locale = page.rows.get(2).context("0xFE rows")?.locale;
                 welcome_click(state, geometry.row(2));
                 welcome_click(state, layout.page.button_rect(ACCEPT).context("0xFE OK")?);
@@ -6367,33 +6366,23 @@ impl WolCapture {
         control: u16,
         matches: impl Fn(&crate::ui::wol_my_info::MyInfoRow) -> bool,
     ) -> Result<usize> {
-        let layout = crate::app::shell_wol::my_info::layout(state);
-        let face = layout.face(control).context("combo face")?;
+        use crate::app::shell_wol::my_info;
+        let layout = my_info::layout(state);
+        let face = layout.rect_of(control).context("combo face")?;
         let arrow = crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale);
         welcome_click(state, arrow);
-        let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
-        ensure!(
-            page.popup.control == Some(control),
-            "the drop list did not open"
-        );
+        let page = my_info::page(state).context("0x114")?;
         let row = page
             .combo(control)
             .and_then(|combo| combo.rows.iter().position(&matches))
             .context("no matching row")?;
-        let visible = page
-            .popup_geometry(&layout)
-            .context("drop list")?
-            .visible_rows;
-        // A row below the first page: scroll there first, as the bar would.
-        if row >= visible
-            && let crate::app::shell_wol::WolPage::MyInformation(page) =
-                &mut state.frontend.wol.as_mut().context("WOL visit")?.page
-        {
-            page.popup.top_index = row + 1 - visible;
+        let popup = my_info::drop_down(state, control).context("the drop list did not open")?.popup;
+        // A row below the first page: step the bar's down arrow there.
+        for _ in 0..(row + 1).saturating_sub(popup.visible_rows) {
+            let bar = popup.scrollbar().context("drop list scrollbar")?;
+            welcome_click(state, RectPx::new(bar.x, bar.y + bar.h - 3, bar.w, 2));
         }
-        let popup = crate::app::shell_wol::my_info::page(state)
-            .and_then(|page| page.popup_geometry(&layout))
-            .context("drop list")?;
+        let popup = my_info::drop_down(state, control).context("drop list")?.popup;
         let rect = popup.row_rect(row).context("row rect")?;
         welcome_click(state, rect);
         Ok(row)
@@ -6486,10 +6475,17 @@ impl WolCapture {
             .iter()
             .position(|row| row.name == name)
             .context("no buddy row")?;
-        let rect = ui
-            .list
-            .geometry(layout.list, ui.rows.len(), layout.page.scale)
-            .row(row - ui.list.top_index);
+        let gui = state.frontend.shell_controller.gui();
+        let top = state
+            .frontend
+            .shell_controller
+            .root_in(crate::ui::wol_buddy::DIALOG)
+            .and_then(|root| gui.find_id(root, crate::ui::wol_buddy::LIST.into()))
+            .and_then(|list| gui.list_view(list))
+            .map_or(0, |view| view.top);
+        let metrics = crate::ui::shell::list::ListMetrics::scaled(layout.page.scale);
+        let rect = crate::ui::shell::list::ShellListGeometry::new(layout.list, ui.rows.len(), top, metrics)
+            .row(row - top);
         welcome_click(state, rect);
         ensure!(
             state.frontend.wol_buddies.selected == name,

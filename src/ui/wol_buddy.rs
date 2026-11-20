@@ -8,13 +8,17 @@
 //! mirror, the ladder table and the runner belong to the app's WOL owners,
 //! which run each returned [`WolBuddyAction`].
 
-use crate::ui::lan_shell::{LanEditKey, LanListState};
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
+
+use crate::render::shell_text::ShellAlign;
+use crate::ui::lan_shell::LanEditKey;
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
 };
 use crate::ui::shell::layout::status_line_rect;
+use crate::ui::shell::page;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 use crate::ui::wol_lobby::{AdmissionContext, LOBBY_PREFIX, WolChannel, WolLobbyRow, admit};
@@ -402,8 +406,8 @@ impl WolAddBuddy {
 #[derive(Debug, Clone)]
 pub(crate) struct WolBuddyPage {
     pub(crate) rows: Vec<WolBuddyRow>,
-    pub(crate) list: LanListState,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
+    /// The list's selection; its scroll is the list widget's.
+    pub(crate) selected: Option<usize>,
     disabled: Vec<u16>,
     /// `[0xAC10C8]`'s view; the multiplayer preference owner keeps it.
     pub(crate) observer: bool,
@@ -419,8 +423,7 @@ impl WolBuddyPage {
     pub(crate) fn new(observer: bool) -> Self {
         Self {
             rows: Vec::new(),
-            list: LanListState::default(),
-            buttons: ShellButtonInteraction::default(),
+            selected: None,
             disabled: vec![JOIN, PAGE_BUTTON, REMOVE],
             observer,
             texts: None,
@@ -436,18 +439,27 @@ impl WolBuddyPage {
         self.disabled.retain(|known| *known != control);
         if !enabled {
             self.disabled.push(control);
-            if self.buttons.pressed == Some(control) {
-                self.buttons.pressed = None;
-            }
         }
     }
 
-    pub(crate) fn cancel_pointer(&mut self) {
-        self.buttons = ShellButtonInteraction::default();
-        self.list.scroll.cancel();
-        self.list.last_press = None;
-        if let Some(add) = self.add.as_mut() {
-            add.buttons = ShellButtonInteraction::default();
+    /// Shows the page in its widgets: the list's rows and selection, the
+    /// enables, the observer boxes and the heading and statistics (the
+    /// template's `GUI:UnknownStats`, `unknown`, until the first fill).
+    pub(crate) fn present(&self, gui: &mut Gui, root: NodeId, unknown: &str) {
+        let mut set = |id: u16, prop: Prop, value: Value| page::set(gui, root, id, prop, value);
+        set(LIST, Prop::RowCount, Value::Int(self.rows.len() as i32));
+        set(LIST, Prop::Selected, Value::Int(self.selected.map_or(-1, |row| row as i32)));
+        for id in [JOIN, PAGE_BUTTON, REMOVE, REFRESH] {
+            set(id, Prop::Enabled, Value::Bool(self.enabled(id)));
+        }
+        set(OBSERVER_TOGGLE, Prop::Checked, Value::Bool(self.observer));
+        for id in std::iter::once(HEADING).chain(STATS) {
+            let text = match &self.texts {
+                Some(texts) => texts.iter().find(|(control, _)| *control == id).map(|(_, text)| text.as_str()),
+                None if id == HEADING => None,
+                None => Some(unknown),
+            };
+            set(id, Prop::Text, Value::Text(text.unwrap_or_default().to_owned()));
         }
     }
 
@@ -466,14 +478,13 @@ impl WolBuddyPage {
                 None => self.rows.push(row),
             }
         }
-        self.list.selected = (!selected.is_empty())
+        self.selected = (!selected.is_empty())
             .then(|| {
                 self.rows
                     .iter()
                     .position(|row| row.name.eq_ignore_ascii_case(selected))
             })
             .flatten();
-        self.list.hot_row = None;
     }
 
     /// The enables `0x0079AF10` and LBN_SELCHANGE end with.
@@ -484,8 +495,7 @@ impl WolBuddyPage {
     }
 
     pub(crate) fn selected_name(&self) -> Option<&str> {
-        self.list
-            .selected
+        self.selected
             .and_then(|row| self.rows.get(row))
             .map(|row| row.name.as_str())
     }
@@ -493,7 +503,7 @@ impl WolBuddyPage {
     /// A press on a row (`LBN_SELCHANGE`).
     pub(crate) fn select(&mut self, row: usize) -> Option<WolBuddyAction> {
         let name = self.rows.get(row)?.name.clone();
-        self.list.selected = Some(row);
+        self.selected = Some(row);
         Some(WolBuddyAction::Select(name))
     }
 
@@ -515,7 +525,7 @@ impl WolBuddyPage {
         if let Some(index) = self.rows.iter().position(|row| row.name == name) {
             self.rows.remove(index);
         }
-        self.list.selected = None;
+        self.selected = None;
     }
 
     /// A released button or picture.
@@ -610,22 +620,57 @@ impl WolBuddyLayout {
         }
     }
 
-    /// The child under `(x, y)`: buttons first, then the template's other
-    /// children with input or help.
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
-            return Some(button.id);
+    /// Where control `id` sits.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        if let Some(index) = STATS.iter().position(|stat| *stat == id) {
+            return Some(self.stats[index]);
         }
-        [
-            (REFRESH, self.refresh),
-            (OBSERVER_TOGGLE, self.observer_toggle),
-            (OBSERVER_IMAGE, self.observer_image),
-            (LIST, self.list),
-        ]
-        .into_iter()
-        .chain(STATS.iter().copied().zip(self.stats))
-        .find_map(|(id, rect)| rect.contains(x, y).then_some(id))
+        match id {
+            LIST => Some(self.list),
+            REFRESH => Some(self.refresh),
+            OBSERVER_TOGGLE => Some(self.observer_toggle),
+            HEADING => Some(self.heading),
+            id if id >= LABEL_IDS => self.labels.get(usize::from(id - LABEL_IDS)).copied(),
+            id => self.page.button_rect(id),
+        }
     }
+}
+
+/// The captions' ids in [`LABELS`] order (statics without ids).
+const LABEL_IDS: u16 = 0xFF00;
+
+/// `0x116`'s widgets: the column's buttons, Refresh (its picture is the
+/// page's to paint), the list (its rows too), the observer box (toggled on
+/// its icon's press), the captions (the column headers left-aligned, the
+/// statistics' labels SS_RIGHT), the heading and the statistics with their
+/// status help. The observer image `0x75F` has no help and takes its press
+/// beside the widgets.
+pub(crate) fn spec() -> NodeSpec {
+    let align = |a: ShellAlign| Value::Int(i32::from(a.0));
+    let help = |kind: NodeKind, id: u16| {
+        let node = NodeSpec::new(kind).id(id.into());
+        match tooltip_key(id) {
+            Some(key) => node.tooltip(key),
+            None => node,
+        }
+    };
+    let labels = LABELS.iter().enumerate().map(|(index, (key, _))| {
+        let a = if index < 2 { ShellAlign::NONE } else { ShellAlign::H_RIGHT };
+        NodeSpec::new(NodeKind::Text).id(i32::from(LABEL_IDS) + index as i32).label(key).with(Prop::Align, align(a))
+    });
+    let observer = help(NodeKind::Checkbox, OBSERVER_TOGGLE).with(Prop::ActivateOnPress, Value::Bool(true));
+    NodeSpec::new(NodeKind::Dialog)
+        .children(page::menu_buttons(&PAGE))
+        .child(help(NodeKind::Button, REFRESH))
+        .child(observer)
+        .child(
+            help(NodeKind::List, LIST)
+                .with(Prop::RowCount, Value::Int(0))
+                .with(Prop::ListWindow, Value::Bool(true)),
+        )
+        .children(labels)
+        .child(help(NodeKind::Text, HEADING).with(Prop::Align, align(ShellAlign::H_CENTER)))
+        .children(STATS.map(|id| help(NodeKind::Text, id).with(Prop::Align, align(ShellAlign::NONE))))
 }
 
 #[cfg(all(test, tests_ui))]
@@ -821,12 +866,12 @@ mod tests {
         assert!(!page.enabled(JOIN) && !page.enabled(REMOVE) && page.enabled(ADD));
         let row = |name: &str, status| buddy_row(name, status, None, &[], &texts);
         page.update_rows(vec![row("A", None), row("B", None)], "b");
-        assert_eq!(page.list.selected, Some(1));
+        assert_eq!(page.selected, Some(1));
         page.update_rows(vec![row("B", Some(2)), row("C", Some(3))], "");
         let names: Vec<_> = page.rows.iter().map(|row| row.name.as_str()).collect();
         assert_eq!(names, ["A", "B", "C"]);
         assert_eq!(page.rows[1].status, "offline");
-        assert_eq!(page.list.selected, None);
+        assert_eq!(page.selected, None);
         assert_eq!(page.select(2), Some(WolBuddyAction::Select("C".into())));
         page.set_enables(true, false, true);
         assert_eq!(

@@ -5,8 +5,13 @@
 //! help `0x695`, three stacked owner-draw buttons at DLU tops 122/149/176 and a
 //! Back button on the final right-panel tile. Only the control identities,
 //! labels and dialog-proc results differ, so each page is a `MenuPageSpec`
-//! table over this one layout.
+//! table over this one layout. The buttons live as `vera20k-gui` nodes under
+//! the page's dialog ([`sync_nodes`]), which own their press, hover and
+//! enable state.
 
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use super::controller::DialogController;
 use super::descriptor::{DialogId, HEADING_ANCHOR, MONITOR_ANCHOR};
 use super::geom::{
     RectPx, RightPanelRects, SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW, SHELL_BASE_H, SHELL_BASE_W,
@@ -62,6 +67,66 @@ impl MenuPageSpec {
     pub fn button(&self, id: u16) -> Option<&MenuPageButtonSpec> {
         self.buttons().find(|button| button.id == id)
     }
+
+    /// The page's buttons as nodes: resource id, caption and status help.
+    pub fn nodes(&self) -> NodeSpec {
+        NodeSpec::new(NodeKind::Dialog).children(self.buttons().map(|b| {
+            NodeSpec::new(NodeKind::Button)
+                .id(i32::from(b.id))
+                .label(b.csf_key)
+                .tooltip(b.tooltip_key)
+        }))
+    }
+}
+
+/// A control the pointer hovers for its status help while its own state
+/// machine takes the press (`0x94`'s emblems and slider): a disabled button.
+pub fn hover_target(id: u16, help_key: &str) -> NodeSpec {
+    NodeSpec::new(NodeKind::Button)
+        .id(i32::from(id))
+        .tooltip(help_key)
+        .with(Prop::Enabled, Value::Bool(false))
+}
+
+/// Builds `nodes` once under `dialog`'s live instance and keeps them on
+/// `rect_of` (a control without a rect is hidden), with each listed control's
+/// runtime enable state (a disabled control still hovers).
+pub fn sync_nodes(
+    controller: &mut DialogController,
+    dialog: DialogId,
+    nodes: impl FnOnce() -> NodeSpec,
+    rect_of: impl Fn(u16) -> Option<RectPx>,
+    enabled: &[(u16, bool)],
+) {
+    let Some(root) = controller.root_in(dialog) else {
+        return;
+    };
+    let gui = controller.gui_mut();
+    super::page::ensure_built(gui, root, nodes);
+    super::page::sync_rects(gui, root, rect_of);
+    for &(id, on) in enabled {
+        super::page::set(gui, root, id, Prop::Enabled, Value::Bool(on));
+    }
+}
+
+/// The control `dialog`'s live instance holds captured.
+pub fn pressed_id(controller: &DialogController, dialog: DialogId) -> Option<u16> {
+    node_id(controller, controller.pressed_node_in(dialog))
+}
+
+/// The control under the pointer in `dialog`'s live instance.
+pub fn hovered_id(controller: &DialogController, dialog: DialogId) -> Option<u16> {
+    node_id(controller, controller.hovered_node_in(dialog))
+}
+
+fn node_id(controller: &DialogController, node: Option<vera20k_gui::NodeId>) -> Option<u16> {
+    u16::try_from(controller.gui().id_of(node?)?).ok()
+}
+
+/// The status help of the control under the pointer in `dialog`'s live
+/// instance (enable-unfiltered).
+pub fn hovered_help(controller: &DialogController, dialog: DialogId) -> Option<String> {
+    super::page::hovered_help(controller.gui(), controller.hovered_node_in(dialog))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

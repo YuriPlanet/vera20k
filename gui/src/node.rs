@@ -128,6 +128,13 @@ pub enum Prop {
     HitRect,
     Color,
     Font,
+    /// List: `Rect` is the list's whole paint surface (no list-box grow);
+    /// rows hit inside its frame, and a second press counts as a double-click
+    /// only on a row (the WOL pages' owner-draw lists).
+    ListWindow,
+    /// Combo: each row's colour swatch for the host to paint in place of its
+    /// text (a palette index in decimal; empty for a text row).
+    Swatches,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -165,9 +172,10 @@ impl Prop {
             | Prop::ShowValue
             | Prop::DoubleClick
             | Prop::OpenAnywhere
+            | Prop::ListWindow
             | Prop::Password
             | Prop::ByteOnly => ValueType::Bool,
-            Prop::Items => ValueType::Items,
+            Prop::Items | Prop::Swatches => ValueType::Items,
             Prop::Text
             | Prop::Label
             | Prop::Picture
@@ -204,8 +212,8 @@ impl Prop {
         match self {
             Prop::Command | Prop::Toggled => kind == NodeKind::Button,
             Prop::Checked | Prop::ActivateOnPress => kind == NodeKind::Checkbox,
-            Prop::DoubleClick => kind == NodeKind::List,
-            Prop::OpenAnywhere | Prop::PopupBottom => kind == NodeKind::Combo,
+            Prop::DoubleClick | Prop::ListWindow => kind == NodeKind::List,
+            Prop::OpenAnywhere | Prop::PopupBottom | Prop::Swatches => kind == NodeKind::Combo,
             Prop::Min | Prop::Max | Prop::Step => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
             _ => true,
         }

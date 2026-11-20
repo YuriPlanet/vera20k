@@ -4,14 +4,15 @@
 //! [`super::persona`].
 
 use crate::util::time::Instant;
+use vera20k_gui::NodeId;
 
 use super::WolPage;
+use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
 use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
 use crate::app::persistence::wol_profile::WolPersona;
 use crate::app::{App, AppState};
-use crate::ui::main_menu_dialogs::options::LauncherCue;
-use crate::ui::shell::combobox::ComboPress;
+use crate::ui::shell::page::PageEvent;
 use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
 use crate::ui::wol_my_info::*;
 
@@ -118,6 +119,7 @@ pub(super) fn open(state: &mut AppState) {
     open_art(state);
     let _ = App::ensure_skirmish_shell_chrome(state);
     state.frontend.shell_controller.reset_to(DIALOG, false);
+    present(state);
     state.platform.window.request_redraw();
 }
 
@@ -140,6 +142,7 @@ pub(super) fn locale_count(state: &mut AppState, count: i32) {
             .collect();
         combo.selected = combo.rows.iter().position(|row| row.data == persona.locale);
     }
+    present(state);
     state.platform.window.request_redraw();
 }
 
@@ -190,8 +193,32 @@ pub(crate) fn layout(state: &AppState) -> WolMyInfoLayout {
 }
 
 /// The status help under the pointer (`0x006040B0`).
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    page(state)?.hovered.and_then(tooltip_key)
+pub(crate) fn status_key(state: &AppState) -> Option<&str> {
+    leaf::status_key(state, DIALOG)
+}
+
+/// Builds and places `0x114`'s widgets; the root.
+pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    let layout = layout(state);
+    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| layout.rect_of(id))
+}
+
+/// Combo `control`'s open drop list.
+pub(crate) fn drop_down(state: &AppState, control: u16) -> Option<vera20k_gui::ComboDropDown> {
+    let gui = state.frontend.shell_controller.gui();
+    gui.combo_drop_down(gui.find_id(leaf::root(state, DIALOG)?, control.into())?)
+}
+
+/// Shows the page in its widgets.
+fn present(state: &mut AppState) {
+    let unknown = service::resolve(state, UNKNOWN_STATS_KEY);
+    let Some(root) = sync(state) else {
+        return;
+    };
+    let frontend = &mut state.frontend;
+    if let Some(WolPage::MyInformation(page)) = frontend.wol.as_ref().map(|visit| &visit.page) {
+        page.present(frontend.shell_controller.gui_mut(), root, &unknown);
+    }
 }
 
 /// Run one control's persona write or account change at once.
@@ -317,112 +344,33 @@ pub(crate) fn commit_close(state: &mut AppState, control: u16) {
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let Some(page) = page_mut(state) else {
-        return;
-    };
-    page.hovered = over;
-    page.buttons.hovered = over.filter(|id| PAGE.button(*id).is_some());
-    if let Some(popup) = page.popup_geometry(&layout) {
-        page.popup.pointer_moved(popup, x, y);
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    sync(state);
+    leaf::pointer(state, Pointer::Move);
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let scale = layout.page.scale;
-    let Some(page) = page_mut(state) else {
+    if sync(state).is_none() {
         return;
-    };
-    let mut action = None;
-    let mut cue = None;
-    let mut button_sound = false;
-    if !pressed {
-        page.popup.cancel_pointer();
-        let button = over.filter(|id| PAGE.button(*id).is_some());
-        if let Some(control) = page.buttons.release(button) {
-            action = page.activate(control);
-        }
-    } else if let Some(popup) = page.popup_geometry(&layout) {
-        let open = page.popup.control;
-        let press = page.popup.press_list(popup, x, y, Instant::now());
-        if let (ComboPress::Pick(row), Some(control)) = (press, open) {
-            action = page.select(control, row);
-        }
-        cue = press.cue().map(LauncherCue::from);
-    } else {
-        match over {
-            Some(control) if PAGE.button(control).is_some() => {
-                if page.enabled(control) {
-                    page.buttons.press(Some(control));
-                    button_sound = true;
-                }
-            }
-            Some(control) if COMBOS.contains(&control) => {
-                if page.enabled(control)
-                    && let Some(face) = layout.face(control)
-                {
-                    let selected = page.combo(control).and_then(|combo| combo.selected);
-                    let press = page.popup.press_face(control, face, scale, selected, x, y);
-                    cue = press.cue().map(LauncherCue::from);
-                }
-            }
-            Some(control @ (AUTO_LOGIN | MATCH_SAME_RES)) => {
-                let rect = if control == AUTO_LOGIN {
-                    layout.auto_login
-                } else {
-                    layout.match_same_res
-                };
-                // OwnerDraw_CheckBox 0x006163A0 admits only its icon.
-                if page.enabled(control)
-                    && crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)
-                {
-                    action = page.toggle(control);
-                    cue = Some(LauncherCue::Checkbox);
-                }
-            }
-            _ => page.buttons.press(None),
+    }
+    for event in leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up }) {
+        let Some(page) = page_mut(state) else {
+            return;
+        };
+        // CBN_SELCHANGE, a box's BS_AUTOCHECKBOX flip, a released button.
+        let action = match event {
+            PageEvent::Picked(id, row) => usize::try_from(row).ok().and_then(|row| page.select(id, row)),
+            PageEvent::Toggled(id, _) => page.toggle(id),
+            PageEvent::Activated(id) => page.activate(id),
+            _ => None,
+        };
+        if let Some(action) = action {
+            apply(state, action);
         }
     }
-    if button_sound {
-        App::play_main_menu_button_sound(state);
-    }
-    if let Some(cue) = cue {
-        App::play_launcher_options_cue(state, cue);
-    }
-    if let Some(action) = action {
-        apply(state, action);
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    present(state);
 }
 
 /// The drop list's scrollbar repeats.
 pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    // Every pass polls: build the layout only while the page is open.
-    if !page_open(state) {
-        return None;
-    }
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let page = page_mut(state)?;
-    let popup = page.popup_geometry(&layout)?;
-    let moved = page.popup.scroll.poll(
-        popup.scroll_geometry(),
-        &mut page.popup.top_index,
-        x,
-        y,
-        Instant::now(),
-    );
-    let repeat = page.popup.scroll.repeat_at();
-    if moved {
-        state.platform.window.request_redraw();
-    }
-    repeat
+    leaf::poll(state, page_open(state))
 }

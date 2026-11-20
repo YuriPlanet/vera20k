@@ -11,22 +11,23 @@ use super::{WolPage, apply_wol_preferences};
 use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
 use crate::app::{App, AppState};
 use crate::ui::chat_translation::ChatTranslation;
-use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::combobox::ComboPopup;
-use crate::ui::shell::sound::{
-    SHELL_SOUND_PAGE, ShellSoundInput, ShellSoundLayout, ShellSoundState,
-};
+use crate::ui::shell::page::{self, PageCue, PageEvent};
+use crate::ui::shell::sound::{self, SHELL_SOUND_PAGE, ShellSoundLayout};
 use crate::ui::wol_options::{
-    DIALOG, TRANSLATE, TRANSLATE_OFF_KEY, WolOptionsAction, WolOptionsInput, WolOptionsLayout,
-    WolOptionsState, WolPreferences,
+    self, DIALOG, TRANSLATE, TRANSLATE_OFF_KEY, WolOptionsAction, WolOptionsLayout, WolPreferences,
 };
-use vera20k_gui::{Prop, Value};
+use vera20k_gui::{Gui, NodeId};
 
-/// The open `0x2BC`, and `0xD6` while it runs over the hidden `0x2BC`.
+/// The open `0x2BC`, and `0xD6` while it runs over the hidden `0x2BC`. Their
+/// widgets hold what they show; these are what each builds from.
 #[derive(Debug, Clone)]
 pub(crate) struct WolOptionsPage {
-    pub(crate) ui: WolOptionsState,
-    pub(crate) sound: Option<ShellSoundState>,
+    /// What `0x2BC` shows when built: the live values (init `0x497`), or
+    /// what it showed when it hid for Sound Options.
+    pub(crate) shown: (WolPreferences, ChatTranslation),
+    /// `0xD6`'s slider positions and whether they take a press.
+    pub(crate) sound: Option<([u8; 3], bool)>,
 }
 
 pub(crate) fn layout(state: &AppState) -> WolOptionsLayout {
@@ -106,8 +107,8 @@ fn page_mut(state: &mut AppState) -> Option<&mut WolOptionsPage> {
 /// `0x113` has slid out (`0x006071E0`) over the empty backdrop: the art,
 /// then `UI__BeginDialog(0x2BC)` and its init `0x497`.
 pub(crate) fn commit_open(state: &mut AppState) {
-    let ui = WolOptionsState::open(
-        &state.frontend.wol_preferences,
+    let shown = (
+        state.frontend.wol_preferences,
         state.persistence.options_profile.chat_translation,
     );
     let Some(visit) = state.frontend.wol.as_mut() else {
@@ -117,7 +118,7 @@ pub(crate) fn commit_open(state: &mut AppState) {
         lobby.shown = false;
         lobby.ui.buttons = Default::default();
     }
-    visit.page = WolPage::Options(Box::new(WolOptionsPage { ui, sound: None }));
+    visit.page = WolPage::Options(Box::new(WolOptionsPage { shown, sound: None }));
     open_art(state);
     state.frontend.shell_controller.reset_to(DIALOG, false);
     sync_gui(state);
@@ -180,7 +181,7 @@ pub(crate) fn commit_open_sound(state: &mut AppState) {
         return;
     };
     // GameActive 0 skips the track list init (0x006B6485).
-    page.sound = Some(ShellSoundState::new(positions, sliders_enabled));
+    page.sound = Some((positions, sliders_enabled));
     open_sound_art(state);
     state
         .frontend
@@ -212,6 +213,12 @@ fn dispatch(state: &mut AppState, action: WolOptionsAction) {
             App::leave_shell_dialog(state, ShellExitThen::WolOptionsClose(None))
         }
         WolOptionsAction::SoundOptions => {
+            // 0x2BC only hides under 0xD6: it shows the same states again.
+            if let Some(shown) = shown(state)
+                && let Some(page) = page_mut(state)
+            {
+                page.shown = shown;
+            }
             App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsOpen)
         }
         WolOptionsAction::MusicPreview(checked) => {
@@ -221,8 +228,42 @@ fn dispatch(state: &mut AppState, action: WolOptionsAction) {
     }
 }
 
-/// Puts the shown page's widgets (`0x2BC`'s or `0xD6`'s) under its dialog
-/// and mirrors the current layout and states into them.
+/// The shown page's dialog root, and whether it is `0xD6`'s.
+fn shown_root(state: &AppState) -> Option<(NodeId, bool)> {
+    let WolPage::Options(page) = &state.frontend.wol.as_ref()?.page else {
+        return None;
+    };
+    let dialog = match page.sound {
+        Some(_) => SHELL_SOUND_PAGE.dialog,
+        None => DIALOG,
+    };
+    let controller = &state.frontend.shell_controller;
+    let root = controller.root_in(dialog)?;
+    Some((root, page.sound.is_some())).filter(|_| controller.top_id() == Some(dialog))
+}
+
+/// `read` of the shown page's tree, when that is `0xD6` (`sound`) or `0x2BC`.
+fn read<'a, T>(
+    state: &'a AppState,
+    sound: bool,
+    read: impl FnOnce(&'a Gui, NodeId) -> T,
+) -> Option<T> {
+    let (root, on_sound) = shown_root(state)?;
+    (on_sound == sound).then(|| read(state.frontend.shell_controller.gui(), root))
+}
+
+/// What the shown `0x2BC`'s boxes and list hold.
+pub(crate) fn shown(state: &AppState) -> Option<(WolPreferences, ChatTranslation)> {
+    read(state, false, wol_options::shown)
+}
+
+/// The shown `0xD6`'s slider positions.
+pub(crate) fn sound_positions(state: &AppState) -> Option<[u8; 3]> {
+    read(state, true, sound::shell_sound_positions)
+}
+
+/// Builds the shown page's widgets (`0x2BC`'s or `0xD6`'s) under its dialog
+/// once, and puts them on the current layout.
 pub(crate) fn sync_gui(state: &mut AppState) {
     let options = layout(state);
     let sound = sound_layout(state);
@@ -230,67 +271,66 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         || TRANSLATE_OFF_KEY.to_owned(),
         |csf| csf.text(TRANSLATE_OFF_KEY).into_owned(),
     );
+    let Some((root, _)) = shown_root(state) else {
+        return;
+    };
     let frontend = &mut state.frontend;
-    let Some(WolPage::Options(page)) = frontend.wol.as_mut().map(|visit| &mut visit.page) else {
+    let Some(WolPage::Options(page)) = frontend.wol.as_ref().map(|visit| &visit.page) else {
         return;
     };
     let controller = &mut frontend.shell_controller;
-    let (dialog, scale) = match page.sound {
-        Some(_) => (SHELL_SOUND_PAGE.dialog, sound.page.scale),
-        None => (DIALOG, options.page.scale),
-    };
-    let Some(root) = controller
-        .root_in(dialog)
-        .filter(|_| controller.top_id() == Some(dialog))
-    else {
-        return;
-    };
-    controller.set_scale(scale);
-    let gui = controller.gui_mut();
-    match page.sound.as_mut() {
-        Some(sound_page) => sound_page.sync_gui(gui, root, &sound),
-        None => page.ui.sync_gui(gui, root, &options, &off),
+    match page.sound {
+        Some((positions, enabled)) => {
+            controller.set_scale(sound.page.scale);
+            let gui = controller.gui_mut();
+            page::ensure_built(gui, root, || sound::shell_sound_spec(positions, enabled));
+            page::sync_rects(gui, root, |id| sound.rect(id));
+        }
+        None => {
+            controller.set_scale(options.page.scale);
+            let gui = controller.gui_mut();
+            page::ensure_built(gui, root, || wol_options::spec(page.shown, &off));
+            page::sync_rects(gui, root, |id| options.rect(id));
+        }
     }
 }
 
-/// The widget events of the last input, in order.
+/// The widget events of the last input, in order: each control's cue, then
+/// what it does. `0x6B6300` on `0xD6`: the sliders apply live and Back
+/// re-applies all three (shared with B8). The rail press plays nothing
+/// (`0x006B6382`/`0x006B63EA`/`0x006B6444`).
 fn handle_events(state: &mut AppState) {
-    for event in state.frontend.shell_controller.drain_events() {
-        let Some(page) = page_mut(state) else {
-            return;
-        };
-        if let Some(sound) = page.sound.as_mut() {
-            // 0x6B6300 on 0xD6: the sliders apply live and Back re-applies
-            // all three (shared with B8).
-            match sound.on_event(&event) {
-                Some(ShellSoundInput::BackPressed) => App::play_main_menu_button_sound(state),
-                Some(ShellSoundInput::Back(positions)) => {
-                    crate::app::input::sound::apply_back_volumes(state, positions);
-                    App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsBack);
+    let raw = state.frontend.shell_controller.drain_events();
+    let Some((root, on_sound)) = shown_root(state) else {
+        return;
+    };
+    for event in page::page_events(state.frontend.shell_controller.gui(), raw) {
+        let gui = state.frontend.shell_controller.gui();
+        match event {
+            PageEvent::Cue(cue) => {
+                App::play_page_cue(state, cue);
+                if matches!(cue, PageCue::ComboOpen | PageCue::ComboClose) {
+                    state.frontend.shell_status_line.repaint();
                 }
-                Some(ShellSoundInput::Volume(id, volume)) => {
+            }
+            PageEvent::Activated(id) if on_sound && id == SHELL_SOUND_PAGE.back.id => {
+                let positions = sound::shell_sound_positions(gui, root);
+                crate::app::input::sound::apply_back_volumes(state, positions);
+                App::leave_shell_dialog(state, ShellExitThen::WolSoundOptionsBack);
+            }
+            _ if on_sound => {
+                if let Some((id, volume)) = sound::shell_sound_volume(&event) {
                     crate::app::input::sound::apply_slider_volume(state, id, volume);
                 }
-                None => {}
             }
-            continue;
-        }
-        match page.ui.on_event(&event) {
-            Some(WolOptionsInput::ButtonPressed) => App::play_main_menu_button_sound(state),
-            Some(WolOptionsInput::Toggled(action)) => {
-                App::play_launcher_options_cue(state, LauncherCue::Checkbox);
-                if let Some(action) = action {
+            PageEvent::Picked(TRANSLATE, _) | PageEvent::Scrolled(TRANSLATE) => {
+                state.frontend.shell_status_line.repaint();
+            }
+            _ => {
+                if let Some(action) = wol_options::action(gui, root, &event) {
                     dispatch(state, action);
                 }
             }
-            Some(WolOptionsInput::List(cue)) => {
-                if let Some(cue) = cue {
-                    App::play_launcher_options_cue(state, LauncherCue::from(cue));
-                }
-                state.frontend.shell_status_line.repaint();
-            }
-            Some(WolOptionsInput::Action(action)) => dispatch(state, action),
-            None => {}
         }
     }
 }
@@ -319,51 +359,31 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
 
 /// Escape closes the open translation list, without a cue.
 pub(super) fn close_list(state: &mut AppState) -> bool {
-    page_mut(state).is_some()
-        && state.frontend.shell_controller.top_id() == Some(DIALOG)
+    read(state, false, |_, _| ()).is_some()
         && state.frontend.shell_controller.gui_mut().close_popup()
 }
 
 /// The open translation list, where it hits.
 pub(crate) fn translate_popup(state: &AppState) -> Option<ComboPopup> {
-    let WolPage::Options(page) = &state.frontend.wol.as_ref()?.page else {
-        return None;
-    };
-    let node = page.ui.node(TRANSLATE)?;
-    let drop_down = state
-        .frontend
-        .shell_controller
-        .gui()
-        .combo_drop_down(node)?;
-    Some(drop_down.popup)
+    read(state, false, |gui, root| {
+        Some(
+            gui.combo_drop_down(gui.find_id(root, TRANSLATE.into())?)?
+                .popup,
+        )
+    })?
 }
 
 /// Whether page button `id` shows pushed: captured and still under the
 /// pointer (612B70).
 pub(crate) fn button_pressed(state: &AppState, id: u16) -> bool {
-    let Some(WolPage::Options(page)) = state.frontend.wol.as_ref().map(|visit| &visit.page) else {
-        return false;
-    };
-    let node = match &page.sound {
-        Some(sound) => sound.back().filter(|_| id == SHELL_SOUND_PAGE.back.id),
-        None => page.ui.node(id),
-    };
-    node.is_some_and(|node| state.frontend.shell_controller.gui().shows_pressed(node))
+    let gui = state.frontend.shell_controller.gui();
+    shown_root(state)
+        .and_then(|(root, _)| gui.find_id(root, id.into()))
+        .is_some_and(|node| gui.shows_pressed(node))
 }
 
 /// The status help under the pointer: the hovered `0x2BC` control's
 /// `0x006040B0` row; `0xD6` has none.
 pub(crate) fn status_key(state: &AppState) -> Option<&str> {
-    let WolPage::Options(page) = &state.frontend.wol.as_ref()?.page else {
-        return None;
-    };
-    let controller = &state.frontend.shell_controller;
-    if page.sound.is_some() || controller.top_id() != Some(DIALOG) {
-        return None;
-    }
-    let gui = controller.gui();
-    match gui.get(gui.hovered()?, Prop::Tooltip).ok().flatten()? {
-        Value::Text(key) => Some(key),
-        _ => None,
-    }
+    read(state, false, |gui, _| page::hovered_key(gui))?
 }

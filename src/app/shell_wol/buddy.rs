@@ -12,12 +12,14 @@
 use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
+use super::leaf::{self, Pointer};
 use super::service;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::lan_shell::LanEditKey;
-use crate::ui::main_menu_dialogs::options::LauncherCue;
+use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::ui::wol_buddy::*;
+use vera20k_gui::NodeId;
 use crate::ui::wol_shell::WolMode;
 use winit::keyboard::KeyCode;
 
@@ -63,8 +65,27 @@ pub(crate) fn layout(state: &AppState) -> WolBuddyLayout {
 
 /// The status help under the pointer (`0x006040B0`). The list's per-row
 /// `0x4E8`/`0x4E9` tooltips are not read, so it answers with its own key.
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    page(state)?.ui.buttons.hovered.and_then(tooltip_key)
+pub(crate) fn status_key(state: &AppState) -> Option<&str> {
+    leaf::status_key(state, DIALOG)
+}
+
+/// Builds and places `0x116`'s widgets; the root.
+pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    let layout = layout(state);
+    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| layout.rect_of(id))
+}
+
+/// Shows the page in its widgets (under `0x115` too).
+fn present(state: &mut AppState) {
+    let unknown = service::resolve(state, UNKNOWN_STATS_KEY);
+    sync(state);
+    let frontend = &mut state.frontend;
+    let Some(root) = frontend.shell_controller.root_in(DIALOG) else {
+        return;
+    };
+    if let Some(WolPage::Buddy(dialog)) = frontend.wol.as_ref().map(|visit| &visit.page) {
+        dialog.ui.present(frontend.shell_controller.gui_mut(), root, &unknown);
+    }
 }
 
 /// `0x0072C060`: BuddyList.shp (800 wide only) through BuddyList.PAL, with
@@ -123,6 +144,7 @@ pub(super) fn open_dialog(state: &mut AppState) {
     open_art(state);
     state.frontend.shell_controller.reset_to(DIALOG, false);
     super::buddies::restart(state);
+    present(state);
     state.platform.window.request_redraw();
 }
 
@@ -289,6 +311,7 @@ pub(super) fn buddies_changed(state: &mut AppState, list_arrived: bool) {
         dialog.refresh_at = None;
         dialog.ui.set_enabled(REFRESH, true);
     }
+    present(state);
     state.platform.window.request_redraw();
 }
 
@@ -345,6 +368,7 @@ fn enables(state: &mut AppState) {
 pub(super) fn stats_changed(state: &mut AppState) {
     if page_open(state) {
         stats(state);
+        present(state);
         state.platform.window.request_redraw();
     }
 }
@@ -410,10 +434,10 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
         WolBuddyAction::Page => super::page::open_received_modal(state),
         WolBuddyAction::OpenAdd => {
             if let Some(dialog) = page_mut(state) {
-                dialog.ui.cancel_pointer();
                 dialog.ui.add = Some(WolAddBuddy::new());
             }
-            state.frontend.shell_controller.reset_to(ADD_DIALOG, false);
+            // 0x115 runs over 0x116, which keeps its list.
+            state.frontend.shell_controller.push(ADD_DIALOG, false);
         }
         WolBuddyAction::Add(name) => {
             close_add(state);
@@ -446,6 +470,7 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
             .multiplayer_shell_runtime
             .set_lan_observer(observer),
     }
+    present(state);
     state.frontend.shell_status_line.repaint();
     state.platform.window.request_redraw();
 }
@@ -455,7 +480,11 @@ fn close_add(state: &mut AppState) {
     if let Some(dialog) = page_mut(state) {
         dialog.ui.add = None;
     }
-    state.frontend.shell_controller.reset_to(DIALOG, false);
+    let controller = &mut state.frontend.shell_controller;
+    if controller.top_id() == Some(ADD_DIALOG) {
+        controller.pop();
+    }
+    controller.ensure_active(DIALOG, false);
 }
 
 /// The `0x115` control under the pointer.
@@ -471,53 +500,31 @@ fn add_control_at(state: &AppState, x: i32, y: i32) -> Option<u16> {
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let add_over = add_control_at(state, x, y);
-    let Some(dialog) = page_mut(state) else {
-        return;
-    };
-    if let Some(add) = dialog.ui.add.as_mut() {
+    if let Some(add) = page_mut(state).and_then(|dialog| dialog.ui.add.as_mut()) {
         add.buttons.hovered = add_over.filter(|id| matches!(*id, ADD | BACK));
         state.platform.window.request_redraw();
         return;
     }
-    let ui = &mut dialog.ui;
-    ui.buttons.hovered = layout.control_at(x, y);
-    let geometry = ui
-        .list
-        .geometry(layout.list, ui.rows.len(), layout.page.scale);
-    ui.list.hot_row = geometry.row_at(ui.rows.len(), ui.list.top_index, x, y);
-    ui.list
-        .scroll
-        .pointer_moved(geometry, &mut ui.list.top_index, x, y);
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    sync(state);
+    leaf::pointer(state, Pointer::Move);
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     if shell_transition::blocks_shell_input(state) {
         return;
     }
-    let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
-    let scale = layout.page.scale;
     let add_over = add_control_at(state, x, y);
-    let over = layout.control_at(x, y);
-    let Some(dialog) = page_mut(state) else {
-        return;
-    };
-    let mut action = None;
-    let mut cue = None;
-    let mut button_sound = false;
-    let mut doubled = false;
-    if let Some(add) = dialog.ui.add.as_mut() {
+    if let Some(add) = page_mut(state).and_then(|dialog| dialog.ui.add.as_mut()) {
+        let mut action = None;
         if pressed {
             match add_over {
                 Some(ADD) if !add.add_enabled => {}
                 Some(id @ (ADD | BACK)) => {
                     add.buttons.press(Some(id));
-                    button_sound = true;
+                    App::play_main_menu_button_sound(state);
                 }
                 _ => add.buttons.press(None),
             }
@@ -525,74 +532,50 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             let over = add_over.filter(|id| matches!(*id, ADD | BACK));
             action = add.buttons.release(over).and_then(|id| add.activate(id));
         }
-    } else if !pressed {
-        let ui = &mut dialog.ui;
-        ui.list.scroll.cancel();
-        let button = over.filter(|id| PAGE.button(*id).is_some() || *id == REFRESH);
-        if let Some(control) = ui.buttons.release(button) {
-            action = ui.activate(control);
+        if let Some(action) = action {
+            apply(state, action);
         }
-    } else {
-        let ui = &mut dialog.ui;
-        let now = Instant::now();
-        let geometry = ui.list.geometry(layout.list, ui.rows.len(), scale);
-        if let Some(part) = geometry.scroll_part_at(x, y) {
-            ui.list
-                .scroll
-                .press(part, geometry, &mut ui.list.top_index, y, now);
-        } else {
-            match over {
-                Some(LIST) => {
-                    if let Some(row) = geometry.row_at(ui.rows.len(), ui.list.top_index, x, y) {
-                        let double = crate::ui::shell::list::is_double_click(
-                            &mut ui.list.last_press,
-                            now,
-                            x,
-                            y,
-                            crate::ui::shell::saved_file_input::host_double_click_limits(),
-                        );
-                        // LBN_SELCHANGE runs first, then LBN_DBLCLK.
-                        action = ui.select(row);
-                        doubled = double;
-                        cue = Some(LauncherCue::GenericClick);
-                    }
-                }
-                Some(control @ (OBSERVER_IMAGE | OBSERVER_TOGGLE)) => {
-                    let icon_hit = control == OBSERVER_IMAGE
-                        || crate::ui::skirmish_shell::checkbox_icon_rect(
-                            layout.observer_toggle,
-                            scale,
-                        )
-                        .contains(x, y);
-                    if icon_hit {
-                        action = ui.activate(control);
-                        cue = Some(LauncherCue::Checkbox);
-                    }
-                }
-                Some(control) if (PAGE.button(control).is_some() || control == REFRESH) => {
-                    if ui.enabled(control) {
-                        ui.buttons.press(Some(control));
-                        button_sound = true;
-                    }
-                }
-                _ => ui.buttons.press(None),
+        state.platform.window.request_redraw();
+        return;
+    }
+    if sync(state).is_none() {
+        return;
+    }
+    // The observer image 0x75F toggles on a press anywhere on it.
+    let image = pressed && layout(state).observer_image.contains(x, y);
+    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    if image {
+        leaf::play(state, PageCue::Checkbox);
+        if let Some(action) = page_mut(state).and_then(|dialog| dialog.ui.activate(OBSERVER_IMAGE)) {
+            apply(state, action);
+        }
+    }
+    for event in events {
+        let Some(ui) = page_mut(state).map(|dialog| &mut dialog.ui) else {
+            return;
+        };
+        let (action, doubled) = match event {
+            PageEvent::Cue(cue) => {
+                leaf::play(state, cue);
+                continue;
             }
+            // LBN_SELCHANGE runs first, then LBN_DBLCLK.
+            PageEvent::Selected(LIST, row) => (ui.select(row as usize), false),
+            PageEvent::DoubleClicked(LIST, row) => (ui.select(row as usize), true),
+            PageEvent::Toggled(id, _) | PageEvent::Activated(id) => (ui.activate(id), false),
+            _ => continue,
+        };
+        if doubled {
+            leaf::play(state, PageCue::ListClick);
+        }
+        if let Some(action) = action {
+            apply(state, action);
+        }
+        if doubled {
+            double_click(state);
         }
     }
-    if button_sound {
-        App::play_main_menu_button_sound(state);
-    }
-    if let Some(cue) = cue {
-        App::play_launcher_options_cue(state, cue);
-    }
-    if let Some(action) = action {
-        apply(state, action);
-    }
-    if doubled {
-        double_click(state);
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    present(state);
 }
 
 /// `LBN_DBLCLK` (`0x0079EB52`) after the selection.
@@ -669,37 +652,23 @@ fn scroll_add_to_caret(state: &mut AppState) {
 /// hold) and the list's scroll repeats.
 pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     let now = Instant::now();
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
     let dialog = page_mut(state)?;
     let mut tick = false;
     if now >= dialog.timer_at {
         dialog.timer_at = now + TIMER_PERIOD;
         tick = true;
     }
-    let mut redraw = false;
-    if dialog.refresh_at.is_some_and(|at| now >= at) {
+    let reenabled = dialog.refresh_at.is_some_and(|at| now >= at);
+    if reenabled {
         dialog.refresh_at = None;
         dialog.ui.set_enabled(REFRESH, true);
-        redraw = true;
     }
-    let ui = &mut dialog.ui;
-    let geometry = ui
-        .list
-        .geometry(layout.list, ui.rows.len(), layout.page.scale);
-    redraw |= ui
-        .list
-        .scroll
-        .poll(geometry, &mut ui.list.top_index, x, y, now);
-    let deadlines = [
-        Some(dialog.timer_at),
-        dialog.refresh_at,
-        ui.list.scroll.repeat_at(),
-    ];
+    let deadlines = [Some(dialog.timer_at), dialog.refresh_at, leaf::poll(state, true)];
     if tick {
         super::buddies::timer(state, now);
     }
-    if redraw {
+    if reenabled {
+        present(state);
         state.platform.window.request_redraw();
     }
     deadlines.into_iter().flatten().min()

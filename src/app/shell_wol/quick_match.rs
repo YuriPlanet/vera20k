@@ -30,7 +30,10 @@ use super::lobby;
 use super::service::{self, WolServiceRequest};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
-use crate::ui::lan_shell::LanChatLine;
+use super::leaf::{self, Pointer};
+use crate::ui::lan_shell::{LanChatLine, LanListState};
+use crate::ui::shell::page::{self, PageEvent};
+use vera20k_gui::{NodeId, Prop, Value};
 use crate::ui::wol_lobby::{GAME_CHANNEL, MEMBER_OPERATOR, WolChannel};
 use crate::ui::wol_quick_match::*;
 use crate::ui::wol_shell::WolMode;
@@ -118,6 +121,9 @@ struct GameSearch {
 pub(crate) struct QuickMatchDialog {
     pub(crate) ui: WolQuickMatchPage,
     dot_at: Instant,
+    /// The status help of the control last hovered on the page itself: a
+    /// box over it takes the pointer and leaves the help as it was.
+    help: Option<String>,
 }
 
 /// `time()`.
@@ -237,7 +243,8 @@ pub(crate) fn page_open(state: &AppState) -> bool {
 }
 
 /// `0x005E2820` on `0x117`'s `0x53F`: `f` gets the page and the adder,
-/// which wraps a row to the list's width and appends it (`0x005E29A0`).
+/// which wraps a row to the list's width and appends it (`0x005E29A0`),
+/// following the list widget's top.
 fn with_transcript(
     state: &mut AppState,
     f: impl FnOnce(&mut WolQuickMatchPage, &dyn Fn(&mut WolQuickMatchPage, LanChatLine)),
@@ -245,6 +252,10 @@ fn with_transcript(
     let layout = layout(state);
     let scale = layout.page.scale;
     let width = scale.base_rect(layout.transcript).w;
+    let visible = LanListState::default().geometry(layout.transcript, 0, scale).visible_rows;
+    let root = sync(state);
+    let gui = state.frontend.shell_controller.gui_mut();
+    let top = std::cell::Cell::new(root.and_then(|root| page::int(gui, root, TRANSCRIPT, Prop::Top)).unwrap_or(0) as usize);
     let font = &state.renderer.bit_font;
     let Some(WolPage::QuickMatch(dialog)) =
         state.frontend.wol.as_mut().map(|visit| &mut visit.page)
@@ -252,20 +263,17 @@ fn with_transcript(
         return;
     };
     let add = |ui: &mut WolQuickMatchPage, line: LanChatLine| {
-        let visible = ui
-            .list
-            .geometry(layout.transcript, ui.lines.len(), scale)
-            .visible_rows;
-        crate::ui::lan_shell::append_list_message(
-            &mut ui.lines,
-            &mut ui.list,
-            line,
-            width,
-            visible,
-            |units| font.text_width(&String::from_utf16_lossy(units)) as i32,
-        );
+        let mut list = LanListState { top_index: top.get(), ..LanListState::default() };
+        crate::ui::lan_shell::append_list_message(&mut ui.lines, &mut list, line, width, visible, |units| {
+            font.text_width(&String::from_utf16_lossy(units)) as i32
+        });
+        top.set(list.top_index);
     };
     f(&mut dialog.ui, &add);
+    if let Some(root) = root {
+        page::set(gui, root, TRANSCRIPT, Prop::RowCount, Value::Int(dialog.ui.lines.len() as i32));
+        page::set(gui, root, TRANSCRIPT, Prop::Top, Value::Int(top.get() as i32));
+    }
 }
 
 /// A line for `0x117`'s transcript (`0x005E2700` with `0x117` on top).
@@ -284,8 +292,21 @@ pub(crate) fn layout(state: &AppState) -> WolQuickMatchLayout {
 }
 
 /// The status help under the pointer (`0x006040B0`).
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    dialog(state)?.ui.hovered.and_then(tooltip_key)
+pub(crate) fn status_key(state: &AppState) -> Option<&str> {
+    dialog(state)?.help.as_deref()
+}
+
+/// Builds and places `0x117`'s widgets; under a box they take no pointer.
+pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    let layout = layout(state);
+    let boxed = App::wol_box_feed(state).is_some();
+    let root = leaf::sync(state, DIALOG, layout.page.scale, spec, |id| layout.rect_of(id))?;
+    let gui = state.frontend.shell_controller.gui_mut();
+    for id in [CANCEL, TRANSCRIPT] {
+        let hit = layout.rect_of(id).filter(|_| !boxed).unwrap_or_default();
+        page::set(gui, root, id, Prop::HitRect, Value::Rect(hit));
+    }
+    Some(root)
 }
 
 /// `0x0072BE80`: quickmatch.shp (800 wide only) through quickmatch.PAL.
@@ -448,6 +469,7 @@ fn open_dialog(state: &mut AppState) {
     visit.page = WolPage::QuickMatch(Box::new(QuickMatchDialog {
         ui: WolQuickMatchPage::default(),
         dot_at: Instant::now() + DOT_PERIOD,
+        help: None,
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
@@ -1394,25 +1416,15 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     pump(state);
     let search = poll_search(state);
     let now = Instant::now();
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
     let mut dot = false;
-    let mut redraw = false;
-    let dialog_deadlines = dialog_mut(state).map(|dialog| {
+    let dot_at = dialog_mut(state).map(|dialog| {
         if now >= dialog.dot_at {
             dialog.dot_at = now + DOT_PERIOD;
             dot = true;
         }
-        let ui = &mut dialog.ui;
-        let geometry = ui
-            .list
-            .geometry(layout.transcript, ui.lines.len(), layout.page.scale);
-        redraw |= ui
-            .list
-            .scroll
-            .poll(geometry, &mut ui.list.top_index, x, y, now);
-        [Some(dialog.dot_at), ui.list.scroll.repeat_at()]
+        dialog.dot_at
     });
+    let repeat = leaf::poll(state, dot_at.is_some());
     if dot {
         // 0x005E2AC0's rows take colour -1.
         with_transcript(state, |ui, add| {
@@ -1426,17 +1438,10 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 )
             })
         });
-        redraw = true;
-    }
-    if redraw {
         state.platform.window.request_redraw();
     }
     let stage_deadline = globals(state).and_then(|globals| globals.deadline(now_seconds()));
-    [stage_deadline, search]
-        .into_iter()
-        .chain(dialog_deadlines.into_iter().flatten())
-        .flatten()
-        .min()
+    [stage_deadline, search, dot_at, repeat].into_iter().flatten().min()
 }
 
 /// Diagnostics: the current stage's timeout has passed.
@@ -1449,62 +1454,22 @@ pub(crate) fn expire_stage(state: &mut AppState) {
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some(dialog) = dialog_mut(state) else {
-        return;
-    };
-    let ui = &mut dialog.ui;
-    ui.hovered = layout.control_at(x, y);
-    ui.buttons.hovered = ui.hovered.filter(|id| *id == CANCEL);
-    let geometry = ui
-        .list
-        .geometry(layout.transcript, ui.lines.len(), layout.page.scale);
-    ui.list
-        .scroll
-        .pointer_moved(geometry, &mut ui.list.top_index, x, y);
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    sync(state);
+    leaf::pointer(state, Pointer::Move);
+    let help = leaf::status_key(state, DIALOG).map(str::to_owned);
+    if let Some(dialog) = dialog_mut(state) {
+        dialog.help = help;
+    }
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    if shell_transition::blocks_shell_input(state) {
+    if shell_transition::blocks_shell_input(state) || sync(state).is_none() {
         return;
     }
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let Some(dialog) = dialog_mut(state) else {
-        return;
-    };
-    let ui = &mut dialog.ui;
-    if !pressed {
-        ui.list.scroll.cancel();
-        if ui.buttons.release(over.filter(|id| *id == CANCEL)) == Some(CANCEL) {
-            cancel(state);
-        }
-        state.platform.window.request_redraw();
-        return;
+    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    if events.contains(&PageEvent::Activated(CANCEL)) {
+        cancel(state);
     }
-    let geometry = ui
-        .list
-        .geometry(layout.transcript, ui.lines.len(), layout.page.scale);
-    let mut sound = false;
-    if let Some(part) = geometry.scroll_part_at(x, y) {
-        ui.list
-            .scroll
-            .press(part, geometry, &mut ui.list.top_index, y, Instant::now());
-    } else if over == Some(CANCEL) {
-        ui.buttons.press(Some(CANCEL));
-        sound = true;
-    } else {
-        ui.buttons.press(None);
-    }
-    if sound {
-        // Owner-draw buttons play GUIMainButtonSound on the press.
-        App::play_main_menu_button_sound(state);
-    }
-    state.platform.window.request_redraw();
 }
 
 /// RunMain's postmatch re-entry in modes 1/2 (`0x0077B439..0x0077B442`):

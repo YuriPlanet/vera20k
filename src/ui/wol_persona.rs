@@ -15,13 +15,15 @@
 //! The models own the controls and what each close answers; `wolinfoMD.ini`
 //! and the service belong to the app's WOL owner.
 
-use crate::ui::shell::button::ShellButtonInteraction;
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
 };
 use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::list::ListScrollInteraction;
+use crate::ui::shell::page;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 pub(crate) const AUTO_LOGIN_DIALOG: DialogId = DialogId(0x0112);
@@ -128,31 +130,17 @@ pub(crate) enum AutoLoginAnswer {
     No { ask_again: bool },
 }
 
-/// Dialog `0x112` or `0x122` while it exists. Init leaves Don't Ask
-/// unchecked; there is no Escape or Enter case.
+/// Dialog `0x112` or `0x122` while it exists; its Don't Ask box (unchecked
+/// at init) lives in the dialog's widgets. There is no Escape or Enter case.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct WolAutoLoginQuery {
-    pub(crate) do_not_ask: bool,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) hovered: Option<u16>,
-}
+pub(crate) struct WolAutoLoginQuery;
 
 impl WolAutoLoginQuery {
-    /// A click on Don't Ask's icon: BS_AUTOCHECKBOX flips it.
-    pub(crate) fn toggle(&mut self) {
-        self.do_not_ask = !self.do_not_ask;
-    }
-
-    /// `0x122` writes `[Ask] AddMatchBuddies` from this on both buttons.
-    pub(crate) fn ask_again(&self) -> bool {
-        !self.do_not_ask
-    }
-
-    pub(crate) fn activate(&self, control: u16) -> Option<AutoLoginAnswer> {
+    pub(crate) fn activate(control: u16, do_not_ask: bool) -> Option<AutoLoginAnswer> {
         match control {
             ACCEPT => Some(AutoLoginAnswer::Yes),
             DECLINE => Some(AutoLoginAnswer::No {
-                ask_again: !self.do_not_ask,
+                ask_again: !do_not_ask,
             }),
             _ => None,
         }
@@ -200,56 +188,67 @@ pub(crate) fn locale_rows(texts: impl IntoIterator<Item = (i32, String)>) -> Vec
     leading
 }
 
-/// Dialog `0xFE` while it exists.
+/// Dialog `0xFE` while it exists: its rows; the list's selection (none
+/// after the fill's LB_SETCURSEL(-1), so OK starts disabled) lives in the
+/// dialog's widgets.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WolLocalePage {
     pub(crate) rows: Vec<LocaleRow>,
-    /// LB_SETCURSEL(-1) after the fill: nothing is selected, so OK starts
-    /// disabled.
-    pub(crate) selected: Option<usize>,
-    pub(crate) top: usize,
-    pub(crate) scroll: ListScrollInteraction,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) hovered: Option<u16>,
 }
 
 impl WolLocalePage {
     /// Init `0x497` (`0x00796C8E..0x00796D2F`): the rows of
-    /// [`locale_rows`], none selected.
+    /// [`locale_rows`].
     pub(crate) fn fill(&mut self, texts: impl IntoIterator<Item = (i32, String)>) {
         self.rows = locale_rows(texts);
-        self.selected = None;
-        self.top = 0;
     }
 
-    /// LBN_SELCHANGE (`0x00796C3C`): OK is enabled exactly while a row is
-    /// selected.
-    pub(crate) fn select(&mut self, row: usize) {
-        if row < self.rows.len() {
-            self.selected = Some(row);
-        }
-    }
-
-    pub(crate) fn button_enabled(&self, control: u16) -> bool {
-        control != ACCEPT || self.selected.is_some()
-    }
-
-    /// OK closes with the selected row's item data (0 with none), Cancel
-    /// with 0.
-    pub(crate) fn activate(&self, control: u16) -> Option<i32> {
-        if !self.button_enabled(control) {
-            return None;
-        }
+    /// OK closes with the selected row's item data, Cancel with 0. OK is
+    /// enabled exactly while a row is selected (LBN_SELCHANGE `0x00796C3C`).
+    pub(crate) fn activate(&self, control: u16, selected: Option<usize>) -> Option<i32> {
         match control {
-            ACCEPT => Some(
-                self.selected
-                    .and_then(|row| self.rows.get(row))
-                    .map_or(0, |row| row.locale),
-            ),
+            ACCEPT => Some(self.rows.get(selected?)?.locale),
             DECLINE => Some(0),
             _ => None,
         }
     }
+}
+
+/// The question or the list's caption (a static without an id).
+pub(crate) const TEXT: u16 = 0xFFFF;
+
+/// A persona page's widgets: the column's buttons, the centred question and
+/// Don't Ask (`OwnerDraw_CheckBox 0x006163A0`, toggled on its icon's press),
+/// or the caption and the locale list (`0x00618D40`, every press selects).
+pub(crate) fn spec(dialog: DialogId) -> NodeSpec {
+    let text = NodeSpec::new(NodeKind::Text).id(TEXT.into());
+    let (text, control) = if dialog == LOCALE_DIALOG {
+        let list = NodeSpec::new(NodeKind::List)
+            .with(Prop::DoubleClick, Value::Bool(false))
+            .with(Prop::ListWindow, Value::Bool(true));
+        (text.label(LOCALE_LABEL_KEY).with(Prop::Align, align(ShellAlign::H_CENTER)), list.id(LOCALE_LIST.into()))
+    } else {
+        let checkbox = NodeSpec::new(NodeKind::Checkbox).label(DO_NOT_ASK_KEY);
+        let text = text.with(Prop::Align, align(ShellAlign::H_CENTER | ShellAlign::V_CENTER));
+        (text, checkbox.id(DO_NOT_ASK.into()).with(Prop::ActivateOnPress, Value::Bool(true)))
+    };
+    let control = match tooltip_key(dialog, control_id(dialog)) {
+        Some(key) => control.tooltip(key),
+        None => control,
+    };
+    let text = if dialog == AUTO_LOGIN_DIALOG { text.label(AUTO_LOGIN_TEXT_KEY) } else { text };
+    NodeSpec::new(NodeKind::Dialog)
+        .children(page::menu_buttons(WolPersonaLayout::spec(dialog)))
+        .child(text)
+        .child(control)
+}
+
+fn align(align: ShellAlign) -> Value {
+    Value::Int(i32::from(align.0))
+}
+
+fn control_id(dialog: DialogId) -> u16 {
+    if dialog == LOCALE_DIALOG { LOCALE_LIST } else { DO_NOT_ASK }
 }
 
 /// A persona page at the current screen: the family right panel, the
@@ -346,19 +345,13 @@ impl WolPersonaLayout {
         }
     }
 
-    /// The control under `(x, y)`: buttons first, then the list or the
-    /// checkbox.
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
-            return Some(button.id);
+    /// Where control `id` sits.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        match id {
+            TEXT => Some(self.text),
+            LOCALE_LIST | DO_NOT_ASK => Some(self.control),
+            id => self.page.button_rect(id),
         }
-        self.control
-            .contains(x, y)
-            .then_some(if self.dialog == LOCALE_DIALOG {
-                LOCALE_LIST
-            } else {
-                DO_NOT_ASK
-            })
     }
 }
 
@@ -425,18 +418,17 @@ mod tests {
 
     #[test]
     fn auto_login_answers_follow_the_proc() {
-        let mut query = WolAutoLoginQuery::default();
-        assert_eq!(query.activate(ACCEPT), Some(AutoLoginAnswer::Yes));
+        let activate = WolAutoLoginQuery::activate;
+        assert_eq!(activate(ACCEPT, false), Some(AutoLoginAnswer::Yes));
         assert_eq!(
-            query.activate(DECLINE),
+            activate(DECLINE, false),
             Some(AutoLoginAnswer::No { ask_again: true })
         );
-        query.toggle();
         assert_eq!(
-            query.activate(DECLINE),
+            activate(DECLINE, true),
             Some(AutoLoginAnswer::No { ask_again: false })
         );
-        assert_eq!(query.activate(DO_NOT_ASK), None);
+        assert_eq!(activate(DO_NOT_ASK, true), None);
     }
 
     #[test]
@@ -452,13 +444,10 @@ mod tests {
         ]);
         let order: Vec<i32> = page.rows.iter().map(|row| row.locale).collect();
         assert_eq!(order, [0, 1, 3, 5, 4, 2]);
-        assert!(!page.button_enabled(ACCEPT));
-        assert_eq!(page.activate(ACCEPT), None);
-        assert_eq!(page.activate(DECLINE), Some(0));
-        page.select(3);
-        assert!(page.button_enabled(ACCEPT));
-        assert_eq!(page.activate(ACCEPT), Some(5));
-        page.select(99);
-        assert_eq!(page.selected, Some(3));
+        // Nothing selected: OK answers nothing (it is disabled).
+        assert_eq!(page.activate(ACCEPT, None), None);
+        assert_eq!(page.activate(DECLINE, None), Some(0));
+        assert_eq!(page.activate(ACCEPT, Some(3)), Some(5));
+        assert_eq!(page.activate(ACCEPT, Some(99)), None);
     }
 }

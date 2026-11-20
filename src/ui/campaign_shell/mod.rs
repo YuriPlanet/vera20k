@@ -20,7 +20,9 @@ use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, center_offset, dlu_rect,
 };
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::menu_page::{
+    self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec, hover_target,
+};
 use crate::ui::shell::trackbar::{
     TrackbarHold, TrackbarPress, authored_track, trackbar_position_from_x, trackbar_press,
 };
@@ -58,6 +60,16 @@ pub const CAMPAIGN_PAGE: MenuPageSpec = MenuPageSpec {
         result: Some(-1),
     },
 };
+
+/// `0x94`'s nodes: Back, then the emblems and the slider, which only hover
+/// for their status help (their presses go through [`CampaignShellState`]).
+pub fn nodes() -> vera20k_gui::NodeSpec {
+    let emblems = CampaignSide::ALL.map(|side| hover_target(side.emblem(), side.caption_key()));
+    CAMPAIGN_PAGE.nodes().children(emblems).child(hover_target(
+        DIFFICULTY_SLIDER,
+        "STT:CampaignSliderDifficulty",
+    ))
+}
 
 /// The two campaigns `0x94` offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +159,15 @@ impl CampaignLayout {
         match side {
             CampaignSide::Allied => self.allied_caption,
             CampaignSide::Soviet => self.soviet_caption,
+        }
+    }
+
+    /// The window of node `id` (see [`nodes`]).
+    pub fn control_rect(&self, id: u16) -> Option<RectPx> {
+        match CampaignSide::from_emblem(id) {
+            Some(side) => Some(self.emblem(side)),
+            None if id == DIFFICULTY_SLIDER => Some(self.slider),
+            None => self.page.button_rect(id),
         }
     }
 

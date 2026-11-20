@@ -6,13 +6,15 @@
 //! The model owns the transcript and Cancel; the runner, its stage machine
 //! and what Cancel does belong to the app's WOL owner.
 
-use crate::ui::lan_shell::{LanChatLine, LanListState};
-use crate::ui::shell::button::ShellButtonInteraction;
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use crate::ui::lan_shell::LanChatLine;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
 };
 use crate::ui::shell::layout::status_line_rect;
+use crate::ui::shell::page;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 pub(crate) const DIALOG: DialogId = DialogId(0x0117);
@@ -42,21 +44,36 @@ pub(crate) const MATCH_STATUS_KEY: &str = "GUI:MatchStatus";
 pub(crate) const DOT_ROW_LIMIT: usize = 0x24;
 
 /// Status help of `0x117`'s children (executed `0x006040B0`).
+#[cfg(all(test, tests_ui))]
 pub(crate) fn tooltip_key(control: u16) -> Option<&'static str> {
     match control {
         CANCEL => Some(PAGE.back.tooltip_key),
-        TRANSCRIPT => Some("STT:WOLMatchOutput"),
+        TRANSCRIPT => Some(TRANSCRIPT_HELP),
         _ => None,
     }
 }
 
-/// Dialog `0x117` while it exists: the transcript's rows and Cancel.
+const TRANSCRIPT_HELP: &str = "STT:WOLMatchOutput";
+
+/// `0x117`'s widgets: Cancel and the transcript (`LBS_NOSEL`: a row press
+/// selects nothing it shows, and plays nothing).
+pub(crate) fn spec() -> NodeSpec {
+    NodeSpec::new(NodeKind::Dialog)
+        .children(page::menu_buttons(&PAGE))
+        .child(
+            NodeSpec::new(NodeKind::List)
+                .id(TRANSCRIPT.into())
+                .tooltip(TRANSCRIPT_HELP)
+                .with(Prop::RowCount, Value::Int(0))
+                .with(Prop::ListWindow, Value::Bool(true)),
+        )
+}
+
+/// Dialog `0x117` while it exists: the transcript's rows (its scroll is the
+/// list widget's).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WolQuickMatchPage {
     pub(crate) lines: Vec<LanChatLine>,
-    pub(crate) list: LanListState,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) hovered: Option<u16>,
 }
 
 impl WolQuickMatchPage {
@@ -140,12 +157,12 @@ impl WolQuickMatchLayout {
         }
     }
 
-    /// The child under `(x, y)` with input or help.
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
-            return Some(button.id);
+    /// Where control `id` sits.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        match id {
+            TRANSCRIPT => Some(self.transcript),
+            id => self.page.button_rect(id),
         }
-        self.transcript.contains(x, y).then_some(TRANSCRIPT)
     }
 }
 

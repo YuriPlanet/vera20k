@@ -12,9 +12,11 @@ use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
 use crate::assets::csf_file::{CsfArg, format_csf};
-use crate::ui::main_menu_dialogs::options::LauncherCue;
+use super::leaf::{self, Pointer};
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_persona::*;
+use vera20k_gui::{NodeId, Prop, Value};
 
 /// Native diagnostics use the file next to VERA.INI; modern online visits
 /// never read or create the legacy account/persona file.
@@ -191,6 +193,11 @@ pub(super) fn open_locale_page(state: &mut AppState) {
         .frontend
         .shell_controller
         .reset_to(LOCALE_DIALOG, false);
+    // OK is created disabled (0x5800000B).
+    if let Some(root) = sync(state) {
+        let gui = state.frontend.shell_controller.gui_mut();
+        page::set(gui, root, ACCEPT, Prop::Enabled, Value::Bool(false));
+    }
     state.platform.window.request_redraw();
 }
 
@@ -205,8 +212,14 @@ pub(super) fn locale_count(state: &mut AppState, count: i32) {
             )
         })
         .collect();
-    if let Some(WolPage::Locale(page)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
-        page.fill(texts);
+    let Some(WolPage::Locale(page)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page) else {
+        return;
+    };
+    page.fill(texts);
+    let items = page.rows.iter().map(|row| row.text.clone()).collect();
+    if let Some(root) = sync(state) {
+        let gui = state.frontend.shell_controller.gui_mut();
+        page::set(gui, root, LOCALE_LIST, Prop::Items, Value::Items(items));
     }
     state.platform.window.request_redraw();
 }
@@ -270,7 +283,6 @@ pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
     };
     visit.page = WolPage::AddBuddyQuery(Box::new(AddBuddyQuery {
         opponent: opponent.to_owned(),
-        query: WolAutoLoginQuery::default(),
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
@@ -278,15 +290,18 @@ pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
         .frontend
         .shell_controller
         .reset_to(ADD_BUDDY_DIALOG, false);
+    let question = add_buddy_text(state).unwrap_or_default();
+    if let Some(root) = sync(state) {
+        let gui = state.frontend.shell_controller.gui_mut();
+        page::set(gui, root, TEXT, Prop::Text, Value::Text(question));
+    }
     state.platform.window.request_redraw();
 }
 
-/// `0x122` while it exists: the controls and the opponent its question
-/// names.
+/// `0x122` while it exists: the opponent its question names.
 #[derive(Debug, Clone)]
 pub(crate) struct AddBuddyQuery {
     pub(crate) opponent: String,
-    pub(crate) query: WolAutoLoginQuery,
 }
 
 /// `0x122`'s question.
@@ -346,96 +361,62 @@ pub(crate) fn layout(state: &AppState) -> Option<WolPersonaLayout> {
     })
 }
 
-/// `0xFE`'s list geometry over its rows.
-pub(crate) fn list_geometry(layout: &WolPersonaLayout, page: &WolLocalePage) -> ShellListGeometry {
-    ShellListGeometry::new(
-        layout.control,
-        page.rows.len(),
-        page.top,
-        ListMetrics::scaled(layout.page.scale),
-    )
+/// Builds and places the open page's widgets; the root.
+pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    let layout = layout(state)?;
+    let dialog = layout.dialog;
+    leaf::sync(state, dialog, layout.page.scale, || spec(dialog), |id| layout.rect_of(id))
+}
+
+/// `0xFE`'s list as it shows: its geometry and top row.
+pub(crate) fn list_view(state: &AppState) -> Option<(ShellListGeometry, usize)> {
+    let layout = layout(state)?;
+    let gui = state.frontend.shell_controller.gui();
+    let list = gui.find_id(leaf::root(state, LOCALE_DIALOG)?, LOCALE_LIST.into())?;
+    let view = gui.list_view(list)?;
+    let metrics = ListMetrics::scaled(layout.page.scale);
+    Some((view.window_geometry(layout.rect_of(LOCALE_LIST)?, metrics), view.top))
 }
 
 /// The status help under the pointer (`0x006040B0`).
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    let dialog = dialog(state)?;
-    let hovered = match &state.frontend.wol.as_ref()?.page {
-        WolPage::AutoLoginQuery(query) => query.hovered,
-        WolPage::AddBuddyQuery(page) => page.query.hovered,
-        WolPage::Locale(page) => page.hovered,
-        _ => None,
-    }?;
-    tooltip_key(dialog, hovered)
+pub(crate) fn status_key(state: &AppState) -> Option<&str> {
+    leaf::status_key(state, dialog(state)?)
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let Some(layout) = layout(state) else {
-        return;
-    };
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let button = over.filter(|id| matches!(*id, ACCEPT | DECLINE));
-    match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
-        Some(WolPage::AutoLoginQuery(query)) => {
-            query.hovered = over;
-            query.buttons.hovered = button;
-        }
-        Some(WolPage::AddBuddyQuery(page)) => {
-            page.query.hovered = over;
-            page.query.buttons.hovered = button;
-        }
-        Some(WolPage::Locale(page)) => {
-            page.hovered = over;
-            page.buttons.hovered = button;
-            let geometry = list_geometry(&layout, page);
-            page.scroll.pointer_moved(geometry, &mut page.top, x, y);
-        }
-        _ => {}
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
-}
-
-enum Press {
-    Nothing,
-    Button,
-    Cue(LauncherCue),
+    sync(state);
+    leaf::pointer(state, Pointer::Move);
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    let Some(layout) = layout(state) else {
+    let Some(root) = sync(state) else {
         return;
     };
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let button = over.filter(|id| matches!(*id, ACCEPT | DECLINE));
-    let Some(page) = state.frontend.wol.as_mut().map(|visit| &mut visit.page) else {
-        return;
-    };
-    if !pressed {
-        let close = match page {
-            WolPage::AutoLoginQuery(query) => query
-                .buttons
-                .release(button)
-                .and_then(|id| query.activate(id))
-                .map(ShellExitThen::WolAutoLoginClose),
+    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    for event in events {
+        let gui = state.frontend.shell_controller.gui_mut();
+        let close = match (event, &state.frontend.wol.as_ref().map(|visit| &visit.page)) {
+            // LBN_SELCHANGE (0x00796C3C): OK follows the selection.
+            (PageEvent::Selected(LOCALE_LIST, _), _) => {
+                page::set(gui, root, ACCEPT, Prop::Enabled, Value::Bool(true));
+                None
+            }
+            (PageEvent::Activated(id), Some(WolPage::AutoLoginQuery(_))) => {
+                WolAutoLoginQuery::activate(id, page::checked(gui, root, DO_NOT_ASK))
+                    .map(ShellExitThen::WolAutoLoginClose)
+            }
             // Both buttons write [Ask] AddMatchBuddies from Don't Ask
             // (0x007A2B2F, 0x007A2B66).
-            WolPage::AddBuddyQuery(page) => {
-                page.query
-                    .buttons
-                    .release(button)
-                    .map(|id| ShellExitThen::WolAddBuddyClose {
-                        yes: id == ACCEPT,
-                        ask_again: page.query.ask_again(),
-                    })
+            (PageEvent::Activated(id), Some(WolPage::AddBuddyQuery(_))) => {
+                Some(ShellExitThen::WolAddBuddyClose {
+                    yes: id == ACCEPT,
+                    ask_again: !page::checked(gui, root, DO_NOT_ASK),
+                })
             }
-            WolPage::Locale(locale) => {
-                locale.scroll.cancel();
+            (PageEvent::Activated(id), Some(WolPage::Locale(locale))) => {
+                let selected = page::int(gui, root, LOCALE_LIST, Prop::Selected);
                 locale
-                    .buttons
-                    .release(button)
-                    .and_then(|id| locale.activate(id))
+                    .activate(id, selected.and_then(|row| usize::try_from(row).ok()))
                     .map(ShellExitThen::WolLocaleClose)
             }
             _ => None,
@@ -443,91 +424,12 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         if let Some(then) = close {
             App::leave_shell_dialog(state, then);
         }
-        state.platform.window.request_redraw();
-        return;
-    }
-    let press = match page {
-        WolPage::AutoLoginQuery(query) => press_query(query, over, &layout, x, y),
-        WolPage::AddBuddyQuery(page) => press_query(&mut page.query, over, &layout, x, y),
-        WolPage::Locale(locale) => {
-            let geometry = list_geometry(&layout, locale);
-            match over {
-                Some(ACCEPT) if !locale.button_enabled(ACCEPT) => Press::Nothing,
-                Some(id @ (ACCEPT | DECLINE)) => {
-                    locale.buttons.press(Some(id));
-                    Press::Button
-                }
-                Some(LOCALE_LIST) => {
-                    if let Some(part) = geometry.scroll_part_at(x, y) {
-                        locale
-                            .scroll
-                            .press(part, geometry, &mut locale.top, y, Instant::now());
-                    } else if let Some(row) = geometry.row_at(locale.rows.len(), locale.top, x, y) {
-                        locale.select(row);
-                    }
-                    Press::Nothing
-                }
-                _ => {
-                    locale.buttons.press(None);
-                    Press::Nothing
-                }
-            }
-        }
-        _ => Press::Nothing,
-    };
-    match press {
-        // Owner-draw buttons play GUIMainButtonSound on the press.
-        Press::Button => App::play_main_menu_button_sound(state),
-        Press::Cue(cue) => App::play_launcher_options_cue(state, cue),
-        Press::Nothing => {}
-    }
-    state.platform.window.request_redraw();
-}
-
-/// A press on `0x112` or `0x122`.
-fn press_query(
-    query: &mut WolAutoLoginQuery,
-    over: Option<u16>,
-    layout: &WolPersonaLayout,
-    x: i32,
-    y: i32,
-) -> Press {
-    match over {
-        Some(id @ (ACCEPT | DECLINE)) => {
-            query.buttons.press(Some(id));
-            Press::Button
-        }
-        // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
-        // toggles on the press.
-        Some(DO_NOT_ASK)
-            if crate::ui::skirmish_shell::checkbox_icon_rect(layout.control, layout.page.scale)
-                .contains(x, y) =>
-        {
-            query.toggle();
-            Press::Cue(LauncherCue::Checkbox)
-        }
-        _ => {
-            query.buttons.press(None);
-            Press::Nothing
-        }
     }
 }
 
 /// The list scrollbar's repeats.
 pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    let layout = layout(state)?;
-    let (x, y) = state.match_state.input.cursor_px();
-    let WolPage::Locale(page) = &mut state.frontend.wol.as_mut()?.page else {
-        return None;
-    };
-    let geometry = list_geometry(&layout, page);
-    if page
-        .scroll
-        .poll(geometry, &mut page.top, x, y, Instant::now())
-    {
-        state.platform.window.request_redraw();
-    }
-    page.scroll.repeat_at()
+    leaf::poll(state, page_open(state))
 }
 
 #[cfg(all(test, tests_app))]

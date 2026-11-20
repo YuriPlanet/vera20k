@@ -191,6 +191,17 @@ impl DialogController {
         Self::control_of(inst, self.gui.hovered_in(inst.dialog))
     }
 
+    /// The node captured in the topmost live instance of `id`, a screen's
+    /// own widget included (fed buttons answer [`Self::pressed_in`]).
+    pub fn pressed_node_in(&self, id: DialogId) -> Option<NodeId> {
+        self.gui.pressed_in(self.instance(id)?.dialog)
+    }
+
+    /// The node under the pointer in the topmost live instance of `id`.
+    pub fn hovered_node_in(&self, id: DialogId) -> Option<NodeId> {
+        self.gui.hovered_in(self.instance(id)?.dialog)
+    }
+
     fn instance(&self, id: DialogId) -> Option<&Instance> {
         self.stack.iter().rev().find(|i| i.id == id)
     }

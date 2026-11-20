@@ -154,8 +154,19 @@ impl Gui {
         self.tree.create(kind, parent)
     }
 
+    /// A node disabled while it holds the pointer loses the capture
+    /// (`EnableWindow(FALSE)`): it never paints pressed and its release
+    /// activates nothing.
     pub fn set(&mut self, id: NodeId, prop: Prop, value: Value) -> Result<(), Refused> {
-        self.tree.set(id, prop, value)
+        let disables = prop == Prop::Enabled && value == Value::Bool(false);
+        self.tree.set(id, prop, value)?;
+        if disables {
+            for d in self.dialogs.iter_mut().filter(|d| d.pointer.pressed == Some(id)) {
+                d.pointer.pressed = None;
+                d.pointer.dragging = false;
+            }
+        }
+        Ok(())
     }
 
     pub fn get(&self, id: NodeId, prop: Prop) -> Result<Option<&Value>, Refused> {
@@ -392,6 +403,9 @@ impl Gui {
     /// Runs the widget timers (scroll-arrow repeat) of the top dialog's
     /// captured node; returns when the next poll is due.
     pub fn poll(&mut self, now: UiMs) -> Option<UiMs> {
+        if let Some(popup) = self.top_pointer().popup {
+            return self.with_ctx(now, |ctx| widget::combo::poll(ctx, popup));
+        }
         let held = self.top_pointer().pressed?;
         match self.tree.kind(held) {
             Ok(NodeKind::List) => self.with_ctx(now, |ctx| widget::list::poll(ctx, held)),
@@ -473,6 +487,9 @@ impl Gui {
     /// A left press on an enabled node.
     fn press(&mut self, node: NodeId, x: i32, y: i32, now: UiMs) {
         let Ok(n) = self.tree.node(node) else { return };
+        if n.kind == NodeKind::Text {
+            return;
+        }
         let delegated = match n.kind {
             NodeKind::List => Some(self.with_ctx(now, |ctx| widget::list::press(ctx, node, x, y))),
             NodeKind::Combo => Some(self.with_ctx(now, |ctx| widget::combo::press(ctx, node, x, y))),
@@ -612,8 +629,10 @@ impl Gui {
     fn hit(&self, root: NodeId, x: i32, y: i32) -> Option<NodeId> {
         let mut found = None;
         self.walk(root, &mut |id, kind| {
+            // A static with status help hovers too (it takes no press).
+            let help = kind == NodeKind::Text && self.tree.get(id, Prop::Tooltip).is_ok_and(|t| t.is_some());
             if found.is_none()
-                && kind.is_focusable()
+                && (kind.is_focusable() || help)
                 && self.tree.effective(id, Prop::Visible)
                 && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
             {
@@ -819,6 +838,33 @@ mod tests {
         // Losing the pointer drops the hold.
         g.cancel_pointer();
         assert_eq!((g.pressed(), g.dragging()), (None, false));
+    }
+
+    #[test]
+    fn disabling_a_held_button_drops_its_pushed_look_and_its_activation() {
+        let (mut g, a, _) = page_with_two_buttons();
+        down(&mut g, 5);
+        assert!(g.shows_pressed(a));
+        g.set(a, Prop::Enabled, Value::Bool(false)).unwrap();
+        assert!(!g.shows_pressed(a) && g.pressed().is_none());
+        g.set(a, Prop::Enabled, Value::Bool(true)).unwrap();
+        up(&mut g, 5);
+        assert!(activations(&mut g).is_empty());
+    }
+
+    #[test]
+    fn a_static_with_help_hovers_but_takes_no_press() {
+        let (mut g, _, _) = page_with_two_buttons();
+        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
+        let text = g.create(NodeKind::Text, Some(root)).unwrap();
+        g.set(text, Prop::Rect, Value::Rect(Rect::new(30, 0, 10, 10))).unwrap();
+        down(&mut g, 35);
+        assert_eq!(g.hovered(), None, "a static without help is not hit");
+        g.set(text, Prop::Tooltip, Value::Text("STT:X".into())).unwrap();
+        down(&mut g, 35);
+        assert_eq!((g.hovered(), g.pressed()), (Some(text), None));
+        up(&mut g, 35);
+        assert!(activations(&mut g).is_empty());
     }
 
     #[test]

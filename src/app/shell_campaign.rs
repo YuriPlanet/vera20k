@@ -6,12 +6,11 @@
 use crate::util::time::Instant;
 
 use super::{App, AppState};
+use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::campaign_shell::{
     CAMPAIGN_DIALOG, CampaignLayout, CampaignRelease, CampaignShellState, CampaignSide,
-    DIFFICULTY_SLIDER,
 };
-use crate::ui::shell::layout::LaidOutControl;
 
 /// Owner id of the campaign voice handle `0x00A8F300`: a new voice stops the
 /// one before it (`0x00405D40` then `0x00750920`).
@@ -81,52 +80,31 @@ impl App {
         crate::app::frontend::shell_layout::campaign_layout(state)
     }
 
-    /// Hover targets for the status line: Back, then the emblems and the
-    /// slider, which never press through the shared controller.
-    fn campaign_feed(state: &mut AppState, layout: &CampaignLayout) -> Vec<LaidOutControl> {
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(CAMPAIGN_DIALOG, false);
-        let mut feed = Self::menu_page_button_feed(&layout.page);
-        for side in CampaignSide::ALL {
-            feed.push(LaidOutControl {
-                id: side.emblem(),
-                rect: layout.emblem(side),
-            });
-        }
-        feed.push(LaidOutControl {
-            id: DIFFICULTY_SLIDER,
-            rect: layout.slider,
-        });
-        feed
-    }
-
-    fn campaign_buttons(feed: Vec<LaidOutControl>) -> Vec<LaidOutControl> {
-        feed.into_iter()
-            .filter(|control| control.id == crate::ui::campaign_shell::BACK_BUTTON)
-            .collect()
+    /// Whether Back holds the mouse since a press on it.
+    fn campaign_back_pressed(state: &AppState) -> bool {
+        crate::ui::shell::menu_page::pressed_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG)
+            .is_some()
     }
 
     pub(super) fn handle_campaign_mouse_move(state: &mut AppState) {
         let layout = Self::campaign_layout(state);
-        let feed = Self::campaign_feed(state, &layout);
         let (x, y) = state.match_state.input.cursor_px();
         // A slider holding the mouse since a press on it keeps the status
         // line and Back's paint: the dialog's hit test (`0x00622CCB`) sees
-        // nothing until the release.
+        // nothing until the release. The emblems and the slider hover as
+        // nodes for their status help.
         let slider_held = state
             .frontend
             .campaign
             .as_ref()
             .is_some_and(|campaign| campaign.slider_held());
         if !slider_held {
-            state.frontend.shell_controller.on_pointer_move(x, y, &feed);
+            Self::family_page_pointer(state, FamilyPage::Campaign, None);
         }
         let now = Instant::now();
         // A slider or a pressed Back holding the mouse: the dialog sees no
         // hit test (`0x0052ED60`) until the release.
-        let back_pressed = state.frontend.shell_controller.pressed().is_some();
+        let back_pressed = Self::campaign_back_pressed(state);
         let mut slider_moved = false;
         if let Some(campaign) = state.frontend.campaign.as_mut() {
             if !slider_held && !back_pressed {
@@ -167,17 +145,13 @@ impl App {
             }
             return;
         }
-        let feed = Self::campaign_buttons(Self::campaign_feed(state, &layout));
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
+        Self::handle_family_page_mouse(state, FamilyPage::Campaign, Some(true));
     }
 
     pub(super) fn handle_campaign_mouse_up(state: &mut AppState) {
         let layout = Self::campaign_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
-        let back_pressed = state.frontend.shell_controller.pressed().is_some();
+        let back_pressed = Self::campaign_back_pressed(state);
         let Some(campaign) = state.frontend.campaign.as_mut() else {
             return;
         };
@@ -207,15 +181,7 @@ impl App {
             }
             return;
         }
-        let feed = Self::campaign_buttons(Self::campaign_feed(state, &layout));
-        if state.frontend.shell_controller.on_pointer_up(x, y, &feed)
-            == Some(crate::ui::campaign_shell::BACK_BUTTON)
-        {
-            Self::leave_shell_dialog(
-                state,
-                crate::app::frontend::shell_transition::ShellExitThen::CampaignBack,
-            );
-        }
+        Self::handle_family_page_mouse(state, FamilyPage::Campaign, Some(false));
     }
 
     /// Released on the pressed emblem: the proc stores the slider in

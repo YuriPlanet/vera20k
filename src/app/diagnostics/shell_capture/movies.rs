@@ -346,8 +346,7 @@ impl MoviesCapture {
         // New Mod needs no row.
         let row = (press != ModsPress::New)
             .then(|| {
-                page.rows
-                    .iter()
+                page.iter()
                     .skip(view.top)
                     .take(geometry.visible_rows)
                     .position(|row| match press {

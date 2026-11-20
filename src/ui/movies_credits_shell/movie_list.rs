@@ -81,29 +81,13 @@ pub fn compute_responsive_movie_list_layout(screen_w: u32, screen_h: u32) -> Mov
     }
 }
 
-/// A family page's owner-draw list box (the movie list `0x744`, VERA's Mods
-/// list): the rows its page paints and the selection its `List` node last
-/// reported. The node keeps the top and the scrollbar.
-#[derive(Debug, Clone)]
-pub struct FamilyList<Row> {
-    pub rows: Vec<Row>,
-    /// Subclass current selection (`-1` = none). Its LB_SETCURSEL handler
-    /// (`0x0061A534..0x0061A5F5`) always returns 0, so the proc's fallback
-    /// `LB_SETCURSEL(0)` never runs: a fresh process opens with nothing
-    /// selected.
-    pub selected: Option<usize>,
-}
-
-impl<Row> FamilyList<Row> {
-    pub fn new(rows: Vec<Row>, selected: Option<usize>) -> Self {
-        Self { rows, selected }
-    }
-}
-
 /// The list box (subclass `0x0061A948`) as a `List` node under `parent`:
 /// window `rect`, `rows` the page paints itself, `selected` and `top`.
 /// `double_click` off makes every press select, as the Mods page, which
-/// checks for no double-click, does.
+/// checks for no double-click, does. The node holds the selection from then
+/// on: the subclass's LB_SETCURSEL handler (`0x0061A534..0x0061A5F5`) always
+/// returns 0, so the proc's fallback `LB_SETCURSEL(0)` never runs and a
+/// fresh process opens with nothing selected.
 pub fn build_family_list(
     gui: &mut Gui,
     parent: NodeId,
@@ -148,14 +132,22 @@ pub fn find_family_list(controller: &DialogController, dialog: DialogId) -> Opti
         .find(|node| gui.tree().kind(*node) == Ok(NodeKind::List))
 }
 
-/// The family page `dialog`'s `List` node, built from `list` at `top` when
-/// the dialog instance has none yet; its window follows `rect`.
-pub fn family_list_node<Row>(
+/// The row the family page `dialog`'s list has selected.
+pub fn family_list_selected(controller: &DialogController, dialog: DialogId) -> Option<usize> {
+    controller
+        .gui()
+        .list_view(find_family_list(controller, dialog)?)?
+        .selected
+}
+
+/// The family page `dialog`'s `List` node, built with `rows`, `selected`
+/// and `top` as a new instance's when the dialog instance has none yet; its
+/// window follows `rect`.
+pub fn family_list_node(
     controller: &mut DialogController,
     dialog: DialogId,
     rect: RectPx,
-    list: &FamilyList<Row>,
-    top: usize,
+    (rows, selected, top): (usize, Option<usize>, usize),
     double_click: bool,
 ) -> Option<NodeId> {
     if let Some(node) = find_family_list(controller, dialog) {
@@ -169,24 +161,21 @@ pub fn family_list_node<Row>(
         controller.gui_mut(),
         root,
         rect,
-        list.rows.len(),
-        list.selected,
+        rows,
+        selected,
         top,
         double_click,
     )
 }
 
-/// One `0x129` instance: rows from `0x005FC000` and the subclass selection.
-pub type MovieListState = FamilyList<MovieEntry>;
+/// One `0x129` instance's rows, from `0x005FC000`.
+pub type MovieListState = Vec<MovieEntry>;
 
-/// One `0x129` instance, populated, with the retained `DAT_00825C80`
-/// selection applied.
-pub fn open_movie_list(progress: MovieProgress, retained_selection: i32) -> MovieListState {
-    let rows = active_movie_entries(progress);
-    let selected = usize::try_from(retained_selection)
+/// The row the retained `DAT_00825C80` selection names, if any.
+pub fn retained_movie_row(rows: &[MovieEntry], retained_selection: i32) -> Option<usize> {
+    usize::try_from(retained_selection)
         .ok()
-        .filter(|index| *index < rows.len());
-    MovieListState::new(rows, selected)
+        .filter(|index| *index < rows.len())
 }
 
 /// One row of the retail movie table.
@@ -284,13 +273,13 @@ mod tests {
     fn list_page() -> (Gui, NodeId) {
         let mut gui = Gui::new(8);
         let root = gui.create(NodeKind::Dialog, None).unwrap();
-        let list = open_movie_list(MovieProgress::default(), -1);
+        let list = active_movie_entries(MovieProgress::default());
         let node = build_family_list(
             &mut gui,
             root,
             compute_movie_list_layout(800, 600).list,
-            list.rows.len(),
-            list.selected,
+            list.len(),
+            retained_movie_row(&list, -1),
             0,
             true,
         )

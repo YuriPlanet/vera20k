@@ -115,7 +115,7 @@ fn mods_composition<'a>(
         push_family_list(&mut sprites, atlas, &backdrop, layout.list, Some(&list));
         push_family_list(&mut sprites, atlas, &backdrop, layout.details, None);
         let (geometry, view) = list;
-        for (visible, index) in (view.top..page.rows.len())
+        for (visible, index) in (view.top..page.len())
             .take(geometry.visible_rows)
             .enumerate()
         {
@@ -126,7 +126,7 @@ fn mods_composition<'a>(
                 row.w - 2 * ROW_TEXT_INSET,
                 row.h,
             );
-            let listed = &page.rows[index];
+            let listed = &page[index];
             if mods.in_use(listed) {
                 // The name keeps the row's left three quarters.
                 let name_w = text.w * 3 / 4;
@@ -146,7 +146,7 @@ fn mods_composition<'a>(
         }
         // An empty Mods folder: where a mod goes, across the empty rows
         // under No mod, one row down.
-        if let Some(hint) = crate::app::mods::none_installed_hint(&page.rows) {
+        if let Some(hint) = crate::app::mods::none_installed_hint(page) {
             let content = geometry.content;
             let top = geometry.row(2).y;
             labels.push(label(
@@ -160,7 +160,7 @@ fn mods_composition<'a>(
                 ShellAlign::NONE,
             ));
         }
-        if let Some(row) = page.selected.and_then(|selected| page.rows.get(selected)) {
+        if let Some(row) = view.selected.and_then(|selected| page.get(selected)) {
             labels.extend(detail_labels(row, mods.in_use(row), layout));
         }
         labels.push(label(
@@ -176,9 +176,10 @@ fn mods_composition<'a>(
     let hovered = active.then(|| controller.hovered()).flatten();
     // Use This Mod is dark while the selection is nothing to change to, Check
     // Files while it is the original game.
+    let selected = crate::ui::movies_credits_shell::family_list_selected(controller, PAGE.dialog);
     let enabled = |id: u16| match id {
-        mods_shell::USE => mods.switch_to().is_some(),
-        mods_shell::CHECK => mods.picked_is_mod(),
+        mods_shell::USE => mods.switch_to(selected).is_some(),
+        mods_shell::CHECK => mods.picked_is_mod(selected),
         _ => true,
     };
     let wave = exit_wave.or(state.frontend.shell_first_paint_slide.as_ref());

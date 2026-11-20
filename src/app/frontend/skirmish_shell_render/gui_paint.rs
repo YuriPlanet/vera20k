@@ -169,14 +169,24 @@ pub(crate) fn paint_gui_children_under(
             }
             NodeKind::Combo => {
                 let drop_down = gui.combo_drop_down(node);
+                let selected = usize::try_from(int(gui, node, Prop::Selected, -1)).ok();
+                // A colour row shows its swatch (`house_color_tint`) and no text.
+                let swatches = match gui.get(node, Prop::Swatches).ok().flatten() {
+                    Some(Value::Items(rows)) => rows.as_slice(),
+                    _ => &[],
+                };
+                let swatch = |row: usize| {
+                    let index = swatches.get(row)?.parse().ok()?;
+                    Some(super::controls::house_color_tint(state.rules(), index))
+                };
+                let face_swatch = selected.and_then(swatch);
                 paint_control(
                     &mut paint.controls,
                     &chrome,
-                    ControlPaint::Combo { rect, swatch: None, open: drop_down.is_some(), disabled: !enabled },
+                    ControlPaint::Combo { rect, swatch: face_swatch, open: drop_down.is_some(), disabled: !enabled },
                     scale,
                 );
                 let items = items(gui, node);
-                let selected = usize::try_from(int(gui, node, Prop::Selected, -1)).ok();
                 if let Some(face) = selected.and_then(|row| items.get(row)) {
                     paint.texts.push(text(
                         state,
@@ -194,7 +204,10 @@ pub(crate) fn paint_gui_children_under(
                     atlas,
                     popup.rect,
                     drop_down.hot_row.and_then(|row| popup.row_rect(row)),
-                    [],
+                    (popup.first..popup.first + popup.visible_rows).filter_map(|row| {
+                        let at = scale.derive_rect(popup.row_rect(row)?, |r| RectPx::new(r.x + 2, r.y + 2, r.w - 4, 19));
+                        Some((at, swatch(row)?))
+                    }),
                     popup.scrollbar().zip(popup.thumb()),
                     drop_down.pressed_part.map(dropdown_scroll_part),
                     scale,
@@ -213,8 +226,25 @@ pub(crate) fn paint_gui_children_under(
                     ));
                 }
             }
+            // A list with a `RowCount` paints its own rows and frame.
+            NodeKind::List if gui.get(node, Prop::RowCount).ok().flatten().is_none() => {
+                // The owner-draw list `0x00618D40` over its dialog's art.
+                let Some(view) = gui.list_view(node) else { continue };
+                let metrics = crate::ui::shell::list::ListMetrics::scaled(scale);
+                let geometry = match gui.get(node, Prop::ListWindow).ok().flatten() {
+                    Some(Value::Bool(true)) => view.window_geometry(rect, metrics),
+                    _ => view.geometry(rect, metrics),
+                };
+                super::list::paint_list(&mut paint.controls, atlas, geometry, view.top, view.selected, view.pressed, false, scale);
+                let rows = items(gui, node).iter().skip(view.top).take(geometry.visible_rows);
+                for (visible, row) in rows.enumerate().filter(|_| !covered) {
+                    let r = geometry.row(visible);
+                    let at = RectPx::new(r.x + 2, r.y, r.w - 2, r.h);
+                    paint.texts.push(text(state, row, at, ShellAlign::V_CENTER, scale, SHELL_LABEL_TEXT_RGB));
+                }
+            }
             NodeKind::Text => {
-                if let Some(label) = caption(state, gui, node).filter(|_| !covered) {
+                if let Some(label) = caption(state, gui, node).filter(|t| !covered && !t.is_empty()) {
                     paint.texts.push(text(state, &label, rect, align, scale, rgb(gui, node, SHELL_LABEL_TEXT_RGB)));
                 }
             }

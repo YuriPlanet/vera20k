@@ -25,6 +25,9 @@ pub struct ComboState {
     list: ComboPopupInteraction<NodeId>,
     /// `UiMs` 0 on the substrate's clock (its arrow-repeat deadline).
     epoch: Instant,
+    /// The pointer as the open list last saw it: the arrow repeat steps the
+    /// arrow under it.
+    pointer: (i32, i32),
 }
 
 impl Default for ComboState {
@@ -32,6 +35,7 @@ impl Default for ComboState {
         Self {
             list: ComboPopupInteraction::default(),
             epoch: Instant::now(),
+            pointer: (0, 0),
         }
     }
 }
@@ -192,21 +196,20 @@ pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
         return;
     };
     let before = st.list.top_index;
+    st.pointer = (x, y);
     let now = st.epoch + Duration::from_millis(now);
     match st.list.press_list(popup, x, y, now) {
         ComboPress::Scroll(_) => sync_top(ctx, node, before),
+        // CBN_SELCHANGE on every pick, the current row too.
         ComboPress::Pick(row) => {
             close(ctx, node);
-            let changed = ctx.tree.node(node).is_ok_and(|n| selected(n) != Some(row));
-            if changed {
-                let value = Value::Int(row as i32);
-                let _ = ctx.tree.set(node, Prop::Selected, value.clone());
-                ctx.events.push(UiEvent::Changed {
-                    node,
-                    value,
-                    final_: true,
-                });
-            }
+            let value = Value::Int(row as i32);
+            let _ = ctx.tree.set(node, Prop::Selected, value.clone());
+            ctx.events.push(UiEvent::Changed {
+                node,
+                value,
+                final_: true,
+            });
         }
         ComboPress::Dismiss | ComboPress::Face | ComboPress::Open => close(ctx, node),
     }
@@ -221,8 +224,24 @@ pub(crate) fn popup_move(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
         return;
     };
     let before = st.list.top_index;
+    st.pointer = (x, y);
     st.list.pointer_moved(popup, x, y);
     sync_top(ctx, node, before);
+}
+
+/// The open list's scroll-arrow repeat (`0x0061D215..0x0061D2C8`): the next
+/// time it wants a poll.
+pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<crate::gui::UiMs> {
+    let popup = open_popup(ctx, node)?;
+    let now = ctx.now;
+    let st = state_mut(ctx.tree, node)?;
+    let before = st.list.top_index;
+    let (x, y) = st.pointer;
+    st.list.scroll.poll(popup.scroll_geometry(), &mut st.list.top_index, x, y, st.epoch + Duration::from_millis(now));
+    let epoch = st.epoch;
+    let next = st.list.scroll.repeat_at().map(|at| at.saturating_duration_since(epoch).as_millis() as crate::gui::UiMs);
+    sync_top(ctx, node, before);
+    next
 }
 
 pub(crate) fn popup_release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
@@ -324,12 +343,16 @@ mod tests {
         let events = click(&mut g, bar.x + 2, bar.y + bar.h - 2);
         assert_eq!(events, vec![UiEvent::Scrolled { node: c, top: 1 }]);
         assert_eq!(g.get(c, Prop::Top).unwrap(), Some(&Value::Int(1)));
-        // The pick of the already-selected row only closes.
+        // The pick of the already-selected row still reports it
+        // (CBN_SELCHANGE runs the owner's handler again).
         g.set(c, Prop::Selected, Value::Int(1)).unwrap();
         let row = g.combo_drop_down(c).unwrap().popup.row_rect(1).unwrap();
         assert_eq!(
             click(&mut g, row.x + 1, row.y + 1),
-            vec![UiEvent::ComboClosed { node: c }]
+            vec![
+                UiEvent::ComboClosed { node: c },
+                UiEvent::Changed { node: c, value: Value::Int(1), final_: true },
+            ]
         );
         // A press on the face while open dismisses and goes no further.
         click(&mut g, 125, 25);

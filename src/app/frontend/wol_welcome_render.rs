@@ -277,6 +277,7 @@ pub(crate) fn render_wol_page(
             ) {
                 crate::app::shell_wol::persona::open_art(state);
             }
+            crate::app::shell_wol::persona::sync(state);
             match crate::app::shell_wol::persona::layout(state) {
                 Some(layout) => Painted::Persona(layout),
                 None => Painted::Backdrop,
@@ -284,14 +285,17 @@ pub(crate) fn render_wol_page(
         }
         WolPage::MyInformation(_) => {
             crate::app::shell_wol::my_info::open_art(state);
+            crate::app::shell_wol::my_info::sync(state);
             Painted::MyInfo(crate::app::shell_wol::my_info::layout(state))
         }
         WolPage::Buddy(_) => {
             crate::app::shell_wol::buddy::open_art(state);
+            crate::app::shell_wol::buddy::sync(state);
             Painted::Buddy(crate::app::shell_wol::buddy::layout(state))
         }
         WolPage::QuickMatch(_) => {
             crate::app::shell_wol::quick_match::open_art(state);
+            crate::app::shell_wol::quick_match::sync(state);
             Painted::QuickMatch(crate::app::shell_wol::quick_match::layout(state))
         }
         WolPage::Backdrop { .. } | WolPage::Message { .. } => Painted::Backdrop,
@@ -533,13 +537,11 @@ pub(crate) fn render_wol_page(
         _ => None,
     };
     let my_info_children = match (&painted, children) {
-        (Painted::MyInfo(layout), true) => {
-            crate::app::shell_wol::my_info::page(state).map(|page| {
-                crate::app::frontend::skirmish_shell_render::paint_wol_my_info_children(
-                    state, page, layout,
-                )
-            })
-        }
+        (Painted::MyInfo(layout), true) => Some(crate::app::shell_wol::leaf::paint(
+            state,
+            crate::ui::wol_my_info::DIALOG,
+            layout.page.scale,
+        )),
         _ => None,
     };
     let login_children = match (&painted, children) {
@@ -592,32 +594,11 @@ pub(crate) fn render_wol_page(
                 layout.page.scale,
             ),
         ),
-        (Painted::Persona(layout), true) => {
-            match &state.frontend.wol.as_ref().expect("checked").page {
-                WolPage::AutoLoginQuery(query) => Some(
-                    crate::app::frontend::skirmish_shell_render::paint_wol_auto_login_children(
-                        state,
-                        query,
-                        &resolve_csf(state, crate::ui::wol_persona::AUTO_LOGIN_TEXT_KEY),
-                        layout,
-                    ),
-                ),
-                WolPage::AddBuddyQuery(page) => Some(
-                    crate::app::frontend::skirmish_shell_render::paint_wol_auto_login_children(
-                        state,
-                        &page.query,
-                        &crate::app::shell_wol::persona::add_buddy_text(state).unwrap_or_default(),
-                        layout,
-                    ),
-                ),
-                WolPage::Locale(page) => Some(
-                    crate::app::frontend::skirmish_shell_render::paint_wol_locale_children(
-                        state, page, layout,
-                    ),
-                ),
-                _ => None,
-            }
-        }
+        (Painted::Persona(layout), true) => Some(crate::app::shell_wol::leaf::paint(
+            state,
+            layout.dialog,
+            layout.page.scale,
+        )),
         _ => None,
     };
     let lobby = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
@@ -759,87 +740,35 @@ pub(crate) fn render_wol_page(
             spec = Some(crate::ui::wol_persona::WolPersonaLayout::spec(
                 layout.dialog,
             ));
-            match &state.frontend.wol.as_ref().expect("checked").page {
-                WolPage::AutoLoginQuery(query) => {
-                    painted_buttons = layout
-                        .page
-                        .buttons
-                        .iter()
-                        .map(|button| (*button, query.buttons.is_pressed(button.id), true))
-                        .collect();
-                }
-                WolPage::AddBuddyQuery(page) => {
-                    painted_buttons = layout
-                        .page
-                        .buttons
-                        .iter()
-                        .map(|button| (*button, page.query.buttons.is_pressed(button.id), true))
-                        .collect();
-                }
-                WolPage::Locale(page) => {
-                    painted_buttons = layout
-                        .page
-                        .buttons
-                        .iter()
-                        .map(|button| {
-                            (
-                                *button,
-                                page.buttons.is_pressed(button.id),
-                                page.button_enabled(button.id),
-                            )
-                        })
-                        .collect();
-                }
-                _ => {}
-            }
+            painted_buttons =
+                crate::app::shell_wol::leaf::buttons(state, layout.dialog, &layout.page.buttons);
             None
         }
         (Painted::MyInfo(layout), None) => {
             spec = Some(&crate::ui::wol_my_info::PAGE);
-            if let Some(page) = crate::app::shell_wol::my_info::page(state) {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            page.buttons.is_pressed(button.id),
-                            page.enabled(button.id),
-                        )
-                    })
-                    .collect();
-            }
+            painted_buttons = crate::app::shell_wol::leaf::buttons(
+                state,
+                crate::ui::wol_my_info::DIALOG,
+                &layout.page.buttons,
+            );
             None
         }
         (Painted::Buddy(layout), None) => {
             spec = Some(&crate::ui::wol_buddy::PAGE);
-            if let Some(dialog) = buddy_page {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            dialog.ui.buttons.is_pressed(button.id),
-                            dialog.ui.enabled(button.id),
-                        )
-                    })
-                    .collect();
-            }
+            painted_buttons = crate::app::shell_wol::leaf::buttons(
+                state,
+                crate::ui::wol_buddy::DIALOG,
+                &layout.page.buttons,
+            );
             None
         }
         (Painted::QuickMatch(layout), None) => {
             spec = Some(&crate::ui::wol_quick_match::PAGE);
-            if let Some(dialog) = quick_match_page {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| (*button, dialog.ui.buttons.is_pressed(button.id), true))
-                    .collect();
-            }
+            painted_buttons = crate::app::shell_wol::leaf::buttons(
+                state,
+                crate::ui::wol_quick_match::DIALOG,
+                &layout.page.buttons,
+            );
             None
         }
         (Painted::Lobby(layout), None) => {

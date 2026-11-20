@@ -44,8 +44,10 @@ pub enum PageEvent {
 }
 
 /// Builds `spec`'s children under the dialog root once; true when it built.
+/// Buttons a box fed into the dialog carry no id and do not count.
 pub fn ensure_built(gui: &mut Gui, root: NodeId, spec: impl FnOnce() -> NodeSpec) -> bool {
-    if gui.tree().children(root).is_ok_and(|c| !c.is_empty()) {
+    let built = gui.tree().children(root).is_ok_and(|c| c.iter().any(|n| gui.id_of(*n).is_some()));
+    if built {
         return false;
     }
     for child in spec().children {
@@ -78,6 +80,32 @@ pub fn set(gui: &mut Gui, root: NodeId, id: u16, prop: Prop, value: Value) {
     }
 }
 
+/// Control `id`'s value of `prop` under `root`.
+pub fn get(gui: &Gui, root: NodeId, id: u16, prop: Prop) -> Option<&Value> {
+    gui.get(gui.find_id(root, i32::from(id))?, prop).ok().flatten()
+}
+
+/// Whether checkbox `id` under `root` is checked.
+pub fn checked(gui: &Gui, root: NodeId, id: u16) -> bool {
+    get(gui, root, id, Prop::Checked) == Some(&Value::Bool(true))
+}
+
+/// Control `id`'s integer `prop` (a trackbar's `Pos`, a list's `Selected`).
+pub fn int(gui: &Gui, root: NodeId, id: u16, prop: Prop) -> Option<i32> {
+    match get(gui, root, id, prop)? {
+        Value::Int(value) => Some(*value),
+        _ => None,
+    }
+}
+
+/// [`hovered_help`] of the tree's hovered control, borrowed from the tree.
+pub fn hovered_key(gui: &Gui) -> Option<&str> {
+    match gui.get(gui.hovered()?, Prop::Tooltip).ok().flatten()? {
+        Value::Text(key) => Some(key),
+        _ => None,
+    }
+}
+
 /// The status-line help of the hovered control (enable-unfiltered: a
 /// disabled control still writes its help).
 pub fn hovered_help(gui: &Gui, hovered: Option<NodeId>) -> Option<String> {
@@ -85,6 +113,46 @@ pub fn hovered_help(gui: &Gui, hovered: Option<NodeId>) -> Option<String> {
         Some(Value::Text(key)) => Some(key.clone()),
         _ => None,
     }
+}
+
+/// A family page's right-panel buttons as nodes, each with its status help.
+pub fn menu_buttons(spec: &super::menu_page::MenuPageSpec) -> impl Iterator<Item = NodeSpec> + '_ {
+    spec.buttons().map(|b| NodeSpec::new(NodeKind::Button).id(i32::from(b.id)).tooltip(b.tooltip_key))
+}
+
+/// The dialog rooted at `root`.
+fn dialog_of(gui: &Gui, root: NodeId) -> Option<vera20k_gui::DialogId> {
+    gui.dialogs().find(|d| gui.dialog_root(*d) == Some(root))
+}
+
+/// The status help of the control hovered in the dialog rooted at `root`,
+/// which may lie under another.
+pub fn hovered_key_in(gui: &Gui, root: NodeId) -> Option<&str> {
+    match gui.get(gui.hovered_in(dialog_of(gui, root)?)?, Prop::Tooltip).ok().flatten()? {
+        Value::Text(key) => Some(key),
+        _ => None,
+    }
+}
+
+/// The right-panel buttons under `root` as the column paints them: rect,
+/// pushed (captured and under the pointer in its own dialog, 612B70) and
+/// enabled.
+pub fn menu_button_looks(
+    gui: &Gui,
+    root: Option<NodeId>,
+    buttons: &[super::menu_page::MenuPageButtonRect],
+) -> Vec<(super::menu_page::MenuPageButtonRect, bool, bool)> {
+    let Some(root) = root else { return Vec::new() };
+    let dialog = dialog_of(gui, root);
+    let held = dialog.and_then(|d| gui.pressed_in(d).filter(|n| gui.hovered_in(d) == Some(*n)));
+    buttons
+        .iter()
+        .map(|b| {
+            let node = gui.find_id(root, i32::from(b.id));
+            let enabled = node.and_then(|n| gui.get(n, Prop::Enabled).ok().flatten()) != Some(&Value::Bool(false));
+            (*b, node.is_some() && node == held, enabled)
+        })
+        .collect()
 }
 
 /// The GUI's events as cues and control-id events, in order: a control's
@@ -168,5 +236,8 @@ mod tests {
             page_events(&gui, events),
             [PageEvent::Cue(PageCue::Checkbox), PageEvent::Toggled(0x5F5, true)]
         );
+        // The tree owns the value the screen reads back.
+        assert!(checked(&gui, root, 0x5F5) && !checked(&gui, root, 1));
+        assert_eq!(hovered_key(&gui), Some("STT:WOLOptionsPage"));
     }
 }

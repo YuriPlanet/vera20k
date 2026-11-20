@@ -12,7 +12,8 @@ use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_grown, push_entry_window_crop,
+    SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_grown, push_entry_scaled,
+    push_entry_window_crop,
 };
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
@@ -222,6 +223,17 @@ pub(crate) fn family_backdrop(
 }
 
 impl FamilyBackdrop {
+    /// The background whole at its origin: `0xE2`'s parent background, and
+    /// the RA2TS area of a menu page while no movie is drawn.
+    pub(crate) fn canvas(&self) -> Vec<SpriteInstance> {
+        let mut out = Vec::new();
+        if let Some(entry) = self.background {
+            let (x, y) = self.origin;
+            push_entry_scaled(&mut out, entry, x, y, self.scale, PARENT_BACKGROUND_DEPTH);
+        }
+        out
+    }
+
     /// The backdrop's own pixels behind `rect`, taken with the mapping the
     /// backdrop is drawn with: 1:1 from the centered dialog canvas on the
     /// retail layout, and, on a scaled page, proportionally from the canvas
@@ -369,13 +381,13 @@ fn movie_list_composition<'a>(
         push_family_list(&mut sprites, atlas, &backdrop, layout.list, view.as_ref());
     }
     if let (Some(list), Some((geometry, view))) = (list, view) {
-        for (visible, index) in (view.top..list.rows.len())
+        for (visible, index) in (view.top..list.len())
             .take(geometry.visible_rows)
             .enumerate()
         {
             let row = geometry.row(visible);
             labels.push(PaintLabel {
-                text: resolve_csf(state, list.rows[index].label_key),
+                text: resolve_csf(state, list[index].label_key),
                 rect: RectPx::new(
                     row.x + LIST_TEXT_INSET,
                     row.y,
@@ -686,12 +698,11 @@ mod tests {
         let list = RectPx::new(120, 128, 399, 304);
         // Selection fill measured at x 121..=518, y 129..=147.
         assert_eq!(list_interior(list), RectPx::new(121, 129, 398, 303));
-        let state = crate::ui::movies_credits_shell::open_movie_list(
+        let state = crate::ui::movies_credits_shell::active_movie_entries(
             crate::ui::movies_credits_shell::MovieProgress::default(),
-            -1,
         );
         let geometry = |rows, top| list_box_geometry(list, rows, top, ListMetrics::RETAIL);
-        let short = geometry(state.rows.len(), 0);
+        let short = geometry(state.len(), 0);
         assert_eq!(short.row(0), RectPx::new(121, 129, 398, 19));
         assert_eq!(short.visible_rows, 15);
         assert!(short.scrollbar.is_none());

@@ -8,13 +8,15 @@
 //! WOL owner, which runs each returned [`MyInfoAction`] at once (every
 //! persona write is LoadRecord, the setter, then SaveProfileToINI).
 
-use crate::ui::shell::button::ShellButtonInteraction;
-use crate::ui::shell::combobox::{ComboPopup, ComboPopupInteraction};
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
+
+use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
 };
 use crate::ui::shell::layout::status_line_rect;
+use crate::ui::shell::page;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
 
@@ -248,9 +250,6 @@ pub(crate) struct WolMyInfoPage {
     /// The heading, the five statistics and the update line by control id
     /// (`0x77A9F0`).
     pub(crate) texts: Vec<(u16, String)>,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) popup: ComboPopupInteraction<u16>,
-    pub(crate) hovered: Option<u16>,
 }
 
 fn combo_index(control: u16) -> Option<usize> {
@@ -473,19 +472,70 @@ impl WolMyInfoPage {
         action
     }
 
-    /// The drop list of the open combo.
-    pub(crate) fn popup_geometry(&self, layout: &WolMyInfoLayout) -> Option<ComboPopup> {
-        let control = self.popup.control?;
-        let combo = self.combo(control).filter(|combo| combo.enabled)?;
-        Some(ComboPopup::new(
-            layout.face(control)?,
-            layout.page.scale,
-            combo.rows.len(),
-            visible_rows(control),
-            self.popup.top_index,
-        ))
+    /// Shows the page in its widgets: the combos' rows, selections and
+    /// enables, the boxes, the buttons' enables and the texts (a text never
+    /// written keeps its template `GUI:UnknownStats`, `unknown`).
+    pub(crate) fn present(&self, gui: &mut Gui, root: NodeId, unknown: &str) {
+        let mut set = |id: u16, prop: Prop, value: Value| page::set(gui, root, id, prop, value);
+        for (id, combo) in COMBOS.into_iter().zip(&self.combos) {
+            let rows = |f: fn(&MyInfoRow) -> String| Value::Items(combo.rows.iter().map(f).collect());
+            set(id, Prop::Items, rows(|row| row.text.clone()));
+            set(id, Prop::Swatches, rows(|row| row.swatch.map(|s| s.to_string()).unwrap_or_default()));
+            set(id, Prop::Selected, Value::Int(combo.selected.map_or(-1, |row| row as i32)));
+            set(id, Prop::Enabled, Value::Bool(combo.enabled));
+        }
+        for (id, checked) in [(AUTO_LOGIN, self.auto_login), (MATCH_SAME_RES, self.match_same_res)] {
+            // The caption greys as a disabled button's does.
+            let enabled = self.enabled(id);
+            let color = if enabled { Rgba(0xFF, 0xFF, 0, 0xFF) } else { Rgba(0x48, 0, 0, 0xFF) };
+            set(id, Prop::Checked, Value::Bool(checked));
+            set(id, Prop::Enabled, Value::Bool(enabled));
+            set(id, Prop::Color, Value::Rgba(color));
+        }
+        for id in [FORGET, PLAY_BUDDY] {
+            set(id, Prop::Enabled, Value::Bool(self.enabled(id)));
+        }
+        for id in [HEADING, UPDATE].into_iter().chain(STATS) {
+            let text = self.texts.iter().find(|(control, _)| *control == id);
+            set(id, Prop::Text, Value::Text(text.map_or(unknown, |(_, text)| text).to_owned()));
+        }
     }
 }
+
+/// `0x114`'s widgets: the column's buttons, the right-aligned captions, the
+/// five combos (their drop lists of [`visible_rows`]), the two boxes (each
+/// toggled on its icon's press), and the heading, update line and
+/// statistics (the statistics with status help).
+pub(crate) fn spec() -> NodeSpec {
+    let align = |a: ShellAlign| Value::Int(i32::from(a.0));
+    let help = |node: NodeSpec, id: u16| match tooltip_key(id) {
+        Some(key) => node.id(id.into()).tooltip(key),
+        None => node.id(id.into()),
+    };
+    let labels = LABELS.iter().enumerate().map(|(index, (key, _))| {
+        let id = LABEL_IDS + index as u16;
+        NodeSpec::new(NodeKind::Text).id(id.into()).label(key).with(Prop::Align, align(ShellAlign::H_RIGHT))
+    });
+    let combos = COMBOS.map(|id| {
+        help(NodeSpec::new(NodeKind::Combo), id).with(Prop::VisibleRows, Value::Int(visible_rows(id) as i32))
+    });
+    let boxes = [(AUTO_LOGIN, AUTO_LOGIN_KEY), (MATCH_SAME_RES, MATCH_SAME_RES_KEY)].map(|(id, key)| {
+        help(NodeSpec::new(NodeKind::Checkbox), id).label(key).with(Prop::ActivateOnPress, Value::Bool(true))
+    });
+    let texts = [(HEADING, ShellAlign::H_CENTER), (UPDATE, ShellAlign::H_CENTER)]
+        .into_iter()
+        .chain(STATS.map(|id| (id, ShellAlign::NONE)))
+        .map(|(id, a)| help(NodeSpec::new(NodeKind::Text), id).with(Prop::Align, align(a)));
+    NodeSpec::new(NodeKind::Dialog)
+        .children(page::menu_buttons(&PAGE))
+        .children(labels)
+        .children(combos)
+        .children(boxes)
+        .children(texts)
+}
+
+/// The captions' ids in [`LABELS`] order (statics without ids).
+const LABEL_IDS: u16 = 0xFF00;
 
 /// The drop list's rows: country `0x4DE(0, 7)` (`0x004E3A36`), colour
 /// `0x4DE(0, 9)` (`0x004E45E5`); the others as many as the template's
@@ -577,26 +627,22 @@ impl WolMyInfoLayout {
         }
     }
 
-    pub(crate) fn face(&self, control: u16) -> Option<RectPx> {
-        combo_index(control).map(|index| self.faces[index])
-    }
-
-    /// The child under `(x, y)`: buttons first, then the template's other
-    /// children with status help.
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
-            return Some(button.id);
+    /// Where control `id` sits.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        if let Some(index) = combo_index(id) {
+            return Some(self.faces[index]);
         }
-        COMBOS
-            .iter()
-            .copied()
-            .zip(self.faces)
-            .chain([
-                (AUTO_LOGIN, self.auto_login),
-                (MATCH_SAME_RES, self.match_same_res),
-            ])
-            .chain(STATS.iter().copied().zip(self.stats))
-            .find_map(|(id, rect)| rect.contains(x, y).then_some(id))
+        if let Some(index) = STATS.iter().position(|stat| *stat == id) {
+            return Some(self.stats[index]);
+        }
+        match id {
+            AUTO_LOGIN => Some(self.auto_login),
+            MATCH_SAME_RES => Some(self.match_same_res),
+            HEADING => Some(self.heading),
+            UPDATE => Some(self.update),
+            id if id >= LABEL_IDS => self.labels.get(usize::from(id - LABEL_IDS)).copied(),
+            id => self.page.button_rect(id),
+        }
     }
 }
 

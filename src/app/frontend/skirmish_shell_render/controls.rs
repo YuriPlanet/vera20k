@@ -2085,6 +2085,18 @@ pub(super) fn list_controls(
     selectable: bool,
     scale: ShellScale,
 ) {
+    let selected = list.selected.filter(|_| selectable);
+    list_view_controls(out, atlas, geometry, (selected, list.top_index, list.scroll.pressed_part()), scale);
+}
+
+/// [`list_controls`] of a list's `(selected, top, pushed arrow)`.
+pub(super) fn list_view_controls(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    geometry: crate::ui::shell::list::ShellListGeometry,
+    (selected, top, pressed): (Option<usize>, usize, Option<crate::ui::shell::list::ListScrollPart>),
+    scale: ShellScale,
+) {
     // Frame lines and scrollbar geometry are shared with all native lists.
     // Their backing remains the composed parent. Its one-RGB565-unit darkening
     // is a small presentation residual until the common atlas carries it.
@@ -2097,9 +2109,8 @@ pub(super) fn list_controls(
             SHELL_CONTROL_DEPTH,
         );
     }
-    if selectable
-        && let Some(index) = list.selected
-        && let Some(visible) = index.checked_sub(list.top_index)
+    if let Some(index) = selected
+        && let Some(visible) = index.checked_sub(top)
         && visible < geometry.visible_rows
     {
         push_solid_rect(
@@ -2117,7 +2128,7 @@ pub(super) fn list_controls(
             ControlPaint::ScrollBar {
                 scrollbar,
                 thumb,
-                pressed_part: list.scroll.pressed_part().map(|part| {
+                pressed_part: pressed.map(|part| {
                     use crate::ui::shell::list::ListScrollPart;
                     use crate::ui::skirmish_shell::DropdownScrollbarPart;
                     match part {

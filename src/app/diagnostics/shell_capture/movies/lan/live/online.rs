@@ -432,12 +432,13 @@ impl LiveRoundFlow {
                     .iter()
                     .position(|row| row.locale != 0)
                     .unwrap_or(0);
-                let geometry = persona::list_geometry(&layout, page);
+                let (geometry, top) =
+                    persona::list_view(state).context("online location list")?;
                 ensure!(
-                    row >= page.top && row < page.top + geometry.visible_rows,
+                    row >= top && row < top + geometry.visible_rows,
                     "online location choice is outside the visible list"
                 );
-                let row_rect = geometry.row(row - page.top);
+                let row_rect = geometry.row(row - top);
                 click(state, row_rect);
                 click(
                     state,

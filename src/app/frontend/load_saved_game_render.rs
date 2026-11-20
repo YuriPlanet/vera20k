@@ -8,19 +8,15 @@ use crate::ui::shell::list::ListMetrics;
 use anyhow::Result;
 
 use crate::app::AppState;
-use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
+use crate::app::frontend::menu_page_render::{
+    FamilyFrame, PageButton, encode_family_page, page_panel_state,
+};
 use crate::app::frontend::movies_credits_render::{
     family_backdrop, push_family_backdrop, push_family_list,
 };
-use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
-    software_cursor,
-};
+use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::render::shell_paint::{
-    self, CURSOR_DEPTH, PaintButton, PaintLabel, SHELL_TEXT_RGB_DISABLED, SHELL_TEXT_RGB_ENABLED,
-};
-use crate::render::shell_text::ShellAlign;
+use crate::render::shell_paint::PaintButton;
 use crate::ui::shell::list::{ListScrollPart, ShellListGeometry};
 use crate::ui::shell::saved_games::{LOAD_BUTTON, LOAD_SAVED_GAME_PAGE};
 use crate::ui::skirmish_shell::SavedSeedControl;
@@ -35,33 +31,14 @@ pub(crate) fn render_load_saved_game_page(
         return Ok(false);
     }
     let layout = crate::app::App::load_saved_game_layout(state);
-    // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
-    // and pumps no messages until it ends: every child stays blank.
-    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
+    let panel = page_panel_state(
         state,
         ShellSlideKind::LoadSavedGame,
-    )
-    .cloned();
-    let leaving = exit_wave.is_some();
-    let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
-    let (title_window, status_label) = if leaving {
-        (None, None)
-    } else {
-        let title_window = state
-            .frontend
-            .shell_page_title
-            .paint(crate::util::time::Instant::now());
-        let status_text = crate::app::App::load_saved_game_status_key(state)
-            .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_default();
-        let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
-            state,
-            status_text,
-            layout.page.status_help,
-        );
-        (title_window, status_label)
-    };
-
+        false,
+        |state| crate::app::App::load_saved_game_status_key(state).map(str::to_owned),
+        layout.page.status_help,
+    );
+    let leaving = panel.leaving;
     let chrome = state
         .frontend
         .main_menu_shell_chrome
@@ -78,21 +55,54 @@ pub(crate) fn render_load_saved_game_page(
         layout.page.screen.h,
         layout.page.scale,
     );
-    let mut sprites = Vec::new();
-    push_family_backdrop(&mut sprites, &backdrop);
-    sprites.extend(shell_paint::paint_chrome(
-        chrome,
-        layout.page.right_panel,
-        Some(layout.page.lower_strip),
-        layout.page.screen.w,
-    ));
-    let geometry = ShellListGeometry::new(
-        layout.browser.list,
-        browser.entries.len(),
-        browser.top_index,
-        ListMetrics::scaled(layout.browser.scale),
+    // The browser's own input owns the buttons; a message box owns the press
+    // while it is up, so the page buttons paint released under it.
+    let pressed = browser
+        .prompt
+        .is_none()
+        .then_some(browser.pressed_control)
+        .flatten();
+    let buttons = layout
+        .page
+        .buttons
+        .iter()
+        .map(|button| {
+            let (control, enabled) = if button.id == LOAD_BUTTON {
+                (SavedSeedControl::Action, browser.action_enabled())
+            } else {
+                (SavedSeedControl::Back0x686, true)
+            };
+            PageButton {
+                id: button.id,
+                paint: PaintButton {
+                    rect: button.rect,
+                    pressed: enabled && pressed == Some(control),
+                    hovered: false,
+                    enabled,
+                },
+            }
+        })
+        .collect();
+    let mut frame = FamilyFrame::new(
+        "Load Saved Game Shell",
+        &LOAD_SAVED_GAME_PAGE,
+        &layout.page,
+        panel,
+        buttons,
     );
+    let mut background = Vec::new();
+    push_family_backdrop(&mut background, &backdrop);
+    frame.under.push(TexturedDraw {
+        texture: &chrome.texture,
+        instances: background,
+    });
     if !leaving {
+        let geometry = ShellListGeometry::new(
+            layout.browser.list,
+            browser.entries.len(),
+            browser.top_index,
+            ListMetrics::scaled(layout.browser.scale),
+        );
         let pressed = match browser.pressed_control {
             Some(SavedSeedControl::ScrollUp) => Some(ListScrollPart::Up),
             Some(SavedSeedControl::ScrollDown) => Some(ListScrollPart::Down),
@@ -100,146 +110,35 @@ pub(crate) fn render_load_saved_game_page(
             Some(SavedSeedControl::ScrollTrack) => Some(ListScrollPart::Track),
             _ => None,
         };
+        let view = vera20k_gui::ListView {
+            rows: browser.entries.len(),
+            top: browser.top_index,
+            selected: browser.selected,
+            pressed,
+        };
         push_family_list(
-            &mut sprites,
+            &mut frame.over_panel,
             chrome,
             &backdrop,
             layout.list_window,
-            Some(&(
-                geometry,
-                vera20k_gui::ListView {
-                    rows: browser.entries.len(),
-                    top: browser.top_index,
-                    selected: browser.selected,
-                    pressed,
-                },
-            )),
+            Some(&(geometry, view)),
         );
     }
-
-    // A message box owns the press while it is up; the page buttons paint
-    // released under it.
-    let pressed = browser
-        .prompt
-        .is_none()
-        .then_some(browser.pressed_control)
-        .flatten();
-    let load_enabled = browser.action_enabled();
-    let button_state = |id: u16| {
-        let control = if id == LOAD_BUTTON {
-            SavedSeedControl::Action
-        } else {
-            SavedSeedControl::Back0x686
-        };
-        let enabled = id != LOAD_BUTTON || load_enabled;
-        (enabled && pressed == Some(control), enabled)
-    };
-    // While a slide runs the engine draws the whole tile column in place of
-    // the buttons (`0x006071E0`).
-    let buttons: Vec<PaintButton> = match wave.as_ref() {
-        Some(wave) => {
-            sprites.extend(shell_paint::paint_slide_column(
-                chrome,
-                layout.page.right_panel,
-                &wave.button_draws(),
-            ));
-            Vec::new()
-        }
-        None => layout
-            .page
-            .buttons
-            .iter()
-            .map(|button| {
-                let (pressed, enabled) = button_state(button.id);
-                PaintButton {
-                    rect: button.rect,
-                    pressed,
-                    hovered: false,
-                    enabled,
-                }
-            })
-            .collect(),
-    };
-    let button_sprites = shell_paint::paint_buttons(
-        chrome,
-        &buttons,
-        crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        crate::util::time::Instant::now(),
-        None,
-    );
-    let mut labels = Vec::new();
-    for button in layout.page.buttons.iter().filter(|_| wave.is_none()) {
-        let Some(spec) = LOAD_SAVED_GAME_PAGE.button(button.id) else {
-            continue;
-        };
-        let (pressed, enabled) = button_state(button.id);
-        labels.push(PaintLabel {
-            text: resolve_csf(state, spec.csf_key),
-            rect: owner_draw_button_label_rect(button.rect, pressed),
-            align: ShellAlign::BUTTON_CAPTION,
-            rgb: if enabled {
-                SHELL_TEXT_RGB_ENABLED
-            } else {
-                SHELL_TEXT_RGB_DISABLED
-            },
-            path_a_reveal: None,
-        });
-    }
-    if let Some(window) = title_window {
-        labels.push(PaintLabel {
-            text: resolve_csf(state, LOAD_SAVED_GAME_PAGE.title_key),
-            rect: layout.page.title,
-            align: ShellAlign::PANEL_TITLE,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(shell_reveal_path_a(window)),
-        });
-    }
-    labels.extend(status_label);
-    let mut text = shell_paint::paint_labels_scaled(
-        &state.renderer.bit_font,
-        &labels,
-        layout.page.scale.factor(),
-    );
-    let prompt_sprites = crate::app::frontend::skirmish_shell_render::family_saved_game_overlays(
+    let prompt = crate::app::frontend::skirmish_shell_render::family_saved_game_overlays(
         state,
         &layout.browser,
         browser,
         !leaving,
-        &mut text,
+        &mut frame.over_text,
     );
-    let prompt_texture = state
+    frame.over = state
         .frontend
         .skirmish_shell_chrome
         .as_ref()
-        .map(|atlas| &atlas.texture);
-    let mut draws = vec![
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: sprites,
-        },
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: button_sprites,
-        },
-    ];
-    if let Some(texture) = prompt_texture {
-        draws.push(TexturedDraw {
-            texture,
-            instances: prompt_sprites,
+        .map(|atlas| TexturedDraw {
+            texture: &atlas.texture,
+            instances: prompt,
         });
-    }
-    encode_shell_pass(
-        state,
-        encoder,
-        destination,
-        "Load Saved Game Shell",
-        ShellComposition {
-            draws: &draws,
-            text: &text,
-            cursor: software_cursor(state, CURSOR_DEPTH),
-            effects: None,
-            smooth_art: false,
-        },
-    );
+    encode_family_page(state, encoder, destination, frame);
     Ok(true)
 }

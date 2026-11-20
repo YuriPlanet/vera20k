@@ -5,31 +5,29 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::app::frontend::menu_page_render::{
+    FamilyFrame, FamilyPage, PanelState, encode_family_page, help_text, paint_shell_monitor,
+    paint_shell_status_line,
+};
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_pass::{owner_draw_button_label_rect, resolve_csf};
+use crate::app::frontend::shell_pass::{TexturedDraw, owner_draw_button_label_rect, resolve_csf};
 use crate::app::frontend::shell_transition::{
     ColumnDraw, ExternalMenuWait, MainMenuEntryPaintFrame, MainMenuEntryPresentToken,
     ShellFrameWave, external_menu_wait,
 };
 use crate::app::{AppState, BUILD_STAMP};
 use crate::render::batch::SpriteInstance;
-use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
+use crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas;
 use crate::render::shell_paint::{
-    self, ArtFit, ButtonPolicy, CURSOR_DEPTH, MOVIE_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton,
-    PaintLabel, SHELL_TEXT_RGB_ENABLED, push_entry_scaled,
+    self, CURSOR_DEPTH, MOVIE_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
 };
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::shell_ui_style_assets::{
     ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver,
 };
-use crate::ui::main_menu_shell::{
-    MainMenuControlId, MainMenuMovieBase, MainMenuShellLayout, csf_key_for_control,
-    tooltip_csf_key_for_control,
-};
+use crate::ui::main_menu_shell::{MAIN_MENU_PAGE, MainMenuMovieBase, MainMenuShellLayout};
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
 use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind1RevealWindow};
 
 /// Archive holding the Red Alert 2 menu loop used by the unchecked default.
@@ -38,19 +36,6 @@ use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind
 /// (Yuri's Revenge), whose copy normal priority resolves first. `ra2ts_s.bik`,
 /// the 640-wide loop, ships only here, so both looks play it.
 const RA2_MOVIE_ARCHIVE: &str = "language.mix";
-
-/// Dialog 0xE2 owner-draw button policy: the SDBTNANM frame fills its 156x42
-/// cell, right-anchored and vertically centred, so a stretched cell stretches
-/// the art with it. At the authored cell size that placement is the native
-/// top-left draw. The dialog has no hover flash or disabled owner-draw button.
-const MAIN_MENU_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
-    art_fit: ArtFit::FitRightAnchored {
-        panel_w: SDBTNANM_CELL_W_NARROW as f32,
-        tile_h: SDBTNANM_CELL_H as f32,
-    },
-    hover_flash: false,
-    art_sink_y: 0.0,
-};
 
 pub(crate) enum MainMenuShellRenderResult {
     Rendered {
@@ -167,30 +152,8 @@ impl MainMenuSlide {
     }
 }
 
-/// Map the layout + shell state into the owner-draw button list for the steady
-/// paint pass. 0xE2 never disables a control, so every button is `enabled: true`.
-fn main_menu_paint_buttons(
-    layout: &MainMenuShellLayout,
-    pressed_button: Option<MainMenuControlId>,
-) -> Vec<PaintButton> {
-    layout
-        .buttons
-        .iter()
-        .map(|button| PaintButton {
-            rect: button.rect,
-            pressed: pressed_button == Some(button.id),
-            hovered: false, // 0xE2 never flashes; hover state is unused on art
-            enabled: true,
-        })
-        .collect()
-}
-
 pub(crate) fn main_menu_title_text(state: &AppState) -> std::borrow::Cow<'_, str> {
-    resolve_csf(state, "GUI:MainMenu")
-}
-
-fn main_menu_status_csf_key(hovered_button: Option<MainMenuControlId>) -> Option<&'static str> {
-    hovered_button.map(tooltip_csf_key_for_control)
+    resolve_csf(state, MAIN_MENU_PAGE.title_key)
 }
 
 /// What 0xE2 shows in place of its live controls.
@@ -241,60 +204,27 @@ pub(crate) fn shell_reveal_path_a(window: Kind1RevealWindow) -> PathAReveal {
     }
 }
 
-/// Build the owner-draw button labels and dialog statics consumed by
-/// `shell_paint::paint_labels`. Button labels use the exact native normal/pressed
-/// clipping rectangles. Status static `0x695` reads the dialog's immediate hover
-/// state rather than the delayed in-game tooltip service.
-fn main_menu_paint_labels<'a>(
-    state: &'a AppState,
-    layout: &MainMenuShellLayout,
-    pressed_button: Option<MainMenuControlId>,
-    version_text: Option<&'a str>,
-    title_window: Option<Kind1RevealWindow>,
-    captions: bool,
-) -> Vec<PaintLabel<'a>> {
-    use crate::render::shell_text::ShellAlign;
-    let mut out = Vec::new();
-    let button_align = ShellAlign::BUTTON_CAPTION;
-    // The slide engine draws the button frames only (`0x006071E0`).
-    for button in layout.buttons.iter().filter(|_| captions) {
-        let pressed = pressed_button == Some(button.id);
-        out.push(PaintLabel {
-            text: resolve_csf(state, csf_key_for_control(button.id)),
-            rect: owner_draw_button_label_rect(button.rect, pressed),
-            align: button_align,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
-    // Statics: title heading, version, tooltip — top-anchored, h-centered.
-    if let Some(window) = title_window {
-        out.push(PaintLabel {
-            text: main_menu_title_text(state),
-            rect: layout.title,
-            align: ShellAlign::PANEL_TITLE,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(shell_reveal_path_a(window)),
-        });
-    }
-    // VERA difference: the release sits on the status line's baseline rather
-    // than gamemd's version-line top, so the two bottom texts line up.
+/// 0xE2's own statics. VERA difference: gamemd prints "<GUI:Version>
+/// <VERSION.TXT>" on the version line, a fixed "1.001TUC" in every build;
+/// this line names the VERA20K release instead, the version players report
+/// and updates compare, on the status line's baseline rather than gamemd's
+/// version-line top, so the two bottom texts line up. The teardown slide
+/// leaves it blank.
+fn version_labels(state: &AppState, layout: &MainMenuShellLayout) -> Vec<PaintLabel<'static>> {
     let version_rect = RectPx {
         y: layout.tooltip_line.y,
         ..layout.version_line
     };
-    out.extend(version_text.map(|text| PaintLabel {
-        text: text.into(),
+    let mut out = vec![PaintLabel {
+        text: BUILD_STAMP.into(),
         rect: version_rect,
         align: ShellAlign::H_CENTER,
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
-    }));
+    }];
     // VERA: the mod in use (`app::mods`), on the same line, between the
     // status help and the right panel. Retail 640x480 has no room there.
-    if version_text.is_some()
-        && let Some(active) = state.frontend.mods.active.as_ref()
-    {
+    if let Some(active) = state.frontend.mods.active.as_ref() {
         // As far from the panel as the status help is from the strip's left.
         let gap = layout.tooltip_line.x - layout.lower_strip.x;
         let left = layout.tooltip_line.x + layout.tooltip_line.w;
@@ -312,71 +242,34 @@ fn main_menu_paint_labels<'a>(
     out
 }
 
-/// Select the parent-background SHP: MNSCRNS only at exactly 640 wide, else
-/// MNSCRNL (mirrors gamemd's `g_ScreenWidth == 640` switch).
-fn select_parent_background(
-    screen_w: i32,
-    mnscrns_640: Option<MainMenuShellChromeEntry>,
-    mnscrnl_large: Option<MainMenuShellChromeEntry>,
-) -> Option<MainMenuShellChromeEntry> {
-    if screen_w == 640 {
-        mnscrns_640
-    } else {
-        mnscrnl_large
-    }
-}
-
 /// The MNSCRN parent background of a right-panel shell at `screen_w` x
-/// `screen_h`: native SHP canvas at the centered shell origin on the retail
-/// layout, scaled with the dialog when the layout scales the shell.
-/// Behind the `0xE2` movie and chrome, and in the RA2TS area of the menu pages
-/// while no movie is drawn.
+/// `screen_h` (`FamilyBackdrop::canvas`): behind the `0xE2` movie and chrome,
+/// and in the RA2TS area of the menu pages while no movie is drawn.
 pub(crate) fn shell_parent_background_instances(
     atlas: &MainMenuShellChromeAtlas,
     screen_w: i32,
     screen_h: i32,
     scale: crate::ui::shell::geom::ShellScale,
 ) -> Vec<SpriteInstance> {
-    // A scaled page is authored at 800 wide, so it takes the large art.
-    let art_w = if scale.is_retail() {
-        screen_w
-    } else {
-        crate::ui::shell::geom::SHELL_BASE_W
-    };
-    let Some(entry) = select_parent_background(
-        art_w,
-        atlas.parent_background_640_mnscrns,
-        atlas.parent_background_large_mnscrnl,
-    ) else {
-        return Vec::new();
-    };
-    // The retail dialog is centred by gamemd's origin; a scaled one starts at
-    // its authored origin, which the scale places in the window.
-    let (x, y) = if scale.is_retail() {
-        crate::ui::shell::geom::dialog_origin(screen_w, screen_h)
-    } else {
-        (0, 0)
-    };
-    let mut out = Vec::new();
-    push_entry_scaled(&mut out, entry, x, y, scale, PARENT_BACKGROUND_DEPTH);
-    out
+    super::movies_credits_render::family_backdrop(atlas, screen_w, screen_h, scale).canvas()
 }
 
-fn movie_instance(layout: &MainMenuShellLayout) -> SpriteInstance {
-    SpriteInstance {
-        position: [layout.movie.x as f32, layout.movie.y as f32],
-        size: [layout.movie.w as f32, layout.movie.h as f32],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        depth: MOVIE_DEPTH,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    }
-}
-
-fn build_movie_instances(layout: &MainMenuShellLayout) -> Vec<SpriteInstance> {
-    vec![movie_instance(layout)]
+/// The RA2TS movie filling `rect`, once its session is loaded.
+pub(crate) fn movie_draw(state: &AppState, rect: RectPx) -> Option<TexturedDraw<'_>> {
+    let movie = state.frontend.main_menu_movie.as_ref()?;
+    Some(TexturedDraw {
+        texture: movie.batch_texture(),
+        instances: vec![SpriteInstance {
+            position: [rect.x as f32, rect.y as f32],
+            size: [rect.w as f32, rect.h as f32],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            depth: MOVIE_DEPTH,
+            tint: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            ..Default::default()
+        }],
+    })
 }
 
 pub(crate) fn ensure_movie_for_current_layout(
@@ -499,10 +392,9 @@ fn menu_movie_bytes<'a>(
         .ok()
 }
 
-/// Paint the normal 0xE2 route through its active-retail presentation boundary.
-///
-/// First-paint callers use [`render_main_menu_first_paint_frame`] so entry and
-/// steady paint share this exact RGB565 presentation boundary.
+/// Paint the normal 0xE2 route. First-paint callers use
+/// [`render_main_menu_first_paint_frame`], so entry and steady paint share one
+/// RGB565 presentation.
 pub(crate) fn render_main_menu_shell(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -529,28 +421,13 @@ pub(crate) fn render_main_menu_shell(
             Kind1PaintWindow::Due { window, receipt } => (Some(window), Some(receipt)),
         }
     };
-    let color = state.renderer.shell_surface_presenter.source_render_view();
-    let depth = state.renderer.depth_view.clone();
-    let result = render_main_menu_shell_to_target_inner(
-        state,
-        encoder,
-        ShellRenderTarget {
-            color: &color,
-            depth: &depth,
+    Ok(
+        if render_main_menu(state, encoder, destination, title_window, slide)? {
+            MainMenuShellRenderResult::Rendered { title_receipt }
+        } else {
+            MainMenuShellRenderResult::Fallback
         },
-        title_window,
-        slide,
-    )?;
-    match result {
-        MainMenuShellRenderResult::Rendered { .. } => {
-            state
-                .renderer
-                .shell_surface_presenter
-                .encode_present(encoder, destination);
-            Ok(MainMenuShellRenderResult::Rendered { title_receipt })
-        }
-        MainMenuShellRenderResult::Fallback => Ok(MainMenuShellRenderResult::Fallback),
-    }
+    )
 }
 
 pub(crate) fn render_main_menu_first_paint_frame(
@@ -559,45 +436,35 @@ pub(crate) fn render_main_menu_first_paint_frame(
     destination: &wgpu::Texture,
     frame: MainMenuEntryPaintFrame,
 ) -> Result<MainMenuEntryRenderResult> {
-    let color = state.renderer.shell_surface_presenter.source_render_view();
-    let depth = state.renderer.depth_view.clone();
-    let result = render_main_menu_shell_to_target_inner(
+    if !render_main_menu(
         state,
         encoder,
-        ShellRenderTarget {
-            color: &color,
-            depth: &depth,
-        },
+        destination,
         None,
         MainMenuSlide::Entry(frame),
-    )?;
-    match result {
-        MainMenuShellRenderResult::Rendered { .. } => {
-            state
-                .renderer
-                .shell_surface_presenter
-                .encode_present(encoder, destination);
-            let token = state
-                .frontend
-                .shell_first_paint_slide
-                .as_ref()
-                .and_then(|wave| wave.mint_present_token(frame))
-                .ok_or_else(|| {
-                    anyhow::anyhow!("main-menu entry frame changed before presenter token mint")
-                })?;
-            Ok(MainMenuEntryRenderResult::Rendered { token })
-        }
-        MainMenuShellRenderResult::Fallback => Ok(MainMenuEntryRenderResult::Fallback),
+    )? {
+        return Ok(MainMenuEntryRenderResult::Fallback);
     }
+    let token = state
+        .frontend
+        .shell_first_paint_slide
+        .as_ref()
+        .and_then(|wave| wave.mint_present_token(frame))
+        .ok_or_else(|| {
+            anyhow::anyhow!("main-menu entry frame changed before presenter token mint")
+        })?;
+    Ok(MainMenuEntryRenderResult::Rendered { token })
 }
 
-fn render_main_menu_shell_to_target_inner(
+/// 0xE2 on the family shell over its MNSCRN parent background and RA2TS
+/// movie; false when its art is missing.
+fn render_main_menu(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
-    target: ShellRenderTarget<'_>,
+    destination: &wgpu::Texture,
     title_window: Option<Kind1RevealWindow>,
     slide: MainMenuSlide,
-) -> Result<MainMenuShellRenderResult> {
+) -> Result<bool> {
     // States 6 and 7 (Exit confirmation, then the quit) run after 0xE2 is
     // destroyed: the confirmation shows over the empty shell backdrop
     // (`0x0052FEC0`). Retail leaves the destroyed box's last image on screen
@@ -616,7 +483,7 @@ fn render_main_menu_shell_to_target_inner(
             .frontend
             .main_menu_shell_error
             .get_or_insert_with(|| crate::i18n::tr("VERA:MenuArtworkUnavailable"));
-        return Ok(MainMenuShellRenderResult::Fallback);
+        return Ok(false);
     }
 
     // While either slide runs the RA2TS static shows no movie and gets no
@@ -626,316 +493,74 @@ fn render_main_menu_shell_to_target_inner(
     let leaving = matches!(slide, MainMenuSlide::Exit(_));
     let movie_shown = !sliding && !backdrop;
     if !step_ra2ts_movie(state, movie_shown) {
-        return Ok(MainMenuShellRenderResult::Fallback);
+        return Ok(false);
     }
 
     let layout = shell_layout::main_menu_layout(state);
+    let page = layout.page();
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
     // that covers the children, and the engine pumps no messages until it
     // ends: the heading, status and version statics stay blank and the
     // monitor window shows the right panel's own art underneath.
-    let monitor_frame = if backdrop || leaving {
+    let monitor = if backdrop || leaving {
         None
     } else {
-        crate::app::frontend::menu_page_render::paint_shell_monitor(state)
+        paint_shell_monitor(state)
     };
-    let status_label = if leaving || cover == MainMenuCover::Backdrop {
+    let status = if leaving || cover == MainMenuCover::Backdrop {
         None
     } else {
-        let status_text = if cover == MainMenuCover::Joining {
-            resolve_csf(state, "GUI:ConnectingToPlayers").into_owned()
-        } else {
-            let hovered =
-                crate::ui::main_menu_shell::hovered_control(&state.frontend.shell_controller);
-            main_menu_status_csf_key(hovered)
-                .map(|key| resolve_csf(state, key).into_owned())
-                .unwrap_or_default()
+        let key = match cover {
+            MainMenuCover::Joining => Some("GUI:ConnectingToPlayers".to_owned()),
+            _ => FamilyPage::MainMenu.status_key(state),
         };
-        crate::app::frontend::menu_page_render::paint_shell_status_line(
-            state,
-            status_text,
-            layout.tooltip_line,
-        )
+        let text = help_text(state, key.as_deref());
+        paint_shell_status_line(state, text, page.status_help)
     };
+    let panel = PanelState {
+        leaving,
+        // The slide engine and the empty backdrop draw the whole tile column
+        // in place of the buttons.
+        column: if backdrop {
+            Some(shell_paint::shuttered_column(page.right_panel))
+        } else {
+            slide.column_draws()
+        },
+        monitor,
+        title: title_window.filter(|_| !backdrop),
+        status,
+    };
+    let buttons = FamilyPage::MainMenu.buttons(state, &page);
+    // An open box paints over the page next, with the cursor above it.
+    let boxed = state.frontend.shell_message_box.is_some()
+        && state.frontend.skirmish_shell_chrome.is_some();
     let chrome = state
         .frontend
         .main_menu_shell_chrome
         .as_ref()
         .expect("checked before render");
-    let movie_texture = state
-        .frontend
-        .main_menu_movie
-        .as_ref()
-        .map(|movie| movie.batch_texture());
-
-    // 0xE2-only MNSCRN parent background, submitted FIRST (no analog on 0x100).
-    let background_instances =
-        shell_parent_background_instances(chrome, layout.screen.w, layout.screen.h, layout.scale);
-    let movie_instances = if movie_shown && movie_texture.is_some() {
-        build_movie_instances(&layout)
-    } else {
-        Vec::new()
-    };
-    let mut chrome_instances = shell_paint::paint_chrome(
-        chrome,
-        layout.right_panel,
-        Some(layout.lower_strip),
-        layout.screen.w,
-    );
-    chrome_instances.extend(monitor_frame.and_then(|frame| {
-        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame, layout.scale)
-    }));
-    // The slide engine and the empty backdrop draw the whole tile column in
-    // place of the buttons.
-    let column = if backdrop {
-        Some(shell_paint::shuttered_column(layout.right_panel))
-    } else {
-        slide.column_draws()
-    };
-    let buttons = match column {
-        Some(draws) => {
-            chrome_instances.extend(shell_paint::paint_slide_column(
-                chrome,
-                layout.right_panel,
-                &draws,
-            ));
-            Vec::new()
-        }
-        None => main_menu_paint_buttons(
-            &layout,
-            crate::ui::main_menu_shell::pressed_control(&state.frontend.shell_controller),
+    let mut frame = FamilyFrame::new("Main Menu Shell", &MAIN_MENU_PAGE, &page, panel, buttons);
+    frame.under.push(TexturedDraw {
+        texture: &chrome.texture,
+        instances: shell_parent_background_instances(
+            chrome,
+            page.screen.w,
+            page.screen.h,
+            page.scale,
         ),
-    };
-    // 0xE2 never flashes, so the hover clock is unused (None) — keep the call
-    // shape uniform with 0x100, which threads its hover_started_at.
-    let button_instances = shell_paint::paint_buttons(
-        chrome,
-        &buttons,
-        MAIN_MENU_BUTTON_POLICY,
-        Instant::now(),
-        None,
-    );
-    let pressed = crate::ui::main_menu_shell::pressed_control(&state.frontend.shell_controller);
-    let mut labels = if backdrop {
-        Vec::new()
-    } else {
-        main_menu_paint_labels(
-            state,
-            &layout,
-            pressed,
-            // VERA difference: gamemd prints "<GUI:Version> <VERSION.TXT>" here,
-            // a fixed "1.001TUC" in every build; this line names the VERA20K
-            // release instead, the version players report and updates compare.
-            (!leaving).then_some(BUILD_STAMP),
-            title_window,
-            !sliding,
-        )
-    };
-    labels.extend(status_label);
-    let text_draws =
-        shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, layout.scale.factor());
-
-    // Quit-confirm SHP modal overlay (blocking; drawn over the menu, under the
-    // cursor). `None` when the modal is closed or the skirmish atlas (which holds
-    // PUDLGBGN/MNBTTN) is not loaded.
-    let modal_overlay = build_shell_message_box_overlay(state);
-    let skirmish_chrome = state.frontend.skirmish_shell_chrome.as_ref();
-
-    state.renderer.batch_renderer.update_camera(
-        &state.renderer.gpu,
-        state.renderer.gpu.config.width as f32,
-        state.renderer.gpu.config.height as f32,
-        0.0,
-        0.0,
-        1.0,
-        crate::render::batch::DepthAxis::NONE,
-    );
-    let background_buffer = state
-        .renderer
-        .batch_renderer
-        .create_instance_buffer(&state.renderer.gpu, &background_instances);
-    let movie_buffer = state
-        .renderer
-        .batch_renderer
-        .create_instance_buffer(&state.renderer.gpu, &movie_instances);
-    let chrome_buffer = state
-        .renderer
-        .batch_renderer
-        .create_instance_buffer(&state.renderer.gpu, &chrome_instances);
-    let button_buffer = state
-        .renderer
-        .batch_renderer
-        .create_instance_buffer(&state.renderer.gpu, &button_instances);
-    let text_buffers: Vec<_> = text_draws
-        .iter()
-        .map(|draw| {
-            state
-                .renderer
-                .batch_renderer
-                .create_instance_buffer(&state.renderer.gpu, &draw.instances)
-        })
-        .collect();
-    let modal_sprite_buffer = modal_overlay.as_ref().and_then(|m| {
-        state
-            .renderer
-            .batch_renderer
-            .create_instance_buffer(&state.renderer.gpu, &m.sprites)
     });
-    let modal_text_buffers: Vec<_> = modal_overlay
-        .as_ref()
-        .map(|m| {
-            m.text
-                .iter()
-                .map(|draw| {
-                    state
-                        .renderer
-                        .batch_renderer
-                        .create_instance_buffer(&state.renderer.gpu, &draw.instances)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let cursor_instances: Vec<SpriteInstance> =
-        crate::app::frontend::shell_pass::software_cursor(state, CURSOR_DEPTH)
-            .map(|(_, instance)| instance)
-            .into_iter()
-            .collect();
-    let cursor_buffer = state
-        .renderer
-        .batch_renderer
-        .create_instance_buffer(&state.renderer.gpu, &cursor_instances);
-    // Default-cursor frame-0 texture, borrowed for the duration of the pass.
-    let cursor_texture = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()
-        .and_then(|cursor| cursor.get(crate::app::types::CursorId::Default))
-        .and_then(|sequence| sequence.frames.first())
-        .map(|frame| &frame.texture);
-
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Main Menu Shell"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target.color,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: target.depth,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: wgpu::StoreOp::Store,
-            }),
-            stencil_ops: None,
-        }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
-    if let Some((buffer, count)) = background_buffer.as_ref() {
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
-            &mut pass,
-            &chrome.texture,
-            buffer,
-            *count,
-        );
+    frame
+        .under
+        .extend(movie_draw(state, page.movie).filter(|_| movie_shown));
+    if !backdrop && !leaving {
+        frame.labels = version_labels(state, &layout);
     }
-    if let (Some(texture), Some((buffer, count))) = (movie_texture, movie_buffer.as_ref()) {
-        state
-            .renderer
-            .batch_renderer
-            .draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
+    frame.cursor = !boxed;
+    encode_family_page(state, encoder, destination, frame);
+    if boxed {
+        render_shell_message_box_over_page(state, encoder, destination);
     }
-    if let Some((buffer, count)) = chrome_buffer.as_ref() {
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
-            &mut pass,
-            &chrome.texture,
-            buffer,
-            *count,
-        );
-    }
-    if let Some((buffer, count)) = button_buffer.as_ref() {
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
-            &mut pass,
-            &chrome.texture,
-            buffer,
-            *count,
-        );
-    }
-    for (draw, buffer) in text_draws.iter().zip(text_buffers.iter()) {
-        let Some((buffer, count)) = buffer.as_ref() else {
-            continue;
-        };
-        pass.set_scissor_rect(
-            draw.scissor.x,
-            draw.scissor.y,
-            draw.scissor.w,
-            draw.scissor.h,
-        );
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
-            &mut pass,
-            state.renderer.bit_font.atlas(),
-            buffer,
-            *count,
-        );
-    }
-    pass.set_scissor_rect(
-        0,
-        0,
-        state.renderer.gpu.config.width,
-        state.renderer.gpu.config.height,
-    );
-    // Quit-confirm modal overlay: SHP panel + buttons (skirmish atlas texture),
-    // then labels (font atlas), above the menu but below the cursor.
-    if let (Some(overlay), Some(sk_chrome)) = (modal_overlay.as_ref(), skirmish_chrome) {
-        if let Some((buffer, count)) = modal_sprite_buffer.as_ref() {
-            state.renderer.batch_renderer.draw_with_buffer_passthrough(
-                &mut pass,
-                &sk_chrome.texture,
-                buffer,
-                *count,
-            );
-        }
-        for (draw, buffer) in overlay.text.iter().zip(modal_text_buffers.iter()) {
-            let Some((buffer, count)) = buffer.as_ref() else {
-                continue;
-            };
-            pass.set_scissor_rect(
-                draw.scissor.x,
-                draw.scissor.y,
-                draw.scissor.w,
-                draw.scissor.h,
-            );
-            state.renderer.batch_renderer.draw_with_buffer_passthrough(
-                &mut pass,
-                state.renderer.bit_font.atlas(),
-                buffer,
-                *count,
-            );
-        }
-        pass.set_scissor_rect(
-            0,
-            0,
-            state.renderer.gpu.config.width,
-            state.renderer.gpu.config.height,
-        );
-    }
-    if let (Some((buffer, count)), Some(texture)) = (cursor_buffer.as_ref(), cursor_texture) {
-        state
-            .renderer
-            .batch_renderer
-            .draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
-    }
-    drop(pass);
-
-    Ok(MainMenuShellRenderResult::Rendered {
-        title_receipt: None,
-    })
+    Ok(true)
 }
 
 /// Back-to-front depths for the quit-confirm modal overlay. They sit in the clear
@@ -1141,11 +766,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     );
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
-            &mut draw,
-            state,
-            atlas,
-            &controls,
-            settings,
+            &mut draw, state, atlas, &controls, settings,
         );
     }
     // The list lies on the dialog's picture, which has no list backing.

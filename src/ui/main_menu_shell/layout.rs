@@ -1,8 +1,8 @@
 //! Dialog 0xE2 shell layout recovered from gamemd.exe.
 
-use super::state::MainMenuControlId;
+use super::state::{MAIN_MENU_DIALOG, MainMenuControlId};
 use crate::ui::shell::descriptor::{
-    AnchorRule, BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId, HEADING_ANCHOR,
+    AnchorRule, BgKind, ControlDescriptor, ControlKind, DialogDescriptor, HEADING_ANCHOR,
     MONITOR_ANCHOR, RepositionPolicy,
 };
 use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
@@ -11,6 +11,9 @@ pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 pub use crate::ui::shell::geom::{SHELL_BASE_H, SHELL_BASE_W};
 use crate::ui::shell::geom::{ShellScale, dlu_rect, lower_strip_rect, right_panel_rects};
 use crate::ui::shell::layout::{LaidOutControl, layout_pass};
+use crate::ui::shell::menu_page::{
+    MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
+};
 use crate::ui::shell::warning_monitor::WARNING_MONITOR_CONTROL;
 
 pub const RA2TS_L_W: i32 = 632;
@@ -117,23 +120,68 @@ fn version_line_rect(screen_w: i32, right_panel: RightPanelRects) -> RectPx {
 /// flush at the panel right edge (distinct from the 168-wide single-player cell).
 const BUTTON_CELL_W: i32 = SDBTNANM_CELL_W_NARROW;
 
-/// Build a 0xE2 owner-draw button control descriptor. The anchor consumes only
-/// the DLU top; the x/w/h carry the 162x37 template client rect the SDBTNANM
-/// cell replaces.
-fn button_ctrl(
-    id: u16,
-    dlu_y: i32,
-    anchor: AnchorRule,
-    csf_key: &'static str,
-    tooltip_key: &'static str,
-) -> ControlDescriptor {
+/// RT_DIALOG `0xE2`'s owner-draw buttons, five stacked and Exit on the bottom
+/// row, with their captions, status help and the results the proc writes.
+pub const MAIN_MENU_PAGE: MenuPageSpec = MenuPageSpec {
+    dialog: MAIN_MENU_DIALOG,
+    title_key: "GUI:MainMenu",
+    stacked: &[
+        MenuPageButtonSpec {
+            id: 0x0683,
+            dlu_top: 125,
+            csf_key: "GUI:SinglePlayer",
+            tooltip_key: "STT:MainButtonSinglePlayer",
+            result: Some(1),
+        },
+        MenuPageButtonSpec {
+            id: 0x0684,
+            dlu_top: 152,
+            csf_key: "GUI:WWOnline",
+            tooltip_key: "STT:MainButtonWWOnline",
+            result: Some(2),
+        },
+        MenuPageButtonSpec {
+            id: 0x0578,
+            dlu_top: 179,
+            csf_key: "GUI:Network",
+            tooltip_key: "STT:MainButtonNetwork",
+            result: Some(3),
+        },
+        MenuPageButtonSpec {
+            id: 0x0686,
+            dlu_top: 206,
+            csf_key: "GUI:MoviesAndCredits",
+            tooltip_key: "STT:MainButtonMovies",
+            result: Some(4),
+        },
+        MenuPageButtonSpec {
+            id: 0x055C,
+            dlu_top: 233,
+            csf_key: "GUI:Options",
+            tooltip_key: "STT:MainButtonOptions",
+            result: Some(5),
+        },
+    ],
+    back: MenuPageButtonSpec {
+        id: 0x03EE,
+        dlu_top: 330,
+        csf_key: "GUI:ExitGame",
+        tooltip_key: "STT:MainButtonExitGamemd",
+        result: Some(6),
+    },
+};
+
+/// A 0xE2 owner-draw button control descriptor. The anchor consumes only the
+/// DLU top; the x/w/h carry the 162x37 template client rect the SDBTNANM cell
+/// replaces.
+fn button_ctrl(button: &MenuPageButtonSpec, anchor: AnchorRule) -> ControlDescriptor {
     ControlDescriptor {
-        id,
+        id: button.id,
         kind: ControlKind::Button,
-        dlu_rect: RectPx::new(425, dlu_y, 108, 23),
+        dlu_rect: RectPx::new(425, button.dlu_top, 108, 23),
         anchor,
-        csf_key: Some(csf_key),
-        tooltip_key: Some(tooltip_key),
+        csf_key: Some(button.csf_key),
+        tooltip_key: Some(button.tooltip_key),
         group: 0,
         enabled: true,
         visible: true,
@@ -148,63 +196,47 @@ fn dialog_descriptor() -> DialogDescriptor {
     let snap = AnchorRule::OwnerDrawButtonSnap {
         cell_w: BUTTON_CELL_W,
     };
+    let bottom_row = AnchorRule::OwnerDrawButtonBottomRow {
+        cell_w: BUTTON_CELL_W,
+    };
+    let buttons = MAIN_MENU_PAGE
+        .stacked
+        .iter()
+        .map(|button| button_ctrl(button, snap));
     DialogDescriptor {
-        id: DialogId(0x00E2),
+        id: MAIN_MENU_DIALOG,
         bg_kind: BgKind::RightPanelShell,
         slide_eligible: true,
         reposition_policy: RepositionPolicy::IncludeSetReanchor,
-        controls: vec![
-            button_ctrl(
-                0x0683,
-                125,
-                snap,
-                "GUI:SinglePlayer",
-                "STT:MainButtonSinglePlayer",
-            ),
-            button_ctrl(0x0684, 152, snap, "GUI:WWOnline", "STT:MainButtonWWOnline"),
-            button_ctrl(0x0578, 179, snap, "GUI:Network", "STT:MainButtonNetwork"),
-            button_ctrl(
-                0x0686,
-                206,
-                snap,
-                "GUI:MoviesAndCredits",
-                "STT:MainButtonMovies",
-            ),
-            button_ctrl(0x055C, 233, snap, "GUI:Options", "STT:MainButtonOptions"),
-            button_ctrl(
-                0x03EE,
-                330,
-                AnchorRule::OwnerDrawButtonBottomRow {
-                    cell_w: BUTTON_CELL_W,
+        controls: buttons
+            .chain([
+                button_ctrl(&MAIN_MENU_PAGE.back, bottom_row),
+                // 0x694 heading: runtime +1w/+1h, right-anchor, then +7y/+1h.
+                ControlDescriptor {
+                    id: 0x0694,
+                    kind: ControlKind::Static,
+                    dlu_rect: RectPx::new(425, 1, 108, 10),
+                    anchor: HEADING_ANCHOR,
+                    csf_key: None,
+                    tooltip_key: None,
+                    group: 0,
+                    enabled: true,
+                    visible: true,
                 },
-                "GUI:ExitGame",
-                "STT:MainButtonExitGamemd",
-            ),
-            // 0x694 heading: runtime +1w/+1h, right-anchor, then +7y/+1h.
-            ControlDescriptor {
-                id: 0x0694,
-                kind: ControlKind::Static,
-                dlu_rect: RectPx::new(425, 1, 108, 10),
-                anchor: HEADING_ANCHOR,
-                csf_key: None,
-                tooltip_key: None,
-                group: 0,
-                enabled: true,
-                visible: true,
-            },
-            // 0x71C SDWRNANM warning monitor (kind 4).
-            ControlDescriptor {
-                id: WARNING_MONITOR_CONTROL,
-                kind: ControlKind::Static,
-                dlu_rect: RectPx::new(447, 29, 61, 33),
-                anchor: MONITOR_ANCHOR,
-                csf_key: None,
-                tooltip_key: None,
-                group: 0,
-                enabled: true,
-                visible: true,
-            },
-        ],
+                // 0x71C SDWRNANM warning monitor (kind 4).
+                ControlDescriptor {
+                    id: WARNING_MONITOR_CONTROL,
+                    kind: ControlKind::Static,
+                    dlu_rect: RectPx::new(447, 29, 61, 33),
+                    anchor: MONITOR_ANCHOR,
+                    csf_key: None,
+                    tooltip_key: None,
+                    group: 0,
+                    enabled: true,
+                    visible: true,
+                },
+            ])
+            .collect(),
     }
 }
 
@@ -301,6 +333,32 @@ pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> MainMenuShellL
         buttons,
         right_panel,
         lower_strip: scale.scale_rect(base.lower_strip),
+    }
+}
+
+impl MainMenuShellLayout {
+    /// The layout as the family pages' shared paint reads it; status line
+    /// `0x695` is the tooltip line.
+    pub fn page(&self) -> MenuPageLayout {
+        MenuPageLayout {
+            scale: self.scale,
+            screen: self.screen,
+            movie_base: self.movie_base,
+            movie: self.movie,
+            title: self.title,
+            warning_monitor: self.warning_monitor,
+            status_help: self.tooltip_line,
+            buttons: self
+                .buttons
+                .iter()
+                .map(|b| MenuPageButtonRect {
+                    id: b.id.resource_id(),
+                    rect: b.rect,
+                })
+                .collect(),
+            right_panel: self.right_panel,
+            lower_strip: self.lower_strip,
+        }
     }
 }
 
@@ -457,5 +515,4 @@ mod tests {
             assert_eq!(actual, expected, "{screen_w}x{screen_h}");
         }
     }
-
 }
