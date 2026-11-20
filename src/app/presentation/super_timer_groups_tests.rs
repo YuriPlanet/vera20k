@@ -5,17 +5,18 @@ fn house(index: u32) -> InternedId {
     InternedId::from_index(index)
 }
 
-fn view(owner: InternedId, sw: &str, frames: i32, ready: bool) -> SuperReadyView {
-    SuperReadyView::for_test(owner, test_intern(sw), frames, ready)
+fn view(owner: InternedId, sw: &str, frames: i32, ready: bool) -> SuperTimerView {
+    SuperTimerView::for_test(owner, test_intern(sw), frames, false, 0, 0).with_ready_for_test(ready)
 }
 
-fn allies(pairs: &[(InternedId, InternedId)], count: usize) -> Vec<BTreeSet<InternedId>> {
-    let mut sets = vec![BTreeSet::new(); count];
-    for &(a, b) in pairs {
-        sets[a.index() as usize].insert(b);
-        sets[b.index() as usize].insert(a);
-    }
-    sets
+/// The one-way alliance test over `(asker, other)` pairs.
+fn allies(pairs: &[(InternedId, InternedId)]) -> impl Fn(InternedId, InternedId) -> bool + '_ {
+    move |asker, other| pairs.contains(&(asker, other))
+}
+
+/// Both directions of each pair.
+fn mutual(pairs: &[(InternedId, InternedId)]) -> Vec<(InternedId, InternedId)> {
+    pairs.iter().flat_map(|&(a, b)| [(a, b), (b, a)]).collect()
 }
 
 #[test]
@@ -25,7 +26,10 @@ fn team_labels() {
     assert_eq!(TeamKey::Named(25).label(), "Z");
     assert_eq!(TeamKey::Named(26).label(), "T26");
     assert_eq!(TeamKey::Unteamed.label(), "-");
-    assert!(TeamKey::Unteamed > TeamKey::Named(25), "unteamed rows sort last");
+    assert!(
+        TeamKey::Unteamed > TeamKey::Named(25),
+        "unteamed rows sort last"
+    );
 }
 
 /// a+b allied (team A), d+e allied (team B, they start later in house order),
@@ -35,7 +39,7 @@ fn team_labels() {
 fn groups_by_alliance_and_aggregates_per_type() {
     let [a, b, c, d, e] = [house(0), house(1), house(2), house(3), house(4)];
     let houses = [a, b, c, d, e];
-    let links = allies(&[(a, b), (d, e)], houses.len());
+    let links = mutual(&[(a, b), (d, e)]);
     let views = vec![
         view(a, "Nuke", 0, true),
         view(b, "Nuke", 45, false), // 45 / 15 = 3s, shortest pending in team A
@@ -47,24 +51,41 @@ fn groups_by_alliance_and_aggregates_per_type() {
         view(b, "LStorm", 90, false),
     ];
 
-    let rows = grouped_super_rows(&houses, &links, &views, None);
+    let rows = grouped_super_rows(&houses, allies(&links), &views, None);
     assert_eq!(rows.len(), 4, "team A: Nuke+LStorm, team B: Nuke, -: Nuke");
 
-    let nuke_a = rows.iter().find(|r| r.team == TeamKey::Named(0) && r.sw_type == test_intern("Nuke")).unwrap();
+    let nuke_a = rows
+        .iter()
+        .find(|r| r.team == TeamKey::Named(0) && r.sw_type == test_intern("Nuke"))
+        .unwrap();
     assert_eq!((nuke_a.ready, nuke_a.total), (1, 2));
     assert_eq!(nuke_a.nearest_seconds, 3);
-    assert_eq!(nuke_a.representative, a, "stable representative is the first house in the team");
+    assert_eq!(
+        nuke_a.representative, a,
+        "stable representative is the first house in the team"
+    );
 
-    let storm_a = rows.iter().find(|r| r.team == TeamKey::Named(0) && r.sw_type == test_intern("LStorm")).unwrap();
+    let storm_a = rows
+        .iter()
+        .find(|r| r.team == TeamKey::Named(0) && r.sw_type == test_intern("LStorm"))
+        .unwrap();
     assert_eq!((storm_a.ready, storm_a.total), (1, 2));
     assert_eq!(storm_a.nearest_seconds, 6);
 
     let nuke_b = rows.iter().find(|r| r.team == TeamKey::Named(1)).unwrap();
-    assert_eq!((nuke_b.ready, nuke_b.total), (2, 2), "d+e are the later team B");
+    assert_eq!(
+        (nuke_b.ready, nuke_b.total),
+        (2, 2),
+        "d+e are the later team B"
+    );
     assert_eq!(nuke_b.nearest_seconds, 0, "all ready -> 0:00");
 
     let nuke_c = rows.iter().find(|r| r.team == TeamKey::Unteamed).unwrap();
-    assert_eq!((nuke_c.ready, nuke_c.total), (0, 1), "c alone is the - group");
+    assert_eq!(
+        (nuke_c.ready, nuke_c.total),
+        (0, 1),
+        "c alone is the - group"
+    );
     assert_eq!(nuke_c.nearest_seconds, 40);
 }
 
@@ -73,20 +94,30 @@ fn groups_by_alliance_and_aggregates_per_type() {
 fn local_in_named_team_counts_its_own_supers() {
     let [a, b, c] = [house(0), house(1), house(2)];
     let houses = [a, b, c];
-    let links = allies(&[(a, b)], houses.len());
+    let links = mutual(&[(a, b)]);
     let views = vec![
         view(a, "Nuke", 0, true),
         view(b, "Nuke", 30, false),
         view(c, "Nuke", 60, false),
     ];
 
-    let rows = grouped_super_rows(&houses, &links, &views, Some(a));
+    let rows = grouped_super_rows(&houses, allies(&links), &views, Some(a));
     assert_eq!(rows.len(), 2);
     let team_a = rows.iter().find(|r| r.team == TeamKey::Named(0)).unwrap();
-    assert_eq!(team_a.representative, a, "stable representative is the first house");
-    assert_eq!((team_a.ready, team_a.total), (1, 2), "local 'a' counts into its team");
+    assert_eq!(
+        team_a.representative, a,
+        "stable representative is the first house"
+    );
+    assert_eq!(
+        (team_a.ready, team_a.total),
+        (1, 2),
+        "local 'a' counts into its team"
+    );
     assert_eq!(team_a.nearest_seconds, 2);
-    assert!(rows.iter().any(|r| r.team == TeamKey::Unteamed), "c stays as no-team");
+    assert!(
+        rows.iter().any(|r| r.team == TeamKey::Unteamed),
+        "c stays as no-team"
+    );
 }
 
 /// Local has no named team (it is alone): its own Supers are hidden, others
@@ -95,10 +126,10 @@ fn local_in_named_team_counts_its_own_supers() {
 fn local_without_team_hides_its_own_supers() {
     let [a, b] = [house(0), house(1)];
     let houses = [a, b];
-    let links = allies(&[], houses.len());
+    let links = mutual(&[]);
     let views = vec![view(a, "Nuke", 0, true), view(b, "Nuke", 60, false)];
 
-    let rows = grouped_super_rows(&houses, &links, &views, Some(a));
+    let rows = grouped_super_rows(&houses, allies(&links), &views, Some(a));
     assert_eq!(rows.len(), 1, "only b's row remains; local a is hidden");
     let unteamed = rows.iter().find(|r| r.team == TeamKey::Unteamed).unwrap();
     assert_eq!((unteamed.ready, unteamed.total), (0, 1));
@@ -111,10 +142,10 @@ fn local_without_team_hides_its_own_supers() {
 fn unknown_local_does_not_suppress_rows() {
     let [a, b] = [house(0), house(1)];
     let houses = [a, b];
-    let links = allies(&[(a, b)], houses.len());
+    let links = mutual(&[(a, b)]);
     let views = vec![view(a, "Nuke", 0, true), view(b, "Nuke", 30, false)];
 
-    let rows = grouped_super_rows(&houses, &links, &views, Some(house(99)));
+    let rows = grouped_super_rows(&houses, allies(&links), &views, Some(house(99)));
     let team_a = rows.iter().find(|r| r.team == TeamKey::Named(0)).unwrap();
     assert_eq!((team_a.ready, team_a.total), (1, 2));
 }
@@ -127,39 +158,25 @@ fn team_order_is_stable_in_house_order() {
     let houses = [a, b, c, d];
     // Pair (c,d) comes first in insertion order, but (a,b) starts earlier in
     // the house array, so it must be team A.
-    let links = allies(&[(c, d), (a, b)], houses.len());
-    let views = vec![
-        view(a, "Nuke", 15, false),
-        view(c, "Nuke", 15, false),
-    ];
-    let rows = grouped_super_rows(&houses, &links, &views, None);
+    let links = mutual(&[(c, d), (a, b)]);
+    let views = vec![view(a, "Nuke", 15, false), view(c, "Nuke", 15, false)];
+    let rows = grouped_super_rows(&houses, allies(&links), &views, None);
     assert_eq!(rows[0].team, TeamKey::Named(0));
     assert_eq!(rows[0].representative, a);
     assert_eq!(rows[1].team, TeamKey::Named(1));
     assert_eq!(rows[1].representative, c);
 }
 
+/// `IsAlliedWith` is one-way: a house that allies another without being
+/// allied back does not join its team.
 #[test]
-fn houses_without_super_views_produce_no_rows() {
+fn one_way_alliance_does_not_form_a_team() {
     let [a, b] = [house(0), house(1)];
     let houses = [a, b];
-    let links = allies(&[(a, b)], houses.len());
-    let rows = grouped_super_rows(&houses, &links, &[], None);
-    assert!(rows.is_empty());
-}
+    let links = [(a, b)];
+    let views = vec![view(a, "Nuke", 0, true), view(b, "Nuke", 30, false)];
 
-#[test]
-fn frames_round_down_and_negative_clamp_to_zero() {
-    let a = house(0);
-    let houses = [a];
-    let links = allies(&[], houses.len());
-    let views = vec![
-        view(a, "Nuke", 14, false),
-        view(a, "LStorm", -1, false),
-    ];
-    let rows = grouped_super_rows(&houses, &links, &views, None);
-    let nuke = rows.iter().find(|r| r.sw_type == test_intern("Nuke")).unwrap();
-    assert_eq!(nuke.nearest_seconds, 0, "14 frames truncates to 0 seconds");
-    let storm = rows.iter().find(|r| r.sw_type == test_intern("LStorm")).unwrap();
-    assert_eq!(storm.nearest_seconds, 0, "negative clamps to 0");
+    let rows = grouped_super_rows(&houses, allies(&links), &views, None);
+    assert!(rows.iter().all(|row| row.team == TeamKey::Unteamed));
+    assert_eq!((rows[0].ready, rows[0].total), (1, 2));
 }

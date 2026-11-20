@@ -594,13 +594,18 @@ pub(crate) fn shp_visitor<'a>(
         // projection (or Tube exit) owns this read. Physical position still
         // owns shroud, depth and the extra's side/ground/height queries.
         let physical_cell = (pos.rx(), pos.ry());
-        // The navigation cell is captured into the frame record off the home
-        // world (objects attached). Reading it from `sim` here would touch a
-        // presentation copy's detached objects during a lent tick. Incomplete
-        // pre-bind/headless actors have no captured cell and fall back to the
-        // physical cell; a missing light-grid entry still uses 1000.
         let light_cell = if entity.category() == EntityCategory::Infantry {
-            entity.infantry_light_cell().unwrap_or(physical_cell)
+            sim.foot_navigation_coordinate(stable_id)
+                .map(|coord| {
+                    (
+                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+                    )
+                })
+                // Incomplete pre-bind/headless actors can lack an active
+                // locomotor or Tube descriptor. Preserve their prior physical
+                // cell fallback; a missing light-grid entry still uses1000.
+                .unwrap_or(physical_cell)
         } else {
             physical_cell
         };

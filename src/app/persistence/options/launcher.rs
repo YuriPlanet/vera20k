@@ -59,6 +59,7 @@ pub(crate) fn launcher_values_from_profile(
         convenience_help: profile.convenience_help,
         building_production_queue: profile.building_production_queue,
         compact_super_timers: profile.compact_super_timers,
+        grouped_super_timers: profile.grouped_super_timers,
         sidebar: profile.sidebar,
         sidebar_columns: profile.sidebar_columns,
         health_bars: profile.health_bars,
@@ -171,6 +172,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_building_production_queue(&mut self, enabled: bool);
     /// VERA's six-line super weapon timer list; default off.
     fn store_compact_super_timers(&mut self, enabled: bool);
+    /// VERA's per-team super weapon timer lines; default off.
+    fn store_grouped_super_timers(&mut self, enabled: bool);
     /// VERA's team-colour strength, as the level the profile stores.
     fn store_house_color_strength(&mut self, strength: u8);
 }
@@ -269,6 +272,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::CompactSuperTimersChanged(enabled) => {
             operations.store_compact_super_timers(enabled);
+        }
+        LauncherOptionsEvent::GroupedSuperTimersChanged(enabled) => {
+            operations.store_grouped_super_timers(enabled);
         }
         LauncherOptionsEvent::HouseColorStrengthChanged(strength) => {
             operations.store_house_color_strength(strength);

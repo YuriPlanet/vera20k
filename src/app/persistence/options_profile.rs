@@ -342,6 +342,13 @@ pub(crate) struct RetailOptionsProfile {
     /// list stacks every line as gamemd does (`TacticalClass::Draw`
     /// `0x006D4941..0x006D4B25`). Client presentation only.
     pub(crate) compact_super_timers: bool,
+    /// `[VERA] GroupedSuperTimers=`: the timer list shows one line per
+    /// team and super weapon type, with how many are ready and the nearest
+    /// countdown, in place of one line per Super
+    /// (`app::presentation::super_timer_groups`). Takes precedence over
+    /// `CompactSuperTimers`. Off by default, so the list stacks every line
+    /// as gamemd does. Client presentation only.
+    pub(crate) grouped_super_timers: bool,
     /// `[VERA] SuperweaponBuildingTimers=`: every building that provides one
     /// of the player's super weapons draws its countdown above itself
     /// (`app::presentation::ui_overlays`). A scenario starts from this value
@@ -442,6 +449,7 @@ impl Default for RetailOptionsProfile {
             convenience_help: false,
             building_production_queue: false,
             compact_super_timers: false,
+            grouped_super_timers: false,
             superweapon_building_timers: false,
         }
     }
@@ -459,7 +467,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 40],
+    pub(crate) vera: [(&'static str, String); 41],
 }
 
 impl RetailOptionsLoad {
@@ -707,6 +715,8 @@ impl RetailOptionsProfile {
                 vera.read_bool("BuildingProductionQueue", self.building_production_queue);
             self.compact_super_timers =
                 vera.read_bool("CompactSuperTimers", self.compact_super_timers);
+            self.grouped_super_timers =
+                vera.read_bool("GroupedSuperTimers", self.grouped_super_timers);
             self.superweapon_building_timers = vera.read_bool(
                 "SuperweaponBuildingTimers",
                 self.superweapon_building_timers,
@@ -909,6 +919,10 @@ impl RetailOptionsProfile {
                 (
                     "CompactSuperTimers",
                     format_bool(self.compact_super_timers).to_string(),
+                ),
+                (
+                    "GroupedSuperTimers",
+                    format_bool(self.grouped_super_timers).to_string(),
                 ),
                 (
                     "SuperweaponBuildingTimers",

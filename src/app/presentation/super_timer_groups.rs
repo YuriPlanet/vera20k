@@ -1,28 +1,30 @@
 //! Per-team aggregation behind the in-game superweapon timer panel.
 //!
-//! This is a VERA presentation extension, not a `TacticalClass::Draw` parity
-//! path: it replaces the native one-line-per-Super list with one line per
-//! (team, superweapon type). The native timer list (`super_timer_views`) and
-//! its oracle tests stay untouched.
+//! This is a VERA presentation extension, on with `[VERA] GroupedSuperTimers=`
+//! (Options), not a `TacticalClass::Draw` parity path: it replaces the native
+//! one-line-per-Super lines with one line per (team, superweapon type). Off,
+//! the native timer list draws as before.
 //!
 //! The runtime has no launch-team number (`LaunchTeam::Team(u8)` lives only in
 //! the startup session). Teams are therefore the connected components of the
-//! live alliance graph: mutually allied houses share a team, an isolated
-//! house is the "-" (no-team) group. Labels A/B/C/... are assigned in a
+//! live alliance graph, joined only where two houses ally each other
+//! (`HouseClass::IsAlliedWith @ 0x004F9A50` is one-way); an isolated house is
+//! the "-" (no-team) group. Labels A/B/C/... are assigned in a
 //! stable order from `houses().order()`. The local house's own Supers are
 //! counted into its named team; if local has no named team (it is alone or
-//! unknown) its Supers are hidden. Only Supers with a timer place
-//! (`SW.ShowTimer=yes`, already filtered by `super_ready_views`) reach here.
+//! unknown) its Supers are hidden. Only Supers of the timer list
+//! (`super_timer_views`, after any Ares `SW.TimerVisibility` filter) reach
+//! here.
 //!
 //! Every isolated house shares the single "-" row key, so several unteamed
 //! rivals are aggregated together even though they are not allies with each
 //! other — this is the panel's one "no-team" bucket, and its counts mean
 //! "how many unteamed houses have this Super", not a coordinated side.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use crate::sim::intern::InternedId;
-use crate::sim::superweapon::SuperReadyView;
+use crate::sim::superweapon::SuperTimerView;
 
 /// Native `TacticalClass::DrawTimer` frames-per-second divisor
 /// (`0x88888889`, `sar 3`), shared with `super_timers`.
@@ -49,7 +51,7 @@ impl TeamKey {
 }
 
 /// One aggregated `(team, superweapon type)` row.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TeamSuperRow {
     pub(crate) team: TeamKey,
     /// A member house used for the row's colour and blink identity.
@@ -73,14 +75,14 @@ struct RowKey {
 /// Group `views` into [`TeamSuperRow`]s.
 ///
 /// `houses` is `sim.houses().order()` (stable, native registration order).
-/// `allies[i]` is the set of houses directly allied with `houses[i]`; only
-/// edges between listed houses are used. `local`'s own Supers are counted
+/// `allied(asker, other)` is the one-way alliance test; two houses join a
+/// team only when each allies the other. `local`'s own Supers are counted
 /// into its named team; when it has none they are omitted (the player reads
 /// those on the sidebar).
 pub(crate) fn grouped_super_rows(
     houses: &[InternedId],
-    allies: &[BTreeSet<InternedId>],
-    views: &[SuperReadyView],
+    allied: impl Fn(InternedId, InternedId) -> bool,
+    views: &[SuperTimerView],
     local: Option<InternedId>,
 ) -> Vec<TeamSuperRow> {
     let count = houses.len();
@@ -90,9 +92,10 @@ pub(crate) fn grouped_super_rows(
     }
 
     let mut parent: Vec<usize> = (0..count).collect();
-    for (left, ally_set) in allies.iter().enumerate().take(count) {
-        for &ally in ally_set {
-            if let Some(&right) = index_of.get(&ally) {
+    for left in 0..count {
+        for right in left + 1..count {
+            let (a, b) = (houses[left], houses[right]);
+            if allied(a, b) && allied(b, a) {
                 union(&mut parent, left, right);
             }
         }
@@ -100,7 +103,10 @@ pub(crate) fn grouped_super_rows(
 
     let mut members: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for index in 0..count {
-        members.entry(find(&mut parent, index)).or_default().push(index);
+        members
+            .entry(find(&mut parent, index))
+            .or_default()
+            .push(index);
     }
 
     let mut teams: Vec<(usize, TeamKey, InternedId)> = Vec::new();
@@ -110,11 +116,7 @@ pub(crate) fn grouped_super_rows(
         .collect();
     multi.sort_by_key(|(_, members)| members[0]);
     for (root, members) in multi {
-        teams.push((
-            *root,
-            TeamKey::Named(teams.len() as u8),
-            houses[members[0]],
-        ));
+        teams.push((*root, TeamKey::Named(teams.len() as u8), houses[members[0]]));
     }
     for (root, members) in &members {
         if members.len() == 1 {
@@ -162,10 +164,10 @@ pub(crate) fn grouped_super_rows(
             })
             .or_insert((0, 0, i32::MAX));
         entry.1 += 1;
-        if view.is_ready {
+        if view.is_ready() {
             entry.0 += 1;
         } else {
-            let seconds = (view.frames_left / FRAMES_PER_SECOND).max(0);
+            let seconds = (view.frames_left() / FRAMES_PER_SECOND).max(0);
             entry.2 = entry.2.min(seconds);
         }
     }
@@ -202,6 +204,6 @@ fn union(parent: &mut [usize], left: usize, right: usize) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "super_timer_groups_tests.rs"]
 mod tests;

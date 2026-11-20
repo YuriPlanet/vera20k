@@ -9,9 +9,10 @@
 //! Text is drawn in the scheme's 8-bit colour, not packed to the native
 //! RGB565 surface's.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::app::AppState;
+use crate::app::presentation::super_timer_groups::{TeamSuperRow, grouped_super_rows};
 use crate::assets::csf_file::{CsfFile, type_ui_name};
 use crate::render::batch::SpriteInstance;
 use crate::rules::house_colors::{HouseColorIndex, NO_REMAP, house_text_rgb};
@@ -37,10 +38,6 @@ const BLINK_MS: u64 = 1000;
 
 /// What a timer line counts down, which also picks its label, its colour
 /// scheme and whether it blinks.
-///
-/// Retained for the native `tactical_timers`/`timer_lines` oracle comparison;
-/// the in-game panel now uses the grouped rows in [`super_timer_groups`].
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TimerSource {
     /// The Scenario timer (`+0x11E8`), labelled by `+0x11F4`, in the
@@ -53,10 +50,13 @@ pub(crate) enum TimerSource {
     /// A house's blackout (`+0x2A4`), labelled `MSG:BlackoutTimer`, in the
     /// house's scheme.
     Blackout(InternedId),
+    /// VERA's `[VERA] GroupedSuperTimers=` line in place of the Super lines:
+    /// one team's Supers of one type, labelled `<team> <UIName> ready/total`
+    /// in the team's first house's scheme; it blinks like a Super's line.
+    Team(TeamSuperRow),
 }
 
 /// One timer line; its index is its place in [`timer_lines`]' answer.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TimerLine {
     pub(crate) source: TimerSource,
@@ -72,7 +72,6 @@ pub(crate) struct TimerLine {
 /// `GetRechargeTime` left takes no line (`0x006D49D1..0x006D4A06`). With
 /// Ares, `supers` holds only the Supers whose `SW.TimerVisibility` admits
 /// the player (hook `0x6D49D1`, filtered by the caller).
-#[allow(dead_code)]
 pub(crate) fn timer_lines(
     scenario_left: Option<i32>,
     supers: &[SuperTimerView],
@@ -170,28 +169,27 @@ pub(crate) struct TimerBlink {
 
 impl TimerBlink {
     /// The Super's blink. A new grant, which a new list place shows, clears
-    /// it (`+0x40`, Grant `0x006CB580`); the deadline stays. Retained for the
-    /// native parity test; the grouped panel uses [`Self::of_key`].
-    #[allow(dead_code)]
+    /// it (`+0x40`, Grant `0x006CB580`); the deadline stays.
     fn of<'a>(blinks: &'a mut TimerBlinks, view: &SuperTimerView) -> &'a mut TimerBlink {
         Self::of_key(blinks, view.owner(), view.sw_type(), view.place())
     }
 
-    /// Blink identity for a grouped panel row, which has no native grant
-    /// place. `place = 0` is stable across frames so a countdown's blink is
-    /// not reset by a reframe; only an owner/type change picks a new blink.
+    /// The blink of a grouped team line, by its first house and type. It has
+    /// no grant place, so it keeps place 0 and a regrouping never clears it.
+    fn of_team<'a>(blinks: &'a mut TimerBlinks, row: &TeamSuperRow) -> &'a mut TimerBlink {
+        Self::of_key(blinks, row.representative, row.sw_type, 0)
+    }
+
     fn of_key<'a>(
         blinks: &'a mut TimerBlinks,
         owner: InternedId,
         sw_type: InternedId,
         place: u32,
     ) -> &'a mut TimerBlink {
-        let blink = blinks
-            .entry((owner, sw_type))
-            .or_insert(TimerBlink {
-                place,
-                ..TimerBlink::default()
-            });
+        let blink = blinks.entry((owner, sw_type)).or_insert(TimerBlink {
+            place,
+            ..TimerBlink::default()
+        });
         if blink.place != place {
             blink.on = false;
             blink.place = place;
@@ -231,7 +229,6 @@ pub(crate) struct TimerDock {
     scroll_rows: Vec<crate::ui::gadget::GadgetRect>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DockRow {
     Line(usize),
@@ -281,7 +278,6 @@ impl TimerDock {
     /// off, and through six Supers. Beyond that, keep local Supers first and
     /// page the remaining ready-first rows. Scenario/blackout lines retain
     /// their original relative order.
-    #[allow(dead_code)]
     fn rows(
         &mut self,
         lines: &[TimerLine],
@@ -410,36 +406,9 @@ fn blink_rgb(rules: &RuleSet) -> [u8; 3] {
 
 /// The timer lines as UI sprites: the black boxes, drawn first, and the text.
 /// The tactical view starts at the screen's origin.
-/// One printable line of the grouped panel. Kept local because none of the
-/// native [`TimerSource`] variants can carry a `小队 TYPE r/t` label; the
-/// native `timer_lines`/oracle path stays untouched for parity evidence.
-struct PanelRow {
-    label: String,
-    seconds: i32,
-    rgb: [u8; 3],
-    /// Grouped lines blink on the representative's wall clock, like a native
-    /// Super. `None` for the Scenario and blackout lines.
-    blink: Option<(InternedId, InternedId)>,
-}
-
-/// House names in the alliance graph are stored trimmed + uppercase.
-fn normalized(name: &str) -> String {
-    name.trim().to_ascii_uppercase()
-}
-
-/// Build the right-hand timer panel: the Scenario timer, one aggregated row
-/// per (team, Super type) for the opponents, then each house's blackout. The
-/// local player's own Supers are hidden (they read them on the sidebar); each
-/// row reads `小队 TYPE ready/total` with the shortest pending countdown.
-///
-/// The former native one-line-per-Super list and its compact/fold dock are
-/// replaced by these grouped rows. Scenario/blackout placement, colours and
-/// blink cadence follow `TacticalClass::DrawTimer` as before.
 pub(crate) fn build_super_timer_instances(
     state: &mut AppState,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    // Grouped rows have no fold/scroll hit areas; clear any left from a frame
-    // that used the old native path (e.g. after a hot reload in dev).
     state
         .match_state
         .match_presentation
@@ -463,6 +432,56 @@ pub(crate) fn build_super_timer_instances(
     };
     let sim = &runtime.simulation;
     let frame = sim.session().binary_frame();
+    let supers = crate::sim::superweapon::super_timer_views(sim, rules);
+    // When the Rules were read the Ares way (`RuleSet::ares_form`), Ares hook
+    // 0x6D49D1 (10035A80) asks SW.TimerVisibility at the head of each Super's
+    // line test; a hidden Super takes no line.
+    let supers: Vec<_> = if rules.ares_form() {
+        supers
+            .into_iter()
+            .filter(|view| crate::sim::superweapon::ares_timer_visible(sim, rules, *view))
+            .collect()
+    } else {
+        supers
+    };
+    let blackouts = sim.houses().order().iter().map(|&house| {
+        let left = sim
+            .power_states()
+            .get(&house)
+            .map_or(0, |power| power.blackout_remaining(frame));
+        (house, left)
+    });
+    let scenario = sim.session().scenario_timer_view();
+    let grouped = state.persistence.options_profile.grouped_super_timers;
+    let mut lines = timer_lines(
+        scenario.map(|(left, _)| left),
+        if grouped { &[] } else { &supers },
+        blackouts,
+        !sim.session().game_mode_nonzero(),
+    );
+    if grouped {
+        // The team lines take the Super lines' place: after the Scenario
+        // line, before the blackouts.
+        let alliances = sim.house_alliances();
+        let teams = grouped_super_rows(
+            sim.houses().order(),
+            |asker, other| alliances.is_allied(sim.interner(), asker, other),
+            &supers,
+            sim.session().current_house(),
+        );
+        let at = usize::from(scenario.is_some());
+        lines.splice(
+            at..at,
+            teams.into_iter().map(|row| TimerLine {
+                source: TimerSource::Team(row),
+                seconds: row.nearest_seconds,
+            }),
+        );
+    }
+    if lines.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
     let csf = state.process_assets.csf.as_ref();
     let schemes = rules.color_schemes.as_slice();
     let house_rgb = |house: Option<InternedId>| {
@@ -486,99 +505,61 @@ pub(crate) fn build_super_timer_instances(
             csf,
         )
     };
-
-    let mut rows: Vec<PanelRow> = Vec::new();
-
-    // The Scenario timer, unchanged (its caption is the line's label).
-    let scenario = sim.session().scenario_timer_view();
-    if let Some((left, _)) = scenario {
-        let caption = scenario
-            .filter(|(_, caption)| !caption.is_empty())
-            .map_or_else(String::new, |(_, caption)| localized(csf, caption));
-        rows.push(PanelRow {
-            label: caption,
-            seconds: left / FRAMES_PER_SECOND,
-            rgb: house_rgb(sim.session().current_house()),
-            blink: None,
-        });
-    }
-
-    // Grouped team/type lines replace the native Super timer list. Ares hook
-    // 0x6D49D1 still hides any Super the local player must not see before it
-    // reaches the panel: filter the ready views by the same TimerVisibility.
-    let mut views = crate::sim::superweapon::super_ready_views(sim);
-    if rules.ares_form() {
-        let visible: HashSet<(InternedId, InternedId)> =
-            crate::sim::superweapon::super_timer_views(sim, rules)
-                .into_iter()
-                .filter(|view| crate::sim::superweapon::ares_timer_visible(sim, rules, *view))
-                .map(|view| (view.owner(), view.sw_type()))
-                .collect();
-        views.retain(|view| visible.contains(&(view.owner(), view.sw_type())));
-    }
-    let houses = sim.houses().order();
-    let interner = sim.interner();
-    let alliances = sim.house_alliances();
-    let mut by_key: HashMap<String, InternedId> = HashMap::with_capacity(houses.len());
-    for &house in houses {
-        by_key.insert(normalized(interner.resolve(house)), house);
-    }
-    let allies: Vec<BTreeSet<InternedId>> = houses
-        .iter()
-        .map(|&house| {
-            alliances
-                .as_map()
-                .get(&normalized(interner.resolve(house)))
-                .into_iter()
-                .flatten()
-                .filter_map(|name| by_key.get(&normalized(name)).copied())
-                .collect()
+    let lines: Vec<(TimerLine, String, [u8; 3])> = lines
+        .into_iter()
+        .map(|line| {
+            let (house, label) = match line.source {
+                TimerSource::Scenario => (
+                    sim.session().current_house(),
+                    scenario
+                        .filter(|(_, caption)| !caption.is_empty())
+                        .map_or_else(String::new, |(_, caption)| localized(csf, caption)),
+                ),
+                TimerSource::Super(view) => (Some(view.owner()), super_name(view.sw_type())),
+                TimerSource::Blackout(house) => (Some(house), localized(csf, BLACKOUT_LABEL)),
+                TimerSource::Team(row) => (
+                    Some(row.representative),
+                    format!(
+                        "{} {} {}/{}",
+                        row.team.label(),
+                        super_name(row.sw_type),
+                        row.ready,
+                        row.total
+                    ),
+                ),
+            };
+            (line, label, house_rgb(house))
         })
         .collect();
-    let grouped = crate::app::presentation::super_timer_groups::grouped_super_rows(
-        houses,
-        &allies,
-        &views,
-        sim.session().current_house(),
-    );
-    for group in grouped {
-        let name = super_name(group.sw_type);
-        let label = format!("{} {} {}/{}", group.team.label(), name, group.ready, group.total);
-        rows.push(PanelRow {
-            label,
-            seconds: group.nearest_seconds,
-            rgb: house_rgb(Some(group.representative)),
-            blink: Some((group.representative, group.sw_type)),
-        });
-    }
-
-    // Each house's blackout, unchanged and after the grouped Super lines.
-    for &house in houses {
-        let left = sim
-            .power_states()
-            .get(&house)
-            .map_or(0, |power| power.blackout_remaining(frame));
-        if left > 0 {
-            rows.push(PanelRow {
-                label: localized(csf, BLACKOUT_LABEL),
-                seconds: left / FRAMES_PER_SECOND,
-                rgb: house_rgb(Some(house)),
-                blink: None,
-            });
-        }
-    }
-
-    if rows.is_empty() {
-        return (Vec::new(), Vec::new());
-    }
-
     let blink_rgb = blink_rgb(rules);
     let now_ms = crate::app::input::tooltips::now_ms(state);
+    // The dock stacks up from the bottom right of its box, the battlefield
+    // in the original interface, and works in the box's own pixels.
     let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
+    // Screen-space lanes add back the world camera the UI shader subtracts,
+    // and the box's corner.
     let camera = field_parts::lane_camera(state, FieldPart::Timers);
 
-    let blinks = &mut state.match_state.match_presentation.super_timer_blinks;
     let font = &state.renderer.bit_font;
+    let local = sim.session().current_house();
+    let timer_lines: Vec<_> = lines.iter().map(|(line, _, _)| *line).collect();
+    // The grouped lines are few; they replace the compact dock's paging.
+    let compact = state.persistence.options_profile.compact_super_timers && !grouped;
+    let dock = &mut state.match_state.match_presentation.super_timer_dock;
+    let rows = dock.rows(
+        &timer_lines,
+        local,
+        [view_w as i32, view_h as i32],
+        font.cell_height() as i32,
+        compact,
+    );
+    let mut positions = vec![None; lines.len()];
+    for (position, row) in rows.iter().enumerate() {
+        if let DockRow::Line(i) = row {
+            positions[*i] = Some(position);
+        }
+    }
+    let blinks = &mut state.match_state.match_presentation.super_timer_blinks;
     let tint = |rgb: [u8; 3]| rgb.map(|channel| f32::from(channel) / 255.0);
     let fill = |[x, y, w, h]: [i32; 4]| SpriteInstance {
         position: [x as f32 + camera[0], y as f32 + camera[1]],
@@ -589,15 +570,19 @@ pub(crate) fn build_super_timer_instances(
         alpha: 1.0,
         ..Default::default()
     };
-    let mut fills = Vec::with_capacity(2 * rows.len());
+    let mut fills = Vec::with_capacity(2 * lines.len());
     let mut texts = Vec::new();
     let mut next_flip_ms: Option<u64> = None;
-    for (index, row) in rows.iter().enumerate() {
-        let blinking = match row.blink {
-            Some((owner, sw_type)) => {
-                let blink = TimerBlink::of_key(blinks, owner, sw_type, 0);
-                let on = blink.step(row.seconds, now_ms);
-                if row.seconds == 0 {
+    for (index, (line, label, rgb)) in lines.iter().enumerate() {
+        let blink = match line.source {
+            TimerSource::Super(view) => Some(TimerBlink::of(blinks, &view)),
+            TimerSource::Team(row) => Some(TimerBlink::of_team(blinks, &row)),
+            TimerSource::Scenario | TimerSource::Blackout(_) => None,
+        };
+        let blinking = match blink {
+            Some(blink) => {
+                let on = blink.step(line.seconds, now_ms);
+                if line.seconds == 0 {
                     next_flip_ms = Some(
                         next_flip_ms.map_or(blink.deadline_ms, |next| next.min(blink.deadline_ms)),
                     );
@@ -606,17 +591,29 @@ pub(crate) fn build_super_timer_instances(
             }
             None => false,
         };
-        let label = label_text(&row.label);
-        let time = time_text(row.seconds);
+        // Hidden rows still step the existing wall-clock blink owner.
+        let Some(position) = positions[index] else {
+            continue;
+        };
+        let label = label_text(label);
+        let time = time_text(line.seconds);
         let (label_at, time_at) = place_line(
-            index,
+            position,
             [view_w as i32, view_h as i32],
             font.cell_height() as i32,
             font.text_width(&label) as i32,
             font.text_width(&time) as i32,
         );
-        let time_rgb = if blinking { blink_rgb } else { row.rgb };
-        for (text, at, rgb) in [(&label, label_at, row.rgb), (&time, time_at, time_rgb)] {
+        let time_rgb = if blinking { blink_rgb } else { *rgb };
+        if dock.expanded && matches!(line.source, TimerSource::Super(_)) {
+            dock.scroll_rows.push(crate::ui::gadget::GadgetRect::new(
+                label_at.fill[0],
+                label_at.fill[1],
+                time_at.fill[0] + time_at.fill[2] - label_at.fill[0],
+                label_at.fill[3],
+            ));
+        }
+        for (text, at, rgb) in [(&label, label_at, *rgb), (&time, time_at, time_rgb)] {
             fills.push(fill(at.fill));
             texts.extend(font.build_text(
                 text,
@@ -633,6 +630,24 @@ pub(crate) fn build_super_timer_instances(
         .match_state
         .match_presentation
         .super_timer_next_flip_ms = next_flip_ms;
+    if let Some(rect) = dock.toggle_rect {
+        // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
+        for row in 0..4 {
+            let width = if dock.expanded {
+                7 - row * 2
+            } else {
+                1 + row * 2
+            };
+            let mut triangle = fill([
+                rect.x + (rect.w - width) / 2,
+                rect.y + (rect.h - 4) / 2 + row,
+                width,
+                1,
+            ]);
+            triangle.tint = [0.0, 0.0, 0.0];
+            fills.push(triangle);
+        }
+    }
     (fills, texts)
 }
 

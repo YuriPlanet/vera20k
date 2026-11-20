@@ -410,14 +410,6 @@ impl SimHost {
                 &self.sidebar_types,
                 self.status_rows,
             ));
-            // Build the display order here, while the home world's objects
-            // are attached, so later readers (picking/band box, tooltips,
-            // drawing) only hit this cache. A frame first asked for its order
-            // during a lent tick would otherwise build it from the detached
-            // presentation copy and read its objects — a debug panic, or a
-            // stale order in release. The frame is captured from `runtime`,
-            // so `runtime` is the world its order belongs to.
-            frame.display_order(runtime.view().simulation());
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
             costs.captures += 1;
