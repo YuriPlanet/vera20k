@@ -175,10 +175,10 @@ impl TunnelRuntime {
         self.state != TunnelState::Idle
     }
     /// `Is_Moving_Now 0x728A60`: `Is_Moving`, and then `State != 1`
-    /// (`0x728A6F` loads State, `0x728A77` compares it against 1, and the equal
-    /// arm at `0x728A7B` answers false): a `PreDigIn` owner is not moving now.
+    /// (`0x728A6F` loads State, `0x728A77` compares it against 1): only a
+    /// `PreDigIn` owner answers moving now.
     pub(crate) fn is_moving_now(&self) -> bool {
-        self.state != TunnelState::Idle && self.state != TunnelState::PreDigIn
+        self.state == TunnelState::PreDigIn
     }
 
     /// The three defined fields the world hash folds: `+0x18` State,

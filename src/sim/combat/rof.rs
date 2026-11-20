@@ -335,9 +335,9 @@ mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
-    /// Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`): after stock's
-    /// `RandomRanged(0, 2)`, a ranged `ROF.RandomDelay` draws the jitter again
-    /// and a single value replaces it without a draw.
+    /// Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`): a ranged
+    /// `ROF.RandomDelay` replaces the stock jitter draw with its own, and a
+    /// single value replaces it without a draw.
     #[test]
     fn rof_random_delay_replaces_the_stock_jitter() {
         use crate::rules::ini_value::PartialIntPair;
@@ -366,15 +366,14 @@ mod tests {
             let value = get_rof(&query, &mut rng);
             (value, rng.logical_state())
         };
+        let seed = SimRng::new(9).logical_state();
         let mut expected = SimRng::new(9);
-        expected.next_range_u32_inclusive(0, 2);
-        let after_stock = expected.logical_state();
         let jitter = expected.next_range_i32_inclusive(10, 20);
 
         assert_eq!(
             rof(PartialIntPair::single(7)),
-            (47, after_stock),
-            "a single value replaces the jitter with no second draw"
+            (47, seed),
+            "a single value replaces the jitter with no draw"
         );
         assert_eq!(
             rof(PartialIntPair {
@@ -383,7 +382,7 @@ mod tests {
                 values: 2,
             }),
             (40 + jitter, expected.logical_state()),
-            "a range draws its own jitter after the stock draw"
+            "a range draws its own jitter, replacing the stock draw"
         );
     }
 

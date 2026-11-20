@@ -29,11 +29,13 @@ use crate::sim::world::display_layers::DisplayLayer;
 /// (`combat_weapon::weapon_class_bits` defaults to `(false, true)`). The
 /// native clear-bit arm (`canTargetRtti & 4` false, stock's Ground-only test)
 /// is therefore not reachable from these fixtures; see the doc's residuals.
+// `[General] AIAirTargetingFix=no` at its default marks the game as one where
+// Phobos installs the replacement gate the test toggles.
 const EXTRA: &str = "[VehicleTypes]\n1=AGHUNT\n\
      [AGHUNT]\nStrength=200\nSpeed=6\nArmor=none\n\
      Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nPrimary=AGGun\n\
      [AGGun]\nDamage=20\nRange=8\nROF=60\nProjectile=TestShot\nWarhead=TestWH\nAG=yes\n\
-     [TestShot]\nROT=0\n[TestWH]\nVerses=100%\n";
+     [TestShot]\nROT=0\n[TestWH]\nVerses=100%\n\n[General]\nAIAirTargetingFix=no\n";
 
 /// A flat arena with the hunter on the ground at (8, 10) and a hostile
 /// `HORNET` airborne at Z 64 three cells east, inside the weapon's range.

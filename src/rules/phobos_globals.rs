@@ -2695,12 +2695,16 @@ impl PhobosGlobals {
         let general = ini.section_or_empty("General");
         // `Ext/Rules/Body.cpp:452,531`: the two targeting switches, both
         // constructed false.
-        globals.ai_air_targeting_fix =
-            general.read_bool("AIAirTargetingFix", globals.ai_air_targeting_fix);
-        globals.disable_overoptimization_in_targeting = general.read_bool(
-            "DisableOveroptimizationInTargeting",
-            globals.disable_overoptimization_in_targeting,
-        );
+        globals.ai_air_targeting_fix = crate::rules::phobos_switch::phobos_read(|| {
+            general.read_bool("AIAirTargetingFix", globals.ai_air_targeting_fix)
+        });
+        globals.disable_overoptimization_in_targeting =
+            crate::rules::phobos_switch::phobos_read(|| {
+                general.read_bool(
+                    "DisableOveroptimizationInTargeting",
+                    globals.disable_overoptimization_in_targeting,
+                )
+            });
         // `Ext/Rules/Body.cpp:323,451,540,606`: the `[General]` keys of this
         // batch, read in the constructor's order.
         globals.building_waypoints =
