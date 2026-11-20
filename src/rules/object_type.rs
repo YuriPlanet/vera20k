@@ -7023,7 +7023,9 @@ impl ObjectType {
             c4: category != ObjectCategory::Infantry && section.read_bool("C4", false),
             can_c4: section.read_bool("CanC4", category == ObjectCategory::Building),
             phobos_can_c4_allow_zero_damage: category == ObjectCategory::Building
-                && section.read_bool("CanC4.AllowZeroDamage", false),
+                && crate::rules::phobos_switch::phobos_read(|| {
+                    section.read_bool("CanC4.AllowZeroDamage", false)
+                }),
             allow_airstrike: section.read_bool_value("AllowAirstrike"),
             eligible_for_delay_kill: section.read_bool("EligibleForDelayKill", false),
             invisible: section.read_bool("Invisible", false),

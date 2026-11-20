@@ -205,6 +205,7 @@ pub(super) fn commit(
     condition_red: f64,
     source_present: bool,
     ares: bool,
+    phobos: bool,
 ) -> DamageState {
     let Some(previous) = host.object().map(|target| target.health.current) else {
         return DamageState::Unaffected;
@@ -215,8 +216,9 @@ pub(super) fn commit(
     if building_no_c4 {
         // 0x5F5416 original: a non-C4 building takes at least 1. Phobos
         // `CanC4.AllowZeroDamage` (`Ext/BuildingType/Hooks.cpp:182-195`)
-        // replaces that body: only a zero packet is floored, unless allowed.
-        let floor = if true {
+        // replaces that body only while Phobos plays: then only a zero packet
+        // is floored, unless allowed. A stock game keeps the `< 1` floor.
+        let floor = if phobos {
             *packet == 0 && !allow_zero_damage
         } else {
             *packet < 1

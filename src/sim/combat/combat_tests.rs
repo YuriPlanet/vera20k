@@ -13835,18 +13835,16 @@ fn phobos_rad_site_warhead_detonate_splashes_around_the_target() {
 #[test]
 fn phobos_can_c4_allow_zero_damage_replaces_the_building_minimum() {
     fn rules(allow: bool) -> RuleSet {
-        let allow = if allow {
-            "CanC4.AllowZeroDamage=yes\n"
-        } else {
-            ""
-        };
+        // The key's presence turns Phobos on (`rules::phobos_switch`); its
+        // value only decides whether a zero packet is floored.
+        let allow = if allow { "yes" } else { "no" };
         let ini = IniFile::from_str(&format!(
             "[Clear]\nBuildable=yes\n\
              [VehicleTypes]\n0=SOURCE\n\
              [BuildingTypes]\n0=BRKS\n1=SAFE\n\
              [SOURCE]\nStrength=100\nArmor=heavy\n\
-             [BRKS]\nStrength=500\nArmor=wood\nCanC4=no\n{allow}\
-             [SAFE]\nStrength=500\nArmor=wood\nCanC4=yes\n{allow}\
+             [BRKS]\nStrength=500\nArmor=wood\nCanC4=no\nCanC4.AllowZeroDamage={allow}\n\
+             [SAFE]\nStrength=500\nArmor=wood\nCanC4=yes\nCanC4.AllowZeroDamage={allow}\n\
              [Warheads]\n0=HITWH\n1=ZEROWH\n\
              [HITWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
              [ZEROWH]\nVerses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\

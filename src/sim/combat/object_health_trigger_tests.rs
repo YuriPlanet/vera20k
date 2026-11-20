@@ -139,6 +139,7 @@ fn object_threshold_and_first_damage_order_matches_original_eighteen_controls() 
                 0.25,
                 source,
                 false,
+                false,
             )
         });
         drop(host);
@@ -266,6 +267,7 @@ fn object_live_reads_and_callback_returns_match_original_twenty_three_mutations(
                 false,
                 0.25,
                 source,
+                false,
                 false,
             )
         });

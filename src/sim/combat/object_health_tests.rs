@@ -93,18 +93,6 @@ fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
     for row in rows {
         let input = &row["input"];
         let output = &row["output"];
-        // Phobos `CanC4.AllowZeroDamage` replaces the whole `0x5F5416` body
-        // (`Ext/BuildingType/Hooks.cpp:182-195`), so an original-gamemd
-        // negative packet on a non-C4 building no longer floors to 1. That
-        // arm is covered by
-        // combat_tests::phobos_can_c4_allow_zero_damage_replaces_the_building_minimum.
-        if true
-            && input["kind"] == "building"
-            && input["can_c4"] == false
-            && input["damage"].as_i64().unwrap() < 0
-        {
-            continue;
-        }
         let mut entity = GameEntity::test_default(1, "X", "Americans", 2, 2);
         entity
             .health
@@ -142,6 +130,7 @@ fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
             0.25,
             false,
             crate::rules::ares_switch::ares_way(),
+            false,
         );
         drop(host);
         assert_eq!(
