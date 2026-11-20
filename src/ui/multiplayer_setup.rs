@@ -961,7 +961,8 @@ pub(crate) enum SetupAction {
 pub(crate) struct MapOffer {
     pub(crate) name: String,
     pub(crate) message: String,
-    /// Download was pressed; the map transfer takes it from here.
+    /// The primary button offers Download or Retry.
+    pub(crate) button_key: &'static str,
     pub(crate) downloading: bool,
     /// When it opened: keys typed for the chat just before do not answer it.
     pub(crate) opened: Instant,

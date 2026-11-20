@@ -1271,11 +1271,17 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
 
 /// VERA asks first: a guest's online room offers its map before the
 /// transfer downloads it (`shell_wol::live_service::maps`).
-pub(crate) fn offer_missing_map(state: &mut AppState, name: String, message: String) {
+pub(crate) fn offer_missing_map(
+    state: &mut AppState,
+    name: String,
+    message: String,
+    button_key: &'static str,
+) {
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.map_offer = Some(crate::ui::multiplayer_setup::MapOffer {
             name,
             message,
+            button_key,
             downloading: false,
             opened: Instant::now(),
         });
