@@ -124,3 +124,25 @@ fn the_destructor_feeds_back_the_triggers_the_original_does() {
         }
     }
 }
+
+/// `AITriggerTrackRecordCoefficient=1e999` reads as infinity. A failure at an
+/// even track record multiplies `s/n - 0.5 = 0` by it, a NaN that the failure
+/// compare (`0x0041FE60`, `TEST AH,0x41`) keeps; the NaN weight is unordered
+/// with the minimum, which `0x0041FE8A` (`TEST AH,0x1`) then stores.
+#[test]
+fn an_infinite_track_record_coefficient_drops_a_failed_weight_to_its_minimum() {
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[General]\nAITriggerTrackRecordCoefficient=1e999\n",
+        ))
+        .unwrap();
+    let feedback = AiTriggerFeedbackRules::new(&rules.general);
+    let [minimum, maximum] = [10.0f64, 70.0].map(|value| NativeF64Bits::from_bits(value.to_bits()));
+    let mut record = AiTriggerTrackRecord {
+        weight: NativeF64Bits::from_bits(50.0f64.to_bits()),
+        successes: 1,
+        attempts: 2,
+    };
+    record.record(false, [minimum, maximum], &feedback);
+    assert_eq!(state(&record), (minimum.bits(), 1, 3));
+}

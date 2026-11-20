@@ -112,9 +112,7 @@ use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
-use crate::util::native_x87::{
-    MaskedX87Chop53, NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering,
-};
+use crate::util::native_x87::{MaskedX87Chop53, MaskedX87Ordering, NativeF32Bits, NativeF64Bits};
 
 /// The `[SuperWeaponTypes]` entry at a type's `PreDependent=` index: the
 /// Super Fire_SW pairs a `PostClick=` type with (`HouseClass+0x258` indexed by
@@ -1498,17 +1496,21 @@ pub(crate) fn super_nearly_ready(
 /// `1.0f` (`[0x007E2AC8]`).
 const ONE_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3F80_0000);
 
-/// `0x0041F148..0x0041F167`: in PC53/chop, `remaining / recharge` is not
-/// above `1.0f - percent` (`FCOMPP`, `TEST AH,0x1`); a zero recharge gives
-/// +inf or NaN, which fail, or -inf, which passes.
+/// `0x0041F148..0x0041F167`: in PC53/chop with masked exceptions,
+/// `remaining / recharge` is not above `1.0f - percent` (`FCOMPP`,
+/// `TEST AH,0x1`, which also fails an unordered compare). A zero recharge
+/// gives +inf or NaN, which fail, or -inf, which passes; an infinite
+/// `AIMinorSuperReadyPercent=` (ReadDouble overflows from about `1.8e308`,
+/// e.g. `1e309`, and the chop store to float keeps it; `1e39` stores the
+/// largest finite float) loads as infinity too.
 pub(crate) fn charge_nearly_full(remaining: i32, recharge: i32, percent: NativeF32Bits) -> bool {
-    type X = X87Chop53;
-    let Ok(ratio) = X::div(X::load_i32(remaining), X::load_i32(recharge)) else {
-        return remaining < 0;
-    };
-    let percent = X::load_f32(percent).expect("AIMinorSuperReadyPercent is finite");
-    let threshold = X::sub(X::load_f32(ONE_F32).expect("1.0f is finite"), percent);
-    X::compare(threshold, ratio) != X87Ordering::Less
+    type X = MaskedX87Chop53;
+    let ratio = X::div(X::load_i32(remaining), X::load_i32(recharge));
+    let threshold = X::sub(X::load_f32(ONE_F32), X::load_f32(percent));
+    matches!(
+        X::compare(threshold, ratio),
+        MaskedX87Ordering::Greater | MaskedX87Ordering::Equal
+    )
 }
 
 /// The charge each of `owner`'s Supers with `Type=` value `kind_index` has
