@@ -1569,15 +1569,14 @@ fn visit_room_left(state: &mut AppState) {
     let room = current_channel(state)
         .map(|room| room.name)
         .unwrap_or_default();
-    let line = if switching_room(state) {
-        crate::assets::csf_file::format_csf(
-            &csf(state, "TXT_YOULEFT"),
-            &[crate::assets::csf_file::CsfArg::Str(&room)],
-        )
+    // A committed switch and an independent room closure both emit
+    // channel_left. Until the destination answers, only the departure is known.
+    let key = if switching_room(state) {
+        "VERA:NoLongerInRoom"
     } else {
-        crate::i18n::tr_fill("VERA:VisitedRoomClosed", &[("room", &room)])
+        "VERA:VisitedRoomClosed"
     };
-    visit_settles(state, line);
+    visit_settles(state, crate::i18n::tr_fill(key, &[("room", &room)]));
 }
 
 /// The visitor's room is gone for them, kicked or closed: the lobby made
