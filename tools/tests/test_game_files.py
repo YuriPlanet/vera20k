@@ -150,6 +150,23 @@ class PrepareTest(unittest.TestCase):
         self.assertIn('required game-data checks passed', '\n'.join(lines))
 
 
+class FindGameFolderTest(unittest.TestCase):
+    """The folder that holds the archives, however the source is nested."""
+
+    def test_a_steam_style_layout_is_found(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            game = base / 'steamapps' / 'common' / 'Command & Conquer Red Alert 2 and YR'
+            game.mkdir(parents=True)
+            (game / 'ra2md.mix').write_bytes(b'archive')
+            self.assertEqual(game_files.find_game_folder(base), game)
+
+    def test_a_folder_without_the_archives_is_returned_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            self.assertEqual(game_files.find_game_folder(base), base)
+
+
 class HumanSizeTest(unittest.TestCase):
     """Byte counts read as short strings."""
 
