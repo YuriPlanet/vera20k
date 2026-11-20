@@ -1670,6 +1670,15 @@ impl App {
                 rect,
             });
         }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        feed.extend(
+            super::shell_mod_import::preview_buttons(state, layout)
+                .filter(|button| button.enabled)
+                .map(|button| LaidOutControl {
+                    id: button.id,
+                    rect: button.rect,
+                }),
+        );
         Some((
             crate::ui::shell::descriptor::DialogId(kind.template_id()),
             feed,
@@ -1717,11 +1726,13 @@ impl App {
         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
         super::shell_mod_import::pointer_button(state, false);
         Self::shell_menu_pointer(state, Some(false));
-        let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        if let Some(result) =
-            activated.and_then(crate::ui::shell::modal::ModalResult::from_message_box_control)
-        {
-            Self::resolve_shell_message_box(state, result);
+        if let Some(id) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) {
+            if let Some(result) = crate::ui::shell::modal::ModalResult::from_message_box_control(id) {
+                Self::resolve_shell_message_box(state, result);
+            } else {
+                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                Self::activate_mod_import_button(state, id);
+            }
         }
     }
 

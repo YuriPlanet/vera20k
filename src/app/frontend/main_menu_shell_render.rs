@@ -1132,6 +1132,28 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         );
     }
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    for button in crate::app::shell_mod_import::preview_buttons(state, layout) {
+        let pressed = pressed == Some(button.id);
+        buttons.push(shell_paint::ModalButton {
+            rect: button.rect,
+            pressed,
+            enabled: button.enabled,
+        });
+        labels.push(PaintLabel {
+            text: crate::i18n::tr(button.label).into(),
+            rect: layout.scale.derive_rect(button.rect, |rect| {
+                owner_draw_button_label_rect(rect, pressed)
+            }),
+            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            rgb: if button.enabled {
+                SHELL_TEXT_RGB_ENABLED
+            } else {
+                shell_paint::SHELL_TEXT_RGB_DISABLED
+            },
+            path_a_reveal: None,
+        });
+    }
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let import_parts = crate::app::shell_mod_import::visible_parts(state).map(|parts| {
         use crate::ui::shell::list::ListMetrics;
         let metrics = ListMetrics::scaled(layout.scale);
@@ -1208,7 +1230,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
             atlas,
             geometry,
             parts.top,
-            None,
+            parts.selected,
             parts.scroll.pressed_part(),
             true,
             layout.scale,

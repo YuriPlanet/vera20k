@@ -19,7 +19,7 @@ pub(super) fn available() -> bool {
 pub(super) fn pick(_window: &Window, title: &str) -> io::Result<Vec<PathBuf>> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
-    use objc2_foundation::NSString;
+    use objc2_foundation::{NSArray, NSString};
 
     let main = MainThreadMarker::new()
         .ok_or_else(|| io::Error::other("the file chooser needs the main thread"))?;
@@ -29,6 +29,16 @@ pub(super) fn pick(_window: &Window, title: &str) -> io::Result<Vec<PathBuf>> {
     panel.setAllowsMultipleSelection(true);
     panel.setResolvesAliases(false);
     panel.setTitle(Some(&NSString::from_str(title)));
+    let message = crate::i18n::tr("VERA:ModImportMacMultiSelect");
+    panel.setMessage(Some(&NSString::from_str(&message)));
+    let types = NSArray::from_retained_slice(&[
+        NSString::from_str("zip"),
+        NSString::from_str("public.folder"),
+    ]);
+    // AppKit accepts filename extensions and UTIs here with the existing
+    // Foundation bindings. Keep ordinary folders available alongside ZIPs.
+    #[allow(deprecated)]
+    panel.setAllowedFileTypes(Some(&types));
     if panel.runModal() != NSModalResponseOK {
         return Ok(Vec::new());
     }

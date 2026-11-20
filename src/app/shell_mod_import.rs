@@ -50,36 +50,82 @@ impl Selection {
         !cfg!(target_os = "macos") && self.can_browse && (self.plan.is_none() || self.choosing_kind)
     }
 
+    fn previewing(&self) -> bool {
+        self.plan.is_some() && !self.choosing_kind()
+    }
+
     fn add(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
-        let mut sources = self
-            .plan
-            .iter()
-            .flat_map(ModImport::parts)
-            .map(|path| path.to_owned())
-            .collect::<Vec<_>>();
-        let old_count = sources.len();
-        for item in paths {
-            if !sources.contains(&item) {
-                sources.push(item);
-            }
-        }
-        if sources.len() == old_count {
+        let paths: Vec<_> = paths.into_iter().collect();
+        if paths.is_empty() {
             return;
         }
-        match ModImport::plan(&sources) {
-            Ok(plan) => {
-                let rows = plan
-                    .parts()
-                    .filter_map(|path| path.file_name())
-                    .enumerate()
-                    .map(|(index, name)| format!("{}. {}", index + 1, name.to_string_lossy()))
-                    .collect();
-                self.rows = ListBoxState::new(rows, None);
+        let selected = self.rows.selected.and_then(|index| {
+            self.plan
+                .as_ref()?
+                .parts()
+                .nth(index)
+                .map(|part| part.to_owned())
+        });
+        let changed = match self.plan.as_mut() {
+            Some(plan) => plan.add_paths(&paths),
+            None => ModImport::plan(&paths).map(|plan| {
                 self.plan = Some(plan);
+                true
+            }),
+        };
+        match changed {
+            Ok(true) => {
+                let index = selected.and_then(|selected| {
+                    self.plan
+                        .as_ref()?
+                        .parts()
+                        .position(|part| part == selected)
+                });
+                self.refresh_rows(index.unwrap_or(0));
                 self.choosing_kind = false;
                 self.error = None;
             }
+            Ok(false) => {}
             Err(error) => self.selection_error(error),
+        }
+    }
+
+    fn refresh_rows(&mut self, selected: usize) {
+        let Some(plan) = self.plan.as_ref() else {
+            return;
+        };
+        self.rows.rows = plan
+            .parts()
+            .filter_map(|path| path.file_name())
+            .enumerate()
+            .map(|(index, name)| format!("{}. {}", index + 1, name.to_string_lossy()))
+            .collect();
+        self.rows.selected = (selected < self.rows.rows.len()).then_some(selected);
+        self.rows.scroll.cancel();
+    }
+
+    fn move_target(&self, id: u16) -> Option<(usize, usize)> {
+        let from = self.rows.selected?;
+        let to = match id {
+            MOVE_UP => from.checked_sub(1)?,
+            MOVE_DOWN => from + 1,
+            _ => return None,
+        };
+        (to < self.rows.rows.len()).then_some((from, to))
+    }
+
+    fn move_selected(&mut self, id: u16) -> bool {
+        let Some((from, to)) = self.move_target(id) else {
+            return false;
+        };
+        let Some(plan) = self.plan.as_mut() else {
+            return false;
+        };
+        if plan.move_part(from, to) {
+            self.refresh_rows(to);
+            true
+        } else {
+            false
         }
     }
 
@@ -98,7 +144,7 @@ impl Selection {
             "VERA:Cancel"
         });
         let title = self.error.clone().unwrap_or_else(|| {
-            tr(if self.plan.is_some() {
+            tr(if self.previewing() {
                 "VERA:ModImportOrder"
             } else if self.can_browse {
                 "VERA:ModImportPrompt"
@@ -112,13 +158,8 @@ impl Selection {
                 tr("VERA:ModImportFolders"),
                 cancel,
             )
-        } else if self.plan.is_some() {
-            let more = if self.can_browse {
-                tr("VERA:ModImportMore")
-            } else {
-                String::new()
-            };
-            (tr("VERA:ModImport"), more, cancel)
+        } else if self.previewing() {
+            (tr("VERA:ModImportPlay"), tr("VERA:ModImportOnly"), cancel)
         } else if self.can_browse {
             (tr("VERA:ModImportBrowse"), String::new(), cancel)
         } else {
@@ -135,6 +176,7 @@ impl Selection {
 
 #[derive(Debug)]
 pub(crate) struct Preparation {
+    play: bool,
     stop: Arc<AtomicBool>,
     result: Receiver<anyhow::Result<PreparedModImport>>,
 }
@@ -145,16 +187,69 @@ impl Drop for Preparation {
     }
 }
 
-pub(crate) fn visible_parts(state: &AppState) -> Option<&ListBoxState<String>> {
+fn preview(state: &AppState) -> Option<&Selection> {
     let ShellMessageBoxPurpose::ModImport(dialog) =
         &state.frontend.shell_message_box.as_ref()?.purpose
     else {
         return None;
     };
     match dialog.as_ref() {
-        Dialog::Select(selection) if !selection.rows.rows.is_empty() => Some(&selection.rows),
+        Dialog::Select(selection) if selection.previewing() => Some(selection),
         _ => None,
     }
+}
+
+pub(crate) fn visible_parts(state: &AppState) -> Option<&ListBoxState<String>> {
+    preview(state).map(|selection| &selection.rows)
+}
+
+const ADD_MORE: u16 = 0x7E37;
+const MOVE_UP: u16 = 0x7E38;
+const MOVE_DOWN: u16 = 0x7E39;
+
+pub(crate) struct PreviewButton {
+    pub(crate) id: u16,
+    pub(crate) rect: RectPx,
+    pub(crate) label: &'static str,
+    pub(crate) enabled: bool,
+}
+
+/// Add and reorder buttons use the row above the install actions.
+pub(crate) fn preview_buttons(
+    state: &AppState,
+    layout: MessageBoxLayout,
+) -> impl Iterator<Item = PreviewButton> + '_ {
+    preview(state).into_iter().flat_map(move |selection| {
+        [
+            (ADD_MORE, Some(layout.ok), "VERA:ModImportMore", true),
+            (
+                MOVE_UP,
+                layout.third,
+                "VERA:ModImportMoveUp",
+                selection.move_target(MOVE_UP).is_some(),
+            ),
+            (
+                MOVE_DOWN,
+                layout.cancel,
+                "VERA:ModImportMoveDown",
+                selection.move_target(MOVE_DOWN).is_some(),
+            ),
+        ]
+        .into_iter()
+        .filter_map(move |(id, rect, label, enabled)| {
+            if id == ADD_MORE && !selection.can_browse {
+                return None;
+            }
+            Some(PreviewButton {
+                id,
+                rect: layout.scale.derive_rect(rect?, |rect| {
+                    RectPx::new(rect.x, rect.y - rect.h - 6, rect.w, rect.h)
+                }),
+                label,
+                enabled,
+            })
+        })
+    })
 }
 
 /// Most of the panel is for the ordered parts. The actions are along its footer.
@@ -205,12 +300,12 @@ pub(crate) fn list_rect(layout: MessageBoxLayout) -> RectPx {
             body.x,
             body.y + body.h + 8,
             body.w - 1,
-            9 * crate::ui::shell::list::ROW_HEIGHT + 1,
+            7 * crate::ui::shell::list::ROW_HEIGHT + 1,
         )
     })
 }
 
-fn scrollable_parts(state: &mut AppState) -> Option<(&mut ListBoxState<String>, MessageBoxLayout)> {
+fn preview_mut(state: &mut AppState) -> Option<(&mut Selection, MessageBoxLayout)> {
     let kind = state.frontend.shell_message_box.as_ref()?.labels.kind();
     let layout = crate::app::frontend::shell_layout::shell_message_box_layout(state, kind);
     let ShellMessageBoxPurpose::ModImport(dialog) =
@@ -219,36 +314,51 @@ fn scrollable_parts(state: &mut AppState) -> Option<(&mut ListBoxState<String>, 
         return None;
     };
     match dialog.as_mut() {
-        Dialog::Select(selection) if !selection.rows.rows.is_empty() => {
-            Some((&mut selection.rows, layout))
-        }
+        Dialog::Select(selection) if selection.previewing() => Some((selection, layout)),
         _ => None,
     }
 }
 
 pub(super) fn pointer_button(state: &mut AppState, pressed: bool) -> bool {
     let (x, y) = state.match_state.input.cursor_px();
-    let Some((parts, layout)) = scrollable_parts(state) else {
+    let Some((selection, layout)) = preview_mut(state) else {
         return false;
     };
+    let parts = &mut selection.rows;
     if !pressed {
         parts.scroll.cancel();
         return false;
     }
-    parts.scroll_press(
-        list_rect(layout),
-        ListMetrics::scaled(layout.scale),
-        x,
-        y,
-        Instant::now(),
-    )
+    let list = list_rect(layout);
+    let metrics = ListMetrics::scaled(layout.scale);
+    if parts.scroll_press(list, metrics, x, y, Instant::now()) {
+        return true;
+    }
+    let geometry = parts.geometry(list, metrics);
+    let row_end = parts.rows.len().min(parts.top + geometry.visible_rows);
+    if let Some(index) = geometry.row_at(row_end, parts.top, x, y) {
+        parts.selected = Some(index);
+        state.platform.window.request_redraw();
+        return true;
+    }
+    false
+}
+
+fn reveal_selection(selection: &mut Selection, layout: MessageBoxLayout) {
+    let parts = &mut selection.rows;
+    if let Some(index) = parts.selected {
+        let geometry = parts.geometry(list_rect(layout), ListMetrics::scaled(layout.scale));
+        let first = index.saturating_sub(geometry.visible_rows.saturating_sub(1));
+        parts.top = parts.top.clamp(first, index).min(geometry.max_top);
+    }
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
     let (x, y) = state.match_state.input.cursor_px();
-    let Some((parts, layout)) = scrollable_parts(state) else {
+    let Some((selection, layout)) = preview_mut(state) else {
         return;
     };
+    let parts = &mut selection.rows;
     let top = parts.top;
     parts.scroll_pointer_moved(list_rect(layout), ListMetrics::scaled(layout.scale), x, y);
     if top != parts.top {
@@ -257,9 +367,10 @@ pub(super) fn cursor_moved(state: &mut AppState) {
 }
 
 pub(super) fn wheel(state: &mut AppState, lines: f32) {
-    let Some((parts, layout)) = scrollable_parts(state) else {
+    let Some((selection, layout)) = preview_mut(state) else {
         return;
     };
+    let parts = &mut selection.rows;
     let max_top = parts
         .geometry(list_rect(layout), ListMetrics::scaled(layout.scale))
         .max_top;
@@ -269,7 +380,8 @@ pub(super) fn wheel(state: &mut AppState, lines: f32) {
 
 fn poll_scroll(state: &mut AppState) -> Option<Instant> {
     let (x, y) = state.match_state.input.cursor_px();
-    let (parts, layout) = scrollable_parts(state)?;
+    let (selection, layout) = preview_mut(state)?;
+    let parts = &mut selection.rows;
     let changed = parts.scroll_poll(
         list_rect(layout),
         ListMetrics::scaled(layout.scale),
@@ -305,6 +417,9 @@ impl App {
     fn show_import_selection(state: &mut AppState, selection: Selection) {
         let labels = selection.labels();
         Self::show_import_box(state, labels, Dialog::Select(selection));
+        if let Some((selection, layout)) = preview_mut(state) {
+            reveal_selection(selection, layout);
+        }
     }
 
     fn show_import_box(state: &mut AppState, labels: ShellMessageBoxLabels, dialog: Dialog) {
@@ -336,7 +451,40 @@ impl App {
             Self::close_shell_message_box_from_controller(state);
             Self::open_shell_message_box(state, message);
         }
+        if let Some((selection, layout)) = preview_mut(state) {
+            reveal_selection(selection, layout);
+        }
         state.platform.window.request_redraw();
+    }
+
+    pub(super) fn activate_mod_import_button(state: &mut AppState, id: u16) {
+        let Some((selection, layout)) = preview_mut(state) else {
+            return;
+        };
+        if id != ADD_MORE {
+            if selection.move_selected(id) {
+                reveal_selection(selection, layout);
+                state.platform.window.request_redraw();
+            }
+            return;
+        }
+        let Some(ShellMessageBox {
+            purpose: ShellMessageBoxPurpose::ModImport(dialog),
+            ..
+        }) = state.frontend.shell_message_box.take()
+        else {
+            return;
+        };
+        let Dialog::Select(mut selection) = *dialog else {
+            return;
+        };
+        Self::close_shell_message_box_from_controller(state);
+        if cfg!(target_os = "macos") {
+            Self::browse_mod_parts(state, selection, false);
+        } else {
+            selection.choosing_kind = true;
+            Self::show_import_selection(state, selection);
+        }
     }
 
     pub(super) fn answer_mod_import(state: &mut AppState, dialog: Dialog, result: ModalResult) {
@@ -344,26 +492,21 @@ impl App {
         let Dialog::Select(mut selection) = dialog else {
             return;
         };
-        let choosing_kind = selection.choosing_kind();
+        if selection.previewing() {
+            if let ModalResult::MessageBox(action @ (0 | 2)) = result
+                && let Some(plan) = selection.plan.take()
+            {
+                Self::prepare_mod_import(state, plan, action == 0);
+            }
+            return;
+        }
         match result {
-            ModalResult::MessageBox(0) => {
-                if !choosing_kind && let Some(plan) = selection.plan.take() {
-                    Self::prepare_mod_import(state, plan);
-                } else if selection.can_browse {
-                    Self::browse_mod_parts(state, selection, false);
-                } else {
-                    Self::open_mods_folder(state);
-                }
-            }
-            ModalResult::MessageBox(2) if choosing_kind => {
-                Self::browse_mod_parts(state, selection, true);
-            }
-            ModalResult::MessageBox(2) if cfg!(target_os = "macos") => {
+            ModalResult::MessageBox(0) if selection.can_browse => {
                 Self::browse_mod_parts(state, selection, false);
             }
-            ModalResult::MessageBox(2) => {
-                selection.choosing_kind = true;
-                Self::show_import_selection(state, selection);
+            ModalResult::MessageBox(0) => Self::open_mods_folder(state),
+            ModalResult::MessageBox(2) if selection.choosing_kind() => {
+                Self::browse_mod_parts(state, selection, true);
             }
             ModalResult::MessageBox(1) if selection.choosing_kind => {
                 selection.choosing_kind = false;
@@ -396,7 +539,7 @@ impl App {
         Self::show_import_selection(state, selection);
     }
 
-    fn prepare_mod_import(state: &mut AppState, plan: ModImport) {
+    fn prepare_mod_import(state: &mut AppState, plan: ModImport, play: bool) {
         let Some(config) = state.platform.game_config.as_ref() else {
             Self::mod_import_failed(
                 state,
@@ -421,7 +564,7 @@ impl App {
                 third: String::new(),
                 cancel: String::new(),
             },
-            Dialog::Preparing(Preparation { stop, result }),
+            Dialog::Preparing(Preparation { play, stop, result }),
         );
     }
 
@@ -439,16 +582,21 @@ impl App {
             Err(TryRecvError::Disconnected) => Err(anyhow::anyhow!("The import worker stopped")),
             Ok(result) => result,
         };
+        let play = preparation.play;
         Self::close_shell_message_box_from_controller(state);
         match result.and_then(|prepared| Ok(prepared.install()?)) {
-            Ok(folder) => Self::mod_imported(state, folder),
+            Ok(folder) => Self::mod_imported(state, folder, play),
             Err(error) => Self::mod_import_failed(state, error),
         }
         None
     }
 
-    fn mod_imported(state: &mut AppState, folder: String) {
+    fn mod_imported(state: &mut AppState, folder: String, play: bool) {
         Self::select_installed_mod(state, &folder);
+        if play && state.frontend.mods.switch_to().is_some() {
+            Self::answer_mod_restart(state, Some(folder), true);
+            return;
+        }
         let row = state
             .frontend
             .mods
@@ -457,30 +605,15 @@ impl App {
             .and_then(|page| page.selected.and_then(|row| page.rows.get(row)));
         let name = row.map_or_else(|| folder.clone(), |row| row.title().into_owned());
         let added = tr_fill("VERA:ModImported", &[("mod", &name)]);
-        if let Some(row) = state.frontend.mods.switch_to() {
-            Self::open_shell_message_box(
-                state,
-                ShellMessageBox {
-                    labels: ShellMessageBoxLabels {
-                        title: added,
-                        confirm: tr("VERA:ModImportUse"),
-                        cancel: tr("VERA:ModImportLater"),
-                        third: String::new(),
-                    },
-                    purpose: ShellMessageBoxPurpose::ModRestart(row.folder.clone()),
-                },
-            );
+        let title = if let Some(needs) = row.and_then(|row| row.needs.as_ref()) {
+            format!(
+                "{added}\n\n{}",
+                tr_fill("VERA:ModNeeds", &[("needs", needs)])
+            )
         } else {
-            let title = if let Some(needs) = row.and_then(|row| row.needs.as_ref()) {
-                format!(
-                    "{added}\n\n{}",
-                    tr_fill("VERA:ModNeeds", &[("needs", needs)])
-                )
-            } else {
-                added
-            };
-            Self::mod_import_notice(state, title);
-        }
+            added
+        };
+        Self::mod_import_notice(state, title);
     }
 
     fn mod_import_failed(state: &mut AppState, error: anyhow::Error) {

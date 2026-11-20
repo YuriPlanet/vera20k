@@ -120,19 +120,34 @@ mod native {
         }
     }
 
-    fn order_parts(parts: &mut [Part]) -> io::Result<()> {
-        if parts.len() > MAX_PARTS {
+    fn check_part_count(count: usize) -> io::Result<()> {
+        if count > MAX_PARTS {
             return Err(invalid(format!("a mod can have at most {MAX_PARTS} parts")));
         }
-        parts.sort_by_cached_key(|part| part.name.to_ascii_lowercase());
-        if let Some([left, _]) = parts.windows(2).find(
-            |pair| matches!(pair, [left, right] if left.name.eq_ignore_ascii_case(&right.name)),
-        ) {
-            return Err(invalid(format!(
-                "more than one mod part is named {:?}; keep one copy of each part",
-                left.name
-            )));
+        Ok(())
+    }
+
+    fn check_part_names<'a>(parts: impl IntoIterator<Item = &'a Part>) -> io::Result<()> {
+        let mut names = HashSet::new();
+        for part in parts {
+            if !names.insert(part.name.to_ascii_lowercase()) {
+                return Err(invalid(format!(
+                    "more than one mod part is named {:?}. Keep one copy of each part",
+                    part.name
+                )));
+            }
         }
+        Ok(())
+    }
+
+    fn sort_parts(parts: &mut [Part]) {
+        parts.sort_by_cached_key(|part| part.name.to_ascii_lowercase());
+    }
+
+    fn order_parts(parts: &mut [Part]) -> io::Result<()> {
+        check_part_count(parts.len())?;
+        check_part_names(parts.iter())?;
+        sort_parts(parts);
         Ok(())
     }
 
@@ -602,7 +617,7 @@ mod native {
         #[derive(Debug)]
         pub struct ModImport {
             parts: Vec<Part>,
-            name: String,
+            manual_order: bool,
         }
 
         /// The assembled files wait here until the player accepts their install.
@@ -612,49 +627,84 @@ mod native {
             name: String,
         }
 
+        fn read_part(path: &Path) -> io::Result<Part> {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| invalid(format!("{} needs a Unicode filename", path.display())))?;
+            let metadata = fs::symlink_metadata(path)?;
+            let zip = path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"));
+            let kind = if !is_link(&metadata) && metadata.is_dir() {
+                Kind::Directory
+            } else if !is_link(&metadata) && metadata.is_file() && zip {
+                Kind::Zip
+            } else {
+                return Err(invalid(format!(
+                    "choose a ZIP archive or an extracted mod folder: {}",
+                    path.display()
+                )));
+            };
+            Ok(Part::new(path.to_owned(), name, kind))
+        }
+
         impl ModImport {
             pub fn plan(sources: &[PathBuf]) -> io::Result<Self> {
                 if sources.is_empty() {
                     return Err(invalid("choose a ZIP archive or a mod folder"));
                 }
-                if sources.len() > MAX_PARTS {
-                    return Err(invalid(format!("a mod can have at most {MAX_PARTS} parts")));
-                }
-                let mut parts = Vec::with_capacity(sources.len());
-                for path in sources {
-                    let name =
-                        path.file_name()
-                            .and_then(|name| name.to_str())
-                            .ok_or_else(|| {
-                                invalid(format!("{} needs a Unicode filename", path.display()))
-                            })?;
-                    let kind = fs::symlink_metadata(path)?;
-                    let zip = path
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"));
-                    let kind = if !is_link(&kind) && kind.is_dir() {
-                        Kind::Directory
-                    } else if !is_link(&kind) && kind.is_file() && zip {
-                        Kind::Zip
-                    } else {
-                        return Err(invalid(format!(
-                            "choose a ZIP archive or an extracted mod folder: {}",
-                            path.display()
-                        )));
-                    };
-                    parts.push(Part::new(path.clone(), name, kind));
-                }
+                check_part_count(sources.len())?;
+                let mut parts = sources
+                    .iter()
+                    .map(|path| read_part(path))
+                    .collect::<io::Result<Vec<_>>>()?;
                 order_parts(&mut parts)?;
-                let name = parts.first().map_or("", |part| part.name.trim());
-                // Keep room for a number if the same name is already installed.
-                let name = name.get(..name.floor_char_boundary(245)).unwrap_or(name);
-                let name = if ignored(name) || portable_component(name).is_err() {
-                    "Imported Mod"
-                } else {
-                    name
+                Ok(Self {
+                    parts,
+                    manual_order: false,
+                })
+            }
+
+            /// Add a selection as a batch. Once the player rearranges the list,
+            /// only the new parts are sorted and they follow the existing parts.
+            pub fn add_paths(&mut self, sources: &[PathBuf]) -> io::Result<bool> {
+                let mut added = Vec::new();
+                for path in sources {
+                    if self
+                        .parts
+                        .iter()
+                        .chain(&added)
+                        .any(|part| &part.path == path)
+                    {
+                        continue;
+                    }
+                    check_part_count(self.parts.len() + added.len() + 1)?;
+                    added.push(read_part(path)?);
                 }
-                .to_owned();
-                Ok(Self { parts, name })
+                if added.is_empty() {
+                    return Ok(false);
+                }
+                check_part_names(self.parts.iter().chain(&added))?;
+                let sort_from = if self.manual_order {
+                    self.parts.len()
+                } else {
+                    0
+                };
+                self.parts.extend(added);
+                sort_parts(&mut self.parts[sort_from..]);
+                Ok(true)
+            }
+
+            /// Move a part to its final index in the order used for installation.
+            pub fn move_part(&mut self, from: usize, to: usize) -> bool {
+                if from == to || from >= self.parts.len() || to >= self.parts.len() {
+                    return false;
+                }
+                let part = self.parts.remove(from);
+                self.parts.insert(to, part);
+                self.manual_order = true;
+                true
             }
 
             pub fn parts(&self) -> impl Iterator<Item = &Path> {
@@ -662,7 +712,14 @@ mod native {
             }
 
             pub fn name(&self) -> &str {
-                &self.name
+                let name = self.parts.first().map_or("", |part| part.name.trim());
+                // Keep room for a number if the same name is already installed.
+                let name = name.get(..name.floor_char_boundary(245)).unwrap_or(name);
+                if ignored(name) || portable_component(name).is_err() {
+                    "Imported Mod"
+                } else {
+                    name
+                }
             }
 
             pub fn prepare(
@@ -695,7 +752,7 @@ mod native {
                 check_stop(stop)?;
                 Ok(PreparedModImport {
                     staged,
-                    name: self.name,
+                    name: self.name().to_owned(),
                 })
             }
         }
@@ -950,6 +1007,44 @@ mod tests {
             fs::read(downloads.path().join("a Base/Rules.INI")).unwrap(),
             b"base"
         );
+    }
+
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn add_mod_keeps_a_chosen_order_when_more_parts_are_picked() {
+        let downloads = tempfile::tempdir().unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        let base = downloads.path().join("Z Base");
+        let patch = downloads.path().join("b Patch.zip");
+        let extra = downloads.path().join("a Extra");
+        let conflict = downloads.path().join("other/z base");
+        write_files(&base, &[("rules.ini", b"base")]);
+        write_zip(
+            &patch,
+            &[("rules.ini", b"patched")],
+            zip::CompressionMethod::Stored,
+        );
+        write_files(&extra, &[("art.ini", b"extra")]);
+        write_files(&conflict, &[("rules.ini", b"wrong")]);
+
+        let mut plan = ModImport::plan(std::slice::from_ref(&base)).unwrap();
+        assert!(plan.add_paths(std::slice::from_ref(&patch)).unwrap());
+        assert_eq!(plan.parts().collect::<Vec<_>>(), [&patch, &base]);
+        assert!(plan.move_part(1, 0));
+        assert!(!plan.move_part(0, 2));
+        assert!(!plan.add_paths(std::slice::from_ref(&base)).unwrap());
+        assert!(plan.add_paths(&[extra.clone(), conflict]).is_err());
+        assert!(plan.add_paths(&[extra]).unwrap());
+
+        let folder = plan
+            .prepare(mods.path(), &AtomicBool::new(false))
+            .unwrap()
+            .install()
+            .unwrap();
+        let installed = mods.path().join(&folder);
+        assert_eq!(fs::read(installed.join("rules.ini")).unwrap(), b"patched");
+        assert_eq!(fs::read(installed.join("art.ini")).unwrap(), b"extra");
+        assert_eq!(folder, "Z Base");
     }
 
     #[cfg(any(windows, target_os = "linux", target_os = "macos"))]

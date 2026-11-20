@@ -91,18 +91,18 @@ sign-in.
 with a `README.txt` in it.
 
 In the desktop game, open **Options → Mods → Add Mod** to import a download.
-Choose the ZIPs or extracted folders for one mod. You can also drop them on the
-window while Add Mod is open where the desktop supports file drops. For a mod
-with a base and patch, add both before pressing **Import**. On Linux, the chooser
-uses Zenity or KDialog.
+Select all the ZIPs or extracted folders for one mod, including any patches. On
+macOS, hold Command while clicking to select several items. Use **Add More** to
+select another part, or drop parts onto the window on desktops that support it.
+The Linux chooser uses Zenity or KDialog. For an extracted mod, select the folder
+that contains the mod's game files.
 
-The preview shows the order of the parts. VERA sorts them by name, ignoring letter
-case and the ZIP extension. Later parts replace files at the same path. If the base
-would appear after the patch, prefix their names with `01` and `02` before adding
-them. For an extracted mod, select the folder that contains the mod's game files.
+The preview starts in filename order, ignoring letter case and the ZIP extension.
+Select a row and use **Move Up** or **Move Down** to follow the mod's install order.
+Later parts replace files at the same path.
 
-Import makes one ready-to-use folder in `Mods` and keeps the original downloads.
-**Use & Restart** loads it straight away. **Later** leaves it installed for next time.
+**Install & Play** makes one ready-to-use folder in `Mods` and restarts into it.
+**Install Only** adds the mod to the list for later. Both keep the original downloads.
 
 You can also install a mod manually.
 
