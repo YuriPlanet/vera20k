@@ -704,6 +704,7 @@ fn death_arm_payload(
     super::death_arm_explodes(obj, veterancy, numbered_weapon)
         .then(|| super::fire_death_weapon_payload(rules, obj, current_weapon, interner))
         .flatten()
+        .map(|payload| (payload.damage, payload.warhead, payload.weapon_ref))
 }
 
 #[test]

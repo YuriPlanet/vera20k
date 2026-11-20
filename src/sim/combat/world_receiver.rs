@@ -79,7 +79,9 @@ pub(crate) fn apply_foot_radiation(
         if level <= 0 {
             return None;
         }
-        let warhead = rules.warhead(&rules.radiation.site_warhead)?;
+        let warhead = rules.radiation_site_warhead()?;
+        // Interned here, not at rules load: interned ids are saved and
+        // hashed, and take the order of their first use.
         let warhead_id = world.interner.intern(&warhead.id);
         let receiver = EntityDamageEvent::direct_receiver(
             stable_id,
@@ -3434,7 +3436,7 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     let altitude = detonation
         .payload
         .installed_weapon()
-        .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
+        .and_then(|weapon| world.interner.weapon_type(weapon, rules))
         .and_then(|weapon| rules.weapon_projectile(weapon))
         .map_or(0, |projectile| projectile.detonation_altitude);
     let weapon = rules.weapon(NUKE_PAYLOAD_WEAPON);
@@ -3911,7 +3913,7 @@ fn emit_detonation_receivers<'r>(
     if let Some(weapon) = detonation
         .payload
         .installed_weapon()
-        .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
+        .and_then(|weapon| world.interner.weapon_type(weapon, rules))
         && weapon.rad_level > 0
         && let Some(rad_warhead) = rules.weapon_warhead(weapon)
     {
@@ -3953,7 +3955,7 @@ fn emit_detonation_receivers<'r>(
         let weapon = detonation
             .payload
             .installed_weapon()
-            .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)));
+            .and_then(|weapon| world.interner.weapon_type(weapon, rules));
         // The abduction of a snapped bullet whose weapon is not
         // `Abductor.Temporal` (`sim::abduction`): taken, the bullet is
         // neutered and the effects below give way to applyPermaMC.
@@ -4199,15 +4201,7 @@ fn emit_warhead_debris(
             &mut host,
         )
     } else {
-        let types: Vec<_> = warhead
-            .debris_types
-            .iter()
-            .map(|name| {
-                rules
-                    .voxel_anim_type_id_by_name(name)
-                    .map(|id| (id, rules.voxel_anim_type(id)))
-            })
-            .collect();
+        let types = rules.warhead_debris_types(warhead);
         throw_typed_debris(budget, &types, &warhead.debris_maximums, None, &mut host).map(|_| ())
     };
     if let Err(error) = result {
@@ -4271,14 +4265,13 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for WarheadDebrisHost<'_, '_> {
     fn construct_voxel(
         &mut self,
         type_id: crate::rules::voxel_anim_type::VoxelAnimTypeId,
-        voxel_type: &crate::rules::voxel_anim_type::VoxelAnimType,
         owner_house: Option<InternedId>,
         origin: glam::IVec3,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let admit_inline = callbacks_enabled(self.world);
         self.world.emit_debris_voxel(
             type_id,
-            voxel_type,
+            self.rules.voxel_anim_type(type_id),
             owner_house,
             origin,
             admit_inline,

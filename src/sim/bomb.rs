@@ -1180,7 +1180,7 @@ fn ivan_bomb_settings<'r>(
 ) -> &'r AresIvanBomb {
     static CONSTRUCTED: AresIvanBomb = AresIvanBomb::CONSTRUCTED;
     weapon
-        .and_then(|weapon| rules.weapon(interner.resolve(weapon)))
+        .and_then(|weapon| interner.weapon_type(weapon, rules))
         .map_or(&CONSTRUCTED, |weapon| &weapon.ares_ivan_bomb)
 }
 
