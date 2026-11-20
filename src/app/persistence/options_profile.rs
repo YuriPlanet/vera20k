@@ -163,8 +163,10 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
-    /// `[VERA] RightClickOrders=`: left selects, right issues context orders.
-    /// VERA-only input preference; off by default.
+    /// `[VERA] RightClickOrders=`: left selects, right issues context orders,
+    /// and a double-click on an object selects its type on screen (the T key's
+    /// screen pass, done without the key). VERA-only input preference; off by
+    /// default.
     pub(crate) right_click_orders: bool,
     /// `[VERA] LockCursor=`: keep the pointer inside the game window. Off
     /// unless the player turns it on, so a new install leaves the pointer free.

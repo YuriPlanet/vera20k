@@ -26,6 +26,7 @@ use crate::app::input::context_order::{ContextOrderTarget, try_queue_context_ord
 use crate::app::input::entity_pick::{
     SelectionMutation, compute_box_selection_snapshot_with_playfield,
     compute_click_selection_snapshot_with_playfield,
+    compute_double_click_type_select_with_playfield,
     compute_type_select_box_mutation_with_playfield,
     compute_type_select_click_mutation_with_playfield, compute_type_select_tap_with_playfield,
     map_entity_creation_order, pick_entity_at_point,
@@ -673,6 +674,34 @@ fn tactical_left_up(state: &mut AppState) {
     ) {
         return;
     }
+    // VERA right-click orders: a second quick click on the same battlefield
+    // point selects every on-screen object of the clicked object's type, the
+    // modern-RTS shortcut for the T key's screen pass. It rides on the option
+    // and on an ordinary selection click only: a held T, a modifier chord or
+    // an armed attack-move keeps the click it already has and ends the chain,
+    // so it never pairs with the next plain click. The chain records every
+    // ordinary selection click, so the next one can pair with it.
+    if let SelectAction::Click(sx, sy) = action {
+        let ordinary = !type_select_held
+            && !shift
+            && !is_ctrl_held(state)
+            && !is_alt_held(state)
+            && state.match_state.input.queued_order_mode == OrderMode::Move;
+        let window_point = state
+            .tactical_zoom()
+            .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
+        let admitted = ordinary && state.persistence.options_profile.right_click_orders;
+        let double_click = state.match_state.input.note_tactical_selection_click(
+            admitted,
+            crate::util::time::Instant::now(),
+            (window_point.0.round() as i32, window_point.1.round() as i32),
+        );
+        if double_click && let Some(mutation) = double_click_type_select(state, sx, sy) {
+            apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
+            apply_selection_action_line_policy(state, TYPE_SELECT_TAP_ACTION_LINE_POLICY);
+            return;
+        }
+    }
     let mut queued_selection: Option<SelectionMutation> = None;
     let mut held_type_select_batch = false;
     if let Some(sim) = state
@@ -853,6 +882,44 @@ fn tactical_left_up(state: &mut AppState) {
             apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
         }
     }
+}
+
+/// The selection a right-click-orders double-click commits, or `None` when the
+/// click found no locally controlled object (ground, an enemy, a refused
+/// object), which leaves the ordinary click to decide. The screen list is the
+/// T key's screen pass; there is no map-wide fallback.
+fn double_click_type_select(state: &AppState, sx: f32, sy: f32) -> Option<SelectionMutation> {
+    let sim = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .map(|rt| &rt.simulation)?;
+    // TypeSelect's defeat guard `0x00732961` (`A8B538`): a defeated local
+    // player's shortcut leaves the plain click in charge.
+    if !selection_navigation::selection_navigation_allowed(sim) {
+        return None;
+    }
+    let click_order =
+        crate::app::presentation::instances::tactical_entity_encounter_order(sim, state.rules());
+    let screen_order =
+        crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+    let world_x = sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
+    let world_y = sy / state.match_state.input.zoom_level + state.match_state.input.camera_y;
+    let fog = (!state.match_state.sandbox_full_visibility)
+        .then_some((sim.fog(), sim.house_alliances().as_map()));
+    compute_double_click_type_select_with_playfield(
+        crate::app::input::entity_pick::presented(state, sim),
+        &click_order,
+        &screen_order,
+        fog,
+        preferred_local_owner_name(state).as_deref(),
+        world_x,
+        world_y,
+        state.rules(),
+        Some(sim.interner()),
+        sim.playfield_bounds().is_some(),
+        sim.resolved_terrain(),
+    )
 }
 
 /// Cancel exactly one armed cursor mode before right-click orders or deselection.
