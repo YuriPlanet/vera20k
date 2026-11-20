@@ -3192,6 +3192,15 @@ impl MatchSession {
         self.network.as_ref()?.max_ahead_frames
     }
 
+    pub(crate) fn network_campaign_carry_over(
+        &self,
+    ) -> Option<crate::sim::campaign_carry_over::CampaignCarryOver> {
+        let NetworkPhase::Frozen { startup, .. } = &self.network.as_ref()?.phase else {
+            return None;
+        };
+        startup.carry_over().copied()
+    }
+
     pub(crate) fn set_network_start_seed(&mut self, seed: u32) -> anyhow::Result<()> {
         let network = self
             .network

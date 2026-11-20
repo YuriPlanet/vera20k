@@ -268,6 +268,15 @@ impl ProcessAssets {
         }
     }
 
+    /// The Options page's Building Production Queue: the next offline
+    /// scenario's rules read it.
+    pub(crate) fn set_building_production_queue(&mut self, on: bool) {
+        self.personal_rules.set_building_production_queue(on);
+        if let Some(rules) = self.native_rules.as_mut() {
+            rules.set_building_production_queue(on);
+        }
+    }
+
     /// The player's own rule switches, which offline games play and a
     /// network room's host shares.
     pub(crate) fn personal_rules(&self) -> &crate::rules::personal_rules::PersonalRules {

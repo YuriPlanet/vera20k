@@ -984,7 +984,7 @@ impl Simulation {
             return false;
         };
         let combat = &rules.combat_damage;
-        if !self.house_is_human_player(bomb.planter_house) {
+        if !self.control_projection().can_order(bomb.house()) {
             return false;
         }
         if rules.ares_form() {

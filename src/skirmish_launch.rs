@@ -1192,7 +1192,7 @@ impl SkirmishLaunchSession {
         }
     }
 
-    fn retain_recorded_house_roster(&mut self, constructor: PreFillHouseRoster) {
+    pub(crate) fn retain_recorded_house_roster(&mut self, constructor: PreFillHouseRoster) {
         let rows_at_decode = self.roster_from_rows();
         self.recorded_house_roster = (constructor != rows_at_decode).then(|| {
             Box::new(RecordedHouseRoster {

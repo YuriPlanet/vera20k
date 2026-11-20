@@ -1076,6 +1076,7 @@ fn two_ordinary_cleg_moves_publish_class_destinations_before_process() {
     );
     for target_rx in [12, 13] {
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &Command::Move {
                 entity_id: id,
@@ -1407,6 +1408,7 @@ fn cleg_overlay_cell_requests_match_every_original_command_boundary() {
                     let (rx, ry) = pair(&boundary["input"]["cell"]);
                     assert!(
                         sim.apply_command_with_overlays(
+                            None,
                             "Americans",
                             &Command::Move {
                                 entity_id: id,

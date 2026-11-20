@@ -1273,6 +1273,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             path_runtime.set_retries_left_for_test(256);
             let grid = sim.path_grid_snapshot();
             assert!(sim.apply_command_with_overlays(
+                None,
                 "Americans",
                 &Command::Move {
                     entity_id: rocketeer,
@@ -1588,6 +1589,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         .unwrap()
         .clone();
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::Stop { entity_id: id },
         &rules,

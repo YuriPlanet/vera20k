@@ -89,6 +89,7 @@ fn walk_frame(sim: &mut Simulation, rules: &RuleSet) {
 
 fn walk_command(sim: &mut Simulation, rules: &RuleSet, command: crate::sim::command::Command) {
     assert!(sim.apply_command_with_overlays(
+        None,
         "Local",
         &command,
         rules,
@@ -138,6 +139,7 @@ fn walk_destination_search_observes_route_opened_before_process() {
     // command and restore the open one for the object turn.
     sim.path_grid = Some(std::sync::Arc::new(closed_grid));
     assert!(sim.apply_command_with_overlays(
+        None,
         "Local",
         &crate::sim::command::Command::Move {
             entity_id: actor,

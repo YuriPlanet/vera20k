@@ -95,6 +95,19 @@ fn collect_eva_object(
     }
 }
 
+/// The text-only counterpart of [`collect_eva_object`], for alerts whose sim
+/// event carries no subject type (base/harvester under attack, ally under
+/// attack, infiltration). Same gate: a disabled switch passes `None`, so no
+/// row is collected at all.
+fn collect_eva_text(
+    hud_text: &mut Option<&mut Vec<crate::app::input::messages::HudMessage>>,
+    label: &'static str,
+) {
+    if let Some(messages) = hud_text.as_deref_mut() {
+        messages.push(crate::app::input::messages::HudMessage::EvaTextLine { label });
+    }
+}
+
 /// Append each already-admitted event in producer order, including multi-cue
 /// events. Simulation owns feedback admission and its Main draws at damage
 /// time; this adapter never advances a random stream.
@@ -782,6 +795,14 @@ pub(super) fn dispatch_sim_sound_events(
                     event: cue.to_string(),
                     type_override: None,
                 });
+                collect_eva_text(
+                    &mut hud_text,
+                    if miner {
+                        "VERA:EvaHarvesterUnderAttack"
+                    } else {
+                        "VERA:EvaBaseUnderAttack"
+                    },
+                );
                 if let Some(siren) = base_under_attack_siren(miner, rules) {
                     output.push(siren);
                 }
@@ -798,6 +819,7 @@ pub(super) fn dispatch_sim_sound_events(
                     event: "EVA_OurAllyIsUnderAttack".to_string(),
                     type_override: None,
                 });
+                collect_eva_text(&mut hud_text, "VERA:EvaAllyUnderAttack");
                 if let Some(siren) = base_under_attack_siren(false, rules) {
                     output.push(siren);
                 }
@@ -1052,6 +1074,16 @@ pub(super) fn dispatch_sim_sound_events(
                         event,
                         type_override: None,
                     });
+                }
+                // The spy's own "funds stolen" line: same arm as its voice.
+                if radar_accepted
+                    && local_is_infiltrator
+                    && matches!(
+                        effect,
+                        crate::sim::spy_infiltration::InfiltrationEffect::Cash
+                    )
+                {
+                    collect_eva_text(&mut hud_text, "VERA:EvaCashStolen");
                 }
                 continue;
             }

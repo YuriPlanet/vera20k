@@ -138,6 +138,13 @@ pub(crate) const COMMANDER_FEEDBACK_HELP: &str = "VERA:CommanderFeedbackHelp";
 /// VERA's accessibility box: retail's string table has nothing for it.
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
+/// VERA's convenience-help box: the umbrella switch for quick status rows
+/// (repair/reload countdowns today, more later).
+pub(crate) const CONVENIENCE_HELP_LABEL: &str = "VERA:ConvenienceHelp";
+pub(crate) const CONVENIENCE_HELP_HELP: &str = "VERA:ConvenienceHelpHelp";
+/// VERA's build-queue box: retail's string table has nothing for it.
+pub(crate) const BUILDING_PRODUCTION_QUEUE_LABEL: &str = "VERA:BuildingProductionQueue";
+pub(crate) const BUILDING_PRODUCTION_QUEUE_HELP: &str = "VERA:BuildingProductionQueueHelp";
 /// VERA's timer box: retail's string table has nothing for it.
 pub(crate) const COMPACT_SUPER_TIMERS_LABEL: &str = "VERA:CompactSuperTimers";
 pub(crate) const COMPACT_SUPER_TIMERS_HELP: &str = "VERA:CompactSuperTimersHelp";
@@ -917,6 +924,13 @@ pub(crate) enum LauncherCheckboxId {
     CommanderFeedback,
     /// VERA-only accessibility box: detailed EVA text rows, default off.
     DetailedEvaText,
+    /// VERA's umbrella box: quick status rows (repair/reload and more), default
+    /// off. Independent of [`Self::DetailedEvaText`].
+    ConvenienceHelp,
+    /// VERA's gameplay box: a structure PRODUCE queues behind a running or
+    /// completed building instead of being dropped. A rule switch the next
+    /// offline scenario reads (`rules::personal_rules`); off by default.
+    BuildingProductionQueue,
     /// VERA's box: the super weapon timer list shows six lines and pages the
     /// rest. Default off; the next timer draw reads it.
     CompactSuperTimers,
@@ -985,6 +999,8 @@ pub(crate) enum LauncherOptionsEvent {
     CustomEndGameMovieChanged(bool),
     CommanderFeedbackChanged(bool),
     DetailedEvaTextChanged(bool),
+    ConvenienceHelpChanged(bool),
+    BuildingProductionQueueChanged(bool),
     CompactSuperTimersChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
@@ -1065,6 +1081,10 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) commander_feedback: bool,
     /// The accessibility box; see [`LauncherCheckboxId::DetailedEvaText`].
     pub(crate) detailed_eva_text: bool,
+    /// The convenience-help box; see [`LauncherCheckboxId::ConvenienceHelp`].
+    pub(crate) convenience_help: bool,
+    /// The build-queue box; see [`LauncherCheckboxId::BuildingProductionQueue`].
+    pub(crate) building_production_queue: bool,
     /// The timer box; see [`LauncherCheckboxId::CompactSuperTimers`].
     pub(crate) compact_super_timers: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
@@ -1119,6 +1139,8 @@ impl Default for LauncherOptionsValues {
             custom_end_game_movie: false,
             commander_feedback: true,
             detailed_eva_text: false,
+            convenience_help: false,
+            building_production_queue: false,
             compact_super_timers: false,
             sidebar: SidebarSize::Normal,
             sidebar_columns: SidebarColumns::Two,
@@ -1602,6 +1624,10 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
             LauncherCheckboxId::CommanderFeedback => &mut self.values.commander_feedback,
             LauncherCheckboxId::DetailedEvaText => &mut self.values.detailed_eva_text,
+            LauncherCheckboxId::ConvenienceHelp => &mut self.values.convenience_help,
+            LauncherCheckboxId::BuildingProductionQueue => {
+                &mut self.values.building_production_queue
+            }
             LauncherCheckboxId::CompactSuperTimers => &mut self.values.compact_super_timers,
         };
         *slot = !*slot;
@@ -1678,6 +1704,15 @@ impl OptionsDialogState {
             LauncherCheckboxId::DetailedEvaText => self
                 .pending_events
                 .push(LauncherOptionsEvent::DetailedEvaTextChanged(checked)),
+            LauncherCheckboxId::ConvenienceHelp => self
+                .pending_events
+                .push(LauncherOptionsEvent::ConvenienceHelpChanged(checked)),
+            LauncherCheckboxId::BuildingProductionQueue => {
+                self.pending_events
+                    .push(LauncherOptionsEvent::BuildingProductionQueueChanged(
+                        checked,
+                    ))
+            }
             LauncherCheckboxId::CompactSuperTimers => self
                 .pending_events
                 .push(LauncherOptionsEvent::CompactSuperTimersChanged(checked)),
@@ -1921,6 +1956,7 @@ impl Category {
             Self::Gameplay => &[
                 Setting::Slider(Slider::Difficulty),
                 Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::BuildingProductionQueue),
                 Setting::Checkbox(Check::AutoRepair),
                 Setting::List(List::Ares),
                 Setting::Checkbox(Check::CustomEndGameBanner),
@@ -1939,6 +1975,7 @@ impl Category {
                 Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::DetailedEvaText),
+                Setting::Checkbox(Check::ConvenienceHelp),
             ],
             Self::Audio => &[
                 Setting::Slider(Slider::Score),
@@ -2659,6 +2696,8 @@ mod tests {
                 Check::CustomEndGameMovie,
                 Check::CommanderFeedback,
                 Check::DetailedEvaText,
+                Check::ConvenienceHelp,
+                Check::BuildingProductionQueue,
                 Check::CompactSuperTimers,
             ]
             .map(Setting::Checkbox),

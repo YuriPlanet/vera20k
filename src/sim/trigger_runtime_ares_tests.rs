@@ -240,6 +240,7 @@ fn superweapon_launch_and_deactivation_spring_the_owner_house_tags() {
     );
     let fire = |sim: &mut Simulation| {
         sim.apply_command_with_overlays(
+            None,
             "House0",
             &crate::sim::command::Command::LaunchSuperWeapon {
                 sw_type_id: cell,
@@ -295,7 +296,7 @@ fn battery_expiry_places_the_same_house_tag_crate_as_manual_deactivation() {
         let registry = Some(&overlays);
         let effects = FrameEffects::default();
         let click = |sim: &mut Simulation| {
-            sim.apply_command_with_overlays("House0", &command, &rules, registry, effects)
+            sim.apply_command_with_overlays(None, "House0", &command, &rules, registry, effects)
         };
         assert!(click(&mut sim));
         assert!(sim.power_states[&owner].has_battery());

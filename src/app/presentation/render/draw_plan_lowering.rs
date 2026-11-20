@@ -475,8 +475,11 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 let rectangles_end = lowered.extras_instances.len() as u32;
                 lowered.extras_instances.extend(strip.group.text);
                 let text_end = lowered.extras_instances.len() as u32;
-                let mut digital_text = Vec::with_capacity(strip.digital_text.len());
-                for text in strip.digital_text {
+                // VERA's Convenience Help rows follow Phobos' DigitalDisplay
+                // text: the same GAME.FNT material, drawn in list order.
+                let mut digital_text =
+                    Vec::with_capacity(strip.digital_text.len() + strip.info_text.len());
+                for text in strip.digital_text.into_iter().chain(strip.info_text) {
                     let rectangles_start = lowered.extras_instances.len() as u32;
                     lowered.extras_instances.extend(text.rectangles);
                     let rectangles_end = lowered.extras_instances.len() as u32;
@@ -1066,6 +1069,33 @@ mod tests {
                 .collect::<Vec<_>>(),
             [ObjectTexture::ShpPage(0)]
         );
+    }
+
+    /// Convenience Help's rows take a range of the status run, as Phobos'
+    /// DigitalDisplay text does; uploaded without one, nothing drew them.
+    #[test]
+    fn convenience_help_rows_reach_the_status_runs_text_ranges() {
+        use crate::app::presentation::ui_overlays::{StatusTextOverlayInstances, TechnoExtras};
+        let mut parent = PlannedObjectInstance::building(
+            ObjectDraw {
+                id: 7,
+                layer: TacticalLayer(2),
+                display_order: 0,
+                policy: BlitPolicy::z_read(SpriteEncoding::Rle),
+            },
+            Vec::new(),
+        );
+        parent.status = Some(TechnoExtras {
+            info_text: vec![StatusTextOverlayInstances {
+                rectangles: vec![SpriteInstance::default()],
+                text: vec![SpriteInstance::default(); 2],
+            }],
+            ..Default::default()
+        });
+        let pass = lower_ground_object_instances(vec![parent]);
+        assert!(matches!(&pass.extras_runs[..], [
+            ObjectExtrasRun::Status { digital_text, .. },
+        ] if *digital_text == [(0..1, 1..3)]));
     }
 
     #[test]

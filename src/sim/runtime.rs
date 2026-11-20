@@ -125,6 +125,10 @@ impl<'a> SimView<'a> {
         self.simulation.entities()
     }
 
+    pub fn control_projection(&self) -> crate::sim::world::ControlProjection<'a> {
+        self.simulation.control_projection()
+    }
+
     pub fn session(&self) -> &'a crate::sim::scenario_session::ScenarioSession {
         &self.simulation.session
     }
@@ -269,6 +273,7 @@ impl SimRuntime {
         command: &crate::sim::command::Command,
     ) -> bool {
         self.simulation.apply_command_with_overlays(
+            None,
             owner,
             command,
             &self.resources.rules,
@@ -1433,6 +1438,15 @@ pub fn map_wall_owner_candidate_from_building(
     }
 }
 
+/// Failure to finalize the initial world after its Houses have been built.
+#[derive(Debug, thiserror::Error)]
+pub enum ScenarioFinalizeError {
+    #[error(transparent)]
+    ControlGrants(#[from] crate::sim::control_authority::ControlGrantError),
+    #[error(transparent)]
+    Overlay(#[from] crate::sim::crates::RuntimeOverlayError),
+}
+
 /// Post-funnel scenario finalization shared by the app loader and the
 /// headless loader (F09). The ordering is part of the construction contract:
 /// ore-spawner terrain seeding, map-wall owner reconstruction from the
@@ -1445,10 +1459,10 @@ pub fn finalize_constructed_scenario(
     house_roster: &crate::map::houses::HouseRoster,
     construction_rules: RulePolicy,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
-) -> Result<
-    crate::sim::scenario_post_map::ScenarioPostMapOutput,
-    crate::sim::crates::RuntimeOverlayError,
-> {
+) -> Result<crate::sim::scenario_post_map::ScenarioPostMapOutput, ScenarioFinalizeError> {
+    if let Some(launch) = skirmish_session {
+        sim.install_control_grants(launch.control_grants().to_vec())?;
+    }
     // Read_INI_Basic @ 0x00689E90 reads TiberiumDeathToVisceroid over the
     // fresh Set_Defaults true (0x00683610); only Ares' visceroid reads it,
     // so a game without Ares keeps the default.

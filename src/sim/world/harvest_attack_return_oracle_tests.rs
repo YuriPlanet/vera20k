@@ -377,6 +377,7 @@ impl Replay {
                 };
                 assert!(
                     s.sim.apply_command_with_overlays(
+                        None,
                         "Americans",
                         &command,
                         &s.rules,

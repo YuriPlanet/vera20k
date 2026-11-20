@@ -179,7 +179,7 @@ pub(crate) fn destroy_connection(
             // (0x005DA898..0x005DA8F0); it kills the House on every peer.
             // VERA shared control: the lost participant's sender, which is
             // that index unless players share Houses.
-            let local = sim.session().current_house();
+            let local = sim.control_projection().local_command_house();
             let sender = source_house(session, sim, source_index);
             if let (Some(local), Some(sender)) = (local, sender) {
                 let local = sim.interner().resolve(local).to_string();

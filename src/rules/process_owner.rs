@@ -753,6 +753,11 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules = rules;
     }
 
+    /// Effective simulation switches at the admitted scenario root.
+    pub fn personal_rules(&self) -> &PersonalRules {
+        &self.sources.personal_rules
+    }
+
     /// The skirmish Game Options' Terrain Deformation box, read by the next scenario.
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.sources.personal_rules.set_terrain_deformation(on);
@@ -761,6 +766,13 @@ impl NativeRulesProcessOwner {
     /// The skirmish Game Options' Superweapon Limit, read by the next scenario.
     pub fn set_superweapon_limit(&mut self, limit: i32) {
         self.sources.personal_rules.set_superweapon_limit(limit);
+    }
+
+    /// The Options page's Building Production Queue, read by the next scenario.
+    pub fn set_building_production_queue(&mut self, on: bool) {
+        self.sources
+            .personal_rules
+            .set_building_production_queue(on);
     }
 
     /// The root every scenario's Rules start from: the selected root with the

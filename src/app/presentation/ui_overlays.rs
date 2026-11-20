@@ -70,6 +70,10 @@ struct HudMore {
     /// with the frame so the label never reads the live simulation while a
     /// frame is being drawn; empty for anything but such a Structure.
     super_charges: Vec<crate::sim::superweapon::SuperChargeLine>,
+    /// VERA's convenience status lines ([VERA] ConvenienceHelp): reload,
+    /// building repair, unit repair. Each string is formatted at capture time
+    /// from frozen sim facts, so the draw pass reads no live simulation.
+    info_lines: Vec<String>,
 }
 
 impl HudMore {
@@ -80,6 +84,7 @@ impl HudMore {
             && self.bomb.is_none()
             && self.digital_values.is_empty()
             && self.super_charges.is_empty()
+            && self.info_lines.is_empty()
     }
 }
 
@@ -190,6 +195,20 @@ impl HudFacts {
             } else {
                 Vec::new()
             },
+            // Convenience Help's rows: captured only while it is on, and only
+            // for the observer's and its allies' objects, which alone draw them.
+            info_lines: if at.status_rows
+                && at.observer.is_some_and(|viewer| {
+                    crate::map::houses::is_allied_with(
+                        sim.house_alliances().as_map(),
+                        viewer,
+                        sim.interner().resolve(entity.owner()),
+                    )
+                }) {
+                status_info_lines(entity, object, rules, at.binary_frame)
+            } else {
+                Vec::new()
+            },
         };
         Self {
             get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
@@ -244,6 +263,11 @@ impl HudFacts {
         self.more().map_or(&[], |more| &more.super_charges)
     }
 
+    /// VERA's detailed status lines, already formatted at capture time.
+    pub(crate) fn info_lines(&self) -> &[String] {
+        self.more().map_or(&[], |more| &more.info_lines)
+    }
+
     fn toggled_off(&self) -> bool {
         self.structure
             .is_some_and(|structure| structure.toggled_off)
@@ -254,6 +278,66 @@ impl HudFacts {
             .is_some_and(|structure| structure.shows_production_to_observer)
     }
 }
+
+/// VERA's convenience help status lines, resolved from frozen sim facts at
+/// capture time (`HudFacts::capture`) so the draw pass never reads live state.
+/// Every number comes from the object's own sim fields plus Rules; nothing
+/// writes back. The strings are complete and localized.
+///
+/// Two kinds are enabled here, both single-entity facts:
+/// - ammo reload: the Techno's reload clock while a magazine is incomplete;
+/// - building repair: what the repair still needs, as its owner
+///   (`production_repair::repair_remaining`) counts it.
+/// Unit repair is depot-side (its progress lives on the servicing Building,
+/// keyed by radio contact) and is intentionally not shown here: the unit has
+/// no reliable single owning repair clock to report.
+fn status_info_lines(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: Option<&crate::rules::object_type::ObjectType>,
+    rules: &RuleSet,
+    frame: u32,
+) -> Vec<String> {
+    let frame = frame as i32;
+    let mut lines = Vec::new();
+
+    // Ammo reload: only a Techno with a limited magazine that is not full and
+    // whose reload clock is actually running. Mirrors DigitalInfoType::Reload.
+    if let Some(object) = object {
+        if object.ammo > 0 {
+            let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
+            if ammo < object.ammo {
+                let timer = entity.ammo_reload_timer();
+                let remaining = timer.remaining(frame);
+                if remaining > 0 {
+                    let seconds =
+                        remaining / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+                    if let Some(template) = crate::i18n::find("VERA:InfoReload") {
+                        let time = crate::app::presentation::super_timers::time_text(seconds);
+                        lines.push(crate::i18n::fill(&template, &[("time", &time)]));
+                    }
+                }
+            }
+        }
+    }
+
+    // Building repair: the repair's own owner answers what is left.
+    if entity.category() == EntityCategory::Structure
+        && let Some(object) = object
+        && let Some((frames, cost)) =
+            crate::sim::production::repair_remaining(entity, object, rules, frame as u32)
+        && let Some(template) = crate::i18n::find("VERA:InfoBuildingRepair")
+    {
+        let seconds = frames / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+        let time = crate::app::presentation::super_timers::time_text(seconds);
+        lines.push(crate::i18n::fill(
+            &template,
+            &[("time", &time), ("cost", &cost)],
+        ));
+    }
+
+    lines
+}
+
 /// Authentic pip counts for unit health bars.
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
@@ -681,7 +765,7 @@ fn status_text_tint(
 /// The shared7BB020/7BAD90/434120 material geometry. Callers supply their
 /// already measured/clipped backing and native glyph origin; group and
 /// Building labels deliberately use different rectangles and alignment.
-fn status_text_instances(
+pub(crate) fn status_text_instances(
     font: &BitFont,
     text: &str,
     origin: [f32; 2],
@@ -927,6 +1011,7 @@ pub(crate) fn build_building_status_render_instances(
     tactical_clip: [i32; 4],
     rules: &RuleSet,
     superweapon_building_timers: bool,
+    convenience_help: bool,
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
@@ -973,13 +1058,23 @@ pub(crate) fn build_building_status_render_instances(
             } else {
                 &[]
             };
+        // VERA's convenience status rows (building repair): the same frozen
+        // capture, gated by ConvenienceHelp, drawn for every visible friendly
+        // building like the Super lines. `allied` is true for the local house
+        // as well as allies, so an enemy's row is never shown. Not restricted
+        // to the selected building.
+        let info_lines: &[String] = if convenience_help && allied && visible {
+            entity.hud.info_lines()
+        } else {
+            &[]
+        };
         // DrawExtraInfo needs the building selected, including when it is
         // also hovered.
         let label = (entity.selection.is_selected()
             && body_opportunities.contains(&entity.stable_id()))
         .then(|| building_status_text(entity, object, allied, primary, ares_form))
         .flatten();
-        if label.is_none() && lines.is_empty() {
+        if label.is_none() && lines.is_empty() && info_lines.is_empty() {
             continue;
         }
         let location = entity.hud.location;
@@ -1035,6 +1130,25 @@ pub(crate) fn build_building_status_render_instances(
             ];
             labels.push(status_text_instances(
                 font, &text, origin, measure, camera, tint,
+            ));
+        }
+        // VERA info rows stack below the Super rows (super first, then info),
+        // each a complete already-localized string from the frozen capture.
+        for (row, text) in info_lines.iter().enumerate() {
+            let anchor = [
+                anchor[0],
+                anchor[1].wrapping_add(line_height.wrapping_mul((lines.len() + row + 1) as i32)),
+            ];
+            let measure = font.compute_text_rect(text, anchor, 0x149, [4, 2]);
+            if !rect_overlaps(measure, tactical_clip) {
+                continue;
+            }
+            let origin = [
+                measure[0].wrapping_add(4) as f32 + camera[0],
+                measure[1].wrapping_add(2) as f32 + camera[1],
+            ];
+            labels.push(status_text_instances(
+                font, text, origin, measure, camera, tint,
             ));
         }
         let Some(label) = label else {
@@ -1228,6 +1342,7 @@ pub(crate) fn build_building_status_instances(
             .match_state
             .match_presentation
             .superweapon_building_timers,
+        state.match_state.match_presentation.convenience_help,
     )
 }
 
@@ -1364,6 +1479,9 @@ pub(crate) struct TechnoExtras {
     pub digital_text: Vec<StatusTextOverlayInstances>,
     /// Phobos DigitalDisplay custom-SHP glyphs: catalog index + sprite.
     pub digital_shapes: Vec<(u32, SpriteInstance)>,
+    /// VERA detailed status rows (reload/unit repair), one backing+glyph set
+    /// per frozen info line, drawn after the group label.
+    pub info_text: Vec<StatusTextOverlayInstances>,
     ///709A90's group tail follows this parent's pip scale, not a global sweep.
     pub group: StatusTextOverlayInstances,
     ///6F5E8D..5EDE: after health/pips/group, plain600 at the caller point.

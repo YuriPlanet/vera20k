@@ -546,6 +546,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         .cell(at.0, at.1)
         .overlay_data;
     assert!(s.sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::clicked_mission(
             s.miner,
@@ -598,6 +599,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
     let owner = s.sim.interner.get("Americans").unwrap();
     let balance = s.sim.houses[&owner].economy().credits();
     assert!(s.sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::clicked_mission(
             s.miner,

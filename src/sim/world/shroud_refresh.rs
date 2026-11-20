@@ -1456,12 +1456,8 @@ impl Simulation {
                 let human = only_viewer.map_or_else(
                     || self.house_is_human_player(entity.owner()),
                     |viewer| {
-                        Self::is_human_player_on(
-                            self.session.native_player_identity(),
-                            &self.houses,
-                            entity.owner(),
-                            Some(viewer),
-                        )
+                        super::ControlProjection::for_native_view(&self.session, &self.houses)
+                            .native_player_on(entity.owner(), Some(viewer))
                     },
                 );
                 if human {
@@ -1587,7 +1583,7 @@ impl Simulation {
 
     /// The logical clients ([`Self::fog_viewers`]) on which
     /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` passes for `house`, each
-    /// asking with its own PlayerPtr ([`Self::is_human_player_on`]). A
+    /// asking with its own PlayerPtr. A
     /// nonzero mode's clients are its human houses, and its PlayerPtr test
     /// (`0x0050B716`) passes only on `house`'s own. Mode zero reads `house`'s
     /// human and PlayerControl flags (`+0x1EC`, `+0x1ED`), so a campaign
@@ -1596,18 +1592,17 @@ impl Simulation {
         &self,
         house: crate::sim::intern::InternedId,
     ) -> Vec<crate::sim::intern::InternedId> {
-        use crate::sim::scenario_session::NativePlayerIdentity;
-
-        let identity = self.session.native_player_identity();
-        let candidates = match identity {
-            NativePlayerIdentity::PlayerPointer if self.owner_is_human(house) => vec![house],
-            NativePlayerIdentity::PlayerPointer => Vec::new(),
-            NativePlayerIdentity::HouseFlags => self.fog_viewers().to_vec(),
-        };
-        candidates
-            .into_iter()
-            .filter(|&client| Self::is_human_player_on(identity, &self.houses, house, Some(client)))
-            .collect()
+        let control = super::ControlProjection::for_native_view(&self.session, &self.houses);
+        if control.uses_player_pointer() {
+            self.owner_is_human(house)
+                .then_some(house)
+                .into_iter()
+                .collect()
+        } else if control.native_player_on(house, None) {
+            self.fog_viewers().to_vec()
+        } else {
+            Vec::new()
+        }
     }
 
     fn fog_clients_current_first(&self) -> Vec<crate::sim::intern::InternedId> {

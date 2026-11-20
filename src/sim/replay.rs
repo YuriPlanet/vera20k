@@ -6,10 +6,10 @@
 //! normally from the recorded header and consumes both record kinds at their
 //! original scheduler rungs.
 //!
-//! [`ReplayLog`] is the Rust command/hash recording. Version 4 regenerates
-//! shared PlanMgr events at their native publication rungs instead of importing
-//! them as frame input. It retains the resolved authored startup, Cooperative
-//! aside, for standalone verification through the normal loader and frame owner.
+//! [`ReplayLog`] is the Rust command/hash recording. It retains the admitted
+//! rule policy and control grants in its authored startup for verification
+//! through the normal loader and frame owner. Shared PlanMgr events are
+//! regenerated at their native publication rungs.
 //! It is separate from [`NativeReplay`]. Production
 //! does not record or play native streams yet; only tests build
 //! [`NativeReplay`], which is kept for native recording playback.
@@ -734,19 +734,21 @@ pub enum RecordedServiceInput {
 }
 
 impl RecordedServiceInput {
-    fn replay(&self, sim: &mut Simulation, rules: &RuleSet) -> Result<()> {
+    fn replay(
+        &self,
+        sim: &mut Simulation,
+        rules: &RuleSet,
+    ) -> Result<Vec<crate::sim::trigger_runtime::TriggerEffect>> {
         match self {
-            Self::Scenario(service) => {
-                service.apply(sim);
-            }
+            Self::Scenario(service) => Ok(service.apply(sim)),
             Self::Cheat { skirmish_cheat } => {
                 sim.apply_skirmish_cheat(skirmish_cheat, rules)
                     .map_err(|reason| {
                         anyhow::anyhow!("recorded skirmish cheat rejected: {reason}")
                     })?;
+                Ok(Vec::new())
             }
         }
-        Ok(())
     }
 }
 
@@ -768,20 +770,41 @@ pub struct ReplayTick {
 pub struct ReplayLog {
     pub header: ReplayHeader,
     /// Present only for a self-contained, freshly constructed authored match.
-    /// Old diagnostic segments remain readable but cannot claim standalone replay.
+    /// Diagnostic segments without a fresh launch record commands and hashes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub startup: Option<Box<ReplayStartup>>,
     pub ticks: Vec<ReplayTick>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub initial_scenario_services: Vec<RecordedServiceInput>,
+    /// Independent endpoint, sampled after the last out-of-frame service.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ending: Option<ReplayEnding>,
 }
 
-pub const REPLAY_VERSION: u32 = 4;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReplayEnding {
+    state_hash: u64,
+    terminal_score_snapshot: Option<crate::sim::score::TerminalScoreSnapshot>,
+}
 
-/// The resolved launch and draw-free initial cursor projection contain no
-/// service session, ticket, network endpoint, authentication key or password.
-/// Startup version 3 reconstructs the normal App's batched path searches and
-/// target scans; version 2 replays, recorded with live scans, are refused.
+pub const REPLAY_VERSION: u32 = 6;
+const REPLAY_STARTUP_VERSION: u32 = 5;
+
+mod blueprint;
+pub use blueprint::{MatchStartBlueprint, ReplayLaunch};
+
+/// Accepted inputs needed in addition to the authored setup and frame-zero world.
+#[derive(Debug, Default)]
+pub struct ReplayStartOptions {
+    pub every_frame_network: bool,
+    pub quick_coop_starts: bool,
+    pub personal_rules: crate::rules::personal_rules::PersonalRules,
+    pub campaign_carry_over: Option<crate::sim::campaign_carry_over::CampaignCarryOver>,
+}
+
+/// The deterministic launch and frame-zero simulation session carry the
+/// admitted rule policy and control grants. Transport and its endpoints,
+/// service sessions and credentials stay in the live network owners.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayStartup {
     version: u32,
@@ -791,8 +814,7 @@ pub struct ReplayStartup {
     map_hash: u64,
     map_payload_len: usize,
     map_sha256: String,
-    launch: crate::skirmish_launch::SkirmishLaunchSession,
-    session: crate::sim::scenario_session::ScenarioSession,
+    blueprint: MatchStartBlueprint,
     scenario_rng: crate::sim::rng::SimRng,
     main_rng: crate::sim::rng::SimRng,
     mapgen_rng: crate::sim::rng::SimRng,
@@ -805,16 +827,39 @@ impl ReplayStartup {
         &self.map_sha256
     }
 
-    pub fn launch_session(&self) -> &crate::skirmish_launch::SkirmishLaunchSession {
-        &self.launch
+    pub fn blueprint(&self) -> &MatchStartBlueprint {
+        &self.blueprint
+    }
+
+    fn session(&self) -> &crate::sim::scenario_session::ScenarioSession {
+        self.blueprint.admitted()
     }
 
     pub fn seed(&self) -> u32 {
-        self.session.seed() as u32
+        self.session().seed() as u32
     }
 
     pub fn game_mode(&self) -> crate::sim::scenario_session::ScenarioGameMode {
-        self.session.game_mode()
+        self.session().game_mode()
+    }
+
+    pub fn rule_policy(&self) -> crate::rules::rule_policy::RulePolicy {
+        self.session().rule_policy()
+    }
+
+    pub fn control_grants(&self) -> &[crate::sim::control_authority::ControlGrant] {
+        self.session().control_grants()
+    }
+
+    pub fn launch_descriptor(
+        &self,
+        map_file: &str,
+    ) -> Result<crate::sim::scenario_bootstrap::MatchLaunchDescriptor> {
+        self.blueprint.launch_descriptor(map_file)
+    }
+
+    pub fn map_name(&self) -> &str {
+        self.session().map_name()
     }
 
     pub fn native_id_prefix(&self) -> Result<u32> {
@@ -828,7 +873,7 @@ impl ReplayStartup {
         source: &crate::map::source::LoadedMapSource,
         map_hash: u64,
         tick_ms: u32,
-        every_frame_network: bool,
+        options: ReplayStartOptions,
     ) -> Result<Self> {
         let sim = &runtime.simulation;
         anyhow::ensure!(
@@ -838,19 +883,11 @@ impl ReplayStartup {
             "standalone replay requires a started frame-zero world"
         );
         anyhow::ensure!(
-            sim.session().has_stock_rule_policy(),
-            "the standalone replay layout requires a stock rule policy"
-        );
-        anyhow::ensure!(
             sim.path_batch_stats().is_some()
                 && sim.target_scans_batched()
                 && sim.effect_anims_presented(),
             "standalone replay requires the normal App's batched paths, target scans and \
              presentation effect anims"
-        );
-        anyhow::ensure!(
-            launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative,
-            "standalone replay does not support Cooperative launches"
         );
         let map_name = launch
             .selected_map_file
@@ -881,12 +918,10 @@ impl ReplayStartup {
             tick_ms != 0 && tick_ms <= 1000,
             "invalid replay tick duration"
         );
-        crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
-            .map_err(|error| anyhow::anyhow!("{error}"))?;
-        let mut launch = launch.clone();
-        launch.selected_map_file = Some(map_name.to_owned());
+        let every_frame_network = options.every_frame_network;
+        let blueprint = MatchStartBlueprint::capture(launch, sim.session(), options)?;
         Ok(Self {
-            version: 3,
+            version: REPLAY_STARTUP_VERSION,
             native_id_prefix: Some(
                 sim.native_identity_prefix_checkpoint()
                     .context("replay native-ID prefix")?,
@@ -895,8 +930,7 @@ impl ReplayStartup {
             map_hash,
             map_payload_len,
             map_sha256: map_sha256.to_owned(),
-            launch,
-            session: sim.session().clone(),
+            blueprint,
             scenario_rng: sim.scenario_rng().clone(),
             main_rng: sim.main_rng().checkpoint(),
             mapgen_rng: sim.mapgen_rng().clone(),
@@ -906,10 +940,8 @@ impl ReplayStartup {
     }
 
     fn validate_header(&self, header: &ReplayHeader) -> Result<()> {
-        anyhow::ensure!(
-            header.version == REPLAY_VERSION && self.version == 3,
-            "unsupported standalone replay version; startup version 3 with native-ID prefix is required"
-        );
+        check_replay_version(header.version, REPLAY_VERSION, "diagnostic replay")?;
+        check_replay_version(self.version, REPLAY_STARTUP_VERSION, "replay startup")?;
         self.native_id_prefix()?;
         anyhow::ensure!(
             self.tick_ms != 0
@@ -919,33 +951,37 @@ impl ReplayStartup {
             "replay tick duration/header disagree"
         );
         anyhow::ensure!(
-            header.seed == self.session.seed() && header.seed <= u64::from(u32::MAX),
+            header.seed == self.session().seed() && header.seed <= u64::from(u32::MAX),
             "replay seed/header disagree"
         );
         anyhow::ensure!(
-            header.map_name == self.session.map_name()
-                && self.launch.selected_map_file.as_deref() == Some(header.map_name.as_str()),
+            header.map_name == self.map_name(),
             "replay map/header disagree"
         );
         crate::map::source::validate_network_map_name(&header.map_name)?;
-        anyhow::ensure!(
-            self.launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative,
-            "unsupported replay launch mode"
-        );
+        self.blueprint.validate()?;
         anyhow::ensure!(
             self.map_payload_len > 0 && crate::map::source::valid_source_sha256(&self.map_sha256),
             "invalid replay map identity"
         );
         anyhow::ensure!(
-            self.session.tick() == 0 && self.session.binary_frame() == 0,
+            self.session().tick() == 0 && self.session().binary_frame() == 0,
             "replay startup is not frame zero"
         );
         anyhow::ensure!(
-            header.pixel_conversion_bounds == self.session.pixel_conversion_bounds(),
+            header.pixel_conversion_bounds == self.session().pixel_conversion_bounds(),
             "replay pixel bounds/header disagree"
         );
         Ok(())
     }
+}
+
+fn check_replay_version(actual: u32, expected: u32, format: &str) -> Result<()> {
+    anyhow::ensure!(
+        actual == expected,
+        "incompatible {format} version {actual}; expected {expected}. Record a fresh replay."
+    );
+    Ok(())
 }
 
 impl ReplayLog {
@@ -957,10 +993,9 @@ impl ReplayLog {
             .as_deref()
             .context("diagnostic log has no standalone startup; record a fresh authored match")?;
         startup.validate_header(&self.header)?;
-        anyhow::ensure!(
-            self.ticks.iter().any(|tick| tick.state_hash.is_some()),
-            "replay contains no recorded state hashes"
-        );
+        self.ending
+            .as_ref()
+            .context("diagnostic replay has no completed endpoint")?;
         Ok(startup)
     }
 
@@ -970,7 +1005,32 @@ impl ReplayLog {
             startup: None,
             ticks: Vec::new(),
             initial_scenario_services: Vec::new(),
+            ending: None,
         }
+    }
+
+    pub fn finish(&mut self, sim: &Simulation) {
+        self.ending =
+            (self.startup.is_some() && !sim.has_suspended_frame()).then(|| ReplayEnding {
+                state_hash: sim.state_hash(),
+                terminal_score_snapshot: sim.terminal_score_snapshot().cloned(),
+            });
+    }
+
+    fn validate_ending(&self, sim: &Simulation) -> Result<()> {
+        if let Some(ending) = &self.ending {
+            let state_hash = sim.state_hash();
+            anyhow::ensure!(
+                state_hash == ending.state_hash,
+                "replay final state hash mismatch: recorded {:#018x}, replayed {state_hash:#018x}",
+                ending.state_hash
+            );
+            anyhow::ensure!(
+                sim.terminal_score_snapshot() == ending.terminal_score_snapshot.as_ref(),
+                "replay terminal score snapshot differs"
+            );
+        }
+        Ok(())
     }
 
     pub fn record_tick(
@@ -1041,9 +1101,30 @@ impl ReplayLog {
     pub fn load_bound(path: &Path) -> Result<(Self, String)> {
         let bytes = std::fs::read(path)
             .with_context(|| format!("Failed to read diagnostic log: {}", path.display()))?;
-        let replay = serde_json::from_slice(&bytes)
-            .context("Failed to parse deterministic diagnostic JSON")?;
+        let replay = Self::decode_json(&bytes)?;
         Ok((replay, crate::util::sha256::sha256_hex(&bytes)))
+    }
+
+    fn decode_json(bytes: &[u8]) -> Result<Self> {
+        // Use only version fields before decoding the startup/session shape.
+        #[derive(Deserialize)]
+        struct Version {
+            version: u32,
+        }
+
+        #[derive(Deserialize)]
+        struct Versions {
+            header: Version,
+            startup: Option<Version>,
+        }
+
+        let versions: Versions =
+            serde_json::from_slice(bytes).context("Failed to read diagnostic JSON versions")?;
+        check_replay_version(versions.header.version, REPLAY_VERSION, "diagnostic replay")?;
+        if let Some(startup) = versions.startup {
+            check_replay_version(startup.version, REPLAY_STARTUP_VERSION, "replay startup")?;
+        }
+        serde_json::from_slice(bytes).context("Failed to parse deterministic diagnostic JSON")
     }
 }
 
@@ -1056,6 +1137,7 @@ pub struct ReplayVerification {
     pub checked_hashes: usize,
     pub final_tick: u64,
     pub final_state_hash: u64,
+    pub terminal_score_snapshot: Option<crate::sim::score::TerminalScoreSnapshot>,
 }
 
 /// Only the queue-exchange decision differs from native diagnostic playback:
@@ -1128,15 +1210,34 @@ impl ReplayPlayback {
             runtime.resources.rules.simulation_config_hash() == replay.header.rules_hash,
             "replay rules/art differ"
         );
-        runtime
-            .simulation
-            .restore_replay_startup(
-                startup.session.clone(),
-                startup.scenario_rng.clone(),
-                startup.main_rng.clone(),
-                startup.mapgen_rng.clone(),
-            )
-            .map_err(anyhow::Error::msg)?;
+        let sim = &mut runtime.simulation;
+        let reconstructed = sim.session();
+        let house_count = sim.houses().len();
+        anyhow::ensure!(
+            reconstructed.rule_policy() == startup.rule_policy()
+                && reconstructed.control_grants() == startup.control_grants()
+                && reconstructed.admitted_control_source_count()
+                    == startup.session().admitted_control_source_count()
+                && reconstructed
+                    .network_sources(house_count)
+                    .eq(startup.session().network_sources(house_count)),
+            "constructed replay rules or source authority differ from the recording"
+        );
+        startup
+            .session()
+            .validate_restored_control_grants(sim.houses())?;
+        // Stock Cooperative restores the incoming single record immediately
+        // after Start_Scenario (0x004C6210). Its globals also reset Tag timers.
+        if let Some(record) = startup.blueprint().campaign_carry_over() {
+            sim.restore_campaign_carry_over(record, &runtime.resources.rules);
+        }
+        sim.restore_replay_startup(
+            startup.session().clone(),
+            startup.scenario_rng.clone(),
+            startup.main_rng.clone(),
+            startup.mapgen_rng.clone(),
+        )
+        .map_err(anyhow::Error::msg)?;
         let tick_ms = startup.tick_ms;
         Self::from_runtime(runtime, replay, tick_ms)
     }
@@ -1189,6 +1290,9 @@ impl ReplayPlayback {
         for input in &replay.initial_scenario_services {
             input.replay(&mut runtime.simulation, &runtime.resources.rules)?;
         }
+        if replay.ticks.is_empty() {
+            replay.validate_ending(&runtime.simulation)?;
+        }
         let every_frame_network = replay
             .startup
             .as_ref()
@@ -1217,7 +1321,11 @@ impl ReplayPlayback {
         !self.is_finished() && self.failure.is_none()
     }
     pub fn recorded_final_hash(&self) -> Option<u64> {
-        self.replay.ticks.last().and_then(|tick| tick.state_hash)
+        self.replay
+            .ending
+            .as_ref()
+            .map(|ending| ending.state_hash)
+            .or_else(|| self.replay.ticks.last().and_then(|tick| tick.state_hash))
     }
 
     /// Advance one recorded frame, retaining the ordinary client's sound,
@@ -1299,7 +1407,12 @@ impl ReplayPlayback {
             );
         }
         for input in &entry.scenario_services {
-            input.replay(&mut runtime.simulation, &runtime.resources.rules)?;
+            output
+                .trigger_effects
+                .extend(input.replay(&mut runtime.simulation, &runtime.resources.rules)?);
+        }
+        if self.index + 1 == self.replay.ticks.len() {
+            self.replay.validate_ending(&runtime.simulation)?;
         }
         self.index += 1;
         Ok(output)
@@ -1320,14 +1433,18 @@ impl ReplayPlayback {
             .filter(|tick| tick.state_hash.is_some())
             .count();
         anyhow::ensure!(
-            checked_hashes > 0,
+            checked_hashes > 0 || self.replay.ending.is_some(),
             "replay contains no recorded state hashes"
         );
+        self.replay.validate_ending(&runtime.simulation)?;
+        let final_state_hash = runtime.simulation.state_hash();
+        let terminal_score_snapshot = runtime.simulation.terminal_score_snapshot().cloned();
         Ok(ReplayVerification {
             ticks: self.index,
             checked_hashes,
             final_tick: runtime.simulation.session().tick(),
-            final_state_hash: runtime.simulation.state_hash(),
+            final_state_hash,
+            terminal_score_snapshot,
         })
     }
 }
@@ -1341,10 +1458,7 @@ impl ReplayRunner {
     ) -> Result<ReplayVerification> {
         let startup = replay.standalone_startup()?;
         let map_file = map_beside.unwrap_or(&replay.header.map_name);
-        let mut session = startup.launch.clone();
-        session.selected_map_file = Some(map_file.to_owned());
-        let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
-            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let launch = startup.launch_descriptor(map_file)?;
         let mut loaded = crate::headless_scenario::load_with_launch_and_ini(
             retail_dir,
             map_file,
@@ -1535,6 +1649,10 @@ impl ReplayRunner {
 }
 
 #[cfg(all(test, tests_sim_p_s))]
+#[path = "replay_authored_lockstep_tests.rs"]
+mod authored_lockstep_tests;
+
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
@@ -1628,7 +1746,10 @@ mod tests {
                 &scene.source,
                 scene.map.ini.content_hash(),
                 22,
-                true,
+                ReplayStartOptions {
+                    every_frame_network: true,
+                    ..Default::default()
+                },
             )
             .is_err(),
             "serial headless paths do not satisfy the normal App replay contract"
@@ -1663,7 +1784,10 @@ mod tests {
             &scene.source,
             scene.map.ini.content_hash(),
             22,
-            true,
+            ReplayStartOptions {
+                every_frame_network: true,
+                ..Default::default()
+            },
         )
         .unwrap();
         let mut log = ReplayLog::new(ReplayHeader {
@@ -1747,11 +1871,12 @@ mod tests {
                 if record.opcode() == crate::sim::command::EXIT_OPCODE
         )));
         assert!(scene.sim().session().started());
+        log.finish(scene.sim());
         let decoded: ReplayLog =
             serde_json::from_slice(&serde_json::to_vec(&log).unwrap()).unwrap();
         // Started is process lifecycle, deliberately absent from serialized
         // ScenarioSession. Reconstruction must retain the loader publication.
-        assert!(!decoded.startup.as_ref().unwrap().session.started());
+        assert!(!decoded.startup.as_ref().unwrap().session().started());
         let mut incomplete = decoded.clone();
         incomplete.startup.as_mut().unwrap().native_id_prefix = None;
         assert!(
@@ -1784,6 +1909,17 @@ mod tests {
                 .to_string()
                 .contains("state hash mismatch")
         );
+    }
+
+    #[test]
+    fn obsolete_diagnostic_replay_versions_are_rejected_before_startup_decode() {
+        let old_log = br#"{"header":{"version":5},"startup":{"version":4},"ticks":[]}"#;
+        let error = ReplayLog::decode_json(old_log).unwrap_err().to_string();
+        assert!(error.contains("incompatible diagnostic replay version 5; expected 6"));
+
+        let old_startup = br#"{"header":{"version":6},"startup":{"version":4},"ticks":[]}"#;
+        let error = ReplayLog::decode_json(old_startup).unwrap_err().to_string();
+        assert!(error.contains("incompatible replay startup version 4; expected 5"));
     }
 
     #[test]

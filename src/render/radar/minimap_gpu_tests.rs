@@ -249,7 +249,7 @@ fn present(
     let runtime = &scene.runtime;
     let view = runtime.view();
     let frame =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
+        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
     let colors = HouseColorMap::new();
     let overlay_colors = HashMap::new();
     let mut first = None;
@@ -270,7 +270,7 @@ fn present(
                     view.fog(),
                     view.house_alliances(),
                     true,
-                    view.session().native_player_identity(),
+                    view.control_projection(),
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),

@@ -123,7 +123,7 @@ pub fn publish_production_changes(
     rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) {
-    let Some(owner) = sim.session.current_house() else {
+    let Some(owner) = sim.control_projection().local_command_house() else {
         return;
     };
     for &visit in effects.production_factories() {

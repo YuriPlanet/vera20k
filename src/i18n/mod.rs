@@ -1404,6 +1404,62 @@ mod tests {
         catalog
     }
 
+    /// The AutoLoad result line ships in English with a `{count}` slot so the
+    /// hotkey's issued-order count can be shown without a type lookup.
+    #[test]
+    fn autoload_result_line_ships_with_a_count_slot() {
+        let english = language("en", shipped::FILES[0].1);
+        let template = english
+            .strings
+            .get("VERA:EVAAUTOLOADED")
+            .map(String::as_str)
+            .expect("the AutoLoad result line is in the English file");
+        let filled = fill(template, &[("count", &3usize)]);
+        assert!(filled.contains('3'));
+        assert!(!filled.contains("{count}"));
+    }
+
+    /// The text-only detailed EVA alerts all ship in English. They carry no
+    /// `{name}` slot because their sim/app events have no subject type.
+    #[test]
+    fn text_only_eva_alert_lines_ship_without_a_name_slot() {
+        let english = language("en", shipped::FILES[0].1);
+        for key in [
+            "VERA:EVABASEUNDERATTACK",
+            "VERA:EVAHARVESTERUNDERATTACK",
+            "VERA:EVAALLYUNDERATTACK",
+            "VERA:EVACASHSTOLEN",
+            "VERA:EVANEWCONSTRUCTION",
+        ] {
+            let text = english
+                .strings
+                .get(key)
+                .map(String::as_str)
+                .unwrap_or_else(|| panic!("{key} is missing from the English file"));
+            assert!(!text.is_empty(), "{key} is empty");
+            assert!(!text.contains("{name}"), "{key} must not need a subject");
+        }
+    }
+
+    /// The detailed object status lines ship in English with the slots their
+    /// capture-time fillers provide.
+    #[test]
+    fn info_status_lines_ship_with_their_slots() {
+        let english = language("en", shipped::FILES[0].1);
+        for (key, slot) in [
+            ("VERA:INFORELOAD", "{time}"),
+            ("VERA:INFOBUILDINGREPAIR", "{time}"),
+            ("VERA:INFOBUILDINGREPAIR", "{cost}"),
+        ] {
+            let text = english
+                .strings
+                .get(key)
+                .map(String::as_str)
+                .unwrap_or_else(|| panic!("{key} is missing from the English file"));
+            assert!(text.contains(slot), "{key} must contain {slot}");
+        }
+    }
+
     /// A language's subtitles and cameo names load from the files beside its
     /// text in the settings folder, and a damaged cameo file only loses those.
     #[test]

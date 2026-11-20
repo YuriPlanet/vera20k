@@ -94,6 +94,12 @@ pub(crate) struct MatchPresentationState {
     /// match by its hotkey command. Presentation only — every consumer is a
     /// draw, so it cannot affect determinism, networking, or replays.
     pub(crate) superweapon_building_timers: bool,
+    /// VERA's Convenience Help: draw the quick status rows (building repair,
+    /// ammo reload, more later) above friendly buildings and units. Started
+    /// from `[VERA] ConvenienceHelp=` when a scenario loads and flipped in a
+    /// match by Ctrl+Alt+H. Presentation only — every consumer is a draw, so
+    /// it cannot affect determinism, networking, or replays.
+    pub(crate) convenience_help: bool,
     /// Owner name → effective house-colour index under the relation-colours
     /// toggle ([`relation_house_colors`]). `None` while the toggle is off or
     /// there is no local house, so colour sites use `house_color_map`.

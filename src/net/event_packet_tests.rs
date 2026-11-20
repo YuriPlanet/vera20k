@@ -176,6 +176,44 @@ fn original_packet_bytes_mirrors_caches_and_expansion_match() {
 }
 
 #[test]
+fn targeted_event_has_the_same_meaning_in_local_mirror_and_received_packet() {
+    use crate::sim::command::{SpecialPlaceRecord, TARGET_HOUSE_PAYLOAD_LEN, TargetHouseRecord};
+    let native = SpecialPlaceRecord {
+        house_id: 1,
+        frame: 42,
+        type_index: 5,
+        cell: (11, 20),
+    }
+    .encode()
+    .unwrap();
+    let mut targeted = TargetHouseRecord::encode(3, &native).unwrap();
+    targeted.payload_mut()[usize::from(TARGET_HOUSE_PAYLOAD_LEN)] = 0xa5;
+    let header = FrameInfo {
+        house_id: 1,
+        event_frame: 42,
+        checksum: 0,
+        timing_word: 0,
+        delay: 0,
+    };
+    let packet = EventPacketCodec::default()
+        .encode_packet(&[&targeted], header, 42, NATIVE_EVENT_PACKET_CAPACITY)
+        .unwrap();
+    let local = TargetHouseRecord::decode(&packet.mirrors[0]).unwrap();
+    let mut remote = None;
+    EventPacketCodec::default()
+        .decode_packet(&packet.bytes, |record| {
+            if let Some(decoded) = TargetHouseRecord::decode(&record) {
+                remote = Some(decoded);
+            }
+            true
+        })
+        .unwrap();
+    assert_eq!(local.target_house, 3);
+    assert_eq!(local.command, native);
+    assert_eq!(remote, Some(local));
+}
+
+#[test]
 fn original_truncated_and_full_admission_keep_the_accepted_prefix() {
     let controls = corpus();
     for receive in controls.receives {

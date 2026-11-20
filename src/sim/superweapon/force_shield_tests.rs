@@ -480,6 +480,7 @@ mod sound_reference_history {
         );
         sim.sound_events.clear_for_test();
         assert!(sim.apply_command_with_overlays(
+            None,
             OWNER,
             &Command::LaunchSuperWeapon {
                 sw_type_id: type_id,

@@ -138,6 +138,41 @@ fn multiplayer_band_box_keeps_to_the_saved_current_house() {
 }
 
 #[test]
+fn band_box_projects_its_source_once_for_all_granted_houses() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use std::cell::Cell;
+
+    #[derive(Clone, Copy)]
+    struct CountedSource<'a>(&'a Simulation, &'a Cell<usize>);
+
+    impl PickSource for CountedSource<'_> {
+        fn entities(&self) -> &EntityStore {
+            self.0.entities()
+        }
+
+        fn selection_control(&self) -> Option<ControlProjection<'_>> {
+            self.1.set(self.1.get() + 1);
+            Some(self.0.control_projection())
+        }
+    }
+
+    let (mut sim, _) = world(false, false);
+    sim.session_mut_for_test()
+        .set_game_mode(ScenarioGameMode::Lan);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 2,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+
+    let resolutions = Cell::new(0);
+    let snapshot = band(CountedSource(&sim, &resolutions), &sim, Some("Russians"));
+    assert_eq!(snapshot.select, vec![2, 3]);
+    assert_eq!(resolutions.get(), 1);
+}
+
+#[test]
 fn band_box_without_a_local_player_stays_open_to_every_owner() {
     let (sim, _) = world(true, false);
     let snapshot = band(&sim, &sim, None);

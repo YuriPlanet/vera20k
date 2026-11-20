@@ -110,7 +110,7 @@ fn production_scenario_mode_reads_stay_behind_admission() {
         "sim/world/shroud_refresh.rs",
         "sim/world/world_spawn.rs",
     ];
-    const LEGACY_READ_COUNT: usize = 30;
+    const LEGACY_READ_COUNT: usize = 29;
 
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut forbidden = Vec::new();
@@ -256,6 +256,92 @@ fn raw_ini_walks_have_pinned_production_callers() {
         "raw INI walks called outside their pinned production sites, or a pin \
          is stale. Read values through the `ini_value` readers; pin a new \
          caller only to copy or show entries as stored."
+    );
+}
+
+/// Command producers use the read-only authority projection. Native
+/// House identity remains inside the engine and cannot authorize input.
+#[test]
+fn command_input_and_radar_do_not_read_raw_house_permissions() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = source_files(&src_root);
+    let tests = test_gated_files(files);
+    let input_and_radar = [
+        "app/input/",
+        "render/radar/",
+        "app/presentation/render/build_instances.rs",
+        "sim/world/move_cell_input.rs",
+    ];
+    let raw = [
+        "house_controls_selection",
+        "house_is_human_player",
+        "is_human_player_on",
+        "native_player_identity",
+        "NativePlayerIdentity",
+        "local_shared_house_source",
+        "control_scope_for_source",
+        "entity_owned_by_id",
+        "player_control",
+    ];
+    let mut violations = Vec::new();
+    for file in files {
+        if tests.contains(&file.rel)
+            || !input_and_radar
+                .iter()
+                .any(|root| file.rel.starts_with(root))
+        {
+            continue;
+        }
+        let Some(production) = &file.production else {
+            continue;
+        };
+        for symbol in raw {
+            if count_identifier(production, symbol) != 0 {
+                violations.push((file.rel.as_str(), symbol));
+            }
+        }
+        if file.rel.starts_with("app/input/") {
+            for symbol in ["techno_player_controllable", "techno_is_active"] {
+                if count_identifier(production, symbol) != 0 {
+                    violations.push((file.rel.as_str(), symbol));
+                }
+            }
+        }
+        if file.rel.starts_with("app/input/") || file.rel == "sim/world/move_cell_input.rs" {
+            let compact: String = production.chars().filter(|c| !c.is_whitespace()).collect();
+            for comparison in [
+                "entity.owner()==",
+                "entity.owner()!=",
+                "==entity.owner()",
+                "!=entity.owner()",
+                "actor.owner()==issuing_house",
+                "actor.owner()!=issuing_house",
+            ] {
+                if compact.contains(comparison) {
+                    violations.push((file.rel.as_str(), comparison));
+                }
+            }
+        }
+        if file.rel.starts_with("render/radar/")
+            || file.rel == "app/presentation/render/build_instances.rs"
+        {
+            for symbol in [
+                "can_select",
+                "can_order",
+                "can_order_from",
+                "can_manage",
+                "can_manage_from",
+                "local_command_house",
+            ] {
+                if count_identifier(production, symbol) != 0 {
+                    violations.push((file.rel.as_str(), symbol));
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "use projected command permission for input and native viewer identity for radar: {violations:?}"
     );
 }
 
@@ -496,11 +582,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/production/factory_lifecycle.rs", 4),
                 ("sim/production/production_placement.rs", 4),
-                ("sim/production/production_queue.rs", 1),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/scenario_bootstrap.rs", 5),
                 // Local identity owner, legacy restoration and its accessor.
-                ("sim/scenario_session.rs", 5),
+                ("sim/scenario_session.rs", 4),
                 // Cheat input reads the local player only in offline skirmish.
                 ("sim/skirmish_cheats.rs", 1),
                 ("sim/snapshot.rs", 2),
@@ -525,10 +610,10 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/trigger_runtime.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
                 ("sim/world/camera_home.rs", 2),
-                ("sim/world/command_schedule.rs", 3),
+                ("sim/world/command_schedule.rs", 2),
                 ("sim/world/fog_objects.rs", 1),
                 ("sim/world/gap_generator.rs", 1),
-                ("sim/world/house_defeat.rs", 9),
+                ("sim/world/house_defeat.rs", 8),
                 ("sim/world/jumpjet_cruise.rs", 1),
                 ("sim/world/lifecycle.rs", 7),
                 ("sim/world/mod.rs", 7),
@@ -540,8 +625,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/techno_ai_cloak.rs", 3),
                 // Includes the Ares Guard key's own-actor check (1005CAF0)
                 // in the input producer `area_guard_key_command`.
-                ("sim/world/world_commands.rs", 7),
-                ("sim/world/world_orders.rs", 2),
+                ("sim/world/world_commands.rs", 4),
+                ("sim/world/world_orders.rs", 1),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
                 ("sim/world/world_spawn/wall_unlimbo.rs", 1),
@@ -577,10 +662,6 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "house_is_human_player",
             &[
-                // What_Action's Tote rung (0x00417CC0): the clicked action.
-                ("sim/aircraft/carryall.rs", 1),
-                // What_Action's Detonate rung (0x006FFF8D): the clicked action.
-                ("sim/bomb.rs", 1),
                 ("sim/building_art.rs", 2),
                 ("sim/building_entry.rs", 1),
                 ("sim/building_power.rs", 2),
@@ -603,18 +684,14 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/production/production_repair.rs", 1),
                 ("sim/production/production_sell.rs", 1),
                 ("sim/reverse_engineering.rs", 1),
-                ("sim/vehicle_theft.rs", 1),
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/fly_process.rs", 1),
                 ("sim/world/lifecycle.rs", 1),
-                ("sim/world/move_cell_input.rs", 3),
                 ("sim/world/planning.rs", 1),
-                ("sim/world/selection_voice.rs", 4),
                 ("sim/world/shroud_refresh.rs", 2),
                 ("sim/world/techno_ai.rs", 1),
-                ("sim/world/world_commands.rs", 2),
-                // The clicked actions, with Ares' infantry heal arm (0x0051E710).
-                ("sim/world/world_orders.rs", 13),
+                // Native Techno control/active checks and the infiltrate cue.
+                ("sim/world/world_orders.rs", 4),
             ],
         ),
         (
@@ -1994,6 +2071,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "rules/object_type.rs",
             "set_secret_lab",
             "runs only inside RuleSet's load",
+        ),
+        (
+            "rules/personal_rules.rs",
+            "set_building_production_queue",
+            "VERA's own switch with no native member: the Options page's Building Production \
+             Queue box, which the app passes in for the rules the next scenario reads",
         ),
         (
             "rules/personal_rules.rs",
