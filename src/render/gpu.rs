@@ -648,6 +648,49 @@ impl GpuContext {
         lost_device()
     }
 
+    /// Why DirectX 12 lost the device, in the driver's own terms: a GPU that
+    /// stopped responding (Windows ends that after two seconds), a reset, a
+    /// driver internal error or a rejected call. wgpu reports every one as
+    /// "Device is lost", so the reason comes from `GetDeviceRemovedReason` on
+    /// the raw device, which DirectX defines for exactly this state. `None` on
+    /// other APIs and platforms.
+    #[cfg(windows)]
+    pub(crate) fn device_removed_reason(&self) -> Option<String> {
+        use windows::Win32::Graphics::Dxgi;
+        if self.adapter_info.backend != wgpu::Backend::Dx12 {
+            return None;
+        }
+        // SAFETY: the hal device is only read, through a method DirectX 12
+        // defines for a lost device, and the guard is dropped before the
+        // device could be.
+        let hal = unsafe { self.device.as_hal::<wgpu::hal::api::Dx12>() }?;
+        let result = unsafe { hal.raw_device().GetDeviceRemovedReason() };
+        let error = match result {
+            Ok(()) => return Some("DirectX reports no removal".to_owned()),
+            Err(error) => error,
+        };
+        let code = error.code();
+        let meaning = if code == Dxgi::DXGI_ERROR_DEVICE_HUNG {
+            "DXGI_ERROR_DEVICE_HUNG: the GPU stopped responding to its commands, which Windows ends after two seconds"
+        } else if code == Dxgi::DXGI_ERROR_DEVICE_RESET {
+            "DXGI_ERROR_DEVICE_RESET: the driver reset the GPU"
+        } else if code == Dxgi::DXGI_ERROR_DEVICE_REMOVED {
+            "DXGI_ERROR_DEVICE_REMOVED: the adapter was removed or its driver updated"
+        } else if code == Dxgi::DXGI_ERROR_DRIVER_INTERNAL_ERROR {
+            "DXGI_ERROR_DRIVER_INTERNAL_ERROR: the driver failed inside itself"
+        } else if code == Dxgi::DXGI_ERROR_INVALID_CALL {
+            "DXGI_ERROR_INVALID_CALL: the driver was given a call it rejects"
+        } else {
+            "an unlisted reason"
+        };
+        Some(format!("DirectX removal reason {code}: {meaning}"))
+    }
+
+    #[cfg(not(windows))]
+    pub(crate) fn device_removed_reason(&self) -> Option<String> {
+        None
+    }
+
     /// Whether the window currently owns a render surface.
     #[cfg(target_os = "android")]
     pub(crate) fn has_surface(&self) -> bool {
