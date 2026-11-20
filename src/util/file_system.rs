@@ -19,6 +19,58 @@ pub fn try_exists(path: impl AsRef<std::path::Path>) -> std::io::Result<bool> {
     path.as_ref().try_exists()
 }
 
+/// Writes `bytes` to a new hidden file in `dir`, syncs it, and hands its path
+/// to `publish` to move it into place. The staged file is removed when the
+/// write or `publish` fails, so no partial file is published or left behind.
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn write_staged(
+    dir: &std::path::Path,
+    bytes: &[u8],
+    publish: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
+    let (stage, mut file) = loop {
+        let id = NEXT_STAGE.fetch_add(1, Ordering::Relaxed);
+        let stage = dir.join(format!(".map-{}-{id}.tmp", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stage)
+        {
+            Ok(file) => break (stage, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    };
+    let result = (|| -> std::io::Result<()> {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        publish(&stage)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&stage);
+    }
+    result
+}
+
+/// Publish complete bytes under a fresh name. The filesystem claims the
+/// target so a simultaneous save, or a different spelling on a case-insensitive
+/// volume, cannot replace an existing file.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub fn write_new(path: impl AsRef<std::path::Path>, bytes: &[u8]) -> std::io::Result<()> {
+    let path = path.as_ref();
+    let directory = path.parent().unwrap_or(std::path::Path::new("."));
+    write_staged(directory, bytes, |stage| {
+        std::fs::File::create_new(path)?;
+        std::fs::rename(stage, path).inspect_err(|_| {
+            let _ = std::fs::remove_file(path);
+        })
+    })
+}
+
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub use memory::*;
 

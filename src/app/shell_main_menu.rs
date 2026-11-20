@@ -2065,7 +2065,12 @@ impl App {
             }
             ShellExitThen::ChooseMapUse(selection) => Self::commit_choose_map_use(state, selection),
             ShellExitThen::ChooseMapCancel => Self::close_choose_map_modal(state),
-            ShellExitThen::ChooseMapRandomMap => Self::commit_choose_map_random_map(state),
+            ShellExitThen::ChooseMapRandomMap(seed) => {
+                Self::commit_choose_map_random_map(state);
+                if let Some(seed) = seed {
+                    Self::load_random_map_seed(state, &seed, true);
+                }
+            }
             ShellExitThen::RandomMapUse => Self::accept_random_map_setup(state),
             ShellExitThen::RandomMapCancel => Self::cancel_random_map_setup(state),
             ShellExitThen::WolBack => Self::return_from_wol(state),
