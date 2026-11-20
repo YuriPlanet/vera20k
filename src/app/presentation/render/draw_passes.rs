@@ -19,7 +19,9 @@ use crate::render::overlay_atlas::OverlayAtlas;
 use crate::render::tactical_draw_plan::RenderZPolicy;
 
 use super::merge_passes;
-use super::terrain_picture::{GroundFrame, TERRAIN_STREAMS, TerrainInputs, TerrainStep};
+use super::terrain_picture::{
+    GroundFrame, TERRAIN_STREAMS, TerrainDraws, TerrainInputs, TerrainStep,
+};
 
 /// One isolated pass for the Phobos placement preview artwork. The texture is
 /// owned by a `RefCell` cache, so the pass must end inside this call and the
@@ -415,7 +417,6 @@ pub(super) fn dispatch_draw_passes(
         let overlay_atlas = presentation.overlay_atlas.as_ref();
         let inputs = TerrainInputs {
             streams: TERRAIN_STREAMS.map(|stream| pool.generation(stream)),
-            cell_bodies: data.cell_body_draws.to_vec(),
             camera: batch.camera_uniform(),
             camera_group: batch.camera_bind_group().clone(),
             a_plane: presentation
@@ -423,7 +424,6 @@ pub(super) fn dispatch_draw_passes(
                 .as_ref()
                 .map_or(0, |shroud| shroud.generation()),
             tactical: [tac_x, tac_y, tac_w, tac_h],
-            fogged_runs: data.fogged_objects.runs.clone(),
             fogged_sources: fogged_sources(presentation, batch, &data.fogged_objects.runs),
             atlases: [
                 presentation
@@ -439,10 +439,14 @@ pub(super) fn dispatch_draw_passes(
             ],
             targets: [view.texture().clone(), world_depth.texture().clone()],
         };
+        let draws = TerrainDraws {
+            cell_bodies: data.cell_body_draws,
+            fogged_runs: &data.fogged_objects.runs,
+        };
         state
             .renderer
             .terrain_picture
-            .step(&state.renderer.gpu.device, inputs, ground)
+            .step(&state.renderer.gpu.device, inputs, draws, ground)
     };
     let mut pass = match terrain_step {
         TerrainStep::Restore => {
