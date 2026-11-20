@@ -160,8 +160,8 @@ pub fn peek(direction: Direction, bytes: &[u8]) -> Result<Header, RelayError> {
     }
     Ok(Header {
         kind,
-        session: u32::from_le_bytes(bytes[1..5].try_into().expect("checked length")),
-        sequence: u32::from_le_bytes(bytes[5..9].try_into().expect("checked length")),
+        session: crate::link::read_u32(bytes, 1)?,
+        sequence: crate::link::read_u32(bytes, 5)?,
     })
 }
 
