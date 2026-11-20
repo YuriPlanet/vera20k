@@ -96,6 +96,8 @@ pub(crate) enum SuperWeaponTargetSource {
 }
 #[cfg(all(test, tests_sim_superweapon))]
 mod spy_plane_tests;
+#[cfg(all(test, tests_sim_superweapon))]
+mod super_ready_views_tests;
 mod targeting;
 pub(crate) mod unit_delivery;
 #[cfg(all(test, tests_sim_superweapon))]
@@ -621,6 +623,13 @@ impl SuperWeaponInstance {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_is_ready_for_test(&mut self, value: bool) {
         self.is_ready = value;
+    }
+
+    /// Give an instance a timer place (the `SW.ShowTimer=yes` gate) so
+    /// `super_ready_views` admits it, or clear it to emulate ShowTimer=no.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_timer_place_for_test(&mut self, value: Option<u32>) {
+        self.timer_place = value;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1546,6 +1555,70 @@ fn next_timer_place(super_weapons: &SuperWeapons) -> u32 {
         .filter_map(|instance| instance.timer_place)
         .max()
         .map_or(0, |place| place + 1)
+}
+
+/// A granted Super's charge state, for the grouped timer panel. Unlike
+/// [`SuperTimerView`] (the native one-line-per-Super list) this carries the
+/// authoritative `SuperClass+0x6F` ready bit, so a panel can count how many
+/// holders are charged without inferring readiness from a zero timer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SuperReadyView {
+    owner: InternedId,
+    sw_type: InternedId,
+    /// Remaining charge frames (`SuperClass+0x30`/`+0x38`).
+    pub frames_left: i32,
+    /// `SuperClass+0x6F`: fully charged and ready to fire.
+    pub is_ready: bool,
+}
+
+impl SuperReadyView {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(
+        owner: InternedId,
+        sw_type: InternedId,
+        frames_left: i32,
+        is_ready: bool,
+    ) -> Self {
+        Self {
+            owner,
+            sw_type,
+            frames_left,
+            is_ready,
+        }
+    }
+
+    pub fn owner(self) -> InternedId {
+        self.owner
+    }
+
+    pub fn sw_type(self) -> InternedId {
+        self.sw_type
+    }
+}
+
+/// Every granted, active Super that occupies a right-hand timer slot, in
+/// storage order. Callers group by owner/type. A Super without a timer place
+/// (`SW.ShowTimer=no`, e.g. a spy satellite or paradrop, or a multiplayer-
+/// passive house) is excluded with the exact gate the native timer list uses,
+/// so those capabilities never reach the panel as text.
+pub fn super_ready_views(sim: &Simulation) -> Vec<SuperReadyView> {
+    let frame = sim.session.binary_frame() as i32;
+    sim.super_weapons
+        .iter()
+        .flat_map(|(&owner, weapons)| {
+            weapons.values().filter_map(move |instance| {
+                if !instance.is_active || instance.timer_place.is_none() {
+                    return None;
+                }
+                Some(SuperReadyView {
+                    owner,
+                    sw_type: instance.type_id,
+                    frames_left: instance.charge_remaining(frame),
+                    is_ready: instance.is_ready,
+                })
+            })
+        })
+        .collect()
 }
 
 /// A Super of the timer list `0x00A83D50` as TacticalClass::Draw reads it

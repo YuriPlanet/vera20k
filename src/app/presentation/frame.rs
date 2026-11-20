@@ -90,6 +90,12 @@ pub(crate) struct ObjectRecord {
     pub(crate) lifecycle: crate::sim::world::ObjectLifecycle,
     pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
+    /// An Infantry body's top-light cell, from its active locomotor's
+    /// navigation projection ([`GameEntity::foot_navigation_coordinate`]).
+    /// Captured here, while the home world's objects are attached: drawing
+    /// reads this record rather than asking the simulation again, because a
+    /// presentation copy's objects are detached.
+    pub(crate) infantry_light_cell: Option<(u16, u16)>,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
     pub(crate) building_art: crate::util::sparse::Sparse<crate::sim::building_art::BuildingArt>,
     pub(crate) animation: Option<crate::sim::animation::Animation>,
@@ -623,6 +629,19 @@ impl ObjectRecord {
             navigation: Navigation {
                 nav_com: entity.navigation.nav_com(),
             },
+            infantry_light_cell: if entity.category() == EntityCategory::Infantry {
+                at.sim
+                    .foot_navigation_coordinate(entity.stable_id())
+                    .ok()
+                    .map(|coord| {
+                        (
+                            crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+                            crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+                        )
+                    })
+            } else {
+                None
+            },
             last_fire_frame: entity.last_fire_frame.clone(),
             building_art: entity.building_art.clone(),
             animation: entity.animation.clone(),
@@ -683,6 +702,13 @@ impl ObjectRecord {
 
     pub(crate) fn category(&self) -> EntityCategory {
         self.category
+    }
+
+    /// Infantry top-light cell, captured from the home world's navigation
+    /// projection. Drawing reads this instead of the simulation's detached
+    /// objects.
+    pub(crate) fn infantry_light_cell(&self) -> Option<(u16, u16)> {
+        self.infantry_light_cell
     }
 
     pub(crate) fn type_ref(&self) -> InternedId {
