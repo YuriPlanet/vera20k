@@ -914,6 +914,88 @@ impl TeamScriptVm {
         self.ai_triggers.insert(definition.id, definition);
     }
 
+    /// Every interned name the VM saves, as `(registry, object, field, id)`:
+    /// the ScriptType, TaskForce, TeamType and AITrigger definitions (keyed
+    /// by their own id), and each live Team (keyed by its team id). A load
+    /// checks each against the saved interner before any consumer resolves
+    /// one ([`Simulation::validate_saved_interned_ids`]).
+    pub(crate) fn saved_interned_ids(
+        &self,
+    ) -> impl Iterator<Item = (&'static str, u64, &'static str, InternedId)> + '_ {
+        let key = |id: InternedId| u64::from(id.index());
+        let scripts = self.scripts.iter().flat_map(move |(&id, script)| {
+            [("id", id), ("definition", script.id)].map(|(f, v)| ("ScriptType", key(id), f, v))
+        });
+        let task_forces = self.task_forces.iter().flat_map(move |(&id, task_force)| {
+            [("id", id), ("definition", task_force.id)]
+                .into_iter()
+                .chain(
+                    task_force
+                        .entries
+                        .iter()
+                        .map(|e| ("member type", e.member_type.id)),
+                )
+                .map(move |(f, v)| ("TaskForce", key(id), f, v))
+        });
+        let team_types = self.team_types.iter().flat_map(move |(&id, team_type)| {
+            [
+                ("id", id),
+                ("definition", team_type.id),
+                ("script", team_type.script_id),
+                ("task force", team_type.task_force_id),
+            ]
+            .map(|(f, v)| ("TeamType", key(id), f, v))
+        });
+        let team_type_ini = self
+            .team_type_ini
+            .keys()
+            .map(move |&id| ("TeamType", key(id), "metadata", id));
+        let ai_triggers = self.ai_triggers.iter().flat_map(move |(&id, trigger)| {
+            [("id", Some(id)), ("definition", Some(trigger.id))]
+                .into_iter()
+                .chain([
+                    ("primary team", trigger.primary_team_type),
+                    ("secondary team", trigger.secondary_team_type),
+                    ("object type", trigger.object_type.map(|o| o.id)),
+                ])
+                .filter_map(move |(f, v)| Some(("AITrigger", key(id), f, v?)))
+        });
+        let ai_trigger_records = self
+            .ai_trigger_records
+            .keys()
+            .map(move |&id| ("AITrigger", key(id), "track record", id));
+        let orders = [
+            ("ScriptType", &self.script_order),
+            ("TaskForce", &self.task_force_order),
+            ("AITrigger", &self.ai_trigger_order),
+        ]
+        .into_iter()
+        .flat_map(move |(registry, order)| {
+            order
+                .iter()
+                .map(move |&id| (registry, key(id), "order", id))
+        });
+        let teams = self.teams.iter().flat_map(|(&team_id, team)| {
+            [
+                ("owner", Some(team.owner)),
+                ("scout House", team.scout_house),
+                ("TeamType", team.team_type_id),
+                ("TaskForce", team.task_force_id),
+                ("ScriptType", Some(team.script_id)),
+            ]
+            .into_iter()
+            .filter_map(move |(f, v)| Some(("Team", team_id, f, v?)))
+        });
+        scripts
+            .chain(task_forces)
+            .chain(team_types)
+            .chain(team_type_ini)
+            .chain(ai_triggers)
+            .chain(ai_trigger_records)
+            .chain(orders)
+            .chain(teams)
+    }
+
     /// `TeamTypeClass::Create_Team @ 0x006F09C0` with a house, as the
     /// computer's team creation calls it (`0x004F8AAD`): refused while the
     /// TeamType's `Max=` is not negative and already reached, in a

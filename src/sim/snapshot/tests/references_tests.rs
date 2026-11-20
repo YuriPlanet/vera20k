@@ -1294,3 +1294,37 @@ fn bullet_warhead_id_past_the_saved_interner_refuses_the_load() {
         },
     );
 }
+
+/// The Team VM's saved ids (here a ScriptType's) are resolved by name when
+/// Teams are made and traced, so one past the saved interner refuses the load.
+#[test]
+fn script_type_id_past_the_saved_interner_refuses_the_load() {
+    use crate::sim::team_script_vm::TeamScriptDefinition;
+
+    let mut sim = Simulation::new();
+    let unknown = crate::sim::intern::InternedId::from_index(9_999);
+    sim.team_script_vm.register_script(TeamScriptDefinition {
+        id: unknown,
+        actions: Vec::new(),
+        source: crate::rules::team_ai_ini::TeamAiDefinitionSource::FixedAimd,
+    });
+    let bytes = GameSnapshot::save(&sim, 0, 0, "unknown-script", 0);
+    let Err(error) = GameSnapshot::load(&bytes).unwrap().restore_player_world(
+        crate::sim::world::SnapshotProcessState::Live(&Simulation::new()),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        flat_terrain(8, 8),
+        Default::default(),
+        PlayerSaveCells::FixtureBaseline,
+    ) else {
+        panic!("a ScriptType id past the saved interner must refuse the load");
+    };
+    assert_eq!(
+        error,
+        SnapshotRestoreError::UnknownInternedId {
+            registry: "ScriptType",
+            object_id: u64::from(unknown.index()),
+            field: "id",
+            id: unknown.index(),
+        },
+    );
+}

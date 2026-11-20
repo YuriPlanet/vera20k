@@ -82,6 +82,11 @@ impl Simulation {
                 check("bullet", bullet_id, "weapon", weapon)?;
             }
         }
+        // Trigger runtime ids name Houses, which its own restore check holds
+        // to the House map checked above (validate_restored_trigger_runtime).
+        for (registry, object_id, field, id) in self.team_script_vm.saved_interned_ids() {
+            check(registry, object_id, field, id)?;
+        }
         Ok(())
     }
 
