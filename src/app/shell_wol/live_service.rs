@@ -1105,11 +1105,12 @@ impl LiveService {
     /// it still holds, after one attempt to finish this service's match with
     /// it; then that match, and any cleanup still owed for the old session,
     /// is dropped, whether or not the lobby answered.
-    fn sign_in(&mut self, nickname: String, credential: http::Credential) {
+    fn sign_in(&mut self, nickname: String, credential: http::Credential, changes: String) {
         let _ = self.requests.send(http::Request::OpenSession {
             attempt: self.auth_attempt,
             nickname,
             credential,
+            changes,
         });
         self.clear_cleanup();
     }
@@ -1996,7 +1997,14 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             let credential =
                 sign_in_credential(settings_dir(state), service, &nickname, password, remember);
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
-            service.sign_in(nickname, credential);
+            // What this game changes from the original game, which a room
+            // names when its rules differ from the host's.
+            use crate::app::shell_network_setup::agreement;
+            let changes = agreement::changes_header(&agreement::original_game_changes(
+                state.frontend.mods.title(),
+                &state.process_assets,
+            ));
+            service.sign_in(nickname, credential, changes);
         }
         WolServiceRequest::Account { attempt, request } => {
             let _ = service
@@ -3072,6 +3080,8 @@ impl Chat {
             "BuildMismatch",
             "RulesMismatch",
             "HostRulesMismatch",
+            "RulesDifferFromHost",
+            "HostRulesDifferFromOthers",
         ])
     }
 
@@ -4877,6 +4887,10 @@ mod completion_tests {
         let build =
             json!([{"key": "BuildMismatch", "values": {"name": "Boris", "version": "0.3.8"}}]);
         assert!(line(build).warns_of_other_game());
+        // The line naming what only one game has opens with its own sentence.
+        let changes = json!([{"key": "RulesDifferFromHost", "values": {"name": "Boris"}},
+            {"key": "SameRulesToStart"}]);
+        assert!(line(changes).warns_of_other_game());
         assert!(!line(json!([{"key": "OnlyPlayerOnline"}])).warns_of_other_game());
         assert!(!line(Value::Null).warns_of_other_game());
     }
@@ -5889,7 +5903,7 @@ mod completion_tests {
         service.hold_match(Some("quick-match".into()));
         service.leave_room(Instant::now());
         service.leave_completed(5);
-        service.sign_in("Tanya".into(), http::Credential::Guest);
+        service.sign_in("Tanya".into(), http::Credential::Guest, String::new());
         let sent: Vec<_> = input
             .try_iter()
             .map(|request| match request {
