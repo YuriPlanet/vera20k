@@ -494,7 +494,7 @@ fn moved(was: Option<(u16, u16)>, now: Option<(u16, u16)>) -> bool {
     dx * dx + dy * dy > REISSUE_CELLS * REISSUE_CELLS
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

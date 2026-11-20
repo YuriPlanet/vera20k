@@ -366,7 +366,7 @@ fn home_threat(census: &Census) -> Option<(u64, (u16, u16))> {
         .map(|enemy| (enemy.entity_id, enemy.cell))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

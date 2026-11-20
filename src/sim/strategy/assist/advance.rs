@@ -739,7 +739,7 @@ fn base_under_threat(census: &Census) -> bool {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::rules::unit_role::RoleTable;

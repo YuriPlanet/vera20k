@@ -708,7 +708,7 @@ impl<'a, 'b> Placement<'a, 'b> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 

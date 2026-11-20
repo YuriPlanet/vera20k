@@ -1811,7 +1811,7 @@ fn isqrt(value: i32) -> i32 {
     i32::try_from(low).unwrap_or(i32::MAX)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod vision_tests {
     use super::*;
     use crate::sim::intern::InternedId;

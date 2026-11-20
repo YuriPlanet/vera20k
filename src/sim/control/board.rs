@@ -751,7 +751,7 @@ fn actor_of(command: &Command) -> Option<u64> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 

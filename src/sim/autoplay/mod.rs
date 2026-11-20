@@ -60,5 +60,5 @@ pub use crate::sim::control::brain::Brain;
 pub use host::AutoPlayHost;
 pub use scripted_policy::{ScriptStep, ScriptedPolicy};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod autoplay_tests;

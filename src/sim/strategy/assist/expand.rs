@@ -904,7 +904,7 @@ fn missing_prerequisite<'r>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::sim::arena_fixture;

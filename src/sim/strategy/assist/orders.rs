@@ -2387,7 +2387,7 @@ fn delivery_cell(brain: &AssistBrain) -> Option<(u16, u16)> {
         .min_by_key(|cell| (cell.0, cell.1))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod transport_tests {
     use super::*;
 
@@ -2607,7 +2607,7 @@ pub(super) fn is_combat_unit(rules: &RuleSet, ty: &ObjectType) -> bool {
     super::census::Traits::of(rules, ty).combat
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

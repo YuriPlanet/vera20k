@@ -576,7 +576,7 @@ fn dedup(list: &[Option<String>]) -> Vec<String> {
     names
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 
