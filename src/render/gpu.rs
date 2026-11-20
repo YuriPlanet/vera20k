@@ -331,18 +331,12 @@ impl GpuContext {
         backends: wgpu::Backends,
         on_adapter: impl FnOnce(&wgpu::AdapterInfo),
     ) -> Result<Self> {
-        // Where a driver offers Vulkan and DirectX 12, wgpu takes Vulkan, the
-        // first API it lists; a start record asks for one alone
-        // (`persistence::startup_backend`). wgpu's own override
-        // (`WGPU_BACKEND`) wins over either, for reproducible shroud GPU
-        // comparisons. wgpu requires the display at instance creation for
-        // Wayland EGL:
-        // https://docs.rs/wgpu-types/30.0.1/wgpu_types/struct.InstanceDescriptor.html
+        // The instance over the APIs this start asks for, the surface it
+        // draws to and the adapter that can; `choose_adapter` says how the
+        // APIs and DirectX 12's shader compilers are chosen.
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: backends.with_env(),
-            ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
-        });
+        let (instance, surface, adapter, fxc_after_dxc) =
+            choose_adapter(&window, display, backends).await?;
         // Browsers without a usable WebGPU adapter fall back to WebGL2. A
         // surface-less probe with the adapter options used below decides
         // first: a canvas given a WebGPU context can no longer create WebGL2.
@@ -381,22 +375,15 @@ impl GpuContext {
             })
         };
 
-        // Create the surface from our window. The surface is what we draw pixels to.
+        // The surface is what we draw pixels to, and the adapter (physical
+        // device) one that can render to it.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let surface: wgpu::Surface<'static> = instance
             .create_surface(window.clone())
             .context("Failed to create wgpu surface from window")?;
-
-        // Request a GPU adapter (physical device) that can render to our surface.
-        // HighPerformance prefers discrete GPUs over integrated ones.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let adapter: wgpu::Adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-                // wgpu 30 can round the adapter's reported limits down to the
-                // WebGPU bucket it belongs to; off keeps the exact 29.x limits.
-                apply_limit_buckets: false,
-            })
+            .request_adapter(&adapter_options(&surface))
             .await
             .context("No suitable GPU adapter found — is a GPU available?")?;
 
@@ -411,16 +398,15 @@ impl GpuContext {
         // wgpu compiles DirectX 12 shaders with Microsoft's DXC when
         // dxcompiler.dll sits beside the game, where the Windows installer puts
         // it (`.github/release/windows/fetch-dxc.ps1`), and otherwise with
-        // Windows' 2015 FXC (`Dx12Compiler::Auto`); a player's log says which.
-        #[cfg(target_os = "windows")]
+        // Windows' 2015 FXC (`Dx12Compiler::Auto`), which `choose_adapter`
+        // also falls back to for a card DXC hides; a player's log says which.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         if adapter_info.backend == wgpu::Backend::Dx12 {
-            let dxc = std::env::current_exe()
-                .ok()
-                .and_then(|exe| exe.parent().map(|dir| dir.join("dxcompiler.dll")))
-                .is_some_and(|dll| dll.is_file());
             log::info!(
                 "DirectX 12 shaders compile with {}",
-                if dxc {
+                if fxc_after_dxc {
+                    "FXC: the driver has no Shader Model 6 for DXC"
+                } else if dxc_beside_game() {
                     "DXC (dxcompiler.dll beside the game)"
                 } else {
                     "FXC: no dxcompiler.dll beside the game"
@@ -1096,6 +1082,138 @@ fn present_settings(vsync: bool) -> (wgpu::PresentMode, u32) {
     }
 }
 
+/// The adapter request every start makes: one that can draw to `surface`,
+/// the discrete card where a machine has two.
+fn adapter_options<'a, 'b>(surface: &'a wgpu::Surface<'b>) -> wgpu::RequestAdapterOptions<'a, 'b> {
+    wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(surface),
+        force_fallback_adapter: false,
+        // wgpu 30 can round the adapter's reported limits down to the
+        // WebGPU bucket it belongs to; off keeps the exact 29.x limits.
+        apply_limit_buckets: false,
+    }
+}
+
+/// A wgpu instance over `backends` whose DirectX 12 shaders `compiler`
+/// builds. wgpu requires the display at instance creation for Wayland EGL:
+/// https://docs.rs/wgpu-types/30.0.1/wgpu_types/struct.InstanceDescriptor.html
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn instance_with(
+    backends: wgpu::Backends,
+    display: &OwnedDisplayHandle,
+    compiler: wgpu::Dx12Compiler,
+) -> wgpu::Instance {
+    let mut descriptor =
+        wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display.clone()));
+    descriptor.backends = backends;
+    descriptor.backend_options.dx12.shader_compiler = compiler;
+    wgpu::Instance::new(descriptor)
+}
+
+/// Whether `dxcompiler.dll` sits beside the game, where wgpu's
+/// `Dx12Compiler::Auto` loads it from. Only a DirectX 12 start asks.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn dxc_beside_game() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("dxcompiler.dll")))
+        .is_some_and(|dll| dll.is_file())
+}
+
+/// The instance, surface and adapter a start draws through, and whether the
+/// adapter came through FXC after DXC had hidden it.
+///
+/// Where a driver offers Vulkan and DirectX 12, wgpu takes Vulkan, the first
+/// API it lists; a start record asks for one alone
+/// (`persistence::startup_backend`). wgpu's own override (`WGPU_BACKEND`)
+/// wins over either, for reproducible shroud GPU comparisons.
+///
+/// wgpu's DirectX 12 backend compiles shaders with Microsoft's DXC where
+/// `dxcompiler.dll` sits beside the game, and then lists no card whose driver
+/// stops at Shader Model 5.1, since DXC's output needs 6.0 (wgpu-hal
+/// `dx12/adapter.rs`: "don't expose this adapter if it doesn't support
+/// DXIL"). Intel's drivers before 15.60 and NVIDIA's before 387.92, both of
+/// late 2017, are such: an HD 620 on 21.20.16.4574 drew a match through
+/// DirectX 12 before the DLL shipped and found only Windows' software
+/// renderer, which draws with the processor, after. So a start that finds no
+/// card, or only the processor, asks DirectX 12 again with FXC, Windows' own
+/// compiler, which every such driver serves, and keeps the card that answers.
+/// The second instance costs milliseconds, on a start that was headed for
+/// the processor anyway.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+async fn choose_adapter(
+    window: &Arc<Window>,
+    display: OwnedDisplayHandle,
+    backends: wgpu::Backends,
+) -> Result<(wgpu::Instance, wgpu::Surface<'static>, wgpu::Adapter, bool)> {
+    let backends = backends.with_env();
+    let instance = instance_with(backends, &display, wgpu::Dx12Compiler::Auto);
+    let surface = instance
+        .create_surface(window.clone())
+        .context("Failed to create wgpu surface from window")?;
+    let first = instance.request_adapter(&adapter_options(&surface)).await;
+    let found = first
+        .as_ref()
+        .ok()
+        .map(|adapter| adapter.get_info().device_type);
+    if cfg!(target_os = "windows") && retry_dx12_with_fxc(found, backends) {
+        let fxc = instance_with(wgpu::Backends::DX12, &display, wgpu::Dx12Compiler::Fxc);
+        let fxc_surface = fxc
+            .create_surface(window.clone())
+            .context("Failed to create wgpu surface from window")?;
+        if let Ok(adapter) = fxc.request_adapter(&adapter_options(&fxc_surface)).await {
+            let info = adapter.get_info();
+            if info.device_type != wgpu::DeviceType::Cpu {
+                log::warn!(
+                    "DirectX 12 with DXC offered {}; {} (driver {} {}) answers with FXC, so its driver has no Shader Model 6 and the game draws through it with FXC. A graphics driver from late 2017 or newer would allow DXC",
+                    match found {
+                        Some(_) => "only the software renderer",
+                        None => "no adapter",
+                    },
+                    info.name,
+                    info.driver,
+                    info.driver_info
+                );
+                log_adapters(&fxc, wgpu::Backends::DX12).await;
+                return Ok((fxc, fxc_surface, adapter, true));
+            }
+        }
+    }
+    let adapter = first.context("No suitable GPU adapter found — is a GPU available?")?;
+    log_adapters(&instance, backends).await;
+    Ok((instance, surface, adapter, false))
+}
+
+/// Whether a start that found no graphics card through its first instance
+/// asks DirectX 12 again with FXC (`choose_adapter`): it asked for DirectX
+/// 12 and found no adapter, or only the processor's software renderer, which
+/// wgpu sorts last (`request_adapter`), so a card on any API would have won.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn retry_dx12_with_fxc(found: Option<wgpu::DeviceType>, backends: wgpu::Backends) -> bool {
+    backends.contains(wgpu::Backends::DX12)
+        && found.is_none_or(|kind| kind == wgpu::DeviceType::Cpu)
+}
+
+/// One line naming every adapter `instance` offers through `backends`, so a
+/// player's log says what their machine had besides the one chosen.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+async fn log_adapters(instance: &wgpu::Instance, backends: wgpu::Backends) {
+    let offered: Vec<String> = instance
+        .enumerate_adapters(backends)
+        .await
+        .iter()
+        .map(|adapter| {
+            let info = adapter.get_info();
+            format!(
+                "{} ({:?}, {:?}, driver {} {})",
+                info.name, info.backend, info.device_type, info.driver, info.driver_info
+            )
+        })
+        .collect();
+    log::info!("Graphics adapters offered: {}", offered.join("; "));
+}
+
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
     use std::sync::Arc;
@@ -1115,6 +1233,22 @@ mod tests {
     fn vsync_keeps_two_pictures_queued() {
         assert_eq!(present_settings(true), (wgpu::PresentMode::Fifo, 2));
         assert_eq!(present_settings(false), (wgpu::PresentMode::AutoNoVsync, 1));
+    }
+
+    /// A start that DirectX 12 with DXC left on the processor, or with no
+    /// adapter at all, asks again with FXC; one that found a card, or never
+    /// asked for DirectX 12, does not.
+    #[test]
+    fn only_a_start_without_a_card_asks_directx_12_again_with_fxc() {
+        use super::retry_dx12_with_fxc;
+        use wgpu::DeviceType::{Cpu, IntegratedGpu};
+        assert!(retry_dx12_with_fxc(Some(Cpu), wgpu::Backends::DX12));
+        assert!(retry_dx12_with_fxc(None, wgpu::Backends::PRIMARY));
+        assert!(!retry_dx12_with_fxc(
+            Some(IntegratedGpu),
+            wgpu::Backends::DX12
+        ));
+        assert!(!retry_dx12_with_fxc(Some(Cpu), wgpu::Backends::VULKAN));
     }
 
     /// A lost device reaches the frame loop, and a working one does not. The
