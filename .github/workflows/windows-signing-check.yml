@@ -133,6 +133,7 @@ jobs:
           cp target/shipping/vera20k.exe config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html dist/package/
           bash .github/release/languages.sh dist/package
+          pwsh -File .github/release/windows/fetch-dxc.ps1 -Package dist/package
           sed -e "s/@VERSION@/${version}/" -e "s/@BUILD@/${stamp}/" -e "s/@COMMIT@/${GITHUB_SHA}/" \
             .github/release/README.txt.in > dist/package/README.txt
           python .github/release/windows/signing.py prepare --package dist/package \

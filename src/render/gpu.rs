@@ -318,6 +318,25 @@ impl GpuContext {
             adapter_info.driver,
             adapter_info.driver_info
         );
+        // wgpu compiles DirectX 12 shaders with Microsoft's DXC when
+        // dxcompiler.dll sits beside the game, where the Windows installer puts
+        // it (`.github/release/windows/fetch-dxc.ps1`), and otherwise with
+        // Windows' 2015 FXC (`Dx12Compiler::Auto`); a player's log says which.
+        #[cfg(target_os = "windows")]
+        if adapter_info.backend == wgpu::Backend::Dx12 {
+            let dxc = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|dir| dir.join("dxcompiler.dll")))
+                .is_some_and(|dll| dll.is_file());
+            log::info!(
+                "DirectX 12 shaders compile with {}",
+                if dxc {
+                    "DXC (dxcompiler.dll beside the game)"
+                } else {
+                    "FXC: no dxcompiler.dll beside the game"
+                }
+            );
+        }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let _ = DEVICE_IDENTITY.set(DeviceIdentity {
             backend: adapter_info.backend,
