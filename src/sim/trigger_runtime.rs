@@ -251,12 +251,6 @@ impl From<EventCondition> for RuntimeEvent {
         }
     }
 }
-impl std::ops::Deref for RuntimeEvent {
-    type Target = EventCondition;
-    fn deref(&self) -> &Self::Target {
-        &self.condition
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct TriggerType {
@@ -1019,8 +1013,8 @@ impl TriggerRuntime {
             let typ = &self.definitions.trigger_types[index];
             view.events
                 .extend(typ.events.iter().map(|event| TriggerEventView {
-                    kind: event.kind,
-                    value: event.value,
+                    kind: event.condition.kind,
+                    value: event.condition.value,
                 }));
             view.actions
                 .extend(typ.actions.iter().map(|action| TriggerActionView {
@@ -1053,7 +1047,10 @@ impl TriggerRuntime {
             .filter_map(|&index| {
                 let live = self.trigger(index)?;
                 let typ = &self.definitions.trigger_types[live.type_index];
-                let has_timer_event = typ.events.iter().any(|event| matches!(event.kind, 13 | 51));
+                let has_timer_event = typ
+                    .events
+                    .iter()
+                    .any(|event| matches!(event.condition.kind, 13 | 51));
                 Some(ArmedTriggerView {
                     trigger_id: typ.id.clone(),
                     enabled: live.enabled,

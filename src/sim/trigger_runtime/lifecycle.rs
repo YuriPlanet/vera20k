@@ -435,7 +435,8 @@ impl Simulation {
             .events
             .len();
         for ordinal in 0..event_count {
-            let event = &trigger_runtime.definitions.trigger_types[type_index].events[ordinal];
+            let event =
+                &trigger_runtime.definitions.trigger_types[type_index].events[ordinal].condition;
             let duration = match event.kind {
                 13 => event.value.wrapping_mul(LOGICAL_FRAMES_PER_SECOND),
                 51 => {
@@ -655,11 +656,18 @@ impl Simulation {
         game_state: i32,
         started: bool,
     ) {
-        let Some(tag) = self.trigger_runtime.tag(index) else {
+        let Some(tag) = self
+            .trigger_runtime
+            .tags
+            .get_mut(index)
+            .and_then(Option::as_mut)
+        else {
             return;
         };
         let typ = tag.type_index;
-        let triggers = tag.triggers.clone();
+        // The Tag is freed below; its chain moves out with nothing left to
+        // read it, since detaching a Tag never reads its Triggers.
+        let triggers = std::mem::take(&mut tag.triggers);
         self.trigger_runtime.detach_live_tag(index);
         // Active-start destructor6E4F60 searches AFTER detach:
         // Find=-1 therefore still decrements the signed cursor.

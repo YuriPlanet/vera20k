@@ -35,7 +35,7 @@ fn duplicate_headers_read_the_crc_selected_value_on_every_physical_visit() {
     assert_eq!(
         root.events
             .iter()
-            .map(|event| (event.kind, event.value))
+            .map(|event| (event.condition.kind, event.condition.value))
             .collect::<Vec<_>>(),
         [(13, 3), (47, 0), (13, 3), (47, 0)]
     );

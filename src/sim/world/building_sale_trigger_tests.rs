@@ -302,7 +302,7 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
     let trigger_type = trigger.type_index;
     let definition = &sim.trigger_runtime.definitions.trigger_types[trigger_type];
     assert_eq!(definition.events.len(), 1);
-    assert_eq!(definition.events[0].kind, 48);
+    assert_eq!(definition.events[0].condition.kind, 48);
     assert_eq!(
         definition
             .actions
