@@ -470,3 +470,23 @@ fn deploy_doing_head_refuses_a_human_owner_without_both_flags() {
         }
     }
 }
+
+/// A Scatter record from another player can name any Foot. When the Scatter
+/// body fails on the actor it names (here: a type the rules do not define),
+/// the order is refused, the same way on every peer, instead of panicking.
+#[test]
+fn scatter_order_whose_body_fails_is_refused() {
+    let mut man = infantry();
+    man.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
+    man.lifecycle.set_object_alive_for_test(true);
+    man.lifecycle.set_in_limbo_for_test(false);
+    let mut sim = sim_with(man);
+    let rng = sim.scenario_rng.native_state_hex();
+    let applied = sim.apply_command(
+        "Allies",
+        &crate::sim::command::Command::Scatter { entity_id: 1 },
+        None,
+    );
+    assert!(!applied);
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+}
