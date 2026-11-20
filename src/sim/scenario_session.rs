@@ -1887,6 +1887,10 @@ impl ScenarioSession {
         self.game_mode == ScenarioGameMode::Wol && self.wol_tournament != 0
     }
 
+    pub(crate) const fn wol_tournament(&self) -> i32 {
+        self.wol_tournament
+    }
+
     pub(crate) fn wol_squad_lists(&self) -> &[Vec<String>; 2] {
         &self.wol_squad_lists
     }

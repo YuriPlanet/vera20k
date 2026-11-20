@@ -289,6 +289,68 @@ fn delegated_infantry_grinds_when_its_house_is_hostile_to_the_viewer() {
     assert!(sim.houses()[&delegated].economy().credits() > credits);
 }
 
+/// An unarmed Infantryman reaches the Grinder row through base Select
+/// (0x0070056C..0x007005E6), even across an alliance. Delegated command
+/// authority over that Grinder does not let a different House feed it.
+#[test]
+fn allied_delegated_grinder_refuses_other_house_infantry_on_hover_and_click() {
+    use crate::app::input::entity_pick::hover_object_by_id;
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let (mut sim, grinder, _, _) = scene(rules, "Russians");
+    let infantry = sim
+        .spawn_object("CIV1", "Americans", 14, 17, 0, rules)
+        .unwrap();
+    sim.install_session_mode(ScenarioGameMode::Lan);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::FullControl,
+    }])
+    .unwrap();
+
+    let Some(HoverObject::Techno(hover)) = hover_object_by_id(&sim, grinder, "Americans") else {
+        panic!("expected the Grinder's live hover classification");
+    };
+    assert_eq!(hover.kind, HoverTargetKind::FriendlyStructure);
+    assert_eq!(
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[infantry],
+            Some(infantry),
+            &hover,
+            Some(rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+            false,
+        )),
+        Some(CursorId::NoEnter)
+    );
+    assert_eq!(
+        entry_orders(
+            &sim,
+            rules,
+            &[infantry],
+            &mut vec![infantry],
+            &hover,
+            OrderModifier::Normal,
+            false,
+            Some(&registry),
+        ),
+        Some(Vec::new())
+    );
+}
+
 /// Over an ally's Grinder an armed player's object has base action 0, not
 /// Select (`0x0070056C`), so neither grinder row runs and the click sends no
 /// one to be ground; the Unit tail (`0x007403EB`) makes the vehicle's NoMove

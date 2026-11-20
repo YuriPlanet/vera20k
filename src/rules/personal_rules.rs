@@ -14,7 +14,8 @@ use std::borrow::Cow;
 
 use crate::rules::ini_parser::IniFile;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PersonalRules {
     /// The skirmish Game Options' Terrain Deformation box (`[VERA] TerrainDeformation=`
     /// in VERA.INI). Each new scenario's root reads it, so it needs no restart.

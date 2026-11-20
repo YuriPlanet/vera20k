@@ -176,6 +176,10 @@ struct LogicRequest<'a> {
 }
 
 impl Simulation {
+    pub(crate) fn has_suspended_frame(&self) -> bool {
+        self.frame_continuation.is_some()
+    }
+
     /// Mark the step the frame enters: it advances the world's revision, and
     /// tests observe the step itself.
     #[inline]

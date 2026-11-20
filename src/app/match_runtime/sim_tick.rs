@@ -75,6 +75,16 @@ pub(crate) fn prepare_replay_recording(state: &mut AppState) {
                 .live_network
                 .as_ref()
                 .is_some_and(|live| live.dispatches_every_frame()),
+            state
+                .match_state
+                .session
+                .network_wol_start()
+                .is_some_and(|start| start.quick_coop),
+            state
+                .process_assets
+                .native_rules()
+                .map(|owner| owner.personal_rules().clone())
+                .unwrap_or_default(),
         );
     }
 }
@@ -101,9 +111,14 @@ pub(crate) fn close_replay_segment_for_new_timeline(state: &mut AppState) {
     }
 }
 
-fn replay_flush_facts(state: &AppState) -> (u64, u64) {
-    let session_tick = state
-        .match_state
+fn replay_flush_facts(state: &mut AppState) -> (u64, u64) {
+    let active = &mut state.match_state;
+    if let Some(log) = &mut active.match_diagnostics.replay_log
+        && let Some(rt) = active.sim_runtime.home_runtime()
+    {
+        log.finish(&rt.simulation);
+    }
+    let session_tick = active
         .sim_runtime
         .runtime()
         .map_or(0, |rt| rt.simulation.session().tick());
@@ -1351,6 +1366,7 @@ fn advance_in_game_runtime_mode(
             if state.match_state.frame_stopped
                 || state.match_state.scenario_outcome.is_some()
                 || state.match_state.scenario_exit.is_some()
+                || crate::app::App::local_outcome_exit_ready(state)
                 || crate::app::App::house_outcome_wait_pending(state)
             {
                 break;
@@ -1707,16 +1723,11 @@ pub(crate) fn debug_speed_allowed(state: &AppState) -> bool {
         && state.match_state.live_network.is_none()
 }
 
-/// Tick simulation: advance movement and animation systems.
-fn should_record_replay_tick(
-    tick_result: &crate::sim::world::TickResult,
-    due_commands: &[crate::sim::command::CommandEnvelope],
-    network_failure: bool,
-) -> bool {
-    !network_failure
-        && (tick_result.frame_committed
-            || !due_commands.is_empty()
-            || tick_result.terminal_score_finalized)
+fn should_record_replay_tick(tick_result: &crate::sim::world::TickResult) -> bool {
+    // The frame tail always emits a hash on a completed terminal frame,
+    // including Cooperative's result without a score snapshot. Suspended
+    // prefixes leave both the frame commit and hash for the resumed tail.
+    tick_result.frame_committed || tick_result.state_hash.is_some()
 }
 
 /// Complete the exact frame suspended by ExecuteDoList's message box. Reuse
@@ -2531,9 +2542,6 @@ fn finish_simulation_frame(
                 combat_lights,
                 lighting_events,
                 multiplayer_checksum,
-                network_failure,
-                network_waiting,
-                outcome_waiting,
                 ..
             } = output;
             // Queue_AI already published this checksum to the process session
@@ -2682,14 +2690,8 @@ fn finish_simulation_frame(
                 local_owner_name.as_deref(),
                 &mut state.match_state.match_audio.sound_events,
             );
-            // Both terminal routes belong to the deterministic stream even
-            // though Main_Tick skips its frame commit. EventClass EXIT carries
-            // a command; natural win/loss carries the one-shot score/RNG latch.
-            if should_record_replay_tick(
-                &tick_result,
-                &admitted_commands,
-                network_failure.is_some() || network_waiting || outcome_waiting,
-            ) && let Some(log) = &mut state.match_state.match_diagnostics.replay_log
+            if should_record_replay_tick(&tick_result)
+                && let Some(log) = &mut state.match_state.match_diagnostics.replay_log
             {
                 log.record_tick(tick_result.tick, admitted_commands, tick_result.state_hash);
             }
@@ -3866,31 +3868,24 @@ mod modal_pump_tests {
     }
 
     #[test]
-    fn empty_natural_terminal_score_frame_is_recorded() {
+    fn completed_cooperative_terminal_frame_without_score_is_recorded() {
         let tick = crate::sim::world::TickResult {
             tick: 10,
             frame_committed: false,
             executed_commands: 0,
             state_hash: Some(123),
-            terminal_score_finalized: true,
+            terminal_score_finalized: false,
             spawned_entities: false,
             destroyed_structure: false,
             ownership_changed: false,
             bridge_state_changed: false,
         };
 
-        assert!(should_record_replay_tick(&tick, &[], false));
-        // A suspended prefix may already carry an outcome, but the complete
-        // admitted journal and final hash arrive only after Stop resumes it.
-        assert!(!should_record_replay_tick(&tick, &[], true));
-        assert!(!should_record_replay_tick(
-            &crate::sim::world::TickResult {
-                terminal_score_finalized: false,
-                ..tick
-            },
-            &[],
-            false
-        ));
+        assert!(should_record_replay_tick(&tick));
+        assert!(!should_record_replay_tick(&crate::sim::world::TickResult {
+            state_hash: None,
+            ..tick
+        }));
     }
 
     #[test]

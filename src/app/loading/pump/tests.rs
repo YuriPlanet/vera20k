@@ -62,8 +62,12 @@ pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSessi
 #[test]
 fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
     use crate::app::match_runtime::session::{MatchSession, SessionMode};
+    use crate::sim::scenario_bootstrap::MatchLaunchDescriptor;
     let startup = LoadingStartup::Replay {
-        session: test_launch_session(LaunchCountry::America),
+        launch: Box::new(
+            MatchLaunchDescriptor::from_resolved(test_launch_session(LaunchCountry::America))
+                .unwrap(),
+        ),
         seed: crate::app::match_bootstrap::MatchSeed {
             value: 73,
             source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
@@ -71,7 +75,6 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
         },
         game_mode: SessionMode::Wol,
         native_id_prefix: 0,
-        authority: None,
     };
     assert!(!crate::app::loading::init::should_read_tmcj4f(
         startup.session_mode(),
@@ -79,16 +82,15 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
     ));
     let replay_with_mode = |game_mode| match &startup {
         LoadingStartup::Replay {
-            session,
+            launch,
             seed,
             native_id_prefix,
             ..
         } => LoadingStartup::Replay {
-            session: session.clone(),
+            launch: launch.clone(),
             seed: *seed,
             game_mode,
             native_id_prefix: *native_id_prefix,
-            authority: None,
         },
         _ => unreachable!("test startup is a Replay"),
     };
@@ -118,8 +120,8 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
 
 #[test]
 fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
-    use crate::app::match_bootstrap::ReplayLoadAuthority;
     use crate::rules::rule_policy::{BootstrapRuleProfile, RulePolicy};
+    use crate::sim::scenario_bootstrap::MatchLaunchDescriptor;
     use crate::sim::scenario_session::{ExecutionTopology, ScenarioDescriptor, ScenarioGameMode};
     use crate::sim::world::Simulation;
     use crate::skirmish_modes::MpModeClass;
@@ -128,8 +130,12 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
     let skirmish_rules = RulePolicy::stock_multiplayer();
     let install = |raw_mode, recorded_policy: Option<RulePolicy>, expected_construction| {
         let game_mode = ScenarioGameMode::from_game_mode(raw_mode);
+        let mut launch = MatchLaunchDescriptor::from_resolved(session.clone()).unwrap();
+        if let Some(policy) = recorded_policy {
+            launch = launch.with_rule_policy(policy);
+        }
         let startup = LoadingStartup::Replay {
-            session: session.clone(),
+            launch: Box::new(launch),
             seed: crate::app::match_bootstrap::MatchSeed {
                 value: 73,
                 source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
@@ -137,13 +143,6 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
             },
             game_mode,
             native_id_prefix: 0,
-            authority: recorded_policy.map(|rule_policy| {
-                Box::new(ReplayLoadAuthority {
-                    rule_policy,
-                    rule_policy_override: Some(rule_policy),
-                    control_grants: Vec::new(),
-                })
-            }),
         };
         let construction_rules = startup
             .match_spec_for_construction(BootstrapRuleProfile::Multiplayer)
@@ -2598,16 +2597,20 @@ fn a_loaded_network_screen_holds_until_its_install_time() {
 /// random maps, which read their rules while they are made.
 #[test]
 fn map_additions_reach_matches_but_not_missions_or_random_maps() {
-    use crate::app::match_bootstrap::ReplayLoadAuthority;
     use crate::app::match_runtime::session::SessionMode;
     use crate::rules::rule_policy::RulePolicy;
+    use crate::sim::scenario_bootstrap::MatchLaunchDescriptor;
     use crate::skirmish_modes::MpModeClass::{Battle, Cooperative};
     let reach = |class, map: &str, game_mode, rule_override: Option<RulePolicy>| {
         let mut session = test_launch_session(LaunchCountry::America);
         session.mode.class = class;
         session.selected_map_file = Some(map.to_owned());
+        let mut launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        if let Some(policy) = rule_override {
+            launch = launch.with_rule_policy(policy);
+        }
         crate::app::mod_additions::reach(&LoadingStartup::Replay {
-            session,
+            launch: Box::new(launch),
             seed: crate::app::match_bootstrap::MatchSeed {
                 value: 73,
                 source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
@@ -2615,13 +2618,6 @@ fn map_additions_reach_matches_but_not_missions_or_random_maps() {
             },
             game_mode,
             native_id_prefix: 0,
-            authority: rule_override.map(|rule_policy| {
-                Box::new(ReplayLoadAuthority {
-                    rule_policy,
-                    rule_policy_override: Some(rule_policy),
-                    control_grants: Vec::new(),
-                })
-            }),
         })
     };
     assert!(reach(Battle, "mp01t4.map", SessionMode::Lan, None));

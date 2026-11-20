@@ -139,22 +139,28 @@ impl FreshScenarioLoadContextDescriptor {
                 },
             });
         }
-        let (session, match_seed, startup_provenance) = match startup {
+        let resolve = |session: &crate::skirmish_launch::SkirmishLaunchSession| {
+            MatchLaunchDescriptor::from_resolved(session.clone())
+                .map_err(|err| anyhow::anyhow!("fresh stock-offline launch is unresolved: {err}"))
+        };
+        let (mut launch, match_seed, startup_provenance) = match startup {
             LoadingStartup::Accepted(prepared) => (
-                prepared.session.launch_session().clone(),
+                resolve(prepared.session.launch_session())?,
                 prepared.seed.value,
                 FreshStartupProvenance::Accepted,
             ),
             LoadingStartup::Network(prepared) => (
-                prepared.launch_session().clone(),
+                resolve(prepared.launch_session())?,
                 prepared.seed.value,
                 FreshStartupProvenance::NetworkAccepted,
             ),
-            LoadingStartup::Replay { session, seed, .. } => {
-                (session.clone(), seed.value, FreshStartupProvenance::Replay)
-            }
+            LoadingStartup::Replay { launch, seed, .. } => (
+                launch.as_ref().clone(),
+                seed.value,
+                FreshStartupProvenance::Replay,
+            ),
             LoadingStartup::UnverifiedLegacy { session, seed } => (
-                session.clone(),
+                resolve(session)?,
                 seed.value,
                 FreshStartupProvenance::ResolvedLegacy,
             ),
@@ -163,20 +169,12 @@ impl FreshScenarioLoadContextDescriptor {
             }
             LoadingStartup::Campaign(_) => unreachable!("campaign admitted above"),
         };
-        let mut launch = MatchLaunchDescriptor::from_resolved(session.clone())
-            .map_err(|err| anyhow::anyhow!("fresh stock-offline launch is unresolved: {err}"))?;
         if let LoadingStartup::Network(prepared) = startup
             && prepared.wol_start().quick_coop
         {
             launch = launch.with_quick_coop_starts();
         }
-        if let LoadingStartup::Replay {
-            authority: Some(authority),
-            ..
-        } = startup
-        {
-            launch = launch.with_control_grants(authority.control_grants.clone());
-        }
+        let session = launch.session();
         let selected_map = session
             .selected_map_file
             .as_deref()
@@ -356,8 +354,13 @@ impl FreshScenarioLoadContextDescriptor {
                 prepared.seed.value,
                 prepared.launch_session(),
             ),
-            LoadingStartup::Replay { session, seed, .. } => {
-                (FreshStartupProvenance::Replay, seed.value, session)
+            LoadingStartup::Replay { launch, seed, .. } => {
+                if launch.as_ref() != self.stock_offline_launch() {
+                    anyhow::bail!(
+                        "fresh descriptor replay launch changed before terminal transfer"
+                    );
+                }
+                (FreshStartupProvenance::Replay, seed.value, launch.session())
             }
             LoadingStartup::UnverifiedLegacy { session, seed } => {
                 (FreshStartupProvenance::ResolvedLegacy, seed.value, session)
