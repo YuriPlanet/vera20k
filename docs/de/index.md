@@ -8,6 +8,8 @@ lang: de
 
 [Svenska](../sv/) · [简体中文](../zh-CN/) · **Deutsch** · [العربية](../ar/) · [Русский](../ru/) · [ไทย](../th/) · [Türkçe](../tr/) · [English](../)
 
+[Kampagnenmanifeste](campaign-manifest.md)
+
 Red Alert 2: Yuri's Revenge — in Rust von Grund auf neu entwickelt.
 
 Eine kurze Übersicht über den Code. Wenn sie dem Code widerspricht, hat der Code recht. Der `//!`-Kommentar am Anfang jedes Moduls beschreibt, was es tut und wovon es abhängen darf.

@@ -882,7 +882,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             }
             installed.map_err(|error| error.to_string())
         }
-        crate::app::match_bootstrap::LoadingStartup::Replay { .. } => {
+        crate::app::match_bootstrap::LoadingStartup::Replay { .. }
+        | crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. } => {
             state.match_state.startup.clear();
             let playback = match (
                 state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle),
@@ -900,8 +901,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             match playback {
                 Ok(effects) => initial_replay_effects = effects,
                 Err(error) => {
-                    let message = format!("Replay startup failed: {error:#}");
-                    log::error!("{message}");
+                    log::error!("Replay startup failed: {error:#}");
+                    let message = if matches!(startup, crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }) {
+                        crate::i18n::tr("VERA:CampaignReplayUnavailable")
+                    } else {
+                        format!("Replay startup failed: {error:#}")
+                    };
                     state.frontend.external_launch_error = Some(message);
                 }
             }

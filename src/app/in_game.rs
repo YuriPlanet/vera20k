@@ -911,6 +911,9 @@ impl App {
             ScenarioExitDestination::CooperativeResult { victory } => {
                 crate::app::cooperative_round::open_result(state, victory)
             }
+            ScenarioExitDestination::AuthoredCampaignResult(outcome) => {
+                crate::app::match_runtime::stage_result::open(state, outcome)
+            }
             ScenarioExitDestination::MainMenu => {
                 Self::return_to_main_menu(state);
             }
