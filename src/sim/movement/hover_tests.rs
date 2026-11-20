@@ -300,6 +300,38 @@ fn zero_hover_time_keys_reach_the_target_at_once() {
     assert_eq!(hover.speed_current, NativeF64Bits::from_bits(0));
 }
 
+/// `HoverBoost=1e999` reads as infinity, which the masked FPU carries: a zero
+/// request then makes the target `inf * 0`, NaN, and the unordered compare
+/// at 0x0051615E (`TEST AH,0x1`) makes that target 1, so the Foot keeps
+/// ramping up exactly as it does toward a full request.
+#[test]
+fn infinite_hover_boost_ramps_toward_full_speed() {
+    let infinite = RuleSet::from_ini(&IniFile::from_str("[General]\nHoverBoost=1e999\n")).unwrap();
+    let ordinary = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut boosted = HoverRuntime::moving_for_test(None, NativeF64Bits::ONE);
+    let mut plain = boosted.clone();
+    boosted.ramp_speed(true, &infinite);
+    boosted.speed_request = NativeF64Bits::POSITIVE_ZERO;
+    boosted.ramp_speed(true, &infinite);
+    plain.ramp_speed(false, &ordinary);
+    plain.ramp_speed(false, &ordinary);
+    assert_eq!(boosted.speed_mult, infinite.general.hover_boost);
+    assert_eq!(boosted.speed_current, plain.speed_current);
+}
+
+/// `HoverDampen=1e999` reads as infinity: the spring offset becomes
+/// `(offset - Gravity) * inf`, -inf, and the next step's height converts
+/// that through ftol's integer indefinite instead of trapping.
+#[test]
+fn infinite_hover_dampen_drives_the_spring_to_negative_infinity() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("[General]\nHoverDampen=1e999\n")).unwrap();
+    let mut hover = HoverRuntime::default();
+    let height = rules.general.hover_height;
+    hover.altitude_step(height, false, 1, 0, true, &rules);
+    hover.altitude_step(height, false, 1, 1, true, &rules);
+    assert_eq!(hover.bob_offset.bits(), f64::NEG_INFINITY.to_bits());
+}
+
 /// The altitude controller: SetHeight's argument and the spring offset. The
 /// climbing test's answer is the original run's (0x00513DC8 compare); the
 /// ground-ahead lookup that feeds it (`hover_altitude`) is not compared.
