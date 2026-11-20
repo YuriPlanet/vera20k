@@ -513,10 +513,8 @@ impl Simulation {
         let membership_updates = self
             .substrate
             .entities
-            .keys_sorted()
-            .into_iter()
-            .filter_map(|stable_id| {
-                let entity = self.substrate.entities.get(stable_id)?;
+            .iter_sorted()
+            .map(|(stable_id, entity)| {
                 let member = crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (
                         i32::from(entity.position.rx()),
@@ -541,7 +539,7 @@ impl Simulation {
                 } else {
                     Vec::new()
                 };
-                Some((stable_id, member, clients))
+                (stable_id, member, clients)
             })
             .collect::<Vec<_>>();
         // Set_Clipped_LocalSize's exact store (`0x0056730E`).
