@@ -1548,7 +1548,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["mapgen"].as_str().unwrap());
         sim.session

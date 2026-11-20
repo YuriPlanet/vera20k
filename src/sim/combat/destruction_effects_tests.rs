@@ -1055,7 +1055,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             // Match the native control's complete ambient streams after
             // setup. The physical Super section above is parsed by the same
             // production reader; ignoreDefenses bypasses armor calculation.
-            sim.main_rng = SimRng::new(1).into();
+            sim.main_rng = SimRng::new(1);
             sim.scenario_rng = SimRng::new(1);
             sim.mapgen_rng = SimRng::new(1);
             replay = sim.scenario_rng.clone();

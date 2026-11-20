@@ -948,7 +948,8 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
         let live_dummy = runtime.simulation.effective_shared_cell_dummy();
         live_dummy.adopt_prepared_load_state(&restored.effective_shared_cell_dummy());
         restored.bind_shared_cell_dummy(live_dummy);
-        restored.install_fresh_process_main(runtime.simulation.main_rng());
+        // No app process cell here: the install writes a stand-in nothing reads.
+        restored.install_fresh_process_main(&crate::sim::rng::MainRng::new(0));
         restored.publish_scenario_started();
         runtime.replace_simulation(restored);
         assert_eq!(

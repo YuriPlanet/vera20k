@@ -2518,7 +2518,7 @@ pub(crate) fn handle_death(
                     .zip(overrides)
                 {
                     if let Some(sound) =
-                        select_death_sound(choices, &world.main_rng).and_then(|sound| {
+                        select_death_sound(choices, &mut world.main_rng).and_then(|sound| {
                             match sound_override {
                                 Some(cue) => cue.map(str::to_owned),
                                 None => Some(sound),

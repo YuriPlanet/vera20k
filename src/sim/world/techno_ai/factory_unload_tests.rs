@@ -85,8 +85,7 @@ fn f64_hex(value: f64) -> String {
 /// no Rust seed/search supplies a replacement Random2 decision.
 fn import_rng(sim: &mut Simulation, native: &Value) {
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(native["main"]["before_hex"].as_str().unwrap())
-            .into();
+        SimRng::from_native_state_hex_for_test(native["main"]["before_hex"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(native["scenario"]["before_hex"].as_str().unwrap());
     sim.mapgen_rng =
@@ -1037,7 +1036,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
         }
         sim.session.set_binary_frame_for_test(now);
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["scenario"].as_str().unwrap());
         sim.mapgen_rng =

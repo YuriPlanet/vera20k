@@ -157,7 +157,7 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
     let building = case["building"].as_str().unwrap();

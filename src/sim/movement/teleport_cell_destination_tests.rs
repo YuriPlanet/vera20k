@@ -334,7 +334,7 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
 }
 
 fn import_rng(sim: &mut Simulation, native: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
 }

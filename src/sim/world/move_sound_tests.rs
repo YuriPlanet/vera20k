@@ -46,7 +46,7 @@ fn assert_rng(sim: &Simulation, expected: &Value, context: &str) {
 fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     let seed = input["seed"].as_u64().unwrap_or(31);
     let mut sim = Simulation::with_seed(seed);
-    sim.main_rng = SimRng::new(seed).into();
+    sim.main_rng = SimRng::new(seed);
     sim.scenario_rng = SimRng::new(seed);
     sim.mapgen_rng = SimRng::new(seed);
     sim.intern_rule_type_ids(rules);
@@ -188,7 +188,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
         Simulation::tick_move_sound_after_process(
             &sim.interner,
             &sim.session,
-            &sim.main_rng,
+            &mut sim.main_rng,
             &mut sim.substrate,
             &mut sim.sound_events,
             &sim.houses,
@@ -582,8 +582,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
     sim.session
         .set_binary_frame_for_test(steps[0]["frame"].as_u64().unwrap() as u32);
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(steps[0]["before"]["rng"]["main"].as_str().unwrap())
-            .into();
+        SimRng::from_native_state_hex_for_test(steps[0]["before"]["rng"]["main"].as_str().unwrap());
     for step in steps {
         let native_frame = step["frame"].as_u64().unwrap() as u32;
         assert_eq!(

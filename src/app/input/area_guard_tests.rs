@@ -187,7 +187,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
     // original process streams from the observed input boundary, without
     // reproducing their seed/draw arithmetic in this test.
     *sim.main_rng_mut_for_test() =
-        SimRng::from_native_state_hex_for_test(rng_hex(row, before, "main")).into();
+        SimRng::from_native_state_hex_for_test(rng_hex(row, before, "main"));
     *sim.scenario_rng_mut_for_test() =
         SimRng::from_native_state_hex_for_test(rng_hex(row, before, "scenario"));
     *sim.mapgen_rng_mut_for_test() =

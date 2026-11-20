@@ -640,10 +640,10 @@ pub struct SnapshotMapRestoreOutput {
 }
 
 /// Retail asset admission on restored live cells, before derived map publication.
-/// The callback can advance Main without obtaining seed/replacement authority.
+/// The callback draws the candidate's Main and nothing else of it.
 pub type SnapshotTerrainAssetPreparation<'a> = dyn FnMut(
         &mut crate::map::resolved_terrain::ResolvedTerrainGrid,
-        crate::sim::rng::MainRngDraws,
+        &mut crate::sim::rng::SimRng,
         i32,
     ) -> Result<(), String>
     + 'a;

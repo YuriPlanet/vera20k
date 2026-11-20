@@ -565,7 +565,7 @@ fn stock_terror_drone_internal_restore_keeps_rock_and_restarts_its_bite_timer() 
     // Explicit process-stream continuation input for this internal Rust
     // state test; no app/native SaveGame or RNG persistence claim.
     loaded.scenario_rng = scene.sim.scenario_rng.clone();
-    loaded.main_rng = scene.sim.main_rng.snapshot_for_test().into();
+    loaded.main_rng = scene.sim.main_rng.clone();
     loaded.mapgen_rng = scene.sim.mapgen_rng.clone();
     loaded.restore_after_snapshot_load().unwrap();
     loaded.rebuild_caches_after_load(
@@ -894,8 +894,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
         initial["native_cursor"].as_u64().unwrap() as u32,
     ));
     scene.sim.main_rng =
-        SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap())
-            .into();
+        SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap());
     scene.sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["scenario"].as_str().unwrap());
     scene.sim.mapgen_rng =

@@ -1491,8 +1491,7 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
             row["native_cursor_before"].as_u64().unwrap() as u32,
         ));
         world.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         world.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         world.mapgen_rng =

@@ -269,7 +269,7 @@ pub(crate) fn erupted(
                 i32::from(y),
             )
             .get_coords();
-            let main = &world.main_rng;
+            let main = &mut world.main_rng;
             let to = ProjectileCoord::new(
                 center
                     .x

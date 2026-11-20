@@ -60,8 +60,7 @@ fn ordinary_spark() -> &'static Value {
 }
 
 fn restore_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());

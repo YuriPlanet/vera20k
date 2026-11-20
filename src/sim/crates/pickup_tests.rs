@@ -1751,7 +1751,7 @@ fn retail_cash_pickup_does_not_rebind_a_failed_animation_until_reread() {
 /// bootstrap claim. The ordinary app Move capture covers that integration.
 #[test]
 fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
-    use crate::sim::rng::{MainRng, SimRng};
+    use crate::sim::rng::SimRng;
     use serde_json::json;
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Hills.mmx")
@@ -1866,7 +1866,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         );
         let placement_seed = input["placement_seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(placement_seed);
-        sim.main_rng = MainRng::new(placement_seed);
+        sim.main_rng = SimRng::new(placement_seed);
         sim.mapgen_rng = SimRng::new(placement_seed);
         assert!(
             super::super::place_crate(
@@ -1930,7 +1930,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         );
         let seed = input["seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = MainRng::new(seed);
+        sim.main_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         let rng = |sim: &Simulation| {
             json!({"scenario": sim.scenario_rng.native_state_hex(),

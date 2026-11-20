@@ -282,7 +282,7 @@ impl Simulation {
                     } else {
                         &object.die_sounds
                     },
-                    &self.main_rng,
+                    &mut self.main_rng,
                 )
             {
                 self.sound_events

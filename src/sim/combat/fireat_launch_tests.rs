@@ -410,7 +410,7 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
     for _ in 0..3 {
         duel.sim.scenario_rng.next_u32();
     }
-    duel.sim.main_rng = SimRng::new(0).into();
+    duel.sim.main_rng = SimRng::new(0);
     duel.sim.mapgen_rng = SimRng::new(0);
     assert_rng(&duel.sim, &expiry["rng_before"], "before UnInit");
     assert_timer(&duel.sim, before_timer);

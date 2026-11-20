@@ -382,8 +382,7 @@ fn whole_unit_fixture(
     );
     fixture.sim.main_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         first["rng_before"]["main"].as_str().unwrap(),
-    )
-    .into();
+    );
     fixture.sim.mapgen_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         first["rng_before"]["mapgen"].as_str().unwrap(),
     );

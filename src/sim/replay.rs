@@ -940,7 +940,7 @@ impl ReplayStartup {
             map_sha256: map_sha256.to_owned(),
             blueprint,
             scenario_rng: sim.scenario_rng().clone(),
-            main_rng: sim.main_rng().checkpoint(),
+            main_rng: sim.main_rng().clone(),
             mapgen_rng: sim.mapgen_rng().clone(),
             initial_hash: sim.state_hash(),
             every_frame_network,

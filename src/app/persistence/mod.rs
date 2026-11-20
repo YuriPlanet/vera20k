@@ -359,9 +359,11 @@ impl PreparedLoad {
         self,
         runtime: &mut crate::sim::runtime::SimRuntime,
     ) -> CommittedLoadPresentation {
+        // These fixtures keep no app process cell: the install writes a
+        // stand-in one that nothing reads.
         let (simulation, presentation) = self.into_committed(
             runtime.simulation.effective_shared_cell_dummy(),
-            runtime.simulation.main_rng(),
+            &crate::sim::rng::MainRng::new(0),
         );
         runtime.replace_simulation(simulation);
         presentation

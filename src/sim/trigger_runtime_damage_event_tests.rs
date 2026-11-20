@@ -106,7 +106,7 @@ fn timer(value: &Value) -> CdTimer {
 
 fn install_rng_boundary(sim: &mut Simulation, states: &Value) {
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 

@@ -612,7 +612,7 @@ impl Simulation {
                 self.resolved_terrain
                     .as_mut()
                     .expect("validated terrain cache"),
-                self.main_rng.draws(),
+                &mut self.main_rng,
                 size_width,
             )
             .map_err(|reason| SnapshotRestoreError::TerrainAssetPreparationFailed { reason })?;

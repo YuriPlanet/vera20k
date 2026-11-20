@@ -359,7 +359,7 @@ impl MindScene {
         let mut loaded = crate::sim::snapshot::GameSnapshot::load(&saved)
             .unwrap()
             .sim;
-        loaded.main_rng = self.sim.main_rng.snapshot_for_test().into();
+        loaded.main_rng = self.sim.main_rng.clone();
         loaded.scenario_rng = self.sim.scenario_rng.clone();
         loaded.mapgen_rng = self.sim.mapgen_rng.clone();
         loaded.restore_after_snapshot_load().unwrap();

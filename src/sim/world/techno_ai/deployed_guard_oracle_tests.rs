@@ -297,7 +297,7 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
     }
     // All three original Random2Class objects execute Seed(input.seed) after
     // the supplied actor is prepared. Constructor draws are outside this seam.
-    sim.main_rng = SimRng::new(input["seed"].as_u64().unwrap()).into();
+    sim.main_rng = SimRng::new(input["seed"].as_u64().unwrap());
     sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
     sim.mapgen_rng = SimRng::new(input["seed"].as_u64().unwrap());
     sim.resolve_type_handles(&rules);

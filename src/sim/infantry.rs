@@ -994,7 +994,7 @@ mod tests {
             ),
         );
         sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(31).into();
+        sim.main_rng = SimRng::new(31);
         sim.mapgen_rng = SimRng::new(31);
         let owner = sim.interner.intern("FearOwner");
         let mut house = HouseState::new(
@@ -1464,7 +1464,7 @@ mod tests {
                 crate::sim::mission::MissionTimer::armed(frame, 0);
             sim.scenario_rng = SimRng::new(scenario_seed);
             sim.sound_events.clear_for_test();
-            let before = sim.main_rng.snapshot_for_test();
+            let before = sim.main_rng.clone();
             assert!(
                 sim.infantry_idle_action(man, &rules, None, Default::default())
                     .unwrap()

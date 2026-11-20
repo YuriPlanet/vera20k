@@ -521,7 +521,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
             .expect("moving ramp snapshot")
             .sim;
         // The original and restored controls run as independent test processes.
-        restored.main_rng = sim.main_rng.snapshot_for_test().into();
+        restored.main_rng = sim.main_rng.clone();
         restored.mapgen_rng = sim.mapgen_rng.clone();
         restored
             .restore_after_snapshot_load()

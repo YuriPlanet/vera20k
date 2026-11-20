@@ -363,7 +363,8 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             let live_dummy = sim.effective_shared_cell_dummy();
             live_dummy.adopt_prepared_load_state(&loaded.effective_shared_cell_dummy());
             loaded.bind_shared_cell_dummy(live_dummy);
-            loaded.install_fresh_process_main(sim.main_rng());
+            // No app process cell here: the install writes a stand-in nothing reads.
+            loaded.install_fresh_process_main(&crate::sim::rng::MainRng::new(0));
             loaded.publish_scenario_started();
             runtime.replace_simulation(loaded);
             snapshot_product = Some(held_id);

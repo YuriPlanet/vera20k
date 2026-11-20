@@ -293,7 +293,7 @@ fn with_world<R>(
         world.houses = std::mem::take(houses);
     }
     if let Some(rng) = main_rng.as_deref() {
-        world.main_rng = rng.clone().into();
+        world.main_rng = rng.clone();
     }
     world.scenario_rng = scenario_rng.clone();
     world.overlay_grid = overlay_grid.as_deref().cloned();
@@ -361,7 +361,7 @@ fn with_world<R>(
         *houses = world.houses;
     }
     if let Some(rng) = main_rng {
-        *rng = world.main_rng.into_rng_for_test();
+        *rng = world.main_rng;
     }
     *scenario_rng = world.scenario_rng;
     if let Some(grid) = overlay_grid {

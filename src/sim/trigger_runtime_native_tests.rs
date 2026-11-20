@@ -2330,8 +2330,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         &native["reactor_native_unique_id"],
     ) as u32));
     let rng_before = &native["rng_state_before"];
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
@@ -2576,7 +2575,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         sim.session.install_waypoints(&waypoints);
         sim.trigger_runtime.definitions = definitions;
         sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(31).into();
+        sim.main_rng = SimRng::new(31);
         sim.mapgen_rng = SimRng::new(31);
         let hashes = |sim: &Simulation| {
             json!({
@@ -3287,8 +3286,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
         let rng_before = &control["member_rng_before"];
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
         let (added, add_draws) = crate::sim::rng::trace_draws(|| {
@@ -4046,8 +4044,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
             // fixed-map Simulation's process default Seed(0).
             sim.scenario_rng =
                 SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-            sim.main_rng =
-                SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+            sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
             sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
         }

@@ -164,8 +164,7 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
         // Admit the harness's incoming stream states after the supplied
         // Building fixture; construction draws are outside this history.
         let seeds = &data["rng_seed_states"];
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
@@ -269,8 +268,7 @@ fn house_hold_pass_matches_original_retained_power_histories() {
             .or_default()
             .insert(type_id, instance);
         let seeds = &data["rng_seed_states"];
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
