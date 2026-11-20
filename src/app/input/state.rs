@@ -501,19 +501,21 @@ impl MatchInputState {
         }
     }
 
-    /// Record one ordinary tactical selection click and answer whether it is
-    /// the second click of a double-click. The modern-RTS
+    /// Record one tactical selection click and answer whether it is the
+    /// second click of a double-click. The modern-RTS
     /// select-same-type-on-screen shortcut is a VERA extension of
-    /// `RightClickOrders`, so with the option off the chain is discarded.
+    /// `RightClickOrders`: a click it does not admit (the option off, or a
+    /// click a held T, a modifier or an armed attack-move claims) discards the
+    /// chain, so it never pairs with the next plain click.
     /// `point` is in physical window pixels, the space the host's double-click
     /// rectangle is measured in.
     pub(crate) fn note_tactical_selection_click(
         &mut self,
-        right_click_orders: bool,
+        admitted: bool,
         now: crate::util::time::Instant,
         point: (i32, i32),
     ) -> bool {
-        if !right_click_orders {
+        if !admitted {
             self.last_selection_click = None;
             return false;
         }
@@ -1056,8 +1058,8 @@ mod double_click_tests {
     use super::*;
 
     /// The modern-RTS double-click is a `RightClickOrders` extension: with the
-    /// option off no chain accumulates, and a pair ends it so the next click
-    /// starts over. Times and the point are far inside any host window.
+    /// option off, or after a click it does not admit, no chain accumulates,
+    /// and a pair ends it so the next click starts over. Times and the point are far inside any host window.
     #[test]
     fn right_click_orders_double_click_pairs_quick_same_spot_selection_clicks_only() {
         let mut input = MatchInputState::new(Default::default());
@@ -1069,6 +1071,9 @@ mod double_click_tests {
         assert!(!input.note_tactical_selection_click(true, start, point));
         assert!(input.note_tactical_selection_click(true, shortly(5), point));
         assert!(!input.note_tactical_selection_click(true, shortly(10), point));
+        // A Shift-click between two plain clicks ends the chain.
+        assert!(!input.note_tactical_selection_click(false, shortly(15), point));
+        assert!(!input.note_tactical_selection_click(true, shortly(20), point));
     }
 }
 

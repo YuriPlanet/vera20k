@@ -1174,8 +1174,9 @@ pub(crate) fn compute_double_click_type_select_with_playfield(
         terrain,
     )?;
     let entities = source.entities();
+    let control = source.selection_control();
     let clicked = entities.get(clicked_id)?;
-    if !type_select_owner_admits(source, local_owner, clicked, interner) {
+    if !type_select_owner_admits(control.as_ref(), local_owner, clicked, interner) {
         return None;
     }
     let type_id = interner.map_or("", |i| i.resolve(clicked.type_ref()));
@@ -1186,6 +1187,7 @@ pub(crate) fn compute_double_click_type_select_with_playfield(
     push_type_select_entity_seeds(&mut seeds, clicked, rules, interner);
     let visible = type_select_candidates(
         source,
+        control.as_ref(),
         screen_order,
         &seeds,
         fog,

@@ -678,22 +678,24 @@ fn tactical_left_up(state: &mut AppState) {
     // point selects every on-screen object of the clicked object's type, the
     // modern-RTS shortcut for the T key's screen pass. It rides on the option
     // and on an ordinary selection click only: a held T, a modifier chord or
-    // an armed attack-move keeps the click it already has. The chain records
-    // every ordinary selection click, so the next one can pair with it.
+    // an armed attack-move keeps the click it already has and ends the chain,
+    // so it never pairs with the next plain click. The chain records every
+    // ordinary selection click, so the next one can pair with it.
     if let SelectAction::Click(sx, sy) = action {
-        let window_point = state
-            .tactical_zoom()
-            .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
-        let right_click_orders = state.persistence.options_profile.right_click_orders;
-        let double_click = state.match_state.input.note_tactical_selection_click(
-            right_click_orders,
-            crate::util::time::Instant::now(),
-            (window_point.0.round() as i32, window_point.1.round() as i32),
-        ) && !type_select_held
+        let ordinary = !type_select_held
             && !shift
             && !is_ctrl_held(state)
             && !is_alt_held(state)
             && state.match_state.input.queued_order_mode == OrderMode::Move;
+        let window_point = state
+            .tactical_zoom()
+            .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
+        let admitted = ordinary && state.persistence.options_profile.right_click_orders;
+        let double_click = state.match_state.input.note_tactical_selection_click(
+            admitted,
+            crate::util::time::Instant::now(),
+            (window_point.0.round() as i32, window_point.1.round() as i32),
+        );
         if double_click && let Some(mutation) = double_click_type_select(state, sx, sy) {
             apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
             apply_selection_action_line_policy(state, TYPE_SELECT_TAP_ACTION_LINE_POLICY);
