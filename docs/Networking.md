@@ -208,6 +208,15 @@ refused by the existing build check. Saved custom sound references use a new aut
 snapshot layout; older layouts are refused. A rollback uses its earlier audio resolution
 and save layout.
 
+The modern online lobby shows the room title, its published team format and
+the map name, separated by ` - `. A running match uses the teams it started
+with. For example, two teams of four on Heck Freezes Over can appear as
+`Friday Night - 4v4 - Heck Freezes Over`. While the host is still seating
+players, the format can read “Teams forming”. A room's capacity includes
+spectators, so it cannot determine team size. The row help gives the team
+counts and distinguishes seated spectators from people watching a running
+match through the relay. See the [lobby protocol](lobby-protocol.md#room-list-summaries).
+
 The online lobby asks for its game list, and the matches to watch with it, every
 5 seconds while it is the front window, so a game someone creates shows up within
 that; gamemd's lobby asked every 30 (`SetTimer(0, 30000)`). Refresh still asks at

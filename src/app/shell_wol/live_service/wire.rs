@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::match_runtime::session::{NetworkMapMetadata, NetworkVacancy};
 use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
 use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
-use crate::ui::wol_lobby::{WolChannel, WolMember};
+use crate::ui::wol_lobby::{WolChannel, WolMember, WolRoomSummary};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Channel {
@@ -24,6 +24,42 @@ pub(super) struct Channel {
     pub name: String,
     #[serde(default)]
     pub ex_info: String,
+    #[serde(
+        default,
+        rename = "room_summary",
+        deserialize_with = "room_summary",
+        skip_serializing
+    )]
+    pub summary: Option<WolRoomSummary>,
+}
+
+// Optional display data must never prevent listing or joining a room with an
+// older or newer lobby. The host's create/advertise requests never send it.
+fn room_summary<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<WolRoomSummary>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let Ok(mut summary) = serde_json::from_value::<WolRoomSummary>(value) else {
+        return Ok(None);
+    };
+    let max = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
+    if summary.teams.as_ref().is_some_and(|teams| {
+        teams.len() > usize::from(*crate::skirmish_launch::ROOM_TEAMS.end())
+            || teams.iter().map(|&count| usize::from(count)).sum::<usize>() > max
+            || (!teams.is_empty() && teams.iter().filter(|&&count| count > 0).count() < 2)
+    }) || [summary.observers, summary.computers]
+        .into_iter()
+        .flatten()
+        .any(|n| usize::from(n) > max)
+    {
+        return Ok(None);
+    }
+    summary.map = summary.map.filter(|name| {
+        !name.trim().is_empty()
+            && name.chars().count() <= 128
+            && !name.chars().any(char::is_control)
+    });
+    Ok(Some(summary))
 }
 
 fn unknown_ping() -> i32 {
@@ -42,6 +78,7 @@ impl From<WolChannel> for Channel {
             ping: channel.ping,
             name: channel.name,
             ex_info: channel.ex_info,
+            summary: None,
         }
     }
 }
@@ -58,6 +95,7 @@ impl From<Channel> for WolChannel {
             ping: channel.ping,
             name: channel.name,
             ex_info: channel.ex_info,
+            summary: channel.summary,
         }
     }
 }
@@ -206,6 +244,8 @@ pub(super) struct Match {
     pub max_watchers: u32,
     #[serde(default)]
     pub names: Vec<String>,
+    #[serde(default, rename = "room_summary", deserialize_with = "room_summary")]
+    pub summary: Option<WolRoomSummary>,
 }
 
 impl From<Match> for crate::app::shell_wol::WolMatch {
@@ -217,6 +257,7 @@ impl From<Match> for crate::app::shell_wol::WolMatch {
             watchers: value.watchers,
             max_watchers: value.max_watchers,
             names: value.names,
+            summary: value.summary,
         }
     }
 }
@@ -399,6 +440,30 @@ mod tests {
         ROOM_TEAMS, SkirmishAiSlot, SkirmishHumanSlot, SkirmishLaunchMode, SkirmishLaunchOptions,
         SkirmishLaunchSession, SkirmishLocalSlot,
     };
+
+    #[test]
+    fn public_room_summary_is_optional_and_never_sent_by_the_host() {
+        let mut room = json!({"kind":41,"max_users":16,"users":8,"name":"Friday Night"});
+        let old: Channel = serde_json::from_value(room.clone()).unwrap();
+        assert!(WolChannel::from(old).summary.is_none());
+        room["room_summary"] = json!({"map":"Heck Freezes Over","teams":[0,4,0,4],"observers":2});
+        let record = WolChannel::from(serde_json::from_value::<Channel>(room.clone()).unwrap());
+        let summary = record.summary.as_ref().unwrap();
+        assert_eq!(summary.teams.as_deref(), Some([0, 4, 0, 4].as_slice()));
+        assert_eq!(summary.map.as_deref(), Some("Heck Freezes Over"));
+        assert_eq!(summary.observers, Some(2));
+        assert!(
+            serde_json::to_value(Channel::from(record))
+                .unwrap()
+                .get("room_summary")
+                .is_none()
+        );
+
+        room["room_summary"]["teams"] = json!([30, 30]);
+        let record = WolChannel::from(serde_json::from_value::<Channel>(room).unwrap());
+        assert_eq!(record.name, "Friday Night");
+        assert!(record.summary.is_none());
+    }
 
     fn human(row: u8, team: LaunchTeam) -> SkirmishHumanSlot {
         SkirmishHumanSlot {

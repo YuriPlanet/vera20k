@@ -117,6 +117,7 @@ pub(crate) fn paint_wol_lobby_children(
     layout: &WolLobbyLayout,
     art: Option<&WolPageArt>,
     base_names: &[String; 8],
+    room_tooltip: Option<&str>,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
     let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
@@ -319,6 +320,54 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_LABEL_TEXT_RGB,
         ));
     }
+    // Keep room help within the game's scrollable content, on the side
+    // with the most space above or below the active row. An unchanged
+    // selection can keep its help open while the pointer is off controls.
+    let room_tip = room_tooltip.map(|caption| {
+        const PAD: i32 = 5;
+        let content = scale.base_rect(games.content);
+        let active = ui
+            .game_list
+            .hot_row
+            .or(ui.game_list.selected)
+            .and_then(|index| index.checked_sub(ui.game_list.top_index))
+            .filter(|&visible| visible < games.visible_rows)
+            .map(|visible| scale.base_rect(games.row(visible)));
+        let above = active.map_or(0, |row| row.y - content.y);
+        let below = active.map_or(content.h, |row| content.y + content.h - (row.y + row.h));
+        let width = (content.w - 2 * PAD).max(1) as u32;
+        let available = (above.max(below) - 2 * PAD).max(1) as u32;
+        let fit = font.fit_box(caption, width, available);
+        let measured = font.fitted(fit, |font| font.wrap_layout(caption, width));
+        let height = measured.height.min(available) as i32 + 2 * PAD;
+        let panel = RectPx::new(
+            content.x,
+            if above > below {
+                content.y
+            } else {
+                content.y + content.h - height
+            },
+            content.w,
+            height,
+        );
+        let body = scale.scale_rect(RectPx::new(
+            panel.x + PAD,
+            panel.y + PAD,
+            width as i32,
+            height - 2 * PAD,
+        ));
+        let draw = shell_text::draw_in_rect_scaled(
+            font,
+            caption,
+            rect_to_text_rect(body),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::NONE,
+            [0.0; 2],
+            SHELL_DROPDOWN_TEXT_DEPTH,
+            scale.factor(),
+        );
+        (scale.scale_rect(panel), draw)
+    });
     let ping_header = layout.control_rect(SORT_PING);
     for (visible, row) in ui
         .game_rows
@@ -328,6 +377,14 @@ pub(crate) fn paint_wol_lobby_children(
         .enumerate()
     {
         let rect = games.row(visible);
+        // The shell paints every glyph after the control plates. Suppress
+        // covered game cells so their text and icons cannot bleed through.
+        if room_tip
+            .as_ref()
+            .is_some_and(|(panel, _)| rect.y < panel.y + panel.h && rect.y + rect.h > panel.y)
+        {
+            continue;
+        }
         let rgb = if row.greyed {
             GREYED_RGB
         } else {
@@ -337,12 +394,28 @@ pub(crate) fn paint_wol_lobby_children(
         // the first icon column; that row's name starts at the next one. A
         // tag ends the name cell against the Ping column, and the name stops
         // a gap before it.
+        let ping = if row.ping == -1 {
+            "???".to_owned()
+        } else {
+            row.ping.to_string()
+        };
         let name_x = if row.keyed {
             GAME_PASSWORD_X
         } else {
             GAME_TYPE_X
         };
-        let name_end = GAME_PING_X - 2;
+        // Watch rows can use the entire list. Other modern rooms stop a
+        // gap before the ping centred under its column heading.
+        let row_base = scale.base_rect(rect);
+        let name_end = if row.watch {
+            row_base.w - 2
+        } else if let Some(header) = ping_header.filter(|_| modern) {
+            let header = scale.base_rect(header);
+            let ping_width = font.text_width(&ping) as i32;
+            (header.x + (header.w - ping_width) / 2 - row_base.x - GAME_TAG_GAP).min(row_base.w - 2)
+        } else {
+            GAME_PING_X - 2
+        };
         let tag = row.tag.as_deref().filter(|_| modern);
         let tag_w = tag.map_or(0, |tag| {
             (font.text_width(tag) as i32).min(name_end - name_x)
@@ -351,8 +424,22 @@ pub(crate) fn paint_wol_lobby_children(
             Some(_) => name_end - name_x - tag_w - GAME_TAG_GAP,
             None => name_end - name_x,
         };
+        // A header that still exceeds one row at the tightest font fit
+        // ends in an ellipsis; its complete text remains in the row help.
+        let mut caption = std::borrow::Cow::Borrowed(row.text.as_str());
+        if modern {
+            let width = name_w.max(1) as u32;
+            caption = font.fitted(crate::render::bit_font::Fit::TIGHTEST, |font| {
+                if font.text_width(&row.text) <= width {
+                    return std::borrow::Cow::Borrowed(row.text.as_str());
+                }
+                let end =
+                    font.truncate_to_width(&row.text, width.saturating_sub(font.text_width("…")));
+                std::borrow::Cow::Owned(format!("{end}…"))
+            });
+        }
         paint.texts.push(text(
-            &row.text,
+            &caption,
             if modern {
                 cell(rect, name_x, name_w.max(1))
             } else {
@@ -373,11 +460,6 @@ pub(crate) fn paint_wol_lobby_children(
         // modern list centres it under its Ping header instead of starting
         // it at the retail column, left of the header's caption. A match to
         // watch has no ping.
-        let ping = if row.ping == -1 {
-            "???".to_owned()
-        } else {
-            row.ping.to_string()
-        };
         let (ping_rect, ping_align) = match ping_header.filter(|_| modern) {
             Some(header) => (
                 RectPx::new(header.x, rect.y, header.w, rect.h),
@@ -495,6 +577,16 @@ pub(crate) fn paint_wol_lobby_children(
             ShellAlign::V_CENTER,
             row_rgb(line.color),
         ));
+    }
+    if let Some((panel, draw)) = room_tip {
+        push_solid_rect(
+            &mut paint.controls,
+            atlas,
+            panel,
+            [0.025, 0.035, 0.045],
+            SHELL_DROPDOWN_DEPTH,
+        );
+        paint.texts.push(draw);
     }
     paint
 }

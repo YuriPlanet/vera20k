@@ -149,6 +149,9 @@ pub enum WolTarget {
     /// Modern lobby presentation with sealed local fixture data, no
     /// credentials, Tanya's row hovered.
     ModernLobby,
+    /// One open room and one running match from the list service, with the
+    /// pointer resting on the requested row. Both retain the same two rows.
+    ModernLobbySummary { watch: bool },
     /// The same, then Create Game: `0xC3` on Red Alert 2's box art, its
     /// Ranked game box's help hovered.
     ModernCreate,
@@ -541,6 +544,7 @@ impl WolTarget {
                 self,
                 Self::TestServiceLobby
                     | Self::ModernLobby
+                    | Self::ModernLobbySummary { .. }
                     | Self::ModernCreate
                     | Self::ModernPlayerCard
                     | Self::ModernChangeCountry
@@ -729,6 +733,14 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0xff-menu", WolTarget::InternetMenu),
     ("wol-test-service-lobby", WolTarget::TestServiceLobby),
     ("wol-modern-lobby", WolTarget::ModernLobby),
+    (
+        "wol-modern-game-summary",
+        WolTarget::ModernLobbySummary { watch: false },
+    ),
+    (
+        "wol-modern-watch-summary",
+        WolTarget::ModernLobbySummary { watch: true },
+    ),
     ("wol-modern-create", WolTarget::ModernCreate),
     ("wol-modern-player-card", WolTarget::ModernPlayerCard),
     ("wol-modern-change-country", WolTarget::ModernChangeCountry),
@@ -1098,8 +1110,10 @@ impl WolCapture {
         match self.phase {
             WolPhase::Main
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(
+                    && steady_main_menu_capture_ready_for(
                         MainMenuCaptureSnapshot::from_state(state).scaled_as_reference(),
+                        // The narrow summary capture uses the 640 shell movie.
+                        matches!(self.target, WolTarget::ModernLobbySummary { .. }),
                     )? =>
             {
                 if self.target == WolTarget::BuddyFromMyInfo {
@@ -1123,6 +1137,7 @@ impl WolCapture {
                 self.phase = match self.target {
                     target if target.online_login() => WolPhase::Login,
                     WolTarget::ModernLobby
+                    | WolTarget::ModernLobbySummary { .. }
                     | WolTarget::ModernCreate
                     | WolTarget::ModernPlayerCard
                     | WolTarget::ModernChangeCountry
@@ -2132,6 +2147,7 @@ impl WolCapture {
                             == if matches!(
                                 self.target,
                                 WolTarget::ModernLobby
+                                    | WolTarget::ModernLobbySummary { .. }
                                     | WolTarget::ModernCreate
                                     | WolTarget::ModernPlayerCard
                                     | WolTarget::ModernChangeCountry
@@ -2214,6 +2230,10 @@ impl WolCapture {
                     );
                     self.event(frame, json!({"Ranked game help": help}));
                     self.settle();
+                    return Ok(());
+                }
+                if let WolTarget::ModernLobbySummary { watch } = self.target {
+                    self.lobby_summary(state, frame, watch)?;
                     return Ok(());
                 }
                 if self.target == WolTarget::ModernLobby {
@@ -5506,6 +5526,106 @@ impl WolCapture {
         } else {
             self.hover_settle(state);
         }
+        Ok(())
+    }
+
+    fn lobby_summary(&mut self, state: &mut AppState, frame: u32, watch: bool) -> Result<()> {
+        use crate::app::shell_wol::WolMatch;
+        use crate::ui::wol_lobby::WolRoomSummary;
+
+        const MATCH_ID: &str = "00000000-0000-4000-8000-000000000042";
+        let summary = |map: &str, side| WolRoomSummary {
+            map: Some(map.into()),
+            teams: Some(vec![side, side]),
+            observers: Some(2),
+            computers: Some(1),
+            ..Default::default()
+        };
+        let open = WolChannel {
+            kind: GAME_CHANNEL,
+            name: "Friday Night".into(),
+            users: 9,
+            max_users: 10,
+            ping: 42,
+            summary: Some(summary("Heck Freezes Over", 4)),
+            ..Default::default()
+        };
+        service_event(
+            state,
+            WolServiceEvent::Channels {
+                kind: GAME_CHANNEL,
+                channels: vec![open],
+            },
+        );
+        service_event(
+            state,
+            WolServiceEvent::Matches(vec![WolMatch {
+                match_id: MATCH_ID.into(),
+                name: "Team Practice".into(),
+                map: "Tour of Egypt".into(),
+                names: ["Tanya", "Boris", "Yuri"].map(String::from).into(),
+                watchers: 1,
+                max_watchers: 8,
+                summary: Some(summary("Tour of Egypt", 2)),
+            }]),
+        );
+
+        let layout = crate::app::shell_wol::lobby::layout(state);
+        let ui = &Self::lobby(state)?.ui;
+        let rows = &ui.game_rows;
+        ensure!(
+            rows.len() == 2 && !rows[0].watch && rows[1].watch && rows[1].name == MATCH_ID,
+            "unexpected room and match rows"
+        );
+        let titles = rows.iter().map(|row| row.text.clone()).collect::<Vec<_>>();
+        ensure!(
+            titles
+                == [
+                    "Friday Night - 4v4 - Heck Freezes Over",
+                    "Team Practice - 2v2 - Tour of Egypt"
+                ],
+            "unexpected lobby titles: {titles:?}"
+        );
+        let index = usize::from(watch);
+        let geometry = ui
+            .game_list
+            .geometry(layout.games, rows.len(), layout.page.scale);
+        let rect = geometry.row(index - ui.game_list.top_index);
+        // Hit the far edge of the row as well as its name. The source id
+        // remains the click target even where a long visible title is clipped.
+        for x in [rect.x + rect.w - 2, rect.x + 3] {
+            set_window_pointer_to_rect_center(state, RectPx::new(x, rect.y, 1, rect.h));
+            App::handle_wol_mouse_move(state);
+            let ui = &Self::lobby(state)?.ui;
+            ensure!(
+                ui.buttons.hovered == Some(lobby_ui::GAMES) && ui.game_list.hot_row == Some(index),
+                "the pointer missed the game row at {x}"
+            );
+        }
+        let help = crate::app::shell_wol::lobby::status_help(state);
+        let (size, seats, limit, capacity_key) = if watch {
+            (2, 1, 8, "VERA:LobbyWatchCapacity")
+        } else {
+            (4, 9, 10, "VERA:LobbyRoomCapacity")
+        };
+        let team =
+            |number| crate::i18n::tr_count("VERA:LobbyTeamSeats", size as u8, &[("team", &number)]);
+        let details = [
+            team(1),
+            team(2),
+            crate::i18n::tr_count("VERA:LobbySpectators", 2u32, &[]),
+            crate::i18n::tr_fill("VERA:LobbyAiCount", &[("count", &1)]),
+            crate::i18n::tr_fill(capacity_key, &[("count", &seats), ("max", &limit)]),
+        ];
+        ensure!(
+            help == format!("{}\n{}", titles[index], details.join(" - ")),
+            "incomplete help for row {index}: {help:?}"
+        );
+        self.event(
+            frame,
+            json!({"room and watch titles": titles, "hovered row": index, "status help": help}),
+        );
+        self.settle();
         Ok(())
     }
 

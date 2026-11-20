@@ -342,6 +342,7 @@ pub(crate) fn render_wol_page(
     } else {
         None
     };
+    let mut room_tooltip = None;
     let (title_window, status_label) = if page_statics {
         let title_window = state
             .frontend
@@ -390,6 +391,22 @@ pub(crate) fn render_wol_page(
             _ => status_key
                 .map(|key| resolve_csf(state, key).into_owned())
                 .unwrap_or_default(),
+        };
+        let multiline = matches!(&painted, Painted::Lobby(_))
+            && status_text.contains('\n')
+            && state
+                .frontend
+                .wol
+                .as_ref()
+                .and_then(|visit| visit.lobby())
+                .is_some_and(|lobby| {
+                    lobby.ui.is_modern() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
+                });
+        let status_text = if multiline {
+            room_tooltip = Some(status_text);
+            String::new()
+        } else {
+            status_text
         };
         let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
@@ -629,6 +646,7 @@ pub(crate) fn render_wol_page(
                     layout,
                     art,
                     &base_names,
+                    room_tooltip.as_deref(),
                 ),
             )
         }
