@@ -110,6 +110,7 @@ fn hover_cursor(
             modifier,
             false,
             false,
+            &mut Default::default(),
         ),
     )
 }

@@ -127,6 +127,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         CursorFeedbackKind::Enter
     );
@@ -401,6 +402,7 @@ fn retail_alt_garrisons_as_its_cursor_shows() {
             modifier,
             alt,
             false,
+            &mut Default::default(),
         );
         assert_eq!(
             cursor == CursorFeedbackKind::Enter,

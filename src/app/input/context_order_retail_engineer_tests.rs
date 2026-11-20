@@ -70,6 +70,7 @@ fn building_orders_for_hover(
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(repairable));
     assert_eq!(

@@ -102,6 +102,7 @@ fn cursor(
         OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     ))
 }
 
