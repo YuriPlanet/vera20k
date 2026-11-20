@@ -78,6 +78,26 @@ pub(crate) fn abstract_type_stored_id(incoming: &str) -> String {
 /// retain the first slot; pointer/index consumers keep the selected object.
 /// The NUL namespace cannot collide with a native C-string ID and is never
 /// used as a filename: the slot's ObjectImageState owns resource requests.
+///
+/// Yields one key per slot of `names`, in registry order, in one pass.
+pub(crate) fn anim_type_runtime_keys<'a>(
+    names: impl IntoIterator<Item = &'a str>,
+) -> impl Iterator<Item = std::borrow::Cow<'a, str>> {
+    // `eq_ignore_ascii_case` holds exactly when the ASCII uppercase spellings
+    // are equal, so a set of those finds the same earlier twin.
+    let mut seen = std::collections::HashSet::new();
+    names.into_iter().enumerate().map(move |(index, name)| {
+        if seen.insert(name.to_ascii_uppercase()) {
+            std::borrow::Cow::Borrowed(name)
+        } else {
+            std::borrow::Cow::Owned(format!("\0ANIM:{index}:{name}"))
+        }
+    })
+}
+
+/// The [`anim_type_runtime_keys`] key of the one slot at `index`, found by
+/// comparing the earlier names in place, without the set; a loop over every
+/// slot takes the iterator instead.
 pub(crate) fn anim_type_runtime_key<'a>(
     names: impl Iterator<Item = &'a str> + Clone,
     index: usize,
@@ -761,9 +781,13 @@ pub(crate) fn read_native_multiplayer_country(
             found
         } else {
             // Unlike generic FindOrAllocate, this reader constructs none
-            // spellings too (4755A0..4755F5).
-            i32::try_from(processor.find_or_construct(RulesTypeFamily::Country, &name))
-                .expect("native Country index exceeds i32")
+            // spellings too (4755A0..4755F5). Past VERA's Country bound it
+            // constructs nothing and keeps the current index.
+            processor
+                .find_or_construct_within_bound(RulesTypeFamily::Country, &name)
+                .map_or(current, |index| {
+                    i32::try_from(index).expect("Country index is within VERA's u16 bound")
+                })
         }
     };
     (index, processor.finish().1)
