@@ -40,6 +40,24 @@ pub enum CheatEffect {
     },
 }
 
+/// Chat validates the order before choosing a location. Placement and replay
+/// resolve it against the same match rules when executing it.
+pub fn skirmish_spawn_type<'a>(
+    rules: &'a RuleSet,
+    type_id: &str,
+    count: u16,
+) -> Result<&'a crate::rules::object_type::ObjectType, &'static str> {
+    if !(1..=MAX_SPAWN_COUNT).contains(&count) {
+        return Err("VERA:CheatUsage");
+    }
+    // A vehicle keeps its ID even if a mod also registers infantry under
+    // that name. Existing commands and replays resolved vehicles first.
+    rules
+        .object_in_category(ObjectCategory::Vehicle, type_id)
+        .or_else(|| rules.task_force_member_object(type_id))
+        .ok_or("VERA:CheatUnit")
+}
+
 impl Simulation {
     pub fn apply_skirmish_cheat(
         &mut self,
@@ -111,15 +129,7 @@ impl Simulation {
         at: Option<(u16, u16)>,
         rules: &RuleSet,
     ) -> Result<CheatEffect, &'static str> {
-        if !(1..=MAX_SPAWN_COUNT).contains(&count) {
-            return Err("VERA:CheatUsage");
-        }
-        // A vehicle keeps its ID even if a mod also registers infantry under
-        // that name. Existing commands and replays resolved vehicles first.
-        let object = rules
-            .object_in_category(ObjectCategory::Vehicle, type_id)
-            .or_else(|| rules.task_force_member_object(type_id))
-            .ok_or("VERA:CheatUnit")?;
+        let object = skirmish_spawn_type(rules, type_id, count)?;
         let bounds = self.playfield_bounds().ok_or(if at.is_some() {
             "VERA:CheatPointAtMap"
         } else {
