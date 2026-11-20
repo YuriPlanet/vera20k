@@ -214,7 +214,7 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
     ) -> Result<Self> {
-        Self::new_async(window, display, false).await
+        Self::new_async(window, display, false, wgpu::Backends::empty()).await
     }
 
     /// Initialize wgpu with the given window.
