@@ -1919,7 +1919,6 @@ impl Simulation {
                     return;
                 }
             }
-            #[cfg(not(feature = "phobos"))]
             return;
         }
         if !house.is_controlled_by_human(game_mode_nonzero) && !house.multiplay_passive() {
@@ -7873,6 +7872,6 @@ mod watcher_tests;
 #[path = "ares_prerequisite_lifecycle_tests.rs"]
 mod ares_prerequisite_lifecycle_tests;
 
-#[cfg(all(test, tests_sim_world_c_o, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "building_ai_repairable_tests.rs"]
 mod building_ai_repairable_tests;

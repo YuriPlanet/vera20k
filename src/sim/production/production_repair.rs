@@ -669,7 +669,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     Simulation::retire_damage_smoke_after_heal(&sim.interner, &mut sim.substrate, id, rules);
 }
 
-#[cfg(all(test, tests_sim_production, feature = "phobos"))]
+#[cfg(all(test, tests_sim_production))]
 mod phobos_repair_tests {
     use super::engineer_repair_amount;
 

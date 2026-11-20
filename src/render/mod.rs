@@ -118,6 +118,6 @@ pub mod xbr;
 mod sidebar_gpu_tests;
 #[cfg(all(test, tests_render_s_z))]
 mod smooth_chrome_gpu_tests;
-#[cfg(all(test, tests_render_s_z, feature = "phobos"))]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "tooltip_blur_gpu_tests.rs"]
 mod tooltip_blur_gpu_tests;

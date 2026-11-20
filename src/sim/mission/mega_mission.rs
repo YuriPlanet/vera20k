@@ -842,11 +842,11 @@ pub(crate) enum ArrivalStep {
 mod tests;
 
 /// Phobos `AttackMove.*` (`Ext/TechnoType/Body.cpp:1086-1087`).
-#[cfg(all(test, tests_sim_h_o, feature = "phobos"))]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "phobos_attack_move_tests.rs"]
 mod phobos_attack_move_tests;
 
 /// Phobos `AttackMove.Follow.*` (`Ext/TechnoType/Body.cpp:1149-1151`).
-#[cfg(all(test, tests_sim_h_o, feature = "phobos"))]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "phobos_attack_move_follow_tests.rs"]
 mod phobos_attack_move_follow_tests;

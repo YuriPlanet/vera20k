@@ -737,7 +737,6 @@ VoxelLightSource=-0.70710678,-0.70710678,0
 
         let set = read("[AudioVisual]\nUseFixedVoxelLighting=yes\n");
         assert!(VoxelLight::for_rules(Some(&set)).fixed);
-        #[cfg(not(feature = "phobos"))]
         assert!(!VoxelLight::for_rules(Some(&set)).fixed);
 
         // The key lives in `[AudioVisual]`, not `[General]`.

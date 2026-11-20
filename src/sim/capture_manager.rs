@@ -499,7 +499,6 @@ pub(crate) struct CaptureVictimFacts {
     owner: InternedId,
     capturable: bool,
     /// Phobos `MindControlSize=`; 1 in non-Phobos builds.
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     mind_control_size: i32,
 }
 
@@ -544,14 +543,10 @@ impl CaptureVictimFacts {
 pub(crate) struct CaptureControllerFacts {
     owner: InternedId,
     max_control: i32,
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     count: i32,
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     total_size: i32,
     infinite: bool,
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     ignore_size: bool,
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     release_victim: bool,
 }
 

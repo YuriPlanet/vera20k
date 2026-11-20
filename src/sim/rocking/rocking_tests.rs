@@ -340,7 +340,6 @@ fn unit_crush_tilt_overwrites_a_nonzero_pre_crush_rate() {
 
 /// The stock tail stores only on the FCOMP C3 arm, so a nonzero pre-crush
 /// rate keeps its value.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn stock_unit_crush_tilt_keeps_a_nonzero_pre_crush_rate() {
     let mut value = state([0, 0, 0, 0x3e80_0000]);

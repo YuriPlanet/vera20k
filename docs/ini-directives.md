@@ -3,7 +3,7 @@
 VERA expands includes in its existing INI source-selection path. Ares
 `[#include]` runs in every build in a game read the Ares way ([Ares](ares.md)),
 as a selected mod that ships `ares.mix` makes it; Phobos `[$Include]` is
-compiled in with `--features phobos`. Other games and builds treat them as
+part of every build. Other games and builds treat them as
 ordinary, unused INI content. These are extension directives, not native YR syntax. Files
 without directives keep their native parsed representation, duplicate-section
 behavior, content hash and saved encoding. The raw `IniFile` byte parser and
@@ -25,10 +25,10 @@ Strength=250
 
 ## Precedence and boundaries
 
-- With `--features phobos`, a document's `[$Include]` runs and takes over from
+- With Phobos play enabled from a game's data, a document's `[$Include]` runs and takes over from
   its `[#include]`, as Phobos `-Include` does by restoring the vanilla bytes at
   the Ares hooks (gamemd `0x474200`/`0x474314`). In a game read the Ares way, a
-  document without `[$Include]` expands its `[#include]`, in a `phobos` build
+  document without `[$Include]` expands its `[#include]`, in Phobos play
   too: VERA has no `-Include` launch switch, while natively one launch runs one
   dialect.
 - Include lists are read in stored entry order, as Ares walks them with

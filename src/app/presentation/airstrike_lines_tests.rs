@@ -9,7 +9,6 @@ fn native() -> &'static Value {
 fn point<const N: usize>(v: &Value) -> [i32; N] {
     std::array::from_fn(|i| v[i].as_i64().unwrap() as i32)
 }
-#[cfg(not(feature = "phobos"))]
 fn coord(v: &Value) -> DriveCoord {
     let [x, y, z] = point(v);
     DriveCoord { x, y, z }
@@ -30,7 +29,6 @@ fn style() -> FlareStyle {
         z_adjust: 0,
     }
 }
-#[cfg(not(feature = "phobos"))]
 fn draws(row: &Value) -> Vec<SurfaceDraw> {
     let input = &row["input"];
     let view = viewport(input);
@@ -80,7 +78,6 @@ fn draws(row: &Value) -> Vec<SurfaceDraw> {
     result
 }
 
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn original_beam_commands_match_color_boundaries_offsets_strength_and_cumulative_depth() {
     assert_eq!(native()["cases"].as_array().unwrap().len(), 18);
@@ -191,7 +188,6 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
         let result = composite(&calls, ms, &shades, view);
         // Phobos's hook at 0x007058F6 resumes past the stock draw at
         // 0x00705905 and draws only its own scale.
-        #[cfg(not(feature = "phobos"))]
         reference.draws().ranged(190, 270);
         reference.draws().ranged(745, 1000);
         assert_eq!(result.first(), Some(&opaque));
@@ -257,7 +253,6 @@ fn phobos_flare_scales_the_lines_flattens_their_depth_and_always_draws_the_dot()
     assert_eq!((lines, dots), (12, 4));
 }
 
-#[cfg(not(feature = "phobos"))]
 #[test]
 #[ignore = "requires GPU; original Boris705860 pixels through shared4BEAC0 pipeline"]
 fn production_airstrike_beam_matches_original_pixels_and_preserves_depth() {

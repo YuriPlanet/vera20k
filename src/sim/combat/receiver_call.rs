@@ -556,6 +556,10 @@ pub(super) fn resolve_receive_damage_with_input(
     // a live attacker's owner wins over arg7 sourceHouse. CanTargetHouse10051B70
     // replaces the stock ally gate after Poison and before Psychedelic, including
     // ignoreDefenses calls. Reuse the EMP/AttachEffect policy's retained owner.
+    // Phobos' retained invoker house extends the Ares CanTargetHouse gate to
+    // the source house a shot keeps after its attacker is gone: the live
+    // attacker's owner wins, the retained house answers without one. An Ares
+    // game keeps Ares' own settings.
     let ares_house_damage_allowed = if rules.ares() {
         warhead.ares_rules().map(|settings| {
             let owner = source.map(|entity| entity.owner()).or(event.source_house);
@@ -566,6 +570,14 @@ pub(super) fn resolve_receive_damage_with_input(
                 warhead.affects_allies,
             )
         })
+    } else if rules.phobos() {
+        let owner = source.map(|entity| entity.owner()).or(event.source_house);
+        Some(
+            warhead.affects_allies
+                || !owner.is_some_and(|owner| {
+                    owner == target.owner() || allied(owner, target.owner())
+                }),
+        )
     } else {
         None
     };

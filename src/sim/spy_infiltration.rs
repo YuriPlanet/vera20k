@@ -61,7 +61,7 @@ mod retail_tests;
 #[path = "spy_infiltration_ares_tests.rs"]
 mod ares_tests;
 
-#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "phobos_spy_effect_tests.rs"]
 mod phobos_spy_effect_tests;
 

@@ -1,6 +1,6 @@
 # Optional Phobos DigitalDisplay
 
-Build with `--features phobos` to register `[DigitalDisplayTypes]` and show
+Phobos is in every build; turn it on from a game's data to register `[DigitalDisplayTypes]` and show
 numeric unit information near the health bar. The feature follows Phobos
 `DigitalDisplayTypeClass` (`src/New/Type/DigitalDisplayTypeClass.{h,cpp}`) and
 `TechnoExt::ProcessDigitalDisplays`/`GetValuesForDisplay`

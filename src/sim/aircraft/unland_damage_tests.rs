@@ -5,7 +5,7 @@
 //! master switch is on. The frames the step visits are the production
 //! `advance_tick` AI pass.
 
-#![cfg(all(test, feature = "phobos"))]
+#![cfg(test)]
 
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::world::Simulation;

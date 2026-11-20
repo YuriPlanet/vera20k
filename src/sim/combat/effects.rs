@@ -315,7 +315,7 @@ pub(crate) fn combat_light_chance_admits(
     chance >= 1.0 || chance >= sim.main_rng().random_double()
 }
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod combat_light_chance_tests {
     use super::combat_light_chance_admits;
     use crate::rules::ini_parser::IniFile;

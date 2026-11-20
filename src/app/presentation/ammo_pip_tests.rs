@@ -467,7 +467,6 @@ AmmoPipOffset=6,-2
 /// Vanilla enters the wrap arm on any nonzero `PipWrap` and draws nothing
 /// when it is negative (`0x70A374 jne`, `0x70A42C jle`); positive wraps use
 /// the same level counter with the stock start frame 14.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn a_negative_pip_wrap_draws_no_stock_strip() {
     let (rules, sim, id) = ammo_pip_scene(

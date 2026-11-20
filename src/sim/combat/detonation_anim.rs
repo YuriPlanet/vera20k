@@ -106,7 +106,6 @@ fn damage_band<'a>(list: &'a [impl AsRef<str>], damage: i32, step: i32) -> Optio
 pub(crate) struct SelectedAnim {
     pub name: InternedId,
     /// Only the Phobos Bullet tail reads this.
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     pub splashed: bool,
 }
 
@@ -849,7 +848,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod phobos_enhancement_tests {
     use super::*;
     use crate::map::entities::EntityCategory;

@@ -67,7 +67,7 @@ required list exists, and the gate can only refuse a firer when one does.
 - The `SkipWeaponPicking` optimization itself is not read; see the note
   above for why this consumer does not need it.
 - `NoAmmoAmount=`/`NoAmmoWeapon=` live in VERA's Ares-gated
-  `techno_combat` data, so a `--features phobos` build without `ares`
+  `techno_combat` data, so a game not read the Ares way
   uses the constructor defaults (`0`, `-1`) for the
   `CanFireNoAmmoWeapon(1)` term even when a section authors the keys.
 - The test drives the unit wall arm (`0x73F495`) and the ATTACK rung

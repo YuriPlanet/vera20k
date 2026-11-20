@@ -1791,7 +1791,7 @@ impl FactoryEdit<'_> {
         // (constructor `0x0045DD9A`/`0x0045DDC7`), which is VERA's `None`.
         // The rewrite is unconditional, so it follows the `phobos` feature and
         // not `[General] BuildingProductionQueue=`.
-        const PHOBOS_STRUCTURE_ABANDON: bool = cfg!(feature = "phobos");
+        const PHOBOS_STRUCTURE_ABANDON: bool = true;
         // Phobos' own guard inside that rewrite: a single cancel on a structure
         // strip holding no product skips the removal and takes the null-held
         // admit at `0x004FAB64`.
@@ -2862,7 +2862,7 @@ mod tests {
             Some(BuildCategory::Power),
         );
         let view = reg.view(owner, ProductionCategory::Building).unwrap();
-        if cfg!(feature = "phobos") {
+        if true {
             assert_eq!(
                 outcome,
                 CancelOutcome::QueuedRemoved,
@@ -2920,7 +2920,7 @@ mod tests {
             (CancelOutcome::AdmittedEmpty, 1),
             "the skip removes nothing"
         );
-        let expected_all = if cfg!(feature = "phobos") {
+        let expected_all = if true {
             (CancelOutcome::QueuedRemoved, 0)
         } else {
             (CancelOutcome::AdmittedEmpty, 1)
@@ -2963,7 +2963,7 @@ mod tests {
             .iter()
             .map(|e| e.type_id)
             .collect();
-        if cfg!(feature = "phobos") {
+        if true {
             assert!(matches!(outcome, CancelOutcome::AbandonedActive(_)));
             assert_eq!(queue, vec![b], "both queued copies drain, B stays");
         } else {

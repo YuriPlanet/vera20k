@@ -101,7 +101,7 @@ fn phobos_disk_laser_ring(radius: f64) -> [[i32; 2]; 16] {
     ring
 }
 
-#[cfg(all(test, tests_sim_world_c_o, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::{RING, phobos_disk_laser_ring};
 

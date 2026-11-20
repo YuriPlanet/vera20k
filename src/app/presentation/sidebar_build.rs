@@ -513,7 +513,7 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// type's own, unconditionally — it is not gated on
 /// `[General] BuildingProductionQueue=`, which only decides whether a
 /// structure strip may stack copies at all.
-const STRUCTURE_QUEUE_BADGES: bool = cfg!(feature = "phobos");
+const STRUCTURE_QUEUE_BADGES: bool = true;
 
 fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: bool) -> bool {
     // VERA's Superweapon Limit: a superweapon cameo counts its charged shots

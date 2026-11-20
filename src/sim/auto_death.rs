@@ -764,10 +764,10 @@ impl Simulation {
     }
 }
 
-#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "auto_death_tests.rs"]
 mod tests;
 
-#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "auto_death_limbo_tests.rs"]
 mod limbo_tests;

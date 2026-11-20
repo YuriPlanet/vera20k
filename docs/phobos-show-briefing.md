@@ -33,8 +33,8 @@ the status line only while that flag is set.
   the shared 2048-byte buffer (`Phobos.h:26`), the status label native's
   `char[0x20]`.
 
-Both land in `rules`/`app` with `#[cfg(feature = "phobos")]` module gating;
-the stock build is unchanged. All three canonical keys were already in
+Both land in `rules`/`app` as part of every build; a game without the
+Phobos reads is unchanged. All three canonical keys were already in
 `G:/20k/scratch/phobos_read_keys.json`, so no registry edit was needed.
 
 ## Scenario-start pass (wired)
@@ -68,9 +68,9 @@ instead of renaming the stock "Return" button:
    authored CSF keys only when `briefing_at_start` is set. The F2 path keeps
    `GUI:Return` and `STT:BriefingButtonReturn`.
 
-All new state fields and the `briefing_start` module are
-`#[cfg(feature = "phobos")]`; a stock build uses `GUI:Return` and never opens
-the start dialog.
+All new state fields and the `briefing_start` module are Phobos-only in
+play; a game without the reads uses `GUI:Return` and never opens the start
+dialog.
 
 ## Tests (production readers)
 

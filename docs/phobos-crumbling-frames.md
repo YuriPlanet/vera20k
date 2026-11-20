@@ -1,6 +1,6 @@
 # Terrain crumbling frames
 
-Build with `--features phobos` to let a terrain object play a crumbling stage
+Phobos is in every build; turn it on from a game's data to let a terrain object play a crumbling stage
 after a lethal hit instead of vanishing in the same call. Stock gamemd removes
 a destroyed tree immediately; with `HasCrumblingFrames=yes` the object stays
 live at zero health, draws a crumbling animation, and is removed only when the

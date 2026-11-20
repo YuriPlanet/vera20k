@@ -1,6 +1,6 @@
 # Optional Phobos critical hits
 
-Build with `--features phobos` to give warheads a critical-hit chance: a hit
+Phobos is in every build; turn it on from a game's data to give warheads a critical-hit chance: a hit
 can roll extra damage, fire a second warhead at the target and play an
 animation. Default builds never roll a critical.
 

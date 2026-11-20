@@ -288,7 +288,7 @@ fn a_slave_shows_the_load_it_carries() {
     // Phobos replaces this arm unconditionally and draws in DisplayOrder;
     // its default {0,2,3,1} puts Riparius (index 0) before gems (index 1),
     // the stock arm's reverse.
-    let mixed = if cfg!(feature = "phobos") {
+    let mixed = if true {
         [2, 2, 5]
     } else {
         [5, 5, 2]
@@ -325,7 +325,6 @@ fn a_slave_shows_the_load_it_carries() {
 /// Native executions supply expected frames, including PC53/chop half ties.
 /// The oracle is the stock arm; a Phobos build draws in DisplayOrder instead
 /// (`the_tiberium_pip_globals_drive_the_strip`).
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")

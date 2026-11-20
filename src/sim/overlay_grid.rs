@@ -3246,7 +3246,7 @@ NoUseTileLandType=yes
             let cell = terrain.cell(0, 0).unwrap();
             // Phobos 0x47D36E clears every slope that cannot germinate; this
             // fixture's overlay carries no projected AllowRamps flag.
-            let cleared = slope != 0 && (slope >= 5 || cfg!(feature = "phobos"));
+            let cleared = slope != 0 && (slope >= 5 || true);
             if !cleared {
                 assert_eq!(overlay_grid.cell(0, 0).overlay_id, Some(11));
                 assert_eq!(cell.land_type, LandType::Tiberium.as_index());

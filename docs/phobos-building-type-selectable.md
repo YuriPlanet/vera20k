@@ -1,6 +1,6 @@
 # Optional Phobos type select for buildings
 
-Build with `--features phobos` to let type select pick buildings that the
+Phobos is in every build; turn it on from a game's data to let type select pick buildings that the
 retail ID match refuses, in a game read the Ares way ([Ares](ares.md)), as a
 selected mod that ships `ares.mix` makes it.
 

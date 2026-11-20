@@ -1,6 +1,6 @@
 # Optional Phobos designator range rings
 
-Build with `--features phobos` to ring the technos that designate or inhibit
+Phobos is in every build; turn it on from a game's data to ring the technos that designate or inhibit
 the armed superweapon. While a superweapon is armed, every current-player
 techno named in its `SW.Designators` and every hostile techno named in its
 `SW.Inhibitors` draws a range ring in its owning house's colour. This is a

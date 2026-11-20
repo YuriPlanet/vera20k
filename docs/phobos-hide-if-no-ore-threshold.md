@@ -1,6 +1,6 @@
 # Optional Phobos ore-stage animation hiding
 
-Build with `--features phobos` to read Phobos `AnimTypeExt`'s
+Phobos is in every build; turn it on from a game's data to read Phobos `AnimTypeExt`'s
 `HideIfNoOre.Threshold=` on an `Animations` entry. Default builds keep the
 original test: the anim hides whenever its cell holds no resource value at all.
 

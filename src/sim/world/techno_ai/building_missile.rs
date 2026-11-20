@@ -571,7 +571,7 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
     // (`Ext/Building/Hooks.cpp:132-189`): the Phobos latch owns the weapon
     // slot, the suspended-SW resume and the clear, all before the shot.
     let weapon_index = phobos_empulse_weapon_index(sim, rules, id, cell);
-#[cfg(not(feature = "phobos"))]    let weapon_index = 0_i32;
+    let weapon_index = 0_i32;
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;
     };
@@ -1309,7 +1309,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_sim_world_techno, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_techno))]
 mod arcing {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, test_flat_cell, test_grid};

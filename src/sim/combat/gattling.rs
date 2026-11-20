@@ -128,7 +128,6 @@ pub struct Report {
 
 /// What a Phobos-delayed decay writes to the gattling value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(feature = "phobos"), allow(dead_code))]
 enum RateDownWrite {
     /// Still inside `RateDown.Delay` (or the delay is negative): leave the
     /// value alone.
@@ -211,7 +210,6 @@ impl GattlingState {
         match write {
             None => self.decrease_value(table.rate_down()),
             Some(write) => self.apply_rate_down_write(write),
-            #[cfg(not(feature = "phobos"))]
             Some(_) => {}
         }
         let stage = self.stage;
@@ -712,7 +710,6 @@ impl crate::sim::world::Simulation {
                 });
             frame_effects.flush_sound(self, rules);
         });
-        #[cfg(not(feature = "phobos"))]
         state.update(&obj.gattling_stages, elite, ticks, || {
             // Update70E013 reaches Release406060 before latch/value writes,
             // including an already cleared handle. The sound owner validates
@@ -797,6 +794,6 @@ impl crate::sim::world::Simulation {
 #[path = "gattling_tests.rs"]
 mod tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "gattling_rate_down_tests.rs"]
 mod rate_down_tests;

@@ -1,6 +1,6 @@
 # Optional Phobos building production queue
 
-Build with `--features phobos` and set `[General] BuildingProductionQueue=yes`
+Phobos is in every build; turn it on from a game's data and set `[General] BuildingProductionQueue=yes`
 to queue buildings like mobile production. Default is `no`.
 
 ```ini

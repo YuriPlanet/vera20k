@@ -1948,8 +1948,8 @@ fn update_idle_anim(
     }
 }
 
-#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
-#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s))]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "shield_tests.rs"]
 mod tests;
 

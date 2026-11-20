@@ -419,13 +419,11 @@ fn a_unit_owns_one_bolt_whose_source_follows_it() {
     let owners: Vec<_> = bolts.live.iter().map(|bolt| bolt.birth.owner).collect();
     // The stock `+0x6DC` slot admits one bolt; Phobos's InitEBolt hook skips
     // the slot test and links every bolt into `TechnoExt::ElectricBolts`.
-    #[cfg(not(feature = "phobos"))]
     assert_eq!(owners, [Some(owner), None]);
     assert_eq!(owners, [Some(owner), Some(owner)]);
 
     bolts.follow_owners(|_| Some(ProjectileCoord::new(99, 1, 2)));
     let sources: Vec<_> = bolts.live.iter().map(|bolt| bolt.birth.from.x).collect();
-    #[cfg(not(feature = "phobos"))]
     assert_eq!(sources, [99, 20], "only the owned bolt follows");
     assert_eq!(sources, [99, 99], "every linked bolt follows");
     bolts.follow_owners(|_| Some(ProjectileCoord::new(0, 0, 0)));

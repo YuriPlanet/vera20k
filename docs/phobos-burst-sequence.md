@@ -1,6 +1,6 @@
 # Burst shots within the firing sequence
 
-Build with `--features phobos` to let a weapon fire its `Burst=` shots at
+Phobos is in every build; turn it on from a game's data to let a weapon fire its `Burst=` shots at
 frames inside one infantry firing sequence instead of one shot per frame.
 
 ```ini

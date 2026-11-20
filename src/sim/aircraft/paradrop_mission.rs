@@ -213,7 +213,7 @@ fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: FrameE
     super::queue_mission(&mut sim.substrate, id, MissionType::Retreat);
 }
 
-#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod overfly_delay_tests {
     use super::overfly_delay;
     use crate::rules::ini_parser::IniFile;

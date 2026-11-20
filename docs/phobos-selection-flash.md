@@ -1,6 +1,6 @@
 # Optional Phobos selection flash
 
-Build with `--features phobos` to flash a unit briefly when the local player
+Phobos is in every build; turn it on from a game's data to flash a unit briefly when the local player
 selects it.
 
 ```ini

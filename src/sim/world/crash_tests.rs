@@ -586,7 +586,6 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
 /// integration test above that boundary covers damage, credit and expiry.
 // Vanilla goldens: Phobos skips the Inviso scatter (`0x469AC1` ->
 // `0x469AF0`) and scatters each animation itself, which shifts the stream.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
     use crate::sim::combat::{CombatLightRequest, RAD_NO_ATTACKER};

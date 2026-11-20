@@ -3132,7 +3132,7 @@ fn paid_drive_crossing_sets_wall_tilt_after_mark_put_before_per_cell() {
     ] {
         // `CrushForwardTiltPerFrame=` only exists on a Phobos build; the
         // stock build cannot read the authored row.
-        if !cfg!(feature = "phobos") && !tilt_ini.is_empty() {
+        if !true && !tilt_ini.is_empty() {
             continue;
         }
         let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 8);
@@ -3398,7 +3398,6 @@ fn assert_crush_history_state(actor: &GameEntity, expected: &serde_json::Value) 
 /// OverrunSquare hook (`0x741941`) replaces the stock zero test with an
 /// unconditional store, so the captured stock rocking words no longer apply
 /// in a phobos build; that behaviour has its own regression tests.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
     use crate::sim::occupancy::CellListInsertion;

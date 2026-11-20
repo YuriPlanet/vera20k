@@ -1,11 +1,12 @@
 # Optional capabilities
 
 The engine ships optional feature flags that no default or release build
-compiles: `phobos`, `npatch`, `npbug` and the diagnostic builds
-(`debug-tools`, `telemetry-dashboard`). They are orthogonal and mixable
-(`--features phobos,npatch,npbug`); an implemented capability must keep working
-with the others present without assuming they are absent. Ares is not among them:
-every build holds it, and a game's data switches it on ([Ares](ares.md)). A flag that nothing
+compiles: `npatch`, `npbug` and the diagnostic builds (`debug-tools`,
+`telemetry-dashboard`). They are orthogonal and mixable (`--features
+npatch,npbug`); an implemented capability must keep working with the others
+present without assuming they are absent. Ares and Phobos are not among them:
+every build holds both, and a game's data switches each on
+([Ares](ares.md), [Phobos](phobos.md)). A flag that nothing
 compiles is a break waiting to be found by whoever tries it first — that gap
 is tracked as #2798, and #2789 (`telemetry-dashboard` unbuildable from `main`
 for a day) is what it costs. `npbug` is VERA20K's own opt-in bug-fix

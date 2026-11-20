@@ -196,7 +196,7 @@ fn expected_draws(sim: &Simulation, scatters: bool) -> (i32, crate::sim::rng::Si
     let mut rng = sim.scenario_rng.clone();
     // Phobos `WeaponTypeExt::GetBurstDelay` (`Ext/WeaponType/Body.cpp:62-74`)
     // answers 0 at burst index 0 before the stock mid-burst draw.
-    let rof = if cfg!(feature = "phobos") {
+    let rof = if true {
         0
     } else {
         rng.next_range_u32_inclusive(3, 5) as i32
@@ -347,7 +347,7 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
         .collect();
     // Phobos `WeaponTypeExt::GetBurstDelay` answers 0 at burst index 0 before
     // the stock mid-burst draw (`Ext/WeaponType/Body.cpp:62-74`).
-    if cfg!(feature = "phobos") {
+    if true {
         assert!(
             plant_draws.is_empty(),
             "the burst-index-0 rearm takes no draw"
@@ -386,7 +386,7 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
     assert!((12..=13).contains(&flash), "flash {flash}");
     let planter = sim.substrate.entities.get(tanya).unwrap();
     assert_eq!(planter.rearm_timer.start_frame(), planted as i32);
-    if cfg!(feature = "phobos") {
+    if true {
         assert_eq!(
             planter.rearm_timer.duration(),
             0,

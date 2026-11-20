@@ -6917,7 +6917,7 @@ mod talk_tests;
 #[path = "trigger_runtime_cargo_tests.rs"]
 mod cargo_tests;
 
-#[cfg(all(test, tests_sim_trigger, feature = "phobos"))]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_drop_crate_tests.rs"]
 mod drop_crate_tests;
 

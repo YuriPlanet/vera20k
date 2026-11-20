@@ -81,7 +81,6 @@ fn weapon_block_reads_each_reached_pass_from_the_live_counts() {
     // the Phobos MultiWeapon latch flips (see below).
     let swap = rules.object("SWAP").unwrap();
     assert_eq!(swap.turret_count, 0);
-    #[cfg(not(feature = "phobos"))]
     assert_eq!((swap.primary(), swap.secondary()), (Some("P"), Some("B")));
     // Phobos `TechnoTypeClass_ReadINI_MultiWeapon` (`0x7128B2`,
     // `Ext/TechnoType/Hooks.MultiWeapon.cpp:15-31`) clears Weapon[0]/[1]

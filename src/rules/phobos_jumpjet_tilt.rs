@@ -258,6 +258,6 @@ fn dir_radian_128(radian: f32) -> f32 {
     (steps * (-std::f64::consts::TAU / 128.0)) as f32
 }
 
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_jumpjet_tilt_tests.rs"]
 mod tests;

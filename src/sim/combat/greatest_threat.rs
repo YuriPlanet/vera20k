@@ -4002,11 +4002,11 @@ mod scenario_gate_tests;
 #[path = "greatest_threat_land_targeting_tests.rs"]
 mod land_targeting_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "greatest_threat_ai_air_targeting_fix_tests.rs"]
 mod ai_air_targeting_fix_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "greatest_threat_targeting_band_tests.rs"]
 mod targeting_band_tests;
 
@@ -4030,19 +4030,19 @@ mod healer_guard_tests;
 #[path = "greatest_threat_coefficient_tests.rs"]
 mod coefficient_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "greatest_threat_extra_threat_tests.rs"]
 mod extra_threat_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "greatest_threat_iron_curtain_tests.rs"]
 mod iron_curtain_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "greatest_threat_mind_control_tests.rs"]
 mod mind_control_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "greatest_threat_attack_no_threat_tests.rs"]
 mod attack_no_threat_tests;
 

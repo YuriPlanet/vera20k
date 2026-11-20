@@ -69,7 +69,7 @@ separate firing-rate tick and no `UpdateTypeData` reset.
 instance state (`TurretAnimState`) and the `GetTurretFrame`-equivalent pure
 function `get_turret_frame` / `arm_firing`. `ObjectType` carries the type data,
 and `GameEntity::phobos_turret_anim` carries the instance state
-(`#[cfg(feature = "phobos")] #[serde(default)]`); it is presentation state and
+(`#[serde(default)]`); it is presentation state and
 is deliberately left out of `world_hash`, like the voxel `TurretAnimCounter`
 (`src/sim/combat/gattling.rs:528`).
 

@@ -1,6 +1,6 @@
 # Optional Phobos Shields
 
-Build with `--features phobos` to register `[ShieldTypes]` and bind a techno
+Phobos is in every build; turn it on from a game's data to register `[ShieldTypes]` and bind a techno
 with `ShieldType=`. Default builds have no shield state and keep gamemd's
 receiver untouched.
 

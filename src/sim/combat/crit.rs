@@ -131,7 +131,6 @@ pub(crate) fn detonate(
             .unwrap_or(globals.suppress_when_intercepted());
     // `RemoveMindControl` can hand the detonation a different House for the
     // arms that follow (`Detonate.cpp:206-208`), so the local is mutable.
-    #[cfg_attr(not(feature = "phobos"), allow(unused_mut))]
     let mut house = source_house.or_else(|| {
         world
             .substrate

@@ -1,6 +1,6 @@
 # Optional Phobos sidebar positions
 
-Build with `--features phobos` to choose the hardcoded sidebar coordinate
+Phobos is in every build; turn it on from a game's data to choose the hardcoded sidebar coordinate
 table per side, independently of the SIDE MIX artwork.
 
 ```ini

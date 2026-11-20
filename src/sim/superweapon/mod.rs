@@ -51,7 +51,7 @@ pub mod chronosphere_tests;
 mod chaining;
 pub(crate) use chaining::ChainDepth;
 mod detonate;
-#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon))]
 mod detonate_tests;
 pub(crate) mod drop_pod;
 #[cfg(all(test, tests_sim_superweapon))]
@@ -61,12 +61,12 @@ mod emp_pulse;
 mod emp_pulse_tests;
 mod fire;
 pub(crate) mod launch_sw;
-#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon))]
 mod launch_sw_tests;
 mod limbo;
-#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon))]
 mod phobos_ai_chronoshift_tests;
-#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "phobos_convert_pairs_tests.rs"]
 mod phobos_convert_pairs_tests;
 pub(crate) use fire::launch_super_preserving_charge;
@@ -89,7 +89,7 @@ pub(crate) mod nuke;
 #[cfg(all(test, tests_sim_superweapon))]
 mod nuke_tests;
 pub mod paradrop;
-#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon))]
 mod phobos_techno_requirements_tests;
 mod protect;
 pub mod psychic_dominator;
@@ -99,7 +99,7 @@ pub mod psychic_reveal;
 mod sonar_pulse;
 mod spy_plane;
 mod two_stage;
-#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon))]
 mod use_weeds_tests;
 pub use two_stage::PaidSuperWeaponSelection;
 

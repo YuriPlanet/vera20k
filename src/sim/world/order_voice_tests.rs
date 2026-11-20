@@ -435,7 +435,7 @@ fn attack_control_rules(corpus: &serde_json::Value, input: &serde_json::Value) -
 // Ares replaces VoiceAttack's choice (TechnoClass_SelectFiringVoice
 // 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`. Phobos
 // replaces it again at 0x7090A0, so this stock corpus only runs without it.
-#[cfg(not(feature = "phobos"))]// 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
+// 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
 #[test]
 fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
     use crate::map::entities::EntityCategory;

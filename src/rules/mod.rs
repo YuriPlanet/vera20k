@@ -131,16 +131,16 @@ pub mod invulnerability_rules;
 pub mod phobos_adjacent;
 pub mod phobos_parallel_ai_queues;
 pub mod phobos_switch;
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_infantry_deploy_tests.rs"]
 mod phobos_infantry_deploy_tests;
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_prone_speed_tests.rs"]
 mod phobos_prone_speed_tests;
 pub mod phobos_airburst;
 pub mod phobos_aircraft_edge;
 pub mod phobos_ammo_deploy;
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_amphibious_tests.rs"]
 mod phobos_amphibious_tests;
 pub mod phobos_anim_draw_offset;
@@ -244,9 +244,8 @@ pub mod type_convert_group;
 /// Whether this binary includes the supported Phobos extensions. INIs cannot change it.
 /// Whether this binary compiles all the supported Phobos extensions. Whether
 /// Phobos plays in a game is the per-game switch [`ruleset::RuleSet::phobos`],
-/// decided from the game's data by [`phobos_switch`], which a build with this
-/// feature turns on in every game; this gates the `cfg(feature = "phobos")`
-/// sites not yet moved to that switch, and launch and network identity.
+/// decided from the game's data by [`phobos_switch`]. Every build carries the
+/// code, so this only names the capability in the launch and network identity.
 pub const PHOBOS_ENABLED: bool = true;
 /// Whether this binary includes supported NPatch behavior. INIs cannot change it.
 pub const NPATCH_ENABLED: bool = cfg!(feature = "npatch");
@@ -292,7 +291,7 @@ mod ares_switch_tests;
 mod ares_type_selection_tests;
 pub mod armor;
 pub mod art_data;
-#[cfg(all(test, tests_rules_a_n, feature = "phobos"))]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "art_data_translucency_tests.rs"]
 mod art_data_translucency_tests;
 pub mod bridge_warheads;

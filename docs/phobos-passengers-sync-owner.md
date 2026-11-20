@@ -93,7 +93,7 @@ still sees `false` there (residual of `sim::auto_death`).
 - All four owner changes go through VERA's one owner-change path
   (`change_owner_with_rules`), the established mapping of native
   `SetOwningHouse`.
-- Every read and arm is `#[cfg(feature = "phobos")]`; with the keys unset
+- Every read and arm is Phobos-only; with the keys unset
   (SyncOwner `false` by default) nothing changes.
 
 ## Residuals

@@ -11,7 +11,6 @@ use crate::sim::world::Simulation;
 /// [`ares_emit`]), including when `Splits=` is false. Installed Phobos NOPs
 /// it and owns both `Airburst=` and `Splits=` (`phobos_airburst`), taking
 /// precedence over Ares; Phobos builds never call this.
-#[cfg_attr(feature = "phobos", allow(dead_code))]
 pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
     if rules.ares() {
         ares_emit(world, rules, detonation);
@@ -22,7 +21,6 @@ pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &Project
 
 /// Eight native compass neighbors followed by the retained center identity;
 /// Cluster controls neither this count nor a second parent detonation.
-#[cfg_attr(feature = "phobos", allow(dead_code))]
 fn stock_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
     if crate::rules::PHOBOS_ENABLED {
         return;
@@ -135,7 +133,6 @@ fn stock_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
 ///
 /// [`ProjectileType::airburst_arm`]: crate::rules::projectile_type::ProjectileType::airburst_arm
 /// [`ares_airburst_launch_velocity`]: crate::sim::projectile::launch::ares_airburst_launch_velocity
-#[cfg_attr(feature = "phobos", allow(dead_code))]
 fn ares_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
     let Some(parent) = world.projectiles.get(detonation.projectile_id) else {
         return;
@@ -277,7 +274,6 @@ fn ares_emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDet
 }
 
 /// `BulletTypeExt::CreateBullet` then `BulletClass::MoveTo` for one child.
-#[cfg_attr(feature = "phobos", allow(dead_code))]
 #[allow(clippy::too_many_arguments)]
 fn spawn_ares_child(
     world: &mut Simulation,
@@ -338,7 +334,6 @@ fn spawn_ares_child(
 }
 
 /// The Target's GetCoords (vt+0x48); `None` without a Target.
-#[cfg_attr(feature = "phobos", allow(dead_code))]
 fn target_get_coords(
     world: &Simulation,
     target: ProjectileTarget,
@@ -368,7 +363,6 @@ fn target_get_coords(
 /// of `floor(radius + 0.99) * 2 + 1` cells from `center`, row-major, keeping
 /// the cells within `radius` that `TryGetCellAt` finds. The square is clipped
 /// to the map first, which yields the same cells.
-#[cfg_attr(feature = "phobos", allow(dead_code))]
 fn cell_range(world: &Simulation, center: (i32, i32), radius: f64) -> Vec<ProjectileTarget> {
     let half = (radius + 0.99).floor();
     if !half.is_finite() || half < 0.0 {
@@ -403,7 +397,6 @@ fn cell_range(world: &Simulation, center: (i32, i32), radius: f64) -> Vec<Projec
 }
 
 /// The map's real cell at `cell` as a target, or `None` off the map.
-#[cfg_attr(feature = "phobos", allow(dead_code))]
 fn map_cell_target(world: &Simulation, cell: (i16, i16)) -> Option<ProjectileTarget> {
     let Some(terrain) = world.resolved_terrain.as_ref() else {
         return Some(ProjectileTarget::Cell {

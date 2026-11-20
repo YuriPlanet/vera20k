@@ -350,7 +350,7 @@ impl Simulation {
                 human_player,
             );
         }
-#[cfg(not(feature = "phobos"))]        let scalar = if weapon.is_some_and(|weapon| weapon.damage < 0)
+        let scalar = if weapon.is_some_and(|weapon| weapon.damage < 0)
             && object.id.eq_ignore_ascii_case("FV")
         {
             //7090D0..7090EB: native literal FV, MatchesTypeID5F3E50/410A40.
@@ -359,7 +359,7 @@ impl Simulation {
         } else {
             object.voice_attack_override(index, veterancy::raw_is_elite(entity.veterancy.raw()))
         };
-#[cfg(not(feature = "phobos"))]        if let Some(sound) = scalar {
+        if let Some(sound) = scalar {
             return Self::queue_voice_request(Some(sound), voices_enabled, human_player);
         }
         //70918D..7091C4: unsigned raw draw/modulo, including a singleton.

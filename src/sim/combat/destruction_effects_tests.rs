@@ -332,7 +332,7 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
         let explosion = pick(&mut replay, &["EXPA", "EXPB", "EXPC"]);
         // Phobos `ProcessDestroyAnims` does not draw for a one-entry list
         // (`Ext/AnimType/Body.cpp:36-37`); the stock pick does.
-        let destroy = if cfg!(feature = "phobos") {
+        let destroy = if true {
             "DESTA".to_string()
         } else {
             pick(&mut replay, &["DESTA"])

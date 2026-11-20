@@ -29,7 +29,7 @@ The auto-target side reads the object's `GetHeight` (vt+0x1C8,
 ## Where VERA20K owns it
 
 - `rules::projectile_type::ProjectileType::au` reads the key
-  (`rules/projectile_type.rs:582`, `#[cfg(feature = "phobos")]`).
+  (`rules/projectile_type.rs:582`, Phobos field).
 - Auto-target: `sim::combat::greatest_threat::evaluate_candidate` resolves the
   selected weapon's projectile and skips the `< -20` height rejection when `au`
   is set (`sim/combat/greatest_threat.rs:2506-2533`).
@@ -42,7 +42,7 @@ The auto-target side reads the object's `GetHeight` (vt+0x1C8,
   facts `sim/combat/fire_error_world.rs` (`ProjectileFacts::au`).
 - Selection: `sim/combat/combat_weapon.rs` carries the `0x6F37EB` AU arm after
   the stock `0x6F37E7` AA answer, via `projectile_au`.
-- Both consumer families are `#[cfg(feature = "phobos")]`, so a build without
+- Both consumer families are Phobos-only, so a game without
   the feature keeps the vanilla paths.
 - The cursor half is the app crate's `object_attack_is_admitted`
   (`src/app/input/context_order.rs`), which reads the same

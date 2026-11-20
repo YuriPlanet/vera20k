@@ -9183,11 +9183,11 @@ mod radiation_overlap_tests;
 #[cfg(all(test, tests_sim_world_a_b))]
 mod building_occupant_storage_tests;
 
-#[cfg(all(test, tests_sim_world_p_s, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "phobos_no_manual_move_tests.rs"]
 mod phobos_no_manual_move_tests;
 
-#[cfg(all(test, tests_sim_world_p_s, feature = "phobos"))]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "phobos_factory_plant_tests.rs"]
 mod phobos_factory_plant_tests;
 /// The parts of the world its presentation copy takes only where they changed

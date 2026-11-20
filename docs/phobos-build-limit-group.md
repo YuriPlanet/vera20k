@@ -9,7 +9,7 @@ production queue. The keys are read in `src/Ext/TechnoType/Body.cpp:1033-1041`
 
 ## Keys
 
-Nine per-TechnoType keys (all `#[cfg(feature = "phobos")]` on `ObjectType`):
+Nine per-TechnoType keys (Phobos fields on `ObjectType`):
 
 | Key | Native type | Default |
 | --- | --- | --- |

@@ -8,7 +8,6 @@ use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 // from Ares verses keys the build does not read, so the ares-style
 // expectation does not hold there; the Warhead= read itself is covered by the
 // ares,phobos run of this test.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -345,7 +344,6 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
     let anim = scene.sim.anim(scene.anim).unwrap();
     // The stock body accumulates while inert and gates the damage later;
     // Phobos' replaced body rejects the inert anim before the accumulator.
-    #[cfg(not(feature = "phobos"))]
     assert!(f64::from_bits(anim.damage_accumulator.bits()) > 1.0);
     assert_eq!(anim.damage_accumulator, NativeF64Bits::POSITIVE_ZERO);
     assert_eq!(
@@ -388,7 +386,6 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
             .damage_accumulator
             .bits(),
     );
-    #[cfg(not(feature = "phobos"))]
     assert!(carried > 0.0 && carried < 1.0);
     assert_eq!(carried, 0.0);
     scene.sim.substrate.set_anim_no_effects(scene.anim, false);

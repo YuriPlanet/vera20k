@@ -2144,7 +2144,6 @@ fn turret_anim_frame_uses_body_shape_low_power_and_requires_a_turret() {
 /// `AnimationAI @ 0x451250..0x451296` without the Phobos hook: slot 9 still
 /// follows `BodyShape[facing]` from the `0x007F4890` table.
 #[test]
-#[cfg(not(feature = "phobos"))]
 fn the_native_slot_nine_frame_follows_the_body_shape_table() {
     use crate::sim::anim_class::AnimWorldCoord;
     let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(

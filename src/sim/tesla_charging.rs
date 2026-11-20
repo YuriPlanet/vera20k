@@ -139,7 +139,6 @@ impl Simulation {
     /// (`Ext/Building/Hooks.cpp:914-955`) over the summed
     /// `ElectricAssaultLevel`s. Without the feature the stock target-only
     /// prune, thresholds (2, 1) and one level per charger hold.
-    #[cfg_attr(not(feature = "phobos"), allow(unused_variables))]
     fn sample_tesla_charge(
         interner: &StringInterner,
         substrate: &mut ObjectSubstrate,

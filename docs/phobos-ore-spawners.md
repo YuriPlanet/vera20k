@@ -1,6 +1,6 @@
 # Optional Phobos custom ore spawners
 
-Build with `--features phobos` to read Phobos `TerrainTypeExt`'s five
+Phobos is in every build; turn it on from a game's data to read Phobos `TerrainTypeExt`'s five
 `SpawnsTiberium.*` keys on a `TerrainTypes` entry. Default builds keep the
 stock spawner: one density-3 cell of the source's own resource type in one of
 the eight neighbours.

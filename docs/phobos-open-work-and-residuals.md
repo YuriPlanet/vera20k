@@ -537,7 +537,7 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 - 2026-11-16 在 `wt-keys` 下，client 的 lib 编译被基线
   `src/app/input/radar.rs:307`（`state.rules()` 中 `state` 未定义，HEAD 已存在；
   应为本会话之外的 `query.rules`）阻断。临时改成 `query.rules` 后验证：
-  `cargo check -p vera20k --features phobos --lib` 通过，
+  `cargo check -p vera20k --lib` 通过，
   `beacons::tests` 4 passed；临时改动未提交、已还原。core 侧
   `rules::phobos_globals::tests`（64 passed）与 `mission::readiness::tests`
   （15 passed）已通过。

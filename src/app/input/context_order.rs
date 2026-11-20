@@ -9352,7 +9352,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 #[path = "allied_object_action_tests.rs"]
 mod allied_object_action_tests;
 
-#[cfg(all(test, tests_app_input_a_c, feature = "phobos"))]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "phobos_attack_underground_tests.rs"]
 mod phobos_attack_underground_tests;
 

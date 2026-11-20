@@ -1094,7 +1094,7 @@ mod canopy_tests {
 
 /// `Ext/Bullet/Hooks.cpp:128-137`: the parabomb rate is the step/cap shape,
 /// with the step subtracted and the cap a signed lower bound.
-#[cfg(all(test, tests_sim_movement, feature = "phobos"))]
+#[cfg(all(test, tests_sim_movement))]
 mod parabomb_rate_tests {
     use super::parachuted_bullet_rate;
 
@@ -1170,7 +1170,7 @@ mod parabomb_rate_tests {
     }
 }
 
-#[cfg(all(test, tests_sim_movement, feature = "phobos"))]
+#[cfg(all(test, tests_sim_movement))]
 mod falling_damage_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

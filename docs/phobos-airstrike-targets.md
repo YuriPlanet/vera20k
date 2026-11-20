@@ -1,6 +1,6 @@
 # Optional Phobos airstrike target eligibility
 
-Build with `--features phobos` to choose which types an `Airstrike=` warhead
+Phobos is in every build; turn it on from a game's data to choose which types an `Airstrike=` warhead
 may designate, independently of `CanC4=`, and to let the aircraft follow a
 non-building target instead of the cell it stood on.
 

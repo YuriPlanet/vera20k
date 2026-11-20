@@ -1736,7 +1736,7 @@ pub(crate) fn join_team_for_test(
     teams.create_team_from_type(owner, team_type_id, &candidates, 0)
 }
 
-#[cfg(all(test, tests_sim_t_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_t_z))]
 mod considered_as_tests;
 #[cfg(all(test, tests_sim_t_z))]
 #[cfg(all(test, tests_sim_t_z))]

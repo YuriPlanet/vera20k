@@ -1,6 +1,6 @@
 # Optional Phobos deployable-building alternate cameo
 
-Build with `--features phobos` to let a building that undeploys show its
+Phobos is in every build; turn it on from a game's data to let a building that undeploys show its
 `AltCameo=` or `AltCameoPCX=` after the local player's spy infiltrates an
 enemy War Factory (`Factory=UnitType`), or when the country's `VeteranUnits=`
 names the unit the building undeploys into.

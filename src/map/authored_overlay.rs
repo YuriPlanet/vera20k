@@ -1998,7 +1998,7 @@ mod tests {
 
         // Phobos 0x47D36E clears cardinal ramps unless the projected
         // AllowRamps flag admits them; this registry has no such flag.
-        let cardinal = if cfg!(feature = "phobos") {
+        let cardinal = if true {
             FinalizedOverlayCell::default()
         } else {
             FinalizedOverlayCell::from_parts(0, 7)

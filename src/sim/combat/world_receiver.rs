@@ -4750,7 +4750,6 @@ fn emit_warhead_debris(
     warhead: &WarheadType,
     out: &mut CombatEmit,
 ) {
-    #[cfg(not(feature = "phobos"))]
     use crate::sim::voxel_anim::debris_budget;
     use crate::sim::voxel_anim::{ShpDebrisSource, throw_shp_debris, throw_typed_debris};
 
@@ -4920,7 +4919,6 @@ impl crate::sim::voxel_anim::ShpDebrisHost for WarheadDebrisHost<'_, '_> {
                 .phobos_debris_anims
                 .as_ref()
                 .and_then(|names| names.get(index)),
-            #[cfg(not(feature = "phobos"))]
             crate::sim::voxel_anim::ShpDebrisSource::WarheadDebrisAnims => None,
             // Techno deaths own their own host and never route here.
             crate::sim::voxel_anim::ShpDebrisSource::TypeDebrisAnims => None,
@@ -4983,7 +4981,7 @@ fn emit_detonation_anim(
     // Phobos jumps over this scatter (`DEFINE_JUMP(LJMP, 0x469AC1,
     // 0x469AF0)`): the light and the Iron Curtain anim keep the raw impact,
     // and its `0x469C46` tail scatters each animation itself.
-    let (x, y) = if inviso && !cfg!(feature = "phobos") {
+    let (x, y) = if inviso && !true {
         inviso_scatter::random_direction_coord(
             world.cell_grid(),
             &mut world.scenario_rng,
@@ -5280,7 +5278,6 @@ pub(crate) fn commit_projectile_detonations_inline(
             if area_continuation.is_none() || area_result != AreaDamageResult::IronCurtain {
                 emit_warhead_debris(world, rules, &live_tail, warhead, emit);
                 super::phobos_airburst::emit(world, rules, &live_tail);
-                #[cfg(not(feature = "phobos"))]
                 super::airburst::emit(world, rules, &live_tail);
             }
             if cluster_draws {
@@ -5411,7 +5408,6 @@ fn warhead_prevents_scatter(rules: &RuleSet, name: &str) -> bool {
     match rules.warhead(name) {
         Some(warhead) => warhead.prevents_scatter(rules),
         None => rules.phobos_globals.warhead_prevent_scatter,
-        #[cfg(not(feature = "phobos"))]
         None => false,
     }
 }
@@ -5525,7 +5521,6 @@ fn radiation_delay_admits(world: &Simulation, rules: &RuleSet) -> bool {
         .binary_frame()
         .is_multiple_of(rules.radiation.application_delay as u32);
     return !rules.radiation.use_global_rad_application_delay || shared;
-    #[cfg(not(feature = "phobos"))]
     shared
 }
 
@@ -5546,7 +5541,6 @@ fn foot_radiation_cell(
 
 /// The retained Cell487CB0 total [`apply_foot_radiation`] reads once
 /// (`0x004DA5EB..0x004DA629`); site membership is irrelevant.
-#[cfg(not(feature = "phobos"))]
 fn cell_radiation_level(
     world: &Simulation,
     rules: &RuleSet,
@@ -5562,7 +5556,6 @@ fn cell_radiation_level(
 /// positive level in its cell. A sleeping Foot is woken by it
 /// (`world::idle_sleep`); the immunity terms it leaves out only wake one
 /// that would have ignored it.
-#[cfg(not(feature = "phobos"))]
 pub(crate) fn radiation_reaches_foot(world: &Simulation, rules: &RuleSet, stable_id: u64) -> bool {
     radiation_enabled(world)
         && radiation_delay_admits(world, rules)
@@ -5628,11 +5621,11 @@ mod nuke_maker_tests;
 #[path = "building_hit_fire_tests.rs"]
 mod building_hit_fire_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "phobos_bullet_init_tests.rs"]
 mod phobos_bullet_init_tests;
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "world_receiver_debris_tests.rs"]
 mod debris_tests;
 
@@ -5643,7 +5636,7 @@ fn warhead_damages_wall(
     warhead.wall || warhead.wall_absolute_destroyer || (warhead.wood && wall_flags.armor_is_wood)
 }
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod prevent_scatter_tests {
     use super::warhead_prevents_scatter;
     use crate::rules::ini_parser::IniFile;

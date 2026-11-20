@@ -2881,9 +2881,6 @@ impl Simulation {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return false;
         };
-        if !target.phobos_unkillable() || target.health.current() <= 0 || input == 0 {
-            return false;
-        }
         let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
             return false;
         };
@@ -3767,7 +3764,7 @@ fn affects_house(
     crate::sim::combat::can_target_house(flags, source, target, houses, alliances, interner)
 }
 
-#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
 

@@ -63,11 +63,11 @@ mod flaming_guy;
 #[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_animated_tiberium_tests.rs"]
 mod animated_tiberium_tests;
-#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_vein_attack_tests.rs"]
 mod vein_attack_tests;
 
-#[cfg(all(test, tests_sim_a_b, feature = "phobos"))]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_firing_update_tests.rs"]
 mod anim_firing_update_tests;
 
@@ -236,7 +236,6 @@ pub struct AnimTranslucencyInput {
     pub end_frame: i32,
     /// Stock `Translucency=` integer level. A build without Phobos has no
     /// `Animatable`, so the key stays the plain value the draw arm maps.
-    #[cfg(not(feature = "phobos"))]
     pub explicit_translucency: i32,
     /// Phobos `Translucency.Get(currentFrame / End)` for this frame
     /// (`Ext/Anim/Hooks.cpp:601-605`, hook `0x423183`). `None` is native
@@ -290,7 +289,6 @@ impl AnimTranslucencyInput {
             translucent_ramp: config.is_some_and(|value| value.translucent),
             current_frame,
             end_frame,
-            #[cfg(not(feature = "phobos"))]
             explicit_translucency: config.map_or(0, |value| value.translucency),
             translucency_level: config.and_then(|value| value.phobos_translucency.get(percentage)),
             translucency_cloaked_level: config
@@ -367,7 +365,6 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
     }
     // A build without Phobos has no `Animatable`: the authored integer is the
     // level, and any other value keeps the stock ladder.
-    #[cfg(not(feature = "phobos"))]
     if input.explicit_translucency > 0 {
         return AnimTranslucencyResult {
             draw: input.instance_ramp < 15,
@@ -6595,7 +6592,6 @@ mod long_tail_contract_tests {
             translucent_ramp: false,
             current_frame: 0,
             end_frame: 10,
-            #[cfg(not(feature = "phobos"))]
             explicit_translucency,
             translucency_level: plain_level(explicit_translucency),
             translucency_cloaked_level: None,
@@ -6634,7 +6630,6 @@ mod long_tail_contract_tests {
                 translucent_ramp: false,
                 current_frame: 0,
                 end_frame: 10,
-                #[cfg(not(feature = "phobos"))]
                 explicit_translucency: 0,
                 translucency_level: None,
                 translucency_cloaked_level: None,
@@ -6664,7 +6659,6 @@ mod long_tail_contract_tests {
                 translucent_ramp: true,
                 current_frame,
                 end_frame: 15,
-                #[cfg(not(feature = "phobos"))]
                 explicit_translucency: 0,
                 translucency_level: None,
                 translucency_cloaked_level: None,
@@ -6701,7 +6695,6 @@ mod long_tail_contract_tests {
                     translucent_ramp: false,
                     current_frame: 0,
                     end_frame: 10,
-                    #[cfg(not(feature = "phobos"))]
                     explicit_translucency,
                     translucency_level: plain_level(explicit_translucency),
                     translucency_cloaked_level: None,

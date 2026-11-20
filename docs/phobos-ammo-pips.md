@@ -62,7 +62,7 @@ Readers use the native pairing helpers in `rules/ini_value.rs`:
 `read_phobos_int_pair` for the `Valueable<Point2D>` offset and globals,
 `read_phobos_nullable_int_pair` for the `Nullable<Point2D>` size (only a full
 two-integer read sets it, and `<default>`/`none` clear it). Each read is
-gated with `#[cfg(feature = "phobos")]` and falls back to the constructor
+part of every build and falls back to the constructor
 value in a stock build, so the three feature sets keep identical drawing.
 
 ## Residuals
@@ -77,7 +77,7 @@ value in a stock build, so the three feature sets keep identical drawing.
 ## Tests
 
 `src/app/presentation/ammo_pip_tests.rs`, all through the production
-`scale_pip_draws` reader/draw path and `#[cfg(feature = "phobos")]`:
+`scale_pip_draws` reader/draw path and the Phobos branch:
 
 - `an_authored_ammo_pip_frame_replaces_the_stock_thirteen`
 - `the_ammo_pip_wrap_start_frame_reads_its_authoring_and_constructor`

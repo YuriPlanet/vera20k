@@ -903,7 +903,6 @@ pub fn is_within_build_area(
             },
         );
     }
-    #[cfg(not(feature = "phobos"))]
     build_area_scan(
         sim,
         rules,
@@ -918,7 +917,6 @@ pub fn is_within_build_area(
 
 /// What a same-house `Adjacent.Disallowed=` provider does in one scan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(feature = "phobos"), allow(dead_code))]
 enum DisallowRule {
     Skip,
     Fatal,

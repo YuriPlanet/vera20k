@@ -266,7 +266,6 @@ fn grant_at(
 
 /// The stock build keeps the native frames (13/20) and offsets (23,-22 for a
 /// Unit, 15,-25 for an Infantry) through the same marker owner.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn the_stock_marker_keeps_its_frames_and_offsets() {
     let (mut sim, rules) = scene("");

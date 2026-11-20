@@ -1,6 +1,6 @@
 # Optional Phobos power-delta indicator
 
-Build with `--features phobos` to draw the net power beside the credits
+Phobos is in every build; turn it on from a game's data to draw the net power beside the credits
 counter. An unmodified game shows only the power bar; this is Phobos's
 `PowerDelta` readout.
 

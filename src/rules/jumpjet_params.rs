@@ -503,7 +503,6 @@ mod tests {
 
     /// Without Phobos the constructor keeps its own literals: the section is
     /// read into the Rules block, but the techno types never consult it.
-    #[cfg(not(feature = "phobos"))]
     #[test]
     fn the_stock_constructor_keeps_its_literals() {
         use crate::rules::ruleset::RuleSet;

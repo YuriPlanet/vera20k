@@ -1,6 +1,6 @@
 # Optional Phobos superweapon sidebar
 
-Build with `--features phobos` and set `[Sidebar] SuperWeaponSidebar=yes` in
+Phobos is in every build; turn it on from a game's data and set `[Sidebar] SuperWeaponSidebar=yes` in
 `uimd.ini` to put superweapon cameos in a left-edge column like C&C3. Default is
 `no`.
 

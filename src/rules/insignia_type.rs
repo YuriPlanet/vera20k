@@ -474,7 +474,7 @@ impl AresInsignia {
     }
 }
 
-#[cfg(all(test, tests_rules_a_n, feature = "phobos"))]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "insignia_type_tests.rs"]
 mod tests;
 

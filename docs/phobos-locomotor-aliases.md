@@ -1,6 +1,6 @@
 # Optional Phobos semantic locomotor aliases
 
-Build with `--features phobos` to let `Locomotor=` name a movement class in
+Phobos is in every build; turn it on from a game's data to let `Locomotor=` name a movement class in
 words instead of a braced CLSID.
 
 ```ini

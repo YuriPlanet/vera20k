@@ -1,6 +1,6 @@
 # Optional Phobos missing cameo
 
-Build with `--features phobos` to replace the placeholder the sidebar shows for
+Phobos is in every build; turn it on from a game's data to replace the placeholder the sidebar shows for
 a type whose cameo art is missing.
 
 ```ini

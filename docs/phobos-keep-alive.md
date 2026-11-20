@@ -39,10 +39,10 @@ unit/infantry/aircraft defaults only exist with these keys.
 
 ## Feature gating
 
-The mechanism belongs to Ares' house survive/defeat logic, so the consumer
-compiles under `all(feature = "ares", feature = "phobos")`. A `phobos`-only
-build reads the globals but has no Ares keep-alive tracking to feed; an
-`ares`-only build keeps the pre-Phobos default (structures only).
+The mechanism belongs to Ares' house survive/defeat logic, so the consumer is
+part of every build. A game without Ares' keep-alive tracking reads the
+globals but has nothing to feed; the pre-Phobos default (structures only)
+stays.
 
 ## Tests
 

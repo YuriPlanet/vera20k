@@ -5633,6 +5633,6 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "aoe_merge_building_tests.rs"]
 mod merge_building_tests;

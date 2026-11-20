@@ -1,6 +1,6 @@
 # Optional Phobos burst with no delay
 
-Build with `--features phobos` to let a weapon empty its whole burst in one
+Phobos is in every build; turn it on from a game's data to let a weapon empty its whole burst in one
 frame. gamemd fires at most one burst shot per frame even with `ROF=` or
 `BurstDelay0=` at 0; this key lifts that for the two classes that have the hook.
 

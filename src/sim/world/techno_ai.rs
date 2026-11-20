@@ -1362,7 +1362,6 @@ fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     use crate::sim::combat::veterancy::Promotion;
 
     // `previous` and `level` feed the Phobos promotion-animation arm only.
-    #[cfg_attr(not(feature = "phobos"), allow(unused_variables))]
     let (previous, promotion, level, owner, type_id, world) = {
         let terrain = sim.resolved_terrain.as_ref();
         let Some(entity) = sim.substrate.entities.get_mut(id) else {
@@ -1714,7 +1713,6 @@ impl Simulation {
 /// it is set when `Health >= Type+0xA0` (`0x006FA7A2`, `jl` past the set) or when
 /// `Health == 0` (`0x006FA7AC`), and either arm leaves before its heal block.
 /// Phobos builds replace both arms with [`phobos_apply_gained_self_heal`].
-#[cfg(not(feature = "phobos"))]
 fn house_heal_arm(
     interner: &StringInterner,
     session: &ScenarioSession,
@@ -6947,7 +6945,7 @@ use super::bridge_test_evidence;
 #[path = "techno_ai/promotion_sound_tests.rs"]
 mod promotion_sound_tests;
 
-#[cfg(all(test, tests_sim_world_techno, feature = "phobos"))]#[path = "techno_ai/promote_anim_tests.rs"]
+#[cfg(all(test, tests_sim_world_techno))]#[path = "techno_ai/promote_anim_tests.rs"]
 mod promote_anim_tests;
 
 #[cfg(all(test, tests_sim_world_techno))]

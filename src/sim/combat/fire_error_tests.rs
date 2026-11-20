@@ -578,7 +578,7 @@ fn original_fire_error_rows() {
         // and refuses after T21 through CanTarget[AI].IronCurtained; the
         // curtained rows therefore legitimately reach T17 first. The new
         // gate has its own focused test.
-        if cfg!(feature = "phobos")
+        if true
             && row["input"]["name"]
                 .as_str()
                 .is_some_and(|name| name.starts_with("T16."))

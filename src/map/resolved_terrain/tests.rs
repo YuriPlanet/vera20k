@@ -3839,7 +3839,7 @@ NoUseTileLandType=no
             // fixtures carry no projected AllowRamps flag.
             assert_eq!(
                 clears,
-                slope != 0 && (early_branch || slope >= 5 || cfg!(feature = "phobos"))
+                slope != 0 && (early_branch || slope >= 5 || true)
             );
             let retains_current_land = !clears || early_branch;
             assert_eq!(

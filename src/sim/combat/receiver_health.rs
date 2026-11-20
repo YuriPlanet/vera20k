@@ -273,7 +273,6 @@ pub(super) fn commit_receiver_health(
         let time = psychedelic_berserk_time(world, rules, event, value);
         let target = world.substrate.entities.get_mut(target_id)?;
         target.berserk.psychedelic_stack(time);
-        #[cfg(not(feature = "phobos"))]
         target.berserk.start(time);
         return Some(ReceiverHealthCommit {
             building_entry_frame,
@@ -544,7 +543,6 @@ impl BerserkState {
     /// time, then the flag. Answers whether this hit turned the object
     /// berserk; a berserk object only has its time refreshed. Phobos' hook
     /// replaces this arm with [`Self::psychedelic_stack`].
-    #[cfg(not(feature = "phobos"))]
     pub fn start(&mut self, time: i32) -> bool {
         self.timer = time;
         !std::mem::replace(&mut self.active, true)

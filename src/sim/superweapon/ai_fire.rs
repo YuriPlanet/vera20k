@@ -197,7 +197,7 @@ pub(crate) fn try_fire(
             continue;
         }
         // Reject extension-gated types before target search can consume RNG.
-        if (ares || cfg!(feature = "phobos"))
+        if (ares || true)
             && !super::super_weapon_available(sim, rules, owner, &sw.id)
         {
             continue;

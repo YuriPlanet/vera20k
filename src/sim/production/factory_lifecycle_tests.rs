@@ -915,7 +915,6 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
 /// stage-1 crew, and that recheck's strip pass abandons the head because
 /// Find_Factory skips a selling factory (`0x5F797A`/`0x5F7983`).
 #[test]
-#[cfg(not(feature = "phobos"))]
 fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::mission::MissionType;

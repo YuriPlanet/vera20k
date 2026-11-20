@@ -768,7 +768,6 @@ fn shows_alt_cameo(
     if rules.ares() {
         if obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
             return undeploying_building_is_veteran(house, obj, rules, country);
-            #[cfg(not(feature = "phobos"))]
             return false;
         }
         if rules.country_starts_veteran(country, obj) {
@@ -1610,7 +1609,7 @@ pub(crate) fn begin_main_load_pass<'a>(
     })
 }
 
-#[cfg(all(test, tests_app_presentation, feature = "phobos"))]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "sidebar_indicator_tests.rs"]
 mod sidebar_indicator_tests;
 

@@ -49,7 +49,7 @@ draws and touches no other timer (`ForceShield` and the rest are untouched).
 
 - The per-visit EMP arm runs in the shared `techno_common_post` step of the
   per-techno visit (`sim::world::techno_ai`), gated
-  `#[cfg(feature = "phobos")]`. The Temporal arm runs in the Temporal owner's
+  as part of every build. The Temporal arm runs in the Temporal owner's
   target update (`sim::temporal::temporal_update_head`) on the
   `remaining > 0` path; the `<= 0` path erases the target that frame, whose
   timers then cease, so the hold there would be unobservable.

@@ -129,7 +129,6 @@ fn rng(sim: &Simulation) -> [String; 3] {
     ]
 }
 
-#[cfg(not(feature = "phobos"))]
 fn restore_rng(sim: &mut Simulation, state: &Value) {
     sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap()).into();
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
@@ -957,7 +956,6 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {

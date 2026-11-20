@@ -1,6 +1,6 @@
 # Optional Phobos custom radiation types
 
-Build with `--features phobos` to register `[RadiationTypes]`, bind object
+Phobos is in every build; turn it on from a game's data to register `[RadiationTypes]`, bind object
 weapons with `RadType=`, and read the per-type radiation keys. Default builds
 retain the original single global `[Radiation]` configuration.
 

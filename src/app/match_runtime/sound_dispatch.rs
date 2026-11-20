@@ -25,7 +25,7 @@ mod sound_boundary_tests;
 #[path = "building_death_sound_tests.rs"]
 mod building_death_sound_tests;
 
-#[cfg(all(test, tests_app_match, feature = "phobos"))]
+#[cfg(all(test, tests_app_match))]
 #[path = "phobos_sw_messages_tests.rs"]
 mod phobos_sw_messages_tests;
 
@@ -533,7 +533,6 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 retained_cue
             }
-            #[cfg(not(feature = "phobos"))]
             SimSoundEvent::SuperWeaponActivatedMessage { .. }
             | SimSoundEvent::SuperWeaponLinkedAcquired { .. } => continue,
             SimSoundEvent::SuperWeaponActivatedMessage { owner, sw_type } => {

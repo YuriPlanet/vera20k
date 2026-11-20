@@ -1282,7 +1282,7 @@ Tiberium=yes
         };
         // Phobos 0x47D36E clears cardinal ramps too unless the projected
         // AllowRamps flag admits them.
-        let cardinal = if cfg!(feature = "phobos") {
+        let cardinal = if true {
             None
         } else {
             Some(LandType::Tiberium)
@@ -1290,7 +1290,7 @@ Tiberium=yes
         assert_eq!(retained_overlay_land(&resource, 4), cardinal);
         assert_eq!(retained_overlay_land(&resource, 1), cardinal);
         assert_eq!(retained_overlay_land(&resource, 5), None);
-        if cfg!(feature = "phobos") {
+        if true {
             let allowed = OverlayTypeFlags {
                 tiberium_allows_ramps: true,
                 ..resource

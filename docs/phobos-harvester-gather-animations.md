@@ -1,6 +1,6 @@
 # Optional Phobos custom gather animations
 
-Build with `--features phobos` to read Phobos `UnitTypeExt`'s three
+Phobos is in every build; turn it on from a game's data to read Phobos `UnitTypeExt`'s three
 `OreGathering.*` keys on a `VehicleTypes` entry. Default builds draw the literal
 `OREGATH.SHP` with its 15 frames per facing, exactly as the original does.
 

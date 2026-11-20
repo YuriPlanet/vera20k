@@ -745,7 +745,6 @@ fn designation_coordinates_follow_the_existing_sortie_target_through_departure_a
     );
     // Phobos `DEFINE_JUMP(LJMP, 0x6D481D, 0x6D482D)` lets the flare reach a
     // foot target; the vanilla Tactical beam only draws to a building.
-    #[cfg(not(feature = "phobos"))]
     assert!(
         f.sim
             .airstrike_designation_coordinates(f.boris, &f.rules)

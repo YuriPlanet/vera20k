@@ -79,7 +79,7 @@ use crate::util::direction::DIRECTION_DELTAS;
 #[cfg(all(test, tests_sim_p_s))]
 #[path = "spawn_manager_oracle_tests.rs"]
 mod oracle_tests;
-#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "phobos_powered_kill_tests.rs"]
 mod powered_kill_tests;
 #[cfg(all(test, tests_sim_p_s))]

@@ -459,7 +459,6 @@ pub(crate) struct NativePcxImage {
 /// instead.
 pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
     let image = crate::assets::pcx_file::PcxFile::from_bytes(bytes).ok()?;
-    #[cfg(not(feature = "phobos"))]
     if !image.is_indexed() {
         return None;
     }

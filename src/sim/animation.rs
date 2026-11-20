@@ -346,7 +346,6 @@ impl UnitFiringCounter {
     /// The same native arm's `fireUp < 0` synchronised alternative stays with
     /// the unrepresented `FiringSyncFrame` reader
     /// ([`commit_unit_firing_counter`]).
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     pub(crate) fn seed_sequence_frame(&mut self, frames: i32) {
         self.value = frames;
     }

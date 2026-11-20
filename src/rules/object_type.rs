@@ -1446,7 +1446,6 @@ pub struct ObjectType {
     /// Native TechnoType `Wake=` (`AnimTypeClass*` Find): the wake anim the
     /// type's water paths use; an unset or unknown name takes `[General]
     /// Wake=`. Read for a non-building techno.
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
     pub wake: Option<String>,
     /// Phobos `Wake.Grapple=` / `Wake.Sinking=` (`Ext/TechnoType/
     /// Body.cpp:1068-1069`, `Nullable<AnimTypeClass*>`): the wake anim on the

@@ -916,7 +916,7 @@ pub fn throw_death_debris(
         data.debris_maximums,
         data.debris_minimums,
         owner_house,
-        cfg!(feature = "phobos"),
+        true,
         data.debris_types_limit,
         host,
     )?;
@@ -1191,7 +1191,6 @@ mod tests {
     /// the budget. Phobos's hook replaces this block for Techno deaths (see
     /// `phobos_debris_one_pass_limit_leaves_the_rest_of_the_budget`), so this
     /// stock check runs only without the feature.
-    #[cfg(not(feature = "phobos"))]
     #[test]
     fn gsi_05_14_the_voxel_budget_drains_and_the_type_index_wraps() {
         let voxel_type = tire();

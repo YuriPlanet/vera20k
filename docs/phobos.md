@@ -19,15 +19,15 @@ match reach the same answer from the same rules, mode and map
 - [AI spare power](phobos-power-surplus.md)
 - [Target zone scan](phobos-target-zone.md)
 
-The rest needs a build with the `phobos` feature, which plays Phobos in every game:
+The rest is part of every build; a game's data switches it on, as with Ares:
 
 ```sh
-cargo run --release --bin vera20k --features phobos
+cargo run --release --bin vera20k
 ```
 
-The capability is independent of Ares and NPatch: a Phobos build needs neither. Every build holds
-Ares, which a game's data switches on ([Ares](ares.md)), and Phobos combines with NPatch as
-`--features phobos,npatch`. Every implemented Phobos chain must keep working
+Phobos is independent of Ares and NPatch: it needs neither. Every build holds
+Ares, which a game's data switches on ([Ares](ares.md)), and Phobos combines with NPatch
+(`--features npatch`). Every implemented Phobos chain must keep working
 when Ares plays or the other capabilities are compiled in — the compatibility rule and the pattern for two
 extensions touching one native site are in
 [NPatch placeholder](npatch.md#cross-extension-compatibility).

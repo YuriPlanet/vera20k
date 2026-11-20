@@ -554,7 +554,6 @@ impl Simulation {
             .substrate
             .entities
             .get(source.airstrike.manager.as_ref()?.target?)?;
-        #[cfg(not(feature = "phobos"))]
         if target.category() != EntityCategory::Structure {
             return None;
         }

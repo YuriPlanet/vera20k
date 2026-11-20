@@ -616,7 +616,6 @@ fn a_single_link_controller_releases_its_victim_first() {
 
 /// Native CaptureUnit's single-link release (`0x00471D8A`) has no infinite
 /// test: an `InfiniteMindControl=yes` weapon with `Damage=1` still replaces.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn an_infinite_single_link_controller_still_replaces_its_victim() {
     let rules = rules_from(&RULES.replacen(
@@ -1134,7 +1133,7 @@ fn native_overload_update_corpus() {
         // bound is exceeded; Phobos' rewritten walk (`Hooks.cpp:131-139`)
         // selects row one. The production Phobos walk has its own case in
         // `phobos_overload_tables_sound_and_particle_count_override_the_rules`.
-        if cfg!(feature = "phobos") && name == "single_row_damages_without_lean" {
+        if true && name == "single_row_damages_without_lean" {
             continue;
         }
         let (count, damage, frames) = match input.get("tables") {
@@ -2396,7 +2395,6 @@ fn a_killing_overload_frees_the_captives_before_the_sparks() {
     // Phobos draws the spark offsets only when the spark system resolves
     // (`Ext/CaptureManager/Hooks.cpp:167`); this fixture defines none, so
     // the stock-only ten draws disappear.
-    #[cfg(not(feature = "phobos"))]
     for _ in 0..10 {
         let _ = replay.next_range_i32_inclusive(-200, 200);
     }

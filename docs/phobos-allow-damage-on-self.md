@@ -1,6 +1,6 @@
 # Optional Phobos warhead self-damage
 
-Build with `--features phobos` to let a warhead damage the object that fired
+Phobos is in every build; turn it on from a game's data to let a warhead damage the object that fired
 it even when that object's type keeps `DamageSelf=no`.
 
 ```ini

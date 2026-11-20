@@ -57,7 +57,7 @@ fn scene(rules: &RuleSet) -> (Simulation, u64, u64) {
 }
 
 fn set_layer(sim: &mut Simulation, id: u64, layer: MovementLayer) {
-    let entity = sim.entities_mut_for_test().get_mut(id).expect("entity");
+    let entity = sim.entities_mut_for_test().get_mut_for_test(id).expect("entity");
     let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Drive);
     locomotor.set_layer_for_test(layer);
     entity.locomotor = Some(locomotor);

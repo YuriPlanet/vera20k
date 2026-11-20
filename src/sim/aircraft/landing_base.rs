@@ -195,7 +195,6 @@ pub(crate) fn get_landing_dir(
         let _ = interner;
         return byte_raw(field & 0xFF);
     }
-    #[cfg(not(feature = "phobos"))]
     unreachable!("the non-Phobos arm returns before the GetLandingDir arms")
 }
 

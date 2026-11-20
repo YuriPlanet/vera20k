@@ -327,7 +327,6 @@ pub(crate) fn process(
             } else {
                 tilt(rocket, block, ext, frame, host);
             }
-            #[cfg(not(feature = "phobos"))]
             tilt(rocket, block, ext, frame, host);
         }
         STATE_CLIMB => climb(rocket, block, host),

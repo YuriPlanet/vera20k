@@ -15,7 +15,6 @@ use crate::sim::timer::CdTimer;
 use serde_json::Value;
 
 /// Retail RULESMD.INI's `[ColorAdd]`, as the oracle's Rules hold it.
-#[cfg(not(feature = "phobos"))]
 const RETAIL_COLOR_ADD: &str = "[ColorAdd]\nNone=0,0,0\nStrongRed=31,0,0\nStrongGreen=0,63,0\n\
     StrongBlue=0,0,31\nHighRed=24,0,0\nHighGreen=0,56,0\nHighBlue=0,0,24\n\
     BrightWhite=31,63,31\nLowWhite=7,7,7\nHighWhite=24,56,24\nMidWhite=14,28,14\n\
@@ -59,7 +58,6 @@ fn curtained(row: &Value) -> GameEntity {
 /// A building under the row's curtain: a Force Shield when IronCurtain wrote
 /// its byte 1, else an Iron Curtain (`+0x1C4` holds 0 or 1; a 2 reads as not
 /// shielded, as the Iron Curtain's 0 does).
-#[cfg(not(feature = "phobos"))]
 fn shielded(row: &Value) -> GameEntity {
     let mut entity = GameEntity::test_default_of_category(
         1,
@@ -81,7 +79,6 @@ fn shielded(row: &Value) -> GameEntity {
     entity
 }
 
-#[cfg(not(feature = "phobos"))]
 fn rules(force_color: i32) -> RuleSet {
     let ini = IniFile::from_str(&format!(
         "{RETAIL_COLOR_ADD}[AudioVisual]\nForceShieldColor={force_color}\nLaserTargetColor=4\n"
@@ -229,7 +226,6 @@ fn the_building_anim_light_matches_native() {
 /// give the same low 16 bits, which are [`shp_colour_word`]'s building arm.
 /// Retail only: Phobos's `BuildingClass_Draw_TintColor` replaces the
 /// airstrike part of this word.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn the_building_colour_word_matches_native() {
     let oracle = oracle();
@@ -482,7 +478,6 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
 /// rows stand in for VERA's cell lookup (`instances/shp.rs`
 /// `anim_colour_word`), which is read, not replayed. Retail only, like
 /// [`the_building_colour_word_matches_native`].
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn the_anim_colour_word_matches_native() {
     let oracle = oracle();

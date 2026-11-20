@@ -1,6 +1,6 @@
 # Optional Phobos warhead decloaking
 
-Build with `--features phobos` to choose per warhead whether a cloaked object
+Phobos is in every build; turn it on from a game's data to choose per warhead whether a cloaked object
 it damages starts to uncloak.
 
 ```ini

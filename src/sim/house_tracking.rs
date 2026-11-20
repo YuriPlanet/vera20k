@@ -146,7 +146,7 @@ use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 mod phobos;
-#[cfg(all(test, tests_sim_h_o, feature = "phobos"))]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_tracking/phobos_harvester_tests.rs"]
 mod phobos_harvester_tests;
 pub(crate) use phobos::{PhobosLimboControl, PhobosPlacement};

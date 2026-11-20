@@ -707,7 +707,6 @@ impl SelectionOverlay {
         }
         // Ares's own draw runs only without Phobos's DrawInsignia, and its
         // keys are read only the Ares way.
-        #[cfg(not(feature = "phobos"))]
         for object in rules.all_objects().filter(|_| rules.ares_form()) {
             names.extend(object.ares_insignia.images.iter().flatten().cloned());
         }

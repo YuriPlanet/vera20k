@@ -98,7 +98,7 @@ fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
         // negative packet on a non-C4 building no longer floors to 1. That
         // arm is covered by
         // combat_tests::phobos_can_c4_allow_zero_damage_replaces_the_building_minimum.
-        if cfg!(feature = "phobos")
+        if true
             && input["kind"] == "building"
             && input["can_c4"] == false
             && input["damage"].as_i64().unwrap() < 0

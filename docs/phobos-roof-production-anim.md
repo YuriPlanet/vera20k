@@ -1,6 +1,6 @@
 # Roof production anims
 
-Build with `--features phobos` to give the factory unload animation its own
+Phobos is in every build; turn it on from a game's data to give the factory unload animation its own
 art and placement when the produced unit leaves through the roof (a JumpJet or
 other `ExitThroughRoof` unit).
 

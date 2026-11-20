@@ -157,7 +157,7 @@ impl Simulation {
         // Optional extension preflight precedes paired-Super writes, effects,
         // defense alerts and charge consumption. Stock-only commands retain
         // their native behavior, including native refused-click side effects.
-        if (ares || cfg!(feature = "phobos"))
+        if (ares || true)
             && !super::super_weapon_available(self, rules, owner, &sw.id)
         {
             return false;

@@ -234,7 +234,7 @@ pin it).
   `crash::phobos_spin_multiplier_tests::the_multiplier_scales_the_whole_double_product`,
   `phobos_crash_spin_zero_multiplier_skips_the_spin_and_its_draws`.
 - `955a2394c`: `launch::arcing_fix_tests::the_fix_aims_at_the_scattered_delta`.
-- Close-out reader tests for G1 (all `#[cfg(feature = "phobos")]`):
+- Close-out reader tests for G1 (all Phobos reads):
   `the_g1_combat_damage_gates_construct_and_read_from_their_own_section`
   (`rules/phobos_globals_tests.rs`),
   `the_g1_warhead_gates_default_and_keep_an_explicit_no` (`rules/warhead_type.rs`),

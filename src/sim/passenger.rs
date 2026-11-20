@@ -2672,7 +2672,7 @@ mod gunner_tests;
 #[cfg(all(test, tests_sim_p_s))]
 mod allegiance_tests;
 
-#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s))]
 mod sync_owner_tests;
 
 #[cfg(all(test, tests_sim_p_s))]

@@ -190,7 +190,7 @@ Run on `feature/delayed-fire` before the commit, all via the production
    `!timer.HasStarted()` branch's `true` (suppress this frame) was changed to
    `false`, so the first delayed FireAt would launch immediately.
 2. **Red**: `CARGO_TARGET_DIR=D:/vera20k-build py -m tools.cargo_run -- test -p
-   vera20k-core --lib phobos_delayed_fire --features phobos` → `0 passed; 3
+   vera20k-core --lib phobos_delayed_fire` → `0 passed; 3
    failed`. All three tests panicked on the frame-100 assertion
    (`left: 1, right: 0`): the shot fired on the very frame the delay should
    have suppressed it.
@@ -199,6 +199,6 @@ Run on `feature/delayed-fire` before the commit, all via the production
 4. **Green**: re-running the same phobos filter after `rustfmt` (leaf files
    only) → `3 passed; 0 failed`.
 
-The stock build was unaffected (all new logic is `#[cfg(feature = "phobos")]`),
+The rest of the engine was unaffected (the new logic reads Phobos keys only),
 and the `Burst.NoDelay` compatibility-gate test stayed green in all three
 feature sets throughout.

@@ -202,6 +202,6 @@ impl PhobosMultiWeapon {
     }
 }
 
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_multi_weapon_tests.rs"]
 mod tests;

@@ -107,7 +107,6 @@ fn without_an_attacker_the_source_house_still_governs() {
 /// Stock reads only `[esp+0xE0]`, the SourceHouse, so the enemy name stands
 /// and the allied attacker is never consulted. This is the case Phobos' hook
 /// inverts.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn stock_reads_only_the_source_house_of_the_call() {
     let rules = rules();

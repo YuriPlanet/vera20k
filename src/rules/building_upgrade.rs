@@ -502,7 +502,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_rules_a_n, feature = "phobos"))]
+#[cfg(all(test, tests_rules_a_n))]
 mod phobos_powers_up_tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::phobos_shields::AffectedHouse;

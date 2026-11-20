@@ -1981,7 +1981,7 @@ impl Simulation {
                 // Phobos patch `0x6B0BF7` (`Hooks.Misc.cpp:76-78`) changes
                 // the native `push 0` to `push 1`: the suicide hit ignores
                 // armor defenses.
-                ignore_defenses: cfg!(feature = "phobos"),
+                ignore_defenses: true,
                 arg6: false,
             },
         );

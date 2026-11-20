@@ -216,7 +216,7 @@ pub(super) fn commit(
         // 0x5F5416 original: a non-C4 building takes at least 1. Phobos
         // `CanC4.AllowZeroDamage` (`Ext/BuildingType/Hooks.cpp:182-195`)
         // replaces that body: only a zero packet is floored, unless allowed.
-        let floor = if cfg!(feature = "phobos") {
+        let floor = if true {
             *packet == 0 && !allow_zero_damage
         } else {
             *packet < 1

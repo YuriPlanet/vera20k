@@ -2481,7 +2481,6 @@ fn gsi_04_07_damage_wad_precedes_wall_and_wood_armor_routing() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
     let ini = IniFile::from_str(
@@ -2587,7 +2586,6 @@ fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
     fn run(victim_hp: i32, explodes: bool) -> (CombatTickResult, OverlayGrid, EntityStore, u64) {
@@ -6102,7 +6100,6 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -8263,7 +8260,6 @@ fn gsi_04_11_death_weapon_anim_precedes_outer_detonation_anim() {
 /// draws no cluster successor (`0x0070D782` calls DetonateAtCoord directly).
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn an_inviso_death_weapon_scatters_its_anim_inside_the_receiver() {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(
@@ -8731,7 +8727,6 @@ fn inviso_detonation_draws(
     effect
 }
 
-#[cfg(not(feature = "phobos"))]
 fn constructed_anim_coord(
     anim: &super::receiver_fixture::ConstructedAnimObservation,
 ) -> (u16, u16, SimFixed, SimFixed) {
@@ -8746,7 +8741,6 @@ fn constructed_anim_coord(
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
     let mut rules = inviso_weapon_rules(true, true);
@@ -8802,7 +8796,6 @@ fn inviso_scatter_uses_scenario_rng_only_for_effect_and_paired_smudge() {
 /// fire. The shooter fires from its centre.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn a_flak_burst_goes_off_where_fire_moved_it() {
     let mut rules = shooter_rules(
@@ -8895,7 +8888,6 @@ fn inviso_empty_animlist_still_consumes_one_draw() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() {
     let rules = inviso_weapon_rules(false, true);
@@ -8943,7 +8935,6 @@ fn gsi_08_05_non_inviso_projectile_advances_scenario_rng_by_the_reload_jitter() 
 /// detonates next frame.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn two_inviso_attackers_fire_in_live_order_and_the_second_bullet_waits_a_frame() {
     let mut rules = inviso_weapon_rules(true, true);
@@ -9015,7 +9006,6 @@ fn inviso_special_rules(special_key: &str) -> RuleSet {
 /// Magnetron's `[MagneticBeam]` dealt 5000 to the vehicle it should lift.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn inviso_special_arms_claim_the_impact_and_keep_the_shared_tail() {
     // DirectRocker is the chain's one conditional arm; TARGET is a UnitClass.
@@ -9748,7 +9738,6 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
 /// same cell is also exempt.
 /// Retail has no building radiation path; Phobos adds one, so this retail
 /// guarantee only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn buildings_take_no_rad_damage() {
     let rules = radiation_rules();
@@ -13553,7 +13542,6 @@ fn phobos_radiation_color_ignores_the_theater() {
 /// RadSiteClass_Radiate_UnhardcodeSnow (10056DB0, hook 0x65B5FB) jumps past
 /// this substitution; `radiation::ares_radiation_keeps_rad_color_on_snow`
 /// covers a game where Ares plays.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn retail_snow_theater_substitutes_red_and_blue() {
     let rules = radiation_rules();

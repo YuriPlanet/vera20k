@@ -1468,7 +1468,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s))]
 mod arcing_fix_tests {
     use super::apply_arcing_fix;
 
@@ -1500,7 +1500,7 @@ mod arcing_fix_tests {
     }
 }
 
-#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s))]
 mod random_coords_near_tests {
     use super::random_coords_near;
     use crate::sim::combat::inviso_scatter::{

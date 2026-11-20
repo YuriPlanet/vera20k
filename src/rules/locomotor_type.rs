@@ -705,7 +705,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "phobos"))]
     #[test]
     fn locomotor_aliases_require_the_phobos_feature() {
         assert_eq!(kind_from_clsid("Drive"), None);

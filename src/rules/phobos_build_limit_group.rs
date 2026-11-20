@@ -17,8 +17,7 @@
 use crate::rules::ini_parser::IniSection;
 
 /// The nine `BuildLimitGroup.*` keys on one TechnoType. Registered on
-/// `ObjectType` under `#[cfg(feature = "phobos")]`; this module is gated the
-/// same way, so stock builds do not compile any of these fields.
+/// `ObjectType`; every build carries it, and the Phobos switch decides play.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuildLimitGroupSettings {
     /// `BuildLimitGroup.Types=`, `ValueableVector<TechnoTypeClass*>`, default

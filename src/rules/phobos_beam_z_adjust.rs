@@ -53,6 +53,6 @@ pub fn resolved_clamp(weapon: Option<bool>, global: bool) -> bool {
     weapon.unwrap_or(global)
 }
 
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_beam_z_adjust_tests.rs"]
 mod tests;

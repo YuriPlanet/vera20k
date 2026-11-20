@@ -10808,7 +10808,6 @@ impl RuleSet {
                     && object.build_cat == Some(crate::rules::object_type::BuildCategory::Combat)
                     && rules.veteran_types.contains_defense(&object.id);
             }
-            #[cfg(not(feature = "phobos"))]
             false
         })
     }

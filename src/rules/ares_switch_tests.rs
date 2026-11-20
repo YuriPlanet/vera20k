@@ -84,7 +84,6 @@ fn retail_modes_and_maps_keep_ares_and_phobos_off() {
 /// A map's Phobos-only key, the building queue limit a harder-AI file sets,
 /// turns Phobos on and leaves Ares off; `AllowParallelAIQueues=` alone, which
 /// Ares reads too, turns neither on.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn a_maps_phobos_key_turns_phobos_on() {
     let Some((_, assets)) = retail_assets() else {

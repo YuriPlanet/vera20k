@@ -1,6 +1,6 @@
 # Optional Phobos AttachEffect
 
-Build with `--features phobos` to register `[AttachEffectTypes]`, attach those
+Phobos is in every build; turn it on from a game's data to register `[AttachEffectTypes]`, attach those
 effects from warheads and TechnoTypes, and read the stat, weapon, tint,
 discard and critical-hit blocks each effect carries. Default builds have no
 attach vector, instance lifecycle or weapon trigger anywhere in the game.

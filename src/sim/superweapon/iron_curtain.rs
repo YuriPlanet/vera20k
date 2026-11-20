@@ -318,7 +318,6 @@ pub(crate) fn curtain_object(
                     }
                 }
             }
-            #[cfg(not(feature = "phobos"))]
             receive_strength_as_c4(
                 sim,
                 rules,

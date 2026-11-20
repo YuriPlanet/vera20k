@@ -1,6 +1,6 @@
 # Per-shot burst delays
 
-Build with `--features phobos` to give each shot of a weapon's burst its own
+Phobos is in every build; turn it on from a game's data to give each shot of a weapon's burst its own
 rearm delay. Stock gamemd has only the Unit's four `BurstDelay0..3=` entries
 and a fixed `RandomRanged(3, 5)` for every other class; this key puts the
 delays on the weapon itself and applies to every class.

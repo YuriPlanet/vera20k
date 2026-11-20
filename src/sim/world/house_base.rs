@@ -380,7 +380,6 @@ impl HouseBaseState {
         {
             self.plants.push(id);
         }
-        #[cfg(not(feature = "phobos"))]
         if self
             .registration(id)
             .is_some_and(|entry| entry.plant.is_some())

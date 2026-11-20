@@ -1775,7 +1775,6 @@ fn phobos_insignia_draw<'a>(
 
 /// Ares.dll 0x1004E0F1..0x1004E149 checks the owner's ally mask for the
 /// viewer and compares the viewer to the observer house (0xAC1198).
-#[cfg(not(feature = "phobos"))]
 fn ares_insignia_visible(
     sim: &crate::sim::world::Simulation,
     owner: crate::sim::intern::InternedId,
@@ -1804,7 +1803,6 @@ fn ares_insignia_visible(
 /// The caller keeps the stock offsets, PALETTE.PAL, E00 and Z -2 it draws
 /// with (1004E1D7..1004E228). Its TechnoTypeExt and RulesExt keys are read
 /// only the Ares way, so the caller asks [`RuleSet::ares_form`].
-#[cfg(not(feature = "phobos"))]
 fn ares_insignia_draw<'a>(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
@@ -2199,7 +2197,6 @@ pub(crate) fn techno_extras_for_parent(
     let character = entity.seen.visual_character;
     // Ares replaces this leaf (hook 0x70A990) when the Rules were read the
     // Ares way ([`ares_insignia_draw`]).
-    #[cfg(not(feature = "phobos"))]
     if !ares_form && !disguised && character != 5 {
         use crate::sim::combat::veterancy::{raw_is_elite, raw_is_negative, raw_is_veteran};
         //70A999's +88 getter is discarded (Unit741490, Building459EE0);
@@ -2254,7 +2251,6 @@ pub(crate) fn techno_extras_for_parent(
             });
         strip.rank_insignia = strip.rank.is_some().then_some(insignia).flatten();
     }
-    #[cfg(not(feature = "phobos"))]
     if ares_form
         && !disguised
         && character != 5
@@ -2736,7 +2732,6 @@ fn scale_pip_rows(
                 }
             }));
         }
-        #[cfg(not(feature = "phobos"))]
         pips.extend(
             (0..object.spawns_number as usize)
                 .map(|slot| pip(slot, usize::from(slot < docked), row_y)),
@@ -3242,7 +3237,6 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
-    #[cfg(not(feature = "phobos"))]
     #[test]
     fn ares_enemy_insignia_checks_the_owners_allies_and_the_observer_house() {
         use super::ares_insignia_visible as visible;

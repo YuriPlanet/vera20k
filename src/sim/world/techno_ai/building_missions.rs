@@ -266,7 +266,6 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // Phobos BuildingClass_AnimationAI_TurretAnim (0x451242): AnimationAI
     // runs once per frame, so GetTurretFrame is called exactly once here.
     update_turret_anim_frame(sim, id, rules);
-    #[cfg(not(feature = "phobos"))]
     update_native_turret_anim_frame(sim, id, rules);
     // 450F9E..451145, between the step and the ready admission, which it
     // does not touch.
@@ -1233,7 +1232,6 @@ fn advance_turret_anim(substrate: &mut ObjectSubstrate, id: u64) {
 /// `AnimationAI @ 0x451250..0x451296` without Phobos' hook: the slot-9
 /// animation's current frame is `BodyShape[facing]` from the `0x007F4890`
 /// table (`(28 - i) & 31`), written with the animation step/delay cleared.
-#[cfg(not(feature = "phobos"))]
 fn update_native_turret_anim_frame(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -1427,7 +1425,6 @@ pub(super) fn gattling_idle(
         entity
             .gattling
             .idle_decay_phobos(&obj.gattling_stages, elite, &obj.phobos_rate_down, ammo);
-        #[cfg(not(feature = "phobos"))]
         entity.gattling.idle_decay(&obj.gattling_stages, elite);
     }
     if entity.gattling.value() > 0 {

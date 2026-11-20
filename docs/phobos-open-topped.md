@@ -152,7 +152,7 @@ keys later; the fallback is evaluated at the hook at runtime by `.Get(...)`.
 `from_section` and per-key `.Get`-equivalent accessors that take `&RuleSet`:
 the three numerics fall back to `garrison_rules` / `combat_damage`, the eight
 bools to `PhobosGlobals` (which reads the eight `[General]` keys). The
-aggregate is a `#[cfg(feature = "phobos")]` field on `ObjectType` with a
+aggregate is a Phobos field on `ObjectType` with a
 getter and a constructor read. All consumers are `cfg`-isolated; the stock
 (no-features) build keeps the YR globals and the native behavior unchanged.
 

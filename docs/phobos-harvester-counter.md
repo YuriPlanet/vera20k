@@ -1,6 +1,6 @@
 # Optional Phobos harvester counter
 
-Build with `--features phobos` to show the working and total harvester counts
+Phobos is in every build; turn it on from a game's data to show the working and total harvester counts
 beside the credits counter, Phobos's `HarvesterCounter` readout.
 
 ```ini

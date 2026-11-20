@@ -642,7 +642,6 @@ fn a_removed_factory_releases_its_phobos_slot() {
 /// Without a Phobos key Phobos does not play, so an AI factory start claims
 /// none of Phobos' per-house factory slots and a retail game keeps no Phobos
 /// state. `AllowParallelAIQueues=`, which Ares reads too, does not turn it on.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn without_a_phobos_key_a_factory_start_claims_no_phobos_slot() {
     use crate::sim::ai_base_building::AiFactorySlot;

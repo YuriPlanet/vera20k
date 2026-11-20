@@ -171,7 +171,7 @@ impl RadiationTypeCatalog {
         }
     }
 
-    #[cfg(all(test, feature = "phobos"))]
+    #[cfg(all(test))]
     pub(crate) fn entries(&self) -> &[RadiationType] {
         &self.types
     }
@@ -374,6 +374,6 @@ pub(crate) fn effective_radiation<'a>(
     }
 }
 
-#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "phobos_radiation_tests.rs"]
 mod tests;

@@ -1229,7 +1229,6 @@ fn phobos_failed_shore_search_takes_the_cannot_unload_arm() {
 // Stock: the failed search passes packed (0,0); Phobos hook `0x73D7B7`
 // (`Ext/Techno/Hooks.Transport.cpp:679-686`) replaces it with the
 // CannotUnload arm, covered below.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn hover_unload_failed_shore_search_assigns_the_retained_fallback_cell() {
     use crate::sim::components::{DriveCoord, NavTargetRef};

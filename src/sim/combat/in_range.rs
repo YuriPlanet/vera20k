@@ -3521,7 +3521,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod keep_range_tests {
     use super::keep_range_overrides;
 
