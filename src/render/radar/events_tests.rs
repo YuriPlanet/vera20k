@@ -806,3 +806,30 @@ fn draw_into(
         rgba[at..at + 4].copy_from_slice(&color);
     });
 }
+
+#[test]
+fn infinite_general_radar_scalars_tick_as_the_masked_fpu_does() {
+    // A rules file or map may write doubles gamemd's ReadDouble turns into
+    // infinities; the tick carries on with the masked x87 results.
+    let config = RadarEventConfig::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[General]\nRadarEventMinRadius=8\nRadarEventSpeed=1e999\n\
+         RadarEventRotationSpeed=1e999\nRadarEventColorSpeed=-1e999\n",
+    ));
+    let mut queue = queue_ready();
+    assert!(queue.create(
+        RadarEventType::BaseUnderAttack,
+        source((20, 20), (40, 40)),
+        0,
+        (140, 108),
+        &config
+    ));
+    for frame in 0..4 {
+        queue.advance_to_frame(frame, &config);
+    }
+    let event = &queue.events[0];
+    // radius - inf is -inf, not Greater than the minimum: the minimum stays.
+    assert_eq!(event.radius, 8.0);
+    // An infinite fade step overshoots every tick, and each bounce clamps
+    // the fade back to 0 or 1.
+    assert!(event.fade == 0.0 || event.fade == 1.0, "{}", event.fade);
+}
