@@ -78,9 +78,16 @@ launch.
 
 `verify` runs the engine's installer check, which reports the retail files
 that are missing. It is an installer check, not a launch proof: the files
-alone do not say that the menu draws or that a match plays. The setup script
-therefore runs a headless match after preparing the folder, which loads the
-rules, the art and the AI and plays them.
+alone do not say that the menu draws or that a match plays. `smoke` runs a
+headless match on the folder, which loads the rules, the art and the AI and
+plays them:
+
+```sh
+python -m tools.game_files smoke --dir game-files/yr
+```
+
+The setup script runs it after preparing the folder, so the one command ends
+with the content proven rather than only present.
 
 ## Inventory a copy
 

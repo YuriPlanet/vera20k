@@ -53,7 +53,7 @@ echo "running a headless match on the prepared copy"
 # The install check above only proves the archives are there. A match loads the
 # rules, the art and the AI and plays them, so it is what says the content
 # works.
-if ! RA2_DIR="$target" python3 -m tools.run_test_map match --ticks 300 --debug; then
+if ! python3 -m tools.game_files smoke --dir "$target"; then
     echo "the match did not run; the game folder is $target" >&2
     exit 1
 fi

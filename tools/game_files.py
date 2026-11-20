@@ -233,6 +233,28 @@ def prepare(source: Path, target: Path, root: Path = REPO, profile: str = 'fast'
     return lines, True
 
 
+def smoke(folder: Path, ticks: int = 300) -> tuple[list[str], bool]:
+    """Run a headless match on FOLDER and report whether the content plays.
+
+    The install check says the archives are there. A match loads the rules,
+    the art and the AI and plays them, so it is what says the content works.
+    It runs through the checkout's own map runner, so it needs the engine.
+    """
+    command = [sys.executable, '-m', 'tools.run_test_map', 'match',
+               '--ticks', str(ticks), '--debug']
+    print(f'+ {" ".join(command)}', flush=True)
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True,
+                            env={**os.environ, 'RA2_DIR': str(folder.resolve())})
+    output = [line for line in (result.stdout or '').splitlines() if line.strip()]
+    errors = [line for line in (result.stderr or '').splitlines() if line.strip()]
+    lines = output[-12:] + errors[-6:]
+    if result.returncode == 0:
+        lines.append(f'the match ran on {folder}')
+    else:
+        lines.append(f'the match did not run on {folder}')
+    return lines, result.returncode == 0
+
+
 def sha256(path: Path) -> str:
     """The file's SHA-256, as hex."""
     digest = hashlib.sha256()
@@ -325,6 +347,10 @@ def main(argv=None) -> int:
     prepare_parser.add_argument('--profile', default='fast', help='the built profile to check with')
     prepare_parser.add_argument('--binary', type=Path, help='the vera20k executable to check with')
 
+    smoke_parser = sub.add_parser('smoke', help='run a headless match on a game folder')
+    smoke_parser.add_argument('--dir', type=Path, required=True, help='the game folder')
+    smoke_parser.add_argument('--ticks', type=int, default=300, help='how many ticks the match runs')
+
     config_parser = sub.add_parser('config', help='point the checkout at a game folder')
     config_parser.add_argument('--dir', type=Path, required=True, help='the game folder')
     config_parser.add_argument('--root', type=Path, default=REPO,
@@ -355,6 +381,10 @@ def main(argv=None) -> int:
         lines, ready = prepare(args.source, args.target, REPO, args.profile, args.binary)
         print('\n'.join(lines))
         return 0 if ready else 1
+    if args.command == 'smoke':
+        lines, played = smoke(args.dir, args.ticks)
+        print('\n'.join(lines))
+        return 0 if played else 1
     if args.command == 'config':
         print(write_config(args.dir, args.root))
         return 0

@@ -167,6 +167,26 @@ class FindGameFolderTest(unittest.TestCase):
             self.assertEqual(game_files.find_game_folder(base), base)
 
 
+class SmokeTest(unittest.TestCase):
+    """The headless match that says the content plays."""
+
+    def test_a_match_that_runs_is_reported_as_played(self) -> None:
+        finished = game_files.subprocess.CompletedProcess([], 0, stdout='ticks=300\n', stderr='')
+        with mock.patch.object(game_files.subprocess, 'run', return_value=finished) as run:
+            lines, played = game_files.smoke(Path('/tmp/yr'))
+        self.assertTrue(played)
+        self.assertEqual(lines[-1], 'the match ran on /tmp/yr')
+        self.assertEqual(run.call_args.kwargs['env']['RA2_DIR'], str(Path('/tmp/yr').resolve()))
+
+    def test_a_match_that_fails_is_reported_as_not_played(self) -> None:
+        finished = game_files.subprocess.CompletedProcess([], 1, stdout='', stderr='no archives\n')
+        with mock.patch.object(game_files.subprocess, 'run', return_value=finished):
+            lines, played = game_files.smoke(Path('/tmp/yr'))
+        self.assertFalse(played)
+        self.assertIn('the match did not run on /tmp/yr', lines[-1])
+        self.assertIn('no archives', lines)
+
+
 class HumanSizeTest(unittest.TestCase):
     """Byte counts read as short strings."""
 
