@@ -263,6 +263,13 @@ The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
 links `-Wl,--wrap=pthread_create` and the wrapper raises the requested stack, so
 `android-activity` stays the crates.io 0.6.0 release.
 
+A long press elsewhere on the battlefield is the touch mapper's right click
+(`app::input::touch`, 400 ms), so it cancels whatever a right click cancels —
+including a pending placement. Over the message lane the long press opens the
+chat instead, and in an offline skirmish it opens it as the `ChatTarget::Skirmish`
+that the plain Enter key picks, which cancels a pending `/…` spawn group
+(`docs/skirmish-cheats.md`). A tap on the lane sends, as Enter does.
+
 Residuals:
 
 - The touch entry is Android-only. The browser build already takes text from the
