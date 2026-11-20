@@ -2175,6 +2175,25 @@ fn techno_common_steps(
     // Phobos `TechnoExt::UpdateAttachEffects` (Body.Update.cpp:895): one AI
     // phase and the animation check for every AttachEffect on this object.
     sim.update_phobos_attach_effects_with(id, rules, effects, overlay_registry);
+    // Phobos `TechnoExt::OnEarlyUpdate -> EatPassengers`
+    // (`Ext/Techno/Body.Update.cpp:19`): after `UpdateAttachEffects` and
+    // before `CheckDeathConditions`.
+    crate::sim::passenger_deletion::eat_passengers(sim, rules, id, effects);
+    // Phobos `TechnoExt::OnEarlyUpdate -> UpdateLastTargetCrd`
+    // (`Ext/Techno/Body.Update.cpp:24`): after the EMP/rearm passes and
+    // `EatPassengers`, before `CheckDeathConditions`; keeps the
+    // `ExtraThreatCoefficient.DistanceToLastTarget` coordinate.
+    sim.update_phobos_extra_threat_last_target(id, rules);
+    // Phobos `TechnoExt::OnEarlyUpdate -> CheckDeathConditions`
+    // (`Ext/Techno/Body.Update.cpp:26`): after `UpdateAttachEffects`, which this
+    // body has just run. Native's early return skips the `ApplyInterceptor`
+    // step that follows.
+    let check_death_returns = sim.check_auto_death(id, rules, overlay_registry, effects);
+    // Phobos `TechnoExt::OnEarlyUpdate -> ApplyInterceptor`
+    // (`Ext/Techno/Body.Update.cpp:33`), the last early-update step.
+    if !check_death_returns {
+        sim.apply_interceptor(id, rules, overlay_registry, effects);
+    }
     if rules.ares() {
         sim.update_ares_operator_operability(id, rules, effects);
         // Installed6F9E50 ->1004B320 owns delayed Building reactivation before

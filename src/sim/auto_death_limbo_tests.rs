@@ -23,7 +23,7 @@ AutoDeath.Behavior=kill\nAutoDeath.AfterDelay=1\n\
 AutoDeath.Behavior=kill\nAutoDeath.AfterDelay=1\nAutoDeath.AllowLimboed=no\n\
 [TRNS]\nStrength=300\nSight=0\nSpeed=6\nPassengers=3\nWeaponCount=4\nGunner=yes\n\
 InitialPayload.Types=TLIMBO,TIFV1,TIFV2\nInitialPayload.Nums=1\n\
-[TRNSP]\nStrength=300\nSight=0\nSpeed=6\nPassengers=2\n\
+[TRNSP]\nStrength=300\nSight=0\nSpeed=6\nPassengers=2\nImmuneToAbduction=yes\n\
 [TIFV1]\nStrength=100\nSight=0\nSpeed=5\nIFVMode=1\n\
 [TIFV2]\nStrength=100\nSight=0\nSpeed=5\nIFVMode=2\n\
 [ABSORB]\nStrength=500\nSight=0\nInfantryAbsorb=yes\nPassengers=1\n\

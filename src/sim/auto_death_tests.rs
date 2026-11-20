@@ -498,7 +498,7 @@ fn an_ares_surface_conversion_stops_the_countdown() {
          [LAND]\nStrength=100\nSpeed=5\nSpeedType=Hover\nMovementZone=Amphibious\n\
          Convert.Water=WATER\nAutoDeath.Behavior=kill\nAutoDeath.AfterDelay=5\n\
          Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n\
-         [WATER]\nStrength=200\nSpeed=5\nSpeedType=Hover\nMovementZone=Amphibious\n\
+         [WATER]\nStrength=200\nSpeed=5\nSpeedType=Hover\nMovementZone=Amphibious\nImmuneToAbduction=yes\n\
          Convert.Land=LAND\nConvert.Water=WATER\n\
          Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n\
          [Warheads]\n0=C4WH\n\
