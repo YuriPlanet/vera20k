@@ -8,6 +8,9 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+pub use native::import::{ModImport, PreparedModImport};
+
 #[derive(Debug, Clone)]
 pub struct ModFolder(Storage);
 
@@ -89,15 +92,59 @@ mod native {
     const MAX_DEPTH: usize = 16;
     const MAX_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 
+    #[derive(Debug)]
     enum Kind {
         Zip,
         Directory,
     }
 
+    #[derive(Debug)]
     struct Part {
         path: PathBuf,
-        key: String,
+        name: String,
         kind: Kind,
+    }
+
+    impl Part {
+        fn new(path: PathBuf, name: &str, kind: Kind) -> Self {
+            // A caller only identifies a ZIP part after checking its suffix.
+            let name = match kind {
+                Kind::Zip => name.get(..name.len().saturating_sub(4)).unwrap_or(name),
+                Kind::Directory => name,
+            };
+            Self {
+                path,
+                name: name.to_owned(),
+                kind,
+            }
+        }
+    }
+
+    fn order_parts(parts: &mut [Part]) -> io::Result<()> {
+        if parts.len() > MAX_PARTS {
+            return Err(invalid(format!("a mod can have at most {MAX_PARTS} parts")));
+        }
+        parts.sort_by_cached_key(|part| part.name.to_ascii_lowercase());
+        if let Some([left, _]) = parts.windows(2).find(
+            |pair| matches!(pair, [left, right] if left.name.eq_ignore_ascii_case(&right.name)),
+        ) {
+            return Err(invalid(format!(
+                "more than one mod part is named {:?}; keep one copy of each part",
+                left.name
+            )));
+        }
+        Ok(())
+    }
+
+    fn staging_directory(prefix: &'static str) -> tempfile::Builder<'static, 'static> {
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(prefix);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            builder.permissions(fs::Permissions::from_mode(0o700));
+        }
+        builder
     }
 
     fn invalid(message: impl Into<String>) -> io::Error {
@@ -144,8 +191,8 @@ mod native {
                             .is_some_and(|ext| {
                                 [
                                     "aud", "bag", "bik", "csf", "fnt", "hva", "ini", "map", "mix",
-                                    "mpr", "pal", "pcx", "png", "shp", "sno", "tem", "urb", "vpl",
-                                    "vxl", "wav", "yrm",
+                                    "mpr", "pal", "pcx", "pkt", "png", "shp", "sno", "tem", "urb",
+                                    "vpl", "vxl", "wav", "yrm",
                                 ]
                                 .iter()
                                 .any(|asset| asset.eq_ignore_ascii_case(ext))
@@ -179,18 +226,10 @@ mod native {
                 if asset_directory(&name) {
                     return Ok(None);
                 }
-                Part {
-                    path,
-                    key,
-                    kind: Kind::Directory,
-                }
-            } else if let Some(stem) = key.strip_suffix(".zip") {
+                Part::new(path, &name, Kind::Directory)
+            } else if key.ends_with(".zip") {
                 contains_zip = true;
-                Part {
-                    path,
-                    key: stem.to_owned(),
-                    kind: Kind::Zip,
-                }
+                Part::new(path, &name, Kind::Zip)
             } else if matches!(key.as_str(), "mod.ini" | "veraui.ini" | "mod-files.txt") {
                 metadata.push((path, PathBuf::from(name)));
                 continue;
@@ -221,47 +260,10 @@ mod native {
                 return Ok(None);
             }
         }
-        if parts.len() > MAX_PARTS {
-            return Err(invalid(format!("a mod can have at most {MAX_PARTS} parts")));
-        }
-        parts.sort_unstable_by(|left, right| left.key.cmp(&right.key));
-        if let Some([left, _]) = parts
-            .windows(2)
-            .find(|pair| matches!(pair, [left, right] if left.key == right.key))
-        {
-            return Err(invalid(format!(
-                "more than one mod part is named {:?}; keep one copy of each part",
-                left.key
-            )));
-        }
-
-        let mut builder = tempfile::Builder::new();
-        builder.prefix("vera20k-mod-");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            builder.permissions(fs::Permissions::from_mode(0o700));
-        }
-        let prepared = builder.tempdir()?;
-        let mut merge = Merge {
-            target: prepared.path(),
-            stop,
-            paths: HashMap::new(),
-            in_part: HashSet::new(),
-            entries_left: MAX_ENTRIES,
-            bytes_left: MAX_BYTES,
-            buffer: vec![0; 128 * 1024],
-        };
-        for part in &parts {
-            merge.in_part.clear();
-            let result = match part.kind {
-                Kind::Zip => merge.zip(&part.path),
-                Kind::Directory => merge.directory(&part.path, Path::new(""), 0),
-            };
-            result.map_err(|error| {
-                io::Error::new(error.kind(), format!("{}: {error}", part.path.display()))
-            })?;
-        }
+        order_parts(&mut parts)?;
+        let prepared = staging_directory("vera20k-mod-").tempdir()?;
+        let mut merge = Merge::new(prepared.path(), stop);
+        merge.apply(&parts)?;
         merge.in_part.clear();
         for (source, relative) in metadata {
             merge.entry()?;
@@ -286,7 +288,34 @@ mod native {
         buffer: Vec<u8>,
     }
 
-    impl Merge<'_> {
+    impl<'a> Merge<'a> {
+        fn new(target: &'a Path, stop: Option<&'a AtomicBool>) -> Self {
+            Self {
+                target,
+                stop,
+                paths: HashMap::new(),
+                in_part: HashSet::new(),
+                entries_left: MAX_ENTRIES,
+                bytes_left: MAX_BYTES,
+                buffer: vec![0; 128 * 1024],
+            }
+        }
+
+        fn apply(&mut self, parts: &[Part]) -> io::Result<()> {
+            for part in parts {
+                check_stop(self.stop)?;
+                self.in_part.clear();
+                let result = match part.kind {
+                    Kind::Zip => self.zip(&part.path),
+                    Kind::Directory => self.directory(&part.path, Path::new(""), 0),
+                };
+                result.map_err(|error| {
+                    io::Error::new(error.kind(), format!("{}: {error}", part.path.display()))
+                })?;
+            }
+            Ok(())
+        }
+
         fn entry(&mut self) -> io::Result<()> {
             check_stop(self.stop)?;
             self.entries_left = self
@@ -564,6 +593,210 @@ mod native {
         }
         Ok(())
     }
+
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    pub(super) mod import {
+        use super::*;
+
+        /// The same ordered parts the Add Mod dialog shows and imports.
+        #[derive(Debug)]
+        pub struct ModImport {
+            parts: Vec<Part>,
+            name: String,
+        }
+
+        /// The assembled files wait here until the player accepts their install.
+        #[derive(Debug)]
+        pub struct PreparedModImport {
+            staged: TempDir,
+            name: String,
+        }
+
+        impl ModImport {
+            pub fn plan(sources: &[PathBuf]) -> io::Result<Self> {
+                if sources.is_empty() {
+                    return Err(invalid("choose a ZIP archive or a mod folder"));
+                }
+                if sources.len() > MAX_PARTS {
+                    return Err(invalid(format!("a mod can have at most {MAX_PARTS} parts")));
+                }
+                let mut parts = Vec::with_capacity(sources.len());
+                for path in sources {
+                    let name =
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                            .ok_or_else(|| {
+                                invalid(format!("{} needs a Unicode filename", path.display()))
+                            })?;
+                    let kind = fs::symlink_metadata(path)?;
+                    let zip = path
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"));
+                    let kind = if !is_link(&kind) && kind.is_dir() {
+                        Kind::Directory
+                    } else if !is_link(&kind) && kind.is_file() && zip {
+                        Kind::Zip
+                    } else {
+                        return Err(invalid(format!(
+                            "choose a ZIP archive or an extracted mod folder: {}",
+                            path.display()
+                        )));
+                    };
+                    parts.push(Part::new(path.clone(), name, kind));
+                }
+                order_parts(&mut parts)?;
+                let name = parts.first().map_or("", |part| part.name.trim());
+                // Keep room for a number if the same name is already installed.
+                let name = name.get(..name.floor_char_boundary(245)).unwrap_or(name);
+                let name = if ignored(name) || portable_component(name).is_err() {
+                    "Imported Mod"
+                } else {
+                    name
+                }
+                .to_owned();
+                Ok(Self { parts, name })
+            }
+
+            pub fn parts(&self) -> impl Iterator<Item = &Path> {
+                self.parts.iter().map(|part| part.path.as_path())
+            }
+
+            pub fn name(&self) -> &str {
+                &self.name
+            }
+
+            pub fn prepare(
+                self,
+                mods_dir: &Path,
+                stop: &AtomicBool,
+            ) -> io::Result<PreparedModImport> {
+                let stop = Some(stop);
+                check_stop(stop)?;
+                fs::create_dir_all(mods_dir)?;
+                let mods_dir = fs::canonicalize(mods_dir)?;
+                for part in &self.parts {
+                    check_stop(stop)?;
+                    if matches!(part.kind, Kind::Directory)
+                        && mods_dir.starts_with(fs::canonicalize(&part.path)?)
+                    {
+                        return Err(invalid(
+                            "choose the mod's folder outside the Mods folder itself",
+                        ));
+                    }
+                }
+                // Stage next to the install so publishing is a single rename.
+                let staged = staging_directory(".vera20k-import-").tempdir_in(mods_dir)?;
+                Merge::new(staged.path(), stop).apply(&self.parts)?;
+                if !is_game_root(staged.path())? {
+                    return Err(invalid(
+                        "No game files found at the top level. Choose the folder that contains the mod's game files",
+                    ));
+                }
+                check_stop(stop)?;
+                Ok(PreparedModImport {
+                    staged,
+                    name: self.name,
+                })
+            }
+        }
+
+        impl PreparedModImport {
+            pub fn install(self) -> io::Result<String> {
+                let mods_dir = self
+                    .staged
+                    .path()
+                    .parent()
+                    .ok_or_else(|| invalid("missing Mods folder"))?;
+                // Serialize name selection across VERA processes, which look up
+                // mods ignoring ASCII case even on a case-sensitive filesystem.
+                let lock = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(mods_dir.join(".vera20k-import.lock"))?;
+                match lock.try_lock() {
+                    Ok(()) => {}
+                    Err(fs::TryLockError::WouldBlock) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::WouldBlock,
+                            "another copy of VERA20K is adding a mod; try again",
+                        ));
+                    }
+                    Err(fs::TryLockError::Error(error)) => return Err(error),
+                }
+                for number in 1..=999 {
+                    let folder = if number == 1 {
+                        self.name.clone()
+                    } else {
+                        format!("{} {number}", self.name)
+                    };
+                    if crate::util::case_insensitive_path::find(mods_dir, &folder).is_some() {
+                        continue;
+                    }
+                    // Exclusive rename also protects a folder another program
+                    // may have made between our lookup and publication.
+                    match rename_new(self.staged.path(), &mods_dir.join(&folder)) {
+                        Ok(()) => {
+                            let _ = self.staged.keep();
+                            return Ok(folder);
+                        }
+                        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                        Err(error) => return Err(error),
+                    }
+                }
+                Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "every mod folder name is taken",
+                ))
+            }
+        }
+
+        #[cfg(unix)]
+        fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+            use std::ffi::CString;
+            use std::os::unix::ffi::OsStrExt;
+
+            let from = CString::new(from.as_os_str().as_bytes())?;
+            let to = CString::new(to.as_os_str().as_bytes())?;
+            // SAFETY: both arguments are NUL-terminated and live for the call.
+            #[cfg(target_os = "macos")]
+            let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+            #[cfg(target_os = "linux")]
+            let result = unsafe {
+                libc::renameat2(
+                    libc::AT_FDCWD,
+                    from.as_ptr(),
+                    libc::AT_FDCWD,
+                    to.as_ptr(),
+                    libc::RENAME_NOREPLACE,
+                )
+            };
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        }
+
+        #[cfg(windows)]
+        fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+            use std::os::windows::ffi::OsStrExt;
+
+            #[link(name = "kernel32")]
+            unsafe extern "system" {
+                fn MoveFileW(from: *const u16, to: *const u16) -> i32;
+            }
+
+            let from: Vec<_> = from.as_os_str().encode_wide().chain([0]).collect();
+            let to: Vec<_> = to.as_os_str().encode_wide().chain([0]).collect();
+            // SAFETY: both paths are NUL-terminated and live for the call.
+            if unsafe { MoveFileW(from.as_ptr(), to.as_ptr()) } != 0 {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        }
+    }
 }
 
 #[cfg(all(
@@ -678,5 +911,78 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert!(error.to_string().contains("unsafe mod package path"));
         assert_eq!(fs::read_dir(package.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn add_mod_applies_the_preview_order_for_zips_and_extracted_folders() {
+        let downloads = tempfile::tempdir().unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        let base = [("Rules.INI", b"base".as_slice()), ("Art.INI", b"art")];
+        let patch = [("rules.ini", b"patched".as_slice())];
+        for (part, files) in [("a Base", base.as_slice()), ("Z Patch", patch.as_slice())] {
+            write_files(&downloads.path().join(part), files);
+            write_zip(
+                &downloads.path().join(format!("{part}.zip")),
+                files,
+                zip::CompressionMethod::Deflated,
+            );
+        }
+
+        for (extension, installed) in [(".zip", "a Base"), ("", "a Base 2")] {
+            let base_path = downloads.path().join(format!("a Base{extension}"));
+            let patch_path = downloads.path().join(format!("Z Patch{extension}"));
+            let plan = ModImport::plan(&[patch_path.clone(), base_path.clone()]).unwrap();
+            assert_eq!(plan.parts().collect::<Vec<_>>(), [&base_path, &patch_path]);
+            let folder = plan
+                .prepare(mods.path(), &AtomicBool::new(false))
+                .unwrap()
+                .install()
+                .unwrap();
+            assert_eq!(folder, installed);
+            let active = ModFolder::open(&mods.path().join(folder), None).unwrap();
+            assert!(!active.is_prepared());
+            assert_eq!(fs::read(active.join("Rules.INI")).unwrap(), b"patched");
+            assert_eq!(fs::read(active.join("Art.INI")).unwrap(), b"art");
+            assert!(base_path.exists() && patch_path.exists());
+        }
+        assert_eq!(
+            fs::read(downloads.path().join("a Base/Rules.INI")).unwrap(),
+            b"base"
+        );
+    }
+
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn add_mod_discards_staged_files_when_a_later_part_cannot_be_read() {
+        let downloads = tempfile::tempdir().unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        let base = downloads.path().join("Base");
+        let patch = downloads.path().join("Patch.zip");
+        write_files(&base, &[("rules.ini", b"base")]);
+        fs::write(&patch, b"not a zip").unwrap();
+
+        let plan = ModImport::plan(&[base.clone(), patch]).unwrap();
+        assert!(plan.prepare(mods.path(), &AtomicBool::new(false)).is_err());
+        assert_eq!(fs::read_dir(mods.path()).unwrap().count(), 0);
+        assert_eq!(fs::read(base.join("rules.ini")).unwrap(), b"base");
+    }
+
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn cancelling_add_mod_discards_a_finished_import_before_it_is_published() {
+        let downloads = tempfile::tempdir().unwrap();
+        let mods = tempfile::tempdir().unwrap();
+        let source = downloads.path().join("Example");
+        write_files(&source, &[("rules.ini", b"new")]);
+        write_files(&mods.path().join("Example"), &[("rules.ini", b"installed")]);
+        let plan = ModImport::plan(&[source]).unwrap();
+        let staged = plan.prepare(mods.path(), &AtomicBool::new(false)).unwrap();
+        drop(staged);
+        assert_eq!(fs::read_dir(mods.path()).unwrap().count(), 1);
+        assert_eq!(
+            fs::read(mods.path().join("Example/rules.ini")).unwrap(),
+            b"installed"
+        );
     }
 }

@@ -464,18 +464,17 @@ pub(crate) fn installed(paths: &PathsConfig) -> Vec<Listed> {
 }
 
 /// What the Mods page says under its one row while `Mods` holds no mod: where
-/// a mod goes. On Windows also the Start menu shortcut to the folder that the
-/// installer makes (`.github/release/windows/vera20k.iss`).
+/// a mod goes, or how to import one in the desktop game.
 pub(crate) fn none_installed_hint(rows: &[Listed]) -> Option<String> {
     if rows.iter().any(|row| row.folder.is_some()) {
         return None;
     }
-    let mut text = crate::i18n::tr("VERA:ModsNoneYet");
-    if cfg!(windows) {
-        text.push(' ');
-        text.push_str(&crate::i18n::tr("VERA:ModsNoneYetStartMenu"));
-    }
-    Some(text)
+    let key = if cfg!(any(windows, target_os = "macos", target_os = "linux")) {
+        "VERA:ModsAddHint"
+    } else {
+        "VERA:ModsNoneYet"
+    };
+    Some(crate::i18n::tr(key))
 }
 
 /// Show the `Mods` folder in the system's file manager, made first if it has
@@ -1017,9 +1016,9 @@ mod tests {
     }
 
     /// A Mods folder with only its README and what a system leaves there
-    /// tells the player where a mod goes; one mod in it, and it says nothing.
+    /// shows how to add a mod, until the player has one.
     #[test]
-    fn an_empty_mods_folder_says_where_a_mod_goes() {
+    fn an_empty_mods_folder_says_how_to_add_one() {
         let (root, paths) = settings("empty");
         let mods = root.join("Mods");
         std::fs::remove_dir_all(mods.join("Winter War")).unwrap();
@@ -1027,7 +1026,11 @@ mod tests {
         std::fs::create_dir_all(mods.join("__MACOSX")).unwrap();
         let hint = none_installed_hint(&installed(&paths)).expect("an empty Mods folder");
         assert!(hint.starts_with("No mods yet."), "{hint}");
-        assert_eq!(hint.contains("Start menu"), cfg!(windows), "{hint}");
+        assert_eq!(
+            hint.contains("Add Mod"),
+            cfg!(any(windows, target_os = "macos", target_os = "linux")),
+            "{hint}"
+        );
         std::fs::create_dir_all(mods.join("Winter War")).unwrap();
         assert_eq!(none_installed_hint(&installed(&paths)), None);
         std::fs::remove_dir_all(root).unwrap();

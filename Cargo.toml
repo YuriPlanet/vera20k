@@ -261,6 +261,11 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 arboard = { version = "3.7", default-features = false }
 
+# The file chooser uses Shell COM interfaces. wgpu already pins windows 0.62.
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell_Common"]
+
 # --- Windows memory allocator ---
 # The game program (src/main.rs) allocates through mimalloc on Windows instead
 # of the process heap. MIT, linked statically, and built by the C compiler that

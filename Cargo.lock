@@ -3305,6 +3305,7 @@ dependencies = [
  "web-sys",
  "webpki-roots",
  "wgpu",
+ "windows",
  "windows-sys 0.61.2",
  "winit",
  "winresource",

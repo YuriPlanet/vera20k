@@ -90,6 +90,22 @@ sign-in.
 `Mods` holds one folder for each mod. The game makes `Mods` the first time it starts,
 with a `README.txt` in it.
 
+In the desktop game, open **Options → Mods → Add Mod** to import a download.
+Choose the ZIPs or extracted folders for one mod. You can also drop them on the
+window while Add Mod is open where the desktop supports file drops. For a mod
+with a base and patch, add both before pressing **Import**. On Linux, the chooser
+uses Zenity or KDialog.
+
+The preview shows the order of the parts. VERA sorts them by name, ignoring letter
+case and the ZIP extension. Later parts replace files at the same path. If the base
+would appear after the patch, prefix their names with `01` and `02` before adding
+them. For an extracted mod, select the folder that contains the mod's game files.
+
+Import makes one ready-to-use folder in `Mods` and keeps the original downloads.
+**Use & Restart** loads it straight away. **Later** leaves it installed for next time.
+
+You can also install a mod manually.
+
 1. Make a folder inside `Mods` and give it your mod's name, such as `Mods/MyMod`.
    Or press **New Mod** in the Mods menu, which makes one with the original game's
    files in it: see [Start a new mod](#start-a-new-mod).

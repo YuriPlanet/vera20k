@@ -1688,6 +1688,10 @@ impl App {
         if crate::app::updater::notes::pointer_button(state, true) {
             return;
         }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if super::shell_mod_import::pointer_button(state, true) {
+            return;
+        }
         if Self::shell_menu_pointer(state, Some(true)) {
             return;
         }
@@ -1710,6 +1714,8 @@ impl App {
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         crate::app::updater::notes::pointer_button(state, false);
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        super::shell_mod_import::pointer_button(state, false);
         Self::shell_menu_pointer(state, Some(false));
         let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
         if let Some(result) =
@@ -1784,6 +1790,11 @@ impl App {
                     folder,
                     result == crate::ui::shell::modal::ModalResult::MessageBox(0),
                 );
+            }
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            ShellMessageBoxPurpose::ModImport(dialog) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_import(state, *dialog, result);
             }
             ShellMessageBoxPurpose::ModFiles(which) => {
                 Self::close_shell_message_box_from_controller(state);
@@ -2443,6 +2454,18 @@ impl App {
         }
         if !state.frontend.shell_controller.on_key(key) {
             return false;
+        }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if key == ShellKey::Enter
+            && let Some(activate) = super::shell_mod_import::enter(state)
+        {
+            if activate {
+                Self::resolve_shell_message_box(
+                    state,
+                    crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            return true;
         }
         // Native MessageBoxProc5D36A0 maps IDOK1 (Enter with no default
         // pushbutton) and IDCANCEL2 (Escape) to result1, the negative answer.
