@@ -426,7 +426,7 @@ mod tests {
         let host_endpoint = relay_peer_endpoint(0).unwrap();
         session.bind_network_endpoint(long, host_endpoint).unwrap();
         session.prepare_wol_timing([0; 2], false).unwrap();
-        session.freeze_network_start(77).unwrap();
+        session.freeze_network_start(77, None).unwrap();
 
         // The long-named player's own report must encode, not fail the load.
         let mut sender = setup;
@@ -483,7 +483,7 @@ mod tests {
             .bind_network_endpoint("Host", relay_peer_endpoint(0).unwrap())
             .unwrap();
         session.prepare_wol_timing([0; 2], false).unwrap();
-        session.freeze_network_start(77).unwrap();
+        session.freeze_network_start(77, None).unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

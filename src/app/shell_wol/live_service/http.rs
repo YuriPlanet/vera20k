@@ -326,6 +326,7 @@ pub(super) enum Response {
         sign_in_token: Option<String>,
         /// The lobby offers `visit_lobby`.
         lobby_visits: bool,
+        campaign_rooms: bool,
     },
     LoginFailed {
         attempt: u64,
@@ -1354,6 +1355,7 @@ macro_rules! serial_driver {
                                 nickname: session.nickname,
                                 motd: session.motd,
                                 lobby_visits: session.features.iter().any(|feature| feature == "visit_lobby"),
+                                campaign_rooms: session.features.iter().any(|feature| feature == "campaign_rooms"),
                                 sign_in_token: session
                                     .sign_in_token
                                     .filter(|_| matches!(credential, Credential::Password { remember: true, .. })),

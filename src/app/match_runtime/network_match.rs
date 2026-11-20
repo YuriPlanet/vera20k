@@ -645,6 +645,11 @@ pub(crate) fn participant_name(session: &MatchSession, source_index: usize) -> S
 /// index. VERA shared control: while players share Houses, each sends as its
 /// own source instead.
 pub(crate) fn source_house(session: &MatchSession, sim: &Simulation, source: usize) -> Option<i32> {
+    if session.campaign_room().is_some() {
+        let sender = session.network_source_sender(source)?;
+        sim.session().network_source_house(sender)?;
+        return Some(i32::from(sender));
+    }
     let owner = sim.interner().get(&session.network_source_owner(source)?)?;
     let index = sim.houses().index_of(owner)?;
     if !sim.session().shares_houses() {
@@ -1525,7 +1530,7 @@ mod tests {
         let name = session.network_setup().unwrap().humans[0].name.clone();
         session.bind_network_endpoint(&name, endpoint).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        session.freeze_network_start(19).unwrap();
+        session.freeze_network_start(19, None).unwrap();
         sim.session_mut_for_test().set_game_mode(SessionMode::Lan);
         let mut connections = LanConnections::new(
             LanConnectionConfig::default(),
@@ -1618,7 +1623,7 @@ mod tests {
             session
                 .bind_network_endpoint(&remote_name, endpoint)
                 .unwrap();
-            session.freeze_network_start(19).unwrap();
+            session.freeze_network_start(19, None).unwrap();
             let local = sim.houses().order()[0];
             let remote = sim.houses().order()[1];
             sim.session_mut_for_test().set_game_mode(SessionMode::Wol);
@@ -1754,7 +1759,7 @@ mod tests {
         session
             .bind_network_endpoint(&remote_name, endpoint)
             .unwrap();
-        session.freeze_network_start(19).unwrap();
+        session.freeze_network_start(19, None).unwrap();
         let local = sim.houses().order()[0];
         sim.session_mut_for_test().set_game_mode(SessionMode::Wol);
         sim.session_mut_for_test()
@@ -1944,7 +1949,7 @@ mod tests {
                     .unwrap();
             }
             session.prepare_wol_timing([0; 3], false).unwrap();
-            session.freeze_network_start(19).unwrap();
+            session.freeze_network_start(19, None).unwrap();
             sim.session_mut_for_test().set_game_mode(SessionMode::Wol);
             let local = *sim
                 .houses()

@@ -526,10 +526,10 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
         )
     };
     let start = out.len();
-    let entries: Vec<_> = overlays.entries_in(window).filter(shown).cloned().collect();
+    let entries: Vec<_> = overlays.entries_in(window).filter(shown).copied().collect();
     build(window, &entries, out);
     if cfg!(debug_assertions) && window != CellWindow::Whole {
-        let entries: Vec<_> = overlays.iter().filter(shown).cloned().collect();
+        let entries: Vec<_> = overlays.iter().filter(shown).copied().collect();
         let mut whole = Vec::new();
         build(CellWindow::Whole, &entries, &mut whole);
         assert!(

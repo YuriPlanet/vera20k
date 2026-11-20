@@ -573,7 +573,7 @@ mod tests {
             .get_mut(&player)
             .unwrap()
             .economy_mut()
-            .initialize_scenario_credits(70, None, false, 0, 0);
+            .initialize_scenario_credits(70, None, 0, 0);
         next.session.initialize_campaign_for_test(3, 5, incoming);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&next, 0, 0, "", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)

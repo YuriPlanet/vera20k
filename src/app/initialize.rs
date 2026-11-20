@@ -1157,6 +1157,7 @@ impl App {
                     commander_feedback: Default::default(),
                     chrono_screen: Default::default(),
                     scenario_pause: Default::default(),
+                    narrative_sync: Default::default(),
                     radar_animation_source: None,
                     radar_content_insets: None,
                     has_radar: false,

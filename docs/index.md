@@ -57,6 +57,7 @@ simulation, session and network command owners.
 
 ## Feature docs
 
+- [Campaign manifests](campaign-manifest.md) covers stages, roles, carry-over, local checks and room setup.
 - [Auto Repair](auto-repair.md): tick it in Options and your damaged buildings start repairing by themselves.
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.

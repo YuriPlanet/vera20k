@@ -25,11 +25,14 @@
 //! (`NetworkReturnContext`), so the visit stores no copy either.
 
 use crate::skirmish_launch::{
-    LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchOptions,
-    SkirmishLaunchSession, SkirmishLocalSlot,
+    LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishHumanSlot,
+    SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
 };
 use std::net::SocketAddrV4;
 use std::sync::Arc;
+
+mod stage_result;
+pub(crate) use stage_result::{CampaignResult, StageHandoff, StageProgress};
 
 pub(crate) use crate::sim::scenario_session::ScenarioGameMode as SessionMode;
 
@@ -59,6 +62,7 @@ pub(crate) enum NetworkRoomReturn {
     },
     Wol {
         cooperative: Option<CooperativeResume>,
+        campaign: Option<Box<crate::app::shell_network_setup::campaign_room::CampaignRoom>>,
     },
 }
 
@@ -307,6 +311,13 @@ enum NetworkPhase {
         startup: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
         connections: ConnectionRoster,
         room_return: NetworkRoomReturn,
+        campaign_abort_pending: bool,
+    },
+    CampaignResult {
+        startup: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
+        connections: ConnectionRoster,
+        result: Box<CampaignResult>,
+        room_return: NetworkRoomReturn,
     },
     /// The co-op result dialog BC6 between missions: the finished start,
     /// the round's own roster (the next mission's, which the master's
@@ -331,6 +342,7 @@ impl NetworkPhase {
         match self {
             Self::Lobby { room_return }
             | Self::Frozen { room_return, .. }
+            | Self::CampaignResult { room_return, .. }
             | Self::CooperativeRound { room_return, .. } => Some(room_return),
             Self::Setup { .. } => None,
         }
@@ -374,6 +386,7 @@ pub(crate) enum NetworkSendRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NetworkSession {
+    campaign_room: Option<crate::app::shell_network_setup::campaign_room::CampaignRoom>,
     /// The WOL game channel's kind (`0x0077D940`/`0x0077D970`), fixed for
     /// the setup it hosts.
     room: NetworkRoom,
@@ -620,6 +633,7 @@ impl MatchSession {
         self.host = false;
         self.offline_player_name = None;
         self.network = Some(NetworkSession {
+            campaign_room: None,
             room: NetworkRoom::default(),
             wol_start: WolStartTerms::default(),
             send_requests: Vec::new(),
@@ -767,8 +781,19 @@ impl MatchSession {
         match &self.network.as_ref()?.phase {
             NetworkPhase::Lobby { .. } => None,
             NetworkPhase::Setup { launch, .. } => Some(launch),
-            NetworkPhase::Frozen { startup, .. } => Some(startup.launch_session()),
+            NetworkPhase::Frozen { startup, .. }
+            | NetworkPhase::CampaignResult { startup, .. } => Some(startup.launch_session()),
             NetworkPhase::CooperativeRound { launch, .. } => Some(launch),
+        }
+    }
+
+    pub(crate) fn network_authored_start(
+        &self,
+    ) -> Option<&crate::app::match_bootstrap::PreparedCampaignStart> {
+        match &self.network.as_ref()?.phase {
+            NetworkPhase::Frozen { startup, .. }
+            | NetworkPhase::CampaignResult { startup, .. } => startup.authored_campaign(),
+            _ => None,
         }
     }
 
@@ -1925,7 +1950,7 @@ impl MatchSession {
 
     pub(crate) fn network_setup_capacity(&self) -> Option<i32> {
         match &self.network.as_ref()?.phase {
-            NetworkPhase::Setup { capacity, .. } => Some(*capacity),
+            NetworkPhase::Setup { capacity, .. } => Some(self.campaign_room().map_or(*capacity, |room| i32::from(room.player_limit()))),
             _ => None,
         }
     }
@@ -3057,6 +3082,9 @@ impl MatchSession {
     /// RESIDUAL: a host's own map selection does not set the metadata yet,
     /// so a host reads 8.
     fn network_slot_test_rows(&self) -> i32 {
+        if let Some(room) = self.campaign_room() {
+            return i32::from(room.player_limit());
+        }
         let maximum_players = if self
             .network_setup_capacity()
             .is_some_and(|capacity| capacity > 8)
@@ -3083,12 +3111,9 @@ impl MatchSession {
     /// adding a player, up to the active eight/30-slot allocation (all 30 in
     /// VERA's rooms, whose spectator rows follow the players).
     pub(crate) fn network_player_row_limit(&self) -> u8 {
-        let Some(NetworkPhase::Setup { capacity, .. }) =
-            self.network.as_ref().map(|network| &network.phase)
-        else {
+        let Some(capacity) = self.network_setup_capacity() else {
             return 0;
         };
-        let capacity = *capacity;
         let allocation = if capacity > 8 || self.network_several_observers() {
             NETWORK_PLAYER_SLOT_COUNT as i32
         } else {
@@ -3151,7 +3176,7 @@ impl MatchSession {
     /// joining; none in any other room.
     fn network_spare_seats(&self) -> impl Iterator<Item = u8> + '_ {
         let rows = NETWORK_PLAYER_SLOT_COUNT as u8;
-        let first = if self.network_shares_bases() {
+        let first = if self.campaign_room().is_none() && self.network_shares_bases() {
             self.network_player_row_limit()
         } else {
             rows
@@ -3174,6 +3199,16 @@ impl MatchSession {
     pub(crate) fn network_join_row(&self, observer: bool) -> Option<(u8, bool)> {
         if self.network_room_full() {
             return None;
+        }
+        if self.campaign_room().is_some() {
+            if observer {
+                return None;
+            }
+            let playing = self.network_setup()?.humans.iter().filter(|human| !human.is_observer()).count();
+            if playing >= usize::from(self.campaign_room()?.player_limit()) {
+                return None;
+            }
+            return self.network_open_seat().map(|row| (row, false));
         }
         let observer = observer || self.network_teams().is_some();
         let other = || {
@@ -3335,6 +3370,37 @@ impl MatchSession {
         Ok(())
     }
 
+    pub(crate) fn campaign_room(&self) -> Option<&crate::app::shell_network_setup::campaign_room::CampaignRoom> {
+        self.network.as_ref()?.campaign_room.as_ref()
+    }
+
+    pub(crate) fn accept_campaign_room(
+        &mut self,
+        room: Option<crate::app::shell_network_setup::campaign_room::CampaignRoom>,
+        game_speed: i32,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            u8::try_from(game_speed).is_ok_and(crate::sim::game_options::is_selectable_game_speed),
+            "invalid campaign room speed"
+        );
+        if let Some(room) = &room {
+            room.validate()?;
+        }
+        let Some(NetworkSession {
+            campaign_room,
+            phase: NetworkPhase::Setup { launch, .. },
+            ..
+        }) = &mut self.network
+        else {
+            anyhow::bail!("campaign room choices require an editable setup");
+        };
+        if room.is_some() {
+            launch.options.game_speed = game_speed;
+        }
+        *campaign_room = room;
+        Ok(())
+    }
+
     pub(crate) fn network_start_seed(&self) -> Option<u32> {
         self.network.as_ref()?.proposed_seed
     }
@@ -3344,6 +3410,7 @@ impl MatchSession {
     pub(crate) fn freeze_network_start(
         &mut self,
         agreed_seed: u32,
+        campaign: Option<crate::app::match_bootstrap::PreparedCampaignStart>,
     ) -> anyhow::Result<crate::app::match_bootstrap::LoadingStartup> {
         let network = self
             .network
@@ -3356,21 +3423,40 @@ impl MatchSession {
             network.proposed_seed.is_none_or(|seed| seed == agreed_seed),
             "accepted host seed differs from admitted setup seed"
         );
+        anyhow::ensure!(
+            campaign.is_some() == network.campaign_room.is_some(),
+            "campaign launch must be verified before freezing"
+        );
+        if campaign.is_none() {
+            admit_network_start_roster(launch)?;
+        } else {
+            validate_network_rows(launch)?;
+        }
         network.proposed_seed = Some(agreed_seed);
-        admit_network_start_roster(launch)?;
         let max_ahead_frames = network
             .max_ahead_frames
             .ok_or_else(|| anyhow::anyhow!("network start requires accepted timing"))?;
         let NetworkPhase::Setup {
-            launch,
+            mut launch,
             watching_sources,
             ..
         } = std::mem::replace(&mut network.phase, NetworkPhase::lobby())
         else {
             unreachable!()
         };
-        let startup = Arc::new(
-            crate::app::match_bootstrap::PreparedNetworkStartup::new(
+        if let Some(prepared) = &campaign {
+            // The connection adapter keeps shell names/rows. The actual world
+            // is compiled from its authored recipe, so stock Co-op setup and
+            // skirmish opponents cannot leak through the frozen transport.
+            launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(
+                crate::skirmish_launch::BATTLE_MODE_ID,
+            ).expect("stock transport mode");
+            launch.selected_map_file = Some(prepared.map_name.clone());
+            launch.opponents.clear();
+            launch.ai_player_count = 0;
+            launch.use_live_house_rows();
+        }
+        let startup = crate::app::match_bootstrap::PreparedNetworkStartup::new(
                 launch,
                 agreed_seed,
                 network.return_context.session_mode(),
@@ -3382,8 +3468,11 @@ impl MatchSession {
                 network.local_map_source.clone(),
                 network.local_map_effective_digest.clone(),
             )
-            .with_random_map_preview(network.local_random_map_preview.clone()),
-        );
+            .with_random_map_preview(network.local_random_map_preview.clone());
+        let startup = Arc::new(match campaign {
+            Some(campaign) => startup.with_campaign(campaign),
+            None => startup,
+        });
         network.phase = NetworkPhase::Frozen {
             connections: ConnectionRoster {
                 playing_sources: (0..startup.launch_session().humans.len()).collect(),
@@ -3391,6 +3480,7 @@ impl MatchSession {
             },
             startup: Arc::clone(&startup),
             room_return: NetworkRoomReturn::Lobby,
+            campaign_abort_pending: false,
         };
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(
             startup,
@@ -3519,6 +3609,14 @@ impl MatchSession {
     /// The frozen launch's owner key of the House network participant
     /// `source_index` controls, its own or one it shares.
     pub(crate) fn network_source_owner(&self, source_index: usize) -> Option<String> {
+        if self.campaign_room().is_some() {
+            let source = usize::try_from(self.network_source_sender(source_index)?).ok()?;
+            return self
+                .network_authored_start()?
+                .primary_houses
+                .get(source)
+                .cloned();
+        }
         let launch = self.network_setup()?;
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .into_iter()
@@ -3531,6 +3629,11 @@ impl MatchSession {
         let Some(launch) = self.network_setup() else {
             return Vec::new();
         };
+        if self.campaign_room().is_some() {
+            return (0..launch.humans.len())
+                .filter(|&index| self.network_source_owner(index).is_some_and(|house| house.eq_ignore_ascii_case(owner)))
+                .collect();
+        }
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .into_iter()
             .find(|slot| slot.owner_name == owner)
@@ -3547,6 +3650,9 @@ impl MatchSession {
     /// players share Houses.
     pub(crate) fn network_source_sender(&self, source_index: usize) -> Option<i8> {
         let launch = self.network_setup()?;
+        if let Some(room) = self.campaign_room() {
+            return room.source(&launch.humans.get(source_index)?.name);
+        }
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .iter()
             .flat_map(|slot| &slot.controllers)
@@ -3557,6 +3663,10 @@ impl MatchSession {
     /// The network participant sending as `sender`.
     pub(crate) fn network_sender_source(&self, sender: i8) -> Option<usize> {
         let launch = self.network_setup()?;
+        if let Some(room) = self.campaign_room() {
+            let name = room.player(sender)?;
+            return launch.humans.iter().position(|human| human.name.eq_ignore_ascii_case(name));
+        }
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .iter()
             .flat_map(|slot| &slot.controllers)
@@ -3571,6 +3681,13 @@ impl MatchSession {
             return false;
         };
         let connected = self.network_connected_source_indices();
+        if self.campaign_room().is_some() {
+            return self.network_source_owner(source_index).is_some_and(|owner| {
+                self.network_owner_sources(&owner).into_iter().any(|source| {
+                    source != source_index && connected.contains(&source)
+                })
+            });
+        }
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .iter()
             .find(|slot| slot.is_controlled_by(source_index))
@@ -3591,13 +3708,14 @@ impl MatchSession {
         let Some(network) = self.network.as_mut() else {
             return false;
         };
-        let NetworkPhase::Frozen {
-            startup,
-            connections,
-            ..
-        } = &mut network.phase
-        else {
-            return false;
+        let (startup, connections) = match &mut network.phase {
+            NetworkPhase::Frozen {
+                startup, connections, ..
+            }
+            | NetworkPhase::CampaignResult {
+                startup, connections, ..
+            } => (startup, connections),
+            _ => return false,
         };
         if source_index == startup.launch_session().local_player_index
             && !connections
@@ -3619,10 +3737,24 @@ impl MatchSession {
         match self.network.as_ref().map(|network| &network.phase) {
             Some(
                 NetworkPhase::Frozen { connections, .. }
+                | NetworkPhase::CampaignResult { connections, .. }
                 | NetworkPhase::CooperativeRound { connections, .. },
             ) => &connections.playing_sources,
             _ => &[],
         }
+    }
+
+    /// The setup roster before launch, and the surviving playing sources
+    /// when preparing a continuation from the frozen launch.
+    pub(crate) fn campaign_launch_humans(&self) -> impl Iterator<Item = &SkirmishHumanSlot> {
+        let playing = self
+            .campaign_result()
+            .map(|_| self.network_connected_source_indices());
+        self.network_setup()
+            .into_iter()
+            .flat_map(|launch| launch.humans.iter().enumerate())
+            .filter(move |(index, _)| playing.is_none_or(|sources| sources.contains(index)))
+            .map(|(_, human)| human)
     }
 
     /// The authenticated relay route's local connection is a viewer. The
@@ -3652,6 +3784,7 @@ impl MatchSession {
             }) => watching_sources,
             Some(
                 NetworkPhase::Frozen { connections, .. }
+                | NetworkPhase::CampaignResult { connections, .. }
                 | NetworkPhase::CooperativeRound { connections, .. },
             ) => &connections.watching_sources,
             _ => return false,
@@ -3680,6 +3813,7 @@ impl MatchSession {
                 watching_sources, ..
             } => Some(watching_sources),
             NetworkPhase::Frozen { connections, .. }
+            | NetworkPhase::CampaignResult { connections, .. }
             | NetworkPhase::CooperativeRound { connections, .. } => {
                 Some(&mut connections.watching_sources)
             }
@@ -3695,6 +3829,7 @@ impl MatchSession {
         network.phase = NetworkPhase::Lobby {
             room_return: room_return.unwrap_or_default(),
         };
+        network.campaign_room = None;
         network.endpoints.clear();
         network.send_requests.clear();
         network.loading_reports.clear();
@@ -3709,8 +3844,10 @@ impl MatchSession {
 
     /// Attach the choice to the admitted start only after freeze succeeds.
     pub(crate) fn set_network_room_return(&mut self, choice: NetworkRoomReturn) {
-        if let Some(NetworkPhase::Frozen { room_return, .. }) =
-            self.network.as_mut().map(|network| &mut network.phase)
+        if let Some(
+            NetworkPhase::Frozen { room_return, .. }
+            | NetworkPhase::CampaignResult { room_return, .. },
+        ) = self.network.as_mut().map(|network| &mut network.phase)
         {
             *room_return = choice;
         }
@@ -4241,7 +4378,7 @@ mod tests {
         session.admit_local_network_watcher(endpoint).unwrap();
         assert!(session.set_network_player_ready(followed, true).is_err());
         session.prepare_wol_timing([0; 2], false).unwrap();
-        session.freeze_network_start(13).unwrap();
+        session.freeze_network_start(13, None).unwrap();
         assert!(session.local_connection_watches());
         assert_eq!(network_match::local_source(&session), None);
         assert!(network_match::nodes(&session).is_empty());
@@ -5019,9 +5156,9 @@ mod tests {
             assert!(session.network_player_ready(0));
             session.set_network_start_seed(0x1234abcd).unwrap();
             session.prepare_network_timing(2, || 0).unwrap();
-            assert!(session.freeze_network_start(123).is_err());
+            assert!(session.freeze_network_start(123, None).is_err());
             assert_eq!(session.network_start_seed(), Some(0x1234abcd));
-            let startup = session.freeze_network_start(0x1234abcd).unwrap();
+            let startup = session.freeze_network_start(0x1234abcd, None).unwrap();
             assert_eq!(startup.session_mode(), mode);
             let crate::app::match_bootstrap::LoadingStartup::Network(prepared) = &startup else {
                 panic!("network variant");
@@ -5709,7 +5846,7 @@ mod tests {
             .accept_prepared_network_map_filename("CONTROLLED.MAP".into())
             .unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        let startup = session.freeze_network_start(13).unwrap();
+        let startup = session.freeze_network_start(13, None).unwrap();
         let crate::app::match_bootstrap::LoadingStartup::Network(prepared) = startup else {
             panic!("network");
         };
@@ -5804,7 +5941,7 @@ mod tests {
             .accept_verified_network_map_source(source, "c".repeat(64))
             .unwrap();
         session.prepare_wol_timing([0; 2], false).unwrap();
-        let startup = session.freeze_network_start(13).unwrap();
+        let startup = session.freeze_network_start(13, None).unwrap();
         let crate::app::match_bootstrap::LoadingStartup::Network(prepared) = startup else {
             panic!("network start");
         };

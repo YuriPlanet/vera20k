@@ -402,6 +402,9 @@ pub(crate) enum WolServiceEvent {
         /// VERA: the lobby's own line, `text` from its phrases in the
         /// interface language.
         localized: bool,
+        /// VERA: the lobby's warning that a player's game differs from the
+        /// host's, shown red.
+        warning: bool,
         private: bool,
         action: bool,
         ansi: bool,
@@ -993,6 +996,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             from,
             text,
             localized,
+            warning,
             private,
             action,
             ansi,
@@ -1005,6 +1009,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     from,
                     text,
                     localized,
+                    warning,
                     private,
                     action,
                     ansi,
@@ -1029,6 +1034,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     from,
                     text,
                     localized,
+                    warning: false,
                     private,
                     action,
                     ansi: false,

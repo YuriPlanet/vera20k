@@ -664,7 +664,8 @@ pub struct SpriteAtlas {
     /// Updated after placement/upload and dropped with the atlas on map load.
     physical_frames: HashMap<ShpPhysicalFrame, ShpFramePlacement>,
     /// Building type → number of make (build-up) animation frames.
-    /// Key is the base type_id (e.g., "GACNST"), not the "_MAKE" suffixed key.
+    /// Keyed by the make image's atlas name, the type id with `_MAKE`
+    /// appended (e.g. "GACNST_MAKE").
     pub make_frame_counts: HashMap<String, u16>,
     /// Building/world-animation type → available non-shadow frame count.
     /// Building consumers use this only to ensure their live animation frame is

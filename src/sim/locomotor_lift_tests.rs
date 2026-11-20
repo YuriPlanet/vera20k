@@ -319,11 +319,10 @@ fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callback
     let origin = (89, 54);
     let at = pull_sensor_ship_across_cell(runtime, magnetron, ship);
     let sim = &runtime.simulation;
-    let current_circle = sim.fog.sensor_circle_cells(at, radius);
+    let current_circle: Vec<_> = sim.fog.sensor_circle_cells(at, radius).collect();
     let old_only = sim
         .fog
         .sensor_circle_cells(origin, radius)
-        .into_iter()
         .find(|cell| !current_circle.contains(cell))
         .unwrap();
     assert!(
@@ -480,12 +479,15 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
             .unwrap()
             .sensors_sight,
     );
-    let current_circle = runtime.simulation.fog.sensor_circle_cells(at, radius);
+    let current_circle: Vec<_> = runtime
+        .simulation
+        .fog
+        .sensor_circle_cells(at, radius)
+        .collect();
     let old_only = runtime
         .simulation
         .fog
         .sensor_circle_cells(origin, radius)
-        .into_iter()
         .find(|cell| !current_circle.contains(cell))
         .unwrap();
     // No direct owner/lift writes: lethal damage frees the real capture node.
@@ -516,7 +518,7 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
         freed.lift.source().is_none(),
         "the nested native NULL setter releases the hold"
     );
-    let old_circle = sim.fog.sensor_circle_cells(origin, radius);
+    let old_circle: Vec<_> = sim.fog.sensor_circle_cells(origin, radius).collect();
     let mut landed = false;
     for _ in 0..400 {
         runtime
@@ -536,7 +538,6 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
             let witness = sim
                 .fog
                 .sensor_circle_cells(center, radius)
-                .into_iter()
                 .find(|cell| current_circle.contains(cell) && !old_circle.contains(cell))
                 .expect("landing and restoration overlap beyond the old radius");
             let index =

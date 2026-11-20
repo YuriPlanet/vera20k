@@ -110,19 +110,20 @@ impl MatchState {
     /// menus: those menus never stop the score clock. Audio still combines
     /// every physical pause through presentation_paused.
     pub(crate) fn elapsed_clock_paused(&self, screen: &crate::ui::game_screen::GameScreen) -> bool {
-        elapsed_clock_pause_for_screen(
-            screen,
-            self.session_mode(),
-            self.match_presentation.in_game_menu.is_open(),
-            self.match_presentation
-                .radar_anim
-                .as_ref()
-                .is_some_and(|radar| radar.movie_pause()),
-            self.sim_runtime
-                .runtime()
-                .is_some_and(|runtime| runtime.simulation.session().scenario_paused()),
-            self.match_presentation.commander_feedback.result_waits(),
-        )
+        self.match_presentation.narrative_sync.pending()
+            || elapsed_clock_pause_for_screen(
+                screen,
+                self.session_mode(),
+                self.match_presentation.in_game_menu.is_open(),
+                self.match_presentation
+                    .radar_anim
+                    .as_ref()
+                    .is_some_and(|radar| radar.movie_pause()),
+                self.sim_runtime
+                    .runtime()
+                    .is_some_and(|runtime| runtime.simulation.session().scenario_paused()),
+                self.match_presentation.commander_feedback.result_waits(),
+            )
     }
 
     pub(crate) fn paused(&self) -> bool {
@@ -131,6 +132,7 @@ impl MatchState {
 
     pub(crate) fn local_paused(&self) -> bool {
         self.match_presentation.in_game_menu.is_open()
+            || self.match_presentation.narrative_sync.pending()
             || self.debug_pause
             || self
                 .match_presentation
@@ -173,6 +175,7 @@ impl MatchState {
             .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
             || self.debug_pause
             || self.multiplayer_paused()
+            || self.match_presentation.narrative_sync.pending()
             || super::scenario_pause::blocks_main_tick(
                 self.session_mode(),
                 self.sim_runtime

@@ -101,7 +101,7 @@ impl MatchStartBlueprint {
                     "MapHouses playback does not use stock slot launch options"
                 );
                 let blueprint = Self {
-                    admitted: admitted.clone(),
+                    admitted: admitted.clone().with_replay_view(None),
                     launch: ReplayLaunch::Campaign(CampaignReplayStart::MapHouses(
                         MapHouseReplayStart {
                             map_houses: start.clone(),
@@ -185,8 +185,7 @@ impl MatchStartBlueprint {
                 self.admitted.execution_topology().is_lockstep()
                     && self.admitted.multiplayer_mode_class().is_none()
                     && self.admitted.campaign_mission_counter() == Some(start.mission_counter)
-                    && self.admitted.rule_policy()
-                        == start.rule_policy.with_counts_player_control_as_human(false),
+                    && self.admitted.rule_policy() == start.rule_policy(),
                 "MapHouses replay disagrees with admitted campaign startup"
             );
             return Ok(());
@@ -244,7 +243,7 @@ impl MatchStartBlueprint {
         self.validate()?;
         let facts = self
             .slot_facts()
-            .context("MapHouses campaign replays use headless verification")?;
+            .context("replay uses the authored House roster rather than player slots")?;
         let mode = SkirmishLaunchMode {
             class: facts.mode.class,
             id: facts.mode.id,

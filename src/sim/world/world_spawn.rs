@@ -1633,8 +1633,9 @@ impl Simulation {
         if building.category() != EntityCategory::Structure {
             return None;
         }
-        //458A92 reads Object5F5B90 -> Type45EC20's sentinel list once.
-        let foundation = building.type_facts.foundation().cell_offsets();
+        //458A92 reads Object5F5B90 -> Type45EC20's sentinel list once. The
+        // walk changes the world, so the list is copied out of the building.
+        let foundation: Vec<_> = building.type_facts.foundation().cell_offsets().collect();
         let origin = (
             crate::util::lepton::lepton_to_cell_packed(coord.x),
             crate::util::lepton::lepton_to_cell_packed(coord.y),

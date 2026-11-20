@@ -1480,11 +1480,9 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
     ) -> EngineerBuildingAction {
-        use crate::sim::scenario_session::ScenarioGameMode;
-        let mode = self.session.game_mode();
-        let allow_damage = (mode != ScenarioGameMode::Skirmish
-            || self.session.game_options().multi_engineer)
-            && mode != ScenarioGameMode::Campaign;
+        let allow_damage = !self.session.uses_campaign_world()
+            && (self.session.execution_topology().is_lockstep()
+                || self.session.game_options().multi_engineer);
         let Some(building) = self.substrate.entities.get(building_id) else {
             return EngineerBuildingAction::Capture;
         };

@@ -26,6 +26,7 @@ use super::{
 };
 use crate::app::AppState;
 use crate::app::persistence::account;
+use crate::app::shell_network_setup::campaign_room;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
@@ -273,6 +274,7 @@ impl OnlineCleanup {
 }
 
 pub(super) struct LiveService {
+    pub(super) campaign_rooms: bool,
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
     _browser_requests: http::RequestOwner,
     stopping: Arc<AtomicBool>,
@@ -727,6 +729,7 @@ impl LiveService {
             auth_attempt: 0,
             revision: 0,
             room: RoomAgreement::default(),
+            campaign_rooms: false,
             start_preparation: None,
             locally_refused_start: false,
             player_id: String::new(),
@@ -2215,6 +2218,19 @@ fn send_chat(
 /// unverified expanded content.
 fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
     let session = &state.match_state.session;
+    if let Some(room) = session.campaign_room() {
+        let (map_digest, effective_map_digest) =
+            if campaign_room::local_map_verified(session) == Some(true) {
+                let (map, effective) = campaign_room::online_agreement(room);
+                (map.to_owned(), effective.to_owned())
+            } else {
+                (String::new(), "0".repeat(64))
+            };
+        let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+        return Ok(
+            json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":""}),
+        );
+    }
     let map_digest = session
         .network_local_map_source()
         .and_then(|source| source.physical_identity())
@@ -2230,6 +2246,9 @@ fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
 }
 
 fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
+    if let Some(verified) = campaign_room::local_map_verified(&state.match_state.session) {
+        return u8::from(verified);
+    }
     if !service.maps.current_verified(state) {
         return 0;
     }
@@ -2272,6 +2291,9 @@ fn local_map_status(state: &AppState, service: &LiveService) -> u8 {
 struct MapTooSmall(i32);
 
 fn check_map_capacity(options: &wire::Options) -> Result<(), MapTooSmall> {
+    if options.campaign.is_some() {
+        return Ok(());
+    }
     let launch = &options.launch;
     let needed = crate::app::shell_network_setup::starts_needed(
         launch,
@@ -2288,18 +2310,40 @@ fn check_map_capacity(options: &wire::Options) -> Result<(), MapTooSmall> {
 /// admitted when the host chose it, as LAN publishes it.
 fn options(state: &AppState) -> Result<wire::Options> {
     let session = &state.match_state.session;
-    let launch = session
+    let mut launch = session
         .network_setup()
         .ok_or_else(|| anyhow!("no online setup"))?
         .clone();
-    let map_metadata = session
-        .network_map_metadata()
-        .cloned()
-        .ok_or_else(|| anyhow!("no admitted map metadata"))?;
+    let campaign = campaign_room::publication(state)?;
+    let map_metadata = if let Some(room) = &campaign {
+        let (file, metadata) = campaign_room::online_map_metadata(state, room)?;
+        launch.selected_map_file = Some(file);
+        launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(
+            crate::skirmish_launch::BATTLE_MODE_ID,
+        )
+        .expect("stock lobby mode");
+        let speed = launch.options.game_speed;
+        launch.options = crate::skirmish_launch::SkirmishLaunchOptions::default();
+        launch.options.game_speed = speed;
+        launch.opponents.clear();
+        launch.ai_player_count = 0;
+        launch.use_live_house_rows();
+        metadata
+    } else {
+        session
+            .network_map_metadata()
+            .cloned()
+            .ok_or_else(|| anyhow!("no admitted map metadata"))?
+    };
     let options = wire::Options {
+        campaign: campaign.clone(),
         launch,
         map_metadata,
-        random_map: crate::app::shell_network_setup::maps::host_generated_manifest(state)?,
+        random_map: if campaign.is_none() {
+            crate::app::shell_network_setup::maps::host_generated_manifest(state)?
+        } else {
+            None
+        },
         vacancies: std::array::from_fn(|row| {
             session
                 .network_vacancy(row as u8)
@@ -2310,7 +2354,10 @@ fn options(state: &AppState) -> Result<wire::Options> {
             .frontend
             .multiplayer_shell_runtime
             .cooperative_difficulty(),
-        cooperative_campaign: cooperative_campaign(state),
+        cooperative_campaign: campaign
+            .is_none()
+            .then(|| cooperative_campaign(state))
+            .flatten(),
         seed: Some(crate::app::shell_network_setup::resident_seed(state)),
         // Only a host's VERA room has one; a guest publishes no options.
         watching: state
@@ -2657,6 +2704,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             motd,
             sign_in_token,
             lobby_visits,
+            campaign_rooms,
         } if attempt == service.auth_attempt => {
             // `http::decode_session` admitted this identity.
             if let Some(token) = sign_in_token {
@@ -2664,6 +2712,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
             remember_online_name(state, &nickname);
             service.player_id = player_id;
+            service.campaign_rooms = campaign_rooms;
             state.frontend.wol_account.nickname = nickname;
             state.frontend.wol_account.password.clear();
             // The operator's welcome is the only one: the game has none of its own.
@@ -2826,6 +2875,14 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             {
                 service.start_preparation = None;
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
+            }
+            "options"
+                if failure == http::CommandFailure::InvalidOptions
+                    && service.is_room_publication(id)
+                    && state.match_state.session.campaign_room().is_some() =>
+            {
+                service.campaign_rooms = false;
+                notice(state, &tr("VERA:CampaignRoomOnlineUnsupported"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
                 if service.is_room_publication(id)
@@ -3044,17 +3101,40 @@ impl Chat {
         (said.encode_utf16().collect(), true)
     }
 
-    /// The lobby's line that a newer release is out (`NewRelease`), which a
-    /// game older than the newest release hears once per release. Only the
+    /// Whether the line is the lobby's own and says one of `keys`. Only the
     /// lobby's own lines carry `phrases`. Only their keys are read, so values
     /// a newer lobby adds that this game cannot show still count.
-    fn announces_release(&self) -> bool {
+    fn says_any(&self, keys: &[&str]) -> bool {
         #[derive(Deserialize)]
         struct Said {
             key: String,
         }
-        Vec::<Said>::deserialize(&self.phrases)
-            .is_ok_and(|phrases| phrases.iter().any(|phrase| phrase.key == "NewRelease"))
+        Vec::<Said>::deserialize(&self.phrases).is_ok_and(|phrases| {
+            phrases
+                .iter()
+                .any(|phrase| keys.contains(&phrase.key.as_str()))
+        })
+    }
+
+    /// The lobby's line that a newer release is out (`NewRelease`), which a
+    /// game older than the newest release hears once per release.
+    fn announces_release(&self) -> bool {
+        self.says_any(&["NewRelease"])
+    }
+
+    /// VERA: the lobby's line that a player's game differs from the host's,
+    /// which no match between them can start with: another version, build or
+    /// rules (docs/lobby-protocol.md). The room shows it red
+    /// (`wol_chat::WARNING_COLOR`).
+    fn warns_of_other_game(&self) -> bool {
+        self.says_any(&[
+            "VersionMismatch",
+            "ReleaseMismatch",
+            "HostReleaseMismatch",
+            "BuildMismatch",
+            "RulesMismatch",
+            "HostRulesMismatch",
+        ])
     }
 
     /// The pairing of the matchbot's `Start` that `local` hosts; only its
@@ -3466,6 +3546,7 @@ fn apply_event(
                 service.room.pending_choices = None;
             }
             service.room.accepted_options = Some(canonical);
+            let authored = p.options.campaign.is_some();
             if changed {
                 service.room.last_ready_request = None;
                 crate::app::shell_network_setup::invalidate_network_agreement(state)?;
@@ -3502,13 +3583,17 @@ fn apply_event(
                     )?;
                 }
             }
-            maps::received_options(state, service, generated)?;
-            // VERA: a guest checks the map these options name before
-            // reporting on it, or one that has it reports 0 first and the
-            // host's room says it lacks the map. The host's own upload still
-            // waits for the poll, after the lobby's `map_available`.
-            if !state.match_state.session.host() {
-                poll_maps(state, service);
+            if authored {
+                maps::cancel(state, service);
+            } else {
+                maps::received_options(state, service, generated)?;
+                // VERA: a guest checks the map these options name before
+                // reporting on it, or one that has it reports 0 first and the
+                // host's room says it lacks the map. The host's own upload
+                // still waits for the poll, after the lobby's `map_available`.
+                if !state.match_state.session.host() {
+                    poll_maps(state, service);
+                }
             }
             // The owner is ready without a guest Accept button, but still proves its
             // own local map and rules to the same server admission gate.
@@ -3619,12 +3704,14 @@ fn apply_event(
             if p.announces_release() {
                 lobby_says_outdated(state);
             }
+            let warning = p.warns_of_other_game();
             service_event(
                 state,
                 WolServiceEvent::Message {
                     from: p.from.into_member(&local),
                     text,
                     localized,
+                    warning,
                     private: p.private,
                     action: p.action,
                     ansi: p.ansi,
@@ -3971,7 +4058,12 @@ fn prepare_watch(state: &mut AppState, started: wire::WatchStarted) -> Result<Wa
         .ok_or_else(|| anyhow!("the match has no player to follow"))?
         .to_owned();
     let names: Vec<_> = started.users.iter().map(|user| user.name.clone()).collect();
+    let room = started.options.campaign.clone();
+    if let Some(room) = &room {
+        campaign_room::verify_current(state, room)?;
+    }
     let options = started.options.into_options(&followed)?;
+    let speed = options.launch.options.game_speed;
     crate::app::shell_network_setup::install_watch_setup(
         state,
         options,
@@ -3984,6 +4076,13 @@ fn prepare_watch(state: &mut AppState, started: wire::WatchStarted) -> Result<Wa
         .match_state
         .session
         .canonicalize_online_roster(&names)?;
+    if let Some(room) = room {
+        state
+            .match_state
+            .session
+            .accept_campaign_room(Some(room), speed)?;
+        campaign_room::report_local_files(state, true)?;
+    }
     Ok(WatchStart {
         version: started.version,
         rules_digest: started.rules_digest,
@@ -4844,6 +4943,28 @@ mod completion_tests {
         assert!(line("VERA20k", release).announces_release());
         assert!(!line("Tanya", Value::Null).announces_release());
         assert!(!line("VERA20k", json!([{"key": "OnlyPlayerOnline"}])).announces_release());
+    }
+
+    /// The lobby's lines that a player's game differs from the host's are
+    /// warnings the room shows red, a newer lobby's values included; its
+    /// other lines and a player's are not.
+    #[test]
+    fn the_lobbys_other_game_lines_are_warnings() {
+        let line = |phrases: Value| -> Chat {
+            decode(json!({
+                "from": {"player_id": "p", "name": "VERA20k", "flags": 1},
+                "text": "the lobby's text",
+                "phrases": phrases,
+            }))
+            .unwrap()
+        };
+        let rules = json!([{"key": "RulesMismatch", "values": {"name": "Boris", "later": 1}}]);
+        assert!(line(rules).warns_of_other_game());
+        let build =
+            json!([{"key": "BuildMismatch", "values": {"name": "Boris", "version": "0.3.8"}}]);
+        assert!(line(build).warns_of_other_game());
+        assert!(!line(json!([{"key": "OnlyPlayerOnline"}])).warns_of_other_game());
+        assert!(!line(Value::Null).warns_of_other_game());
     }
 
     /// Only a line shown from the lobby's phrases counts as localized, which
@@ -6025,6 +6146,7 @@ mod completion_tests {
                     motd: None,
                     sign_in_token: None,
                     lobby_visits: false,
+                    campaign_rooms: false,
                 })
                 .is_ok()
         );
