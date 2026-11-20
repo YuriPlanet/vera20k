@@ -1979,10 +1979,11 @@ impl PathGrid {
         foundation: &crate::rules::foundation::Foundation,
         has_bib: bool,
     ) {
-        let foundation_cells =
-            crate::sim::production::building_base_foundation_cells(cell_rx, cell_ry, foundation);
-        let blocking =
-            crate::sim::production::building_movement_blocking_cells(&foundation_cells, has_bib);
+        let blocking = crate::sim::production::building_movement_blocking_cells(
+            (cell_rx, cell_ry),
+            foundation,
+            has_bib,
+        );
         for (rx, ry) in blocking {
             self.block_structure_cell(rx, ry);
         }
