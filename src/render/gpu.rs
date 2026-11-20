@@ -34,6 +34,38 @@ mod web_present;
 /// clamped to the adapter's own maximum anyway.
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
+/// The edge asked for instead on a Windows or Linux GPU that draws from the
+/// system's memory (`DeviceType::IntegratedGpu`, and the processor itself).
+/// That memory is shared with the game and the system, and a driver short of
+/// it removes the device: an Intel HD 620 lost its DirectX 12 device seconds
+/// into a match whose sprite atlas was one 11721x11968 page, 134 MiB of
+/// palette indices. At 8192 a page is 64 MiB at most and the atlases pack into
+/// more pages. The cost: on a screen wider than 2048 px the zoom-out stops
+/// where the view no longer fits one page (`camera::minimum_view_zoom`), at
+/// 0.42 on a 3440 px screen instead of 0.25. Apple's unified memory is the
+/// GPU's own, so Metal keeps [`MAX_USEFUL_TEXTURE_DIM`].
+pub(crate) const SHARED_MEMORY_TEXTURE_DIM: u32 = 8_192;
+
+/// The 2D texture edge this device is asked for: what the adapter offers, up
+/// to [`MAX_USEFUL_TEXTURE_DIM`], or [`SHARED_MEMORY_TEXTURE_DIM`] on a GPU
+/// that draws from the system's memory outside Metal.
+pub(crate) fn requested_texture_dim(
+    backend: wgpu::Backend,
+    device_type: wgpu::DeviceType,
+    adapter_max: u32,
+) -> u32 {
+    let shared_memory = matches!(
+        device_type,
+        wgpu::DeviceType::IntegratedGpu | wgpu::DeviceType::Cpu
+    ) && backend != wgpu::Backend::Metal;
+    let useful = if shared_memory {
+        SHARED_MEMORY_TEXTURE_DIM
+    } else {
+        MAX_USEFUL_TEXTURE_DIM
+    };
+    adapter_max.min(useful)
+}
+
 /// True on the browser's WebGL2 fallback device, which has no storage buffers,
 /// compute or reinterpreting texture views. Renderers that use those select
 /// render-target equivalents there; every other device keeps its ordinary path.
@@ -347,12 +379,23 @@ impl GpuContext {
 
         // Atlas sizing is bounded by whatever limits we *request*, not by the hardware.
         let adapter_limits = adapter.limits();
-        log::info!(
-            "GPU limits: max_texture_dimension_2d={} (requesting {})",
+        let texture_dim = requested_texture_dim(
+            adapter_info.backend,
+            adapter_info.device_type,
             adapter_limits.max_texture_dimension_2d,
-            adapter_limits
-                .max_texture_dimension_2d
-                .min(MAX_USEFUL_TEXTURE_DIM),
+        );
+        log::info!(
+            "GPU limits: max_texture_dimension_2d={} (requesting {texture_dim}{})",
+            adapter_limits.max_texture_dimension_2d,
+            if texture_dim
+                < adapter_limits
+                    .max_texture_dimension_2d
+                    .min(MAX_USEFUL_TEXTURE_DIM)
+            {
+                ", the shared-memory graphics cap"
+            } else {
+                ""
+            },
         );
 
         // Request a logical device and command queue from the adapter.
@@ -364,9 +407,7 @@ impl GpuContext {
         // actually offers, bounded by what the atlases can use, and fall back
         // automatically on a device that offers less.
         let required_limits = wgpu::Limits {
-            max_texture_dimension_2d: adapter_limits
-                .max_texture_dimension_2d
-                .min(MAX_USEFUL_TEXTURE_DIM),
+            max_texture_dimension_2d: texture_dim,
             ..wgpu::Limits::default()
         };
         // WebGL2 has no storage buffers or compute, so the WebGPU baseline is
@@ -945,7 +986,7 @@ mod tests {
 
     use super::{
         CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, lost_device,
-        present_settings, watch_device_loss,
+        present_settings, requested_texture_dim, watch_device_loss,
     };
 
     /// With VSync a picture over one refresh must not wait a whole refresh
@@ -1018,6 +1059,19 @@ mod tests {
         let (outcome, requests) = acquire_over(vec![Outdated, Outdated]);
         assert!(outcome.unwrap().is_none());
         assert_eq!(requests, [None, Some(SurfaceRecovery::Reconfigure)]);
+    }
+
+    #[test]
+    fn shared_memory_graphics_get_smaller_texture_pages_outside_metal() {
+        use wgpu::Backend::{Dx12, Metal, Vulkan};
+        use wgpu::DeviceType::{Cpu, DiscreteGpu, IntegratedGpu};
+        assert_eq!(requested_texture_dim(Dx12, IntegratedGpu, 16_384), 8_192);
+        assert_eq!(requested_texture_dim(Vulkan, Cpu, 16_384), 8_192);
+        assert_eq!(requested_texture_dim(Dx12, DiscreteGpu, 16_384), 16_384);
+        assert_eq!(requested_texture_dim(Metal, IntegratedGpu, 16_384), 16_384);
+        // The adapter's own limit still bounds every request.
+        assert_eq!(requested_texture_dim(Dx12, IntegratedGpu, 4_096), 4_096);
+        assert_eq!(requested_texture_dim(Dx12, DiscreteGpu, 32_768), 16_384);
     }
 
     #[test]
