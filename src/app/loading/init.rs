@@ -3956,7 +3956,7 @@ fn load_map_first_step(
                                                                 prepared_manifest.finish(
                                                                     services.gpu,
                                                                     services.batch,
-                                                                ),
+                                                                )?,
                                                                 None,
                                                             )
                                                         } else {
