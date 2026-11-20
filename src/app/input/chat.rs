@@ -454,6 +454,7 @@ fn skirmish_input_available(state: &AppState) -> bool {
 
 fn parse_skirmish_command(
     line: &str,
+    spawn_cell: impl FnOnce() -> Option<(u16, u16)>,
 ) -> Result<Option<crate::sim::skirmish_cheats::SkirmishCheat>, &'static str> {
     use crate::sim::skirmish_cheats::SkirmishCheat;
     const USAGE: &str = "VERA:CheatUsage";
@@ -477,10 +478,14 @@ fn parse_skirmish_command(
             words.next().ok_or(USAGE)?
         };
         let count = words.next().and_then(|n| n.parse().ok()).ok_or(USAGE)?;
-        Some(SkirmishCheat::Spawn {
+        if words.next().is_some() {
+            return Err(USAGE);
+        }
+        return Ok(Some(SkirmishCheat::SpawnAt {
             type_id: type_id.to_owned(),
             count,
-        })
+            cell: spawn_cell().ok_or("VERA:CheatPointAtMap")?,
+        }));
     } else {
         return Err(USAGE);
     };
@@ -501,16 +506,26 @@ fn skirmish_command(state: &mut AppState, line: &str) -> String {
     if !state.persistence.options_profile.skirmish_cheats {
         return tr("VERA:CheatDisabled");
     }
-    let command = match parse_skirmish_command(line) {
-        Ok(Some(command)) => command,
-        Ok(None) => return tr("VERA:CheatHelp"),
-        Err(key) => return tr(key),
-    };
-    // Finish and record an outstanding tick before appending this input after its hash.
+    // Keep the visible camera point at Enter. Terrain heights are available
+    // once an outstanding tick returns, and the cheat follows that tick in the replay.
+    let point = crate::app::input::camera::spawn_pointer_world_point(state);
     sim_tick::finish_threaded_frame(state);
     if !skirmish_input_available(state) {
         return tr("VERA:CheatUnavailable");
     }
+    let command = match parse_skirmish_command(line, || {
+        let (x, y) = point?;
+        let sim = &state.match_state.sim_runtime.home_runtime()?.simulation;
+        Some(sim_tick::world_point_to_cell(
+            x,
+            y,
+            Some(sim_tick::tactical_cells(sim)?),
+        ))
+    }) {
+        Ok(Some(command)) => command,
+        Ok(None) => return tr("VERA:CheatHelp"),
+        Err(key) => return tr(key),
+    };
     sim_tick::prepare_replay_recording(state);
     let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return tr("VERA:CheatUnavailable");
@@ -824,20 +839,26 @@ mod tests {
     #[test]
     fn the_rhino_shortcut_and_rules_id_reach_the_same_command() {
         use crate::sim::skirmish_cheats::SkirmishCheat;
+        let at = || Some((31, 42));
         assert_eq!(
-            parse_skirmish_command("/RhInO 200 "),
-            Ok(Some(SkirmishCheat::Spawn {
+            parse_skirmish_command("/RhInO 200 ", at),
+            Ok(Some(SkirmishCheat::SpawnAt {
                 type_id: "HTNK".into(),
-                count: 200
+                count: 200,
+                cell: (31, 42)
             }))
         );
         assert_eq!(
-            parse_skirmish_command("/spawn HTNK 200"),
-            parse_skirmish_command("/rhino 200")
+            parse_skirmish_command("/spawn HTNK 200", at),
+            parse_skirmish_command("/rhino 200", at)
         );
-        assert!(parse_skirmish_command("/money 10000 extra").is_err());
-        assert!(parse_skirmish_command("/rhino -1").is_err());
-        assert_eq!(parse_skirmish_command("/help"), Ok(None));
+        assert_eq!(
+            parse_skirmish_command("/spawn ZEP 100", || None),
+            Err("VERA:CheatPointAtMap")
+        );
+        assert!(parse_skirmish_command("/money 10000 extra", || None).is_err());
+        assert!(parse_skirmish_command("/rhino -1", at).is_err());
+        assert_eq!(parse_skirmish_command("/help", || None), Ok(None));
     }
 
     #[test]
