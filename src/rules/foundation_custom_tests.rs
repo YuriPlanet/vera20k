@@ -69,11 +69,11 @@ fn custom_foundations_match_native_reader_geometry_and_retention() {
             serde_json::json!([expected["width"], expected["height"]])
         );
         assert_eq!(
-            serde_json::json!(foundation.cell_offsets()),
+            serde_json::json!(foundation.cell_offsets().collect::<Vec<_>>()),
             terminated(&expected["cells"])
         );
         assert_eq!(
-            serde_json::json!(foundation_exit_list(foundation)),
+            serde_json::json!(foundation_exit_list(foundation).collect::<Vec<_>>()),
             terminated(&expected["outline"])
         );
         let bounds = foundation.cell_bounds();

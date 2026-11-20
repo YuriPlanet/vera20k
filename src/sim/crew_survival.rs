@@ -198,16 +198,12 @@ pub(crate) fn foundation_cells(
     rx: u16,
     ry: u16,
     foundation: &crate::rules::foundation::Foundation,
-) -> Vec<(u16, u16)> {
-    foundation
-        .cell_offsets()
-        .into_iter()
-        .filter_map(|(dx, dy)| {
-            let x = u16::try_from(i32::from(rx) + i32::from(dx)).ok()?;
-            let y = u16::try_from(i32::from(ry) + i32::from(dy)).ok()?;
-            Some((x, y))
-        })
-        .collect()
+) -> impl Iterator<Item = (u16, u16)> + '_ {
+    foundation.cell_offsets().filter_map(move |(dx, dy)| {
+        let x = u16::try_from(i32::from(rx) + i32::from(dx)).ok()?;
+        let y = u16::try_from(i32::from(ry) + i32::from(dy)).ok()?;
+        Some((x, y))
+    })
 }
 
 /// The unit gate against `CrewEscape=` (`0x00738218..0x0073822D`: FILD,
@@ -409,7 +405,7 @@ impl Simulation {
         let owner = entity.owner();
         let origin = (entity.position.rx(), entity.position.ry());
         let captured = entity.building.has_been_captured.is_set();
-        let cells = foundation_cells(origin.0, origin.1, &object.foundation);
+        let cells: Vec<_> = foundation_cells(origin.0, origin.1, &object.foundation).collect();
         // C4AppliedBy (+0x540); the pointer-expiry broadcast clears it when
         // the planter leaves play.
         let c4_source = entity
