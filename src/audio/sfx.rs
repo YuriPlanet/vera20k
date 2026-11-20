@@ -31,7 +31,6 @@ use std::num::NonZero;
 use std::sync::{Arc, OnceLock};
 
 use rodio::Player;
-use rodio::buffer::SamplesBuffer;
 use rodio::source::EmptyCallback;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use rodio::{DeviceSinkBuilder, MixerDeviceSink};
@@ -411,18 +410,6 @@ pub fn pan_channel_gains(pan: i32) -> (f32, f32) {
         (attenuated, 1.0)
     } else {
         (1.0, 1.0)
-    }
-}
-
-/// Apply per-channel pan gains to interleaved stereo samples.
-fn apply_pan(samples: &mut [f32], pan: i32) {
-    let (left, right) = pan_channel_gains(pan);
-    if left == 1.0 && right == 1.0 {
-        return;
-    }
-    for frame in samples.as_chunks_mut::<2>().0 {
-        frame[0] *= left;
-        frame[1] *= right;
     }
 }
 
@@ -2340,8 +2327,7 @@ impl SfxPlayer {
         );
         let channels = NonZero::new(decoded.channels)?;
         let sample_rate = NonZero::new(decoded.sample_rate)?;
-        // rodio 0.22.2 `SamplesBuffer::new` takes its samples only as a `Vec`.
-        let source = SamplesBuffer::new(channels, sample_rate, decoded.samples.to_vec());
+        let source = playback::ClipSource::new(decoded.samples, channels, sample_rate);
         let player: Player = Player::connect_new(self._device.mixer());
         let output = LiveSfxOutput::new(player, gain, initial_volume);
         output.player.append(source);
@@ -2584,16 +2570,14 @@ impl SfxPlayer {
                 self.arbiter.stop(event);
                 return;
             };
-            // The pan goes into this start's own copy; the cached clip stays
-            // as decoded.
-            let mut samples = decoded.samples.to_vec();
-            apply_pan(&mut samples, pan);
             if let Some(observer) = &mut self.pcm_observer {
-                observer.samples(token, resolved.observed_samples, samples.len());
+                observer.samples(token, resolved.observed_samples, decoded.samples.len());
             }
+            // The pan applies as the start reads the cached clip, which stays
+            // as decoded.
             output
                 .player
-                .append(SamplesBuffer::new(channels, rate, samples));
+                .append(playback::ClipSource::new(decoded.samples, channels, rate).panned(pan));
         } else {
             self.arbiter.stop(event);
             return;
